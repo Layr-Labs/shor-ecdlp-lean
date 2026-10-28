@@ -1,0 +1,7 @@
+/.lake
+.worktrees/
+.DS_Store
+__pycache__/
+*.pyc
+scripts/score.json
+score.json

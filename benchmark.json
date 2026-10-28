@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "name": "shor-ecdlp-lean",
+  "tracks": [
+    {
+      "name": "lean",
+      "description": "Optimize the qubit × T-model product for a formally verified Lean 4 end-to-end Shor's algorithm circuit solving secp256k1 ECDLP with >= 99% success probability.",
+      "category": "lean",
+      "direction": "-",
+      "exactScores": true,
+      "editablePaths": [
+        "ShorECDLP/Submission/Entrant"
+      ],
+      "setupCommand": [
+        "bash",
+        "-lc",
+        "./setup.sh"
+      ],
+      "benchmarkCommand": [
+        "bash",
+        "-lc",
+        "./benchmark.sh"
+      ],
+      "scorePath": "scripts/score.json",
+      "runner": {
+        "provider": "github-actions",
+        "workflow": "benchmark.yml",
+        "maxConcurrentWorkflows": 4
+      }
+    }
+  ]
+}

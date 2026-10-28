@@ -1,0 +1,353 @@
+import ShorECDLP.Submission.«2607_13816».EEA.CoefficientInvariant
+import ShorECDLP.Submission.«2607_13816».EEA.LogicalPhase
+namespace ShorECDLP.Paper2607_13816
+open Classical
+private theorem phase_regroup_disjoint (a b c d e : List Wire)
+    (h : (a++(b++(c++(d++e)))).Nodup) :
+    List.Disjoint (a++c++e) (d++b) := by
+  obtain ⟨_,hrest,ha⟩ := List.nodup_append.mp h
+  obtain ⟨_,hrest,hb⟩ := List.nodup_append.mp hrest
+  obtain ⟨_,hrest,hc⟩ := List.nodup_append.mp hrest
+  obtain ⟨_,_,hd⟩ := List.nodup_append.mp hrest
+  apply List.disjoint_left.mpr
+  intro w hw hn
+  simp only [List.mem_append] at hw hn
+  rcases hw with (hw | hw) | hw <;> rcases hn with hn | hn
+  · exact ha w hw w (List.mem_append_right _ (List.mem_append_right _ (List.mem_append_left _ hn))) rfl
+  · exact ha w hw w (List.mem_append_left _ hn) rfl
+  · exact hc w hw w (List.mem_append_left _ hn) rfl
+  · exact hb w hn w (List.mem_append_left _ hw) rfl
+  · exact hd w hn w hw rfl
+  · exact hb w hn w (List.mem_append_right _ (List.mem_append_right _ hw)) rfl
+
+/-- The actual D/E/F/G coefficient phase enters its comparison phase exactly
+when the last quotient bit is consumed and the divisor length is nonzero.
+The complete state equation retains every coefficient-stage data output. -/
+theorem blockDEFGForward_coefficientPhase (r : IndexedStepRegisters) (n index : Nat)
+    (s : BasisState) (v : EEAState) (h : IndexedStepLayout r n index)
+    (hc : Clean r.aux s) (hp1 : s r.phase1 = true) (hp2 : s r.phase2 = false)
+    (hsign : s r.sign = false) (hQ : 0 < v.lQ)
+    (htmeta : boolWordToNat (wireValues r.lengthT s) = truthMinusOneValue r.lengthT.length v.lT)
+    (hqmeta : boolWordToNat (wireValues r.lengthQ s) = truthMinusOneValue r.lengthQ.length v.lQ)
+    (hrmeta : boolWordToNat (wireValues r.lengthRPrime s) = truthMinusOneValue r.lengthT.length v.lRPrime)
+    (hsmeta : boolWordToNat (wireValues r.tBoundary.lengthSLow s) = truthMinusOneValue r.lengthT.length v.shift)
+    (hqfit : v.lT+v.lQ+1 < 2^r.lengthQ.length)
+    (hqlo : (certifiedActiveWindows n index).quotientSwap.start ≤ v.lT+v.lQ+1)
+    (hqhi : v.lT+v.lQ+1 ≤ (certifiedActiveWindows n index).quotientSwap.stop)
+    (hthi : v.lT+1 < 2^r.lengthT.length)
+    (hlo : v.lRPrime+v.shift ≤ n+3)
+    (hhi : n+3-v.lRPrime-v.shift < 2^r.lengthT.length)
+    (hv : v.lT+1 ∈ quotientSwapLabels 1 (certifiedActiveWindows n index).coefficient.stop)
+    (ht : v.t < 2^v.lT) (htp : v.tPrime < 2^(n+3-v.lRPrime))
+    (hspan : v.shift+(v.lT+1) ≤ n+3-v.lRPrime)
+    (hbound : v.tPrime < 2^v.shift*v.t)
+    (hquot : v.q < 2^v.lQ) (hrem : v.r < 2^(n+3-(v.lT+v.lQ+1)))
+    (hwork1 : wireValues r.work1 s = constantBits v.lT v.t ++ [false] ++
+      (constantBits v.lQ v.q).reverse ++ (constantBits (n+3-(v.lT+v.lQ+1)) v.r).reverse)
+    (hwork2 : wireValues r.work2 s = (constantBits (n+3-v.lRPrime) v.tPrime ++
+      (constantBits v.lRPrime v.rPrime).reverse).rotate v.shift)
+    (hsfull : boolWordToNat (wireValues r.lengthS s) = truthMinusOneValue r.lengthS.length v.shift)
+    (hswidth : 0 < r.lengthS.length) (hsinc : v.shift+1 < 2^r.lengthS.length)
+    (hrpfit : v.lRPrime < 2^r.lengthRPrime.length) :
+    let pre := blockDForward r (certifiedActiveWindows n index).quotientSwap ++
+      blockEForward r n (certifiedActiveWindows n index).coefficient ++ blockFForward r
+    let mid := run pre s
+    let switch := decide (v.lQ=1) && !decide (v.lRPrime=0)
+    run (pre ++ blockGForward r) s = mid[r.phase2 ↦ switch][r.sign ↦ switch] ∧
+    IndexedStepReady r (run (pre ++ blockGForward r) s) := by
+  let pre := blockDForward r (certifiedActiveWindows n index).quotientSwap ++
+    blockEForward r n (certifiedActiveWindows n index).coefficient ++ blockFForward r
+  let mid := run pre s
+  obtain ⟨_,_,hdQ,hdS,hdSign,_,_,hdReady,_,_,hdFrame⟩ :=
+    blockDEFForward_completeCoefficient r n index s v h hc hp1 hp2 hsign hQ
+      htmeta hqmeta hrmeta hsmeta hqfit hqlo hqhi hthi hlo hhi hv ht htp hspan
+      hbound hquot hrem hwork1 hwork2 hsfull hswidth hsinc
+  have hsep := phase_regroup_disjoint [r.phase1,r.phase2,r.iter] (r.sign :: r.work1 ++ r.work2)
+    r.lengthT (r.lengthQ ++ r.lengthS) (r.lengthRPrime ++ r.aux)
+    (by simpa only [IndexedStepRegisters.allWires,List.append_assoc,List.cons_append,List.nil_append] using h.physical)
+  have hpres : ∀ wire ∈ [r.phase1,r.phase2,r.iter] ++ r.lengthT ++ (r.lengthRPrime ++ r.aux),
+      mid wire = s wire := by
+    intro wire hw
+    apply hdFrame wire
+    have hn := List.disjoint_left.mp hsep hw
+    intro hm
+    apply hn
+    simp only [List.mem_append] at hm ⊢
+    rcases hm with (hm | hm) | hm
+    · exact Or.inl (Or.inl hm)
+    · exact Or.inr hm
+    · exact Or.inl (Or.inr hm)
+  have hp1m : mid r.phase1 = true := (hpres _ (by simp)).trans hp1
+  have hp2m : mid r.phase2 = false := (hpres _ (by simp)).trans hp2
+  have hsgm : mid r.sign = false := hdSign
+  have hrword : wireValues r.lengthRPrime mid = wireValues r.lengthRPrime s := by
+    apply List.map_congr_left
+    intro wire hw
+    exact hpres _ (by simp [hw])
+  have hepmem : r.shiftEpoch ∈ r.aux := by
+    change r.aux.getD 1 0 ∈ r.aux
+    rw [List.getD_eq_getElem _ _ (by rw [h.aux_length]; decide)]
+    exact List.getElem_mem _
+  have hepoch : mid r.shiftEpoch = false := (hpres _ (by simp [hepmem])).trans (hc _ hepmem)
+  have hrwidth : r.lengthRPrime.length = r.lengthT.length := h.tBoundary.lengthRP_length
+  have hqmeta' : boolWordToNat (wireValues r.lengthQ mid) = truthMinusOneValue r.lengthQ.length (v.lQ-1) := by
+    change wireValues r.lengthQ mid = _ at hdQ
+    rw [hdQ,boolWordToNat_constantBits]
+    exact Nat.mod_mod _ _
+  have hqfit' : v.lQ-1 < 2^r.lengthQ.length := by omega
+  have hg := blockGForward_logical r n index (v.lQ-1) v.lRPrime (v.shift+1) mid h hdReady hepoch
+    hqmeta' (by simpa only [hrword,hrwidth] using hrmeta) hdS hqfit' hrpfit hsinc
+  have hQeq : v.lQ-1=0 ↔ v.lQ=1 := by omega
+  have hSpos : ¬ v.shift+1=0 := by omega
+  have hupdate : mid[r.phase1 ↦ true] = mid := by
+    funext wire
+    by_cases hw : wire = r.phase1
+    · subst wire; simp only [upd_same,hp1m]
+    · simp only [upd,hw,ite_false]
+  dsimp only at hg ⊢
+  simp only [hp1m,hp2m,hsgm,Bool.false_xor,Bool.and_true,Bool.and_self,
+    hQeq,decide_eq_false hSpos,Bool.xor_false,hupdate] at hg
+  simpa only [pre,mid,Classical.run_append] using hg
+/-- The complete indexed coefficient microstep, including the disabled A–C and H
+blocks, has the same physical result and phase transition as D–G. -/
+theorem indexedStepUnitary_coefficientPhase (r : IndexedStepRegisters) (n index : Nat)
+    (s : BasisState) (v : EEAState) (h : IndexedStepLayout r n index)
+    (hc : Clean r.aux s) (hp1 : s r.phase1 = true) (hp2 : s r.phase2 = false)
+    (hsign : s r.sign = false) (hQ : 0 < v.lQ)
+    (htmeta : boolWordToNat (wireValues r.lengthT s) = truthMinusOneValue r.lengthT.length v.lT)
+    (hqmeta : boolWordToNat (wireValues r.lengthQ s) = truthMinusOneValue r.lengthQ.length v.lQ)
+    (hrmeta : boolWordToNat (wireValues r.lengthRPrime s) = truthMinusOneValue r.lengthT.length v.lRPrime)
+    (hsmeta : boolWordToNat (wireValues r.tBoundary.lengthSLow s) = truthMinusOneValue r.lengthT.length v.shift)
+    (hqfit : v.lT+v.lQ+1 < 2^r.lengthQ.length)
+    (hqlo : (certifiedActiveWindows n index).quotientSwap.start ≤ v.lT+v.lQ+1)
+    (hqhi : v.lT+v.lQ+1 ≤ (certifiedActiveWindows n index).quotientSwap.stop)
+    (hthi : v.lT+1 < 2^r.lengthT.length)
+    (hlo : v.lRPrime+v.shift ≤ n+3)
+    (hhi : n+3-v.lRPrime-v.shift < 2^r.lengthT.length)
+    (hv : v.lT+1 ∈ quotientSwapLabels 1 (certifiedActiveWindows n index).coefficient.stop)
+    (ht : v.t < 2^v.lT) (htp : v.tPrime < 2^(n+3-v.lRPrime))
+    (hspan : v.shift+(v.lT+1) ≤ n+3-v.lRPrime)
+    (hbound : v.tPrime < 2^v.shift*v.t)
+    (hquot : v.q < 2^v.lQ) (hrem : v.r < 2^(n+3-(v.lT+v.lQ+1)))
+    (hwork1 : wireValues r.work1 s = constantBits v.lT v.t ++ [false] ++
+      (constantBits v.lQ v.q).reverse ++ (constantBits (n+3-(v.lT+v.lQ+1)) v.r).reverse)
+    (hwork2 : wireValues r.work2 s = (constantBits (n+3-v.lRPrime) v.tPrime ++
+      (constantBits v.lRPrime v.rPrime).reverse).rotate v.shift)
+    (hsfull : boolWordToNat (wireValues r.lengthS s) = truthMinusOneValue r.lengthS.length v.shift)
+    (hswidth : 0 < r.lengthS.length) (hsinc : v.shift+1 < 2^r.lengthS.length)
+    (hrpfit : v.lRPrime < 2^r.lengthRPrime.length) :
+    let pre := blockDForward r (certifiedActiveWindows n index).quotientSwap ++
+      blockEForward r n (certifiedActiveWindows n index).coefficient ++ blockFForward r
+    let mid := run pre s
+    let switch := decide (v.lQ=1) && !decide (v.lRPrime=0)
+    run (indexedStepUnitary r n index) s = mid[r.phase2 ↦ switch][r.sign ↦ switch] ∧
+    IndexedStepReady r (run (indexedStepUnitary r n index) s) := by
+  let pre := blockDForward r (certifiedActiveWindows n index).quotientSwap ++
+    blockEForward r n (certifiedActiveWindows n index).coefficient ++ blockFForward r
+  let mid := run pre s
+  let out := run (pre ++ blockGForward r) s
+  let switch := decide (v.lQ=1) && !decide (v.lRPrime=0)
+  have hg := blockDEFGForward_coefficientPhase r n index s v h hc hp1 hp2 hsign hQ
+    htmeta hqmeta hrmeta hsmeta hqfit hqlo hqhi hthi hlo hhi hv ht htp hspan
+    hbound hquot hrem hwork1 hwork2 hsfull hswidth hsinc hrpfit
+  change out = mid[r.phase2 ↦ switch][r.sign ↦ switch] ∧ IndexedStepReady r out at hg
+  obtain ⟨_,_,_,hdS,_,_,_,_,_,_,_⟩ :=
+    blockDEFForward_completeCoefficient r n index s v h hc hp1 hp2 hsign hQ
+      htmeta hqmeta hrmeta hsmeta hqfit hqlo hqhi hthi hlo hhi hv ht htp hspan
+      hbound hquot hrem hwork1 hwork2 hsfull hswidth hsinc
+  have hS : wireAnd r.lengthS mid = false := by
+    rw [wireAnd_encoded_zero r.lengthS mid (v.shift+1) hdS hsinc]
+    simp
+  have hphysical := h.physical
+  simp only [IndexedStepRegisters.allWires,List.cons_append,List.nil_append,List.nodup_cons] at hphysical
+  have hframe : ∀ wire ∈ r.lengthS, out wire = mid wire := by
+    intro wire hw
+    have hp : wire ≠ r.phase2 := by
+      intro he; subst wire
+      exact hphysical.2.1 (by simp [hw])
+    have hsg : wire ≠ r.sign := by
+      intro he; subst wire
+      exact hphysical.2.2.2.1 (by simp [hw])
+    rw [hg.1]
+    simp only [upd_other _ _ _ hsg,upd_other _ _ _ hp]
+  have hword : wireValues r.lengthS out = wireValues r.lengthS mid := by
+    apply List.map_congr_left
+    exact hframe
+  have hand : wireAnd r.lengthS out = wireAnd r.lengthS mid := by
+    rw [wireAnd_eq_numeric_allOnes,wireAnd_eq_numeric_allOnes,hword]
+  have hz : (wireAnd r.lengthS out && !out r.shiftEpoch) = false := by
+    rw [hand,hS]
+    rfl
+  have hfull := indexedStepUnitary_coefficient_tail r n index s h hc hp1 hp2 hg.2 hz
+  change run (indexedStepUnitary r n index) s = out at hfull
+  dsimp only
+  exact ⟨hfull.trans hg.1, hfull.symm ▸ hg.2⟩
+
+/-- With an empty quotient and a nonzero divisor length, the actual swap-stage
+phase update clears sign and selects its next phase from the comparison and
+whether the decremented shift is zero. -/
+theorem blockEFGForward_swapPhase (r : IndexedStepRegisters) (n index : Nat)
+    (window : ActiveWindow) (s : BasisState) (v : EEAState)
+    (h : IndexedStepLayout r n index)
+    (hw : window = (certifiedActiveWindows n index).coefficient)
+    (hr : IndexedStepReady r s) (hp1 : s r.phase1 = true) (hp2 : s r.phase2 = true)
+    (htmeta : boolWordToNat (wireValues r.lengthT s) = truthMinusOneValue r.lengthT.length v.lT)
+    (hrmeta : boolWordToNat (wireValues r.lengthRPrime s) = truthMinusOneValue r.lengthT.length v.lRPrime)
+    (hsmeta : boolWordToNat (wireValues r.tBoundary.lengthSLow s) = truthMinusOneValue r.lengthT.length v.shift)
+    (hthi : v.lT+1 < 2^r.lengthT.length)
+    (hspan : v.lT+1+v.lRPrime ≤ n+3)
+    (hshift : 0 < v.shift) (hlo : v.lRPrime+v.shift ≤ n+3)
+    (hhi : n+3-v.lRPrime-v.shift < 2^r.lengthT.length)
+    (hv : n+3-v.lRPrime-v.shift ∈ quotientSwapLabels window.start window.stop)
+    (ht : v.t < 2^v.lT) (htB : v.t < 2^(n+3-v.lRPrime-v.shift))
+    (htp : v.tPrime < 2^(n+3-v.lRPrime)) (hrem : v.r < 2^v.lRPrime)
+    (hsfull : boolWordToNat (wireValues r.lengthS s) = truthMinusOneValue r.lengthS.length v.shift)
+    (hswidth : 0 < r.lengthS.length) (hsfit : v.shift < 2^r.lengthS.length)
+    (hepoch : s r.shiftEpoch = false)
+    (hqmeta : boolWordToNat (wireValues r.lengthQ s) = truthMinusOneValue r.lengthQ.length 0)
+    (hR : 0 < v.lRPrime) (hrfit : v.lRPrime < 2^r.lengthRPrime.length)
+    (hwork1 : wireValues r.work1 s = constantBits v.lT v.t ++ [false] ++
+      (constantBits (n+3-(v.lT+1)) v.r).reverse)
+    (hwork2 : wireValues r.work2 s =
+      (constantBits (n+3-v.lRPrime) v.tPrime ++
+        (constantBits v.lRPrime v.rPrime).reverse).rotate v.shift) :
+    let pre := blockEForward r n window ++ blockFForward r
+    let mid := run pre s
+    let comparison := s r.sign ^^ decide (v.t*2^v.shift ≤ v.tPrime)
+    let zeroShift := decide (v.shift=1)
+    run (pre ++ blockGForward r) s =
+      mid[r.phase1 ↦ !zeroShift][r.phase2 ↦ comparison ^^ zeroShift][r.sign ↦ false] ∧
+      IndexedStepReady r (run (pre ++ blockGForward r) s) := by
+  let pre := blockEForward r n window ++ blockFForward r
+  let mid := run pre s
+  obtain ⟨_,_,hsout,hsg,hready,hframe⟩ := blockEFForward_swap r n index window s v h hw hr hp1 hp2
+    htmeta hrmeta hsmeta hthi hspan hshift hlo hhi hv ht htB htp hrem hsfull hswidth hsfit hwork1 hwork2
+  have hsep := phase_regroup_disjoint [r.phase1,r.phase2,r.iter] (r.sign :: r.work1 ++ r.work2)
+    (r.lengthT ++ r.lengthQ) r.lengthS (r.lengthRPrime ++ r.aux)
+    (by simpa only [IndexedStepRegisters.allWires,List.append_assoc,List.cons_append,List.nil_append] using h.physical)
+  have hpres : ∀ wire ∈ [r.phase1,r.phase2,r.iter] ++ (r.lengthT ++ r.lengthQ) ++ (r.lengthRPrime ++ r.aux),
+      mid wire = s wire := by
+    intro wire hm
+    apply hframe wire
+    have hn := List.disjoint_left.mp hsep hm
+    intro hx
+    apply hn
+    simp only [List.mem_append,List.mem_cons] at hx ⊢
+    rcases hx with (hx | hx) | hx
+    · exact Or.inr (Or.inl (Or.inl hx))
+    · exact Or.inr (Or.inr hx)
+    · exact Or.inl hx
+  have hp1m : mid r.phase1 = true := (hpres _ (by simp)).trans hp1
+  have hp2m : mid r.phase2 = true := (hpres _ (by simp)).trans hp2
+  have hqword : wireValues r.lengthQ mid = wireValues r.lengthQ s := by
+    apply List.map_congr_left; intro wire hm; exact hpres _ (by simp [hm])
+  have hrword : wireValues r.lengthRPrime mid = wireValues r.lengthRPrime s := by
+    apply List.map_congr_left; intro wire hm; exact hpres _ (by simp [hm])
+  have hepmem : r.shiftEpoch ∈ r.aux := by
+    change r.aux.getD 1 0 ∈ r.aux
+    rw [List.getD_eq_getElem _ _ (by rw [h.aux_length]; decide)]
+    exact List.getElem_mem _
+  have hepm : mid r.shiftEpoch = false := (hpres _ (by simp [hepmem])).trans hepoch
+  have hrwidth : r.lengthRPrime.length = r.lengthT.length := h.tBoundary.lengthRP_length
+  change mid r.sign = (s r.sign ^^ decide (v.t*2^v.shift ≤ v.tPrime)) at hsg
+  have hg := blockGForward_logical r n index 0 v.lRPrime (v.shift-1) mid h hready hepm
+    (by simpa only [hqword] using hqmeta)
+    (by simpa only [hrword,hrwidth] using hrmeta) hsout
+    (Nat.pow_pos (by decide)) hrfit (by omega)
+  have hz : v.shift-1=0 ↔ v.shift=1 := by omega
+  have hRne : v.lRPrime ≠ 0 := by omega
+  have hsimpl (b z : Bool) :
+      (true ^^ (b ^^ true)) = b ∧ (true ^^ z) = !z := by
+    cases b <;> cases z <;> decide
+  have hh := hsimpl (s r.sign ^^ decide (v.t*2^v.shift ≤ v.tPrime)) (decide (v.shift=1))
+  dsimp only at hg ⊢
+  simp only [hp1m,hp2m,hsg,decide_true,decide_eq_false hRne,Bool.not_false,
+    Bool.true_and,hz,hh.1,Bool.xor_self,hh.2] at hg
+  simpa only [pre,mid,Classical.run_append] using hg
+
+/-- Before shift reaches zero, the complete indexed swap microstep has the verified
+comparison, backward shift and phase update, with no additional routing assumptions. -/
+theorem indexedStepUnitary_swapPhase (r : IndexedStepRegisters) (n index : Nat)
+    (window : ActiveWindow) (s : BasisState) (v : EEAState)
+    (h : IndexedStepLayout r n index)
+    (hw : window = (certifiedActiveWindows n index).coefficient)
+    (hc : Clean r.aux s) (hp1 : s r.phase1 = true) (hp2 : s r.phase2 = true)
+    (htmeta : boolWordToNat (wireValues r.lengthT s) = truthMinusOneValue r.lengthT.length v.lT)
+    (hrmeta : boolWordToNat (wireValues r.lengthRPrime s) = truthMinusOneValue r.lengthT.length v.lRPrime)
+    (hsmeta : boolWordToNat (wireValues r.tBoundary.lengthSLow s) = truthMinusOneValue r.lengthT.length v.shift)
+    (hthi : v.lT+1 < 2^r.lengthT.length)
+    (hspan : v.lT+1+v.lRPrime ≤ n+3)
+    (hshift : 1 < v.shift) (hlo : v.lRPrime+v.shift ≤ n+3)
+    (hhi : n+3-v.lRPrime-v.shift < 2^r.lengthT.length)
+    (hv : n+3-v.lRPrime-v.shift ∈ quotientSwapLabels window.start window.stop)
+    (ht : v.t < 2^v.lT) (htB : v.t < 2^(n+3-v.lRPrime-v.shift))
+    (htp : v.tPrime < 2^(n+3-v.lRPrime)) (hrem : v.r < 2^v.lRPrime)
+    (hsfull : boolWordToNat (wireValues r.lengthS s) = truthMinusOneValue r.lengthS.length v.shift)
+    (hswidth : 0 < r.lengthS.length) (hsfit : v.shift < 2^r.lengthS.length)
+    (hqmeta : boolWordToNat (wireValues r.lengthQ s) = truthMinusOneValue r.lengthQ.length 0)
+    (hR : 0 < v.lRPrime) (hrfit : v.lRPrime < 2^r.lengthRPrime.length)
+    (hwork1 : wireValues r.work1 s = constantBits v.lT v.t ++ [false] ++
+      (constantBits (n+3-(v.lT+1)) v.r).reverse)
+    (hwork2 : wireValues r.work2 s =
+      (constantBits (n+3-v.lRPrime) v.tPrime ++
+        (constantBits v.lRPrime v.rPrime).reverse).rotate v.shift) :
+    let mid := run (blockEForward r n window ++ blockFForward r) s
+    let comparison := s r.sign ^^ decide (v.t*2^v.shift ≤ v.tPrime)
+    run (indexedStepUnitary r n index) s =
+      mid[r.phase1 ↦ true][r.phase2 ↦ comparison][r.sign ↦ false] ∧
+      IndexedStepReady r (run (indexedStepUnitary r n index) s) := by
+  subst window
+  let cw := (certifiedActiveWindows n index).coefficient
+  let pre := blockEForward r n cw ++ blockFForward r
+  let mid := run pre s
+  let out := run (pre ++ blockGForward r) s
+  let comparison := s r.sign ^^ decide (v.t*2^v.shift ≤ v.tPrime)
+  have hr : IndexedStepReady r s := by
+    intro wire hm
+    apply hc wire
+    simp only [IndexedStepRegisters.sharedScratch,List.mem_cons,List.mem_append] at hm
+    rcases hm with he | he | he
+    · subst wire
+      change r.aux.getD 0 0 ∈ r.aux
+      rw [List.getD_eq_getElem _ _ (by rw [h.aux_length]; decide)]
+      exact List.getElem_mem _
+    · exact List.mem_of_mem_take (List.mem_of_mem_drop he)
+    · exact List.mem_of_mem_drop he
+  have hepoch : s r.shiftEpoch = false := hc _ (by
+    change r.aux.getD 1 0 ∈ r.aux
+    rw [List.getD_eq_getElem _ _ (by rw [h.aux_length]; decide)]
+    exact List.getElem_mem _)
+  have hg := blockEFGForward_swapPhase r n index cw s v h rfl hr hp1 hp2
+    htmeta hrmeta hsmeta hthi hspan (by omega) hlo hhi hv ht htB htp hrem hsfull hswidth hsfit
+    hepoch hqmeta hR hrfit hwork1 hwork2
+  have hnonzero : v.shift ≠ 1 := by omega
+  simp only [decide_eq_false hnonzero,Bool.not_false,Bool.xor_false] at hg
+  change out = mid[r.phase1 ↦ true][r.phase2 ↦ comparison][r.sign ↦ false] ∧ IndexedStepReady r out at hg
+  obtain ⟨_,_,hsout,_,_,_⟩ := blockEFForward_swap r n index cw s v h rfl hr hp1 hp2
+    htmeta hrmeta hsmeta hthi hspan (by omega) hlo hhi hv ht htB htp hrem hsfull hswidth hsfit hwork1 hwork2
+  have hS : wireAnd r.lengthS mid = false := by
+    rw [wireAnd_encoded_zero r.lengthS mid (v.shift-1) hsout (by omega)]
+    exact decide_eq_false (by omega)
+  have hphysical := h.physical
+  simp only [IndexedStepRegisters.allWires,List.cons_append,List.nil_append,List.nodup_cons] at hphysical
+  have hframe : ∀ wire ∈ r.lengthS, out wire = mid wire := by
+    intro wire hm
+    have hp : wire ≠ r.phase1 := by
+      intro he; subst wire; exact hphysical.1 (by simp [hm])
+    have hp2 : wire ≠ r.phase2 := by
+      intro he; subst wire; exact hphysical.2.1 (by simp [hm])
+    have hsg : wire ≠ r.sign := by
+      intro he; subst wire; exact hphysical.2.2.2.1 (by simp [hm])
+    rw [hg.1]
+    simp only [upd_other _ _ _ hsg,upd_other _ _ _ hp2,upd_other _ _ _ hp]
+  have hword : wireValues r.lengthS out = wireValues r.lengthS mid := by
+    apply List.map_congr_left; exact hframe
+  have hand : wireAnd r.lengthS out = false := by
+    rw [wireAnd_eq_numeric_allOnes,hword,← wireAnd_eq_numeric_allOnes,hS]
+  have hz : (wireAnd r.lengthS out && !out r.shiftEpoch) = false := by rw [hand]; rfl
+  have hi := indexedStepUnitary_swap_tail r n index s h hc hp1 hp2 hg.2 hz
+  change run (indexedStepUnitary r n index) s = out at hi
+  rw [hi]
+  exact hg
+
+end ShorECDLP.Paper2607_13816
