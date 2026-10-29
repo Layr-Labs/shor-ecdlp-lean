@@ -1,6 +1,6 @@
 import ShorECDLP.Submission.Entrant.Trial
 import ShorECDLP.Submission.Entrant.Success
-import ShorECDLP.Submission.Entrant.WindowMassSharp
+import ShorECDLP.Submission.Entrant.WindowMass
 import ShorECDLP.Challenge.Official
 
 /-! EDITABLE. Entrant: one observed trial at 263-bit phase precision.
@@ -66,10 +66,10 @@ theorem successE_verified (Q : Point) (d : Nat) (hd : Q = d • G)
 
 set_option exponentiation.threshold 300 in
 theorem hwinE (n : ℕ) (hn0 : 0 < n) (hnr : n < order) :
-    (200 : ℝ) / 201 ≤ ∑ a : Fin (2 ^ 263),
+    (9951 : ℝ) / 10000 ≤ ∑ a : Fin (2 ^ 263),
       if Quantum.OrderFinding.nearestNumerator order 263 a.val = n then
         Complex.normSq (qpeAmplitude 263 ((n : ℝ) / (order : ℝ)) a.val) else 0 := by
-  have h := window_mass_sharp order 263 n hn0 hnr (by decide)
+  have h := window_mass order 263 n hn0 hnr (by decide) (by decide)
   rw [Fin.sum_univ_eq_sum_range (fun a => if Quantum.OrderFinding.nearestNumerator order 263 a = n then
     Complex.normSq (qpeAmplitude 263 ((n : ℝ) / (order : ℝ)) a) else 0)]
   simpa only [Quantum.OrderFinding.nearestNumerator, qpeAmplitude, eigenvalue] using h
@@ -129,7 +129,7 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
   rw [heq, trialV2_run]
   refine le_trans ?_ (success_of_window_mass pointEncoding _ G Q regA regB bitcoinPointReg
     (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting (spec_any _ Q)
-    hsetup (secret_mod_ne_zero Q d hn hd) (200 / 201) (by norm_num) hwinE)
+    hsetup (secret_mod_ne_zero Q d hn hd) (9951 / 10000) (by norm_num) hwinE)
   rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
   norm_num [order]
 
@@ -163,6 +163,8 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
+/-- The declared T bound is the certified count rounded up to a multiple of 10^5, so the
+qubit × T product has at most fifteen significant digits. -/
 def bounds : Bounds where
   qubits := 206638
   tModel := 176706041851470
