@@ -1,161 +1,18 @@
-import ShorECDLP.Submission.Entrant.Streaming.Semantics
+import ShorECDLP.Submission.«2607_13816».OrderFinding.WrappedCandidates
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
 import Mathlib.Analysis.SpecialFunctions.Complex.Log
 import Mathlib.Analysis.Real.Pi.Bounds
 import ShorECDLP.Submission.Naive.OrderFinding.Proofs.SuccessProbability
 import ShorECDLP.Submission.«2607_13816».Window.CharacterMixture
 import ShorECDLP.Challenge.Contract
+import ShorECDLP.Submission.Entrant.Single.Physical
+import ShorECDLP.Submission.Entrant.Streaming.Semantics
 import ShorECDLP.Framework.Quantum.TerminalInterference
-import ShorECDLP.Challenge.Official
 
-section
 
-section
-
-/-! EDITABLE. Single-trial entrant: mixed-width distribution and decoder proofs.
-Concatenated in dependency order to bound parallel kernel replay memory.
-Original provenance comments are retained beside each source part. -/
-
--- ==== part: Single/History ====
-
-section
-/-! Dynamic histories for compositional straight-program distribution proofs.
-The protected straight semantics and record decomposition are Apache-2.0;
-see LICENSE and NOTICE. -/
-namespace ShorECDLP.Entrant.Single
-open Quantum ShorECDLP.Challenge ShorECDLP.Paper2607_13816.ChallengeMigration
-
-/-- Total extension; actual branches have exactly the required record length. -/
-def historyAfter {start : Nat} (finish : Nat) (history : Fin start → Bool)
-    (bits : List Bool) : Fin finish → Bool :=
-  fun i => ((List.ofFn history ++ bits)[i.val]?).getD false
-
-theorem historyAfter_nil {start : Nat} (history : Fin start → Bool) :
-    historyAfter start history List.nil = history := by
-  funext i
-  simp [historyAfter]
-
-theorem historyAfter_step {start : Nat} (finish : Nat) (history : Fin start → Bool)
-    (bit : Bool) (bits : List Bool) :
-    historyAfter finish (Fin.lastCases bit history) bits =
-      historyAfter finish history (bit :: bits) := by
-  funext i
-  simp only [historyAfter, List.ofFn_succ', Fin.lastCases_castSucc, Fin.lastCases_last,
-    List.concat_eq_append, List.append_assoc, List.singleton_append]
-
-theorem historyAfter_list {start finish : Nat} (history : Fin start → Bool)
-    (bits : List Bool) (hlen : start + bits.length = finish) :
-    List.ofFn (historyAfter finish history bits) = List.ofFn history ++ bits := by
-  apply List.ext_getElem
-  · simpa using hlen.symm
-  · intro i hi hj
-    simp only [List.getElem_ofFn, historyAfter]
-    rw [List.getElem?_eq_getElem hj, Option.getD_some]
-
-/-- Exact branch enumeration, retaining the history used by the suffix. -/
-theorem append_run_history {n start mid finish : Nat}
-    (p : Straight n start mid) (q : Straight n mid finish)
-    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
-    ((p.append q).instantiate read history).run =
-      ((p.instantiate read history).run).flatMap (fun a =>
-        ((q.instantiate read (historyAfter mid history a.history)).run).map a.seq) := by
-  induction p with
-  | done =>
-    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run,
-      List.flatMap_cons, List.flatMap_nil, List.append_nil, historyAfter_nil]
-    apply Eq.symm
-    apply List.map_id'
-  | gate g p ih =>
-    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run, ih,
-      List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def]
-    apply List.flatMap_congr
-    intro a ha
-    apply List.map_congr_left
-    intro b hb
-    rfl
-  | recordGate i v g p ih =>
-    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run, ih,
-      List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def]
-    apply List.flatMap_congr
-    intro a ha
-    apply List.map_congr_left
-    intro b hb
-    rfl
-  | measure w p ih =>
-    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run, ih,
-      List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def,
-      List.flatMap_append]
-    congr 1 <;>
-      (apply List.flatMap_congr; intro a ha
-       simp only [historyAfter_step]
-       apply List.map_congr_left; intro b hb; rfl)
-
-theorem historyAfter_old {start finish : Nat} (history : Fin start → Bool)
-    (bits : List Bool) (hle : start ≤ finish) (i : Fin start) :
-    historyAfter finish history bits ⟨i.val, lt_of_lt_of_le i.isLt hle⟩ = history i := by
-  simp only [historyAfter]
-  rw [List.getElem?_append_left (show i.val < (List.ofFn history).length by
-    simpa only [List.length_ofFn] using i.isLt)]
-  simp
-
-theorem bankPrior_map {start : Nat} (count : Nat) (prior : List (Fin start))
-    (history : Fin start → Bool) (bits : List Bool) :
-    (bankPrior count prior).map (historyAfter (start + count) history bits) = prior.map history := by
-  simp only [bankPrior, List.map_map, Function.comp_def]
-  apply List.map_congr_left
-  intro i hi
-  exact historyAfter_old history bits (by omega) i
-
-theorem nextPrior_map {start : Nat} (count width : Nat) (prior : List (Fin start))
-    (history : Fin start → Bool) (arith bits : List Bool)
-    (ha : arith.length = count) (hb : bits.length = width) :
-    (nextPrior count width prior).map
-      (historyAfter (start + count + width)
-        (historyAfter (start + count) history arith) bits) = bits.reverse ++ prior.map history := by
-  let h₁ := historyAfter (start + count) history arith
-  have hold (i : Fin start) :
-      historyAfter (start + count + width) h₁ bits ⟨i.val, by omega⟩ = history i := by
-    rw [historyAfter_old h₁ bits (by omega) ⟨i.val, by omega⟩]
-    exact historyAfter_old history arith (by omega) i
-  have hbits : List.ofFn (fun i : Fin width =>
-      historyAfter (start + count + width) h₁ bits ⟨start + count + i.val, by omega⟩) = bits := by
-    apply List.ext_getElem
-    · simp [hb]
-    · intro i hi hj
-      simp only [List.getElem_ofFn, historyAfter]
-      rw [List.getElem?_append_right (by simp)]
-      simp only [List.length_ofFn, Nat.add_sub_cancel_left]
-      rw [List.getElem?_eq_getElem hj, Option.getD_some]
-  simp only [nextPrior, List.map_append, List.map_reverse, List.map_ofFn, List.map_map,
-    Function.comp_def]
-  rw [hbits]
-  congr 1
-  apply List.map_congr_left
-  intro i hi
-  exact hold i
-
-/-- Preparation contributes no records and is an ordinary Hadamard prefix. -/
-theorem prepare_run {n start finish : Nat} (ws : List Wire) (p : Straight n start finish)
-    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
-    ((prepareOuterBank ws p).instantiate read history).run =
-      ((p.instantiate read history).run).map (fun b =>
-        ({ history := List.nil, kraus := Quantum.run (ws.map Gate.H) } : InstrumentBranch).seq b) := by
-  induction ws with
-  | nil =>
-    simp only [prepareOuterBank, List.foldr_nil, List.map_nil, Quantum.run]
-    apply Eq.symm
-    apply List.map_id'
-  | cons w ws ih =>
-    change (AdaptiveCircuit.unitary [.H w]
-      ((prepareOuterBank ws p).instantiate read history)).run = _
-    simp only [AdaptiveCircuit.run, ih, List.map_map, Function.comp_def, List.map_cons]
-    apply List.map_congr_left
-    intro b hb
-    rfl
-
-end ShorECDLP.Entrant.Single
-
-end
+/-! Circular Fourier concentration and recorded half-bin rounding.
+The sharp pointwise Fourier estimate is inherited from ArthurOstapenko's
+single-trial certificate (8c5e5431), retaining its original attribution. -/
 
 -- ==== part: Single/WindowMassSharp ====
 
@@ -636,71 +493,515 @@ end ShorECDLP.Entrant
 
 end
 
--- ==== part: Single/Success ====
+namespace ShorECDLP.Entrant.WindowMassSharpProof
+open Finset
+noncomputable section
 
-section
-/-! Adapted from public promoted submission 8321638bca0ea97505a1fae2e711c0f52b0d2a2e.
-Apache-2.0; see LICENSE and NOTICE.
+/-- Concentration in a circular interval, including phases near zero. -/
+theorem circular_mass (N : Nat) (hN : 0 < N) (β L : ℝ)
+    (hβ0 : 0 ≤ β) (hβ1 : β < 1) (hL : 1 < L) :
+    1 - 3 / (Real.pi ^ 2 * (L - 1)) ≤
+      ∑ a ∈ range N,
+        if phiR N (N * β) a < L ∨ phiL N (N * β) a < L
+        then ampSq N β a else 0 := by
+  have hNR : (0 : ℝ) < N := by exact_mod_cast hN
+  let c : ℝ := N * β
+  have hc0 : 0 ≤ c := mul_nonneg hNR.le hβ0
+  have hcN : c < N := by dsimp [c]; nlinarith
+  let S := (range N).filter (fun a => ¬ (phiR N c a < L ∨ phiL N c a < L))
+  have hSN : ∀ a ∈ S, a < N := fun a ha => mem_range.mp (mem_filter.mp ha).1
+  have hR : ∀ a ∈ S, L ≤ phiR N c a := by
+    intro a ha
+    exact le_of_not_gt (fun h => (mem_filter.mp ha).2 (Or.inl h))
+  have hL' : ∀ a ∈ S, L ≤ phiL N c a := by
+    intro a ha
+    exact le_of_not_gt (fun h => (mem_filter.mp ha).2 (Or.inr h))
+  have hpt : ∀ a ∈ S, ampSq N β a ≤
+      3 / (2 * Real.pi ^ 2) * (1 / (phiR N c a) ^ 2 + 1 / (phiL N c a) ^ 2) := by
+    intro a ha
+    have haN : (a : ℝ) < N := by exact_mod_cast hSN a ha
+    have ha0 : (0 : ℝ) ≤ a := Nat.cast_nonneg _
+    have hR' := hR a ha
+    have hL'' := hL' a ha
+    by_cases hca : c ≤ (a : ℝ)
+    · have e1 : phiR N c a = (a : ℝ) - c := by simp [phiR, hca]
+      have hu : 0 < (a : ℝ) - c := by rw [e1] at hR'; linarith
+      have e2 : phiL N c a = (N : ℝ) - ((a : ℝ) - c) := by
+        rw [phiL, if_neg (by linarith)]; ring
+      rw [e1, e2]
+      exact point_bound_sharp N hN (2 * Real.pi * (β - a / N)) ((a : ℝ) - c)
+        hu (by linarith) (Or.inr (by dsimp [c]; field_simp; ring))
+    · have hca' : (a : ℝ) < c := lt_of_not_ge hca
+      have e1 : phiR N c a = (N : ℝ) - (c - (a : ℝ)) := by
+        rw [phiR, if_neg hca]; ring
+      have e2 : phiL N c a = c - (a : ℝ) := by simp [phiL, hca'.le]
+      rw [e1, e2, add_comm (1 / ((N : ℝ) - (c - (a : ℝ))) ^ 2)]
+      exact point_bound_sharp N hN (2 * Real.pi * (β - a / N)) (c - (a : ℝ))
+        (by linarith) (by linarith) (Or.inl (by dsimp [c]; field_simp))
+  have sR := sum_inv_sq_le S (phiR N c) L hL hR
+    (fun a ha b hb h => phiR_sep N c a b (hSN a ha) (hSN b hb) h)
+  have sL := sum_inv_sq_le S (phiL N c) L hL hL'
+    (fun a ha b hb h => phiL_sep N c a b (hSN a ha) (hSN b hb) h)
+  have htail : ∑ a ∈ S, ampSq N β a ≤ 3 / (Real.pi ^ 2 * (L - 1)) := by
+    calc
+      _ ≤ 3 / (2 * Real.pi ^ 2) * (1 / (L - 1) + 1 / (L - 1)) := by
+        refine (sum_le_sum hpt).trans ?_
+        rw [← mul_sum, sum_add_distrib]
+        exact mul_le_mul_of_nonneg_left (add_le_add sR sL) (by positivity)
+      _ = _ := by field_simp; ring
+  have hsplit : (∑ a ∈ range N,
+      if phiR N c a < L ∨ phiL N c a < L then ampSq N β a else 0) =
+      (∑ a ∈ range N, ampSq N β a) - ∑ a ∈ S, ampSq N β a := by
+    rw [eq_sub_iff_add_eq, show ∑ a ∈ S, ampSq N β a =
+      ∑ a ∈ range N, if ¬ (phiR N c a < L ∨ phiL N c a < L) then ampSq N β a else 0
+      from sum_filter _ _]
+    rw [← sum_add_distrib]
+    apply sum_congr rfl
+    intro a _
+    split_ifs <;> simp
+  change _ ≤ ∑ a ∈ range N, if phiR N c a < L ∨ phiL N c a < L then _ else _
+  rw [hsplit, parseval N hN β]
+  linarith
 
- Single-trial success from rounding-window mass.
+/-- A 512-outcome radius loses less than one part in a thousand. -/
+theorem circular_mass_512 (N : Nat) (hN : 0 < N) (β : ℝ)
+    (hβ0 : 0 ≤ β) (hβ1 : β < 1) :
+    (999 : ℝ) / 1000 ≤ ∑ a ∈ range N,
+      if phiR N (N * β) a < 512 ∨ phiL N (N * β) a < 512
+      then ampSq N β a else 0 := by
+  apply le_trans _ (circular_mass N hN β 512 hβ0 hβ1 (by norm_num))
+  have hp := Real.pi_gt_d2
+  have hden : 0 < Real.pi ^ 2 * ((512 : ℝ) - 1) := by positivity
+  have ht : 3 / (Real.pi ^ 2 * ((512 : ℝ) - 1)) ≤ 1 / 1000 := by
+    rw [div_le_div_iff₀ hden (by norm_num)]
+    norm_num at hp ⊢
+    nlinarith
+  linarith
 
-For every nonzero character `k`, the joint distribution of the two phase
-registers is a product of two phase-estimation distributions.  If each
-distribution puts mass at least `c` on the samples that round to the correct
-numerator, the canonical postprocessing recovers the secret with probability
-at least `((r - 1) / r) * c ^ 2`. -/
+end
+end ShorECDLP.Entrant.WindowMassSharpProof
 
-namespace ShorECDLP.Entrant.Single
-open ShorECDLP.Quantum ShorECDLP.Quantum.OrderFinding ShorECDLP.Quantum.PhaseEstimation
-open ShorECDLP.Paper2607_13816 ShorECDLP.Secp256k1
+namespace ShorECDLP.Entrant.RoundedReadout
+noncomputable section
+
+/-- Rounding is locally constant away from its half-integer boundaries. -/
+theorem round_stable (x y ε : ℝ)
+    (haway : |x - (round x : ℝ)| ≤ 1 / 2 - ε) (hclose : |y - x| < ε) :
+    round y = round x := by
+  apply round_eq_iff.mpr
+  have hx := abs_le.mp haway
+  have hy := abs_lt.mp hclose
+  constructor <;> linarith
+
+/-- A residue outside a short central interval stays clear of a rounding boundary. -/
+theorem residue_away (u : ℝ) (hu0 : 0 ≤ u) (hu1 : u < 1) (ε : ℝ)
+    (hε : 0 ≤ ε)
+    (h : u ≤ 1 / 2 - ε ∨ 1 / 2 + ε ≤ u) :
+    |u - (round u : ℝ)| ≤ 1 / 2 - ε := by
+  rcases h with h | h
+  · by_cases he : u = 1 / 2
+    · have hz : ε = 0 := by linarith
+      subst ε
+      simpa using abs_sub_round u
+    · have huHalf : u < 1 / 2 := lt_of_le_of_ne (by linarith) he
+      have hr : round u = 0 := round_eq_iff.mpr ⟨by norm_num; linarith, by norm_num; linarith⟩
+      rw [hr]
+      simpa only [Int.cast_zero, sub_zero, abs_of_nonneg hu0] using h
+  · have hr : round u = 1 := round_eq_iff.mpr ⟨by norm_num; linarith, by norm_num; linarith⟩
+    rw [hr]
+    norm_num only [Int.cast_one]
+    rw [abs_of_nonpos (by linarith)]
+    linarith
+
+/-- Exact arithmetic for the proposed public resource bounds. -/
+theorem target_score : 855 * 15399939344 = 13166948139120 := by norm_num
+
+theorem one_trial_budget :
+    2 * (ShorECDLP.order / 2 ^ 203 + 2) ≤ 56 * (2 ^ 49 + 2) := by decide +kernel
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+
+namespace ShorECDLP.Entrant.RoundedReadout
+open Finset
+noncomputable section
+
+/-- Residues within one part in 1024 of a half-bin boundary are discarded. -/
+def boundaryResidues (r : Nat) : Finset Nat :=
+  (range r).filter (fun z => 511 * r / 1024 ≤ z ∧ z ≤ 513 * r / 1024 + 1)
+
+theorem boundaryResidues_card (r : Nat) :
+    (boundaryResidues r).card ≤ r / 512 + 4 := by
+  have hs : boundaryResidues r ⊆ Icc (511 * r / 1024) (513 * r / 1024 + 1) := by
+    intro z hz
+    exact mem_Icc.mpr (mem_filter.mp hz).2
+  have hc := card_le_card hs
+  rw [Nat.card_Icc] at hc
+  have hhi := Nat.div_mul_le_self (513 * r) 1024
+  have hlo := Nat.lt_mul_div_succ (511 * r) (by omega : 0 < 1024)
+  have hdiv := Nat.lt_mul_div_succ r (by omega : 0 < 512)
+  have hwidth : 513 * r / 1024 + 2 ≤ 511 * r / 1024 + (r / 512 + 4) := by
+    nlinarith
+  exact hc.trans (Nat.sub_le_of_le_add (by omega))
+
+theorem outside_boundary (r z : Nat) (hr : 0 < r) (hz : z < r)
+    (h : z ∉ boundaryResidues r) :
+    (z : ℝ) / r ≤ 1 / 2 - 1 / 1024 ∨
+      1 / 2 + 1 / 1024 ≤ (z : ℝ) / r := by
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr
+  have hh : z < 511 * r / 1024 ∨ 513 * r / 1024 + 1 < z := by
+    simp only [boundaryResidues, mem_filter, mem_range, hz, true_and, not_and_or,
+      not_le] at h
+    exact h
+  rcases hh with h | h
+  · left
+    rw [div_le_iff₀ hrR]
+    have hf := Nat.div_mul_le_self (511 * r) 1024
+    have hn : 1024 * z ≤ 511 * r := by nlinarith
+    have hn' : (1024 : ℝ) * z ≤ 511 * r := by exact_mod_cast hn
+    linarith
+  · right
+    rw [le_div_iff₀ hrR]
+    have hf := Nat.lt_mul_div_succ (513 * r) (by omega : 0 < 1024)
+    have hn : 513 * r ≤ 1024 * z := by nlinarith
+    have hn' : (513 : ℝ) * r ≤ 1024 * z := by exact_mod_cast hn
+    linarith
+
+theorem outside_boundary_round (r z : Nat) (hr : 0 < r) (hz : z < r)
+    (h : z ∉ boundaryResidues r) :
+    |(z : ℝ) / r - (round ((z : ℝ) / r) : ℝ)| ≤ 1 / 2 - 1 / 1024 := by
+  apply residue_away _ (by positivity) ((div_lt_one (by exact_mod_cast hr)).mpr
+    (by exact_mod_cast hz)) _ (by norm_num)
+  exact outside_boundary r z hr hz h
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+
+namespace ShorECDLP.Entrant.RoundedReadout
+open ShorECDLP.Paper2607_13816
+open ShorECDLP.Entrant.WindowMassSharpProof
 open scoped BigOperators
 noncomputable section
 
-/-- A pair in the two correct rounding windows decodes to the secret. -/
-theorem postprocess_of_windows {r t d : ℕ} (hr : Nat.Prime r)
-    (k : Fin r) (hk : k.val ≠ 0) (a b : Fin (2 ^ t))
-    (ha : nearestNumerator r t a.val = k.val)
-    (hb : nearestNumerator r t b.val = (k.val * d) % r) :
-    orderFindingPostprocess r t hr (a, b) = some (d : ZMod r) := by
-  haveI : Fact (Nat.Prime r) := ⟨hr⟩
-  have hk0 : ((k.val : ℕ) : ZMod r) ≠ 0 := by
-    intro h
-    rw [ZMod.natCast_eq_zero_iff] at h
-    exact hk (Nat.eq_zero_of_dvd_of_lt h k.isLt)
-  unfold orderFindingPostprocess
-  simp only [ha, hb, ZMod.natCast_mod, Nat.cast_mul]
-  rw [if_neg hk0]
-  congr 1
-  field_simp
+theorem ratio_round_away (n r : Nat) (hr : 0 < r)
+    (h : n % r ∉ boundaryResidues r) :
+    |(n : ℝ) / r - (round ((n : ℝ) / r) : ℝ)| ≤ 1 / 2 - 1 / 1024 := by
+  have he : (n : ℝ) / r = (n % r : Nat) / (r : ℝ) + (n / r : Nat) := by
+    have hn := congrArg (fun a : Nat => (a : ℝ)) (Nat.mod_add_div n r)
+    push_cast at hn
+    have hr0 : (r : ℝ) ≠ 0 := by exact_mod_cast hr.ne'
+    field_simp
+    nlinarith
+  rw [he, round_add_natCast]
+  simp only [Int.cast_add, Int.cast_natCast]
+  simpa only [add_sub_add_right_eq_sub] using outside_boundary_round r (n % r) hr
+    (Nat.mod_lt _ hr) h
 
-theorem mod_mul_ne_zero {r d : ℕ} (hr : Nat.Prime r) (hd : d % r ≠ 0) (k : Fin r)
-    (hk : k.val ≠ 0) : (k.val * d) % r ≠ 0 := by
-  intro h
-  have hdvd : r ∣ k.val * d := Nat.dvd_of_mod_eq_zero h
-  rcases (Nat.Prime.dvd_mul hr).mp hdvd with h1 | h1
-  · exact hk (Nat.eq_zero_of_dvd_of_lt h1 k.isLt)
-  · exact hd (Nat.mod_eq_zero_of_dvd h1)
+theorem round_nat_ratio (n r : Nat) (hr : 0 < r) :
+    round ((n : ℝ) / r) = ((2 * n + r) / (2 * r) : Nat) := by
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr
+  have hlo := Nat.div_mul_le_self (2 * n + r) (2 * r)
+  have hhi := Nat.lt_mul_div_succ (2 * n + r) (by omega : 0 < 2 * r)
+  have hl : ((2 * n + r) / (2 * r) : Nat) * (2 * (r : ℝ)) ≤ 2 * n + r := by exact_mod_cast hlo
+  have hh : 2 * (n : ℝ) + r < 2 * r * (((2 * n + r) / (2 * r) : Nat) + 1) := by exact_mod_cast hhi
+  apply round_eq_iff.mpr
+  simp only [Int.cast_natCast]
+  constructor
+  · rw [le_div_iff₀ hrR]; nlinarith
+  · rw [div_lt_iff₀ hrR]; nlinarith
 
-/-- Generic single-trial lower bound from a rounding-window mass bound. -/
-theorem success_of_window_mass {r d t : ℕ}
-    (hr : Nat.Prime r) (hd : d % r ≠ 0) (c : ℝ) (hc : 0 ≤ c)
-    (hwin : ∀ n : ℕ, 0 < n → n < r →
-      c ≤ ∑ a : Fin (2 ^ t),
-        if nearestNumerator r t a.val = n then
-          Complex.normSq (paperPhaseAmplitude t ((n : ℝ) / (r : ℝ)) a.val) else 0) :
-    ((r - 1 : ℝ) / r) * (c * c) ≤
-      ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t),
-        if orderFindingPostprocess r t hr (a, b) = some (d : ZMod r)
-        then asymmetricPairMass r t t d (a, b) else 0 := by
+theorem round_half_bin (b D : Nat) (hD : 0 < D) :
+    round ((b : ℝ) / (2 * D)) = ((b + D) / (2 * D) : Nat) := by
+  have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+  have hlo := Nat.div_mul_le_self (b + D) (2 * D)
+  have hhi := Nat.lt_mul_div_succ (b + D) (by omega : 0 < 2 * D)
+  have hl : ((b + D) / (2 * D) : Nat) * (2 * (D : ℝ)) ≤ b + D := by exact_mod_cast hlo
+  have hh : (b : ℝ) + D < 2 * D * (((b + D) / (2 * D) : Nat) + 1) := by exact_mod_cast hhi
+  apply round_eq_iff.mpr
+  simp only [Int.cast_natCast]
+  constructor
+  · rw [le_div_iff₀ (by positivity : (0 : ℝ) < 2 * D)]; nlinarith
+  · rw [div_lt_iff₀ (by positivity : (0 : ℝ) < 2 * D)]; nlinarith
+
+/-- Circular closeness is ordinary closeness after an integer-period lift. -/
+theorem circular_close_lift (M S b : Nat) (hS : 0 < S) (hb : b < M*S) (β L : ℝ)
+    (hβ0 : 0 ≤ β) (hβ1 : β < 1)
+    (hc : phiR (M*S) ((M*S : Nat) * β) b < L ∨
+      phiL (M*S) ((M*S : Nat) * β) b < L) :
+    ∃ z : ℤ, |(b : ℝ) / S + z * M - (M : ℝ) * β| < L / S := by
+  have hSR : (0 : ℝ) < S := by exact_mod_cast hS
+  have hMS : (0 : ℝ) < (M*S : Nat) := by exact_mod_cast (show 0 < M*S by omega)
+  have hc0 : 0 ≤ ((M*S : Nat) : ℝ) * β := mul_nonneg hMS.le hβ0
+  have hcN : ((M*S : Nat) : ℝ) * β < (M*S : Nat) := by nlinarith
+  have hb0 : (0 : ℝ) ≤ b := Nat.cast_nonneg _
+  have hbN : (b : ℝ) < (M*S : Nat) := by exact_mod_cast hb
+  push_cast at hc0 hcN hbN
+  rcases hc with hc | hc
+  · unfold phiR at hc
+    split_ifs at hc with h
+    · refine ⟨0, ?_⟩
+      norm_num only [Int.cast_zero, zero_mul, add_zero]
+      rw [abs_lt]
+      push_cast at hc h
+      have he : (b : ℝ) / S * S = b := div_mul_cancel₀ _ hSR.ne'
+      constructor
+      · rw [← neg_div, div_lt_iff₀ hSR]; nlinarith
+      · rw [lt_div_iff₀ hSR]; nlinarith
+    · refine ⟨1, ?_⟩
+      norm_num only [Int.cast_one, one_mul]
+      rw [abs_lt]
+      push_cast at hc h
+      have he : (b : ℝ) / S * S = b := div_mul_cancel₀ _ hSR.ne'
+      constructor
+      · rw [← neg_div, div_lt_iff₀ hSR]; nlinarith
+      · rw [lt_div_iff₀ hSR]; nlinarith
+  · unfold phiL at hc
+    split_ifs at hc with h
+    · refine ⟨0, ?_⟩
+      norm_num only [Int.cast_zero, zero_mul, add_zero]
+      rw [abs_lt]
+      push_cast at hc h
+      have he : (b : ℝ) / S * S = b := div_mul_cancel₀ _ hSR.ne'
+      constructor
+      · rw [← neg_div, div_lt_iff₀ hSR]; nlinarith
+      · rw [lt_div_iff₀ hSR]; nlinarith
+    · refine ⟨-1, ?_⟩
+      norm_num only [Int.cast_neg, Int.cast_one, neg_mul, one_mul]
+      rw [abs_lt]
+      push_cast at hc h
+      have he : (b : ℝ) / S * S = b := div_mul_cancel₀ _ hSR.ne'
+      constructor
+      · rw [← neg_div, div_lt_iff₀ hSR]; nlinarith
+      · rw [lt_div_iff₀ hSR]; nlinarith
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+
+namespace ShorECDLP.Entrant.RoundedReadout
+open scoped BigOperators
+noncomputable section
+theorem sum_mulMod (r a : Nat) (hr : r.Prime) (ha : ¬ r ∣ a) (H : ℕ → ℝ) :
+    ∑ k : Fin r, H ((a * k.val) % r) = ∑ c ∈ Finset.range r, H c := by
+  rw [Fin.sum_univ_eq_sum_range (fun k => H ((a*k) % r))]
+  haveI := Fact.mk hr
+  have hinj : Set.InjOn (fun k => (a*k) % r) (Finset.range r) := by
+    intro x hx y hy hxy
+    simp only [Finset.coe_range, Set.mem_Iio] at hx hy
+    have h1 : ((a*x : ℕ) : ZMod r) = ((a*y : ℕ) : ZMod r) :=
+      (ZMod.natCast_eq_natCast_iff' _ _ _).2 hxy
+    have ha' : (a : ZMod r) ≠ 0 := by rwa [Ne, ZMod.natCast_eq_zero_iff]
+    push_cast at h1
+    have h2 : (x : ZMod r) = y := mul_left_cancel₀ ha' h1
+    have h3 := (ZMod.natCast_eq_natCast_iff' x y r).1 h2
+    rwa [Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt hy] at h3
+  have himage : (Finset.range r).image (fun k => (a*k) % r) = Finset.range r := by
+    apply Finset.eq_of_subset_of_card_le
+    · intro c hc
+      obtain ⟨k, _, rfl⟩ := Finset.mem_image.1 hc
+      exact Finset.mem_range.2 (Nat.mod_lt _ hr.pos)
+    · rw [Finset.card_image_of_injOn hinj]
+  conv_rhs => rw [← himage]
+  rw [Finset.sum_image hinj]
+
+/-- Removing boundary residues and the zero character leaves ample mass. -/
+theorem average_boundary_loss (r a : Nat) (hr : r.Prime) (ha : ¬ r ∣ a)
+    (hrLarge : 1000000 ≤ r) (mass : Fin r → ℝ)
+    (hm0 : ∀ k, 0 ≤ mass k)
+    (hm : ∀ k, k.val ≠ 0 → (a*k.val)%r ∉ boundaryResidues r →
+      (999 : ℝ)/1000 ≤ mass k) :
+    (997 : ℝ)/1000 * r ≤ ∑ k : Fin r, if k.val = 0 then 0 else mass k := by
   classical
-  let A : Fin r → Fin (2 ^ t) → ℝ := fun k a =>
-    Complex.normSq (paperPhaseAmplitude t ((k.val : ℝ) / (r : ℝ)) a.val)
-  let B : Fin r → Fin (2 ^ t) → ℝ := fun k b =>
-    Complex.normSq (paperPhaseAmplitude t ((((k.val * d) % r : ℕ) : ℝ) / (r : ℝ)) b.val)
-  let good : Fin r → Fin (2 ^ t) → Fin (2 ^ t) → Prop := fun k a b =>
-    k.val ≠ 0 ∧ nearestNumerator r t a.val = k.val ∧
-      nearestNumerator r t b.val = (k.val * d) % r
-  let F : Fin r → Fin (2 ^ t) → Fin (2 ^ t) → ℝ := fun k a b =>
+  let H : Nat → ℝ := fun z => if z ∈ boundaryResidues r then 0 else 1
+  have hH : ∑ z ∈ Finset.range r, H z = (r : ℝ) - (boundaryResidues r).card := by
+    have he : ∑ z ∈ Finset.range r, (if z ∈ boundaryResidues r then (1 : ℝ) else 0) =
+        (boundaryResidues r).card := by
+      rw [← Finset.sum_filter]
+      have hf : (Finset.range r).filter (fun z => z ∈ boundaryResidues r) = boundaryResidues r := by
+        ext z
+        simp only [Finset.mem_filter, Finset.mem_range, and_iff_right_iff_imp]
+        exact fun h => Finset.mem_range.mp (Finset.mem_filter.mp h).1
+      rw [hf]
+      simp
+    calc
+      _ = (∑ _z ∈ Finset.range r, (1 : ℝ)) -
+          ∑ z ∈ Finset.range r, if z ∈ boundaryResidues r then 1 else 0 := by
+        rw [← Finset.sum_sub_distrib]
+        apply Finset.sum_congr rfl
+        intro z _
+        dsimp [H]
+        split_ifs <;> norm_num
+      _ = _ := by rw [he]; simp
+  have hperm := sum_mulMod r a hr ha H
+  rw [hH] at hperm
+  have hzero : (∑ k : Fin r, if k.val = 0 then (1 : ℝ) else 0) = 1 := by
+    have hr0 : 0 < r := hr.pos
+    rw [Fin.sum_univ_eq_sum_range (fun k => if k = 0 then (1 : ℝ) else 0)]
+    simp [hr0]
+  have hp : ∀ k : Fin r,
+      (999 : ℝ)/1000 * H ((a*k.val)%r) - (if k.val = 0 then 1 else 0) ≤
+        if k.val = 0 then 0 else mass k := by
+    intro k
+    by_cases hk : k.val = 0
+    · rw [if_pos hk, if_pos hk]
+      dsimp [H]
+      split_ifs <;> norm_num
+    · rw [if_neg hk, if_neg hk, sub_zero]
+      dsimp [H]
+      split_ifs with hb
+      · simpa using hm0 k
+      · simpa using hm k hk hb
+  have hs := Finset.sum_le_sum (fun k (_ : k ∈ Finset.univ) => hp k)
+  rw [Finset.sum_sub_distrib, ← Finset.mul_sum, hperm, hzero] at hs
+  have hc := boundaryResidues_card r
+  have hd := Nat.div_mul_le_self r 512
+  have hcR : ((boundaryResidues r).card : ℝ) ≤ (r / 512 : Nat) + 4 := by exact_mod_cast hc
+  have hdR : (r / 512 : Nat) * (512 : ℝ) ≤ r := by exact_mod_cast hd
+  have hrR : (1000000 : ℝ) ≤ r := by exact_mod_cast hrLarge
+  linarith
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+namespace ShorECDLP.Entrant.RoundedReadout
+open ShorECDLP.Paper2607_13816
+open ShorECDLP.Entrant.WindowMassSharpProof
+open scoped BigOperators
+noncomputable section
+set_option exponentiation.threshold 300
+
+/-- Add half a coarse bin and drop 21 low bits, wrapping at the endpoint. -/
+def coarseRound (b : Nat) : Nat := (b + 2^20) / 2^21 % 2^203
+
+theorem coarseRound_correct (r : Nat) (hr : 0 < r) (k : Fin r) (b : Fin (2^224))
+    (haway : (2^203*k.val)%r ∉ boundaryResidues r)
+    (hc : phiR (2^224) ((2^224 : Nat) * ((k.val : ℝ) / r)) b.val < 512 ∨
+      phiL (2^224) ((2^224 : Nat) * ((k.val : ℝ) / r)) b.val < 512) :
+    coarseRound b.val = (reducedPeak r 203 k).val := by
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr
+  have hβ0 : 0 ≤ (k.val : ℝ) / r := by positivity
+  have hβ1 : (k.val : ℝ) / r < 1 := (div_lt_one hrR).mpr (by exact_mod_cast k.isLt)
+  have heN : (2^203 : Nat) * 2^21 = 2^224 := by norm_num
+  have hlift := circular_close_lift (2^203) (2^21) b.val (by positivity)
+    (by simpa only [heN] using b.isLt) ((k.val : ℝ)/r) 512 hβ0 hβ1
+    (by simpa only [heN] using hc)
+  obtain ⟨z, hz⟩ := hlift
+  have hphase := ratio_round_away (2^203 * k.val) r hr haway
+  have hephase : ((2^203 * k.val : Nat) : ℝ) / r =
+      ((2^203 : Nat) : ℝ) * ((k.val : ℝ) / r) := by push_cast; ring
+  rw [hephase] at hphase
+  have hclose : |(b.val : ℝ) / (2^21 : Nat) + z * (2^203 : Nat) -
+      (2^203 : Nat) * ((k.val : ℝ) / r)| < 1 / 1024 := by
+    apply hz.trans_le
+    norm_num
+  have hs := round_stable _ _ (1/1024) hphase hclose
+  have hez : (z : ℝ) * (2^203 : Nat) = ((z * (2^203 : Nat) : ℤ) : ℝ) := by
+    simp only [Int.cast_mul, Int.cast_natCast]
+  rw [hez, round_add_intCast, ← hephase, round_nat_ratio _ r hr] at hs
+  have hh := round_half_bin b.val (2^20) (by positivity)
+  have heS : (2 : ℝ) * (2^20 : Nat) = (2^21 : Nat) := by norm_num
+  have heD : (2 : Nat) * 2^20 = 2^21 := by norm_num
+  rw [heS, heD] at hh
+  rw [hh] at hs
+  have hm := congrArg (fun x : ℤ => x % (2^203 : Nat)) hs
+  dsimp only at hm
+  rw [Int.add_mul_emod_self_right] at hm
+  have hcast : ((coarseRound b.val : Nat) : ℤ) = ((reducedPeak r 203 k).val : ℤ) := by
+    simpa only [coarseRound, reducedPeak, reducedPeakRaw, Int.natCast_mod,
+      Nat.mul_assoc] using hm
+  exact_mod_cast hcast
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+
+namespace ShorECDLP.Entrant.RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Quantum.PhaseEstimation
+open ShorECDLP.Entrant.WindowMassSharpProof
+open scoped BigOperators
+noncomputable section
+
+set_option exponentiation.threshold 300
+
+def coarseMass (r : Nat) (k : Fin r) : ℝ := ∑ b : Fin (2^224),
+  if coarseRound b.val = (reducedPeak r 203 k).val then
+    Complex.normSq (paperPhaseAmplitude 224 ((k.val : ℝ) / r) b.val) else 0
+
+theorem coarseMass_nonneg (r : Nat) (k : Fin r) : 0 ≤ coarseMass r k := by
+  unfold coarseMass
+  apply Finset.sum_nonneg
+  intro b _
+  split_ifs
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+theorem coarseMass_lower (r : Nat) (hr : 0 < r) (k : Fin r)
+    (haway : (2^203*k.val)%r ∉ boundaryResidues r) :
+    (999 : ℝ)/1000 ≤ coarseMass r k := by
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr
+  have hc := circular_mass_512 (2^224) (by positivity) ((k.val : ℝ)/r)
+    (by positivity) ((div_lt_one hrR).mpr (by exact_mod_cast k.isLt))
+  have hfin : (999 : ℝ)/1000 ≤ ∑ b : Fin (2^224),
+      if phiR (2^224) ((2^224 : Nat) * ((k.val : ℝ)/r)) b.val < 512 ∨
+        phiL (2^224) ((2^224 : Nat) * ((k.val : ℝ)/r)) b.val < 512
+      then Complex.normSq (paperPhaseAmplitude 224 ((k.val : ℝ)/r) b.val) else 0 := by
+    rw [Fin.sum_univ_eq_sum_range (fun b =>
+      if phiR (2^224) ((2^224 : Nat) * ((k.val : ℝ)/r)) b < 512 ∨
+        phiL (2^224) ((2^224 : Nat) * ((k.val : ℝ)/r)) b < 512
+      then Complex.normSq (paperPhaseAmplitude 224 ((k.val : ℝ)/r) b) else 0)]
+    simpa only [ampSq, paperPhaseAmplitude, eigenvalue] using hc
+  refine hfin.trans (Finset.sum_le_sum (fun b _ => ?_))
+  dsimp only
+  split_ifs with hnear heq
+  · rfl
+  · exact (heq (coarseRound_correct r hr k b haway hnear)).elim
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+theorem coarseMass_average (r a : Nat) (hr : r.Prime) (ha : ¬ r ∣ a)
+    (hrLarge : 1000000 ≤ r) :
+    (997 : ℝ)/1000 * r ≤ ∑ k : Fin r, if k.val = 0 then 0 else
+      coarseMass r ⟨a*k.val % r, Nat.mod_lt _ hr.pos⟩ := by
+  have hpow : ¬ r ∣ 2^203 := by
+    intro h
+    have h2 := hr.dvd_of_dvd_pow h
+    have hr2 : r ≤ 2 := Nat.le_of_dvd (by omega) h2
+    omega
+  apply average_boundary_loss r (2^203*a) hr (by
+    intro h
+    rcases hr.dvd_mul.mp h with h | h
+    · exact hpow h
+    · exact ha h) hrLarge _
+    (fun k => coarseMass_nonneg _ _)
+  intro k _ hk
+  apply coarseMass_lower r hr.pos
+  simpa only [Nat.mul_mod, Nat.mod_mod, Nat.mul_assoc] using hk
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+namespace ShorECDLP.Entrant.RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Quantum.OrderFinding
+open ShorECDLP.Quantum.PhaseEstimation
+open scoped BigOperators
+noncomputable section
+
+set_option maxRecDepth 4096 in
+/-- The left exact-numerator window and the averaged rounded right register combine. -/
+theorem rounded_pair_coverage (r n d : Nat) (hr : r.Prime) (hd : ¬ r ∣ d)
+    (hrLarge : 1000000 ≤ r) (hprecision : 128*r ≤ 2^n)
+    (accept : Fin (2^n) → Fin (2^224) → Prop) [∀ a b, Decidable (accept a b)]
+    (haccept : ∀ (k : Fin r), k.val ≠ 0 → ∀ a b,
+      nearestNumerator r n a.val = k.val →
+      coarseRound b.val = (reducedPeak r 203 ⟨d*k.val%r, Nat.mod_lt _ hr.pos⟩).val →
+      accept a b) :
+    (200 : ℝ)/201 * (997/1000) ≤ ∑ a : Fin (2^n), ∑ b : Fin (2^224),
+      if accept a b then asymmetricPairMass r n 224 d (a,b) else 0 := by
+  classical
+  let A : Fin r → Fin (2^n) → ℝ := fun k a =>
+    Complex.normSq (paperPhaseAmplitude n ((k.val : ℝ)/r) a.val)
+  let B : Fin r → Fin (2^224) → ℝ := fun k b =>
+    Complex.normSq (paperPhaseAmplitude 224 (((d*k.val%r : Nat) : ℝ)/r) b.val)
+  let good : Fin r → Fin (2^n) → Fin (2^224) → Prop := fun k a b =>
+    k.val ≠ 0 ∧ nearestNumerator r n a.val = k.val ∧
+      coarseRound b.val = (reducedPeak r 203 ⟨d*k.val%r, Nat.mod_lt _ hr.pos⟩).val
+  let F : Fin r → Fin (2^n) → Fin (2^224) → ℝ := fun k a b =>
     if good k a b then A k a * B k b else 0
   have hA : ∀ k a, 0 ≤ A k a := fun _ _ => Complex.normSq_nonneg _
   have hB : ∀ k b, 0 ≤ B k b := fun _ _ => Complex.normSq_nonneg _
@@ -710,23 +1011,21 @@ theorem success_of_window_mass {r d t : ℕ}
     split_ifs
     · exact mul_nonneg (hA k a) (hB k b)
     · exact le_rfl
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr.pos
   have hrinv : (0 : ℝ) ≤ (r : ℝ)⁻¹ := by positivity
-  have hjp : ∀ a b : Fin (2 ^ t),
-      asymmetricPairMass r t t d (a, b) =
-        (r : ℝ)⁻¹ * ∑ k : Fin r, A k a * B k b := by
+  have hjp : ∀ a : Fin (2^n), ∀ b : Fin (2^224),
+      asymmetricPairMass r n 224 d (a,b) = (r : ℝ)⁻¹ * ∑ k : Fin r, A k a * B k b := by
     intro a b
-    simp only [asymmetricPairMass, one_div, A, B, Nat.mul_comm]
-  -- Step 1: restrict every character to its own pair of rounding windows.
+    simp only [asymmetricPairMass, one_div, A, B]
   have step1 :
-      ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b ≤
-        (∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t),
-          if orderFindingPostprocess r t hr (a, b) = some (d : ZMod r)
-          then asymmetricPairMass r t t d (a, b) else 0) := by
+      ∑ a : Fin (2^n), ∑ b : Fin (2^224), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b ≤
+        ∑ a : Fin (2^n), ∑ b : Fin (2^224),
+          if accept a b then asymmetricPairMass r n 224 d (a,b) else 0 := by
     apply Finset.sum_le_sum
     intro a _
     apply Finset.sum_le_sum
     intro b _
-    by_cases hp : orderFindingPostprocess r t hr (a, b) = some (d : ZMod r)
+    by_cases hp : accept a b
     · rw [if_pos hp, hjp]
       apply mul_le_mul_of_nonneg_left _ hrinv
       apply Finset.sum_le_sum
@@ -741,112 +1040,259 @@ theorem success_of_window_mass {r d t : ℕ}
         dsimp only [F]
         rw [if_neg]
         rintro ⟨hk, ha, hb⟩
-        exact hp (postprocess_of_windows hr k hk a b ha hb)
+        exact hp (haccept k hk a b ha hb)
       simp [hz]
-  -- Step 2: exchange the order of summation.
   have step2 :
-      ∑ k : Fin r, (r : ℝ)⁻¹ * ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), F k a b =
-        ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b := by
+      (r : ℝ)⁻¹ * ∑ k : Fin r, ∑ a : Fin (2^n), ∑ b : Fin (2^224), F k a b =
+        ∑ a : Fin (2^n), ∑ b : Fin (2^224), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b := by
     simp_rw [Finset.mul_sum]
     rw [Finset.sum_comm]
     apply Finset.sum_congr rfl
     intro a _
     rw [Finset.sum_comm]
-  -- Step 3: each nonzero character contributes at least `c * c / r`.
+  have hleft (k : Fin r) (hk : k.val ≠ 0) :
+      (200 : ℝ)/201 ≤ ∑ a : Fin (2^n),
+        if nearestNumerator r n a.val = k.val then A k a else 0 := by
+    have h := ShorECDLP.Entrant.window_mass_sharp r n k.val
+      (Nat.pos_of_ne_zero hk) k.isLt hprecision
+    rw [Fin.sum_univ_eq_sum_range (fun a =>
+      if nearestNumerator r n a = k.val then
+        Complex.normSq (paperPhaseAmplitude n ((k.val : ℝ)/r) a) else 0)]
+    simpa only [nearestNumerator, paperPhaseAmplitude, eigenvalue] using h
   have step3 : ∀ k : Fin r,
-      (if k.val = 0 then 0 else (r : ℝ)⁻¹ * (c * c)) ≤
-        (r : ℝ)⁻¹ * ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), F k a b := by
+      (200 : ℝ)/201 * (if k.val = 0 then 0 else
+        coarseMass r ⟨d*k.val%r, Nat.mod_lt _ hr.pos⟩) ≤
+      ∑ a : Fin (2^n), ∑ b : Fin (2^224), F k a b := by
     intro k
     by_cases hk : k.val = 0
-    · rw [if_pos hk]
-      apply mul_nonneg hrinv
+    · rw [if_pos hk, mul_zero]
       exact Finset.sum_nonneg (fun a _ => Finset.sum_nonneg (fun b _ => hF k a b))
     · rw [if_neg hk]
-      apply mul_le_mul_of_nonneg_left _ hrinv
-      have hprod :
-          ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), F k a b =
-            (∑ a : Fin (2 ^ t),
-                if nearestNumerator r t a.val = k.val then A k a else 0) *
-              (∑ b : Fin (2 ^ t),
-                if nearestNumerator r t b.val = (k.val * d) % r then B k b else 0) := by
-        rw [Finset.sum_mul_sum]
+      have he : (∑ a : Fin (2^n), ∑ b : Fin (2^224), F k a b) =
+          (∑ a : Fin (2^n), if nearestNumerator r n a.val = k.val then A k a else 0) *
+            coarseMass r ⟨d*k.val%r, Nat.mod_lt _ hr.pos⟩ := by
+        rw [coarseMass, Finset.sum_mul_sum]
         apply Finset.sum_congr rfl
         intro a _
         apply Finset.sum_congr rfl
         intro b _
-        dsimp only [F, good]
+        dsimp only [F, good, B]
         rw [ite_zero_mul_ite_zero]
         simp only [hk, ne_eq, not_false_eq_true, true_and]
-      rw [hprod]
-      have hka := hwin k.val (Nat.pos_of_ne_zero hk) k.isLt
-      have hkb := hwin ((k.val * d) % r)
-        (Nat.pos_of_ne_zero (mod_mul_ne_zero hr hd k hk)) (Nat.mod_lt _ hr.pos)
-      exact mul_le_mul hka hkb hc (le_trans hc hka)
-  calc
-    ((r - 1 : ℝ) / r) * (c * c) =
-        ∑ k : Fin r, (if k.val = 0 then 0 else (r : ℝ)⁻¹ * (c * c)) :=
-      (nonzero_character_baseline_sum hr (c * c)).symm
-    _ ≤ ∑ k : Fin r, (r : ℝ)⁻¹ * ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), F k a b :=
-      Finset.sum_le_sum (fun k _ => step3 k)
-    _ = ∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b := step2
-    _ ≤ (∑ a : Fin (2 ^ t), ∑ b : Fin (2 ^ t),
-          if orderFindingPostprocess r t hr (a, b) = some (d : ZMod r)
-          then asymmetricPairMass r t t d (a, b) else 0) := step1
-
-set_option exponentiation.threshold 300 in
-theorem sharp_window_mass (n : ℕ) (hn0 : 0 < n) (hnr : n < order) :
-    (200 : ℝ) / 201 ≤ ∑ a : Fin (2 ^ 263),
-      if nearestNumerator order 263 a.val = n then
-        Complex.normSq (paperPhaseAmplitude 263 ((n : ℝ) / (order : ℝ)) a.val) else 0 := by
-  have h := ShorECDLP.Entrant.window_mass_sharp order 263 n hn0 hnr (by decide)
-  rw [Fin.sum_univ_eq_sum_range (fun a => if nearestNumerator order 263 a = n then
-    Complex.normSq (paperPhaseAmplitude 263 ((n : ℝ) / (order : ℝ)) a) else 0)]
-  simpa only [nearestNumerator, paperPhaseAmplitude, eigenvalue] using h
-
-theorem secret_mod_ne_zero (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    d % order ≠ 0 := by
-  intro h
-  apply hn
-  rw [hd, ← Nat.mod_add_div d order, h, Nat.zero_add, mul_nsmul, generator_nsmul_eq_zero,
-    nsmul_zero]
-
-/-- The 263-bit character mixture meets the protected decoder's success target. -/
-theorem character_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99 : ℝ) / 100 ≤ ∑ a : Fin (2 ^ 263), ∑ b : Fin (2 ^ 263),
-      if orderFindingPostprocess order 263 order_prime (a, b) = some (d : ZMod order)
-      then asymmetricPairMass order 263 263 d (a, b) else 0 := by
-  refine le_trans ?_ (success_of_window_mass order_prime
-    (secret_mod_ne_zero Q d hn hd) (200 / 201) (by norm_num) sharp_window_mass)
-  rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
-  norm_num [order]
-
-set_option exponentiation.threshold 300 in
-theorem candidates_of_readWords (history : List Bool) (a b : Fin (2 ^ 263))
-    (ha : ShorECDLP.Challenge.readWord history trialPositions.left.toList = some a.val)
-    (hb : ShorECDLP.Challenge.readWord history trialPositions.right.toList = some b.val) :
-    ShorECDLP.Challenge.candidates layout history =
-      (orderFindingPostprocess order 263 order_prime (a, b)).toList := by
-  simp only [ShorECDLP.Challenge.candidates, layout, List.flatMap_cons, List.flatMap_nil,
-    List.append_nil, ShorECDLP.Challenge.decodeTrial, ha, hb]
-  exact ShorECDLP.Challenge.nearestPairCandidates_eq_postprocess params rfl a b
-
-/-- Sparse Fourier positions feed the protected verifier without arithmetic records. -/
-theorem verifiedCandidate_of_postprocess (Q : Point) (d : Nat) (hd : Q = d • G)
-    (history : List Bool) (a b : Fin (2 ^ 263))
-    (ha : ShorECDLP.Challenge.readWord history trialPositions.left.toList = some a.val)
-    (hb : ShorECDLP.Challenge.readWord history trialPositions.right.toList = some b.val)
-    (hp : orderFindingPostprocess order 263 order_prime (a, b) = some (d : ZMod order)) :
-    ShorECDLP.Challenge.verifiedCandidate layout Q history = some (d : ZMod order) := by
-  classical
-  have he : (d : ZMod order).val • G = Q := by
-    rw [hd, ZMod.val_natCast]
-    have hh := congrArg (fun k : Nat => k • G) (Nat.mod_add_div d order)
-    simpa only [add_nsmul, mul_nsmul, generator_nsmul_eq_zero, nsmul_zero, add_zero] using hh
-  simp only [ShorECDLP.Challenge.verifiedCandidate,
-    candidates_of_readWords history a b ha hb, hp, Option.toList_some,
-    List.find?_cons, he, decide_true]
+      rw [he]
+      exact mul_le_mul_of_nonneg_right (hleft k hk) (coarseMass_nonneg _ _)
+  have hsum := Finset.sum_le_sum (fun k (_ : k ∈ Finset.univ) => step3 k)
+  rw [← Finset.mul_sum] at hsum
+  have havg := coarseMass_average r d hr hd hrLarge
+  have hprod : (200 : ℝ)/201 * ((997:ℝ)/1000*r) ≤
+      ∑ k : Fin r, ∑ a : Fin (2^n), ∑ b : Fin (2^224), F k a b :=
+    (mul_le_mul_of_nonneg_left havg (by norm_num)).trans hsum
+  have hlower := mul_le_mul_of_nonneg_left hprod hrinv
+  have heval : (r : ℝ)⁻¹ * ((200:ℝ)/201 * ((997:ℝ)/1000*r)) =
+      (200:ℝ)/201 * ((997:ℝ)/1000) := by field_simp
+  rw [heval, step2] at hlower
+  exact hlower.trans step1
 
 end
+end ShorECDLP.Entrant.RoundedReadout
+
+namespace ShorECDLP.Entrant.RoundedReadout
+open ShorECDLP ShorECDLP.Challenge ShorECDLP.Secp256k1
+open ShorECDLP.Paper2607_13816
+open scoped BigOperators
+noncomputable section
+set_option exponentiation.threshold 300
+
+def decoderParams : DecoderParams := ⟨263, 203, by omega, by omega, by omega, by omega⟩
+
+def pairRecovered (d a b : Nat) : Bool :=
+  decide ((d : ZMod order) ∈ fixedCandidates decoderParams a (coarseRound b))
+
+theorem pairRecovered_of_character (d : Nat) (k : Fin order) (hk : k.val ≠ 0)
+    (a : Fin (2^263)) (b : Fin (2^224))
+    (ha : ShorECDLP.Quantum.OrderFinding.nearestNumerator order 263 a.val = k.val)
+    (hb : coarseRound b.val = (reducedPeak order 203
+      ⟨d*k.val%order, Nat.mod_lt _ order_prime.pos⟩).val) :
+    pairRecovered d a.val b.val = true := by
+  haveI : Fact (Nat.Prime order) := ⟨order_prime⟩
+  have hk0 : ((k.val : Nat) : ZMod order) ≠ 0 := by
+    intro h
+    rw [ZMod.natCast_eq_zero_iff] at h
+    exact hk (Nat.eq_zero_of_dvd_of_lt h k.isLt)
+  apply decide_eq_true
+  unfold fixedCandidates
+  apply Finset.mem_image.mpr
+  refine ⟨d*k.val%order, ?_, ?_⟩
+  · change d*k.val%order ∈ wrappedNumeratorCandidates order 203 (coarseRound b.val)
+    rw [hb]
+    exact reducedPeak_mem_candidates order 203 _
+  · change ((d*k.val%order : Nat) : ZMod order) *
+      (ShorECDLP.Quantum.OrderFinding.nearestNumerator order 263 a.val : ZMod order)⁻¹ = d
+    rw [ha]
+    simp only [ZMod.natCast_mod, Nat.cast_mul]
+    field_simp
+
+theorem secret_not_dvd (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+    ¬ order ∣ d := by
+  intro h
+  obtain ⟨k, rfl⟩ := h
+  apply hn
+  rw [hd, mul_nsmul, generator_nsmul_eq_zero, nsmul_zero]
+
+theorem pair_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+    (99 : ℝ)/100 ≤ ∑ a : Fin (2^263), ∑ b : Fin (2^224),
+      if pairRecovered d a.val b.val then asymmetricPairMass order 263 224 d (a,b) else 0 := by
+  have h := rounded_pair_coverage order 263 d order_prime (secret_not_dvd Q d hn hd)
+    (by norm_num [order]) (by norm_num [order])
+    (fun a b => pairRecovered d a.val b.val = true)
+    (fun k hk a b ha hb => pairRecovered_of_character d k hk a b ha hb)
+  exact (by norm_num : (99:ℝ)/100 ≤ 200/201*(997/1000)).trans h
+
+end
+end ShorECDLP.Entrant.RoundedReadout
+
+
+/-! EDITABLE. Single-trial entrant: mixed-width distribution and decoder proofs.
+Concatenated in dependency order to bound parallel kernel replay memory.
+Original provenance comments are retained beside each source part. -/
+
+-- ==== part: Single/History ====
+
+section
+/-! Dynamic histories for compositional straight-program distribution proofs.
+The protected straight semantics and record decomposition are Apache-2.0;
+see LICENSE and NOTICE. -/
+namespace ShorECDLP.Entrant.Single
+open Quantum ShorECDLP.Challenge ShorECDLP.Paper2607_13816.ChallengeMigration
+
+/-- Total extension; actual branches have exactly the required record length. -/
+def historyAfter {start : Nat} (finish : Nat) (history : Fin start → Bool)
+    (bits : List Bool) : Fin finish → Bool :=
+  fun i => ((List.ofFn history ++ bits)[i.val]?).getD false
+
+theorem historyAfter_nil {start : Nat} (history : Fin start → Bool) :
+    historyAfter start history List.nil = history := by
+  funext i
+  simp [historyAfter]
+
+theorem historyAfter_step {start : Nat} (finish : Nat) (history : Fin start → Bool)
+    (bit : Bool) (bits : List Bool) :
+    historyAfter finish (Fin.lastCases bit history) bits =
+      historyAfter finish history (bit :: bits) := by
+  funext i
+  simp only [historyAfter, List.ofFn_succ', Fin.lastCases_castSucc, Fin.lastCases_last,
+    List.concat_eq_append, List.append_assoc, List.singleton_append]
+
+theorem historyAfter_list {start finish : Nat} (history : Fin start → Bool)
+    (bits : List Bool) (hlen : start + bits.length = finish) :
+    List.ofFn (historyAfter finish history bits) = List.ofFn history ++ bits := by
+  apply List.ext_getElem
+  · simpa using hlen.symm
+  · intro i hi hj
+    simp only [List.getElem_ofFn, historyAfter]
+    rw [List.getElem?_eq_getElem hj, Option.getD_some]
+
+/-- Exact branch enumeration, retaining the history used by the suffix. -/
+theorem append_run_history {n start mid finish : Nat}
+    (p : Straight n start mid) (q : Straight n mid finish)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    ((p.append q).instantiate read history).run =
+      ((p.instantiate read history).run).flatMap (fun a =>
+        ((q.instantiate read (historyAfter mid history a.history)).run).map a.seq) := by
+  induction p with
+  | done =>
+    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run,
+      List.flatMap_cons, List.flatMap_nil, List.append_nil, historyAfter_nil]
+    apply Eq.symm
+    apply List.map_id'
+  | gate g p ih =>
+    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run, ih,
+      List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def]
+    apply List.flatMap_congr
+    intro a ha
+    apply List.map_congr_left
+    intro b hb
+    rfl
+  | recordGate i v g p ih =>
+    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run, ih,
+      List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def]
+    apply List.flatMap_congr
+    intro a ha
+    apply List.map_congr_left
+    intro b hb
+    rfl
+  | measure w p ih =>
+    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.run, ih,
+      List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def,
+      List.flatMap_append]
+    congr 1 <;>
+      (apply List.flatMap_congr; intro a ha
+       simp only [historyAfter_step]
+       apply List.map_congr_left; intro b hb; rfl)
+
+theorem historyAfter_old {start finish : Nat} (history : Fin start → Bool)
+    (bits : List Bool) (hle : start ≤ finish) (i : Fin start) :
+    historyAfter finish history bits ⟨i.val, lt_of_lt_of_le i.isLt hle⟩ = history i := by
+  simp only [historyAfter]
+  rw [List.getElem?_append_left (show i.val < (List.ofFn history).length by
+    simpa only [List.length_ofFn] using i.isLt)]
+  simp
+
+theorem bankPrior_map {start : Nat} (count : Nat) (prior : List (Fin start))
+    (history : Fin start → Bool) (bits : List Bool) :
+    (bankPrior count prior).map (historyAfter (start + count) history bits) = prior.map history := by
+  simp only [bankPrior, List.map_map, Function.comp_def]
+  apply List.map_congr_left
+  intro i hi
+  exact historyAfter_old history bits (by omega) i
+
+theorem nextPrior_map {start : Nat} (count width : Nat) (prior : List (Fin start))
+    (history : Fin start → Bool) (arith bits : List Bool)
+    (ha : arith.length = count) (hb : bits.length = width) :
+    (nextPrior count width prior).map
+      (historyAfter (start + count + width)
+        (historyAfter (start + count) history arith) bits) = bits.reverse ++ prior.map history := by
+  let h₁ := historyAfter (start + count) history arith
+  have hold (i : Fin start) :
+      historyAfter (start + count + width) h₁ bits ⟨i.val, by omega⟩ = history i := by
+    rw [historyAfter_old h₁ bits (by omega) ⟨i.val, by omega⟩]
+    exact historyAfter_old history arith (by omega) i
+  have hbits : List.ofFn (fun i : Fin width =>
+      historyAfter (start + count + width) h₁ bits ⟨start + count + i.val, by omega⟩) = bits := by
+    apply List.ext_getElem
+    · simp [hb]
+    · intro i hi hj
+      simp only [List.getElem_ofFn, historyAfter]
+      rw [List.getElem?_append_right (by simp)]
+      simp only [List.length_ofFn, Nat.add_sub_cancel_left]
+      rw [List.getElem?_eq_getElem hj, Option.getD_some]
+  simp only [nextPrior, List.map_append, List.map_reverse, List.map_ofFn, List.map_map,
+    Function.comp_def]
+  rw [hbits]
+  congr 1
+  apply List.map_congr_left
+  intro i hi
+  exact hold i
+
+/-- Preparation contributes no records and is an ordinary Hadamard prefix. -/
+theorem prepare_run {n start finish : Nat} (ws : List Wire) (p : Straight n start finish)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    ((prepareOuterBank ws p).instantiate read history).run =
+      ((p.instantiate read history).run).map (fun b =>
+        ({ history := List.nil, kraus := Quantum.run (ws.map Gate.H) } : InstrumentBranch).seq b) := by
+  induction ws with
+  | nil =>
+    simp only [prepareOuterBank, List.foldr_nil, List.map_nil, Quantum.run]
+    apply Eq.symm
+    apply List.map_id'
+  | cons w ws ih =>
+    change (AdaptiveCircuit.unitary [.H w]
+      ((prepareOuterBank ws p).instantiate read history)).run = _
+    simp only [AdaptiveCircuit.run, ih, List.map_map, Function.comp_def, List.map_cons]
+    apply List.map_congr_left
+    intro b hb
+    rfl
+
 end ShorECDLP.Entrant.Single
 
 end
@@ -1612,17 +2058,6 @@ theorem idealEventMass_distribution (Q : Point) (d : Nat) (hd : Q = d • G)
       (paperOutcomeBits_length m b) (a, b) (paperOutcomeBits_word n a) (paperOutcomeBits_word m b)
   · rfl
 
-/-- The public postprocessor's success event, on bounded 263-bit outcomes. -/
-def recovered (d a b : Nat) : Bool :=
-  decide (orderFindingPostprocess order 263 order_prime
-    (Fin.ofNat (2 ^ 263) a, Fin.ofNat (2 ^ 263) b) = some (d : ZMod order))
-
-theorem idealEventMass_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G)
-    (root : BasisState) :
-    (99 : ℝ) / 100 ≤ idealEventMass Q root 263 263 (recovered d) := by
-  rw [idealEventMass_distribution Q d hd]
-  simpa only [recovered, Fin.ofNat_eq_cast, Fin.cast_val_eq_self, decide_eq_true_eq] using
-    character_success Q d hn hd
 
 end
 end ShorECDLP.Entrant.Single
@@ -2214,89 +2649,6 @@ end ShorECDLP.Entrant.Single.Distribution
 
 end
 
--- ==== part: Single/PhysicalSuccess ====
-
-section
-/-! Protected candidate verification for the sparse single-trial layout. -/
-namespace ShorECDLP.Entrant.Single
-open Quantum Secp256k1 ShorECDLP.Challenge Quantum.OrderFinding
-noncomputable section
-set_option pp.maxSteps 40
-set_option maxRecDepth 100000
-set_option exponentiation.threshold 300
-
-def boundedRecovered (d a b : Nat) : Bool :=
-  if a < 2 ^ 263 ∧ b < 2 ^ 263 then recovered d a b else false
-
-def historyRecovered (d : Nat) (history : List Bool) : Bool :=
-  ((readWord history trialPositions.left.toList).bind (fun a =>
-    (readWord history trialPositions.right.toList).map (boundedRecovered d a))).getD false
-
-theorem historyRecovered_verified (Q : Point) (d : Nat) (hd : Q = d • G)
-    (history : List Bool) (hs : historyRecovered d history = true) :
-    verifiedCandidate layout Q history = some (d : ZMod order) := by
-  unfold historyRecovered at hs
-  cases ha : readWord history trialPositions.left.toList with
-  | none => simp [ha] at hs
-  | some a =>
-    cases hb : readWord history trialPositions.right.toList with
-    | none => simp [ha, hb] at hs
-    | some b =>
-      have hr : boundedRecovered d a b = true := by
-        simpa only [ha, hb, Option.bind_some, Option.map_some, Option.getD_some] using hs
-      unfold boundedRecovered at hr
-      split at hr
-      next hab =>
-        have hp : orderFindingPostprocess order 263 order_prime
-            (⟨a, hab.1⟩, ⟨b, hab.2⟩) = some (d : ZMod order) := by
-          have hea : Fin.ofNat (2 ^ 263) a = (⟨a, hab.1⟩ : Fin (2 ^ 263)) := by
-            apply Fin.ext
-            exact Nat.mod_eq_of_lt hab.1
-          have heb : Fin.ofNat (2 ^ 263) b = (⟨b, hab.2⟩ : Fin (2 ^ 263)) := by
-            apply Fin.ext
-            exact Nat.mod_eq_of_lt hab.2
-          simpa only [recovered, decide_eq_true_eq, hea, heb] using hr
-        exact verifiedCandidate_of_postprocess Q d hd history ⟨a, hab.1⟩ ⟨b, hab.2⟩ ha hb hp
-      next h => simp only [Bool.false_eq_true] at hr
-
-theorem idealEventMass_bounded_eq (Q : Point) (d : Nat) (hd : Q = d • G) (root : BasisState) :
-    idealEventMass Q root 263 263 (boundedRecovered d) = idealEventMass Q root 263 263 (recovered d) := by
-  rw [idealEventMass_distribution Q d hd, idealEventMass_distribution Q d hd]
-  apply Finset.sum_congr rfl
-  intro a ha
-  apply Finset.sum_congr rfl
-  intro b hb
-  simp only [boundedRecovered, if_pos (show a.val < 2 ^ 263 ∧ b.val < 2 ^ 263 from ⟨a.isLt, b.isLt⟩)]
-
-/-- Any exact physical event-distribution identity transfers the 99% bound to
-precisely the protected verifier and sparse positions used by the certificate. -/
-theorem success_of_event_distribution (Q : Point) (d : Nat) (hn : Q ≠ 0)
-    (hd : Q = d • G) (I : Instrument) (ψ : State) (root : BasisState)
-    (hdistribution : Instrument.bornMass (I.filter (fun b => historyRecovered d b.history)) ψ =
-      idealEventMass Q root 263 263 (recovered d)) :
-    (99 : ℝ) / 100 ≤ Instrument.bornMass
-      (I.filter (fun b => (verifiedCandidate layout Q b.history).isSome)) ψ := by
-  have hfilter : (I.filter (fun b => (verifiedCandidate layout Q b.history).isSome)).filter
-      (fun b => historyRecovered d b.history) = I.filter (fun b => historyRecovered d b.history) := by
-    rw [List.filter_filter]
-    apply List.filter_congr
-    intro b hb
-    by_cases hs : historyRecovered d b.history = true
-    · simp only [historyRecovered_verified Q d hd b.history hs, Option.isSome_some, Bool.and_true]
-    · simp only [Bool.eq_false_iff.mpr hs, Bool.false_and]
-  calc
-    (99 : ℝ) / 100 ≤ idealEventMass Q root 263 263 (recovered d) :=
-      idealEventMass_success Q d hn hd root
-    _ = Instrument.bornMass (I.filter (fun b => historyRecovered d b.history)) ψ := hdistribution.symm
-    _ = Instrument.bornMass ((I.filter (fun b => (verifiedCandidate layout Q b.history).isSome)).filter
-        (fun b => historyRecovered d b.history)) ψ := congrArg (fun J => Instrument.bornMass J ψ) hfilter.symm
-    _ ≤ _ := Instrument.bornMass_filter_le _ _ _
-
-end
-end ShorECDLP.Entrant.Single
-
-end
-
 -- ==== part: Single/EventMass ====
 
 section
@@ -2824,9 +3176,7 @@ end
 end ShorECDLP.Entrant.Single.Distribution
 
 end
-end
 
-section
 
 /-! EDITABLE. Single-trial entrant: concrete single-trial success.
 Concatenated in dependency order to bound parallel kernel replay memory.
@@ -2854,7 +3204,7 @@ theorem increment_offset (Q : Point) (hQ : order • Q = 0) (w : SignedWindow) (
   have hr : order • P = 0 := by
     cases w with
     | left16 _ | left15 _ => exact generator_nsmul_eq_zero
-    | right16 _ | right15 _ => exact hQ
+    | right16 _ => exact hQ
   have hh : halfOrder ≤ 2^(w.width-1) + order := by
     have hl : halfOrder ≤ order := by norm_num [halfOrder, order]
     exact hl.trans (Nat.le_add_left _ _)
@@ -2899,7 +3249,7 @@ theorem left_offsets :
 
 theorem right_offsets :
     (rightSigned.map (fun w => offsetScalar w.width w.exponent)).sum = rightOffset := by
-  simp [rightSigned, rightOffset, widths, exponents, List.ofFn_succ,
+  simp [rightSigned, rightOffset, rightWidths, rightExponents, List.ofFn_succ,
     SignedWindow.width, SignedWindow.exponent]
 
 theorem left_base (Q : Point) (w : SignedWindow) (hw : w ∈ leftSigned) : w.base Q = G := by
@@ -2907,8 +3257,9 @@ theorem left_base (Q : Point) (w : SignedWindow) (hw : w ∈ leftSigned) : w.bas
   rcases hw with ⟨i, rfl⟩ | ⟨i, rfl⟩ <;> rfl
 
 theorem right_base (Q : Point) (w : SignedWindow) (hw : w ∈ rightSigned) : w.base Q = Q := by
-  simp only [rightSigned, List.mem_append, List.mem_ofFn] at hw
-  rcases hw with ⟨i, rfl⟩ | ⟨i, rfl⟩ <;> rfl
+  simp only [rightSigned, List.mem_ofFn] at hw
+  obtain ⟨i, rfl⟩ := hw
+  rfl
 
 theorem increments_sum (Q : Point) (hQ : order • Q = 0) (ws : List SignedWindow)
     (P : Point) (hbase : ∀ w ∈ ws, w.base Q = P) (values : SignedWindow → Nat) :
@@ -2960,7 +3311,7 @@ structure Setup {n : Nat} (coeffs : Fin n → PointCoeff) where
   firstWires : first.wires = (bank 16).reverse
   signedWires : ∀ w, (signed w).wires = (bank w.width).reverse
   firstCount : first.count = 65535
-  signedCount : ∀ w, (signed w).count = 30705809
+  signedCount : ∀ w, (signed w).count = 30700717
 
 def Setup.firstModel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : WindowModel (readConstant coeffs Q) :=
@@ -3015,7 +3366,7 @@ theorem Setup.modelWeights {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup 
 theorem left_signed_width : (leftSigned.map SignedWindow.width).sum = 247 := by
   norm_num [leftSigned, List.ofFn_succ, SignedWindow.width]
 
-theorem right_signed_width : (rightSigned.map SignedWindow.width).sum = 263 := by
+theorem right_signed_width : (rightSigned.map SignedWindow.width).sum = 224 := by
   norm_num [rightSigned, List.ofFn_succ, SignedWindow.width]
 
 theorem Setup.left_weights {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
@@ -3108,7 +3459,7 @@ theorem Setup.left_precision {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setu
     List.map_map, Function.comp_def, s.signed_length, left_signed_width]
 
 theorem Setup.right_precision {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
-    (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : precision (s.rightModels Q hQ hn) = 263 := by
+    (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : precision (s.rightModels Q hQ hn) = 224 := by
   rw [precision, Setup.rightModels]
   simp only [List.map_map, Function.comp_def, s.signed_length, right_signed_width]
 
@@ -3132,7 +3483,7 @@ theorem Setup.right_metadata {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setu
 
 theorem Setup.left_count {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 491358742 := by
+    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 491277270 := by
   rw [← recordCount_eq_axisCount, s.left_metadata, left_record_count]
 
 theorem Setup.left_positions {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
@@ -3145,22 +3496,6 @@ theorem Setup.right_positions {n : Nat} {coeffs : Fin n → PointCoeff} (s : Set
     axisPositions ((s.rightModels Q hQ hn).map WindowModel.physical) start = positions rightMetadata start := by
   rw [axisPositions, s.right_metadata]
 
-/-- One 263/263 Streaming trial reaches the protected verifier with probability
-at least 99/100, assuming only the per-window coherent contracts and metadata. -/
-theorem Setup.success {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
-    (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) (hQ : order • Q = 0)
-    (J : Instrument) (hJ : ∀ ψ, J.bornMass ψ = normSq ψ) :
-    (99 : ℝ) / 100 ≤ Instrument.bornMass
-      (((physicalAxes (s.leftModels Q hQ hn) (s.rightModels Q hQ hn) 0 Fin.elim0).seq J).filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket initialRoot) := by
-  apply success_of_event_distribution Q d hn hd _ (ket initialRoot) initialRoot
-  have hm := physicalTwoAxes_event_mass Q initialRoot (s.leftModels Q hQ hn)
-    (s.rightModels Q hQ hn) 0 Fin.elim0 (ket initialRoot) (s.ready Q hQ hn)
-    (s.kernel Q hQ hn) J hJ (boundedRecovered d)
-  rw [selectedTwoAxes_fixed_filter, s.left_count, s.left_positions, s.right_positions,
-    s.left_precision, s.right_precision, idealEventMass_bounded_eq Q d hd] at hm
-  simpa only [pairAccept, historyRecovered, trialPositions, Vector.toList_mk,
-    List.toList_toArray] using hm
 
 end
 end ShorECDLP.Entrant.Single.Distribution
@@ -3209,14 +3544,6 @@ theorem terminalInstrument_mass (ψ : State) : terminalInstrument.bornMass ψ = 
     _ = normSq (Quantum.run [.X 836] ψ) := resetRegister_mass _ _
     _ = normSq ψ := normSq_run _ (by simp [CircuitWellFormed, Gate.WellFormed]) ψ
 
-/-- Concrete 263/263 Streaming recovery, including exceptional arithmetic branches. -/
-theorem concrete_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G)
-    (hQ : order • Q = 0) :
-    (99 : ℝ) / 100 ≤ Instrument.bornMass
-      (((physicalAxes (concreteSetup.leftModels Q hQ hn) (concreteSetup.rightModels Q hQ hn)
-        0 Fin.elim0).seq terminalInstrument).filter
-          (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket initialRoot) :=
-  concreteSetup.success Q d hn hd hQ terminalInstrument terminalInstrument_mass
 
 theorem concrete_model_left (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     (concreteSetup.leftModels Q hQ hn).map WindowModel.physical = ShorECDLP.Entrant.Single.leftWindows := by
@@ -3294,7 +3621,7 @@ theorem framed_reset_run {n start a b finish out : Nat}
     rfl
   rw [framed_run, unitary_run_map, append_run_fixed_right _ _ _ _ _ _ ht]
 
-theorem program_run_data (read : ConstantBit 851968 → Bool) :
+theorem program_run_data (read : ConstantBit 901120 → Bool) :
     (ShorECDLP.Entrant.Single.program.instantiate read Fin.elim0).run =
       ((physicalAxesData leftWindows rightWindows read 0 Fin.elim0).seq terminalInstrument).map
         (fun b => ({history := List.nil, kraus := Quantum.run [.X 836]} : InstrumentBranch).seq b) := by
@@ -3330,119 +3657,55 @@ theorem assembled_program_run (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) 
       (fun b => ({history := List.nil, kraus := Quantum.run [.X 836]} : InstrumentBranch).seq b))
         (concrete_axes_data Q hQ hn).symm)
 
-/-- Success for the exact shared single-trial straight program, with the protected
-sparse 263/263 nearest-pair decoder, from the all-zero input state. -/
-theorem program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99 : ℝ) / 100 ≤ Instrument.bornMass
-      (((ShorECDLP.Entrant.Single.program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).run).filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
-  have hQ : order • Q = 0 := by
-    rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
-  rw [assembled_program_run Q hQ hn,
-    prefix_filter_mass _ ([Gate.X 836]) (fun history => (verifiedCandidate layout Q history).isSome) (ket zeroBasisState)]
-  have hs : Quantum.run [.X 836] (ket zeroBasisState) = ket initialRoot := by
-    simp [Quantum.run, applyGate_ket, onKet, initialRoot, zeroBasisState]
-  rw [hs]
-  exact concrete_success Q d hn hd hQ
 
 end
 end ShorECDLP.Entrant.Single.Distribution
 
 end
-end
 
-section
+namespace ShorECDLP.Entrant.Single.Distribution
+open Quantum Secp256k1 ShorECDLP.Challenge ShorECDLP.Paper2607_13816
+noncomputable section
 
-/-! EDITABLE. Single-trial entrant: protected certificate assembly.
-Concatenated in dependency order to bound parallel kernel replay memory.
-Original provenance comments are retained beside each source part. -/
+def fineEvent (accept : Nat → Nat → Bool) (history : List Bool) : Bool :=
+  pairAccept trialPositions.left.toList trialPositions.right.toList accept history
 
--- ==== part: Single/Certificate ====
+theorem Setup.event_mass {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
+    (Q : Point) (hn : Q ≠ 0) (hQ : order • Q = 0)
+    (J : Instrument) (hJ : ∀ ψ, J.bornMass ψ = normSq ψ) (accept : Nat → Nat → Bool) :
+    Instrument.bornMass
+      (((physicalAxes (s.leftModels Q hQ hn) (s.rightModels Q hQ hn) 0 Fin.elim0).seq J).filter
+        (fun b => fineEvent accept b.history)) (ket initialRoot) =
+      idealEventMass Q initialRoot 263 224 accept := by
+  have hm := physicalTwoAxes_event_mass Q initialRoot (s.leftModels Q hQ hn)
+    (s.rightModels Q hQ hn) 0 Fin.elim0 (ket initialRoot) (s.ready Q hQ hn)
+    (s.kernel Q hQ hn) J hJ accept
+  rw [selectedTwoAxes_fixed_filter, s.left_count, s.left_positions, s.right_positions,
+    s.left_precision, s.right_precision] at hm
+  simpa only [fineEvent, trialPositions, Vector.toList_mk, List.toList_toArray] using hm
 
-section
-/-! Single-trial certificate for the 263/263-bit protected nearest-pair decoder.
-The fixed-table packaging follows the Apache-2.0 VerifiedQC Streaming certificate
-(PR #551), for the construction of arXiv:2607.13816v2. See LICENSE and NOTICE. -/
-namespace ShorECDLP.Entrant.Single
-open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-open ShorECDLP.Paper2607_13816.ChallengeMigration
+theorem program_event_mass (Q : Point) (hn : Q ≠ 0) (hQ : order • Q = 0)
+    (accept : Nat → Nat → Bool) :
+    Instrument.bornMass
+      (((ShorECDLP.Entrant.Single.program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).run).filter
+        (fun b => fineEvent accept b.history)) (ket zeroBasisState) =
+      idealEventMass Q initialRoot 263 224 accept := by
+  rw [assembled_program_run Q hQ hn,
+    prefix_filter_mass _ ([Gate.X 836]) (fineEvent accept) (ket zeroBasisState)]
+  have hs : Quantum.run [.X 836] (ket zeroBasisState) = ket initialRoot := by
+    simp [Quantum.run, applyGate_ket, onKet, initialRoot, zeroBasisState]
+  rw [hs]
+  exact concreteSetup.event_mass Q hn hQ terminalInstrument terminalInstrument_mass accept
 
-/-- Generic packaging avoids unfolding a large coefficient table to transport its length. -/
-def fixedEntry {n e : Nat} (f : Fin n → PointCoeff) (p : Straight n 0 e) : StraightEntry where
-  coefficients := List.ofFn f
-  finalCursor := e
-  program := reindexStraight (Fin.cast List.length_ofFn.symm) p
-
-private theorem ofFn_read {n : Nat} (f : Fin n → PointCoeff) (Q : Point) :
-    (fun r : ConstantBit n => readConstant (List.ofFn f).get Q
-      ⟨Fin.cast (List.length_ofFn).symm r.point, r.field, r.bit⟩) =
-      readConstant f Q := by
-  funext r
-  simp only [readConstant,List.get_eq_getElem,List.getElem_ofFn,Fin.val_cast,Fin.eta]
-
-theorem fixedEntry_instantiate {n e : Nat} (f : Fin n → PointCoeff)
-    (p : Straight n 0 e) (Q : Point) :
-    (fixedEntry f p).instantiate Q = p.instantiate (readConstant f Q) Fin.elim0 := by
-  dsimp only [fixedEntry,StraightEntry.instantiate]
-  rw [reindexStraight_instantiate]
-  simp only [Function.comp_def,reindexBit]
-  rw [ofFn_read]
-
-theorem fixedEntry_slots {n e : Nat} (f : Fin n → PointCoeff)
-    (p : Straight n 0 e) : (fixedEntry f p).program.gateSlots = p.gateSlots :=
-  reindexStraight_gateSlots _ _
-
-theorem fixedEntry_wellFormed {n e : Nat} (f : Fin n → PointCoeff)
-    (p : Straight n 0 e) : (fixedEntry f p).program.WellFormed ↔ p.WellFormed :=
-  reindexStraight_wellFormed _ _
-
-theorem fixedEntry_cursor {n e : Nat} (f : Fin n → PointCoeff)
-    (p : Straight n 0 e) : (fixedEntry f p).finalCursor = e := rfl
-
-theorem fixedEntry_rows {n e : Nat} (f : Fin n → PointCoeff)
-    (p : Straight n 0 e) : (fixedEntry f p).coefficients.length = n := List.length_ofFn
-
-/-- Package the fixed coefficient data with the exact single-trial producer. -/
-def entry : StraightEntry := fixedEntry mixedCoefficientAt program
-
-theorem entry_instantiate (Q : Point) :
-    entry.instantiate Q = program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0 :=
-  fixedEntry_instantiate _ _ Q
-
-attribute [local irreducible] entry
-
-/-- These values are exactly the proved upper bounds and record count. -/
-def bounds : Bounds := ⟨855, 16936827878, 1013358612⟩
-
-theorem certificate : Certificate officialLimits layout entry bounds where
-  gateBudget := by
-    rw [entry, fixedEntry_slots]
-    exact program_slots.trans (by decide)
-  recordBudget := by
-    unfold entry
-    change 1013358612 ≤ officialLimits.measurements
-    decide
-  tableBudget := by
-    rw [entry, fixedEntry_rows]
-    decide
-  candidateBudget := by
-    rw [one_candidate_check]
-    decide
-  wellFormed := by
-    rw [entry, fixedEntry_wellFormed]
-    exact program_wellFormed
-  resources := by
-    intro Q
-    rw [entry_instantiate]
-    obtain ⟨hq, ht, hm⟩ := program_resource_facts Q
-    exact ⟨hq, ht, hm.le⟩
-  success := by
-    intro Q d hn hd
-    rw [entry_instantiate]
-    exact Distribution.program_success Q d hn hd
-
-end ShorECDLP.Entrant.Single
+theorem program_rounded_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+    (99 : ℝ)/100 ≤ Instrument.bornMass
+      (((ShorECDLP.Entrant.Single.program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).run).filter
+        (fun b => fineEvent (ShorECDLP.Entrant.RoundedReadout.pairRecovered d) b.history))
+      (ket zeroBasisState) := by
+  have hQ : order • Q = 0 := by
+    rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
+  rw [program_event_mass Q hn hQ, idealEventMass_distribution Q d hd]
+  exact ShorECDLP.Entrant.RoundedReadout.pair_success Q d hn hd
 
 end
-end
-end
+end ShorECDLP.Entrant.Single.Distribution
