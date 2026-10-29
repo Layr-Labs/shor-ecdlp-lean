@@ -99,15 +99,17 @@ def fastSetupGates {n : Nat} (row : Fin n) (pointReg : List Wire) (pw : Wire) :
 def fastOutGates {n : Nat} (row : Fin n) (control : Wire) (pointReg outReg : List Wire)
     (workStart : Wire) : List (TemplateGate n) :=
   let pw := controlledPointAddPointWorkStart workStart
-  let sc := constScratch pw
+  let cand := pointAddCandidate pw
   (fastPass control pointReg outReg).map TemplateGate.literal ++
     fastSetupGates row pointReg pw ++
-    (fastBlockGates control (pointAddGenericFlag pw) workStart (genericPointGates row pw)
-        (genericSource control pw) outReg ++
-      fastBlockGates control (pointAddDoubleFlag pw) workStart (dpackedLoadGates row sc 0)
-        sc outReg ++
-      fastBlockGates control (pointAddInfinityFlag pw) workStart (packedLoadGates row sc 0)
-        sc outReg) ++
+    (fastBlockGates control (pointAddGenericFlag pw) workStart
+        (genericPointGates row pw ++
+          (packFinitePoint (pointAddT5 pw) (pointAddT4 pw) cand).map TemplateGate.literal)
+        cand outReg ++
+      fastBlockGates control (pointAddDoubleFlag pw) workStart (dpackedLoadGates row cand 0)
+        cand outReg ++
+      fastBlockGates control (pointAddInfinityFlag pw) workStart (packedLoadGates row cand 0)
+        cand outReg) ++
     (fastSetupGates row pointReg pw).reverse
 
 theorem fastBlockGates_source {n : Nat} (read : ConstantBit n → Bool) (control flag anc : Wire)
@@ -342,15 +344,16 @@ theorem fastOutGates_length_le {n : Nat} (row : Fin n) (control : Wire)
     (controlledPointAddPointWorkStart workStart)
   have h3 := pointFlagGates_length_le row pointReg (controlledPointAddPointWorkStart workStart)
   have h4 := genericPointGates_length_le row (controlledPointAddPointWorkStart workStart)
-  have h5 := controlledCopyReg_length_le workStart
-    (genericSource control (controlledPointAddPointWorkStart workStart)) outReg
+  have h5 := packFinitePoint_length_le (pointAddT5 (controlledPointAddPointWorkStart workStart))
+    (pointAddT4 (controlledPointAddPointWorkStart workStart))
+    (pointAddCandidate (controlledPointAddPointWorkStart workStart))
   have h6 := controlledCopyReg_length_le workStart
-    (constScratch (controlledPointAddPointWorkStart workStart)) outReg
+    (pointAddCandidate (controlledPointAddPointWorkStart workStart)) outReg
   have h7 := dpackedLoadGates_length_le row
-    (constScratch (controlledPointAddPointWorkStart workStart)) 0
+    (pointAddCandidate (controlledPointAddPointWorkStart workStart)) 0
   have h8 := packedLoadGates_length_le row
-    (constScratch (controlledPointAddPointWorkStart workStart)) 0
-  simp only [constScratch_length, genericSource_length] at h5 h6 h7 h8
+    (pointAddCandidate (controlledPointAddPointWorkStart workStart)) 0
+  simp only [pointAddCandidate_length] at h6 h7 h8
   rw [hP] at h1
   simp only [fastOutGates, fastSetupGates, fastBlockGates, fastPass, List.length_append,
     List.length_reverse, List.length_map, List.length_cons, List.length_nil]
