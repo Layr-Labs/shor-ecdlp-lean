@@ -29,6 +29,9 @@ import ShorECDLP.Submission.«2607_13816».Challenge.Coordinate
 
 
 
+import ShorECDLP.Framework.Quantum.RelabelCongr
+import ShorECDLP.Submission.«2607_13816».Arithmetic.ZeroAllowedIdentity
+
 section
 
 /-! Adaptive zero guards, based on VerifiedQC/ShorECDLP, streaming-dev, PR #551,
@@ -450,6 +453,542 @@ theorem sharedAdaptiveCoordinateProgram_tCount (w : OddWindow) (start : Nat) (Q 
 
 end
 end ShorECDLP.Entrant.ZeroAdaptive
+end
+
+section
+
+/-! Local conjugation proof for borrowing the enabled query root as a zero flag.
+Scratch research file: not part of a candidate certificate until compiled. -/
+namespace ShorECDLP.Entrant.BorrowFlag
+open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1000000
+
+def exchange : Wire ≃ Wire := Equiv.swap 836 837
+def flip : Circuit := [.X 836]
+def quench (s : BasisState) : BasisState := upd s 836 false
+
+theorem quench_other (s : BasisState) (w : Wire) (hw : w ≠ 836) :
+    quench s w = s w := by simp [quench, upd, hw]
+
+theorem values_quench (ws : List Wire) (s : BasisState) (h : 836 ∉ ws) :
+    wireValues ws (quench s) = wireValues ws s := by
+  apply List.map_congr_left
+  intro w hw
+  apply quench_other
+  intro he
+  exact h (he ▸ hw)
+
+theorem quench_valid (s : BasisState) (hs : Secp256k1ZeroAllowedInputValid s) :
+    Secp256k1ZeroAllowedInputValid (quench s) := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro w hw
+    rw [quench_other s w (by simp at hw; dsimp only [Wire] at *; omega)]
+    exact hs.1 w hw
+  · simpa [quench, upd] using hs.2.1
+  · rw [values_quench _ s (by decide +kernel)]
+    exact hs.2.2.1
+  · rw [values_quench _ s (by decide +kernel)]
+    exact hs.2.2.2
+
+theorem exchange_fixed (s : BasisState) (ha : s 836 = false) (hb : s 837 = false) :
+    relabelBasis exchange s = s := by
+  funext w
+  by_cases hwa : w = 836
+  · subst w
+    simp [relabelBasis, exchange, ha, hb]
+  · by_cases hwb : w = 837
+    · subst w
+      simp [relabelBasis, exchange, ha, hb]
+    · simp [relabelBasis, exchange, Equiv.swap_apply_def, hwa, hwb]
+
+theorem flip_quench (s : BasisState) (hs : s 836 = true) :
+    Classical.run flip s = quench s := by
+  funext w
+  by_cases hw : w = 836
+  · subst w; simp [flip, Classical.run, Classical.applyGate, quench, upd, hs]
+  · simp [flip, Classical.run, Classical.applyGate, quench, upd, hw]
+
+theorem flip_restore (s : BasisState) (hs : s 836 = true) :
+    Classical.run flip (quench s) = s := by
+  funext w
+  by_cases hw : w = 836
+  · subst w; simp [flip, Classical.run, Classical.applyGate, quench, upd, hs]
+  · simp [flip, Classical.run, Classical.applyGate, quench, upd, hw]
+
+theorem division_quench_data (s : BasisState) (hs : Secp256k1ZeroAllowedInputValid s)
+    (w : Wire) (hw : w ∈ List.range' 580 256) :
+    zeroAllowedDivisionOutputState (quench s) w = zeroAllowedDivisionOutputState s w := by
+  have hword : boolWordToNat (wireValues (List.range' 580 256)
+      (zeroAllowedDivisionOutputState (quench s))) =
+      boolWordToNat (wireValues (List.range' 580 256) (zeroAllowedDivisionOutputState s)) := by
+    rw [zeroAllowedDivisionOutputState_word _ (quench_valid s hs),
+      zeroAllowedDivisionOutputState_word s hs,
+      values_quench _ s (by decide +kernel), values_quench _ s (by decide +kernel)]
+  have hvalues := boolWordToNat_injective_of_length (by simp [wireValues]) hword
+  exact List.map_inj_left.mp hvalues w hw
+
+theorem multiplication_quench_data (s : BasisState) (hs : Secp256k1ZeroAllowedInputValid s)
+    (w : Wire) (hw : w ∈ List.range' 580 256) :
+    zeroAllowedMultiplicationOutputState (quench s) w = zeroAllowedMultiplicationOutputState s w := by
+  have hword : boolWordToNat (wireValues (List.range' 580 256)
+      (zeroAllowedMultiplicationOutputState (quench s))) =
+      boolWordToNat (wireValues (List.range' 580 256) (zeroAllowedMultiplicationOutputState s)) := by
+    rw [zeroAllowedMultiplicationOutputState_word _ (quench_valid s hs),
+      zeroAllowedMultiplicationOutputState_word s hs,
+      values_quench _ s (by decide +kernel), values_quench _ s (by decide +kernel)]
+  have hvalues := boolWordToNat_injective_of_length (by simp [wireValues]) hword
+  exact List.map_inj_left.mp hvalues w hw
+
+theorem division_quench (s : BasisState) (hs : Secp256k1ZeroAllowedInputValid s) :
+    zeroAllowedDivisionOutputState (quench s) = quench (zeroAllowedDivisionOutputState s) := by
+  funext w
+  by_cases hw : w ∈ List.range' 580 256
+  · rw [division_quench_data s hs w hw,
+      quench_other _ w (by simp at hw; dsimp only [Wire] at *; omega)]
+  · have hframe := congrFun (zeroAllowedDivisionOutputState_frame (quench s) (quench_valid s hs)) w
+    have hframe' := congrFun (zeroAllowedDivisionOutputState_frame s hs) w
+    simp only [if_neg hw] at hframe hframe'
+    by_cases he : w = 836
+    · subst w; simpa [quench, upd] using hframe
+    · rw [hframe, quench_other _ _ he, quench_other _ _ he, hframe']
+
+theorem multiplication_quench (s : BasisState) (hs : Secp256k1ZeroAllowedInputValid s) :
+    zeroAllowedMultiplicationOutputState (quench s) = quench (zeroAllowedMultiplicationOutputState s) := by
+  funext w
+  by_cases hw : w ∈ List.range' 580 256
+  · rw [multiplication_quench_data s hs w hw,
+      quench_other _ w (by simp at hw; dsimp only [Wire] at *; omega)]
+  · have hframe := congrFun (zeroAllowedMultiplicationOutputState_frame (quench s) (quench_valid s hs)) w
+    have hframe' := congrFun (zeroAllowedMultiplicationOutputState_frame s hs) w
+    simp only [if_neg hw] at hframe hframe'
+    by_cases he : w = 836
+    · subst w; simpa [quench, upd] using hframe
+    · rw [hframe, quench_other _ _ he, quench_other _ _ he, hframe']
+
+
+theorem before_eq (s : BasisState) (hs : PointLookupValid s) :
+    relabelBasis exchange.symm (Classical.run flip s) = quench s := by
+  rw [flip_quench s hs.2]
+  change relabelBasis exchange (quench s) = quench s
+  apply exchange_fixed
+  · simp [quench, upd]
+  · simpa [quench, upd] using hs.1.2.1
+
+def borrowed (program : AdaptiveCircuit) : AdaptiveCircuit :=
+  ((AdaptiveCircuit.unitary flip .done).seq (program.relabel exchange)).seq
+    (.unitary flip .done)
+
+private theorem map_ket (F : BasisState → BasisState) (s : BasisState) :
+    (Finsupp.lmapDomain ℂ ℂ F) (ket s) = ket (F s) := by simp [ket]
+
+/-- Local borrowing changes neither the ideal state nor coherent branch weights. -/
+theorem borrowed_coherent (program : AdaptiveCircuit) (F : BasisState → BasisState)
+    (hc : CoherentlyImplementsOn program (Finsupp.lmapDomain ℂ ℂ F)
+      Secp256k1ZeroAllowedInputValid)
+    (hq : ∀ s, Secp256k1ZeroAllowedInputValid s → F (quench s) = quench (F s))
+    (ha : ∀ s, PointLookupValid s → F s 836 = true)
+    (hb : ∀ s, PointLookupValid s → F s 837 = false) :
+    CoherentlyImplementsOn (borrowed program) (Finsupp.lmapDomain ℂ ℂ F) PointLookupValid := by
+  have hf := CoherentlyImplementsOn.unitary flip PointLookupValid
+  have first := hf.seq (hc.relabel exchange) (by
+    intro s hs
+    rw [Quantum.run_ket_agrees_classical flip s (by simp [flip, HPFree])]
+    exact supportedOn_ket _ _ (by rw [before_eq s hs]; exact quench_valid s hs.1))
+  have all := first.seq (CoherentlyImplementsOn.unitary flip (fun _ => True)) (by
+    intro s hs t ht
+    trivial)
+  apply all.congrIdeal
+  intro s hs
+  simp only [LinearMap.comp_apply]
+  rw [Quantum.run_ket_agrees_classical flip s (by simp [flip, HPFree]),
+    relabelState_ket, before_eq s hs, map_ket, relabelState_ket,
+    Quantum.run_ket_agrees_classical flip _ (by simp [flip, HPFree]), map_ket]
+  rw [hq s hs.1]
+  have hfixed : relabelBasis exchange (quench (F s)) = quench (F s) := by
+    apply exchange_fixed
+    · simp [quench, upd]
+    · simpa [quench, upd] using hb s hs
+  rw [hfixed, flip_restore (F s) (ha s hs)]
+
+noncomputable def division : AdaptiveCircuit := borrowed ZeroAdaptive.division
+noncomputable def multiplication : AdaptiveCircuit := borrowed ZeroAdaptive.multiplication
+
+theorem division_coherent : CoherentlyImplementsOn division
+    (Finsupp.lmapDomain ℂ ℂ zeroAllowedDivisionOutputState) PointLookupValid := by
+  apply borrowed_coherent _ _ ZeroAdaptive.division_coherent division_quench
+  · intro s hs
+    simpa only [zeroAllowedDivisionOutputState_frame s hs.1,
+      show (836 : Wire) ∉ List.range' 580 256 by decide, if_false] using hs.2
+  · intro s hs
+    simpa only [zeroAllowedDivisionOutputState_frame s hs.1,
+      show (837 : Wire) ∉ List.range' 580 256 by decide, if_false] using hs.1.2.1
+
+theorem multiplication_coherent : CoherentlyImplementsOn multiplication
+    (Finsupp.lmapDomain ℂ ℂ zeroAllowedMultiplicationOutputState) PointLookupValid := by
+  apply borrowed_coherent _ _ ZeroAdaptive.multiplication_coherent multiplication_quench
+  · intro s hs
+    simpa only [zeroAllowedMultiplicationOutputState_frame s hs.1,
+      show (836 : Wire) ∉ List.range' 580 256 by decide, if_false] using hs.2
+  · intro s hs
+    simpa only [zeroAllowedMultiplicationOutputState_frame s hs.1,
+      show (837 : Wire) ∉ List.range' 580 256 by decide, if_false] using hs.1.2.1
+
+end ShorECDLP.Entrant.BorrowFlag
+
+/-! Append after GuardBorrow.lean (within its imports) for an incremental check.
+This file is a source part, not an importable standalone module. -/
+namespace ShorECDLP.Entrant.BorrowFlag
+open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1000000
+attribute [local irreducible] ZeroAdaptive.prepare ZeroAdaptive.restore
+  secp256k1InPlaceDivision secp256k1InPlaceMultiplication
+
+private theorem gate_relabel_refl (g : Gate) : g.relabel (Equiv.refl Wire) = g := by
+  cases g <;> rfl
+
+private theorem adaptive_relabel_refl (p : AdaptiveCircuit) :
+    p.relabel (Equiv.refl Wire) = p := by
+  induction p with
+  | done => rfl
+  | unitary gs p ih =>
+    simp only [AdaptiveCircuit.relabel, ih]
+    congr 1
+    calc
+      gs.map (Gate.relabel (Equiv.refl Wire)) = gs.map id := by
+        apply List.map_congr_left
+        intro g hg
+        exact gate_relabel_refl g
+      _ = gs := List.map_id' gs
+  | xMeasureReset w p q ihp ihq =>
+    simp only [AdaptiveCircuit.relabel, ihp, ihq, Equiv.refl_apply]
+
+private theorem arithmetic_relabel (p : AdaptiveCircuit) (hs : p.wires ⊆ List.range 836) :
+    p.relabel exchange = p := by
+  calc
+    p.relabel exchange = p.relabel (Equiv.refl Wire) := by
+      apply p.relabel_congr
+      intro w hw
+      have hh := List.mem_range.mp (hs hw)
+      have h836 : w ≠ (836 : Wire) := by dsimp only [Wire] at *; omega
+      have h837 : w ≠ (837 : Wire) := by dsimp only [Wire] at *; omega
+      simp [exchange, Equiv.swap_apply_def, h836, h837]
+    _ = p := adaptive_relabel_refl p
+
+theorem division_source_relabel :
+    secp256k1InPlaceDivision.relabel exchange = secp256k1InPlaceDivision :=
+  arithmetic_relabel _ secp256k1InPlaceDivision_wires_subset
+
+theorem multiplication_source_relabel :
+    secp256k1InPlaceMultiplication.relabel exchange = secp256k1InPlaceMultiplication :=
+  arithmetic_relabel _ secp256k1InPlaceMultiplication_wires_subset
+
+/-- Only guard programs are relabeled: the raw arithmetic compiler is retained. -/
+def prepareProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  appendCompiled (equalityProgram n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch)
+    ⟨0, literalProgram ZeroAdaptive.cx⟩
+
+def restoreProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  prependCompiled ZeroAdaptive.cx
+    (equalityProgram n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch)
+
+theorem prepareProgram_run (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledRun (prepareProgram n start) read history = ZeroAdaptive.prepare.run := by
+  unfold prepareProgram ZeroAdaptive.prepare
+  apply appendCompiled_run_eq
+  · exact equalityProgram_run _ _ _ _ _ _ _ _
+  · intro h
+    exact literalProgram_run _ read h
+
+theorem restoreProgram_run (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledRun (restoreProgram n start) read history = ZeroAdaptive.restore.run := by
+  unfold restoreProgram ZeroAdaptive.restore
+  apply prependCompiled_run_eq
+  exact equalityProgram_run _ _ _ _ _ _ _ _
+
+theorem prepareProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledTCount (prepareProgram n start) read history = ZeroAdaptive.prepare.tCount := by
+  unfold prepareProgram ZeroAdaptive.prepare
+  apply appendCompiled_tCount_eq
+  · exact equalityProgram_tCount _ _ _ _ _ _ _ _
+  · intro h
+    exact literalProgram_tCount _ read h
+
+theorem restoreProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledTCount (restoreProgram n start) read history = ZeroAdaptive.restore.tCount := by
+  unfold restoreProgram ZeroAdaptive.restore
+  apply prependCompiled_tCount_eq
+  exact equalityProgram_tCount _ _ _ _ _ _ _ _
+
+def coreSegments (n : Nat) (arithmetic : FixedSegment n) : List (FixedSegment n) :=
+  [fun start => relabelCompiled exchange (prepareProgram n start), arithmetic,
+   fun start => relabelCompiled exchange (restoreProgram n start)]
+
+def coreSource (arithmetic : AdaptiveCircuit) : AdaptiveCircuit :=
+  sequenceCircuit [ZeroAdaptive.prepare.relabel exchange, arithmetic,
+    ZeroAdaptive.restore.relabel exchange]
+
+def fieldProgram (n start : Nat) (arithmetic : FixedSegment n) :
+    (count : Nat) × Straight n start (start+count) :=
+  surroundCompiled flip flip (sequenceProgram n (coreSegments n arithmetic) start)
+
+def divisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  fieldProgram n start (Paper2607_13816.ChallengeMigration.divisionProgram n)
+
+def multiplicationProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  fieldProgram n start (Paper2607_13816.ChallengeMigration.multiplicationProgram n)
+
+theorem coreProgram_run (n start : Nat) (arithmetic : FixedSegment n)
+    (source : AdaptiveCircuit) (read : ConstantBit n → Bool) (history : Fin start → Bool)
+    (h : ∀ start h, compiledRun (arithmetic start) read h = source.run) :
+    compiledRun (sequenceProgram n (coreSegments n arithmetic) start) read history =
+      (coreSource source).run := by
+  unfold coreSource
+  apply sequenceProgram_run
+  unfold coreSegments
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons h (List.Forall₂.cons ?_ .nil))
+  · intro start h
+    exact relabelCompiled_run exchange _ ZeroAdaptive.prepare read h (prepareProgram_run _ _ _ _)
+  · intro start h
+    exact relabelCompiled_run exchange _ ZeroAdaptive.restore read h (restoreProgram_run _ _ _ _)
+
+theorem divisionProgram_run (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledRun (divisionProgram n start) read history = division.run := by
+  have h := surroundCompiled_run flip flip
+    (sequenceProgram n (coreSegments n (Paper2607_13816.ChallengeMigration.divisionProgram n)) start)
+    (coreSource secp256k1InPlaceDivision) read history
+    (coreProgram_run n start _ _ read history (fun start h =>
+      Paper2607_13816.ChallengeMigration.divisionProgram_run n start read h))
+  have he : coreSource secp256k1InPlaceDivision = ZeroAdaptive.division.relabel exchange := by
+    simp only [coreSource, sequenceCircuit, ZeroAdaptive.division,
+      AdaptiveCircuit.relabel_seq, division_source_relabel, adaptive_seq_done, adaptive_seq_assoc]
+  rw [he] at h
+  simpa only [divisionProgram, fieldProgram, division, borrowed,
+    AdaptiveCircuit.seq, adaptive_seq_done, adaptive_seq_assoc] using h
+
+theorem multiplicationProgram_run (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledRun (multiplicationProgram n start) read history = multiplication.run := by
+  have h := surroundCompiled_run flip flip
+    (sequenceProgram n (coreSegments n (Paper2607_13816.ChallengeMigration.multiplicationProgram n)) start)
+    (coreSource secp256k1InPlaceMultiplication) read history
+    (coreProgram_run n start _ _ read history (fun start h =>
+      Paper2607_13816.ChallengeMigration.multiplicationProgram_run n start read h))
+  have he : coreSource secp256k1InPlaceMultiplication = ZeroAdaptive.multiplication.relabel exchange := by
+    simp only [coreSource, sequenceCircuit, ZeroAdaptive.multiplication,
+      AdaptiveCircuit.relabel_seq, multiplication_source_relabel, adaptive_seq_done, adaptive_seq_assoc]
+  rw [he] at h
+  simpa only [multiplicationProgram, fieldProgram, multiplication, borrowed,
+    AdaptiveCircuit.seq, adaptive_seq_done, adaptive_seq_assoc] using h
+
+
+theorem borrowed_tCount (program : AdaptiveCircuit) :
+    (borrowed program).tCount = program.tCount := by
+  simp [borrowed, flip, adaptive_tCount_seq, AdaptiveCircuit.tCount, ShorECDLP.tCount, tCost]
+
+theorem borrowed_measurements (program : AdaptiveCircuit) :
+    (borrowed program).measurementCount = program.measurementCount := by
+  simp [borrowed, flip, modularMeasurements_seq, AdaptiveCircuit.measurementCount]
+
+theorem division_counts : division.tCount = 246064973 ∧ division.measurementCount = 14707815 := by
+  simpa only [division, borrowed_tCount, borrowed_measurements] using ZeroAdaptive.division_counts
+
+theorem multiplication_counts : multiplication.tCount = 246064973 ∧ multiplication.measurementCount = 14707815 := by
+  simpa only [multiplication, borrowed_tCount, borrowed_measurements] using ZeroAdaptive.multiplication_counts
+
+theorem coreProgram_tCount (n start : Nat) (arithmetic : FixedSegment n)
+    (source : AdaptiveCircuit) (read : ConstantBit n → Bool) (history : Fin start → Bool)
+    (h : ∀ start h, compiledTCount (arithmetic start) read h = source.tCount) :
+    compiledTCount (sequenceProgram n (coreSegments n arithmetic) start) read history =
+      (coreSource source).tCount := by
+  unfold coreSource
+  apply sequenceProgram_tCount
+  unfold coreSegments
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons h (List.Forall₂.cons ?_ .nil))
+  · intro start h
+    exact relabelCompiled_tCount exchange _ ZeroAdaptive.prepare read h (prepareProgram_tCount _ _ _ _)
+  · intro start h
+    exact relabelCompiled_tCount exchange _ ZeroAdaptive.restore read h (restoreProgram_tCount _ _ _ _)
+
+/-- Prove the count transport before substituting the concrete arithmetic circuit. -/
+theorem fieldProgram_tCount (n start : Nat) (arithmetic : FixedSegment n)
+    (source : AdaptiveCircuit) (read : ConstantBit n → Bool) (history : Fin start → Bool)
+    (hc : ∀ start h, compiledTCount (arithmetic start) read h = source.tCount) :
+    compiledTCount (fieldProgram n start arithmetic) read history =
+      (borrowed ((ZeroAdaptive.prepare.seq source).seq ZeroAdaptive.restore)).tCount := by
+  have h := surroundCompiled_tCount flip flip
+    (sequenceProgram n (coreSegments n arithmetic) start)
+    (coreSource source) read history (coreProgram_tCount n start arithmetic source read history hc)
+  have he : (borrowed ((ZeroAdaptive.prepare.seq source).seq ZeroAdaptive.restore)).tCount =
+      (coreSource source).tCount := by
+    rw [borrowed_tCount]
+    simp only [adaptive_tCount_seq, coreSource, sequenceCircuit,
+      AdaptiveCircuit.relabel_tCount, show AdaptiveCircuit.done.tCount = 0 by rfl,
+      Nat.add_zero, Nat.add_assoc]
+  change compiledTCount (fieldProgram n start arithmetic) read history = _ at h
+  rw [he]
+  simpa only [AdaptiveCircuit.tCount, adaptive_tCount_seq,
+    show ShorECDLP.tCount flip = 0 by rfl, Nat.zero_add, Nat.add_zero] using h
+
+theorem divisionProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledTCount (divisionProgram n start) read history = division.tCount :=
+  fieldProgram_tCount n start (Paper2607_13816.ChallengeMigration.divisionProgram n)
+    secp256k1InPlaceDivision read history
+    (fun cursor h => Paper2607_13816.ChallengeMigration.divisionProgram_tCount n cursor read h)
+
+theorem multiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
+    (history : Fin start → Bool) :
+    compiledTCount (multiplicationProgram n start) read history = multiplication.tCount :=
+  fieldProgram_tCount n start (Paper2607_13816.ChallengeMigration.multiplicationProgram n)
+    secp256k1InPlaceMultiplication read history
+    (fun cursor h => Paper2607_13816.ChallengeMigration.multiplicationProgram_tCount n cursor read h)
+
+end ShorECDLP.Entrant.BorrowFlag
+
+
+/-! Append after ProgramParts.lean for the borrowed coordinate source. -/
+namespace ShorECDLP.Entrant.BorrowFlag
+open ShorECDLP Classical Quantum Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+/-- Five sequential field-word queries, each loaded and cleared around its modular addition. -/
+def coordinateSource (x y : Nat → Nat) : AdaptiveCircuit :=
+  ((((((((fig14LookupX (fun a => (ShorECDLP.p-x a)%ShorECDLP.p)).seq
+    (signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p))).seq
+    division).seq fig14SquareSubtract).seq
+    (fig14LookupX (fun a => (3*x a)%ShorECDLP.p))).seq
+    multiplication).seq fig14Negate).seq
+    (fig14LookupX (fun a => x a%ShorECDLP.p))).seq
+    (signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p))
+
+private theorem lookup_coherent_seq (a b : AdaptiveCircuit) (f g : BasisState → BasisState)
+    (ha : CoherentlyImplementsOn a (Finsupp.lmapDomain ℂ ℂ f) PointLookupValid)
+    (hb : CoherentlyImplementsOn b (Finsupp.lmapDomain ℂ ℂ g) PointLookupValid)
+    (hf : ∀ s, PointLookupValid s → PointLookupValid (f s)) :
+    CoherentlyImplementsOn (a.seq b) (Finsupp.lmapDomain ℂ ℂ (fun s => g (f s))) PointLookupValid := by
+  have h := ha.seq hb (by
+    intro s hs
+    simpa [ket] using supportedOn_ket PointLookupValid (f s) (hf s hs))
+  apply h.congrIdeal
+  intro s hs
+  simp [LinearMap.comp_apply,ket]
+
+private theorem lookup_restrict {program : AdaptiveCircuit} {ideal : Quantum.State →ₗ[ℂ] Quantum.State}
+    (h : CoherentlyImplementsOn program ideal Secp256k1ZeroAllowedInputValid) :
+    CoherentlyImplementsOn program ideal PointLookupValid := by
+  obtain ⟨cs,ha,hm⟩ := h
+  exact ⟨cs,ha.imp (fun b c hb s hs => hb s hs.1),hm⟩
+
+private theorem lookup_division_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (zeroAllowedDivisionOutputState s) := by
+  refine ⟨fig14Division_ready s hs.1,?_⟩
+  rw [zeroAllowedDivisionOutputState_frame s hs.1]
+  simpa using hs.2
+private theorem lookup_multiplication_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (zeroAllowedMultiplicationOutputState s) := by
+  refine ⟨fig14Multiplication_ready s hs.1,?_⟩
+  rw [zeroAllowedMultiplicationOutputState_frame s hs.1]
+  simpa using hs.2
+private theorem lookup_square_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (fig14SquareSubtractState s) :=
+  ⟨fig14SquareSubtractState_ready s hs.1,
+    ((fig14SquareSubtractState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+private theorem lookup_negate_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (fig14NegateState s) :=
+  ⟨fig14NegateState_ready s hs.1,
+    ((fig14NegateState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+
+theorem coordinateSource_coherent (x y : Nat → Nat) :
+    CoherentlyImplementsOn (coordinateSource x y)
+      (Finsupp.lmapDomain ℂ ℂ (signedLookupCoordinateState x y)) PointLookupValid := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  let p1 := fig14LookupX (fun a => (ShorECDLP.p-x a)%ShorECDLP.p)
+  let f1 := fig14LookupXState (fun a => (ShorECDLP.p-x a)%ShorECDLP.p)
+  have h1 : CoherentlyImplementsOn p1 (Finsupp.lmapDomain ℂ ℂ f1) PointLookupValid := fig14LookupX_coherent _ (fun _ => hk _)
+  have r1 : ∀ s, PointLookupValid s → PointLookupValid (f1 s) := fig14LookupXState_ready _ (fun _ => hk _)
+  let p2 := signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+  let f2 := signedPointLookupYState (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+  have h2 : CoherentlyImplementsOn p2 (Finsupp.lmapDomain ℂ ℂ f2) PointLookupValid := signedPointLookupY_coherent _ (fun _ => hk _)
+  have r2 : ∀ s, PointLookupValid s → PointLookupValid (f2 s) := signedPointLookupYState_ready _ (fun _ => hk _)
+  let p3 := division
+  let f3 := zeroAllowedDivisionOutputState
+  have h3 : CoherentlyImplementsOn p3 (Finsupp.lmapDomain ℂ ℂ f3) PointLookupValid := division_coherent
+  have r3 : ∀ s, PointLookupValid s → PointLookupValid (f3 s) := lookup_division_ready
+  let p4 := fig14SquareSubtract
+  let f4 := fig14SquareSubtractState
+  have h4 : CoherentlyImplementsOn p4 (Finsupp.lmapDomain ℂ ℂ f4) PointLookupValid := lookup_restrict fig14SquareSubtract_coherent
+  have r4 : ∀ s, PointLookupValid s → PointLookupValid (f4 s) := lookup_square_ready
+  let p5 := fig14LookupX (fun a => (3*x a)%ShorECDLP.p)
+  let f5 := fig14LookupXState (fun a => (3*x a)%ShorECDLP.p)
+  have h5 : CoherentlyImplementsOn p5 (Finsupp.lmapDomain ℂ ℂ f5) PointLookupValid := fig14LookupX_coherent _ (fun _ => hk _)
+  have r5 : ∀ s, PointLookupValid s → PointLookupValid (f5 s) := fig14LookupXState_ready _ (fun _ => hk _)
+  let p6 := multiplication
+  let f6 := zeroAllowedMultiplicationOutputState
+  have h6 : CoherentlyImplementsOn p6 (Finsupp.lmapDomain ℂ ℂ f6) PointLookupValid := multiplication_coherent
+  have r6 : ∀ s, PointLookupValid s → PointLookupValid (f6 s) := lookup_multiplication_ready
+  let p7 := fig14Negate
+  let f7 := fig14NegateState
+  have h7 : CoherentlyImplementsOn p7 (Finsupp.lmapDomain ℂ ℂ f7) PointLookupValid := lookup_restrict fig14Negate_coherent
+  have r7 : ∀ s, PointLookupValid s → PointLookupValid (f7 s) := lookup_negate_ready
+  let p8 := fig14LookupX (fun a => x a%ShorECDLP.p)
+  let f8 := fig14LookupXState (fun a => x a%ShorECDLP.p)
+  have h8 : CoherentlyImplementsOn p8 (Finsupp.lmapDomain ℂ ℂ f8) PointLookupValid := fig14LookupX_coherent _ (fun _ => hk _)
+  have r8 : ∀ s, PointLookupValid s → PointLookupValid (f8 s) := fig14LookupXState_ready _ (fun _ => hk _)
+  let p9 := signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+  let f9 := signedPointLookupYState (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+  have h9 : CoherentlyImplementsOn p9 (Finsupp.lmapDomain ℂ ℂ f9) PointLookupValid := signedPointLookupY_coherent _ (fun _ => hk _)
+  have c2 := lookup_coherent_seq _ _ _ _ h1 h2 r1
+  have v2 := fun s hs => r2 _ (r1 s hs)
+  have c3 := lookup_coherent_seq _ _ _ _ c2 h3 v2
+  have v3 := fun s hs => r3 _ (v2 s hs)
+  have c4 := lookup_coherent_seq _ _ _ _ c3 h4 v3
+  have v4 := fun s hs => r4 _ (v3 s hs)
+  have c5 := lookup_coherent_seq _ _ _ _ c4 h5 v4
+  have v5 := fun s hs => r5 _ (v4 s hs)
+  have c6 := lookup_coherent_seq _ _ _ _ c5 h6 v5
+  have v6 := fun s hs => r6 _ (v5 s hs)
+  have c7 := lookup_coherent_seq _ _ _ _ c6 h7 v6
+  have v7 := fun s hs => r7 _ (v6 s hs)
+  have c8 := lookup_coherent_seq _ _ _ _ c7 h8 v7
+  have v8 := fun s hs => r8 _ (v7 s hs)
+  have c9 := lookup_coherent_seq _ _ _ _ c8 h9 v8
+  exact c9
+
+
+
+
+open ShorECDLP.Challenge ShorECDLP.Secp256k1
+
+def adaptiveCoordinateSegments : List (FixedSegment 32768) :=
+  [fieldLookupAddProgram .negX (List.range' 263 256), signedFieldProgram .negY,
+   divisionProgram 32768, pointSquareProgram 32768,
+   fieldLookupAddProgram .tripleX (List.range' 263 256), multiplicationProgram 32768,
+   xNegateProgram 32768, fieldLookupAddProgram .x (List.range' 263 256), signedFieldProgram .negY]
+
+def adaptiveCoordinateProgram (start : Nat) :
+    (count : Nat) × ShorECDLP.Challenge.Straight 32768 start (start+count) :=
+  sequenceProgram 32768 adaptiveCoordinateSegments start
+
+theorem coordinate_tCount (x y : Nat → Nat) :
+    (coordinateSource x y).tCount = (ZeroAdaptive.coordinateSource x y).tCount := by
+  simp only [coordinateSource, ZeroAdaptive.coordinateSource, adaptive_tCount_seq,
+    division, multiplication, borrowed_tCount]
+
+theorem coordinate_measurements (x y : Nat → Nat) :
+    (coordinateSource x y).measurementCount = (ZeroAdaptive.coordinateSource x y).measurementCount := by
+  simp only [coordinateSource, ZeroAdaptive.coordinateSource, modularMeasurements_seq,
+    division, multiplication, borrowed_measurements]
+
+end
+end ShorECDLP.Entrant.BorrowFlag
 end
 
 /-! Measured equality schedules: entrant improvement using protected measurement-uncomputation semantics. -/

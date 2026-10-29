@@ -110,11 +110,11 @@ theorem readout_t (read : ConstantBit 901120 → Bool) (history : Fin 921302466 
   exact addWord_t _ _ _ _ _
 
 theorem readout_support (read : ConstantBit 901120 → Bool) (history : Fin 921302466 → Bool) :
-    (readout.instantiate read history).wires ⊆ completeBatchedSupport := by
+    (readout.instantiate read history).wires ⊆ resetWires := by
   unfold readout
   rw [castFinish_instantiate]
   apply (addWord_support _ _ _ _ _).trans
-  simp [List.subset_def, completeBatchedSupport, resetWires]
+  simp [List.subset_def, resetWires]
 
 theorem program_clean (read : ConstantBit 901120 → Bool) (b : InstrumentBranch)
     (hb : b ∈ (Single.program.instantiate read Fin.elim0).run) (ψ : State) :
@@ -332,25 +332,25 @@ theorem program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) 
 
 def entry : StraightEntry := Single.fixedEntry Single.mixedCoefficientAt program
 
-def bounds : Bounds := ⟨855, 15398440784, 921302872⟩
+def bounds : Bounds := ⟨854, 15398440784, 921302872⟩
 
 theorem program_wellFormed : program.WellFormed :=
   straight_append_wellFormed _ _ Single.program_wellFormed readout_wellFormed
 
 theorem program_support (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).wires ⊆ completeBatchedSupport :=
-  outer_append_support _ _ read Fin.elim0 completeBatchedSupport (Single.program_support read)
+    (program.instantiate read Fin.elim0).wires ⊆ resetWires :=
+  outer_append_support _ _ read Fin.elim0 resetWires (Single.program_support read)
     (readout_support read)
 
 theorem program_qubits (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).qubitCount ≤ 855 := by
+    (program.instantiate read Fin.elim0).qubitCount ≤ 854 := by
   have hs : (program.instantiate read Fin.elim0).wires.dedup.toFinset ⊆
-      completeBatchedSupport.toFinset := by
+      resetWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (program_support read (by simpa using hw))
   have hc := (Finset.card_le_card hs).trans (List.toFinset_card_le _)
   rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
-  simpa only [AdaptiveCircuit.qubitCount, completeBatchedSupport_length] using hc
+  simpa only [AdaptiveCircuit.qubitCount, resetWires_length] using hc
 
 attribute [local irreducible] readout
 
@@ -1473,29 +1473,30 @@ open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
 noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
-attribute [local irreducible] sequenceProgram appendCompiled literalProgram ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram
+attribute [local irreducible] sequenceProgram appendCompiled literalProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.divisionProgram ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
   Single.axis Rounded.entry
 
+def borrowedFieldPatch {saving : Nat} (n start : Nat) (arithmetic : FixedSegment n)
+    (hp : ∀ cursor, Patch (arithmetic cursor).2 saving) :
+    Patch (ShorECDLP.Entrant.BorrowFlag.fieldProgram n start arithmetic).2 saving := by
+  unfold ShorECDLP.Entrant.BorrowFlag.fieldProgram
+  apply Patch.surroundCompiled
+  unfold ShorECDLP.Entrant.BorrowFlag.coreSegments
+  refine (Patch.sequenceCons (d := 0) (f := saving) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  exact (Patch.sequenceCons (d := saving) (f := 0) _ _ (hp _) (Patch.refl _)).castSaving (by omega)
+
 def zeroDivisionPatch (n start : Nat) :
-    Patch (ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram n start).2 2313360 := by
-  unfold ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram
-  dsimp only
-  refine (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine Patch.prependCompiled _ _ ?_
-  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _
-    (divisionPatch n _) (Patch.refl _)).castSaving (by omega)
+    Patch (ShorECDLP.Entrant.BorrowFlag.divisionProgram n start).2 2313360 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.divisionProgram
+  exact borrowedFieldPatch n start (divisionProgram n) (divisionPatch n)
 
 def zeroMultiplicationPatch (n start : Nat) :
-    Patch (ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram n start).2 2313360 := by
-  unfold ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram
-  dsimp only
-  refine (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine Patch.prependCompiled _ _ ?_
-  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _
-    (multiplicationPatch n _) (Patch.refl _)).castSaving (by omega)
+    Patch (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 2313360 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
+  exact borrowedFieldPatch n start (multiplicationProgram n) (multiplicationPatch n)
 
-def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram start).2 4626720 := by
-  unfold ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateSegments
+def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 4626720 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 2313360) (f := 2313360) _ _ (zeroDivisionPatch 32768 _) ?_).castSaving (by omega)
