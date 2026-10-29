@@ -24,14 +24,14 @@ def program : Circuit := Entrant.LowInv.lowProgram
 
 def layout : RegisterLayout := Entrant.LowInv.lowLayout
 
-def cost : Nat := 10263089914
+def cost : Nat := 10425834650
 
 /-- Number of 257-wire blocks spanned by the engine's full registers. -/
-def blocks : Nat := 42
+def blocks : Nat := 34
 
 /-- Every engine wire lies below this bound: the last multiplier flag is the first wire of
-block 42. -/
-def wireBound : Nat := 257 * 42 + 1
+block 34. -/
+def wireBound : Nat := 257 * 34 + 1
 
 theorem contract :
     CleanBinaryContract program layout ShorECDLP.p (fun a _ => a ^ (ShorECDLP.p - 2)) cost := by
@@ -58,7 +58,7 @@ theorem out_nodup : layout.out.Nodup := (Secp256k1Instance.regBlock 2).wires_nod
 theorem allWires_lt : ∀ w ∈ layout.allWires, w < wireBound :=
   Entrant.LowInv.lowLayout_allWires_lt
 
-theorem program_length_le : program.length ≤ 4075000000 := Entrant.LowInv.lowProgram_length_le
+theorem program_length_le : program.length ≤ 4140000000 := Entrant.LowInv.lowProgram_length_le
 
 end Engine
 end V2

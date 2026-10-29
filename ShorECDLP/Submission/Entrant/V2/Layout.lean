@@ -14,7 +14,7 @@ namespace V2
 /-- Dense envelope of the V2 trial (without the phase-register extension). -/
 def v2QubitCount : Nat := 6164 + Engine.wireBound
 
-theorem v2QubitCount_eq : v2QubitCount = 16959 := by
+theorem v2QubitCount_eq : v2QubitCount = 14903 := by
   simp [v2QubitCount, Engine.wireBound]
 
 def v2AllWires : List Wire := List.range v2QubitCount
@@ -346,11 +346,11 @@ theorem v2DeclaredWires_subset :
   · change w ∈ List.range' 0 256 at ha
     have hbound := (List.mem_range'_1.mp ha).2
     simpa [v2AllWires, v2QubitCount, Engine.wireBound] using
-      (hbound.trans (by norm_num : 256 < 16959))
+      (hbound.trans (by norm_num : 256 < 14903))
   · change w ∈ List.range' 256 256 at hb
     have hbound := (List.mem_range'_1.mp hb).2
     simpa [v2AllWires, v2QubitCount, Engine.wireBound] using
-      (hbound.trans (by norm_num : 512 < 16959))
+      (hbound.trans (by norm_num : 512 < 14903))
   · change w ∈ List.range' 512 pointWidth at hpoint
     have hbound := (List.mem_range'_1.mp hpoint).2
     have hlt : w < v2QubitCount := by

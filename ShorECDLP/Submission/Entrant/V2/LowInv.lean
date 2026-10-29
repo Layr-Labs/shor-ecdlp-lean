@@ -574,12 +574,12 @@ theorem engProg_good {x D : Nat} (scr : List Nat) (segs : List (List Op)) (ckpts
 /-! ## The Naive low-space multiplier as a `MulSpec` -/
 
 /-- The Naive low-space multiplier, with its workspace in blocks `38 … 42`. -/
-def msE : MulSpec 38 where
-  work := Secp256k1Instance.mulWork 38 39
-  prog a b c := Secp256k1Instance.mulProgram a b c 38 39
+def msE : MulSpec 30 where
+  work := Secp256k1Instance.mulWork 30 31
+  prog a b c := Secp256k1Instance.mulProgram a b c 30 31
   cost := Secp256k1Instance.mulCost
   len := 4037213
-  prog_length a b c := NaiveChallenge.secpMulProgram_length_le a b c 38 39
+  prog_length a b c := NaiveChallenge.secpMulProgram_length_le a b c 30 31
   work_disjoint i hi w hw := by
     rw [mem_ids] at hi
     rw [Secp256k1Instance.mulWork_eq_blocksWires]
@@ -599,46 +599,54 @@ def msE : MulSpec 38 where
     decide
   contract a b c ha hb hc hab _ _ := by
     rw [mem_ids] at ha hb
-    exact Secp256k1Instance.mul_contract a b c 38 39 (by omega) (by omega) (by omega)
+    exact Secp256k1Instance.mul_contract a b c 30 31 (by omega) (by omega) (by omega)
       hab (by omega) (by omega)
 
 /-! ## The concrete engine
 
-The libsecp256k1 addition chain (255 squarings, 15 multiplications) is cut into twenty
-segments.  Checkpoints live in blocks `4 … 22`, the segment scratch in blocks `23 … 37`,
-the squaring duplicate in block `3`, and the multiplier workspace above block `37`. -/
+The libsecp256k1 addition chain (255 squarings, 15 multiplications) is cut into 26
+segments of decreasing length.  Blocks `4 … 29` form one pool: checkpoints are taken from
+its top (29 downwards) and segment scratch from its bottom (4 upwards), so at segment `i` the
+`i - 1` live checkpoints and the segment's scratch never meet.  The squaring duplicate is
+block `3`; the multiplier workspace lies above block `29`. -/
 
-def nbE : Nat := 38
+def nbE : Nat := 30
 def dupE : Nat := 3
-def ckptsE : List Nat := List.range' 4 19
-def scrE : List Nat := List.range' 23 15
+def ckptsE : List Nat := (List.range' 5 25).reverse
+def scrE : List Nat := List.range' 4 22
 
 def plan : List (List Op) :=
   [[.sq, .mul 0 1],
    [.sq, .mul 0 1],
-   [.sq, .sq, .sq, .mul 5 7, .sq, .sq, .sq, .mul 5 7, .sq, .sq, .mul 4 3],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 6 2047],
+   [.sq, .sq, .sq, .mul 28 7, .sq, .sq, .sq, .mul 28 7, .sq, .sq, .mul 29 3, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 14 2047],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 27 4194303],
+   [.sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 26 17592186044415],
+   [.sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .mul 23 309485009821345068724781055, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
    [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 7 4194303],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 9 17592186044415],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .mul 12 309485009821345068724781055, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .mul 9 17592186044415, .sq, .sq, .sq, .mul 5 7, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
-   [.sq, .sq, .mul 7 4194303, .sq, .sq, .sq, .sq, .sq, .mul 0 1, .sq, .sq, .sq, .mul 4 3, .sq, .sq, .mul 0 1]]
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .mul 26 17592186044415, .sq, .sq, .sq, .mul 28 7],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .sq, .sq, .sq, .sq],
+   [.sq, .sq, .mul 27 4194303, .sq, .sq],
+   [.sq, .sq, .sq, .mul 0 1],
+   [.sq, .sq, .sq],
+   [.mul 29 3, .sq],
+   [.sq, .mul 0 1]]
 
 def lowProgram : Circuit := engProg msE dupE scrE plan ckptsE
 
 /-- Number of placed multiplications in `lowProgram`. -/
-def lowMults : Nat := 1009
+def lowMults : Nat := 1025
 
 def lowCost : Nat := lowMults * Secp256k1Instance.mulCost
 
@@ -657,11 +665,11 @@ theorem plan_cost :
 
 set_option maxRecDepth 100000 in
 theorem plan_len :
-    bcost (fun seg => bcost (stepLen msE) seg) plan ≤ 4075000000 := by
+    bcost (fun seg => bcost (stepLen msE) seg) plan ≤ 4140000000 := by
   decide +kernel
 
 theorem lowProgram_good (x : Nat) :
-    Good msE x σ₀ (upd σ₀ 2 (some (p - 2))) lowProgram lowCost 4075000000 := by
+    Good msE x σ₀ (upd σ₀ 2 (some (p - 2))) lowProgram lowCost 4140000000 := by
   have h := engProg_good (ms := msE) (x := x) (D := dupE) scrE plan ckptsE plan_ok
   rw [plan_exp] at h
   exact h.cast plan_cost plan_len
@@ -672,10 +680,10 @@ theorem lowProgram_good (x : Nat) :
 /-- Base in block 0, untouched port in block 1, result in block 2; everything else is work. -/
 def lowLayout : RegisterLayout :=
   { lhs := (reg 0).wires, rhs := (reg 1).wires, out := (reg 2).wires,
-    work := (List.range' 3 35).flatMap (fun i => (reg i).wires) ++ msE.work }
+    work := (List.range' 3 27).flatMap (fun i => (reg i).wires) ++ msE.work }
 
 theorem mem_lowWork_regs {w : Nat} :
-    w ∈ (List.range' 3 35).flatMap (fun i => (reg i).wires) ↔ ∃ i, 3 ≤ i ∧ i < 38 ∧ w ∈ (reg i).wires := by
+    w ∈ (List.range' 3 27).flatMap (fun i => (reg i).wires) ↔ ∃ i, 3 ≤ i ∧ i < 30 ∧ w ∈ (reg i).wires := by
   simp only [List.mem_flatMap, List.mem_range'_1]
   constructor
   · rintro ⟨i, ⟨h1, h2⟩, hw⟩
@@ -757,8 +765,8 @@ theorem lowProgram_contract :
   wellFormed := fun _ => (lowProgram_good 0).wf
 
 def lowBlocks : List Block :=
-  [regBlock 0, regBlock 1, regBlock 2] ++ (List.range' 3 35).map regBlock ++
-    Secp256k1Instance.mulWorkBlocks 38 39
+  [regBlock 0, regBlock 1, regBlock 2] ++ (List.range' 3 27).map regBlock ++
+    Secp256k1Instance.mulWorkBlocks 30 31
 
 theorem lowLayout_allWires_eq : lowLayout.allWires = Secp256k1Instance.blocksWires lowBlocks := by
   simp only [lowLayout, RegisterLayout.allWires, lowBlocks, msE,
@@ -766,8 +774,8 @@ theorem lowLayout_allWires_eq : lowLayout.allWires = Secp256k1Instance.blocksWir
     List.flatMap_append, List.flatMap_cons, List.flatMap_nil, List.append_nil,
     List.append_assoc, Secp256k1Instance.reg_wires, List.flatMap_map]
 
-theorem lowBlocks_ids : lowBlocks.map Block.id = [0, 1, 2] ++ List.range' 3 35 ++
-    [41, 38, 39, 40, 42] := by
+theorem lowBlocks_ids : lowBlocks.map Block.id = [0, 1, 2] ++ List.range' 3 27 ++
+    [33, 30, 31, 32, 34] := by
   simp [lowBlocks, Secp256k1Instance.mulWorkBlocks_ids, List.map_map, Function.comp_def]
 
 theorem lowLayout_valid : lowLayout.Valid := by
@@ -778,10 +786,10 @@ theorem lowLayout_valid : lowLayout.Valid := by
   rw [lowBlocks_ids]
   decide
 
-theorem lowBlocks_top : ∀ b ∈ lowBlocks, 257 * b.id + b.size ≤ 257 * 42 + 1 := by
+theorem lowBlocks_top : ∀ b ∈ lowBlocks, 257 * b.id + b.size ≤ 257 * 34 + 1 := by
   decide
 
-theorem lowLayout_allWires_lt : ∀ w : Nat, w ∈ lowLayout.allWires → w < 257 * 42 + 1 := by
+theorem lowLayout_allWires_lt : ∀ w : Nat, w ∈ lowLayout.allWires → w < 257 * 34 + 1 := by
   intro w hw
   rw [lowLayout_allWires_eq, Secp256k1Instance.blocksWires, List.mem_flatMap] at hw
   obtain ⟨b, hb, hwb⟩ := hw
@@ -789,9 +797,9 @@ theorem lowLayout_allWires_lt : ∀ w : Nat, w ∈ lowLayout.allWires → w < 25
   simp only [Block.wires, Secp256k1Instance.fieldWidth, List.mem_range'_1] at hwb
   omega
 
-theorem lowProgram_length_le : lowProgram.length ≤ 4075000000 := (lowProgram_good 0).len
+theorem lowProgram_length_le : lowProgram.length ≤ 4140000000 := (lowProgram_good 0).len
 
-theorem lowCost_eq : lowCost = 10263089914 := by
+theorem lowCost_eq : lowCost = 10425834650 := by
   simp [lowCost, lowMults, Secp256k1Instance.mulCost, Secp256k1Instance.fieldWidth]
 
 end ShorECDLP.Entrant.LowInv
