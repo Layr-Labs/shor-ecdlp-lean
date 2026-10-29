@@ -1,19 +1,27 @@
-import ShorECDLP.Submission.Entrant.Single.Certificate
+import ShorECDLP.Submission.Entrant.Streaming.Certificate
+import ShorECDLP.Challenge.Official
 
-/-! EDITABLE. One 263/263-bit trial of the Streaming construction
-(arXiv:2607.13816v2), using the protected nearest-pair decoder.
-The physical arithmetic derives from the Apache-2.0 VerifiedQC Streaming
-certificate (PR #551); see LICENSE and NOTICE. -/
+/-! EDITABLE. Entrant: the certified Streaming construction (arXiv:2607.13816v2) at 6 rounds.
+
+The program is the first 6 rounds of the 56-round Streaming outer plan, ported
+from VerifiedQC/ShorECDLP (branch `streaming-dev`, PR #551) under Apache-2.0 into
+`Entrant/Streaming`. Every round is the same fixed windowed program with complete coherent
+exceptional-case correction. The correction is the in-place XOR block of
+`Streaming/Correction.lean`, which works inside the 855-wire core allocation instead of the
+upstream five-word batch. `Streaming/AveragedSuccess` proves a per-round success lower bound
+of 27/50 by averaging the two Fourier-axis peak probabilities over the characters (instead of
+the pointwise worst case 163/1000), and `1 - (23/50)^6 ≥ 99/100`, so 6 rounds suffice. -/
+
 namespace ShorECDLP.Entrant
-open Challenge
+open Challenge ShorECDLP.Paper2607_13816.ChallengeMigration
 
-def entry : StraightEntry := Single.entry
-def layout : DecodeLayout := Single.layout
+def entry : StraightEntry := streamingEntry
+def layout : DecodeLayout := streamingLayout
 
-/-- Exact proved upper bounds, with the exact measurement count. -/
-def bounds : Bounds := ⟨855, 16939890938, 1013190576⟩
+/-- Qubits ≤ 855; T-model ≤ 6 × 14,371,907,349; exactly 6 × 859,886,737 records. -/
+def bounds : Bounds := streamingBounds
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
-  Single.certificate
+  streamingEntry_certificate_unconditional
 
 end ShorECDLP.Entrant

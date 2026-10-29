@@ -4,14 +4,20 @@ import ShorECDLP.Submission.«2607_13816».Challenge.AccumulatorEncoding
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
 import ShorECDLP.Submission.«2607_13816».Challenge.GidneyAdd
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowBody
+import ShorECDLP.Submission.Entrant.Streaming.ZeroAdaptive
 
-/-! EDITABLE. Single-trial entrant: in-place XOR correction model, circuit and semantics.
-Concatenated in dependency order to bound parallel kernel replay memory.
-Original provenance comments are retained beside each source part. -/
+/-! EDITABLE. Streaming entrant, module `Correction`: the in-place XOR exceptional-point correction (word model, circuit, semantics, window).
 
--- ==== part: Streaming/IpxModel ====
+This module concatenates the former per-file modules `IpxModel`, `IpxCircuit`, `IpxSemantics`,
+`IpxWindow` (in this order). Each former file is one `namespace` block below, marked `-- ====
+part: <Name> ====`, with its provenance note. Only the import lines changed.
 
-section
+Why few modules: the kernel replay loads the complete import closure (about 4.3 GB) once per
+Entrant module, in parallel across its worker threads, so its peak memory grows with the number
+of Entrant modules. -/
+
+-- ==== part: IpxModel ====
+
 /-! # In-place XOR correction: the word-level model
 
 The streaming window addition writes `F(enc P)` into the 513-bit accumulator, where `F` is the
@@ -307,11 +313,8 @@ end
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: IpxCircuit ====
 
--- ==== part: Streaming/IpxCircuit ====
-
-section
 /-! # In-place XOR correction: the circuit
 
 Every wire of the correction block lies in the core streaming allocation:
@@ -367,13 +370,83 @@ def ipxTest (k : Fin 4) : Circuit :=
     computeEqConst (ipxHalf :: ipxHigh) 1 (ipxFlag k) ipxScratch ++
     computeEqConst ipxLow 0 ipxHalf ipxScratch
 
+/-! ### Measured zero test
+
+The same three equality computations, each with the measured v-chain cleanup of
+`computeEqConstAdaptive`, written as flat lookup operations. -/
+
+/-- `mcxVChainTailAdaptive` as lookup operations. -/
+def vchainTailOps {n : Nat} : Wire → List Wire → Wire → List Wire → List (LookupOp n)
+  | _, [], _, _ => []
+  | acc, [control], target, _ => [ordinaryOp [.CCX control acc target]]
+  | acc, control :: nextControl :: controls, target, scratch :: scratches =>
+      ordinaryOp [.CCX control acc scratch] ::
+        (vchainTailOps scratch (nextControl :: controls) target scratches ++ [.erase control acc scratch])
+  | _, _ :: _ :: _, _, [] => []
+
+/-- `mcxVChainAdaptive` as lookup operations. -/
+def vchainOps {n : Nat} : List Wire → Wire → List Wire → List (LookupOp n)
+  | [], target, _ => [ordinaryOp [.X target]]
+  | [control], target, _ => [ordinaryOp [.CX control target]]
+  | first :: second :: controls, target, scratches =>
+      vchainTailOps second (first :: controls) target scratches
+
+/-- `computeEqConstAdaptive` as lookup operations. -/
+def eqAdaptiveOps {n : Nat} (register : List Wire) (value : Nat) (flag : Wire)
+    (scratches : List Wire) : List (LookupOp n) :=
+  ordinaryOp (zeroMask register value) ::
+    (vchainOps register flag scratches ++ [ordinaryOp (zeroMask register value)])
+
+def ipxTestOps {n : Nat} (k : Fin 4) : List (LookupOp n) :=
+  eqAdaptiveOps ipxLow 0 ipxHalf ipxScratch ++
+    (eqAdaptiveOps (ipxHalf :: ipxHigh) 1 (ipxFlag k) ipxScratch ++
+      eqAdaptiveOps ipxLow 0 ipxHalf ipxScratch)
+
+def ipxTestAdaptive (k : Fin 4) : AdaptiveCircuit :=
+  (computeEqConstAdaptive ipxLow 0 ipxHalf ipxScratch).seq
+    ((computeEqConstAdaptive (ipxHalf :: ipxHigh) 1 (ipxFlag k) ipxScratch).seq
+      (computeEqConstAdaptive ipxLow 0 ipxHalf ipxScratch))
+
+theorem vchainTailOps_circuit {n : Nat} (read : ConstantBit n → Bool) :
+    ∀ (acc : Wire) (controls : List Wire) (target : Wire) (scratches : List Wire),
+      lookupCircuit read (vchainTailOps acc controls target scratches) =
+        mcxVChainTailAdaptive acc controls target scratches
+  | _, [], _, _ => rfl
+  | acc, [control], target, _ => by
+      simp only [vchainTailOps,mcxVChainTailAdaptive,ordinaryOp,lookupCircuit,literal_gates]
+  | acc, control :: nextControl :: controls, target, scratch :: scratches => by
+      simp only [vchainTailOps,mcxVChainTailAdaptive,ordinaryOp,lookupCircuit,literal_gates,
+        lookupCircuit_append,vchainTailOps_circuit read scratch (nextControl :: controls) target scratches,
+        adaptive_seq_done]
+  | _, _ :: _ :: _, _, [] => rfl
+
+theorem vchainOps_circuit {n : Nat} (read : ConstantBit n → Bool) (controls : List Wire)
+    (target : Wire) (scratches : List Wire) :
+    lookupCircuit read (vchainOps controls target scratches) = mcxVChainAdaptive controls target scratches := by
+  match controls with
+  | [] => simp only [vchainOps,mcxVChainAdaptive,ordinaryOp,lookupCircuit,literal_gates]
+  | [control] => simp only [vchainOps,mcxVChainAdaptive,ordinaryOp,lookupCircuit,literal_gates]
+  | first :: second :: controls =>
+    simp only [vchainOps,mcxVChainAdaptive,vchainTailOps_circuit]
+
+theorem eqAdaptiveOps_circuit {n : Nat} (read : ConstantBit n → Bool) (register : List Wire)
+    (value : Nat) (flag : Wire) (scratches : List Wire) :
+    lookupCircuit read (eqAdaptiveOps register value flag scratches) =
+      computeEqConstAdaptive register value flag scratches := by
+  simp only [eqAdaptiveOps,ordinaryOp,lookupCircuit,literal_gates,lookupCircuit_append,
+    vchainOps_circuit,computeEqConstAdaptive]
+
+theorem ipxTestOps_circuit {n : Nat} (read : ConstantBit n → Bool) (k : Fin 4) :
+    lookupCircuit read (ipxTestOps (n := n) k) = ipxTestAdaptive k := by
+  simp only [ipxTestOps,lookupCircuit_append,eqAdaptiveOps_circuit,ipxTestAdaptive]
+
 def ipxOps {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire) :
     List IpxOp → List (LookupOp n)
   | [] => []
   | .query c u v :: ops =>
     unaryLookupOps (fun l q => ipxLeaf (rows l) q u v) tree (ipxControl c) paths ++
       ipxOps rows tree paths ops
-  | .test k :: ops => ordinaryOp (ipxTest k) :: ipxOps rows tree paths ops
+  | .test k :: ops => ipxTestOps k ++ ipxOps rows tree paths ops
 
 noncomputable def ipxSourceOps {n : Nat} (read : ConstantBit n → Bool) (rows : Nat → Fin n)
     (tree : UnaryActionTree) (paths : List Wire) : List IpxOp → AdaptiveCircuit
@@ -381,7 +454,7 @@ noncomputable def ipxSourceOps {n : Nat} (read : ConstantBit n → Bool) (rows :
   | .query c u v :: ops =>
     (unaryAction .inc (fun l q => ipxLeafCircuit read (rows l) q u v) tree
       (ipxControl c) paths).seq (ipxSourceOps read rows tree paths ops)
-  | .test k :: ops => .unitary (ipxTest k) (ipxSourceOps read rows tree paths ops)
+  | .test k :: ops => (ipxTestAdaptive k).seq (ipxSourceOps read rows tree paths ops)
 
 theorem ipxOps_source {n : Nat} (read : ConstantBit n → Bool) (rows : Nat → Fin n)
     (tree : UnaryActionTree) (paths : List Wire) (ops : List IpxOp) :
@@ -392,7 +465,7 @@ theorem ipxOps_source {n : Nat} (read : ConstantBit n → Bool) (rows : Nat → 
     cases op with
     | query c u v =>
       simp only [ipxOps,lookupCircuit_append,unaryLookupOps_circuit,ipxLeaf_source,ih,ipxSourceOps]
-    | test k => simp only [ipxOps,ordinaryOp,lookupCircuit,literal_gates,ih,ipxSourceOps]
+    | test k => simp only [ipxOps,lookupCircuit_append,ipxTestOps_circuit,ih,ipxSourceOps]
 
 def ipxProgramOf {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
     (start : Nat) : (count : Nat) × Straight n start (start+count) :=
@@ -546,31 +619,87 @@ def ipxQueries : List IpxOp → Nat
 
 theorem ipxSchedule_queries : ipxQueries ipxSchedule = 13 := rfl
 
+def ipxTests : List IpxOp → Nat
+  | [] => 0
+  | .query _ _ _ :: ops => ipxTests ops
+  | .test _ :: ops => 1 + ipxTests ops
+
+theorem ipxSchedule_tests : ipxTests ipxSchedule = 8 := rfl
+
+theorem vchainTailOps_measurements {n : Nat} :
+    ∀ (acc : Wire) (controls : List Wire) (target : Wire) (scratches : List Wire),
+      controls.length ≤ scratches.length + 1 →
+      lookupMeasurements (vchainTailOps (n := n) acc controls target scratches) = controls.length - 1
+  | _, [], _, _, _ => rfl
+  | _, [_], _, _, _ => rfl
+  | _, control :: nextControl :: controls, target, scratch :: scratches, h => by
+      have ih := vchainTailOps_measurements (n := n) scratch (nextControl :: controls) target scratches
+        (by simp only [List.length_cons] at h ⊢; omega)
+      simp only [vchainTailOps,ordinaryOp,lookupMeasurements,lookupMeasurements_append,ih,
+        List.length_cons]
+      omega
+  | _, _ :: _ :: _, _, [], h => by simp only [List.length_cons,List.length_nil] at h; omega
+
+theorem eqAdaptiveOps_measurements {n : Nat} (register : List Wire) (value : Nat) (flag : Wire)
+    (scratches : List Wire) (h : register.length - 2 ≤ scratches.length) :
+    lookupMeasurements (eqAdaptiveOps (n := n) register value flag scratches) = register.length - 2 := by
+  have hv : lookupMeasurements (vchainOps (n := n) register flag scratches) = register.length - 2 := by
+    match register, h with
+    | [], _ => rfl
+    | [_], _ => rfl
+    | first :: second :: controls, h =>
+      simp only [vchainOps]
+      rw [vchainTailOps_measurements (n := n) second (first :: controls) flag scratches
+        (by simp only [List.length_cons] at h ⊢; omega)]
+      simp only [List.length_cons]
+      omega
+  simp only [eqAdaptiveOps,ordinaryOp,lookupMeasurements,lookupMeasurements_append,hv]
+  omega
+
+/-- Each measured equality erases 255 v-chain conjunctions. -/
+theorem ipxTestOps_measurements {n : Nat} (k : Fin 4) :
+    lookupMeasurements (ipxTestOps (n := n) k) = 765 := by
+  simp only [ipxTestOps,lookupMeasurements_append]
+  rw [eqAdaptiveOps_measurements _ _ _ _ (by simp [ipxLow,ipxScratch]),
+    eqAdaptiveOps_measurements _ _ _ _ (by simp [ipxHigh,ipxScratch])]
+  simp [ipxLow,ipxHigh]
+
 theorem ipxOps_measurements {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
     (hl : ∀ c, tree.Layout (ipxControl c) paths) (ops : List IpxOp) :
-    lookupMeasurements (ipxOps rows tree paths ops) = ipxQueries ops * tree.internalNodes := by
+    lookupMeasurements (ipxOps rows tree paths ops) =
+      ipxQueries ops * tree.internalNodes + 765 * ipxTests ops := by
   induction ops with
-  | nil => simp [ipxOps,lookupMeasurements,ipxQueries]
+  | nil => simp [ipxOps,lookupMeasurements,ipxQueries,ipxTests]
   | cons op ops ih =>
     cases op with
     | query c u v =>
       simp only [ipxOps,lookupMeasurements_append,unaryLookupOps_measurements _ _ _ _ (hl c),
-        ih,ipxQueries,Nat.add_mul,Nat.one_mul]
-    | test k => exact ih
+        ih,ipxQueries,ipxTests,Nat.add_mul,Nat.one_mul]
+      omega
+    | test k =>
+      simp only [ipxOps,lookupMeasurements_append,ipxTestOps_measurements,ih,ipxQueries,ipxTests]
+      omega
 
 theorem batchWindowTree_nodes : batchWindowTree.internalNodes = 32767 := by
   have h := tableAddressTree_nodes pointLookupAddress 0 1
   change batchWindowTree.internalNodes + 1 = 32768 at h
   omega
 
-theorem ipxProgram_count (w : OddWindow) (start : Nat) : (ipxProgram w start).1 = 425971 := by
+theorem ipxProgram_count (w : OddWindow) (start : Nat) : (ipxProgram w start).1 = 432091 := by
   simp only [ipxProgram,ipxProgramOf]
-  rw [ipxOps_measurements _ _ _ ipxTree_layout,ipxSchedule_queries,batchWindowTree_nodes]
+  rw [ipxOps_measurements _ _ _ ipxTree_layout,ipxSchedule_queries,ipxSchedule_tests,batchWindowTree_nodes]
 
 theorem ipxTest_tCount (k : Fin 4) : ShorECDLP.tCount (ipxTest k) = 10731 := by
   simp only [ipxTest,tCount_append]
   rw [computeEqConst_tCount _ _ _ _ (by simp [ipxLow,ipxScratch]),
     computeEqConst_tCount _ _ _ _ (by simp [ipxHigh,ipxScratch])]
+  simp only [ipxLow,ipxHigh,List.length_cons,List.length_append,List.length_range']
+  rfl
+
+theorem ipxTestAdaptive_tCount (k : Fin 4) : (ipxTestAdaptive k).tCount = 5376 := by
+  simp only [ipxTestAdaptive,adaptive_tCount_seq]
+  rw [computeEqConstAdaptive_tCount _ _ _ _ (by simp [ipxLow,ipxScratch]),
+    computeEqConstAdaptive_tCount _ _ _ _ (by simp [ipxHigh,ipxScratch])]
   simp only [ipxLow,ipxHigh,List.length_cons,List.length_append,List.length_range']
   rfl
 
@@ -591,7 +720,7 @@ theorem ipxQuery_tCount {n : Nat} (read : ConstantBit n → Bool) (rows : Nat �
 def ipxCost (nodes : Nat) : List IpxOp → Nat
   | [] => 0
   | .query _ _ _ :: ops => 7*nodes + ipxCost nodes ops
-  | .test _ :: ops => 10731 + ipxCost nodes ops
+  | .test _ :: ops => 5376 + ipxCost nodes ops
 
 theorem ipxSourceOps_tCount {n : Nat} (read : ConstantBit n → Bool) (rows : Nat → Fin n)
     (tree : UnaryActionTree) (paths : List Wire) (hl : ∀ c, tree.Layout (ipxControl c) paths)
@@ -602,13 +731,13 @@ theorem ipxSourceOps_tCount {n : Nat} (read : ConstantBit n → Bool) (rows : Na
   | cons op ops ih =>
     cases op with
     | query c u v => simp only [ipxSourceOps,adaptive_tCount_seq,ipxQuery_tCount _ _ _ _ _ _ _ (hl c),ih,ipxCost]
-    | test k => simp only [ipxSourceOps,AdaptiveCircuit.tCount,ipxTest_tCount,ih,ipxCost]
+    | test k => simp only [ipxSourceOps,adaptive_tCount_seq,ipxTestAdaptive_tCount,ih,ipxCost]
 
-theorem ipxSchedule_cost (nodes : Nat) : ipxCost nodes ipxSchedule = 91*nodes+85848 := by
+theorem ipxSchedule_cost (nodes : Nat) : ipxCost nodes ipxSchedule = 91*nodes+43008 := by
   simp only [ipxSchedule,ipxPhase1,ipxPhase2,ipxPhase3,List.cons_append,List.nil_append,ipxCost]
   omega
 
-theorem ipxSource_tCount (Q : Point) (w : OddWindow) : (ipxSource Q w).tCount = 3067645 := by
+theorem ipxSource_tCount (Q : Point) (w : OddWindow) : (ipxSource Q w).tCount = 3024805 := by
   rw [ipxSource,ipxSourceOps_tCount _ _ _ _ ipxTree_layout,ipxSchedule_cost,batchWindowTree_nodes]
 
 theorem ipxProgram_tCount (w : OddWindow) (start : Nat) (Q : Point) (history : Fin start → Bool) :
@@ -634,9 +763,43 @@ theorem ipxTest_wellFormed (k : Fin 4) : CircuitWellFormed (ipxTest k) := by
     computeEqConst_wellFormed _ _ _ _ (ipxHigh_layout k)⟩,
     computeEqConst_wellFormed _ _ _ _ ipxLow_layout⟩
 
+/-- Boolean check of `Gate.WellFormed`. -/
+def gateOk : Gate → Bool
+  | .CX c t => c != t
+  | .CCX a b t => a != b && a != t && b != t
+  | _ => true
+
+theorem gateOk_wellFormed (g : Gate) (h : gateOk g = true) : g.WellFormed := by
+  cases g <;> simp_all [gateOk,Gate.WellFormed]
+
+/-- Boolean check of `LookupOp.Physical` for literal gate lists and erasures. -/
+def lookupOpOk {n : Nat} : LookupOp n → Bool
+  | .gates gs => gs.all fun g => match g with
+    | .literal g => gateOk g
+    | .whenBit _ _ g => gateOk g
+  | .erase a b _ => a != b
+
+theorem lookupOpOk_physical {n : Nat} (op : LookupOp n) (h : lookupOpOk op = true) : op.Physical := by
+  cases op with
+  | gates gs =>
+    intro g hg
+    have hg' := List.all_eq_true.mp h g hg
+    cases g with
+    | literal g => exact gateOk_wellFormed g hg'
+    | whenBit _ _ g => exact gateOk_wellFormed g hg'
+  | erase a b t => simpa [lookupOpOk,LookupOp.Physical] using h
+
+theorem ipxTestOps_ok (k : Fin 4) : (ipxTestOps (n := 983040) k).all lookupOpOk = true := by
+  fin_cases k <;> decide +kernel
+
+theorem ipxTestOps_physical {n : Nat} (k : Fin 4) (hk : (ipxTestOps (n := n) k).all lookupOpOk = true) :
+    ∀ op ∈ ipxTestOps (n := n) k, op.Physical :=
+  fun op hop => lookupOpOk_physical op (List.all_eq_true.mp hk op hop)
+
 theorem ipxOps_physical {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
     (hl : ∀ c, tree.Layout (ipxControl c) paths)
-    (hout : ∀ c, ∀ w ∈ ipxControl c :: paths, w ∉ pointLogicalWires) (ops : List IpxOp) :
+    (hout : ∀ c, ∀ w ∈ ipxControl c :: paths, w ∉ pointLogicalWires)
+    (htest : ∀ k, (ipxTestOps (n := n) k).all lookupOpOk = true) (ops : List IpxOp) :
     ∀ op ∈ ipxOps rows tree paths ops, op.Physical := by
   induction ops with
   | nil => intro op ho; cases ho
@@ -647,8 +810,8 @@ theorem ipxOps_physical {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree
       exact ⟨unaryLookupOps_physical _ _ _ _ (hl c)
         (fun l q hq => ipxLeaf_wellFormed _ _ _ _ (hout c q hq)),ih⟩
     | test k =>
-      simp only [ipxOps,List.forall_mem_cons]
-      exact ⟨ordinaryOp_physical _ (ipxTest_wellFormed k),ih⟩
+      rw [ipxOps,List.forall_mem_append]
+      exact ⟨ipxTestOps_physical k (htest k),ih⟩
 
 theorem ipxPaths_outside (c : Option (Fin 4)) (w : Wire) (hw : w ∈ ipxControl c :: pointLookupPath) :
     w ∉ pointLogicalWires := by
@@ -661,21 +824,19 @@ theorem ipxPaths_outside (c : Option (Fin 4)) (w : Wire) (hw : w ∈ ipxControl 
 
 theorem ipxProgramOf_wellFormed {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree)
     (paths : List Wire) (hl : ∀ c, tree.Layout (ipxControl c) paths)
-    (hout : ∀ c, ∀ w ∈ ipxControl c :: paths, w ∉ pointLogicalWires) (start : Nat) :
+    (hout : ∀ c, ∀ w ∈ ipxControl c :: paths, w ∉ pointLogicalWires)
+    (htest : ∀ k, (ipxTestOps (n := n) k).all lookupOpOk = true) (start : Nat) :
     (ipxProgramOf rows tree paths start).2.WellFormed :=
-  lookupProgram_wellFormed _ (ipxOps_physical _ _ _ hl hout _) start
+  lookupProgram_wellFormed _ (ipxOps_physical _ _ _ hl hout htest _) start
 
 attribute [local irreducible] ipxProgramOf in
 theorem ipxProgram_wellFormed (w : OddWindow) (start : Nat) : (ipxProgram w start).2.WellFormed :=
-  ipxProgramOf_wellFormed _ _ _ ipxTree_layout ipxPaths_outside start
+  ipxProgramOf_wellFormed _ _ _ ipxTree_layout ipxPaths_outside ipxTestOps_ok start
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: IpxSemantics ====
 
--- ==== part: Streaming/IpxSemantics ====
-
-section
 /-! # In-place XOR correction: semantics
 
 Every step of the correction block acts on the accumulator word `s ∘ accumulatorPort` and the
@@ -1066,6 +1227,28 @@ private theorem ipxCoherentSeq {a b : AdaptiveCircuit} {u v : Circuit} {P R : Ba
   intro s _
   exact (Quantum.run_append u v (ket s)).symm
 
+private theorem eqConst_keeps_clean (register : List Wire) (value : Nat) (flag : Wire)
+    (scratches : List Wire) (hl : EqConstLayout register flag scratches) (s : BasisState)
+    (hs : Clean scratches s) : Clean scratches (Classical.run (computeEqConst register value flag scratches) s) := by
+  rw [run_computeEqConst _ _ _ _ s hl hs]
+  have hf : flag ∉ scratches := (List.nodup_cons.mp (List.nodup_append.mp hl.2).2.1).1
+  intro w hw
+  have hne : w ≠ flag := fun h => hf (h ▸ hw)
+  simp only [upd,hne,if_false]
+  exact hs w hw
+
+set_option maxRecDepth 20000 in
+theorem ipxTestAdaptive_coherent (k : Fin 4) :
+    CoherentlyImplementsOn (ipxTestAdaptive k) (Quantum.run (ipxTest k)) (Clean ipxScratch) := by
+  have h3 := computeEqConstAdaptive_coherent ipxLow 0 ipxHalf ipxScratch ipxLow_layout
+  have h2 := computeEqConstAdaptive_coherent (ipxHalf :: ipxHigh) 1 (ipxFlag k) ipxScratch (ipxHigh_layout k)
+  have h23 := ipxCoherentSeq h2 h3 (computeEqConst_HPFree _ _ _ _)
+    (eqConst_keeps_clean _ _ _ _ (ipxHigh_layout k))
+  have h123 := ipxCoherentSeq h3 h23 (computeEqConst_HPFree _ _ _ _)
+    (eqConst_keeps_clean _ _ _ _ ipxLow_layout)
+  rw [ipxTestAdaptive,ipxTest,List.append_assoc]
+  exact h123
+
 theorem ipxSourceOps_coherent {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Point) (rows : Nat → Fin n)
     (tree : UnaryActionTree) (paths : List Wire) (hg : IpxGeometry tree paths) (ops : List IpxOp) :
     CoherentlyImplementsOn (ipxSourceOps (readConstant coeffs Q) rows tree paths ops)
@@ -1094,9 +1277,10 @@ theorem ipxSourceOps_coherent {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Poi
       simpa only [ipxSourceOps,ipxUnitaryOps,ipxStepCircuit,ipxLeafCircuit] using
         ipxCoherentSeq hq' ih hf hp
     | test k =>
-      have hu := CoherentlyImplementsOn.unitary (ipxTest k) (IpxInv paths)
+      have hu := ipxCoherentRestrict (ipxTestAdaptive_coherent k)
+        (fun st (hs : IpxInv paths st) => hs.2.1)
       unfold ipxStepCircuit at hf hp
-      simpa only [ipxSourceOps,ipxUnitaryOps,ipxStepCircuit,AdaptiveCircuit.seq] using
+      simpa only [ipxSourceOps,ipxUnitaryOps,ipxStepCircuit] using
         ipxCoherentSeq hu ih hf hp
 
 /-! ## The window correction block -/
@@ -1188,11 +1372,8 @@ theorem ipxState_pointWrite (Q : Point) (w : OddWindow) (st : BasisState)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: IpxWindow ====
 
--- ==== part: Streaming/IpxWindow ====
-
-section
 /-! # Windows and outer plan with the in-place XOR correction
 
 Adapted from `ShorECDLP/Submission/2607_13816/Challenge/WindowBody.lean` (VerifiedQC/ShorECDLP,
@@ -1202,15 +1383,15 @@ body is unchanged except that the five-word correction block `placedBatchProgram
 `resetWires` (854 wires) instead of `batchedResetWires` (3931 wires). -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
+open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1 ShorECDLP.Entrant.ZeroAdaptive
+attribute [local irreducible] sharedAdaptiveCoordinateProgram yNegateProgram ipxProgram
 
 /-- Internal additions only; address preparation and Fourier are outside this list. -/
 def ipxWindowSegments (w : OddWindow) : List (FixedSegment 983040) :=
-  [sharedCoordinateProgram w, sharedYNegateProgram w, ipxProgram w, sharedYNegateProgram w]
+  [sharedAdaptiveCoordinateProgram w, sharedYNegateProgram w, ipxProgram w, sharedYNegateProgram w]
 
 noncomputable def ipxWindowSources (Q : Point) (w : OddWindow) : List AdaptiveCircuit :=
-  [signedLookupCoordinateProgram (fun l => fieldValue (windowPoint Q w l) .x)
+  [coordinateSource (fun l => fieldValue (windowPoint Q w l) .x)
     (fun l => fieldValue (windowPoint Q w l) .y),windowYNegate,ipxSource Q w,windowYNegate]
 
 def ipxWindowCore (w : OddWindow) (start : Nat) :
@@ -1223,7 +1404,7 @@ theorem ipxWindowCore_run (w : OddWindow) (start : Nat) (Q : Point) (hQ : order 
       (sequenceCircuit (ipxWindowSources Q w)).run := by
   apply sequenceProgram_run
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact sharedCoordinateProgram_run w cursor Q hQ h
+  · intro cursor h; exact sharedAdaptiveCoordinateProgram_run w cursor Q hQ h
   · intro cursor h; exact sharedYNegateProgram_run w cursor _ h
   · intro cursor h; exact ipxProgram_run w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_run w cursor _ h
@@ -1272,5 +1453,3 @@ def ipxOuterPlan : OuterPlan 983040 :=
     ⟨ipxRightWindows.toArray,by simp [ipxRightWindows_length]⟩ resetWires
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
-
-end

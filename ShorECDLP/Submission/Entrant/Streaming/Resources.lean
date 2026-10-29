@@ -1,5 +1,5 @@
-import ShorECDLP.Submission.«2607_13816».Challenge.WindowBody
 import ShorECDLP.Submission.Entrant.Streaming.Correction
+import ShorECDLP.Submission.«2607_13816».Challenge.WindowBody
 import ShorECDLP.Submission.«2607_13816».Arithmetic.ZeroAllowedPrimitiveCounts
 import ShorECDLP.Submission.«2607_13816».Arithmetic.UnitaryPrimitiveCounts
 import ShorECDLP.Submission.«2607_13816».EEA.EndpointPrimitiveCounts
@@ -12,6 +12,7 @@ import ShorECDLP.Submission.«2607_13816».Challenge.Records
 import ShorECDLP.Submission.«2607_13816».Challenge.GidneyAdd
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchCost
 import ShorECDLP.Submission.«2607_13816».Window.LookupPrimitiveCounts
+import ShorECDLP.Challenge.Official
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
 import ShorECDLP.Submission.«2607_13816».Challenge.LengthRefresh
 import ShorECDLP.Submission.«2607_13816».EEA.PhysicalSupport
@@ -21,13 +22,32 @@ import ShorECDLP.Submission.«2607_13816».EEA.WrapperSupport
 import ShorECDLP.Submission.«2607_13816».Challenge.Coordinate
 import ShorECDLP.Submission.«2607_13816».Arithmetic.ZeroAllowedResources
 
-/-! EDITABLE. Single-trial entrant: inherited resource and support lemmas.
-Concatenated in dependency order to bound parallel kernel replay memory.
-Original provenance comments are retained beside each source part. -/
+/-! EDITABLE. Streaming entrant, module `Resources`: gate-slot, T-model and record counts, and the qubit-support proof.
 
--- ==== part: Streaming/LookupSlots ====
+This module concatenates the former per-file modules `LookupSlots`, `ArithmeticSlots`,
+`DecoderSlots`, `EEACellSlots`, `EEALengthSlots`, `EEAScheduleSlots`, `ProductionEEASlots`,
+`InPlaceSlots`, `WindowSlots`, `MeasurementBridge`, `WindowCounts`, `WindowBudget`, `UniformT`,
+`StructuralSupport`, `BatchSupport`, `ArithmeticSupport`, `ControlSupport`, `WindowSupport`,
+`EEACoreSupport`, `EEACenterSupport`, `MultiplicationSupport`, `CoefficientSupport`,
+`PhaseSupport`, `IntervalSupport`, `LengthSupport`, `StepSupport`, `EndpointSupport`,
+`WrapperSupport`, `InPlaceSupport`, `CoordinateSupport`, `CompleteSupport` (in this order). Each
+former file is one `namespace` block below, marked `-- ==== part: <Name> ====`, with its
+provenance note. Only the import lines changed. Dropped because an identical private copy occurs
+earlier in this module: `EndpointSupport.support_to_580`, `WrapperSupport.support_to_580`,
+`WrapperSupport.range580_of_closed`, `WrapperSupport.window_mem`,
+`WrapperSupport.production_remainder_support`, `WrapperSupport.gate_support_580`,
+`WrapperSupport.production_coefficient_support`. Renamed because an earlier part has a different
+private lemma of the same name: `getD_support` to `getD_support_endpointSupport`,
+`old_in_complete` to `old_in_complete_completeSupport`.
 
-section
+Why few modules: the kernel replay loads the complete import closure (about 4.3 GB) once per
+Entrant module, in parallel across its worker threads, so its peak memory grows with the number
+of Entrant modules. -/
+
+open ShorECDLP.Entrant.ZeroAdaptive
+
+-- ==== part: LookupSlots ====
+
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/LookupSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -246,10 +266,13 @@ theorem ipxLeaf_length_le {n : Nat} (row : Fin n) (q : Wire) (u : Fin 8) (v : Op
 def ipxSlotBound (nodes : Nat) : List IpxOp → Nat
   | [] => 0
   | .query _ _ _ :: ops => 1026*(nodes+1)+10*nodes+ipxSlotBound nodes ops
-  | .test _ :: ops => 3075+ipxSlotBound nodes ops
+  | .test _ :: ops => 4605+ipxSlotBound nodes ops
+
+theorem ipxTestOps_slots (k : Fin 4) : lookupSlots (ipxTestOps (n := 983040) k) ≤ 4605 := by
+  fin_cases k <;> decide +kernel
 
 theorem ipxOps_slots_le {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
-    (ops : List IpxOp) :
+    (htest : ∀ k, lookupSlots (ipxTestOps (n := n) k) ≤ 4605) (ops : List IpxOp) :
     lookupSlots (ipxOps rows tree paths ops) ≤ ipxSlotBound tree.internalNodes ops := by
   induction ops with
   | nil => rfl
@@ -261,12 +284,12 @@ theorem ipxOps_slots_le {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree
       simp only [ipxOps,lookupSlots_append,ipxSlotBound]
       omega
     | test k =>
-      have h := ipxTest_length_le k
-      simp only [ipxOps,lookupSlots,ordinaryOp,List.length_map,ipxSlotBound]
+      have h := htest k
+      simp only [ipxOps,lookupSlots_append,ipxSlotBound]
       omega
 
 theorem ipxSlotBound_schedule (nodes : Nat) :
-    ipxSlotBound nodes ipxSchedule = 13*(1026*(nodes+1)+10*nodes)+8*3075 := by
+    ipxSlotBound nodes ipxSchedule = 13*(1026*(nodes+1)+10*nodes)+8*4605 := by
   simp only [ipxSchedule,ipxPhase1,ipxPhase2,ipxPhase3,List.cons_append,List.nil_append,ipxSlotBound]
   omega
 
@@ -274,17 +297,14 @@ theorem ipxSlotBound_schedule (nodes : Nat) :
 theorem ipxProgram_slots (w : OddWindow) (start : Nat) :
     (ipxProgram w start).2.gateSlots ≤ 1183793236 := by
   simp only [ipxProgram,ipxProgramOf,lookupProgram_slots]
-  have h := ipxOps_slots_le (batchWindowRows w) batchWindowTree pointLookupPath ipxSchedule
+  have h := ipxOps_slots_le (batchWindowRows w) batchWindowTree pointLookupPath ipxTestOps_slots ipxSchedule
   rw [ipxSlotBound_schedule,batchWindowTree_nodes] at h
   omega
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: ArithmeticSlots ====
 
--- ==== part: Streaming/ArithmeticSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ArithmeticSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -760,11 +780,8 @@ theorem signedFieldProgram_slots (field : PointField) (start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: DecoderSlots ====
 
--- ==== part: Streaming/DecoderSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/DecoderSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1078,11 +1095,8 @@ theorem intervalProgram_slots9 (n start : Nat) (r : IntervalRegisters) (width k 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: EEACellSlots ====
 
--- ==== part: Streaming/EEACellSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEACellSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1251,11 +1265,8 @@ theorem lowerMapProgram_slots (n k K : Nat) (tree : UnaryActionTree) (control r 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: EEALengthSlots ====
 
--- ==== part: Streaming/EEALengthSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEALengthSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1537,11 +1548,8 @@ theorem hInverseProgram_slots (n start : Nat) (r : IndexedStepRegisters) (width 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: EEAScheduleSlots ====
 
--- ==== part: Streaming/EEAScheduleSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEAScheduleSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1768,11 +1776,8 @@ theorem quotientSwapTree_nodes_le (r : QuotientSwapRegisters) (k K : Nat) (hk : 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: ProductionEEASlots ====
 
--- ==== part: Streaming/ProductionEEASlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ProductionEEASlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2119,11 +2124,8 @@ theorem measuredReverseWrapperProgram_slots (n start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: InPlaceSlots ====
 
--- ==== part: Streaming/InPlaceSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/InPlaceSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2244,11 +2246,8 @@ theorem multiplicationProgram_slots (n start : Nat) : (multiplicationProgram n s
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: WindowSlots ====
 
--- ==== part: Streaming/WindowSlots ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/WindowSlots.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2257,7 +2256,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge
 attribute [local irreducible] divisionProgram multiplicationProgram
-attribute [local irreducible] zeroDivisionProgram zeroMultiplicationProgram modularNegateProgram squareSubtractProgram coordinateProgram
+attribute [local irreducible] zDivisionProgram zMultiplicationProgram modularNegateProgram squareSubtractProgram adaptiveCoordinateProgram
 
 theorem fig15ZeroPrepare_length : fig15ZeroPrepare.length=1022 := by
   rw [circuit_length_primitive,fig15ZeroPrepare_primitive]; rfl
@@ -2265,16 +2264,26 @@ theorem fig15ZeroPrepare_length : fig15ZeroPrepare.length=1022 := by
 theorem fig15ZeroRestore_length : fig15ZeroRestore.length=1022 := by
   rw [circuit_length_primitive,fig15ZeroRestore_primitive]; rfl
 
-theorem zeroDivisionProgram_slots (n start : Nat) :
-    (zeroDivisionProgram n start).2.gateSlots≤676000000 := by
-  have h := divisionProgram_slots n start
-  simp only [zeroDivisionProgram,surroundCompiled_slots,fig15ZeroPrepare_length,fig15ZeroRestore_length]
+theorem zDivisionProgram_slots (n start : Nat) :
+    (zDivisionProgram n start).2.gateSlots≤676000000 := by
+  have h := divisionProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
+  have h1 := equalityProgram_slots n start reg 0 837 scratch
+  have h2 := equalityProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1 +
+    (divisionProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
+  simp only [reg, List.length_cons, List.length_range'] at h1 h2
+  simp only [zDivisionProgram, appendCompiled_slots, prependCompiled_slots, cx, List.length_singleton]
+  simp only [reg] at *
   omega
 
-theorem zeroMultiplicationProgram_slots (n start : Nat) :
-    (zeroMultiplicationProgram n start).2.gateSlots≤676000000 := by
-  have h := multiplicationProgram_slots n start
-  simp only [zeroMultiplicationProgram,surroundCompiled_slots,fig15ZeroPrepare_length,fig15ZeroRestore_length]
+theorem zMultiplicationProgram_slots (n start : Nat) :
+    (zMultiplicationProgram n start).2.gateSlots≤676000000 := by
+  have h := multiplicationProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
+  have h1 := equalityProgram_slots n start reg 0 837 scratch
+  have h2 := equalityProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1 +
+    (multiplicationProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
+  simp only [reg, List.length_cons, List.length_range'] at h1 h2
+  simp only [zMultiplicationProgram, appendCompiled_slots, prependCompiled_slots, cx, List.length_singleton]
+  simp only [reg] at *
   omega
 
 theorem xNegateProgram_slots (n start : Nat) :
@@ -2288,23 +2297,23 @@ theorem pointSquareProgram_slots (n start : Nat) :
   exact squareSubtractProgram_slots256 n start _ _ _ _ _ _ _ _ _ _ _ _
     (by simp) (by simp) (by simp) (by simp [secp256k1ReductionConstantBits]) (by simp)
 
-theorem coordinateProgram_slots (start : Nat) :
-    (coordinateProgram start).2.gateSlots≤1500000000 := by
-  have h := sequenceProgram_slots_le 32768 coordinateSegments
+theorem adaptiveCoordinateProgram_slots (start : Nat) :
+    (adaptiveCoordinateProgram start).2.gateSlots≤1500000000 := by
+  have h := sequenceProgram_slots_le 32768 adaptiveCoordinateSegments
     ([17449459,17502203,676000000,15750663,17449459,676000000,26370,17449459,17502203] : List Nat) (by
-      unfold coordinateSegments
+      unfold adaptiveCoordinateSegments
       refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ List.Forall₂.nil))))))))
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact signedFieldProgram_slots _ s
-      · intro s; exact zeroDivisionProgram_slots _ s
+      · intro s; exact zDivisionProgram_slots _ s
       · intro s; exact pointSquareProgram_slots _ s
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
-      · intro s; exact zeroMultiplicationProgram_slots _ s
+      · intro s; exact zMultiplicationProgram_slots _ s
       · intro s; exact xNegateProgram_slots _ s
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact signedFieldProgram_slots _ s) start
   simp only [List.sum_cons,List.sum_nil] at h
-  unfold coordinateProgram
+  unfold adaptiveCoordinateProgram
   omega
 
 
@@ -2313,14 +2322,14 @@ theorem reindexCompiled_slots {n m start : Nat} (f : Fin n → Fin m)
     (reindexCompiled f p).2.gateSlots=p.2.gateSlots := by
   exact reindexStraight_gateSlots f p.2
 
-attribute [local irreducible] reindexCompiled sharedCoordinateProgram sharedYNegateProgram
+attribute [local irreducible] reindexCompiled sharedAdaptiveCoordinateProgram sharedYNegateProgram
   ipxProgram ipxWindowCore ipxWindowPrepared actualIpxWindow actualFirstWindow
   ipxLeftWindows ipxRightWindows ipxOuterPlan
 
-theorem sharedCoordinateProgram_slots (w : OddWindow) (start : Nat) :
-    (sharedCoordinateProgram w start).2.gateSlots≤1500000000 := by
-  simp only [sharedCoordinateProgram,reindexCompiled_slots]
-  exact coordinateProgram_slots start
+theorem sharedAdaptiveCoordinateProgram_slots (w : OddWindow) (start : Nat) :
+    (sharedAdaptiveCoordinateProgram w start).2.gateSlots≤1500000000 := by
+  simp only [sharedAdaptiveCoordinateProgram,reindexCompiled_slots]
+  exact adaptiveCoordinateProgram_slots start
 
 theorem sharedYNegateProgram_slots (w : OddWindow) (start : Nat) :
     (sharedYNegateProgram w start).2.gateSlots≤26372 := by
@@ -2333,7 +2342,7 @@ theorem ipxWindowCore_slots (w : OddWindow) (start : Nat) :
     ([1500000000,26372,1183793236,26372] : List Nat) (by
       unfold ipxWindowSegments
       refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-      · intro s; exact sharedCoordinateProgram_slots w s
+      · intro s; exact sharedAdaptiveCoordinateProgram_slots w s
       · intro s; exact sharedYNegateProgram_slots w s
       · intro s; exact ipxProgram_slots w s
       · intro s; exact sharedYNegateProgram_slots w s) start
@@ -2376,11 +2385,8 @@ theorem ipxOuterPlan_rounds_slots (start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: MeasurementBridge ====
 
--- ==== part: Streaming/MeasurementBridge ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/MeasurementBridge.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2440,11 +2446,8 @@ theorem compiled_count_of_run {n start : Nat}
   simpa using hh
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: WindowCounts ====
 
--- ==== part: Streaming/WindowCounts ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/WindowCounts.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2452,7 +2455,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
+attribute [local irreducible] sharedAdaptiveCoordinateProgram yNegateProgram ipxProgram
   ipxWindowCore ipxWindowPrepared signedLookupCoordinateProgram primitiveResources
   sharedYNegateProgram actualIpxWindow ipxLeftWindows ipxRightWindows
   ipxSource windowYNegate sequenceCircuit ipxWindowSources
@@ -2468,7 +2471,7 @@ private theorem lookup_counts (table : Nat → Nat) :
   decide
 
 /-- Source coordinate arithmetic includes both zero-allowed field operations. -/
-theorem coordinate_numeric_counts (x y : Nat → Nat) :
+theorem old_coordinate_numeric_counts (x y : Nat → Nat) :
     (signedLookupCoordinateProgram x y).tCount = 510203526 ∧
     (signedLookupCoordinateProgram x y).measurementCount = 30272702 := by
   have h : (primitiveResources (signedLookupCoordinateProgram x y)).toffoli = 72886218 ∧
@@ -2481,6 +2484,19 @@ theorem coordinate_numeric_counts (x y : Nat → Nat) :
   have ht := primitiveResources_T_of_no_phase _ h.2.1
   rw [h.1] at ht
   exact ⟨ht,by simpa only [primitiveResources] using h.2.2⟩
+
+/-- The two measured guards in each field operation preserve the coordinate map. -/
+theorem coordinate_numeric_counts (x y : Nat → Nat) :
+    (coordinateSource x y).tCount = 510196414 ∧
+    (coordinateSource x y).measurementCount = 30273718 := by
+  have h := old_coordinate_numeric_counts x y
+  have hd := division_counts
+  have hm := multiplication_counts
+  have od := secp256k1ZeroAllowedDivision_resources
+  have om := secp256k1ZeroAllowedMultiplication_resources
+  simp only [coordinateSource, signedLookupCoordinateProgram, adaptive_tCount_seq,
+    modularMeasurements_seq] at h ⊢
+  omega
 
 /-- One actual sign-negation segment, including its two X wrappers. -/
 theorem windowYNegate_numeric_counts :
@@ -2502,11 +2518,11 @@ theorem windowYNegate_numeric_counts :
   · exact ht
   · simpa only [primitiveResources] using hm
 
-theorem sharedCoordinateProgram_count (w : OddWindow) (start : Nat) :
-    (sharedCoordinateProgram w start).1 = 30272702 := by
-  have h := compiled_count_of_run (sharedCoordinateProgram w start)
+theorem sharedAdaptiveCoordinateProgram_count (w : OddWindow) (start : Nat) :
+    (sharedAdaptiveCoordinateProgram w start).1 = 30273718 := by
+  have h := compiled_count_of_run (sharedAdaptiveCoordinateProgram w start)
     (readConstant coefficientAt (0 : Point)) (fun _ => false) _
-    (sharedCoordinateProgram_run w start 0 (by simp) (fun _ => false))
+    (sharedAdaptiveCoordinateProgram_run w start 0 (by simp) (fun _ => false))
   exact h.trans (coordinate_numeric_counts _ _).2
 
 theorem sharedYNegateProgram_count (w : OddWindow) (start : Nat) :
@@ -2530,7 +2546,7 @@ theorem ipxWindowCore_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : ord
   apply sequenceProgram_tCount
   unfold ipxWindowSegments ipxWindowSources
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact sharedCoordinateProgram_tCount w cursor Q hQ h
+  · intro cursor h; exact sharedAdaptiveCoordinateProgram_tCount w cursor Q hQ h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
   · intro cursor h; exact ipxProgram_tCount w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
@@ -2541,7 +2557,7 @@ theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
   omega
 
 theorem ipxWindowSources_tCount (Q : Point) (w : OddWindow) :
-    (sequenceCircuit (ipxWindowSources Q w)).tCount = 513314039 := by
+    (sequenceCircuit (ipxWindowSources Q w)).tCount = 513264087 := by
   unfold ipxWindowSources
   rw [sequenceCircuit_four_tCount,(coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1,ipxSource_tCount]
@@ -2556,7 +2572,7 @@ theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0
 theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
     (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      513314039 := by
+      513264087 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
     (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
@@ -2569,9 +2585,9 @@ theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : o
   exact h
 
 theorem ipxWindowCore_count (w : OddWindow) (start : Nat) :
-    (ipxWindowCore w start).1 = 30700717 := by
+    (ipxWindowCore w start).1 = 30707853 := by
   simp only [ipxWindowCore,ipxWindowSegments,sequenceProgram,appendCompiled,
-    sharedCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
+    sharedAdaptiveCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
 
 theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
     (p : (count : Nat) × Straight n start (start+count)) :
@@ -2579,9 +2595,9 @@ theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
   simp only [surroundCompiled,prependCompiled,appendCompiled,Nat.add_zero]
 
 theorem actualIpxWindow_count (w : OddWindow) :
-    (actualIpxWindow w).count = 30700717 := by
+    (actualIpxWindow w).count = 30707853 := by
   unfold actualIpxWindow closedWindow
-  change 0 + (ipxWindowPrepared w 0).1 = 30700717
+  change 0 + (ipxWindowPrepared w 0).1 = 30707853
   rw [Nat.zero_add]
   have hp : (ipxWindowPrepared w 0).1 = (ipxWindowCore w 0).1 := by
     unfold ipxWindowPrepared
@@ -2599,18 +2615,18 @@ theorem axisCount_constant {n : Nat} (ws : List (OuterWindow n)) (m : Nat)
     simp only [List.length_cons,Nat.add_mul,Nat.one_mul]
     omega
 
-theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 460576546 := by
+theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 460683586 := by
   unfold ipxLeftWindows
   rw [axisCount,actualFirstWindow_count]
-  rw [axisCount_constant _ 30700717]
+  rw [axisCount_constant _ 30707853]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
     exact actualIpxWindow_count _
 
-theorem ipxRightWindows_count : axisCount ipxRightWindows = 399109529 := by
+theorem ipxRightWindows_count : axisCount ipxRightWindows = 399202297 := by
   unfold ipxRightWindows
-  rw [axisCount_constant _ 30700717]
+  rw [axisCount_constant _ 30707853]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
@@ -2623,7 +2639,7 @@ theorem standardOuterPlan_lists_stride {n : Nat} (left right : List (OuterWindow
       axisCount left + axisCount right + reset.length := by
   simp only [OuterPlan.stride,standardOuterPlan,Vector.toList,List.toList_toArray]
 
-theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859686929 := by
+theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859886737 := by
   have h := standardOuterPlan_lists_stride ipxLeftWindows ipxRightWindows
     ipxLeftWindows_length ipxRightWindows_length resetWires
   apply h.trans
@@ -2631,20 +2647,366 @@ theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859686929 := by
 
 /-- Exact final record count includes the first lookup, all 28 addition windows,
 all Fourier measurements, and the full 854-wire reset in each of 56 rounds. -/
-theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48142468024 := by
+theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48153657272 := by
   rw [ipxOuterPlan_stride]
 
 /-- Exact final record count of the entrant's 6-round program. -/
-theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5158121574 := by
+theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5159320422 := by
   rw [ipxOuterPlan_stride]
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: WindowBudget ====
 
--- ==== part: Streaming/StructuralSupport ====
+/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
+`ShorECDLP/Submission/2607_13816/Challenge/WindowBudget.lean`, Apache-2.0 (see the repository
+LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
-section
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
+attribute [local irreducible] actualFirstWindow actualIpxWindow ipxLeftWindows ipxRightWindows
+  ipxOuterPlan
+
+/-- Weighted window costs retain the much smaller first lookup. -/
+theorem outerAxis_weighted_t_le {n : Nat} (wires : Vector Wire 16) (ws : List (OuterWindow n))
+    (cost : OuterWindow n → Nat) (read : ConstantBit n → Bool)
+    (hw : ∀ w ∈ ws, ∀ s h, ((w.program s).instantiate read h).tCount ≤ cost w)
+    (start : Nat) (prior : List (Fin start)) (history : Fin start → Bool) :
+    ((outerAxis wires ws start prior).instantiate read history).tCount ≤
+      (ws.map cost).sum + axisFeedback ws.length prior.length := by
+  induction ws generalizing start with
+  | nil => simp [outerAxis,axisFeedback,Straight.instantiate,AdaptiveCircuit.tCount]
+  | cons w ws ih =>
+    simp only [outerAxis,castFinish_instantiate]
+    apply (outer_append_t_le _ _ read history
+      (fourierSlots 16 prior.length + ((ws.map cost).sum+axisFeedback ws.length (prior.length+16))) ?_).trans
+    · simp only [prepareOuterBank_t,List.length_cons,List.map_cons,List.sum_cons,axisFeedback]
+      have h := hw w (by simp) start history
+      omega
+    · intro h
+      apply (outer_append_t_le _ _ read h
+        ((ws.map cost).sum+axisFeedback ws.length (prior.length+16)) ?_).trans
+      · have hf := fourierProgram_t_le n .inverse wires.toList (start+w.count) (bankPrior w.count prior) read h
+        simp only [Vector.length_toList,bankPrior_length] at hf
+        simp only [castFinish_instantiate]
+        omega
+      · intro h₂
+        simpa only [nextBankPrior_length] using
+          ih (fun v hv => hw v (List.mem_cons_of_mem w hv)) _ (nextBankPrior w.count prior) h₂
+
+theorem OuterPlan.round_weighted_t_le {n : Nat} (p : OuterPlan n)
+    (cost : OuterWindow n → Nat) (read : ConstantBit n → Bool)
+    (hw : ∀ w ∈ p.left.toList ++ p.right.toList, ∀ s h,
+      ((w.program s).instantiate read h).tCount ≤ cost w)
+    (start : Nat) (history : Fin start → Bool) :
+    ((p.round start).instantiate read history).tCount ≤
+      (p.left.toList.map cost).sum + (p.right.toList.map cost).sum + 54168 := by
+  have hl := outerAxis_weighted_t_le p.wires p.left.toList cost read
+    (fun w h => hw w (List.mem_append_left _ h)) start List.nil history
+  have hr (h) := outerAxis_weighted_t_le p.wires p.right.toList cost read
+    (fun w h => hw w (List.mem_append_right _ h)) (start+axisCount p.left.toList) List.nil h
+  simp only [Vector.length_toList,List.length_nil] at hl hr
+  simp only [OuterPlan.round,castFinish_instantiate,Straight.instantiate,TemplateGate.instantiate,
+    AdaptiveCircuit.tCount,ShorECDLP.tCount,List.map_cons,List.map_nil,List.sum_cons,List.sum_nil,
+    tCost,Nat.zero_add]
+  apply (outer_append_t_le _ _ read history ((p.right.toList.map cost).sum+axisFeedback 13 0) ?_).trans
+  · have h := outer_feedback_overhead; omega
+  · intro h
+    apply (outer_append_t_le _ _ read h 0 ?_).trans
+    · have ht := hr h; omega
+    · intro h₂
+      simp [Straight.instantiate,TemplateGate.instantiate,AdaptiveCircuit.tCount,
+        ShorECDLP.tCount,tCost,resetProgram_t]
+
+def actualWindowTCost (w : OuterWindow 983040) : Nat :=
+  if w.count = 65535 then 458745 else 513264087
+
+theorem actualWindowTCost_first : actualWindowTCost actualFirstWindow = 458745 := by
+  simp only [actualWindowTCost,actualFirstWindow_count,ite_true]
+theorem actualWindowTCost_batched (w : OddWindow) :
+    actualWindowTCost (actualIpxWindow w) = 513264087 := by
+  simp only [actualWindowTCost,actualIpxWindow_count]
+  decide
+
+theorem actualWindowTCost_bound (Q : Point) (hQ : order • Q = 0) :
+    ∀ w ∈ ipxLeftWindows ++ ipxRightWindows, ∀ start history,
+      ((w.program start).instantiate (readConstant coefficientAt Q) history).tCount ≤ actualWindowTCost w := by
+  intro w hw start history
+  simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+  rcases hw with (rfl | ⟨i,rfl⟩) | ⟨i,rfl⟩
+  · rw [actualFirstWindow_tCount start Q hQ history,actualWindowTCost_first]
+  · rw [actualIpxWindow_tCount _ start Q hQ history,actualWindowTCost_batched]
+  · rw [actualIpxWindow_tCount _ start Q hQ history,actualWindowTCost_batched]
+
+theorem actualWindowTCost_total :
+    (ipxLeftWindows.map actualWindowTCost).sum +
+      (ipxRightWindows.map actualWindowTCost).sum = 14371853181 := by
+  simp only [ipxLeftWindows,ipxRightWindows,List.map_cons,List.sum_cons,List.map_ofFn,
+    Function.comp_def,actualWindowTCost_first,actualWindowTCost_batched]
+  simp
+
+theorem ipxOuterPlan_left : ipxOuterPlan.left.toList = ipxLeftWindows := by
+  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
+theorem ipxOuterPlan_right : ipxOuterPlan.right.toList = ipxRightWindows := by
+  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
+
+theorem ipxOuterPlan_round_t_le (Q : Point) (hQ : order • Q = 0)
+    (start : Nat) (history : Fin start → Bool) :
+    ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
+      14371907349 := by
+  have h := ipxOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
+    (by rw [ipxOuterPlan_left,ipxOuterPlan_right]; exact actualWindowTCost_bound Q hQ) start history
+  rw [ipxOuterPlan_left,ipxOuterPlan_right,actualWindowTCost_total] at h
+  exact h
+
+theorem OuterPlan.repeat_t_le_of_round {n : Nat} (p : OuterPlan n) (cost : Nat)
+    (read : ConstantBit n → Bool)
+    (hcost : ∀ start history, ((p.round start).instantiate read history).tCount ≤ cost)
+    (trials start : Nat) (history : Fin start → Bool) :
+    ((p.repeat trials start).instantiate read history).tCount ≤ trials * cost := by
+  induction trials generalizing start with
+  | zero => simp [OuterPlan.repeat,castFinish_instantiate,Straight.instantiate,AdaptiveCircuit.tCount]
+  | succ trials ih =>
+    simp only [OuterPlan.repeat,castFinish_instantiate]
+    have ha := outer_append_t_le (p.round start) (p.repeat trials (start+p.stride)) read history
+      (trials*cost) (fun h => ih _ h)
+    have hb := hcost start history
+    rw [Nat.succ_mul]
+    omega
+
+/-- T upper bound of the actual 56-round program with the in-place correction; includes Fourier
+feedback. -/
+theorem ipxOuterPlan_total_t_le (Q : Point) (hQ : order • Q = 0) :
+    ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      804826811544 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14371907349 (readConstant coefficientAt Q)
+    (ipxOuterPlan_round_t_le Q hQ) 56 0 Fin.elim0
+
+/-- All 56 rounds would exceed the published measurement limit. -/
+theorem ipxOuterPlan_exceeds_old_measurement_limit :
+    47471340504 < 56 * ipxOuterPlan.stride := by
+  rw [ipxOuterPlan_finalCursor]
+  decide
+/-- The published cap admits the entrant's 6-round program. -/
+theorem ipxOuterPlan_measurements_fit6 :
+    6 * ipxOuterPlan.stride ≤ officialLimits.measurements := by
+  rw [ipxOuterPlan_finalCursor6]
+  decide
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+-- ==== part: UniformT ====
+
+/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
+`ShorECDLP/Submission/2607_13816/Challenge/UniformT.lean`, Apache-2.0 (see the repository
+LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
+
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
+private theorem leaf_t_zero {n : Nat} (q : Wire) (ports : List (ConstantBit n × Wire))
+    (read : ConstantBit n → Bool) :
+    ShorECDLP.tCount ((lookupLeafGates q ports).flatMap (TemplateGate.instantiate read)) = 0 := by
+  rw [lookupLeafGates_instantiate]
+  induction ports.filter (fun p => read p.1) with
+  | nil => rfl
+  | cons p ps ih => simpa [ShorECDLP.tCount, tCost] using ih
+private theorem unary_t_congr (tree : UnaryActionTree) (f g : Nat → Wire → Circuit)
+    (h : ∀ l w, ShorECDLP.tCount (f l w) = ShorECDLP.tCount (g l w))
+    (q : Wire) (anc : List Wire) :
+    (unaryAction .inc f tree q anc).tCount = (unaryAction .inc g tree q anc).tCount := by
+  induction tree generalizing q anc with
+  | leaf l => simp [unaryAction,AdaptiveCircuit.tCount,h]
+  | node b z o ihz iho => cases anc <;>
+      simp only [unaryAction,AdaptiveCircuit.tCount,adaptive_tCount_seq,ihz,iho]
+private theorem field_load_uniform (field : PointField) (start : Nat)
+    (read : ConstantBit 32768 → Bool) (history : Fin start → Bool) :
+    ((fieldLoadProgram field start).instantiate read history).tCount = 229369 := by
+  have he : ((fieldLoadProgram field start).instantiate read history).tCount =
+      ((fieldLoadProgram field start).instantiate (readConstant (oddWindowCoefficients (.left 0)) 0) history).tCount := by
+    simp only [fieldLoadProgram,castFinish_instantiate,lookupProgram_tCount,fieldLoadOps,unaryLookupOps_circuit]
+    apply unary_t_congr
+    intro l w
+    simp only [fieldLeaf,leaf_t_zero]
+  exact he.trans (fieldLoadProgram_tCount (.left 0) field start 0 (by simp) history)
+private theorem first_load_uniform (start : Nat)
+    (read : ConstantBit 65536 → Bool) (history : Fin start → Bool) :
+    ((firstLookupProgram start).instantiate read history).tCount = 458745 := by
+  have he : ((firstLookupProgram start).instantiate read history).tCount =
+      ((firstLookupProgram start).instantiate (readConstant (fun i : Fin 65536 => firstWindowCoefficients i.val) 0) history).tCount := by
+    simp only [firstLookupProgram,castFinish_instantiate,lookupProgram_tCount,firstLookupOps,unaryLookupOps_circuit]
+    apply unary_t_congr
+    intro l w
+    simp only [pointLeaf,leaf_t_zero]
+  exact he.trans (firstLookupProgram_tCount start 0 (by simp) history)
+attribute [local irreducible] fieldLoadProgram modularAddProgram
+private theorem field_add_uniform (field : PointField) (acc : List Wire)
+    (start : Nat) (read : ConstantBit 32768 → Bool) (hl : acc.length = 256)
+    (history : Fin start → Bool) :
+    compiledTCount (fieldLookupAddProgram field acc start) read history =
+      229369 + (controlledModularAdd (List.range' 7 256) acc secp256k1ReductionConstantBits
+        ShorECDLP.p 836 559 560 561 558).tCount + 229369 := by
+  let add := modularAddProgram 32768 (start+32767) (List.range' 7 256) acc
+    secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558
+  let target := controlledModularAdd (List.range' 7 256) acc secp256k1ReductionConstantBits
+    ShorECDLP.p 836 559 560 561 558
+  have addT : ∀ h, (add.2.instantiate read h).tCount = target.tCount := by
+    intro h
+    exact modularAddProgram_tCount 32768 _ _ acc _ _ _ _ _ _ _
+      (by simp [hl]) (by simp [secp256k1ReductionConstantBits, hl]) (by omega) read h
+  have suffixT : ∀ h, compiledTCount
+      (appendCompiled add ⟨32767, fieldLoadProgram field (start+32767+add.1)⟩) read h =
+      target.tCount + 229369 := by
+    intro h
+    rw [appendCompiled_tCount add ⟨32767, fieldLoadProgram field (start+32767+add.1)⟩ read h 229369
+      (fun h => field_load_uniform field _ read h), addT h]
+  change compiledTCount
+    (appendCompiled ⟨32767, fieldLoadProgram field start⟩
+      (appendCompiled add ⟨32767, fieldLoadProgram field (start+32767+add.1)⟩)) read history = _
+  rw [appendCompiled_tCount _ _ _ _ (target.tCount+229369) suffixT,
+    field_load_uniform field start read history]
+  exact (Nat.add_assoc _ _ _).symm
+
+private theorem field_add_source (field : PointField) (acc : List Wire)
+    (start : Nat) (read : ConstantBit 32768 → Bool) (hl : acc.length = 256)
+    (history : Fin start → Bool) :
+    compiledTCount (fieldLookupAddProgram field acc start) read history =
+      (lookupModularAddProgram (fun l => fieldValue (windowPoint 0 (.left 0) l) field)
+        pointLookupAddress pointLookupPath (List.range' 7 256) acc secp256k1ReductionConstantBits
+        ShorECDLP.p 836 559 560 561 558).tCount := by
+  rw [field_add_uniform field acc start read hl history]
+  simp only [lookupModularAddProgram, adaptive_tCount_seq]
+  rw [tableLookupProgram_tCount _ _ _ _ (by decide) (by decide)]
+  rfl
+
+private theorem signed_field_uniform (field : PointField) (start : Nat)
+    (read : ConstantBit 32768 → Bool) (history : Fin start → Bool) :
+    compiledTCount (signedFieldProgram field start) read history =
+      (signedPointLookupY (fun l => fieldValue (windowPoint 0 (.left 0) l) field)).tCount := by
+  unfold signedFieldProgram
+  dsimp only
+  unfold signedPointLookupY signedLookupModularAddProgram
+  simp only [List.length_range']
+  rw [adaptive_seq_assoc]
+  apply appendCompiled_tCount_eq
+  · exact yNegateProgram_tCount start _ history
+  · intro h
+    apply appendCompiled_tCount_eq
+    · exact field_add_source field _ _ read (by simp) h
+    · intro h
+      exact yNegateProgram_tCount _ _ h
+
+theorem adaptiveCoordinateProgram_tCount_uniform (start : Nat) (read : ConstantBit 32768 → Bool)
+    (history : Fin start → Bool) :
+    compiledTCount (adaptiveCoordinateProgram start) read history =
+      (coordinateSource (fun l => fieldValue (windowPoint 0 (.left 0) l) .x)
+        (fun l => fieldValue (windowPoint 0 (.left 0) l) .y)).tCount := by
+  unfold adaptiveCoordinateProgram
+  rw [← adaptiveCoordinateSources_eq]
+  apply sequenceProgram_tCount
+  unfold adaptiveCoordinateSegments adaptiveCoordinateSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))
+  · intro cursor h
+    exact field_add_source .negX _ cursor read (by simp) h
+  · intro cursor h
+    exact signed_field_uniform .negY cursor read h
+  · intro cursor h
+    exact zDivisionProgram_tCount 32768 cursor _ h
+  · intro cursor h
+    exact pointSquareProgram_tCount 32768 cursor _ h
+  · intro cursor h
+    exact field_add_source .tripleX _ cursor read (by simp) h
+  · intro cursor h
+    exact zMultiplicationProgram_tCount 32768 cursor _ h
+  · intro cursor h
+    exact xNegateProgram_tCount 32768 cursor _ h
+  · intro cursor h
+    exact field_add_source .x _ cursor read (by simp) h
+  · intro cursor h
+    exact signed_field_uniform .negY cursor read h
+
+attribute [local irreducible] sharedAdaptiveCoordinateProgram yNegateProgram ipxProgram
+  ipxWindowCore ipxWindowPrepared coordinateSource
+  sharedYNegateProgram actualIpxWindow ipxLeftWindows ipxRightWindows
+  ipxSource windowYNegate sequenceCircuit ipxWindowSources
+
+theorem sharedAdaptiveCoordinateProgram_tCount_uniform (w : OddWindow) (start : Nat)
+    (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
+    compiledTCount (sharedAdaptiveCoordinateProgram w start) read history = 510196414 := by
+  simp only [sharedAdaptiveCoordinateProgram,reindexCompiled,compiledTCount,reindexStraight_instantiate]
+  exact (adaptiveCoordinateProgram_tCount_uniform start _ history).trans (coordinate_numeric_counts _ _).1
+
+theorem ipxWindowCore_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
+    (history : Fin start → Bool) :
+    compiledTCount (ipxWindowCore w start) (readConstant coefficientAt Q) history =
+      (sequenceCircuit (ipxWindowSources Q w)).tCount := by
+  unfold ipxWindowCore
+  apply sequenceProgram_tCount
+  unfold ipxWindowSegments ipxWindowSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
+  · intro cursor h; exact (sharedAdaptiveCoordinateProgram_tCount_uniform w cursor _ h).trans (coordinate_numeric_counts _ _).1.symm
+  · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
+  · intro cursor h; exact ipxProgram_tCount w cursor Q h
+  · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
+
+
+theorem actualFirstWindow_tCount_uniform (start : Nat) (Q : Point)
+    (history : Fin start → Bool) :
+    ((actualFirstWindow.program start).instantiate (readConstant coefficientAt Q) history).tCount = 458745 := by
+  simp only [actualFirstWindow,reindexStraight_instantiate]
+  exact first_load_uniform start _ history
+theorem actualIpxWindow_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
+    (history : Fin start → Bool) :
+    (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
+      513264087 := by
+  have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
+    (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
+    (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
+    (ipxWindowCore_tCount_uniform w 0 Q Fin.elim0)
+  simp only [AdaptiveCircuit.tCount,adaptive_tCount_seq,signedAddressCircuit_tCount,
+    Nat.zero_add,Nat.add_zero,ipxWindowSources_tCount] at h
+  simp only [actualIpxWindow,closedWindow_run,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount]
+  change compiledTCount (ipxWindowPrepared w 0) (readConstant coefficientAt Q) Fin.elim0 = _
+  unfold ipxWindowPrepared
+  exact h
+
+theorem actualWindowTCost_bound_uniform (Q : Point) :
+    ∀ w ∈ ipxLeftWindows ++ ipxRightWindows, ∀ start history,
+      ((w.program start).instantiate (readConstant coefficientAt Q) history).tCount ≤ actualWindowTCost w := by
+  intro w hw start history
+  simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+  rcases hw with (rfl | ⟨i,rfl⟩) | ⟨i,rfl⟩
+  · rw [actualFirstWindow_tCount_uniform start Q history,actualWindowTCost_first]
+  · rw [actualIpxWindow_tCount_uniform _ start Q history,actualWindowTCost_batched]
+  · rw [actualIpxWindow_tCount_uniform _ start Q history,actualWindowTCost_batched]
+
+attribute [local irreducible] ipxOuterPlan
+theorem ipxOuterPlan_round_t_uniform (Q : Point)
+    (start : Nat) (history : Fin start → Bool) :
+    ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
+      14371907349 := by
+  have h := ipxOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
+    (by rw [ipxOuterPlan_left,ipxOuterPlan_right]; exact actualWindowTCost_bound_uniform Q) start history
+  rw [ipxOuterPlan_left,ipxOuterPlan_right,actualWindowTCost_total] at h
+  exact h
+
+theorem ipxOuterPlan_total_t_uniform (Q : Point) :
+    ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      804826811544 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14371907349 (readConstant coefficientAt Q)
+    (ipxOuterPlan_round_t_uniform Q) 56 0 Fin.elim0
+
+/-- T upper bound of the entrant's 6-round program: 6 × 14,373,106,869. -/
+theorem ipxOuterPlan_rounds_t_uniform (Q : Point) :
+    ((ipxOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      86231444094 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14371907349 (readConstant coefficientAt Q)
+    (ipxOuterPlan_round_t_uniform Q) 6 0 Fin.elim0
+
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+-- ==== part: StructuralSupport ====
+
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/StructuralSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2884,11 +3246,8 @@ theorem actualFirstWindow_support_static (start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: BatchSupport ====
 
--- ==== part: Streaming/BatchSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/BatchSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3103,9 +3462,25 @@ theorem ipxLeaf_support {n : Nat} (row : Fin n) (q : Wire) (u : Fin 8) (v : Opti
     intro p hp
     exact ipxPoint_support _ (ipxPortsOpt_wire row v p.1 (List.mem_map.mpr ⟨p,hp,rfl⟩))
 
+/-- Boolean membership test for `ipxRawSupport`. -/
+def ipxWireOk (w : Wire) : Bool := decide (w < 854) && w != 837
+
+theorem ipxWireOk_mem (w : Wire) (h : ipxWireOk w = true) : w ∈ ipxRawSupport := by
+  simp only [ipxWireOk,Bool.and_eq_true,decide_eq_true_eq,bne_iff_ne,ne_eq] at h
+  obtain ⟨h1,h2⟩ := h
+  apply ipxRawSupport_mem w _ h2
+  (try dsimp only [Wire] at *)
+  omega
+
+theorem ipxTestOps_wiresOk (k : Fin 4) :
+    (ipxTestOps (n := 983040) k).all (fun op => (lookupOpWires op).all ipxWireOk) = true := by
+  fin_cases k <;> decide +kernel
+
 theorem ipxOps_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
     (hc : ∀ c, ipxControl c ∈ ipxRawSupport) (hp : paths ⊆ ipxRawSupport)
-    (ht : tree.indexWires ⊆ ipxRawSupport) (ops : List IpxOp) :
+    (ht : tree.indexWires ⊆ ipxRawSupport)
+    (htest : ∀ k, (ipxTestOps (n := n) k).all (fun op => (lookupOpWires op).all ipxWireOk) = true)
+    (ops : List IpxOp) :
     ∀ op ∈ ipxOps rows tree paths ops, lookupOpWires op ⊆ ipxRawSupport := by
   induction ops with
   | nil => simp [ipxOps]
@@ -3116,17 +3491,20 @@ theorem ipxOps_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree)
       exact ⟨unaryLookupOps_support _ _ _ _ _ (hc c) hp ht
         (fun l q hq => ipxLeaf_support _ _ _ _ hq),ih⟩
     | test k =>
-      simp only [ipxOps,List.forall_mem_cons,ordinaryOp_support]
-      exact ⟨ipxTest_support k,ih⟩
+      simp only [ipxOps,List.forall_mem_append]
+      refine ⟨fun op hop w hw => ipxWireOk_mem w ?_,ih⟩
+      exact List.all_eq_true.mp (List.all_eq_true.mp (htest k) op hop) w hw
 
 theorem ipxProgramOf_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree)
     (paths : List Wire) (hc : ∀ c, ipxControl c ∈ ipxRawSupport) (hp : paths ⊆ ipxRawSupport)
-    (ht : tree.indexWires ⊆ ipxRawSupport) (start : Nat) :
+    (ht : tree.indexWires ⊆ ipxRawSupport)
+    (htest : ∀ k, (ipxTestOps (n := n) k).all (fun op => (lookupOpWires op).all ipxWireOk) = true)
+    (start : Nat) :
     straightWires (ipxProgramOf rows tree paths start).2 ⊆ ipxRawSupport := by
   simp only [ipxProgramOf,lookupProgram_support]
   intro w hw
   obtain ⟨op,hop,hw⟩ := List.mem_flatMap.mp hw
-  exact ipxOps_support rows tree paths hc hp ht ipxSchedule op hop hw
+  exact ipxOps_support rows tree paths hc hp ht htest ipxSchedule op hop hw
 
 theorem ipxRawSupport_placed (z : Wire) (hz : z ∈ ipxRawSupport) :
     windowAddressPerm 855 (by decide) z ∈ resetWires := by
@@ -3155,17 +3533,15 @@ theorem ipxProgram_support_static (w : OddWindow) (start : Nat) :
       have h := (tableAddressTree_mem_index pointLookupAddress 0 1 z).mp hz
       simp only [pointLookupAddress,List.mem_range'_1] at h
       apply ipxRawSupport_mem _ <;> (try dsimp only [Wire] at *) <;> omega
+    · exact ipxTestOps_wiresOk
   intro z hz
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hz
   exact ipxRawSupport_placed v (hraw hv)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: ArithmeticSupport ====
 
--- ==== part: Streaming/ArithmeticSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ArithmeticSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3470,11 +3846,8 @@ theorem sharedYNegateProgram_support_static (w : OddWindow) (start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: ControlSupport ====
 
--- ==== part: Streaming/ControlSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ControlSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3770,11 +4143,8 @@ theorem signedFieldProgram_support_static (field : PointField) (start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: WindowSupport ====
 
--- ==== part: Streaming/WindowSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/WindowSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3817,7 +4187,7 @@ theorem signedAddressCircuit_support_static :
 /-- The remaining arithmetic obligation is explicit. The correction and both
 negation segments have unconditional concrete support proofs. -/
 theorem actualIpxWindow_support_of_coordinate (w : OddWindow)
-    (hc : ∀ start, (straightWires (sharedCoordinateProgram w start).2).map
+    (hc : ∀ start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires) (start : Nat) :
     straightWires ((actualIpxWindow w).program start) ⊆ resetWires := by
   have hcore cursor : (straightWires (ipxWindowCore w cursor).2).map
@@ -3833,7 +4203,7 @@ theorem actualIpxWindow_support_of_coordinate (w : OddWindow)
 
 
 theorem actualWindows_support_of_coordinate
-    (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
+    (hc : ∀ w start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (window : OuterWindow 983040) (hw : window ∈ ipxLeftWindows ++ ipxRightWindows)
     (start : Nat) : straightWires (window.program start) ⊆ resetWires := by
@@ -3844,7 +4214,7 @@ theorem actualWindows_support_of_coordinate
   · exact actualIpxWindow_support_of_coordinate _ (hc _) start
 
 theorem ipxOuter_support_of_coordinate
-    (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
+    (hc : ∀ w start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
     ((ipxOuterPlan.repeat count start).instantiate read history).wires ⊆ resetWires := by
@@ -3862,7 +4232,7 @@ theorem ipxOuter_support_of_coordinate
 /-- Conditional assembly only: the concrete coordinate compiler support must
 still be supplied. This is not an unconditional Streaming resource certificate. -/
 theorem ipxOuter_qubits_le_of_coordinate
-    (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
+    (hc : ∀ w start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
     ((ipxOuterPlan.repeat count start).instantiate read history).wires.toFinset.card ≤ 854 := by
@@ -3875,11 +4245,8 @@ theorem ipxOuter_qubits_le_of_coordinate
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: EEACoreSupport ====
 
--- ==== part: Streaming/EEACoreSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEACoreSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4222,11 +4589,8 @@ theorem unaryProgram_support (n : Nat) (order : UnaryOrder)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: EEACenterSupport ====
 
--- ==== part: Streaming/EEACenterSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEACenterSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4298,11 +4662,8 @@ theorem eeaParityProgram_support (n start : Nat) (input dirty : List Wire) (bits
   exact ⟨hx,hb,hx⟩
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: MultiplicationSupport ====
 
--- ==== part: Streaming/MultiplicationSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/MultiplicationSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4568,11 +4929,8 @@ theorem xNegateProgram_support_static (n start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: CoefficientSupport ====
 
--- ==== part: Streaming/CoefficientSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/CoefficientSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4686,11 +5044,8 @@ theorem coefficientInverseProgram_support_layout (n start : Nat) (r : Coefficien
   exact coefficientProgram_support_layout n start r k K mode.inverse signUpdate target hl
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: PhaseSupport ====
 
--- ==== part: Streaming/PhaseSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/PhaseSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4752,11 +5107,8 @@ theorem phaseInverseProgram_support (n start : Nat) (r : PhaseUpdateRegisters) (
   exact sequenceProgram_support n _ _ (phaseSegments_support n r shift _ (phaseInverseCoreGates_support _)) start
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: IntervalSupport ====
 
--- ==== part: Streaming/IntervalSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/IntervalSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5060,11 +5412,8 @@ theorem intervalInverseProgram_support_layout (n start : Nat) (r : IntervalRegis
   exact intervalProgram_support_layout n start r width k K mode.inverse signUpdate target hl
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: LengthSupport ====
 
--- ==== part: Streaming/LengthSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/LengthSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5304,11 +5653,8 @@ theorem lrpUpdateProgram_support (n width k K : Nat) (tree : UnaryActionTree)
   all_goals apply lowerWriterProgram_support <;> assumption
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: StepSupport ====
 
--- ==== part: Streaming/StepSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/StepSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5467,11 +5813,8 @@ theorem indexedStepProgram_support_production (n start T : Nat)
   · simpa only [literalProgram_support,circuitWires] using hH
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: EndpointSupport ====
 
--- ==== part: Streaming/EndpointSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EndpointSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5479,7 +5822,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge
-private theorem getD_support_EndpointSupport (ws : List Wire) (i : Nat)
+private theorem getD_support_endpointSupport (ws : List Wire) (i : Nat)
     (hws : ∀ w ∈ ws, w ∈ List.range 580) : ws.getD i 0 ∈ List.range 580 := by
   by_cases hi : i < ws.length
   · rw [List.getD_eq_getElem _ _ hi]
@@ -5529,14 +5872,14 @@ theorem endPrograms_support_production (n start T : Nat)
   have hu cursor := ltUpdateProgram_support n 256 windows.k4 windows.K4 (r.upperTree windows) r.control
     (r.rangeAccumulator windows.k4 windows.K4) (r.temporary windows.k4 windows.K4) r.carry
     (r.path windows.k4 windows.K4) r.work1At r.work2At r.lengthT r.lengthRP r.constants cursor (List.range 580)
-    (fun _ h => huIndex _ h) hc (getD_support_EndpointSupport _ _ hs) (getD_support_EndpointSupport _ _ hs) (getD_support_EndpointSupport _ _ hs)
-    (fun _ h => hpath _ _ _ h) (fun _ => getD_support_EndpointSupport _ _ h1) (fun _ => getD_support_EndpointSupport _ _ h2)
+    (fun _ h => huIndex _ h) hc (getD_support_endpointSupport _ _ hs) (getD_support_endpointSupport _ _ hs) (getD_support_endpointSupport _ _ hs)
+    (fun _ h => hpath _ _ _ h) (fun _ => getD_support_endpointSupport _ _ h1) (fun _ => getD_support_endpointSupport _ _ h2)
     (fun _ h => hT _ h) (fun _ h => hRP _ h) (fun _ h => hconst _ h)
   have hl cursor := lrpUpdateProgram_support n 256 windows.k5 (windows.K5Decode 256) (r.lowerTree 256 windows) r.control
     (r.rangeAccumulator windows.k5 (windows.K5Decode 256)) (r.temporary windows.k5 (windows.K5Decode 256)) r.carry
     (r.path windows.k5 (windows.K5Decode 256)) r.work1At r.work2At r.lengthT r.lengthRP r.constants cursor (List.range 580)
-    (fun _ h => hlIndex _ h) hc (getD_support_EndpointSupport _ _ hs) (getD_support_EndpointSupport _ _ hs) (getD_support_EndpointSupport _ _ hs)
-    (fun _ h => hpath _ _ _ h) (fun _ => getD_support_EndpointSupport _ _ h1) (fun _ => getD_support_EndpointSupport _ _ h2)
+    (fun _ h => hlIndex _ h) hc (getD_support_endpointSupport _ _ hs) (getD_support_endpointSupport _ _ hs) (getD_support_endpointSupport _ _ hs)
+    (fun _ h => hpath _ _ _ h) (fun _ => getD_support_endpointSupport _ _ h1) (fun _ => getD_support_endpointSupport _ _ h2)
     (fun _ h => hT _ h) (fun _ h => hRP _ h) (fun _ h => hconst _ h)
   have hws : r.control :: r.work1 ++ r.work2 ⊆ List.range 580 := by
     simp only [List.append_subset,List.cons_subset]
@@ -5620,11 +5963,8 @@ theorem measuredStepProgram_support_production (n start T : Nat)
   · exact (hPrograms_support_production n _ T hl.endIteration).1
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: WrapperSupport ====
 
--- ==== part: Streaming/WrapperSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/WrapperSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5632,19 +5972,6 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge
-
-
-
-
-
-
-
-
-
-
-
-
-
 attribute [local irreducible] coefficientInverseProgram intervalInverseProgram phaseInverseProgram hInverseProgram
   blockAInverse blockCInverse blockDInverse blockFForward
 
@@ -5861,11 +6188,8 @@ theorem measuredReverseDataBankProgram_support_static (n start : Nat) :
   exact exchanged_580_in_base v (measuredReverseWrapperProgram_support n start hv)
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: InPlaceSupport ====
 
--- ==== part: Streaming/InPlaceSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/InPlaceSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5959,11 +6283,8 @@ theorem multiplicationProgram_support_static (n start : Nat) :
     (multiplicationAfterResetProgram_support_static n) _ data_in_base _ _
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: CoordinateSupport ====
 
--- ==== part: Streaming/CoordinateSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/CoordinateSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5996,21 +6317,40 @@ private theorem zero_wrapper_literals :
     simp only [secp256k1ZeroAllowedDivision,modularWires_seq,AdaptiveCircuit.wires,List.mem_append,List.not_mem_nil,or_false]
     exact Or.inr hw
 
-theorem zeroDivisionProgram_support_static (n start : Nat) :
-    straightWires (zeroDivisionProgram n start).2 ⊆ coordinateBaseSupport := by
-  simp only [zeroDivisionProgram,surroundCompiled_support,List.append_subset]
-  exact ⟨⟨zero_wrapper_literals.1,(divisionProgram_support_static n start).trans old_in_complete⟩,zero_wrapper_literals.2⟩
+private theorem zero_eq_support (n start : Nat) :
+    straightWires (equalityProgram n start reg 0 837 scratch).2 ⊆ coordinateBaseSupport := by
+  apply equalityProgram_support
+  · intro w hw
+    simp [reg] at hw
+    simp [coordinateBaseSupport,windowBaseSupport]
+    dsimp only [Wire] at *
+    omega
+  · simp [coordinateBaseSupport]
+  · intro w hw
+    simp [scratch] at hw
+    simp [coordinateBaseSupport,windowBaseSupport]
+    dsimp only [Wire] at *
+    omega
+private theorem zero_cx_support : circuitWires cx ⊆ coordinateBaseSupport := by
+  simp [cx,circuitWires,gateWires,coordinateBaseSupport,windowBaseSupport]
 
-theorem zeroMultiplicationProgram_support_static (n start : Nat) :
-    straightWires (zeroMultiplicationProgram n start).2 ⊆ coordinateBaseSupport := by
-  simp only [zeroMultiplicationProgram,surroundCompiled_support,List.append_subset]
-  exact ⟨⟨zero_wrapper_literals.1,(multiplicationProgram_support_static n start).trans old_in_complete⟩,zero_wrapper_literals.2⟩
+theorem zDivisionProgram_support_static (n start : Nat) :
+    straightWires (zDivisionProgram n start).2 ⊆ coordinateBaseSupport := by
+  simp only [zDivisionProgram,appendCompiled_support,prependCompiled_support,List.append_subset]
+  exact ⟨zero_eq_support _ _,zero_cx_support,(divisionProgram_support_static _ _).trans old_in_complete,
+    zero_cx_support,zero_eq_support _ _⟩
 
-attribute [local irreducible] fieldLookupAddProgram signedFieldProgram zeroDivisionProgram
-  pointSquareProgram zeroMultiplicationProgram xNegateProgram
+theorem zMultiplicationProgram_support_static (n start : Nat) :
+    straightWires (zMultiplicationProgram n start).2 ⊆ coordinateBaseSupport := by
+  simp only [zMultiplicationProgram,appendCompiled_support,prependCompiled_support,List.append_subset]
+  exact ⟨zero_eq_support _ _,zero_cx_support,(multiplicationProgram_support_static _ _).trans old_in_complete,
+    zero_cx_support,zero_eq_support _ _⟩
 
-theorem coordinateProgram_support_static (start : Nat) :
-    straightWires (coordinateProgram start).2 ⊆ coordinateBaseSupport := by
+attribute [local irreducible] fieldLookupAddProgram signedFieldProgram zDivisionProgram
+  pointSquareProgram zMultiplicationProgram xNegateProgram
+
+theorem adaptiveCoordinateProgram_support_static (start : Nat) :
+    straightWires (adaptiveCoordinateProgram start).2 ⊆ coordinateBaseSupport := by
   have ha : List.range' 263 256 ⊆ windowBaseSupport := by
     intro w hw
     simp only [List.mem_range'_1] at hw
@@ -6018,39 +6358,25 @@ theorem coordinateProgram_support_static (start : Nat) :
     omega
   have hf field cursor := (fieldLookupAddProgram_support_static field _ ha (by simp) cursor).trans old_in_complete
   have hs field cursor := (signedFieldProgram_support_static field cursor).trans old_in_complete
-  unfold coordinateProgram
+  unfold adaptiveCoordinateProgram
   apply sequenceProgram_support
   intro seg hseg cursor
-  simp only [coordinateSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
+  simp only [adaptiveCoordinateSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
   rcases hseg with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl
   · exact hf _ _
   · exact hs _ _
-  · exact zeroDivisionProgram_support_static _ _
+  · exact zDivisionProgram_support_static _ _
   · exact (pointSquareProgram_support_static _ _).trans old_in_complete
   · exact hf _ _
-  · exact zeroMultiplicationProgram_support_static _ _
+  · exact zMultiplicationProgram_support_static _ _
   · exact (xNegateProgram_support_static _ _).trans old_in_complete
   · exact hf _ _
   · exact hs _ _
-theorem zeroDivision_touches837 (n start : Nat) :
-    837 ∈ straightWires (zeroDivisionProgram n start).2 := by
-  simp only [zeroDivisionProgram,surroundCompiled_support,List.mem_append]
-  left; left
-  simp only [fig15ZeroPrepare,nonzeroInputPrepare,circuitWires,List.flatMap_append,List.mem_append]
-  right
-  simp [gateWires]
 
-theorem coordinateProgram_touches837 (start : Nat) :
-    837 ∈ straightWires (coordinateProgram start).2 := by
-  simp only [coordinateProgram,coordinateSegments,sequenceProgram,appendCompiled_support,List.mem_append]
-  exact Or.inr (Or.inr (Or.inl (zeroDivision_touches837 _ _)))
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
-end
+-- ==== part: CompleteSupport ====
 
--- ==== part: Streaming/CompleteSupport ====
-
-section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/CompleteSupport.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -6064,21 +6390,21 @@ def completeBatchedSupport : List Wire := 837 :: resetWires
 theorem completeBatchedSupport_length : completeBatchedSupport.length = 855 := by
   simp only [completeBatchedSupport,List.length_cons,resetWires_length]
 
-private theorem old_in_complete_CompleteSupport : resetWires ⊆ completeBatchedSupport :=
+private theorem old_in_complete_completeSupport : resetWires ⊆ completeBatchedSupport :=
   List.subset_cons_of_subset 837 (List.Subset.refl _)
 
-theorem sharedCoordinateProgram_support_static (w : OddWindow) (start : Nat) :
-    (straightWires (sharedCoordinateProgram w start).2).map
+theorem sharedAdaptiveCoordinateProgram_support_static (w : OddWindow) (start : Nat) :
+    (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
-  simp only [sharedCoordinateProgram,reindexCompiled_support]
+  simp only [sharedAdaptiveCoordinateProgram,reindexCompiled_support]
   intro z hz
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hz
-  have h := coordinateProgram_support_static start hv
+  have h := adaptiveCoordinateProgram_support_static start hv
   rcases List.mem_cons.mp h with rfl | h
   · have he : windowAddressPerm 855 (by decide) 837 = 837 := by decide +kernel
     rw [he]
     exact List.mem_cons_self
-  · exact old_in_complete_CompleteSupport (windowBaseSupport_relocated v h)
+  · exact old_in_complete_completeSupport (windowBaseSupport_relocated v h)
 
 theorem actualIpxWindow_support_static (w : OddWindow) (start : Nat) :
     straightWires ((actualIpxWindow w).program start) ⊆ completeBatchedSupport := by
@@ -6086,14 +6412,14 @@ theorem actualIpxWindow_support_static (w : OddWindow) (start : Nat) :
       (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
     apply sequenceProgram_mapped_support
     simp only [ipxWindowSegments,List.forall_mem_cons,List.mem_nil_iff,false_implies,implies_true,and_true]
-    exact ⟨sharedCoordinateProgram_support_static w,
-      fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_CompleteSupport,
-      fun cursor => (ipxProgram_support_static w cursor).trans old_in_complete_CompleteSupport,
-      fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_CompleteSupport⟩
+    exact ⟨sharedAdaptiveCoordinateProgram_support_static w,
+      fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_completeSupport,
+      fun cursor => (ipxProgram_support_static w cursor).trans old_in_complete_completeSupport,
+      fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_completeSupport⟩
   simp only [actualIpxWindow,closedWindow,straightWires_shift,straightWires_relabel,
     ipxWindowPrepared,surroundCompiled_support,List.map_append,List.append_subset]
-  exact ⟨⟨signedAddressCircuit_support_static.trans old_in_complete_CompleteSupport,hcore 0⟩,
-    signedAddressCircuit_support_static.trans old_in_complete_CompleteSupport⟩
+  exact ⟨⟨signedAddressCircuit_support_static.trans old_in_complete_completeSupport,hcore 0⟩,
+    signedAddressCircuit_support_static.trans old_in_complete_completeSupport⟩
 
 theorem actualWindows_support_static
     (window : OuterWindow 983040) (hw : window ∈ ipxLeftWindows ++ ipxRightWindows)
@@ -6101,7 +6427,7 @@ theorem actualWindows_support_static
   simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
   rcases hw with (rfl | ⟨k,rfl⟩) | ⟨k,rfl⟩
   · exact (actualFirstWindow_support_static start).trans
-      old_in_complete_CompleteSupport
+      old_in_complete_completeSupport
   · exact actualIpxWindow_support_static _ start
   · exact actualIpxWindow_support_static _ start
 
@@ -6111,8 +6437,8 @@ theorem ipxOuter_support_static
   apply OuterPlan.repeat_support
   · intro w hw
     simp only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
-    exact old_in_complete_CompleteSupport (List.mem_append_right _ hw)
-  · exact old_in_complete_CompleteSupport
+    exact old_in_complete_completeSupport (List.mem_append_right _ hw)
+  · exact old_in_complete_completeSupport
   · simp [completeBatchedSupport,resetWires]
   · intro window hw cursor h
     apply (straight_instantiate_support _ read h).trans
@@ -6122,18 +6448,6 @@ theorem ipxOuter_support_static
 theorem wire837_not_in_old_allocation : 837 ∉ resetWires := by
   simp only [resetWires,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
   norm_num
-
-theorem sharedCoordinateProgram_touches837 (w : OddWindow) (start : Nat) :
-    837 ∈ (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) := by
-  simp only [sharedCoordinateProgram,reindexCompiled_support]
-  exact List.mem_map.mpr ⟨837,coordinateProgram_touches837 start,by decide +kernel⟩
-
-theorem old_coordinate_support_false (w : OddWindow) (start : Nat) :
-    ¬ (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
-  intro h
-  exact wire837_not_in_old_allocation (h (sharedCoordinateProgram_touches837 w start))
 
 /-- An upper bound on the actual program's deduplicated wire set, not an exact usage count. -/
 theorem ipxOuter_qubits_le_855
@@ -6146,5 +6460,3 @@ theorem ipxOuter_qubits_le_855
     exact List.mem_toFinset.mpr (hs (List.mem_toFinset.mp hw))
   exact (Finset.card_le_card hfin).trans ((List.toFinset_card_le _).trans_eq completeBatchedSupport_length)
 end ShorECDLP.Paper2607_13816.ChallengeMigration
-
-end
