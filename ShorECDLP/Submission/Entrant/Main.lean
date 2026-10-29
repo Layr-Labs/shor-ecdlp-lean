@@ -201,8 +201,6 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
-/-- The declared T bound is the certified count 20048582458848 rounded up to a multiple of
-10^3, so the qubit × T product 277532526979937000 has fifteen significant digits. -/
 def bounds : Bounds where
   qubits := 13843
   tModel := 20048582459000
