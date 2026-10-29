@@ -1,5 +1,5 @@
 import ShorECDLP.Submission.Entrant.FastOracle
-import ShorECDLP.Submission.Entrant.V2.Gates
+import ShorECDLP.Submission.Naive.Challenge.NumericCertificate
 
 /-! EDITABLE. Fixed template gates for `fastCPA`.
 
@@ -7,8 +7,8 @@ Every constant-dependent gate is an `X` gate enabled by one protected table bit.
 doubling branch reads the protected `doubleInfinity/doubleX/doubleY` fields of its own
 row; the backward pass uses a separate row holding the negated point. -/
 
-namespace ShorECDLP.Secp256k1.V2
-open Quantum Challenge Arithmetic NaiveChallenge
+namespace ShorECDLP.Entrant
+open Quantum Secp256k1 Challenge NaiveChallenge Arithmetic
 
 /-! ## Packed load of the doubled table point -/
 
@@ -297,7 +297,7 @@ theorem fastCPAGates_instantiate {n : Nat} (coeffs : Fin n → PointCoeff) (Q : 
 
 theorem fastCPAGates_templateT {n : Nat} (row negRow : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hP : pointReg.length = pointWidth) :
-    templateT (fastCPAGates row negRow control pointReg workStart) = 83822677848 := by
+    templateT (fastCPAGates row negRow control pointReg workStart) = 167318124904 := by
   rw [xSlots_templateT _ (xSlots_fastCPAGates row negRow control pointReg workStart)
     (readConstant (fun _ : Fin n => qCoefficient) G), fastCPAGates_instantiate]
   exact fastCPA2_tCount control pointReg workStart _ _ hP
@@ -377,7 +377,7 @@ theorem fastScalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : 
     (hP : pointReg.length = pointWidth) :
     ∀ (cs : List Wire) (rs : List (Fin n × Fin n)),
       templateT (fastScalarGates pointReg workStart cs rs) =
-        min cs.length rs.length * 83822677848 := by
+        min cs.length rs.length * 167318124904 := by
   intro cs
   induction cs with
   | nil => intro rs; cases rs <;> simp [fastScalarGates, templateT]
@@ -480,4 +480,4 @@ theorem fastScalarGates_usesOnly {n : Nat} (coeffs : Fin n → PointCoeff) (Q : 
         simp only [List.mem_append, List.mem_cons] at hw ⊢
         tauto
 
-end ShorECDLP.Secp256k1.V2
+end ShorECDLP.Entrant

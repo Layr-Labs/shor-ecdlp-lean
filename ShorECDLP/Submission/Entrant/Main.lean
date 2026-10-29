@@ -3,13 +3,6 @@ import ShorECDLP.Submission.Entrant.Success
 import ShorECDLP.Submission.Entrant.WindowMassSharp
 import ShorECDLP.Challenge.Official
 
-/-! EDITABLE. Entrant: one observed trial at 263-bit phase precision.
-
-The circuit uses the V2 field arithmetic and the Naive dense workspace, with seven extra
-high-order qubits per phase register; each controlled point addition is the single-pass
-`fastCPA` construction.  The extra precision makes the
-canonical nearest-numerator decoder succeed with probability at least 99 % in a single
-trial, so the 26 sequential repetitions of the baseline are dropped. -/
 
 namespace ShorECDLP.Entrant
 open Quantum Secp256k1 Challenge NaiveChallenge Arithmetic
@@ -85,16 +78,16 @@ theorem secret_mod_ne_zero (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
 /-- The oracle specification, for whichever proof of primality of `p` the circuit carries. -/
 theorem spec_any (inst : Fact (Nat.Prime p)) (Q : Point) (hn : Q ≠ 0) (ho : order • Q = 0) :
     ECDLPOracleSpec pointEncoding
-      (Quantum.run (@V2.fastOracle inst regA regB bitcoinPointReg bitcoinWorkStart G Q))
-      G Q regA regB bitcoinPointReg (V2.scalarMulWork bitcoinWorkStart) :=
-  @V2.fastOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
-    (V2.doublingTable_ne_zero _ G G_ne_zero generator_nsmul_eq_zero)
-    (V2.doublingTable_ne_zero _ Q hn ho)
+      (Quantum.run (@fastOracle inst regA regB bitcoinPointReg bitcoinWorkStart G Q))
+      G Q regA regB bitcoinPointReg (scalarMulWork bitcoinWorkStart) :=
+  @fastOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
+    (doublingTable_ne_zero _ G G_ne_zero generator_nsmul_eq_zero)
+    (doublingTable_ne_zero _ Q hn ho)
     bitcoinWireLayout.2.2.1 layoutE.1
 
 theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99 : ℝ) / 100 ≤ recordMass
-      (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
+      (observedTrial (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
         bitcoinQFTAncilla Q) regA regB).run
       (pairEvent 263 (recoveredE d)) (ket zeroBasisState) := by
   have hfresh := layoutE.2
@@ -103,7 +96,7 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
       order_P := generator_order
       Q_eq := hd }
   have hsetup : OrderFindingSetup pointEncoding regA regB bitcoinPointReg
-      (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla 263 zeroBasisState :=
+      (scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla 263 zeroBasisState :=
     { a_width := regA_length
       b_width := regB_length
       a_zero := regValue_zeroBasisState regA
@@ -115,23 +108,23 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
       ancilla_fresh := hfresh }
   rw [observedTrial_recordMass]
   have h := zObserve_eventProbability regA regB 263 regA_length regB_length (recoveredE d)
-    (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
+    (Quantum.run (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
       bitcoinQFTAncilla Q) (ket zeroBasisState))
   rw [regA_length] at h
   rw [h]
   have heq : (∑ a : Fin (2 ^ 263), ∑ b : Fin (2 ^ 263),
       if recoveredE d a.val b.val then
         jointRegisterProbability regA regB a.val b.val
-          (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
+          (Quantum.run (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
             bitcoinQFTAncilla Q) (ket zeroBasisState)) else 0) =
       orderFindingSuccessProbability order 263 d order_prime regA regB
-        (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
+        (Quantum.run (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
           bitcoinQFTAncilla Q) (ket zeroBasisState)) := by
     unfold orderFindingSuccessProbability
     simp only [recoveredE, Fin.ofNat_eq_cast, Fin.cast_val_eq_self, decide_eq_true_eq]
-  rw [heq, trialV2_run]
+  rw [heq, fastTrial_run]
   refine le_trans ?_ (success_of_window_mass pointEncoding _ G Q regA regB bitcoinPointReg
-    (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting
+    (scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting
     (spec_any _ Q hn (by rw [hd]; exact dlogPoint_order d))
     hsetup (secret_mod_ne_zero Q d hn hd) (200 / 201) (by norm_num) hwinE)
   rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
@@ -143,7 +136,7 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
       (fun b => (verifiedCandidate layoutE' Q b.history).isSome)) (ket zeroBasisState) := by
   have ho : order • Q = 0 := by rw [hd]; exact dlogPoint_order d
   rw [entryE_run Q ho]
-  have hlen : ∀ b ∈ (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
+  have hlen : ∀ b ∈ (observedTrial (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
       bitcoinQFTAncilla Q) regA regB).run, b.history.length = 526 := by
     intro b hb
     have h := observedTrial_history_length _ regA regB b hb
@@ -151,12 +144,12 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     exact h
   calc
     (99 : ℝ) / 100 ≤ recordMass
-        (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
+        (observedTrial (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
           bitcoinQFTAncilla Q) regA regB).run
         (pairEvent 263 (recoveredE d)) (ket zeroBasisState) :=
       trialE_probability Q d hn hd
-    _ = Instrument.bornMass ((observedTrial (trialV2 regA regB bitcoinPointReg
-          bitcoinWorkStart bitcoinQFTAncilla Q) regA regB).run.filter
+    _ = Instrument.bornMass ((observedTrial (fastTrial regA regB bitcoinPointReg
+          bitcoinQFTAncilla Q) regA regB).run.filter
           (fun b => pairEvent 263 (recoveredE d) b.history)) (ket zeroBasisState) :=
       recordMass_filter _ _ _
     _ ≤ _ := bornMass_filter_mono _ _ _
@@ -167,11 +160,9 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
-/-- The declared T bound is the certified count 44090729581638 rounded up to a multiple of
-10^4, so the qubit × T product 9110820181018420000 has fifteen significant digits. -/
 def bounds : Bounds where
   qubits := 206638
-  tModel := 44090729590000
+  tModel := 88009334733094
   measurements := 526
 
 attribute [local irreducible] tableE progE Straight.WellFormed

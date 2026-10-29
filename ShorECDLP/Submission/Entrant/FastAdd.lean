@@ -1,4 +1,4 @@
-import ShorECDLP.Submission.Entrant.V2.Controlled_PointAdd
+import ShorECDLP.Submission.Naive.Arithmetic.Controlled_PointAdd
 import ShorECDLP.Challenge.Template
 import Batteries.Tactic.OpenPrivate
 
@@ -14,13 +14,12 @@ import Batteries.Tactic.OpenPrivate
   so they are loaded as constants under `control ∧ flag`;
 * the setup is uncomputed.
 
-The V2 (Naive-derived) construction instead computes all branches into a private register,
+The Naive construction instead computes all branches into a private register,
 copies that register out and runs the whole computation backwards; the doubling
 branch is a quantum computation there.  -/
 
 namespace ShorECDLP
 namespace Secp256k1
-namespace V2
 
 open Classical
 open Arithmetic
@@ -38,9 +37,9 @@ open private pointAddBranchActiveSupport genericPointCompute_usesOnly
   pointAddFlags_wellFormed genericPointCompute_correct packFinitePoint_correct
   run_writeReg_commute writeReg_other controlledCopyReg_tCount packFinitePoint_tCount
   pointAddSetup_tCount genericPointCompute_tCount pointAddControl_mem_work
-  from ShorECDLP.Submission.Entrant.V2.PointAdd
+  from ShorECDLP.Submission.Naive.Arithmetic.PointAdd
 open private pointSwapReg_usesOnly pointSwapReg_tCount
-  from ShorECDLP.Submission.Entrant.V2.Controlled_PointAdd
+  from ShorECDLP.Submission.Naive.Arithmetic.Controlled_PointAdd
 
 /-! ## Circuit -/
 
@@ -858,7 +857,7 @@ theorem fastBlock_tCount (control flag anc : Wire) (K : Circuit) (cand outReg : 
 omit [Fact (Nat.Prime p)] in
 theorem fastOut_tCount (control : Wire) (pointReg outReg : List Wire) (workStart : Wire)
     (C : Point) (hP : pointReg.length = pointWidth) (hO : outReg.length = pointWidth) :
-    tCount (fastOut control pointReg outReg workStart C) = 41911338924 := by
+    tCount (fastOut control pointReg outReg workStart C) = 83659062452 := by
   have hc : (pointAddCandidate (controlledPointAddPointWorkStart workStart)).length =
       outReg.length := by rw [hO]; simp [pointAddCandidate]
   simp only [fastOut, fastBlocks, fastPass, tCount_append, tCount_reverse,
@@ -874,7 +873,7 @@ theorem fastCPA2_tCount (control : Wire) (pointReg : List Wire) (workStart : Wir
         (controlledPointAddAuxStart workStart) C ++
       pointSwapReg pointReg (controlledPointAddTemp workStart) ++
       (fastOut control pointReg (controlledPointAddTemp workStart)
-        (controlledPointAddAuxStart workStart) C').reverse) = 83822677848 := by
+        (controlledPointAddAuxStart workStart) C').reverse) = 167318124904 := by
   have ht : (controlledPointAddTemp workStart).length = pointWidth := by
     simp [controlledPointAddTemp]
   simp only [tCount_append, tCount_reverse, fastOut_tCount _ _ _ _ _ hP ht, pointSwapReg_tCount]
@@ -884,6 +883,5 @@ theorem pointSwapReg_usesOnly' (left right : List Wire) :
     CircuitUsesOnly (left ++ right) (pointSwapReg left right) :=
   pointSwapReg_usesOnly left right
 
-end V2
 end Secp256k1
 end ShorECDLP

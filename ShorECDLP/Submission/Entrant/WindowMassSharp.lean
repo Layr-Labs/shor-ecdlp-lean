@@ -2,16 +2,6 @@ import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
 import Mathlib.Analysis.SpecialFunctions.Complex.Log
 import Mathlib.Analysis.Real.Pi.Bounds
 
-/-! Sharp window mass for quantum phase estimation.
-
-With `N = 2 ^ t ≥ 128 r` outcomes, the QPE outcome distribution for the phase `n / r`
-puts mass at least `200 / 201` on the outcomes `a` whose rounding `round (r a / N)`
-equals `n`.  Compared with `WindowMass.lean`, the pointwise estimate uses
-`sin z ≥ z - z ^ 3 / 6` and `sin z = cos (π / 2 - z) ≥ 1 - (π / 2 - z) ^ 2 / 2`, giving
-`1 / sin² z ≤ (3 / 2) (1 / z² + 1 / (π - z)²)` on `(0, π)`, so that
-`|amplitude a|² ≤ 3 / (2 π²) (1 / u² + 1 / (N - u)²)`.  The two families of terms are
-regrouped by the wrapped distances `phiR`, `phiL` (each injective with values `≥ L`), and a
-telescoping estimate bounds the tail by `3 / (π² (L - 1)) < 1 / 201` for `L ≥ 64`. -/
 
 namespace ShorECDLP.Entrant
 
@@ -121,7 +111,7 @@ lemma sin_sq_mul_ge_half (z : ℝ) (hz0 : 0 < z) (hz1 : z ≤ Real.pi / 2) :
   have hw : 0 < Real.pi - z := by linarith
   have hcub := sin_ge_cubic z hz0.le
   rcases le_total z 1 with h1 | h1
-  · -- z ≤ 1
+  ·
     have hs : 5 * z / 6 ≤ Real.sin z := by nlinarith [mul_pos hz0 hz0]
     have ha : 25 / 36 ≤ Real.sin z ^ 2 * (1 / z ^ 2) := by
       rw [mul_one_div, le_div_iff₀ (by positivity)]
@@ -130,7 +120,7 @@ lemma sin_sq_mul_ge_half (z : ℝ) (hz0 : 0 < z) (hz1 : z ≤ Real.pi / 2) :
     rw [mul_add]
     linarith
   rcases le_total z (6 / 5) with h2 | h2
-  · -- 1 ≤ z ≤ 6/5
+  ·
     have hs : 19 * z / 25 ≤ Real.sin z := by nlinarith [mul_pos hz0 hz0]
     have hs2 : 361 * z ^ 2 / 625 ≤ Real.sin z ^ 2 := by nlinarith
     have ha : 361 / 625 ≤ Real.sin z ^ 2 * (1 / z ^ 2) := by
@@ -145,7 +135,7 @@ lemma sin_sq_mul_ge_half (z : ℝ) (hz0 : 0 < z) (hz1 : z ≤ Real.pi / 2) :
       nlinarith
     rw [mul_add]
     linarith
-  · -- 6/5 ≤ z ≤ π/2
+  ·
     have hy0 : 0 ≤ Real.pi / 2 - z := by linarith
     have hy1 : Real.pi / 2 - z ≤ 3 / 8 := by norm_num at hpi2; linarith
     have hcos := Real.one_sub_sq_div_two_le_cos (x := Real.pi / 2 - z)
@@ -240,7 +230,6 @@ lemma orth (N : ℕ) (hN : 0 < N) (y y' : ℕ) (hy : y < N) (hy' : y' < N) :
       omega
     rw [geom_sum_eq hz1, hz, sub_self, zero_div]
 
-/-- The squared QPE amplitude at outcome `a`, for phase `β`. -/
 noncomputable def ampSq (N : ℕ) (β : ℝ) (a : ℕ) : ℝ :=
   Complex.normSq (((N : ℂ)⁻¹) * ∑ y ∈ range N,
     Complex.exp (Complex.I * ((2 * Real.pi * (β - (a : ℝ) / (N : ℝ)) : ℝ) : ℂ)) ^ y)
@@ -324,11 +313,9 @@ lemma point_bound_sharp (N : ℕ) (hN : 0 < N) (x u : ℝ) (hu0 : 0 < u) (huN : 
   rw [e, div_pow, one_pow, mul_pow, div_le_div_iff₀ (by positivity) (by positivity)]
   nlinarith [mul_le_mul_of_nonneg_left key (sq_nonneg (N : ℝ))]
 
-/-- Wrapped distance from `c` going right (mod `N`). -/
 noncomputable def phiR (N : ℕ) (c : ℝ) (a : ℕ) : ℝ :=
   if c ≤ (a : ℝ) then (a : ℝ) - c else (N : ℝ) - c + a
 
-/-- Wrapped distance from `c` going left (mod `N`). -/
 noncomputable def phiL (N : ℕ) (c : ℝ) (a : ℕ) : ℝ :=
   if (a : ℝ) ≤ c then c - (a : ℝ) else (N : ℝ) + c - a
 
@@ -401,7 +388,6 @@ lemma window_mass_sharp_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 128
       have h' : (2 * r * a + N : ℝ) < 2 * N * n := by exact_mod_cast h
       nlinarith
   have hL0 : 0 < L := by linarith
-  -- pointwise domination of the tail
   have hpt : ∀ a ∈ S, ampSq N β a ≤
       3 / (2 * Real.pi ^ 2) * (1 / (phiR N c a) ^ 2 + 1 / (phiL N c a) ^ 2) := by
     intro a ha
