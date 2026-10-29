@@ -311,12 +311,12 @@ theorem entryE_wellFormed : entryE.program.WellFormed :=
 
 /-- Every wire the trial can touch: the phase registers, the point register through the
 first branch ancilla (512 … 1539), the local point-addition block below the unused
-`candidate` and `selected` registers, and the arithmetic engine region. -/
+`selected` register, and the arithmetic engine region. -/
 def qubitWires : List Wire :=
-  regA ++ regB ++ List.range' 512 1028 ++ List.range' 2052 3086 ++
+  regA ++ regB ++ List.range' 512 1028 ++ List.range' 2052 3599 ++
     List.range' 6164 V2.Engine.wireBound
 
-theorem qubitWires_length : qubitWires.length = 13379 := by
+theorem qubitWires_length : qubitWires.length = 13892 := by
   simp [qubitWires, regA_length, regB_length, V2.Engine.wireBound]
 
 open private pointAddArithmeticWork_lower from ShorECDLP.Submission.Entrant.V2.PointAdd
@@ -454,7 +454,7 @@ theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ qubitWires
   · have h := zObserve_support _ hw
     exact tight_sub w (by simp only [List.mem_append] at h ⊢; tauto)
 
-theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 13379 := by
+theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 13892 := by
   have hs : (entryE.instantiate Q).wires.toFinset ⊆ qubitWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (entryE_support Q (List.mem_toFinset.mp hw))

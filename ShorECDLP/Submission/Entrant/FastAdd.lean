@@ -8,12 +8,10 @@ import Batteries.Tactic.OpenPrivate
 
 * the Naive setup stage computes the branch flags;
 * a control-gated copy writes `R` when the control is off;
-* the generic affine branch is computed once, its coordinates are XOR-copied straight from
-  the field registers into `out` under `control ∧ genericFlag` (the control itself supplies
-  the finite-point tag), and the branch is uncomputed;
+* the generic affine branch is computed once, XOR-copied into `out` under
+  `control ∧ genericFlag`, and uncomputed;
 * the doubling and infinity branches have classical results (`C + C` and `C`),
-  so they are loaded as constants into clean field temporaries and copied under
-  `control ∧ flag`;
+  so they are loaded as constants under `control ∧ flag`;
 * the setup is uncomputed.
 
 The V2 (Naive-derived) construction instead computes all branches into a private register,
@@ -32,7 +30,6 @@ open Challenge (pointCoordinates)
 variable [Fact (Nat.Prime p)]
 
 open private pointAddBranchActiveSupport genericPointCompute_usesOnly
-  regValue_take_mod IsPointAddFieldRegister pointAddFieldRegister_mem_work
   packFinitePoint_usesOnly_pointAdd pointAddBranchActiveSupport_mem_work
   pointAddCandidate_mem_work genericPointCompute_HPFree packFinitePoint_HPFree
   genericPointCompute_wellFormed packFinitePoint_wellFormed controlledCopyReg_HPFree
@@ -56,26 +53,20 @@ def fastBlock (control flag anc : Wire) (K : Circuit) (cand outReg : List Wire) 
   [Gate.CCX control flag anc] ++ K ++ controlledCopyReg anc cand outReg ++ K.reverse ++
     [Gate.CCX control flag anc]
 
-/-- Source of the generic result: the control (set whenever the block is active) as the
-finite-point tag, then the low 256 bits of the two coordinate registers. -/
-def genericSource (control pw : Wire) : List Wire :=
-  control :: ((pointAddT5 pw).take 256 ++ (pointAddT4 pw).take 256)
-
-/-- Scratch for the classical branch results: the first 513 wires of the field temporaries,
-which are clean whenever the branch blocks run. -/
-def constScratch (pw : Wire) : List Wire := List.range' (pw + 514) 513
+def fastGenericK (pw : Wire) (xC yC : Fp) : Circuit :=
+  genericPointCompute pw xC yC ++
+    packFinitePoint (pointAddT5 pw) (pointAddT4 pw) (pointAddCandidate pw)
 
 def fastBlocks (control anc : Wire) (outReg : List Wire) (pw : Wire) (C : Point) :
     Circuit :=
   let xC := (pointCoordinates C).2.1
   let yC := (pointCoordinates C).2.2
-  let sc := constScratch pw
-  fastBlock control (pointAddGenericFlag pw) anc (genericPointCompute pw xC yC)
-      (genericSource control pw) outReg ++
+  let cand := pointAddCandidate pw
+  fastBlock control (pointAddGenericFlag pw) anc (fastGenericK pw xC yC) cand outReg ++
     fastBlock control (pointAddDoubleFlag pw) anc
-      (loadConst sc (encode (C + C)).val) sc outReg ++
+      (loadConst cand (encode (C + C)).val) cand outReg ++
     fastBlock control (pointAddInfinityFlag pw) anc
-      (loadConst sc (encode C).val) sc outReg
+      (loadConst cand (encode C).val) cand outReg
 
 def fastOut (control : Wire) (pointReg outReg : List Wire) (workStart : Wire)
     (C : Point) : Circuit :=
@@ -285,143 +276,26 @@ theorem writeReg_zero_of_clean (ws : List Wire) (s : BasisState) (h : Clean ws s
     rw [hs, ih s (fun v hv => h v (List.mem_cons_of_mem _ hv))]
 
 omit [Fact (Nat.Prime p)] in
-theorem genericK_usesOnly (pw : Wire) (xC yC : Fp) :
-    CircuitUsesOnly (pointAddWork pw) (genericPointCompute pw xC yC) :=
-  usesOnly_mono (genericPointCompute_usesOnly pw xC yC) (pointAddBranchActiveSupport_mem_work pw)
+theorem fastGenericK_HPFree (pw : Wire) (xC yC : Fp) : HPFree (fastGenericK pw xC yC) := by
+  simp only [fastGenericK, hpFree_append]
+  exact ⟨genericPointCompute_HPFree pw xC yC, packFinitePoint_HPFree _ _ _⟩
 
 omit [Fact (Nat.Prime p)] in
-theorem constScratch_sub (pw : Wire) :
-    ∀ w ∈ constScratch pw, w ∈ pointAddT0 pw ∨ w ∈ pointAddT1 pw := by
-  have e0 : pointAddT0 pw = List.range' (pw + 514) 257 := rfl
-  have e1 : pointAddT1 pw = List.range' (pw + 771) 257 := rfl
-  intro w hw
-  rw [e0, e1, List.mem_range'_1, List.mem_range'_1]
-  rw [constScratch, List.mem_range'_1] at hw
-  omega
+theorem fastGenericK_wellFormed (pw : Wire) (xC yC : Fp) :
+    CircuitWellFormed (fastGenericK pw xC yC) := by
+  rw [fastGenericK, circuitWellFormed_append]
+  exact ⟨genericPointCompute_wellFormed pw xC yC, packFinitePoint_wellFormed pw⟩
 
 omit [Fact (Nat.Prime p)] in
-theorem constScratch_mem_work (pw : Wire) : ∀ w ∈ constScratch pw, w ∈ pointAddWork pw := by
-  intro w hw
-  rcases constScratch_sub pw w hw with h | h
-  · exact pointAddFieldRegister_mem_work pw _ (by simp [IsPointAddFieldRegister]) w h
-  · exact pointAddFieldRegister_mem_work pw _ (by simp [IsPointAddFieldRegister]) w h
+theorem fastGenericK_usesOnly (pw : Wire) (xC yC : Fp) :
+    CircuitUsesOnly (pointAddWork pw) (fastGenericK pw xC yC) :=
+  usesOnly_mono (usesOnly_append (genericPointCompute_usesOnly pw xC yC)
+    (packFinitePoint_usesOnly_pointAdd pw)) (pointAddBranchActiveSupport_mem_work pw)
 
 omit [Fact (Nat.Prime p)] in
-theorem constScratch_clean (pw : Wire) (s : BasisState) (h : Clean (pointAddBranchWork pw) s) :
-    Clean (constScratch pw) s := by
-  intro w hw
-  apply h
-  have hT : w ∈ pointAddT0 pw ++ pointAddT1 pw := by
-    rcases constScratch_sub pw w hw with h' | h'
-    · exact List.mem_append_left _ h'
-    · exact List.mem_append_right _ h'
-  exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
-    (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ hT)))))
-
-omit [Fact (Nat.Prime p)] in
-@[simp] theorem constScratch_length (pw : Wire) : (constScratch pw).length = 513 := by
-  simp [constScratch]
-
-omit [Fact (Nat.Prime p)] in
-theorem constScratch_nodup (pw : Wire) : (constScratch pw).Nodup := List.nodup_range'
-
-omit [Fact (Nat.Prime p)] in
-theorem loadScratch_usesOnly (pw : Wire) (v : Nat) :
-    CircuitUsesOnly (pointAddWork pw) (loadConst (constScratch pw) v) :=
-  usesOnly_mono (loadConst_usesOnly _ _) (constScratch_mem_work pw)
-
-omit [Fact (Nat.Prime p)] in
-theorem genericTail_mem (pw : Wire) :
-    ∀ w ∈ (pointAddT5 pw).take 256 ++ (pointAddT4 pw).take 256,
-      w ∈ pointAddT5 pw ∨ w ∈ pointAddT4 pw := by
-  intro w hw
-  rcases List.mem_append.mp hw with h | h
-  · exact Or.inl (List.mem_of_mem_take h)
-  · exact Or.inr (List.mem_of_mem_take h)
-
-omit [Fact (Nat.Prime p)] in
-theorem genericTail_mem_work (pw : Wire) :
-    ∀ w ∈ (pointAddT5 pw).take 256 ++ (pointAddT4 pw).take 256, w ∈ pointAddWork pw := by
-  intro w hw
-  rcases genericTail_mem pw w hw with h | h
-  · exact pointAddFieldRegister_mem_work pw _ (by simp [IsPointAddFieldRegister]) w h
-  · exact pointAddFieldRegister_mem_work pw _ (by simp [IsPointAddFieldRegister]) w h
-
-omit [Fact (Nat.Prime p)] in
-theorem genericTail_nodup (pw : Wire) :
-    ((pointAddT5 pw).take 256 ++ (pointAddT4 pw).take 256).Nodup := by
-  have e4 : pointAddT4 pw = List.range' (pw + 1542) 257 := rfl
-  have e5 : pointAddT5 pw = List.range' (pw + 1799) 257 := rfl
-  refine List.nodup_append.mpr ⟨?_, ?_, ?_⟩
-  · rw [e5]; exact List.Nodup.sublist (List.take_sublist _ _) List.nodup_range'
-  · rw [e4]; exact List.Nodup.sublist (List.take_sublist _ _) List.nodup_range'
-  · intro a ha b hb hab
-    have ha' := List.mem_of_mem_take ha
-    have hb' := List.mem_of_mem_take hb
-    rw [e5, List.mem_range'_1] at ha'
-    rw [e4, List.mem_range'_1] at hb'
-    subst hab
-    omega
-
-omit [Fact (Nat.Prime p)] in
-@[simp] theorem genericSource_length (control pw : Wire) :
-    (genericSource control pw).length = 513 := by
-  have e4 : pointAddT4 pw = List.range' (pw + 1542) 257 := rfl
-  have e5 : pointAddT5 pw = List.range' (pw + 1799) 257 := rfl
-  simp [genericSource, e4, e5]
-
-omit [Fact (Nat.Prime p)] in
-theorem regValue_append' (xs ys : List Wire) (s : BasisState) :
-    regValue (xs ++ ys) s = regValue xs s + 2 ^ xs.length * regValue ys s := by
-  induction xs with
-  | nil => simp
-  | cons x xs ih =>
-      simp only [List.cons_append, regValue_cons, ih, List.length_cons, Nat.pow_succ]
-      ring
-
-set_option exponentiation.threshold 300 in
-omit [Fact (Nat.Prime p)] in
-/-- With the control set, the generic source reads the packed finite point. -/
-theorem genericSource_value (control pw : Wire) {x y : Fp}
-    (h : curve.toAffine.Nonsingular x y) (s : BasisState) (hc : s control = true)
-    (hx : regValue (pointAddT5 pw) s = x.val) (hy : regValue (pointAddT4 pw) s = y.val) :
-    regValue (genericSource control pw) s = encodeNat (.some h) := by
-  have e5 : pointAddT5 pw = List.range' (pw + 1799) 257 := rfl
-  have hlen : ((pointAddT5 pw).take 256).length = 256 := by simp [e5]
-  have hxl : x.val < 2 ^ 256 := x.val_lt.trans (by norm_num [p])
-  have hyl : y.val < 2 ^ 256 := y.val_lt.trans (by norm_num [p])
-  rw [genericSource, regValue_cons, hc, regValue_append', hlen, regValue_take_mod,
-    regValue_take_mod, hx, hy, Nat.mod_eq_of_lt hxl, Nat.mod_eq_of_lt hyl, encodeNat_some]
-  simp only [if_true]
-  ring
-
-omit [Fact (Nat.Prime p)] in
-/-- Duplicate-freedom of the branch ancilla, a copy source inside `work`, and the output. -/
-theorem nodup_anc_cand (anc : Wire) (cand outReg work : List Wire)
-    (hcand : ∀ w ∈ cand, w ∈ work) (hcnd : cand.Nodup) (hOnd : outReg.Nodup)
-    (hOW : ∀ w ∈ outReg, w ∉ work) (hancWork : anc ∉ work) (hancOut : anc ∉ outReg) :
-    (anc :: cand ++ outReg).Nodup := by
-  rw [List.cons_append]
-  refine List.nodup_cons.mpr ⟨?_, ?_⟩
-  · intro h
-    rcases List.mem_append.mp h with h | h
-    · exact hancWork (hcand _ h)
-    · exact hancOut h
-  · refine List.nodup_append.mpr ⟨hcnd, hOnd, fun a ha b hb => ?_⟩
-    intro e; subst e; exact hOW a hb (hcand a ha)
-
-omit [Fact (Nat.Prime p)] in
-theorem genericSource_nodup (control pw : Wire) (hc : control ∉ pointAddWork pw) :
-    (genericSource control pw).Nodup :=
-  List.nodup_cons.mpr ⟨fun h => hc (genericTail_mem_work pw _ h), genericTail_nodup pw⟩
-
-omit [Fact (Nat.Prime p)] in
-theorem genericSource_mem (control pw : Wire) :
-    ∀ w ∈ genericSource control pw, w ∈ control :: pointAddWork pw := by
-  intro w hw
-  rcases List.mem_cons.mp hw with h | h
-  · exact h ▸ List.mem_cons_self
-  · exact List.mem_cons_of_mem _ (genericTail_mem_work pw w h)
+theorem loadCand_usesOnly (pw : Wire) (v : Nat) :
+    CircuitUsesOnly (pointAddWork pw) (loadConst (pointAddCandidate pw) v) :=
+  usesOnly_mono (loadConst_usesOnly _ _) (pointAddCandidate_mem_work pw)
 
 omit [Fact (Nat.Prime p)] in
 theorem fastSetup_wellFormed (pointReg outReg : List Wire) (pw : Wire) (xC yC : Fp)
@@ -448,9 +322,7 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
   let pw := controlledPointAddPointWorkStart workStart
   let work := pointAddWork pw
   let choice := controlledPointAddChoice workStart
-  let sc := constScratch pw
-  let gs := genericSource control pw
-  let G := genericPointCompute pw xC yC
+  let cand := pointAddCandidate pw
   let anc := workStart
   let setup := pointAddSetup pointReg pw xC yC
   have hwork : controlledPointAddOutWork workStart = choice ++ work := rfl
@@ -489,27 +361,18 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
       rcases List.mem_append.mp hb with hb | hb
       · exact hPx a ha b (List.mem_append_left _ hb)
       · exact hPx a ha b (List.mem_append_right _ (List.mem_append_right _ hb))⟩
-  have hcandWork : ∀ w ∈ sc, w ∈ work := constScratch_mem_work pw
-  have hcandLen : sc.length = pointWidth := by simp [sc, pointWidth]
-  have hcc : (anc :: sc ++ outReg).Nodup :=
-    nodup_anc_cand anc sc outReg work hcandWork (constScratch_nodup pw) hOnd hOW hancWork hancOut
-  -- the generic block copies from `control :: work`
-  have hOW' : ∀ w ∈ outReg, w ∉ control :: work := fun w hw h => by
-    rcases List.mem_cons.mp h with h | h
-    · exact hcontrolOut (h ▸ hw)
-    · exact hOW w hw h
-  have hancWork' : anc ∉ control :: work := fun h => by
-    rcases List.mem_cons.mp h with h | h
-    · exact hcontrolAnc h.symm
-    · exact hancWork h
-  have hgsWork : ∀ w ∈ gs, w ∈ control :: work := genericSource_mem control pw
-  have hgsLen : gs.length = pointWidth := by simp [gs, pointWidth]
-  have hgcc : (anc :: gs ++ outReg).Nodup :=
-    nodup_anc_cand anc gs outReg (control :: work) hgsWork
-      (genericSource_nodup control pw hcontrolWork) hOnd hOW' hancWork' hancOut
-  have hOWnd' : (outReg ++ control :: work).Nodup :=
-    List.nodup_append.mpr ⟨hOnd, List.nodup_cons.mpr ⟨hcontrolWork, hWnd⟩,
-      fun a ha b hb e => hOW' a ha (e ▸ hb)⟩
+  have hcandWork : ∀ w ∈ cand, w ∈ work := pointAddCandidate_mem_work pw
+  have hcandLen : cand.length = pointWidth := by simp [cand, pointAddCandidate]
+  have hcc : (anc :: cand ++ outReg).Nodup := by
+    rw [List.cons_append]
+    refine List.nodup_cons.mpr ⟨?_, ?_⟩
+    · intro h
+      rcases List.mem_append.mp h with h | h
+      · exact hancWork (hcandWork _ h)
+      · exact hancOut h
+    · refine List.nodup_append.mpr ⟨?_, hOnd, fun a ha b hb => ?_⟩
+      · simp [cand, pointAddCandidate, List.nodup_range']
+      · intro e; subst e; exact hOW a hb (hcandWork a ha)
   have hgenW : pointAddGenericFlag pw ∈ work := pointAddControl_mem_work pw 3 (by norm_num)
   have hdblW : pointAddDoubleFlag pw ∈ work := pointAddControl_mem_work pw 5 (by norm_num)
   have hinfW : pointAddInfinityFlag pw ∈ work := by
@@ -529,44 +392,35 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
     · exact hPO a ha hb
     · exact hOW a hb ha
   -- generic block facts
-  have inactive : ∀ (flag : Wire) (K : Circuit) (cand : List Wire) (s : BasisState), HPFree K →
+  have inactive : ∀ (flag : Wire) (K : Circuit) (s : BasisState), HPFree K →
       CircuitWellFormed K → CircuitUsesOnly work K → (s control && s flag) = false →
       s anc = false → Classical.run (fastBlock control flag anc K cand outReg) s = s :=
-    fun flag K cand s hK hW hU hoff ha =>
+    fun flag K s hK hW hU hoff ha =>
       fastBlock_inactive control flag anc K cand outReg work s hK hW hU hancWork hoff ha
   have active : ∀ (flag : Wire) (K : Circuit) (s : BasisState), flag ∈ work → HPFree K →
       CircuitWellFormed K → CircuitUsesOnly work K → s control = true → s flag = true →
       s anc = false → Clean outReg s →
-      Classical.run (fastBlock control flag anc K sc outReg) s =
-        writeReg outReg (regValue sc (Classical.run K s)) s :=
+      Classical.run (fastBlock control flag anc K cand outReg) s =
+        writeReg outReg (regValue cand (Classical.run K s)) s :=
     fun flag K s hfl hK hW hU hc hf ha hcl =>
-      fastBlock_active control flag anc K sc outReg work s hK hW hU hcandWork hOWnd
+      fastBlock_active control flag anc K cand outReg work s hK hW hU hcandWork hOWnd
         (by rw [houtLength, hcandLen]) hancWork hancOut hcontrolOut
         (fun h => hOW flag h hfl) hcontrolAnc (fun e => hancWork (e ▸ hfl)) hcc hc hf ha hcl
-  have hGK : HPFree G := genericPointCompute_HPFree pw xC yC
-  have hGW : CircuitWellFormed G := genericPointCompute_wellFormed pw xC yC
-  have hGU : CircuitUsesOnly work G := genericK_usesOnly pw xC yC
-  have activeG : ∀ (s : BasisState), s control = true → s (pointAddGenericFlag pw) = true →
-      s anc = false → Clean outReg s →
-      Classical.run (fastBlock control (pointAddGenericFlag pw) anc G gs outReg) s =
-        writeReg outReg (regValue gs (Classical.run G s)) s :=
-    fun s hc hf ha hcl =>
-      fastBlock_active control (pointAddGenericFlag pw) anc G gs outReg (control :: work) s
-        hGK hGW (usesOnly_mono hGU (fun w hw => List.mem_cons_of_mem _ hw)) hgsWork hOWnd'
-        (by rw [houtLength, hgsLen]) hancWork' hancOut hcontrolOut
-        (fun h => hOW _ h hgenW) hcontrolAnc (fun e => hancWork (e ▸ hgenW)) hgcc hc hf ha hcl
-  have hLK (v : Nat) : HPFree (loadConst sc v) := loadConst_HPFree _ _
-  have hLW (v : Nat) : CircuitWellFormed (loadConst sc v) := loadConst_wellFormed _ _
-  have hLU (v : Nat) : CircuitUsesOnly work (loadConst sc v) := loadScratch_usesOnly pw v
+  have hGK := fastGenericK_HPFree pw xC yC
+  have hGW := fastGenericK_wellFormed pw xC yC
+  have hGU : CircuitUsesOnly work (fastGenericK pw xC yC) := fastGenericK_usesOnly pw xC yC
+  have hLK (v : Nat) : HPFree (loadConst cand v) := loadConst_HPFree _ _
+  have hLW (v : Nat) : CircuitWellFormed (loadConst cand v) := loadConst_wellFormed _ _
+  have hLU (v : Nat) : CircuitUsesOnly work (loadConst cand v) := loadCand_usesOnly pw v
   let blocks := fastBlocks control anc outReg pw (.some hC)
   have hfast : fastOut control pointReg outReg workStart (.some hC) =
       fastPass control pointReg outReg ++ setup ++ blocks ++ setup.reverse := rfl
   have hblocksEq : blocks =
-      fastBlock control (pointAddGenericFlag pw) anc G gs outReg ++
+      fastBlock control (pointAddGenericFlag pw) anc (fastGenericK pw xC yC) cand outReg ++
       fastBlock control (pointAddDoubleFlag pw) anc
-        (loadConst sc (encode ((.some hC : Point) + .some hC)).val) sc outReg ++
+        (loadConst cand (encode ((.some hC : Point) + .some hC)).val) cand outReg ++
       fastBlock control (pointAddInfinityFlag pw) anc
-        (loadConst sc (encode (.some hC : Point)).val) sc outReg := rfl
+        (loadConst cand (encode (.some hC : Point)).val) cand outReg := rfl
   -- after the setup, writes to `outReg` commute with its reverse
   have hfinish : ∀ (v : Nat) (s : BasisState),
       Classical.run setup.reverse (writeReg outReg v (Classical.run setup s)) =
@@ -611,9 +465,9 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
       rw [hkeep _ _ haNotPW, hs1a]
     have hblocks : Classical.run blocks s2 = s2 := by
       rw [hblocksEq, Classical.run_append, Classical.run_append]
-      rw [inactive _ _ _ _ hGK hGW hGU (by simp [hs2c]) hs2a,
-        inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by simp [hs2c]) hs2a,
-        inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by simp [hs2c]) hs2a]
+      rw [inactive _ _ _ hGK hGW hGU (by simp [hs2c]) hs2a,
+        inactive _ _ _ (hLK _) (hLW _) (hLU _) (by simp [hs2c]) hs2a,
+        inactive _ _ _ (hLK _) (hLW _) (hLU _) (by simp [hs2c]) hs2a]
     rw [hfast, Classical.run_append, Classical.run_append, Classical.run_append, h1, hblocks,
       run_reverse_cancel setup s1 hsetupHP hsetupWF]
     simp only [controlledPointResult, Bool.false_eq_true, if_false, encode_val, s1]
@@ -637,10 +491,12 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
     have hblocks : Classical.run blocks s2 =
         writeReg outReg (encode (R + (.some hC : Point))).val s2 := by
       rw [hblocksEq, Classical.run_append, Classical.run_append]
+      have hcandNd : cand.Nodup := by simp [cand, pointAddCandidate, List.nodup_range']
+      have hcandClean (hbw : Clean (pointAddBranchWork pw) s2) : Clean cand s2 :=
+        fun w hw => hbw w (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ hw)))
       have hload (v : Nat) (hv : v < 2 ^ pointWidth) (hbw : Clean (pointAddBranchWork pw) s2) :
-          regValue sc (Classical.run (loadConst sc v) s2) = v :=
-        loadConst_correct sc v s2 (constScratch_nodup pw) (constScratch_clean pw s2 hbw)
-          (by rw [hcandLen]; exact hv)
+          regValue cand (Classical.run (loadConst cand v) s2) = v :=
+        loadConst_correct cand v s2 hcandNd (hcandClean hbw) (by rw [hcandLen]; exact hv)
       cases R with
       | zero =>
         obtain ⟨hinf, hgen, hdbl, hbw⟩ := pointAddSetup_zero_correct pointReg outReg pw
@@ -648,8 +504,8 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
         have hinf' : s2 (pointAddInfinityFlag pw) = true := hinf
         have hgen' : s2 (pointAddGenericFlag pw) = false := hgen
         have hdbl' : s2 (pointAddDoubleFlag pw) = false := hdbl
-        rw [inactive _ _ _ _ hGK hGW hGU (by rw [hs2c, hgen']; rfl) hs2a,
-          inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs2c, hdbl']; rfl) hs2a,
+        rw [inactive _ _ _ hGK hGW hGU (by rw [hs2c, hgen']; rfl) hs2a,
+          inactive _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs2c, hdbl']; rfl) hs2a,
           active _ _ _ hinfW (hLK _) (hLW _) (hLU _) hs2c hinf' hs2a hs2o,
           hload _ (encode _).isLt hbw]
         rfl
@@ -665,9 +521,9 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
           · have hdbl' : s2 (pointAddDoubleFlag pw) = false := by
               change Classical.run setup st (pointAddDoubleFlag pw) = false
               rw [hdbl]; simp [hinv]
-            rw [inactive _ _ _ _ hGK hGW hGU (by rw [hs2c, hgen']; rfl) hs2a,
-              inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs2c, hdbl']; rfl) hs2a,
-              inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs2c, hinf']; rfl) hs2a,
+            rw [inactive _ _ _ hGK hGW hGU (by rw [hs2c, hgen']; rfl) hs2a,
+              inactive _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs2c, hdbl']; rfl) hs2a,
+              inactive _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs2c, hinf']; rfl) hs2a,
               inverseAdd_correct hR hC hx hinv, encode_val, encodeNat_zero]
             exact (writeReg_zero_of_clean outReg s2 hs2o).symm
           · have hdbl' : s2 (pointAddDoubleFlag pw) = true := by
@@ -675,7 +531,7 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
               rw [hdbl]; simp [hx, hinv]
             have hy := y_eq_of_x_eq_of_not_inverse hR hC hx hinv
             subst hx hy
-            rw [inactive _ _ _ _ hGK hGW hGU (by rw [hs2c, hgen']; rfl) hs2a,
+            rw [inactive _ _ _ hGK hGW hGU (by rw [hs2c, hgen']; rfl) hs2a,
               active _ _ _ hdblW (hLK _) (hLW _) (hLU _) hs2c hdbl' hs2a hs2o,
               hload _ (encode _).isLt hbw]
             have hs3c : (writeReg outReg (encode ((.some hR : Point) + .some hR)).val s2)
@@ -685,23 +541,22 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
             have hs3i : (writeReg outReg (encode ((.some hR : Point) + .some hR)).val s2)
                 (pointAddInfinityFlag pw) = false := by
               rw [writeReg_not_mem' _ _ _ _ (fun h => hOW _ h hinfW), hinf']
-            rw [inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs3c, hs3i]; rfl) hs3a]
+            rw [inactive _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs3c, hs3i]; rfl) hs3a]
         · have hgen' : s2 (pointAddGenericFlag pw) = true := by
             change Classical.run setup st (pointAddGenericFlag pw) = true
             rw [hgen]; simp [hx]
           have hdbl' : s2 (pointAddDoubleFlag pw) = false := by
             change Classical.run setup st (pointAddDoubleFlag pw) = false
             rw [hdbl]; simp [hx]
-          obtain ⟨ht2, ht4, -⟩ := genericPointCompute_correct pw xR yR xC yC hx s2
+          obtain ⟨ht2, ht4, hcc2⟩ := genericPointCompute_correct pw xR yR xC yC hx s2
             hxReg hyReg hbw hT5
-          have hcG : Classical.run G s2 control = true := by
-            rw [hGU.preservesOutside s2 control hcontrolWork, hs2c]
-          have hgv : regValue gs (Classical.run G s2) =
+          have hpack := packFinitePoint_correct pw (generic_nonsingular hR hC hx)
+            (Classical.run (genericPointCompute pw xC yC) s2) ht2 ht4 hcc2
+          have hgv : regValue cand (Classical.run (fastGenericK pw xC yC) s2) =
               (encode ((.some hR : Point) + .some hC)).val := by
-            rw [genericSource_value control pw (generic_nonsingular hR hC hx) _ hcG ht2 ht4,
-              encode_val, ← genericAdd_correct hR hC hx]
+            rw [fastGenericK, Classical.run_append, hpack, encode_val, ← genericAdd_correct hR hC hx]
             rfl
-          rw [activeG s2 hs2c hgen' hs2a hs2o, hgv]
+          rw [active _ _ _ hgenW hGK hGW hGU hs2c hgen' hs2a hs2o, hgv]
           have hs3c : (writeReg outReg (encode ((.some hR : Point) + .some hC)).val s2)
               control = true := by rw [writeReg_not_mem' _ _ _ _ hcontrolOut, hs2c]
           have hs3a : (writeReg outReg (encode ((.some hR : Point) + .some hC)).val s2)
@@ -712,8 +567,8 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
           have hs3i : (writeReg outReg (encode ((.some hR : Point) + .some hC)).val s2)
               (pointAddInfinityFlag pw) = false := by
             rw [writeReg_not_mem' _ _ _ _ (fun h => hOW _ h hinfW), hinf']
-          rw [inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs3c, hs3d]; rfl) hs3a,
-            inactive _ _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs3c, hs3i]; rfl) hs3a]
+          rw [inactive _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs3c, hs3d]; rfl) hs3a,
+            inactive _ _ _ (hLK _) (hLW _) (hLU _) (by rw [hs3c, hs3i]; rfl) hs3a]
     rw [hfast, Classical.run_append, Classical.run_append, Classical.run_append, h1, hblocks,
       hfinish]
     simp only [controlledPointResult, if_true]
@@ -731,7 +586,7 @@ theorem fastOut_HPFree (control : Wire) (pointReg outReg : List Wire) (workStart
     (C : Point) : HPFree (fastOut control pointReg outReg workStart C) := by
   simp only [fastOut, fastBlocks, fastPass, hpFree_append]
   refine ⟨⟨⟨⟨⟨by simp, controlledCopyReg_HPFree _ _ _⟩, by simp⟩, pointAddSetup_HPFree _ _ _ _⟩,
-    ⟨⟨fastBlock_HPFree _ _ _ _ _ _ (genericPointCompute_HPFree _ _ _),
+    ⟨⟨fastBlock_HPFree _ _ _ _ _ _ (fastGenericK_HPFree _ _ _),
       fastBlock_HPFree _ _ _ _ _ _ (loadConst_HPFree _ _)⟩,
       fastBlock_HPFree _ _ _ _ _ _ (loadConst_HPFree _ _)⟩⟩,
     Arithmetic.hpFree_reverse (pointAddSetup_HPFree _ _ _ _)⟩
@@ -778,8 +633,7 @@ theorem fastOut_structural (control : Wire) (pointReg outReg : List Wire) (workS
   let pw := controlledPointAddPointWorkStart workStart
   let work := pointAddWork pw
   let choice := controlledPointAddChoice workStart
-  let sc := constScratch pw
-  let gs := genericSource control pw
+  let cand := pointAddCandidate pw
   let anc := workStart
   have hwork : controlledPointAddOutWork workStart = choice ++ work := rfl
   have hN : (control :: (pointReg ++ (outReg ++ (choice ++ work)))).Nodup := by
@@ -797,8 +651,6 @@ theorem fastOut_structural (control : Wire) (pointReg outReg : List Wire) (workS
       (List.mem_append_left _ hancChoice)))
   have hcontrolWork : control ∉ work := fun h =>
     hcNot (List.mem_append_right _ (List.mem_append_right _ (List.mem_append_right _ h)))
-  have hcontrolOut : control ∉ outReg := fun h =>
-    hcNot (List.mem_append_right _ (List.mem_append_left _ h))
   have hOW : ∀ w ∈ outReg, w ∉ work := fun w hw hw' =>
     hOx w hw w (List.mem_append_right _ hw') rfl
   have hOWnd : (outReg ++ work).Nodup :=
@@ -809,21 +661,17 @@ theorem fastOut_structural (control : Wire) (pointReg outReg : List Wire) (workS
       rcases List.mem_append.mp hb with hb | hb
       · exact hPx a ha b (List.mem_append_left _ hb)
       · exact hPx a ha b (List.mem_append_right _ (List.mem_append_right _ hb))⟩
-  have hcandWork : ∀ w ∈ sc, w ∈ work := constScratch_mem_work pw
-  have hcc : (anc :: sc ++ outReg).Nodup :=
-    nodup_anc_cand anc sc outReg work hcandWork (constScratch_nodup pw) hOnd hOW hancWork hancOut
-  have hOW' : ∀ w ∈ outReg, w ∉ control :: work := fun w hw h => by
-    rcases List.mem_cons.mp h with h | h
-    · exact hcontrolOut (h ▸ hw)
-    · exact hOW w hw h
-  have hancWork' : anc ∉ control :: work := fun h => by
-    rcases List.mem_cons.mp h with h | h
-    · exact hcontrolAnc h.symm
-    · exact hancWork h
-  have hgsWork : ∀ w ∈ gs, w ∈ control :: work := genericSource_mem control pw
-  have hgcc : (anc :: gs ++ outReg).Nodup :=
-    nodup_anc_cand anc gs outReg (control :: work) hgsWork
-      (genericSource_nodup control pw hcontrolWork) hOnd hOW' hancWork' hancOut
+  have hcandWork : ∀ w ∈ cand, w ∈ work := pointAddCandidate_mem_work pw
+  have hcc : (anc :: cand ++ outReg).Nodup := by
+    rw [List.cons_append]
+    refine List.nodup_cons.mpr ⟨?_, ?_⟩
+    · intro h
+      rcases List.mem_append.mp h with h | h
+      · exact hancWork (hcandWork _ h)
+      · exact hancOut h
+    · refine List.nodup_append.mpr ⟨?_, hOnd, fun a ha b hb => ?_⟩
+      · simp [cand, pointAddCandidate, List.nodup_range']
+      · intro e; subst e; exact hOW a hb (hcandWork a ha)
   have hpass : (control :: pointReg ++ outReg).Nodup := by
     rw [List.cons_append]
     exact List.nodup_cons.mpr ⟨fun h => hcNot (by
@@ -844,8 +692,8 @@ theorem fastOut_structural (control : Wire) (pointReg outReg : List Wire) (workS
     refine ⟨⟨⟨⟨⟨by simp [CircuitWellFormed, Gate.WellFormed],
       controlledCopyReg_wellFormed _ _ _ hpass⟩, by simp [CircuitWellFormed, Gate.WellFormed]⟩,
       hsetup⟩, ⟨⟨?_, ?_⟩, ?_⟩⟩, Arithmetic.wellFormed_reverse hsetup⟩
-    · exact fastBlock_wellFormed _ _ _ _ _ _ (genericPointCompute_wellFormed _ _ _)
-        (hne _ hgenW).1 hcontrolAnc (hne _ hgenW).2 hgcc
+    · exact fastBlock_wellFormed _ _ _ _ _ _ (fastGenericK_wellFormed _ _ _)
+        (hne _ hgenW).1 hcontrolAnc (hne _ hgenW).2 hcc
     · exact fastBlock_wellFormed _ _ _ _ _ _ (loadConst_wellFormed _ _)
         (hne _ hdblW).1 hcontrolAnc (hne _ hdblW).2 hcc
     · exact fastBlock_wellFormed _ _ _ _ _ _ (loadConst_wellFormed _ _)
@@ -878,19 +726,15 @@ theorem fastOut_structural (control : Wire) (pointReg outReg : List Wire) (workS
           · exact hSc
           · exact hSP w hw
           · exact hSO w hw))) hx
-    have hcS : ∀ w ∈ sc, w ∈ S := fun w hw => hSW w (hcandWork w hw)
-    have hgS : ∀ w ∈ gs, w ∈ S := fun w hw => by
-      rcases List.mem_cons.mp (hgsWork w hw) with h | h
-      · exact h ▸ hSc
-      · exact hSW w h
+    have hcS : ∀ w ∈ cand, w ∈ S := fun w hw => hSW w (hcandWork w hw)
     simp only [fastOut, fastBlocks]
     exact usesOnly_append (usesOnly_append (usesOnly_append hpassU hsetupU)
       (usesOnly_append (usesOnly_append
-        (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (genericK_usesOnly _ _ _) hSW)
-          hSc (hSW _ hgenW) hSa hgS hSO)
-        (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadScratch_usesOnly _ _) hSW)
+        (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (fastGenericK_usesOnly _ _ _) hSW)
+          hSc (hSW _ hgenW) hSa hcS hSO)
+        (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadCand_usesOnly _ _) hSW)
           hSc (hSW _ hdblW) hSa hcS hSO))
-        (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadScratch_usesOnly _ _) hSW)
+        (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadCand_usesOnly _ _) hSW)
           hSc (hSW _ hinfW) hSa hcS hSO))) (usesOnly_reverse hsetupU)
 
 /-! ## In-place controlled addition -/
@@ -1015,15 +859,12 @@ omit [Fact (Nat.Prime p)] in
 theorem fastOut_tCount (control : Wire) (pointReg outReg : List Wire) (workStart : Wire)
     (C : Point) (hP : pointReg.length = pointWidth) (hO : outReg.length = pointWidth) :
     tCount (fastOut control pointReg outReg workStart C) = 21015284696 := by
-  have hc : (constScratch (controlledPointAddPointWorkStart workStart)).length =
-      outReg.length := by rw [hO]; simp [pointWidth]
-  have hg : (genericSource control (controlledPointAddPointWorkStart workStart)).length =
-      outReg.length := by rw [hO]; simp [pointWidth]
+  have hc : (pointAddCandidate (controlledPointAddPointWorkStart workStart)).length =
+      outReg.length := by rw [hO]; simp [pointAddCandidate]
   simp only [fastOut, fastBlocks, fastPass, tCount_append, tCount_reverse,
-    fastBlock_tCount _ _ _ _ _ _ hc, fastBlock_tCount _ _ _ _ _ _ hg,
-    controlledCopyReg_tCount control pointReg outReg
-      (by rw [hP, hO]), pointAddSetup_tCount, genericPointCompute_tCount,
-    loadConst_tCount, hO]
+    fastBlock_tCount _ _ _ _ _ _ hc, controlledCopyReg_tCount control pointReg outReg
+      (by rw [hP, hO]), pointAddSetup_tCount, fastGenericK, genericPointCompute_tCount,
+    packFinitePoint_tCount, loadConst_tCount, hO]
   simp [tCount, tCost, pointWidth]
 
 omit [Fact (Nat.Prime p)] in

@@ -4,10 +4,10 @@ import Batteries.Tactic.OpenPrivate
 /-! EDITABLE. The wires actually touched by the single-pass controlled point addition.
 
 The single-pass `fastOut` writes its result straight into the output register. It never
-touches the V2 `candidate` and `selected` registers (the last 1026 wires of the local
-point-addition block), and of the V2 `choice` register it only uses the first wire, as the
-branch ancilla. The support below omits them, so the qubit envelope can be certified without
-them. No register position changes. -/
+touches the V2 `selected` register (the last 513 wires of the local point-addition block),
+and of the V2 `choice` register it only uses the first wire, as the branch ancilla. The
+support below omits both, so the qubit envelope can be certified without them. No register
+position changes. -/
 
 namespace ShorECDLP
 namespace Secp256k1
@@ -17,15 +17,14 @@ open Classical
 open Arithmetic
 open Challenge
 
-open private pointAddFlags_usesOnly controlledCopyReg_usesOnly IsPointAddFieldRegister
-  fieldSubConst_usesOnly fieldInv_usesOnly fieldMul_usesOnly fieldSub_usesOnly
-  circuitUsesOnly_append_iff circuitUsesOnly_reverse_iff
+open private pointAddBranchActiveSupport genericPointCompute_usesOnly
+  packFinitePoint_usesOnly_pointAdd pointAddFlags_usesOnly controlledCopyReg_usesOnly
   from ShorECDLP.Submission.Entrant.V2.PointAdd
 
-/-- Local point-addition wires below `candidate`, followed by the arithmetic engines. -/
-def tightPW (pw : Wire) : List Wire := List.range' pw 3086 ++ pointAddArithmeticWork pw
+/-- Local point-addition wires below `selected`, followed by the arithmetic engines. -/
+def tightPW (pw : Wire) : List Wire := List.range' pw 3599 ++ pointAddArithmeticWork pw
 
-private theorem range_sub (pw a n : Nat) (h : a + n ≤ 3086) :
+private theorem range_sub (pw a n : Nat) (h : a + n ≤ 3599) :
     ∀ w ∈ List.range' (pw + a) n, w ∈ tightPW pw := by
   intro w hw
   apply List.mem_append_left
@@ -69,10 +68,11 @@ theorem tight_t4 (pw : Wire) : ∀ w ∈ pointAddT4 pw, w ∈ tightPW pw := by
 theorem tight_t5 (pw : Wire) : ∀ w ∈ pointAddT5 pw, w ∈ tightPW pw := by
   have e : pointAddT5 pw = List.range' (pw + 1799) 257 := rfl
   rw [e]; exact range_sub pw 1799 257 (by norm_num)
-theorem tight_scratch (pw : Wire) : ∀ w ∈ constScratch pw, w ∈ tightPW pw :=
-  range_sub pw 514 513 (by norm_num)
+theorem tight_cand (pw : Wire) : ∀ w ∈ pointAddCandidate pw, w ∈ tightPW pw := by
+  have e : pointAddCandidate pw = List.range' (pw + 3086) 513 := rfl
+  rw [e]; exact range_sub pw 3086 513 (by norm_num)
 
-private theorem one_sub (pw a : Nat) (h : a < 3086) : pw + a ∈ tightPW pw :=
+private theorem one_sub (pw a : Nat) (h : a < 3599) : pw + a ∈ tightPW pw :=
   range_sub pw a 1 (by omega) (pw + a) (by simp)
 
 theorem tight_flagWork (pw : Wire) : ∀ w ∈ pointAddFlagWork pw, w ∈ tightPW pw := by
@@ -105,65 +105,21 @@ theorem tight_flagWork (pw : Wire) : ∀ w ∈ pointAddFlagWork pw, w ∈ tightP
   · subst h; exact one_sub pw 3084 (by norm_num)
   · subst h; exact one_sub pw 3085 (by norm_num)
 
-private theorem tight_field (pw : Wire) (r : List Wire) (hr : IsPointAddFieldRegister pw r) :
-    ∀ w ∈ r, w ∈ tightPW pw := by
-  rcases hr with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-  · exact tight_x pw
-  · exact tight_y pw
-  · exact tight_t0 pw
-  · exact tight_t1 pw
-  · exact tight_t2 pw
-  · exact tight_t3 pw
-  · exact tight_t4 pw
-  · exact tight_t5 pw
-
-private theorem fieldSubConst_tight (pw : Wire) (l : List Wire) (c : Nat) (o : List Wire)
-    (hl : IsPointAddFieldRegister pw l) (ho : IsPointAddFieldRegister pw o) :
-    CircuitUsesOnly (tightPW pw) (fieldSubConst (pointAddArithmeticOffset pw) l c o) := by
-  apply usesOnly_mono (fieldSubConst_usesOnly _ l c o)
+theorem tight_activeSupport (pw : Wire) :
+    ∀ w ∈ pointAddBranchActiveSupport pw, w ∈ tightPW pw := by
   intro w hw
-  simp only [List.mem_append] at hw
-  rcases hw with (h | h) | h
-  · exact tight_field pw l hl w h
-  · exact tight_field pw o ho w h
-  · exact engine_sub pw w (Or.inl h)
-
-private theorem fieldSub_tight (pw : Wire) (l r o : List Wire)
-    (hl : IsPointAddFieldRegister pw l) (hr : IsPointAddFieldRegister pw r)
-    (ho : IsPointAddFieldRegister pw o) :
-    CircuitUsesOnly (tightPW pw) (fieldSub (pointAddArithmeticOffset pw) l r o) := by
-  apply usesOnly_mono (fieldSub_usesOnly _ l r o)
-  intro w hw
-  simp only [List.mem_append] at hw
-  rcases hw with ((h | h) | h) | h
-  · exact tight_field pw l hl w h
-  · exact tight_field pw r hr w h
-  · exact tight_field pw o ho w h
-  · exact engine_sub pw w (Or.inl h)
-
-private theorem fieldMul_tight (pw : Wire) (l r o : List Wire)
-    (hl : IsPointAddFieldRegister pw l) (hr : IsPointAddFieldRegister pw r)
-    (ho : IsPointAddFieldRegister pw o) :
-    CircuitUsesOnly (tightPW pw) (fieldMul (pointAddArithmeticOffset pw) l r o) := by
-  apply usesOnly_mono (fieldMul_usesOnly _ l r o)
-  intro w hw
-  simp only [List.mem_append] at hw
-  rcases hw with ((h | h) | h) | h
-  · exact tight_field pw l hl w h
-  · exact tight_field pw r hr w h
-  · exact tight_field pw o ho w h
-  · exact engine_sub pw w (Or.inr (Or.inl h))
-
-private theorem fieldInv_tight (pw : Wire) (i o : List Wire)
-    (hi : IsPointAddFieldRegister pw i) (ho : IsPointAddFieldRegister pw o) :
-    CircuitUsesOnly (tightPW pw) (fieldInv (pointAddArithmeticOffset pw) i o) := by
-  apply usesOnly_mono (fieldInv_usesOnly _ i o)
-  intro w hw
-  simp only [List.mem_append] at hw
-  rcases hw with (h | h) | h
-  · exact tight_field pw i hi w h
-  · exact tight_field pw o ho w h
-  · exact engine_sub pw w (Or.inr (Or.inr h))
+  simp only [pointAddBranchActiveSupport, List.mem_append] at hw
+  rcases hw with h | h | h | h | h | h | h | h | h | h
+  · exact tight_x pw w h
+  · exact tight_y pw w h
+  · exact tight_t0 pw w h
+  · exact tight_t1 pw w h
+  · exact tight_t2 pw w h
+  · exact tight_t3 pw w h
+  · exact tight_t4 pw w h
+  · exact tight_t5 pw w h
+  · exact tight_cand pw w h
+  · exact engine_sub pw w h
 
 theorem setup_usesOnly_tight (pointReg : List Wire) (pw : Wire) (xC yC : Fp) :
     CircuitUsesOnly (pointReg ++ tightPW pw) (pointAddSetup pointReg pw xC yC) := by
@@ -191,14 +147,13 @@ theorem setup_usesOnly_tight (pointReg : List Wire) (pw : Wire) (xC yC : Fp) :
   exact usesOnly_append (usesOnly_append hx hy) hflags
 
 theorem genericK_usesOnly_tight (pw : Wire) (xC yC : Fp) :
-    CircuitUsesOnly (tightPW pw) (genericPointCompute pw xC yC) := by
-  simp [genericPointCompute, circuitUsesOnly_append_iff, circuitUsesOnly_reverse_iff,
-    fieldSubConst_tight, fieldInv_tight, fieldMul_tight, fieldSub_tight,
-    IsPointAddFieldRegister]
+    CircuitUsesOnly (tightPW pw) (fastGenericK pw xC yC) :=
+  usesOnly_mono (usesOnly_append (genericPointCompute_usesOnly pw xC yC)
+    (packFinitePoint_usesOnly_pointAdd pw)) (tight_activeSupport pw)
 
-theorem loadScratch_usesOnly_tight (pw : Wire) (v : Nat) :
-    CircuitUsesOnly (tightPW pw) (loadConst (constScratch pw) v) :=
-  usesOnly_mono (loadConst_usesOnly _ _) (tight_scratch pw)
+theorem loadCand_usesOnly_tight (pw : Wire) (v : Nat) :
+    CircuitUsesOnly (tightPW pw) (loadConst (pointAddCandidate pw) v) :=
+  usesOnly_mono (loadConst_usesOnly _ _) (tight_cand pw)
 
 /-- Tight support of one single-pass out-of-place controlled addition. -/
 theorem fastOut_usesOnly_tight (control : Wire) (pointReg outReg : List Wire) (ws : Wire)
@@ -221,14 +176,7 @@ theorem fastOut_usesOnly_tight (control : Wire) (pointReg outReg : List Wire) (w
   have hgen : pointAddGenericFlag pw ∈ S := hflag _ (by simp [pointAddFlagWork])
   have hdbl : pointAddDoubleFlag pw ∈ S := hflag _ (by simp [pointAddFlagWork])
   have hinf : pointAddInfinityFlag pw ∈ S := hflag _ (by simp [pointAddFlagWork])
-  have hcS : ∀ w ∈ constScratch pw, w ∈ S := fun w hw => hST w (tight_scratch pw w hw)
-  have hgS : ∀ w ∈ genericSource control pw, w ∈ S := by
-    intro w hw
-    rcases List.mem_cons.mp hw with h | h
-    · exact h ▸ hSc
-    · rcases genericTail_mem pw w h with h' | h'
-      · exact hST w (tight_t5 pw w h')
-      · exact hST w (tight_t4 pw w h')
+  have hcS : ∀ w ∈ pointAddCandidate pw, w ∈ S := fun w hw => hST w (tight_cand pw w hw)
   have hsetupU := usesOnly_mono (setup_usesOnly_tight pointReg pw (pointCoordinates C).2.1
     (pointCoordinates C).2.2) hSPT
   have hpassU : CircuitUsesOnly S (fastPass control pointReg outReg) := by
@@ -246,10 +194,10 @@ theorem fastOut_usesOnly_tight (control : Wire) (pointReg outReg : List Wire) (w
   exact usesOnly_append (usesOnly_append (usesOnly_append hpassU hsetupU)
     (usesOnly_append (usesOnly_append
       (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (genericK_usesOnly_tight _ _ _) hST)
-        hSc hgen hSa hgS hSO)
-      (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadScratch_usesOnly_tight _ _) hST)
+        hSc hgen hSa hcS hSO)
+      (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadCand_usesOnly_tight _ _) hST)
         hSc hdbl hSa hcS hSO))
-      (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadScratch_usesOnly_tight _ _) hST)
+      (fastBlock_usesOnly _ _ _ _ _ _ S (usesOnly_mono (loadCand_usesOnly_tight _ _) hST)
         hSc hinf hSa hcS hSO))) (usesOnly_reverse hsetupU)
 
 /-- Tight workspace of one in-place controlled addition placed at `workStart`. -/
