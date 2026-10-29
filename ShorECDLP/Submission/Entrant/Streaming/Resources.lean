@@ -1,3 +1,4 @@
+import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowBody
 import ShorECDLP.Submission.«2607_13816».Arithmetic.ZeroAllowedPrimitiveCounts
 import ShorECDLP.Submission.«2607_13816».Arithmetic.UnitaryPrimitiveCounts
@@ -230,14 +231,69 @@ theorem batchSlotBound_schedule (nodes : Nat) :
   simp only [batchSchedule,batchSlotBound]
   omega
 
-theorem placedBatchProgram_slots (w : OddWindow) (start : Nat) :
-    (placedBatchProgram w start).2.gateSlots ≤ 1183793236 := by
-  simp only [placedBatchProgram,relabelCompiled,relabelStraight_slots,batchedEndpointProgram,
-    lookupProgram_slots]
-  have h := batchOps_slots_le (batchWindowRows w) 1024 batchWindowTree 836 pointLookupPath batchSchedule
-  rw [batchSlotBound_schedule] at h
-  have hn := tableAddressTree_nodes pointLookupAddress 0 1
-  change batchWindowTree.internalNodes + 1 = 32768 at hn
+theorem computeEqConst_length_le (r : List Wire) (value : Nat) (flag : Wire) (scratch : List Wire)
+    (hs : r.length-2 ≤ scratch.length) (hr : r.length = 257) :
+    (computeEqConst r value flag scratch).length ≤ 1025 := by
+  have hc := computeEqConst_primitive r value flag scratch hs
+  have hlen := circuit_length_primitive (computeEqConst r value flag scratch)
+  rw [hc] at hlen
+  have hz := zeroBitCount_bound value 0 r.length
+  rw [hr] at hlen hz
+  norm_num only [mcxVChainCnotCost,mcxVChainToffoliCost] at hlen
+  (try simp only [ite_false] at hlen)
+  omega
+
+theorem ipxTest_length_le (k : Fin 4) : (ipxTest k).length ≤ 3075 := by
+  have h1 := computeEqConst_length_le ipxLow 0 ipxHalf ipxScratch
+    (by simp [ipxLow,ipxScratch]) (by simp [ipxLow])
+  have h2 := computeEqConst_length_le (ipxHalf :: ipxHigh) 1 (ipxFlag k) ipxScratch
+    (by simp [ipxHigh,ipxScratch]) (by simp [ipxHigh])
+  simp only [ipxTest,List.length_append]
+  omega
+
+theorem ipxLeaf_length_le {n : Nat} (row : Fin n) (q : Wire) (u : Fin 8) (v : Option (Fin 8)) :
+    (ipxLeaf row q u v).length ≤ 1026 := by
+  have h1 := endpointSelectGates_length_le q (ipxPorts row u)
+  have h2 := endpointSelectGates_length_le q (ipxPortsOpt row v)
+  have l1 : (ipxPorts row u).length = 513 := by simp only [ipxPorts,List.length_ofFn]
+  have l2 : (ipxPortsOpt row v).length ≤ 513 := by
+    cases v <;> simp only [ipxPortsOpt,ipxPorts,List.length_nil,List.length_ofFn] <;> omega
+  simp only [ipxLeaf,List.length_append]
+  omega
+
+def ipxSlotBound (nodes : Nat) : List IpxOp → Nat
+  | [] => 0
+  | .query _ _ _ :: ops => 1026*(nodes+1)+10*nodes+ipxSlotBound nodes ops
+  | .test _ :: ops => 3075+ipxSlotBound nodes ops
+
+theorem ipxOps_slots_le {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
+    (ops : List IpxOp) :
+    lookupSlots (ipxOps rows tree paths ops) ≤ ipxSlotBound tree.internalNodes ops := by
+  induction ops with
+  | nil => rfl
+  | cons op ops ih =>
+    cases op with
+    | query c u v =>
+      have h := unaryLookupOps_slots_le _ 1026 (fun l q => ipxLeaf_length_le (rows l) q u v)
+        tree (ipxControl c) paths
+      simp only [ipxOps,lookupSlots_append,ipxSlotBound]
+      omega
+    | test k =>
+      have h := ipxTest_length_le k
+      simp only [ipxOps,lookupSlots,ordinaryOp,List.length_map,ipxSlotBound]
+      omega
+
+theorem ipxSlotBound_schedule (nodes : Nat) :
+    ipxSlotBound nodes ipxSchedule = 13*(1026*(nodes+1)+10*nodes)+8*3075 := by
+  simp only [ipxSchedule,ipxPhase1,ipxPhase2,ipxPhase3,List.cons_append,List.nil_append,ipxSlotBound]
+  omega
+
+/-- The correction block keeps the slot budget of the block it replaces. -/
+theorem ipxProgram_slots (w : OddWindow) (start : Nat) :
+    (ipxProgram w start).2.gateSlots ≤ 1183793236 := by
+  simp only [ipxProgram,ipxProgramOf,lookupProgram_slots]
+  have h := ipxOps_slots_le (batchWindowRows w) batchWindowTree pointLookupPath ipxSchedule
+  rw [ipxSlotBound_schedule,batchWindowTree_nodes] at h
   omega
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -2252,8 +2308,8 @@ theorem reindexCompiled_slots {n m start : Nat} (f : Fin n → Fin m)
   exact reindexStraight_gateSlots f p.2
 
 attribute [local irreducible] reindexCompiled sharedCoordinateProgram sharedYNegateProgram
-  placedBatchProgram batchedWindowCore batchedWindowPrepared actualBatchedWindow actualFirstWindow
-  actualLeftWindows actualRightWindows batchedOuterPlan
+  ipxProgram ipxWindowCore ipxWindowPrepared actualIpxWindow actualFirstWindow
+  ipxLeftWindows ipxRightWindows ipxOuterPlan
 
 theorem sharedCoordinateProgram_slots (w : OddWindow) (start : Nat) :
     (sharedCoordinateProgram w start).2.gateSlots≤1500000000 := by
@@ -2265,51 +2321,51 @@ theorem sharedYNegateProgram_slots (w : OddWindow) (start : Nat) :
   simp only [sharedYNegateProgram,reindexCompiled_slots]
   exact yNegateProgram_slots_le start
 
-theorem batchedWindowCore_slots (w : OddWindow) (start : Nat) :
-    (batchedWindowCore w start).2.gateSlots≤2683845980 := by
-  have h := sequenceProgram_slots_le 983040 (batchedWindowSegments w)
+theorem ipxWindowCore_slots (w : OddWindow) (start : Nat) :
+    (ipxWindowCore w start).2.gateSlots≤2683845980 := by
+  have h := sequenceProgram_slots_le 983040 (ipxWindowSegments w)
     ([1500000000,26372,1183793236,26372] : List Nat) (by
-      unfold batchedWindowSegments
+      unfold ipxWindowSegments
       refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
       · intro s; exact sharedCoordinateProgram_slots w s
       · intro s; exact sharedYNegateProgram_slots w s
-      · intro s; exact placedBatchProgram_slots w s
+      · intro s; exact ipxProgram_slots w s
       · intro s; exact sharedYNegateProgram_slots w s) start
-  simpa only [batchedWindowCore,List.sum_cons,List.sum_nil] using h
+  simpa only [ipxWindowCore,List.sum_cons,List.sum_nil] using h
 
-theorem batchedWindowPrepared_slots (w : OddWindow) (start : Nat) :
-    (batchedWindowPrepared w start).2.gateSlots≤3000000000 := by
-  have h := batchedWindowCore_slots w start
-  simp only [batchedWindowPrepared,surroundCompiled_slots,signedAddressCircuit_length,
+theorem ipxWindowPrepared_slots (w : OddWindow) (start : Nat) :
+    (ipxWindowPrepared w start).2.gateSlots≤3000000000 := by
+  have h := ipxWindowCore_slots w start
+  simp only [ipxWindowPrepared,surroundCompiled_slots,signedAddressCircuit_length,
     pointLookupAddress,List.length_range']
   omega
 
-theorem actualBatchedWindow_slots (w : OddWindow) (start : Nat) :
-    ((actualBatchedWindow w).program start).gateSlots≤3000000000 := by
-  simp only [actualBatchedWindow,closedWindow,shiftStraight_gateSlots,relabelStraight_slots]
-  exact batchedWindowPrepared_slots w 0
+theorem actualIpxWindow_slots (w : OddWindow) (start : Nat) :
+    ((actualIpxWindow w).program start).gateSlots≤3000000000 := by
+  simp only [actualIpxWindow,closedWindow,shiftStraight_gateSlots,relabelStraight_slots]
+  exact ipxWindowPrepared_slots w 0
 
-theorem batchedOuterPlan_windowSlots :
-    ∀ w ∈ batchedOuterPlan.left.toList ++ batchedOuterPlan.right.toList,
+theorem ipxOuterPlan_windowSlots :
+    ∀ w ∈ ipxOuterPlan.left.toList ++ ipxOuterPlan.right.toList,
       ∀ start, (w.program start).gateSlots≤3000000000 := by
   intro w hw start
-  simp only [batchedOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray,
-    actualLeftWindows,actualRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray,
+    ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
   rcases hw with (rfl | ⟨i,rfl⟩) | ⟨i,rfl⟩
   · exact (actualFirstWindow_slots start).trans (by decide)
-  · exact actualBatchedWindow_slots _ start
-  · exact actualBatchedWindow_slots _ start
+  · exact actualIpxWindow_slots _ start
+  · exact actualIpxWindow_slots _ start
 
 /-- Syntactic slots of the actual 56-round program. This counts every fixed
 correction slot; it does not assert physical validity, success, or wire support. -/
-theorem batchedOuterPlan_slots (start : Nat) :
-    (batchedOuterPlan.repeat 56 start).gateSlots≤5000000000000 := by
-  exact (batchedOuterPlan.repeat_slots_le 3000000000 batchedOuterPlan_windowSlots 56 start).trans (by decide)
+theorem ipxOuterPlan_slots (start : Nat) :
+    (ipxOuterPlan.repeat 56 start).gateSlots≤5000000000000 := by
+  exact (ipxOuterPlan.repeat_slots_le 3000000000 ipxOuterPlan_windowSlots 56 start).trans (by decide)
 
-/-- Syntactic slots of the entrant's 6-round program. -/
-theorem batchedOuterPlan_rounds_slots (start : Nat) :
-    (batchedOuterPlan.repeat 6 start).gateSlots≤5000000000000 := by
-  exact (batchedOuterPlan.repeat_slots_le 3000000000 batchedOuterPlan_windowSlots 6 start).trans (by decide)
+/-- Syntactic slots of the entrant's 26-round program. -/
+theorem ipxOuterPlan_rounds_slots (start : Nat) :
+    (ipxOuterPlan.repeat 26 start).gateSlots≤5000000000000 := by
+  exact (ipxOuterPlan.repeat_slots_le 3000000000 ipxOuterPlan_windowSlots 26 start).trans (by decide)
 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -2384,10 +2440,10 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] sharedCoordinateProgram yNegateProgram placedBatchProgram
-  batchedWindowCore batchedWindowPrepared signedLookupCoordinateProgram primitiveResources
-  sharedYNegateProgram actualBatchedWindow actualLeftWindows actualRightWindows
-  placedBatchSource windowYNegate sequenceCircuit batchedWindowSources
+attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
+  ipxWindowCore ipxWindowPrepared signedLookupCoordinateProgram primitiveResources
+  sharedYNegateProgram actualIpxWindow ipxLeftWindows ipxRightWindows
+  ipxSource windowYNegate sequenceCircuit ipxWindowSources
 
 private theorem adder_counts : pointLookupAdderPrimitives.toffoli=2813 ∧
     pointLookupAdderPrimitives.phase=0 ∧ pointLookupAdderPrimitives.measurements=511 := by
@@ -2447,14 +2503,6 @@ theorem sharedYNegateProgram_count (w : OddWindow) (start : Nat) :
     (sharedYNegateProgram_run w start (fun _ => false) (fun _ => false))).trans
     windowYNegate_numeric_counts.2
 
-theorem placedBatchProgram_tCount (w : OddWindow) (start : Nat) (Q : Point)
-    (history : Fin start → Bool) :
-    compiledTCount (placedBatchProgram w start) (readConstant coefficientAt Q) history =
-      (placedBatchSource Q w).tCount := by
-  simp only [placedBatchProgram,relabelCompiled,compiledTCount,relabelStraight_instantiate,
-    AdaptiveCircuit.relabel_tCount,batchedEndpointProgram,lookupProgram_tCount,batchOps_source,
-    placedBatchSource]
-
 theorem sharedYNegateProgram_tCount (w : OddWindow) (start : Nat)
     (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
     compiledTCount (sharedYNegateProgram w start) read history = windowYNegate.tCount := by
@@ -2462,17 +2510,17 @@ theorem sharedYNegateProgram_tCount (w : OddWindow) (start : Nat)
   unfold windowYNegate
   exact yNegateProgram_tCount start _ history
 
-theorem batchedWindowCore_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
+theorem ipxWindowCore_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
-    compiledTCount (batchedWindowCore w start) (readConstant coefficientAt Q) history =
-      (sequenceCircuit (batchedWindowSources Q w)).tCount := by
-  unfold batchedWindowCore
+    compiledTCount (ipxWindowCore w start) (readConstant coefficientAt Q) history =
+      (sequenceCircuit (ipxWindowSources Q w)).tCount := by
+  unfold ipxWindowCore
   apply sequenceProgram_tCount
-  unfold batchedWindowSegments batchedWindowSources
+  unfold ipxWindowSegments ipxWindowSources
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
   · intro cursor h; exact sharedCoordinateProgram_tCount w cursor Q hQ h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
-  · intro cursor h; exact placedBatchProgram_tCount w cursor Q h
+  · intro cursor h; exact ipxProgram_tCount w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
 
 theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
@@ -2480,11 +2528,11 @@ theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
   simp only [sequenceCircuit,adaptive_tCount_seq,AdaptiveCircuit.tCount]
   omega
 
-theorem batchedWindowSources_tCount (Q : Point) (w : OddWindow) :
-    (sequenceCircuit (batchedWindowSources Q w)).tCount = 514030776 := by
-  unfold batchedWindowSources
+theorem ipxWindowSources_tCount (Q : Point) (w : OddWindow) :
+    (sequenceCircuit (ipxWindowSources Q w)).tCount = 513314039 := by
+  unfold ipxWindowSources
   rw [sequenceCircuit_four_tCount,(coordinate_numeric_counts _ _).1,
-    windowYNegate_numeric_counts.1,placedBatchSource_tCount]
+    windowYNegate_numeric_counts.1,ipxSource_tCount]
 
 theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
@@ -2493,40 +2541,40 @@ theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0
     readConstant_reindex firstIndex _ _ Q coefficientAt_first]
   exact firstLookupProgram_tCount start Q hQ history
 
-theorem actualBatchedWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
+theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
-    (((actualBatchedWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      514030776 := by
+    (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
+      513314039 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
-    (signedAddressCircuit 836 854 pointLookupAddress) (batchedWindowCore w 0)
-    (sequenceCircuit (batchedWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
-    (batchedWindowCore_tCount w 0 Q hQ Fin.elim0)
+    (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
+    (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
+    (ipxWindowCore_tCount w 0 Q hQ Fin.elim0)
   simp only [AdaptiveCircuit.tCount,adaptive_tCount_seq,signedAddressCircuit_tCount,
-    Nat.zero_add,Nat.add_zero,batchedWindowSources_tCount] at h
-  simp only [actualBatchedWindow,closedWindow_run,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount]
-  change compiledTCount (batchedWindowPrepared w 0) (readConstant coefficientAt Q) Fin.elim0 = _
-  unfold batchedWindowPrepared
+    Nat.zero_add,Nat.add_zero,ipxWindowSources_tCount] at h
+  simp only [actualIpxWindow,closedWindow_run,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount]
+  change compiledTCount (ipxWindowPrepared w 0) (readConstant coefficientAt Q) Fin.elim0 = _
+  unfold ipxWindowPrepared
   exact h
 
-theorem batchedWindowCore_count (w : OddWindow) (start : Nat) :
-    (batchedWindowCore w start).1 = 30733484 := by
-  simp only [batchedWindowCore,batchedWindowSegments,sequenceProgram,appendCompiled,
-    sharedCoordinateProgram_count,sharedYNegateProgram_count,placedBatchProgram_count]
+theorem ipxWindowCore_count (w : OddWindow) (start : Nat) :
+    (ipxWindowCore w start).1 = 30700717 := by
+  simp only [ipxWindowCore,ipxWindowSegments,sequenceProgram,appendCompiled,
+    sharedCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
 
 theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
     (p : (count : Nat) × Straight n start (start+count)) :
     (surroundCompiled before after p).1 = p.1 := by
   simp only [surroundCompiled,prependCompiled,appendCompiled,Nat.add_zero]
 
-theorem actualBatchedWindow_count (w : OddWindow) :
-    (actualBatchedWindow w).count = 30733484 := by
-  unfold actualBatchedWindow closedWindow
-  change 0 + (batchedWindowPrepared w 0).1 = 30733484
+theorem actualIpxWindow_count (w : OddWindow) :
+    (actualIpxWindow w).count = 30700717 := by
+  unfold actualIpxWindow closedWindow
+  change 0 + (ipxWindowPrepared w 0).1 = 30700717
   rw [Nat.zero_add]
-  have hp : (batchedWindowPrepared w 0).1 = (batchedWindowCore w 0).1 := by
-    unfold batchedWindowPrepared
+  have hp : (ipxWindowPrepared w 0).1 = (ipxWindowCore w 0).1 := by
+    unfold ipxWindowPrepared
     exact surroundCompiled_count _ _ _
-  rw [hp,batchedWindowCore_count]
+  rw [hp,ipxWindowCore_count]
 
 theorem actualFirstWindow_count : actualFirstWindow.count = 65535 := rfl
 
@@ -2539,22 +2587,22 @@ theorem axisCount_constant {n : Nat} (ws : List (OuterWindow n)) (m : Nat)
     simp only [List.length_cons,Nat.add_mul,Nat.one_mul]
     omega
 
-theorem actualLeftWindows_count : axisCount actualLeftWindows = 461068051 := by
-  unfold actualLeftWindows
+theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 460576546 := by
+  unfold ipxLeftWindows
   rw [axisCount,actualFirstWindow_count]
-  rw [axisCount_constant _ 30733484]
+  rw [axisCount_constant _ 30700717]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
-    exact actualBatchedWindow_count _
+    exact actualIpxWindow_count _
 
-theorem actualRightWindows_count : axisCount actualRightWindows = 399535500 := by
-  unfold actualRightWindows
-  rw [axisCount_constant _ 30733484]
+theorem ipxRightWindows_count : axisCount ipxRightWindows = 399109529 := by
+  unfold ipxRightWindows
+  rw [axisCount_constant _ 30700717]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
-    exact actualBatchedWindow_count _
+    exact actualIpxWindow_count _
 
 theorem standardOuterPlan_lists_stride {n : Nat} (left right : List (OuterWindow n))
     (hl : left.length = 16) (hr : right.length = 13) (reset : List Wire) :
@@ -2563,20 +2611,20 @@ theorem standardOuterPlan_lists_stride {n : Nat} (left right : List (OuterWindow
       axisCount left + axisCount right + reset.length := by
   simp only [OuterPlan.stride,standardOuterPlan,Vector.toList,List.toList_toArray]
 
-theorem batchedOuterPlan_stride : batchedOuterPlan.stride = 860607482 := by
-  have h := standardOuterPlan_lists_stride actualLeftWindows actualRightWindows
-    actualLeftWindows_length actualRightWindows_length batchedResetWires
+theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859686929 := by
+  have h := standardOuterPlan_lists_stride ipxLeftWindows ipxRightWindows
+    ipxLeftWindows_length ipxRightWindows_length resetWires
   apply h.trans
-  rw [actualLeftWindows_count,actualRightWindows_count,batchedResetWires_length]
+  rw [ipxLeftWindows_count,ipxRightWindows_count,resetWires_length]
 
 /-- Exact final record count includes the first lookup, all 28 addition windows,
-all Fourier measurements, and the full 3931-wire reset in each of 56 rounds. -/
-theorem batchedOuterPlan_finalCursor : 56 * batchedOuterPlan.stride = 48194018992 := by
-  rw [batchedOuterPlan_stride]
+all Fourier measurements, and the full 854-wire reset in each of 56 rounds. -/
+theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48142468024 := by
+  rw [ipxOuterPlan_stride]
 
-/-- Exact final record count of the entrant's 6-round program. -/
-theorem batchedOuterPlan_finalCursor6 : 6 * batchedOuterPlan.stride = 5163644892 := by
-  rw [batchedOuterPlan_stride]
+/-- Exact final record count of the entrant's 26-round program. -/
+theorem ipxOuterPlan_finalCursor26 : 26 * ipxOuterPlan.stride = 22351860154 := by
+  rw [ipxOuterPlan_stride]
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -2589,8 +2637,8 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] actualFirstWindow actualBatchedWindow actualLeftWindows actualRightWindows
-  batchedOuterPlan
+attribute [local irreducible] actualFirstWindow actualIpxWindow ipxLeftWindows ipxRightWindows
+  ipxOuterPlan
 
 /-- Weighted window costs retain the much smaller first lookup. -/
 theorem outerAxis_weighted_t_le {n : Nat} (wires : Vector Wire 16) (ws : List (OuterWindow n))
@@ -2644,44 +2692,44 @@ theorem OuterPlan.round_weighted_t_le {n : Nat} (p : OuterPlan n)
         ShorECDLP.tCount,tCost,resetProgram_t]
 
 def actualWindowTCost (w : OuterWindow 983040) : Nat :=
-  if w.count = 65535 then 458745 else 514030776
+  if w.count = 65535 then 458745 else 513314039
 
 theorem actualWindowTCost_first : actualWindowTCost actualFirstWindow = 458745 := by
   simp only [actualWindowTCost,actualFirstWindow_count,ite_true]
 theorem actualWindowTCost_batched (w : OddWindow) :
-    actualWindowTCost (actualBatchedWindow w) = 514030776 := by
-  simp only [actualWindowTCost,actualBatchedWindow_count]
+    actualWindowTCost (actualIpxWindow w) = 513314039 := by
+  simp only [actualWindowTCost,actualIpxWindow_count]
   decide
 
 theorem actualWindowTCost_bound (Q : Point) (hQ : order • Q = 0) :
-    ∀ w ∈ actualLeftWindows ++ actualRightWindows, ∀ start history,
+    ∀ w ∈ ipxLeftWindows ++ ipxRightWindows, ∀ start history,
       ((w.program start).instantiate (readConstant coefficientAt Q) history).tCount ≤ actualWindowTCost w := by
   intro w hw start history
-  simp only [actualLeftWindows,actualRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+  simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
   rcases hw with (rfl | ⟨i,rfl⟩) | ⟨i,rfl⟩
   · rw [actualFirstWindow_tCount start Q hQ history,actualWindowTCost_first]
-  · rw [actualBatchedWindow_tCount _ start Q hQ history,actualWindowTCost_batched]
-  · rw [actualBatchedWindow_tCount _ start Q hQ history,actualWindowTCost_batched]
+  · rw [actualIpxWindow_tCount _ start Q hQ history,actualWindowTCost_batched]
+  · rw [actualIpxWindow_tCount _ start Q hQ history,actualWindowTCost_batched]
 
 theorem actualWindowTCost_total :
-    (actualLeftWindows.map actualWindowTCost).sum +
-      (actualRightWindows.map actualWindowTCost).sum = 14393320473 := by
-  simp only [actualLeftWindows,actualRightWindows,List.map_cons,List.sum_cons,List.map_ofFn,
+    (ipxLeftWindows.map actualWindowTCost).sum +
+      (ipxRightWindows.map actualWindowTCost).sum = 14373251837 := by
+  simp only [ipxLeftWindows,ipxRightWindows,List.map_cons,List.sum_cons,List.map_ofFn,
     Function.comp_def,actualWindowTCost_first,actualWindowTCost_batched]
   simp
 
-theorem batchedOuterPlan_left : batchedOuterPlan.left.toList = actualLeftWindows := by
-  simp only [batchedOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
-theorem batchedOuterPlan_right : batchedOuterPlan.right.toList = actualRightWindows := by
-  simp only [batchedOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
+theorem ipxOuterPlan_left : ipxOuterPlan.left.toList = ipxLeftWindows := by
+  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
+theorem ipxOuterPlan_right : ipxOuterPlan.right.toList = ipxRightWindows := by
+  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
 
-theorem batchedOuterPlan_round_t_le (Q : Point) (hQ : order • Q = 0)
+theorem ipxOuterPlan_round_t_le (Q : Point) (hQ : order • Q = 0)
     (start : Nat) (history : Fin start → Bool) :
-    ((batchedOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
-      14393374641 := by
-  have h := batchedOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
-    (by rw [batchedOuterPlan_left,batchedOuterPlan_right]; exact actualWindowTCost_bound Q hQ) start history
-  rw [batchedOuterPlan_left,batchedOuterPlan_right,actualWindowTCost_total] at h
+    ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
+      14373306005 := by
+  have h := ipxOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
+    (by rw [ipxOuterPlan_left,ipxOuterPlan_right]; exact actualWindowTCost_bound Q hQ) start history
+  rw [ipxOuterPlan_left,ipxOuterPlan_right,actualWindowTCost_total] at h
   exact h
 
 theorem OuterPlan.repeat_t_le_of_round {n : Nat} (p : OuterPlan n) (cost : Nat)
@@ -2699,22 +2747,23 @@ theorem OuterPlan.repeat_t_le_of_round {n : Nat} (p : OuterPlan n) (cost : Nat)
     rw [Nat.succ_mul]
     omega
 
-/-- T upper bound of the actual 56-round five-word program; includes Fourier feedback. -/
-theorem batchedOuterPlan_total_t_le (Q : Point) (hQ : order • Q = 0) :
-    ((batchedOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      806028979896 := by
-  exact batchedOuterPlan.repeat_t_le_of_round 14393374641 (readConstant coefficientAt Q)
-    (batchedOuterPlan_round_t_le Q hQ) 56 0 Fin.elim0
+/-- T upper bound of the actual 56-round program with the in-place correction; includes Fourier
+feedback. -/
+theorem ipxOuterPlan_total_t_le (Q : Point) (hQ : order • Q = 0) :
+    ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      804905136280 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14373306005 (readConstant coefficientAt Q)
+    (ipxOuterPlan_round_t_le Q hQ) 56 0 Fin.elim0
 
-/-- The earlier provisional limit omitted the five-word correction overhead. -/
-theorem batchedOuterPlan_exceeds_old_measurement_limit :
-    47471340504 < 56 * batchedOuterPlan.stride := by
-  rw [batchedOuterPlan_finalCursor]
+/-- All 56 rounds would exceed the published measurement limit. -/
+theorem ipxOuterPlan_exceeds_old_measurement_limit :
+    47471340504 < 56 * ipxOuterPlan.stride := by
+  rw [ipxOuterPlan_finalCursor]
   decide
-/-- The published cap admits the entrant's 6-round program. -/
-theorem batchedOuterPlan_measurements_fit6 :
-    6 * batchedOuterPlan.stride ≤ officialLimits.measurements := by
-  rw [batchedOuterPlan_finalCursor6]
+/-- The published cap admits the entrant's 26-round program. -/
+theorem ipxOuterPlan_measurements_fit26 :
+    26 * ipxOuterPlan.stride ≤ officialLimits.measurements := by
+  rw [ipxOuterPlan_finalCursor26]
   decide
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -2848,10 +2897,10 @@ theorem coordinateProgram_tCount_uniform (start : Nat) (read : ConstantBit 32768
   · intro cursor h
     exact signed_field_uniform .negY cursor read h
 
-attribute [local irreducible] sharedCoordinateProgram yNegateProgram placedBatchProgram
-  batchedWindowCore batchedWindowPrepared signedLookupCoordinateProgram
-  sharedYNegateProgram actualBatchedWindow actualLeftWindows actualRightWindows
-  placedBatchSource windowYNegate sequenceCircuit batchedWindowSources
+attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
+  ipxWindowCore ipxWindowPrepared signedLookupCoordinateProgram
+  sharedYNegateProgram actualIpxWindow ipxLeftWindows ipxRightWindows
+  ipxSource windowYNegate sequenceCircuit ipxWindowSources
 
 theorem sharedCoordinateProgram_tCount_uniform (w : OddWindow) (start : Nat)
     (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
@@ -2859,17 +2908,17 @@ theorem sharedCoordinateProgram_tCount_uniform (w : OddWindow) (start : Nat)
   simp only [sharedCoordinateProgram,reindexCompiled,compiledTCount,reindexStraight_instantiate]
   exact (coordinateProgram_tCount_uniform start _ history).trans (coordinate_numeric_counts _ _).1
 
-theorem batchedWindowCore_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
+theorem ipxWindowCore_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    compiledTCount (batchedWindowCore w start) (readConstant coefficientAt Q) history =
-      (sequenceCircuit (batchedWindowSources Q w)).tCount := by
-  unfold batchedWindowCore
+    compiledTCount (ipxWindowCore w start) (readConstant coefficientAt Q) history =
+      (sequenceCircuit (ipxWindowSources Q w)).tCount := by
+  unfold ipxWindowCore
   apply sequenceProgram_tCount
-  unfold batchedWindowSegments batchedWindowSources
+  unfold ipxWindowSegments ipxWindowSources
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
   · intro cursor h; exact (sharedCoordinateProgram_tCount_uniform w cursor _ h).trans (coordinate_numeric_counts _ _).1.symm
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
-  · intro cursor h; exact placedBatchProgram_tCount w cursor Q h
+  · intro cursor h; exact ipxProgram_tCount w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
 
 
@@ -2878,53 +2927,53 @@ theorem actualFirstWindow_tCount_uniform (start : Nat) (Q : Point)
     ((actualFirstWindow.program start).instantiate (readConstant coefficientAt Q) history).tCount = 458745 := by
   simp only [actualFirstWindow,reindexStraight_instantiate]
   exact first_load_uniform start _ history
-theorem actualBatchedWindow_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
+theorem actualIpxWindow_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    (((actualBatchedWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      514030776 := by
+    (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
+      513314039 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
-    (signedAddressCircuit 836 854 pointLookupAddress) (batchedWindowCore w 0)
-    (sequenceCircuit (batchedWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
-    (batchedWindowCore_tCount_uniform w 0 Q Fin.elim0)
+    (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
+    (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
+    (ipxWindowCore_tCount_uniform w 0 Q Fin.elim0)
   simp only [AdaptiveCircuit.tCount,adaptive_tCount_seq,signedAddressCircuit_tCount,
-    Nat.zero_add,Nat.add_zero,batchedWindowSources_tCount] at h
-  simp only [actualBatchedWindow,closedWindow_run,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount]
-  change compiledTCount (batchedWindowPrepared w 0) (readConstant coefficientAt Q) Fin.elim0 = _
-  unfold batchedWindowPrepared
+    Nat.zero_add,Nat.add_zero,ipxWindowSources_tCount] at h
+  simp only [actualIpxWindow,closedWindow_run,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount]
+  change compiledTCount (ipxWindowPrepared w 0) (readConstant coefficientAt Q) Fin.elim0 = _
+  unfold ipxWindowPrepared
   exact h
 
 theorem actualWindowTCost_bound_uniform (Q : Point) :
-    ∀ w ∈ actualLeftWindows ++ actualRightWindows, ∀ start history,
+    ∀ w ∈ ipxLeftWindows ++ ipxRightWindows, ∀ start history,
       ((w.program start).instantiate (readConstant coefficientAt Q) history).tCount ≤ actualWindowTCost w := by
   intro w hw start history
-  simp only [actualLeftWindows,actualRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+  simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
   rcases hw with (rfl | ⟨i,rfl⟩) | ⟨i,rfl⟩
   · rw [actualFirstWindow_tCount_uniform start Q history,actualWindowTCost_first]
-  · rw [actualBatchedWindow_tCount_uniform _ start Q history,actualWindowTCost_batched]
-  · rw [actualBatchedWindow_tCount_uniform _ start Q history,actualWindowTCost_batched]
+  · rw [actualIpxWindow_tCount_uniform _ start Q history,actualWindowTCost_batched]
+  · rw [actualIpxWindow_tCount_uniform _ start Q history,actualWindowTCost_batched]
 
-attribute [local irreducible] batchedOuterPlan
-theorem batchedOuterPlan_round_t_uniform (Q : Point)
+attribute [local irreducible] ipxOuterPlan
+theorem ipxOuterPlan_round_t_uniform (Q : Point)
     (start : Nat) (history : Fin start → Bool) :
-    ((batchedOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
-      14393374641 := by
-  have h := batchedOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
-    (by rw [batchedOuterPlan_left,batchedOuterPlan_right]; exact actualWindowTCost_bound_uniform Q) start history
-  rw [batchedOuterPlan_left,batchedOuterPlan_right,actualWindowTCost_total] at h
+    ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
+      14373306005 := by
+  have h := ipxOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
+    (by rw [ipxOuterPlan_left,ipxOuterPlan_right]; exact actualWindowTCost_bound_uniform Q) start history
+  rw [ipxOuterPlan_left,ipxOuterPlan_right,actualWindowTCost_total] at h
   exact h
 
-theorem batchedOuterPlan_total_t_uniform (Q : Point) :
-    ((batchedOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      806028979896 := by
-  exact batchedOuterPlan.repeat_t_le_of_round 14393374641 (readConstant coefficientAt Q)
-    (batchedOuterPlan_round_t_uniform Q) 56 0 Fin.elim0
+theorem ipxOuterPlan_total_t_uniform (Q : Point) :
+    ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      804905136280 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14373306005 (readConstant coefficientAt Q)
+    (ipxOuterPlan_round_t_uniform Q) 56 0 Fin.elim0
 
-/-- T upper bound of the entrant's 6-round program: 6 × 14,393,374,641. -/
-theorem batchedOuterPlan_rounds_t_uniform (Q : Point) :
-    ((batchedOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      86360247846 := by
-  exact batchedOuterPlan.repeat_t_le_of_round 14393374641 (readConstant coefficientAt Q)
-    (batchedOuterPlan_round_t_uniform Q) 6 0 Fin.elim0
+/-- T upper bound of the entrant's 26-round program: 26 × 14,373,306,005. -/
+theorem ipxOuterPlan_rounds_t_uniform (Q : Point) :
+    ((ipxOuterPlan.repeat 26 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      373705956130 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14373306005 (readConstant coefficientAt Q)
+    (ipxOuterPlan_round_t_uniform Q) 26 0 Fin.elim0
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -3327,43 +3376,119 @@ theorem batchedEndpointProgram_support {n : Nat} (rows : Nat → Fin n) (base : 
   exact batchOps_support rows base tree control paths support hc hp ht hb batchSchedule op hop hw
 
 
-/-- Component allocation before the data-bank permutation. -/
-def batchRawSupport : List Wire :=
-  836 :: pointLookupPath ++ pointLookupAddress ++ List.range' 1024 3590
+/-- Allocation of the in-place XOR correction before the address-bank permutation: core wires
+below 839 except the zero-divisor flag 837, and the window address. -/
+def ipxRawSupport : List Wire := List.range 837 ++ [838] ++ pointLookupAddress
 
-theorem batchWindow_support_raw (w : OddWindow) (start : Nat) :
-    straightWires (batchedEndpointProgram (batchWindowRows w) 1024
-      batchWindowTree 836 pointLookupPath start).2 ⊆ batchRawSupport := by
-  apply batchedEndpointProgram_support
-  · simp [batchRawSupport]
-  · intro z hz; simp [batchRawSupport,hz]
-  · intro z hz
-    have h := (tableAddressTree_mem_index pointLookupAddress 0 1 z).mp hz
-    simp [batchRawSupport,h]
-  · intro z hz; simp [batchRawSupport,hz]
+theorem ipxRawSupport_mem (z : Wire) (hz : z < 839 ∨ (839 ≤ z ∧ z < 854)) (h837 : z ≠ 837) :
+    z ∈ ipxRawSupport := by
+  simp only [ipxRawSupport,pointLookupAddress,List.mem_append,List.mem_range,List.mem_singleton,
+    List.mem_range'_1]
+  (try dsimp only [Wire] at *)
+  omega
 
-/-- Both real wire permutations place the complete correction block inside the
-same reset allocation. In particular the temporary sixth word is replaced by
-accumulator ports; it is not counted as an additional resident word. -/
-theorem batchRawSupport_placed (z : Wire) (hz : z ∈ batchRawSupport) :
-    windowAddressPerm 855 (by decide) (batchPlacement z) ∈ batchedResetWires := by
-  change windowAddressSwap 855 (batchPlacementFn z) ∈ batchedResetWires
-  simp only [batchRawSupport,pointLookupPath,pointLookupAddress,List.mem_cons,
-    List.mem_append,List.mem_range'_1] at hz
-  simp only [batchedResetWires,resetWires,List.mem_append,List.mem_range,
-    List.mem_singleton,List.mem_range'_1]
-  unfold batchPlacementFn windowAddressSwap
-  split_ifs <;> dsimp only [Wire] at * <;> omega
+theorem ipxPoint_support (w : Wire) (hw : w ∈ pointLogicalWires) : w ∈ ipxRawSupport := by
+  have h := pointLogicalWires_bounds w hw
+  apply ipxRawSupport_mem w <;> (try dsimp only [Wire] at *) <;> omega
 
-attribute [local irreducible] batchedEndpointProgram
+theorem ipxScratch_support (w : Wire) (hw : w ∈ ipxScratch) : w ∈ ipxRawSupport := by
+  simp only [ipxScratch,List.mem_range'_1] at hw
+  apply ipxRawSupport_mem w <;> (try dsimp only [Wire] at *) <;> omega
 
-theorem placedBatchProgram_support_static (w : OddWindow) (start : Nat) :
-    (straightWires (placedBatchProgram w start).2).map (windowAddressPerm 855 (by decide))
-      ⊆ batchedResetWires := by
-  simp only [placedBatchProgram,relabelCompiled_support,List.map_map]
+theorem ipxTest_support (k : Fin 4) : circuitWires (ipxTest k) ⊆ ipxRawSupport := by
+  have hf : ipxFlag k ∈ ipxRawSupport := by
+    have hk := ipxFlag_lt k
+    apply ipxRawSupport_mem _ <;> (try dsimp only [Wire] at *) <;> omega
+  have hh : ipxHalf ∈ ipxRawSupport := ipxRawSupport_mem _ (by decide) (by decide)
+  have hlow : ∀ w ∈ ipxLow, w ∈ ipxRawSupport := fun w hw =>
+    ipxPoint_support w ((ipxLowHigh_mem w).mpr (Or.inl hw))
+  have hhigh : ∀ w ∈ ipxHigh, w ∈ ipxRawSupport := fun w hw =>
+    ipxPoint_support w ((ipxLowHigh_mem w).mpr (Or.inr hw))
+  have he (r : List Wire) (value : Nat) (flag : Wire) (hr : ∀ w ∈ r, w ∈ ipxRawSupport)
+      (hfl : flag ∈ ipxRawSupport) :
+      circuitWires (computeEqConst r value flag ipxScratch) ⊆ ipxRawSupport := by
+    apply (circuitWires_subset_of_usesOnly (computeEqConst_usesOnly _ _ _ _)).trans
+    intro w hw
+    rcases List.mem_append.mp hw with hw | hw
+    · exact hr w hw
+    · rcases List.mem_cons.mp hw with rfl | hw
+      · exact hfl
+      · exact ipxScratch_support w hw
+  have h1 := he ipxLow 0 ipxHalf hlow hh
+  have h2 := he (ipxHalf :: ipxHigh) 1 (ipxFlag k) (by
+    intro w hw
+    rcases List.mem_cons.mp hw with rfl | hw
+    · exact hh
+    · exact hhigh w hw) hf
+  simpa only [ipxTest,circuitWires,List.flatMap_append,List.append_subset] using
+    And.intro (And.intro h1 h2) h1
+
+theorem ipxLeaf_support {n : Nat} (row : Fin n) (q : Wire) (u : Fin 8) (v : Option (Fin 8))
+    (hq : q ∈ ipxRawSupport) : (ipxLeaf row q u v).flatMap templateGateWires ⊆ ipxRawSupport := by
+  simp only [ipxLeaf,List.flatMap_append,List.append_subset]
+  constructor
+  · apply endpointSelectGates_support _ _ _ hq
+    intro p hp
+    exact ipxPoint_support _ (ipxPorts_wire row u p.1 (List.mem_map.mpr ⟨p,hp,rfl⟩))
+  · apply endpointSelectGates_support _ _ _ hq
+    intro p hp
+    exact ipxPoint_support _ (ipxPortsOpt_wire row v p.1 (List.mem_map.mpr ⟨p,hp,rfl⟩))
+
+theorem ipxOps_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
+    (hc : ∀ c, ipxControl c ∈ ipxRawSupport) (hp : paths ⊆ ipxRawSupport)
+    (ht : tree.indexWires ⊆ ipxRawSupport) (ops : List IpxOp) :
+    ∀ op ∈ ipxOps rows tree paths ops, lookupOpWires op ⊆ ipxRawSupport := by
+  induction ops with
+  | nil => simp [ipxOps]
+  | cons op ops ih =>
+    cases op with
+    | query c u v =>
+      simp only [ipxOps,List.forall_mem_append]
+      exact ⟨unaryLookupOps_support _ _ _ _ _ (hc c) hp ht
+        (fun l q hq => ipxLeaf_support _ _ _ _ hq),ih⟩
+    | test k =>
+      simp only [ipxOps,List.forall_mem_cons,ordinaryOp_support]
+      exact ⟨ipxTest_support k,ih⟩
+
+theorem ipxProgramOf_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree)
+    (paths : List Wire) (hc : ∀ c, ipxControl c ∈ ipxRawSupport) (hp : paths ⊆ ipxRawSupport)
+    (ht : tree.indexWires ⊆ ipxRawSupport) (start : Nat) :
+    straightWires (ipxProgramOf rows tree paths start).2 ⊆ ipxRawSupport := by
+  simp only [ipxProgramOf,lookupProgram_support]
+  intro w hw
+  obtain ⟨op,hop,hw⟩ := List.mem_flatMap.mp hw
+  exact ipxOps_support rows tree paths hc hp ht ipxSchedule op hop hw
+
+theorem ipxRawSupport_placed (z : Wire) (hz : z ∈ ipxRawSupport) :
+    windowAddressPerm 855 (by decide) z ∈ resetWires := by
+  change windowAddressSwap 855 z ∈ resetWires
+  simp only [ipxRawSupport,pointLookupAddress,List.mem_append,List.mem_range,List.mem_singleton,
+    List.mem_range'_1] at hz
+  simp only [resetWires,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+  unfold windowAddressSwap
+  split_ifs <;> (try dsimp only [Wire] at *) <;> omega
+
+attribute [local irreducible] ipxProgramOf
+
+/-- The whole correction block, after the address-bank permutation, stays in the core reset
+allocation. -/
+theorem ipxProgram_support_static (w : OddWindow) (start : Nat) :
+    (straightWires (ipxProgram w start).2).map (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
+  have hraw : straightWires (ipxProgram w start).2 ⊆ ipxRawSupport := by
+    apply ipxProgramOf_support
+    · intro c
+      have hc := ipxControl_lt c
+      apply ipxRawSupport_mem _ <;> (try dsimp only [Wire] at *) <;> omega
+    · intro z hz
+      simp only [pointLookupPath,List.mem_range'_1] at hz
+      apply ipxRawSupport_mem _ <;> (try dsimp only [Wire] at *) <;> omega
+    · intro z hz
+      have h := (tableAddressTree_mem_index pointLookupAddress 0 1 z).mp hz
+      simp only [pointLookupAddress,List.mem_range'_1] at h
+      apply ipxRawSupport_mem _ <;> (try dsimp only [Wire] at *) <;> omega
   intro z hz
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hz
-  exact batchRawSupport_placed v (batchWindow_support_raw w start hv)
+  exact ipxRawSupport_placed v (hraw hv)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -3665,12 +3790,11 @@ theorem windowBaseSupport_relocated (z : Wire) (hz : z ∈ windowBaseSupport) :
 
 theorem sharedYNegateProgram_support_static (w : OddWindow) (start : Nat) :
     (straightWires (sharedYNegateProgram w start).2).map (windowAddressPerm 855 (by decide))
-      ⊆ batchedResetWires := by
+      ⊆ resetWires := by
   simp only [sharedYNegateProgram,reindexCompiled_support]
   intro z hz
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hz
-  exact List.mem_append_left _ (List.mem_append_left _
-    (windowBaseSupport_relocated v (yNegateProgram_support_static start hv)))
+  exact windowBaseSupport_relocated v (yNegateProgram_support_static start hv)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -3995,7 +4119,7 @@ theorem sequenceProgram_mapped_support (n : Nat) (ps : List (FixedSegment n))
 
 theorem signedAddressCircuit_support_static :
     (circuitWires (signedAddressCircuit 836 854 pointLookupAddress)).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires := by
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
   have hx (q : Wire) (hq : q ∈ windowBaseSupport) :
       circuitWires (tableXorGates q pointLookupAddress) ⊆ windowBaseSupport := by
     intro z hz
@@ -4010,67 +4134,66 @@ theorem signedAddressCircuit_support_static :
       And.intro (hx 836 (by simp [windowBaseSupport])) (hx 854 (by simp [windowBaseSupport]))
   intro z hz
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hz
-  exact List.mem_append_left _ (List.mem_append_left _ (windowBaseSupport_relocated v (hp hv)))
+  exact windowBaseSupport_relocated v (hp hv)
 
 /-- The remaining arithmetic obligation is explicit. The correction and both
 negation segments have unconditional concrete support proofs. -/
-theorem actualBatchedWindow_support_of_coordinate (w : OddWindow)
+theorem actualIpxWindow_support_of_coordinate (w : OddWindow)
     (hc : ∀ start, (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires) (start : Nat) :
-    straightWires ((actualBatchedWindow w).program start) ⊆ batchedResetWires := by
-  have hcore cursor : (straightWires (batchedWindowCore w cursor).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires := by
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires) (start : Nat) :
+    straightWires ((actualIpxWindow w).program start) ⊆ resetWires := by
+  have hcore cursor : (straightWires (ipxWindowCore w cursor).2).map
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
     apply sequenceProgram_mapped_support
-    simp only [batchedWindowSegments,List.forall_mem_cons,List.mem_nil_iff,false_implies,implies_true,and_true]
-    exact ⟨hc,sharedYNegateProgram_support_static w,placedBatchProgram_support_static w,
+    simp only [ipxWindowSegments,List.forall_mem_cons,List.mem_nil_iff,false_implies,implies_true,and_true]
+    exact ⟨hc,sharedYNegateProgram_support_static w,ipxProgram_support_static w,
       sharedYNegateProgram_support_static w⟩
-  simp only [actualBatchedWindow,closedWindow,straightWires_shift,straightWires_relabel,
-    batchedWindowPrepared,surroundCompiled_support,List.map_append,List.append_subset]
+  simp only [actualIpxWindow,closedWindow,straightWires_shift,straightWires_relabel,
+    ipxWindowPrepared,surroundCompiled_support,List.map_append,List.append_subset]
   exact ⟨⟨signedAddressCircuit_support_static,hcore 0⟩,signedAddressCircuit_support_static⟩
 
 
 
 theorem actualWindows_support_of_coordinate
     (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires)
-    (window : OuterWindow 983040) (hw : window ∈ actualLeftWindows ++ actualRightWindows)
-    (start : Nat) : straightWires (window.program start) ⊆ batchedResetWires := by
-  simp only [actualLeftWindows,actualRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires)
+    (window : OuterWindow 983040) (hw : window ∈ ipxLeftWindows ++ ipxRightWindows)
+    (start : Nat) : straightWires (window.program start) ⊆ resetWires := by
+  simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
   rcases hw with (rfl | ⟨k,rfl⟩) | ⟨k,rfl⟩
-  · exact (actualFirstWindow_support_static start).trans
-      (fun _ h => List.mem_append_left _ (List.mem_append_left _ h))
-  · exact actualBatchedWindow_support_of_coordinate _ (hc _) start
-  · exact actualBatchedWindow_support_of_coordinate _ (hc _) start
+  · exact actualFirstWindow_support_static start
+  · exact actualIpxWindow_support_of_coordinate _ (hc _) start
+  · exact actualIpxWindow_support_of_coordinate _ (hc _) start
 
-theorem batchedOuter_support_of_coordinate
+theorem ipxOuter_support_of_coordinate
     (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires)
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
-    ((batchedOuterPlan.repeat count start).instantiate read history).wires ⊆ batchedResetWires := by
+    ((ipxOuterPlan.repeat count start).instantiate read history).wires ⊆ resetWires := by
   apply OuterPlan.repeat_support
   · intro w hw
-    simp only [batchedOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
-    exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ hw))
+    simp only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
+    exact List.mem_append_right _ hw
   · exact List.Subset.refl _
-  · simp [batchedResetWires,resetWires]
+  · simp [resetWires]
   · intro window hw cursor h
     apply (straight_instantiate_support _ read h).trans
     apply actualWindows_support_of_coordinate hc window _ cursor
-    simpa only [batchedOuterPlan,standardOuterPlan,Vector.toList_mk,List.toList_toArray] using hw
+    simpa only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.toList_toArray] using hw
 
 /-- Conditional assembly only: the concrete coordinate compiler support must
 still be supplied. This is not an unconditional Streaming resource certificate. -/
-theorem batchedOuter_qubits_le_of_coordinate
+theorem ipxOuter_qubits_le_of_coordinate
     (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires)
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
-    ((batchedOuterPlan.repeat count start).instantiate read history).wires.toFinset.card ≤ 3931 := by
-  have hs := batchedOuter_support_of_coordinate hc count start read history
-  have hfin : ((batchedOuterPlan.repeat count start).instantiate read history).wires.toFinset ⊆
-      batchedResetWires.toFinset := by
+    ((ipxOuterPlan.repeat count start).instantiate read history).wires.toFinset.card ≤ 854 := by
+  have hs := ipxOuter_support_of_coordinate hc count start read history
+  have hfin : ((ipxOuterPlan.repeat count start).instantiate read history).wires.toFinset ⊆
+      resetWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (hs (List.mem_toFinset.mp hw))
-  exact (Finset.card_le_card hfin).trans ((List.toFinset_card_le _).trans_eq batchedResetWires_length)
+  exact (Finset.card_le_card hfin).trans ((List.toFinset_card_le _).trans_eq resetWires_length)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -6206,12 +6329,12 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge
 /-- Static allocation includes the zero-divisor flag even though the reset list omits it. -/
-def completeBatchedSupport : List Wire := 837 :: batchedResetWires
+def completeBatchedSupport : List Wire := 837 :: resetWires
 
-theorem completeBatchedSupport_length : completeBatchedSupport.length = 3932 := by
-  simp only [completeBatchedSupport,List.length_cons,batchedResetWires_length]
+theorem completeBatchedSupport_length : completeBatchedSupport.length = 855 := by
+  simp only [completeBatchedSupport,List.length_cons,resetWires_length]
 
-private theorem old_in_complete_completeSupport : batchedResetWires ⊆ completeBatchedSupport :=
+private theorem old_in_complete_completeSupport : resetWires ⊆ completeBatchedSupport :=
   List.subset_cons_of_subset 837 (List.Subset.refl _)
 
 theorem sharedCoordinateProgram_support_static (w : OddWindow) (start : Nat) :
@@ -6225,49 +6348,49 @@ theorem sharedCoordinateProgram_support_static (w : OddWindow) (start : Nat) :
   · have he : windowAddressPerm 855 (by decide) 837 = 837 := by decide +kernel
     rw [he]
     exact List.mem_cons_self
-  · exact old_in_complete_completeSupport (List.mem_append_left _ (List.mem_append_left _ (windowBaseSupport_relocated v h)))
+  · exact old_in_complete_completeSupport (windowBaseSupport_relocated v h)
 
-theorem actualBatchedWindow_support_static (w : OddWindow) (start : Nat) :
-    straightWires ((actualBatchedWindow w).program start) ⊆ completeBatchedSupport := by
-  have hcore cursor : (straightWires (batchedWindowCore w cursor).2).map
+theorem actualIpxWindow_support_static (w : OddWindow) (start : Nat) :
+    straightWires ((actualIpxWindow w).program start) ⊆ completeBatchedSupport := by
+  have hcore cursor : (straightWires (ipxWindowCore w cursor).2).map
       (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
     apply sequenceProgram_mapped_support
-    simp only [batchedWindowSegments,List.forall_mem_cons,List.mem_nil_iff,false_implies,implies_true,and_true]
+    simp only [ipxWindowSegments,List.forall_mem_cons,List.mem_nil_iff,false_implies,implies_true,and_true]
     exact ⟨sharedCoordinateProgram_support_static w,
       fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_completeSupport,
-      fun cursor => (placedBatchProgram_support_static w cursor).trans old_in_complete_completeSupport,
+      fun cursor => (ipxProgram_support_static w cursor).trans old_in_complete_completeSupport,
       fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_completeSupport⟩
-  simp only [actualBatchedWindow,closedWindow,straightWires_shift,straightWires_relabel,
-    batchedWindowPrepared,surroundCompiled_support,List.map_append,List.append_subset]
+  simp only [actualIpxWindow,closedWindow,straightWires_shift,straightWires_relabel,
+    ipxWindowPrepared,surroundCompiled_support,List.map_append,List.append_subset]
   exact ⟨⟨signedAddressCircuit_support_static.trans old_in_complete_completeSupport,hcore 0⟩,
     signedAddressCircuit_support_static.trans old_in_complete_completeSupport⟩
 
 theorem actualWindows_support_static
-    (window : OuterWindow 983040) (hw : window ∈ actualLeftWindows ++ actualRightWindows)
+    (window : OuterWindow 983040) (hw : window ∈ ipxLeftWindows ++ ipxRightWindows)
     (start : Nat) : straightWires (window.program start) ⊆ completeBatchedSupport := by
-  simp only [actualLeftWindows,actualRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
+  simp only [ipxLeftWindows,ipxRightWindows,List.mem_append,List.mem_cons,List.mem_ofFn] at hw
   rcases hw with (rfl | ⟨k,rfl⟩) | ⟨k,rfl⟩
   · exact (actualFirstWindow_support_static start).trans
-      (fun _ h => old_in_complete_completeSupport (List.mem_append_left _ (List.mem_append_left _ h)))
-  · exact actualBatchedWindow_support_static _ start
-  · exact actualBatchedWindow_support_static _ start
+      old_in_complete_completeSupport
+  · exact actualIpxWindow_support_static _ start
+  · exact actualIpxWindow_support_static _ start
 
-theorem batchedOuter_support_static
+theorem ipxOuter_support_static
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
-    ((batchedOuterPlan.repeat count start).instantiate read history).wires ⊆ completeBatchedSupport := by
+    ((ipxOuterPlan.repeat count start).instantiate read history).wires ⊆ completeBatchedSupport := by
   apply OuterPlan.repeat_support
   · intro w hw
-    simp only [batchedOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
-    exact old_in_complete_completeSupport (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ hw)))
+    simp only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
+    exact old_in_complete_completeSupport (List.mem_append_right _ hw)
   · exact old_in_complete_completeSupport
-  · simp [completeBatchedSupport,batchedResetWires,resetWires]
+  · simp [completeBatchedSupport,resetWires]
   · intro window hw cursor h
     apply (straight_instantiate_support _ read h).trans
     apply actualWindows_support_static window _ cursor
-    simpa only [batchedOuterPlan,standardOuterPlan,Vector.toList_mk,List.toList_toArray] using hw
+    simpa only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.toList_toArray] using hw
 
-theorem wire837_not_in_old_allocation : 837 ∉ batchedResetWires := by
-  simp only [batchedResetWires,resetWires,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+theorem wire837_not_in_old_allocation : 837 ∉ resetWires := by
+  simp only [resetWires,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
   norm_num
 
 theorem sharedCoordinateProgram_touches837 (w : OddWindow) (start : Nat) :
@@ -6278,16 +6401,16 @@ theorem sharedCoordinateProgram_touches837 (w : OddWindow) (start : Nat) :
 
 theorem old_coordinate_support_false (w : OddWindow) (start : Nat) :
     ¬ (straightWires (sharedCoordinateProgram w start).2).map
-      (windowAddressPerm 855 (by decide)) ⊆ batchedResetWires := by
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
   intro h
   exact wire837_not_in_old_allocation (h (sharedCoordinateProgram_touches837 w start))
 
 /-- An upper bound on the actual program's deduplicated wire set, not an exact usage count. -/
-theorem batchedOuter_qubits_le_3932
+theorem ipxOuter_qubits_le_855
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
-    ((batchedOuterPlan.repeat count start).instantiate read history).wires.toFinset.card ≤ 3932 := by
-  have hs := batchedOuter_support_static count start read history
-  have hfin : ((batchedOuterPlan.repeat count start).instantiate read history).wires.toFinset ⊆
+    ((ipxOuterPlan.repeat count start).instantiate read history).wires.toFinset.card ≤ 855 := by
+  have hs := ipxOuter_support_static count start read history
+  have hfin : ((ipxOuterPlan.repeat count start).instantiate read history).wires.toFinset ⊆
       completeBatchedSupport.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (hs (List.mem_toFinset.mp hw))

@@ -3,7 +3,7 @@ import ShorECDLP.Submission.Entrant.Streaming.Semantics
 import ShorECDLP.Submission.«2607_13816».Challenge.Outer
 import ShorECDLP.Submission.«2607_13816».Window.PhysicalRepetition
 
-/-! EDITABLE. Streaming entrant, module `Certificate`: the round-count instantiation, retry event and final certificate.
+/-! EDITABLE. Streaming entrant, module `Certificate`: the 26-round instantiation, retry event and final certificate.
 
 This module concatenates the former per-file modules `Rounds`, `ResourceCertificate`,
 `RoundReset`, `RepeatEvent`, `FinalCertificate` (in this order). Each former file is one
@@ -41,7 +41,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] batchedOuterPlan coefficientTable OuterPlan.repeat
+attribute [local irreducible] ipxOuterPlan coefficientTable OuterPlan.repeat
 
 /-- Generic packaging avoids unfolding a large coefficient table to transport its length. -/
 def fixedTableEntry {n e : Nat} (f : Fin n → PointCoeff) (p : Straight n 0 e) : StraightEntry where
@@ -87,38 +87,38 @@ theorem fixedTableEntry_measurements {n e : Nat} (f : Fin n → PointCoeff)
     (resources ((fixedTableEntry f p).instantiate Q)).measurements = e := by
   rw [resource_m,fixedTableEntry_instantiate,Straight.measurementCount,Nat.sub_zero]
 
-/-- The entrant's fixed producer: the first 6 rounds of the upstream 56-round outer plan,
+/-- The entrant's fixed producer: the first 26 rounds of the upstream 56-round outer plan,
 using the public coefficient table. -/
-def streamingEntry : StraightEntry := fixedTableEntry coefficientAt (batchedOuterPlan.repeat 6 0)
+def streamingEntry : StraightEntry := fixedTableEntry coefficientAt (ipxOuterPlan.repeat 26 0)
 
-/-- The protected wrappedShift layout restricted to the 6 actual rounds. -/
-def streamingLayout : DecodeLayout := batchedOuterPlan.roundsLayout 6 (by decide)
+/-- The protected wrappedShift layout restricted to the 26 actual rounds. -/
+def streamingLayout : DecodeLayout := ipxOuterPlan.roundsLayout 26 (by decide)
 
 theorem streamingEntry_instantiate (Q : Point) :
     streamingEntry.instantiate Q =
-      (batchedOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0 :=
+      (ipxOuterPlan.repeat 26 0).instantiate (readConstant coefficientAt Q) Fin.elim0 :=
   fixedTableEntry_instantiate _ _ Q
 
 attribute [local irreducible] streamingEntry fixedTableEntry
 
 /-- Upper bounds; the qubit bound is not an exact cardinality claim. -/
-def streamingBounds : Bounds := ⟨3932,86360247846,5163644892⟩
+def streamingBounds : Bounds := ⟨855,373705956130,22351860154⟩
 
 theorem streamingEntry_qubitCount (Q : Point) :
-    (streamingEntry.instantiate Q).qubitCount ≤ 3932 := by
+    (streamingEntry.instantiate Q).qubitCount ≤ 855 := by
   rw [streamingEntry_instantiate]
   simpa only [AdaptiveCircuit.qubitCount,List.card_toFinset] using
-    batchedOuter_qubits_le_3932 6 0 (readConstant coefficientAt Q) Fin.elim0
+    ipxOuter_qubits_le_855 26 0 (readConstant coefficientAt Q) Fin.elim0
 
 theorem streamingEntry_tModel (Q : Point) :
-    (resources (streamingEntry.instantiate Q)).tModel ≤ 86360247846 := by
+    (resources (streamingEntry.instantiate Q)).tModel ≤ 373705956130 := by
   rw [resource_t,streamingEntry_instantiate]
-  exact batchedOuterPlan_rounds_t_uniform Q
+  exact ipxOuterPlan_rounds_t_uniform Q
 
 theorem streamingEntry_measurements (Q : Point) :
-    (resources (streamingEntry.instantiate Q)).measurements = 5163644892 := by
+    (resources (streamingEntry.instantiate Q)).measurements = 22351860154 := by
   rw [streamingEntry,fixedTableEntry_measurements,Nat.zero_add]
-  exact batchedOuterPlan_finalCursor6
+  exact ipxOuterPlan_finalCursor26
 
 theorem streamingEntry_resources (Q : Point) :
     (resources (streamingEntry.instantiate Q)).qubits ≤ streamingBounds.qubits ∧
@@ -128,15 +128,15 @@ theorem streamingEntry_resources (Q : Point) :
   exact ⟨streamingEntry_qubitCount Q,streamingEntry_tModel Q,(streamingEntry_measurements Q).le⟩
 
 theorem streamingEntry_gateSlots : streamingEntry.program.gateSlots ≤ 5000000000000 := by
-  simpa only [streamingEntry,fixedTableEntry_slots] using batchedOuterPlan_rounds_slots 0
+  simpa only [streamingEntry,fixedTableEntry_slots] using ipxOuterPlan_rounds_slots 0
 
 theorem streamingEntry_gateBudget : streamingEntry.program.gateSlots ≤ officialLimits.gateSlots :=
   streamingEntry_gateSlots.trans (by decide)
 
-theorem streamingEntry_finalCursor : streamingEntry.finalCursor = 5163644892 := by
+theorem streamingEntry_finalCursor : streamingEntry.finalCursor = 22351860154 := by
   unfold streamingEntry
-  exact (fixedTableEntry_cursor coefficientAt (batchedOuterPlan.repeat 6 0)).trans
-    ((Nat.zero_add _).trans batchedOuterPlan_finalCursor6)
+  exact (fixedTableEntry_cursor coefficientAt (ipxOuterPlan.repeat 26 0)).trans
+    ((Nat.zero_add _).trans ipxOuterPlan_finalCursor26)
 
 theorem streamingEntry_recordBudget : streamingEntry.finalCursor ≤ officialLimits.measurements :=
   streamingEntry_finalCursor.le.trans (by decide)
@@ -153,7 +153,7 @@ theorem streamingEntry_candidateBudget :
 
 theorem streamingEntry_wellFormed : streamingEntry.program.WellFormed := by
   rw [streamingEntry]
-  exact (fixedTableEntry_wellFormed _ _).mpr (batchedOuterPlan_repeat_wellFormed 6 0)
+  exact (fixedTableEntry_wellFormed _ _).mpr (ipxOuterPlan_repeat_wellFormed 26 0)
 
 /-- Only success remains an input: all physical, syntactic and resource fields
 refer to this actual fixed entry. This conditional shell is not an accepted submission. -/
@@ -182,46 +182,46 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] actualFirstSource actualOddSource streamAddress fourierOutcomes Quantum.run batchedOuterPlan actualFirstWindow actualBatchedWindow
+attribute [local irreducible] actualFirstSource actualOddSource streamAddress fourierOutcomes Quantum.run ipxOuterPlan actualFirstWindow actualIpxWindow
 
-theorem batchedResetWires_nodup : batchedResetWires.Nodup := by
-  simp only [batchedResetWires,resetWires,List.nodup_append,List.nodup_range,
+theorem ipxResetWires_nodup : resetWires.Nodup := by
+  simp only [resetWires,List.nodup_append,List.nodup_range,
     List.nodup_range' 1, List.nodup_singleton,true_and]
   simp only [List.mem_append,List.mem_range,List.mem_range'_1,List.mem_singleton]
   repeat' constructor
   all_goals intros; dsimp only [Wire] at *; omega
 
 theorem actualRound_support (start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
-    ((batchedOuterPlan.round start).instantiate read history).wires ⊆ completeBatchedSupport := by
+    ((ipxOuterPlan.round start).instantiate read history).wires ⊆ completeBatchedSupport := by
   apply OuterPlan.round_support
   · intro w hw
-    simp only [batchedOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
-    exact List.mem_cons_of_mem 837 (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ hw)))
-  · simpa only [batchedOuterPlan,standardOuterPlan] using
-      (List.subset_cons_of_subset 837 (List.Subset.refl batchedResetWires))
-  · simp [completeBatchedSupport,batchedResetWires,resetWires]
+    simp only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.mem_reverse] at hw
+    exact List.mem_cons_of_mem 837 (List.mem_append_right _ hw)
+  · simpa only [ipxOuterPlan,standardOuterPlan] using
+      (List.subset_cons_of_subset 837 (List.Subset.refl resetWires))
+  · simp [completeBatchedSupport,resetWires]
   · intro window hw cursor h
     apply (straight_instantiate_support _ read h).trans
     apply actualWindows_support_static window _ cursor
-    simpa only [batchedOuterPlan,standardOuterPlan,Vector.toList_mk,List.toList_toArray] using hw
+    simpa only [ipxOuterPlan,standardOuterPlan,Vector.toList_mk,List.toList_toArray] using hw
 
 theorem actualRoundTail_clean (b : InstrumentBranch)
     (hb : b ∈ (AdaptiveCircuit.unitary [.X 836]
-      (measureResetWithCorrection batchedResetWires (fun _ => []))).run) (ψ : State) :
-    SupportedOn (Clean batchedResetWires) (b.kraus ψ) := by
+      (measureResetWithCorrection resetWires (fun _ => []))).run) (ψ : State) :
+    SupportedOn (Clean resetWires) (b.kraus ψ) := by
   rw [AdaptiveCircuit.run] at hb
   obtain ⟨c,hc,rfl⟩ := List.mem_map.mp hb
-  exact resetRegister_clean _ batchedResetWires_nodup c hc _
+  exact resetRegister_clean _ ipxResetWires_nodup c hc _
 
 theorem actualRoundSource_clean (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
     (b : InstrumentBranch) (hb : b ∈ (actualRoundSource Q).run) :
-    SupportedOn (Clean batchedResetWires) (b.kraus (ket zeroBasisState)) := by
+    SupportedOn (Clean resetWires) (b.kraus (ket zeroBasisState)) := by
   rw [actualRoundSource,sourceOuterRound_streamAxis,actualLeftSources_indices,actualRightSources_indices] at hb
   rw [AdaptiveCircuit.run, ← selectedSourceTwoAxes_constant] at hb
   obtain ⟨c,hc,rfl⟩ := List.mem_map.mp hb
   have hx : Quantum.run [.X 836] (ket zeroBasisState) = ket (zeroBasisState[836 ↦ true]) := by
     simp [Quantum.run,applyGate_ket,onKet,zeroBasisState]
-  change SupportedOn (Clean batchedResetWires) (c.kraus (Quantum.run [.X 836] (ket zeroBasisState)))
+  change SupportedOn (Clean resetWires) (c.kraus (Quantum.run [.X 836] (ket zeroBasisState)))
   rw [hx]
   exact actualSourceTwoAxes_supported Q hQ hn leftOddIndices rightOddIndices _ _
     (fun _ _ b hb ψ _ => actualRoundTail_clean b hb ψ) _
@@ -229,13 +229,13 @@ theorem actualRoundSource_clean (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
 
 theorem actualCompiledRound_zero_support (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
     (start : Nat) (history : Fin start → Bool) (b : InstrumentBranch)
-    (hb : b ∈ ((batchedOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).run) :
+    (hb : b ∈ ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).run) :
     SupportedOn (fun s => s=zeroBasisState) (b.kraus (ket zeroBasisState)) := by
   intro s hs
   funext w
-  by_cases hw : w ∈ batchedResetWires
+  by_cases hw : w ∈ resetWires
   · have hb' := hb
-    rw [batchedOuterPlan_round_run Q hQ start history] at hb'
+    rw [ipxOuterPlan_round_run Q hQ start history] at hb'
     exact actualRoundSource_clean Q hQ hn b hb' s hs w hw
   · by_cases he : w=837
     · subst w
@@ -246,7 +246,7 @@ theorem actualCompiledRound_zero_support (Q : Point) (hQ : order • Q=0) (hn : 
 
 theorem actualCompiledRound_zero_branch (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
     (start : Nat) (history : Fin start → Bool) (b : InstrumentBranch)
-    (hb : b ∈ ((batchedOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).run) :
+    (hb : b ∈ ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).run) :
     b.kraus (ket zeroBasisState) = (b.kraus (ket zeroBasisState)) zeroBasisState • ket zeroBasisState :=
   supportedZero_scalar _ (actualCompiledRound_zero_support Q hQ hn start history b hb)
 
@@ -254,29 +254,29 @@ theorem actualRoundSource_zero_branch (Q : Point) (hQ : order • Q=0) (hn : Q�
     (b : InstrumentBranch) (hb : b ∈ (actualRoundSource Q).run) :
     b.kraus (ket zeroBasisState) = (b.kraus (ket zeroBasisState)) zeroBasisState • ket zeroBasisState := by
   apply actualCompiledRound_zero_branch Q hQ hn 0 Fin.elim0 b
-  rwa [batchedOuterPlan_round_run Q hQ]
+  rwa [ipxOuterPlan_round_run Q hQ]
 
 theorem actualRoundSource_total (Q : Point) (hQ : order • Q=0) :
     (actualRoundSource Q).run.bornMass (ket zeroBasisState)=1 := by
-  rw [← batchedOuterPlan_round_run Q hQ 0 Fin.elim0]
+  rw [← ipxOuterPlan_round_run Q hQ 0 Fin.elim0]
   exact AdaptiveCircuit.run_bornMass_eq_one _
-    (Straight.instantiate_wellFormed _ _ _ (batchedOuterPlan_round_wellFormed 0)) _ (normSq_ket _)
+    (Straight.instantiate_wellFormed _ _ _ (ipxOuterPlan_round_wellFormed 0)) _ (normSq_ket _)
 
 theorem actualCompiledRepeat_retry_mass (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
     (count start : Nat) (history : Fin start → Bool) (accept : List Bool → Bool) :
     Instrument.bornMass
-      ((((batchedOuterPlan.repeat count start).instantiate (readConstant coefficientAt Q) history).run).filter
+      ((((ipxOuterPlan.repeat count start).instantiate (readConstant coefficientAt Q) history).run).filter
         (fun b => !repeatWindowFailed (actualRoundSource Q) accept count b.history)) (ket zeroBasisState) =
       independentRetrySuccessProbability
         (Instrument.bornMass ((actualRoundSource Q).run.filter (fun b => accept b.history)) (ket zeroBasisState)) count := by
-  rw [batchedOuterPlan_repeat_run Q hQ count start history]
+  rw [ipxOuterPlan_repeat_run Q hQ count start history]
   exact repeatWindowSuccess_mass _ accept (actualRoundSource_zero_branch Q hQ hn) (actualRoundSource_total Q hQ) count
 
 theorem actualCompiledRepeat_zero_branch (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
     (count start : Nat) (history : Fin start → Bool) (b : InstrumentBranch)
-    (hb : b ∈ ((batchedOuterPlan.repeat count start).instantiate (readConstant coefficientAt Q) history).run) :
+    (hb : b ∈ ((ipxOuterPlan.repeat count start).instantiate (readConstant coefficientAt Q) history).run) :
     b.kraus (ket zeroBasisState) = (b.kraus (ket zeroBasisState)) zeroBasisState • ket zeroBasisState := by
-  rw [batchedOuterPlan_repeat_run Q hQ count start history] at hb
+  rw [ipxOuterPlan_repeat_run Q hQ count start history] at hb
   exact repeatWindowProgram_zero _ (actualRoundSource_zero_branch Q hQ hn) count b hb
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -289,7 +289,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] batchedOuterPlan actualRoundSource
+attribute [local irreducible] ipxOuterPlan actualRoundSource
 
 theorem readWord_append_shift (before history : List Bool) (positions : List Nat) :
     readWord (before ++ history) (positions.map (before.length + ·)) = readWord history positions := by
@@ -366,15 +366,15 @@ private theorem round_records_length {n : Nat} (p : OuterPlan n)
 
 theorem actualRoundSource_records (Q : Point) (hQ : order • Q=0)
     (b : InstrumentBranch) (hb : b ∈ (actualRoundSource Q).run) :
-    b.history.length = batchedOuterPlan.stride := by
-  rw [← batchedOuterPlan_round_run Q hQ 0 Fin.elim0] at hb
+    b.history.length = ipxOuterPlan.stride := by
+  rw [← ipxOuterPlan_round_run Q hQ 0 Fin.elim0] at hb
   exact round_records_length _ _ b hb
 
 theorem planRepeatAccept_retry (Q : Point) (hQ : order • Q=0)
     (accept : Nat → Nat → Bool) (count : Nat) (b : InstrumentBranch)
     (hb : b ∈ (repeatWindowProgram (actualRoundSource Q) count).run) :
-    planRepeatAccept batchedOuterPlan accept count b.history =
-      !repeatWindowFailed (actualRoundSource Q) (planRoundAccept batchedOuterPlan accept 0) count b.history := by
+    planRepeatAccept ipxOuterPlan accept count b.history =
+      !repeatWindowFailed (actualRoundSource Q) (planRoundAccept ipxOuterPlan accept 0) count b.history := by
   induction count generalizing b with
   | zero => rfl
   | succ count ih =>
@@ -441,20 +441,20 @@ private theorem roundAccept_zero {n : Nat} (p : OuterPlan n) (accept : Nat → N
   simp only [OuterPlan.positions,Vector.toList,List.toList_toArray,Nat.zero_mul,planRoundAccept]
 
 theorem actualRoundFixedAccept_eq (accept : Nat → Nat → Bool) (history : List Bool) :
-    actualRoundFixedAccept accept history = planRoundAccept batchedOuterPlan accept 0 history :=
+    actualRoundFixedAccept accept history = planRoundAccept ipxOuterPlan accept 0 history :=
   roundAccept_zero _ accept history
 
 theorem actualCompiledRepeat_verified_event (Q : Point) (hQ : order • Q=0)
     (b : InstrumentBranch)
-    (hb : b ∈ ((batchedOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run) :
-    (verifiedCandidate batchedOuterPlan.layout Q b.history).isSome =
+    (hb : b ∈ ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run) :
+    (verifiedCandidate ipxOuterPlan.layout Q b.history).isSome =
       !repeatWindowFailed (actualRoundSource Q)
         (actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q)) 56 b.history := by
   rw [OuterPlan.verified_repeat_event]
   have hh := planRepeatAccept_retry Q hQ (wrappedPairAccept legacyDecoderParams Q) 56 b
-    (by rwa [batchedOuterPlan_repeat_run Q hQ] at hb)
+    (by rwa [ipxOuterPlan_repeat_run Q hQ] at hb)
   have he : actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) =
-      planRoundAccept batchedOuterPlan (wrappedPairAccept legacyDecoderParams Q) 0 :=
+      planRoundAccept ipxOuterPlan (wrappedPairAccept legacyDecoderParams Q) 0 :=
     funext (actualRoundFixedAccept_eq _)
   rw [he]
   exact hh
@@ -463,8 +463,8 @@ theorem actualCompiledRepeat_verified_event (Q : Point) (hQ : order • Q=0)
 /-- The protected final decoder tests exactly the independent retry event of the actual 56 rounds. -/
 theorem actualCompiledRepeat_verified_mass (Q : Point) (hQ : order • Q=0) (hn : Q≠0) :
     Instrument.bornMass
-      ((((batchedOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
-        (fun b => (verifiedCandidate batchedOuterPlan.layout Q b.history).isSome)) (ket zeroBasisState) =
+      ((((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
+        (fun b => (verifiedCandidate ipxOuterPlan.layout Q b.history).isSome)) (ket zeroBasisState) =
       independentRetrySuccessProbability
         (Instrument.bornMass ((actualRoundSource Q).run.filter
           (fun b => actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) b.history)) (ket zeroBasisState)) 56 := by
@@ -475,15 +475,15 @@ theorem actualCompiledRepeat_verified_mass (Q : Point) (hQ : order • Q=0) (hn 
 independent retry event of the actual `k`-round program. -/
 theorem actualCompiledRounds_verified_event (Q : Point) (hQ : order • Q=0) (k : Nat) (hk : k ≤ 56)
     (b : InstrumentBranch)
-    (hb : b ∈ ((batchedOuterPlan.repeat k 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run) :
-    (verifiedCandidate (batchedOuterPlan.roundsLayout k hk) Q b.history).isSome =
+    (hb : b ∈ ((ipxOuterPlan.repeat k 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run) :
+    (verifiedCandidate (ipxOuterPlan.roundsLayout k hk) Q b.history).isSome =
       !repeatWindowFailed (actualRoundSource Q)
         (actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q)) k b.history := by
   rw [OuterPlan.verified_rounds_event]
   have hh := planRepeatAccept_retry Q hQ (wrappedPairAccept legacyDecoderParams Q) k b
-    (by rwa [batchedOuterPlan_repeat_run Q hQ] at hb)
+    (by rwa [ipxOuterPlan_repeat_run Q hQ] at hb)
   have he : actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) =
-      planRoundAccept batchedOuterPlan (wrappedPairAccept legacyDecoderParams Q) 0 :=
+      planRoundAccept ipxOuterPlan (wrappedPairAccept legacyDecoderParams Q) 0 :=
     funext (actualRoundFixedAccept_eq _)
   rw [he]
   exact hh
@@ -491,8 +491,8 @@ theorem actualCompiledRounds_verified_event (Q : Point) (hQ : order • Q=0) (k 
 theorem actualCompiledRounds_verified_mass (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
     (k : Nat) (hk : k ≤ 56) :
     Instrument.bornMass
-      ((((batchedOuterPlan.repeat k 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
-        (fun b => (verifiedCandidate (batchedOuterPlan.roundsLayout k hk) Q b.history).isSome))
+      ((((ipxOuterPlan.repeat k 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
+        (fun b => (verifiedCandidate (ipxOuterPlan.roundsLayout k hk) Q b.history).isSome))
         (ket zeroBasisState) =
       independentRetrySuccessProbability
         (Instrument.bornMass ((actualRoundSource Q).run.filter
@@ -512,7 +512,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] batchedOuterPlan actualRoundSource streamingEntry
+attribute [local irreducible] ipxOuterPlan actualRoundSource streamingEntry
 
 theorem publicPoint_order (Q : Point) (d : Nat) (h : Q=d • G) : order • Q=0 := by
   rw [h,smul_comm,generator_nsmul_eq_zero,nsmul_zero]
@@ -523,32 +523,32 @@ theorem actualRoundAcceptedMass_le_one (Q : Point) (hQ : order • Q=0) :
       (ket zeroBasisState) ≤ 1 := by
   exact (Instrument.bornMass_filter_le _ _ _).trans_eq (actualRoundSource_total Q hQ)
 
-/-- 6 independent rounds suffice: `1 - (23/50)^6 ≥ 99/100` (5 rounds would not). -/
-theorem retry6_success :
-    (99:ℝ)/100 ≤ independentRetrySuccessProbability ((27:ℝ)/50) 6 := by
+/-- 26 independent rounds suffice: `1 - (837/1000)^26 ≥ 99/100` (25 rounds would not). -/
+theorem retry26_success :
+    (99:ℝ)/100 ≤ independentRetrySuccessProbability ((163:ℝ)/1000) 26 := by
   norm_num [independentRetrySuccessProbability]
 
 theorem actualCompiledRounds_success_of_round (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (h : (27:ℝ)/50 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
+    (h : (163:ℝ)/1000 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
       (fun b => actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) b.history))
       (ket zeroBasisState)) :
     (99:ℝ)/100 ≤ Instrument.bornMass
-      ((((batchedOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
+      ((((ipxOuterPlan.repeat 26 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
         (fun b => (verifiedCandidate streamingLayout Q b.history).isSome)) (ket zeroBasisState) := by
-  rw [streamingLayout,actualCompiledRounds_verified_mass Q hQ hn 6 (by decide)]
-  have hm := independentRetrySuccessProbability_mono 6 (actualRoundAcceptedMass_le_one Q hQ) h
-  exact retry6_success.trans hm
+  rw [streamingLayout,actualCompiledRounds_verified_mass Q hQ hn 26 (by decide)]
+  have hm := independentRetrySuccessProbability_mono 26 (actualRoundAcceptedMass_le_one Q hQ) h
+  exact retry26_success.trans hm
 
 /-- Actual single-round accepted mass, with the protected decoder and no loss term. -/
 theorem streamingRound_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d • G) :
-    (27:ℝ)/50 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
+    (163:ℝ)/1000 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
       (fun b => actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) b.history))
       (ket zeroBasisState) := by
   have hQ := publicPoint_order Q d hd
   rw [actualRoundSource_fixedPair_mass Q hQ hn,selectedIdealTwoAxes_event_eq Q hQ hn]
   exact wrappedIdeal_mass_lower Q G_ne_zero hn hQ d hd
 
-/-- Success of the actual fixed 6-round entry, measured by the protected final decoder. -/
+/-- Success of the actual fixed 26-round entry, measured by the protected final decoder. -/
 theorem streamingEntry_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d • G) :
     (99:ℝ)/100 ≤ Instrument.bornMass
       ((streamingEntry.instantiate Q).run.filter
@@ -558,7 +558,7 @@ theorem streamingEntry_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d • 
   exact actualCompiledRounds_success_of_round Q (publicPoint_order Q d hd) hn
     (streamingRound_success Q d hn hd)
 
-/-- Unconditional protected certificate for the entrant's fixed 6-round streaming program. -/
+/-- Unconditional protected certificate for the entrant's fixed 26-round streaming program. -/
 theorem streamingEntry_certificate_unconditional :
     Certificate officialLimits streamingLayout streamingEntry streamingBounds :=
   streamingEntry_certificate streamingEntry_success
