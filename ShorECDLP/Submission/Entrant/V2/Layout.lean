@@ -139,6 +139,107 @@ private theorem pointAddArithmeticWork_upper :
     rw [hoffset, v2QubitCount]
     exact Nat.add_lt_add_left hsourceUpper 6164
 
+private theorem secpAddLayout_tight :
+    ∀ w ∈ Secp256k1Instance.secpAddLayout.allWires, w < 2570 := by
+  let blocks :=
+    [Secp256k1Instance.regBlock Secp256k1Instance.baseId,
+      Secp256k1Instance.regBlock Secp256k1Instance.exponentId,
+      Secp256k1Instance.regBlock Secp256k1Instance.outId] ++
+      Secp256k1Instance.addScratchBlocks
+        Secp256k1Instance.initialAccId
+  have hlayout :
+      Secp256k1Instance.secpAddLayout.allWires =
+        Secp256k1Instance.blocksWires blocks := by
+    simp [blocks, Secp256k1Instance.secpAddLayout,
+      RegisterLayout.allWires, Secp256k1Instance.addWork,
+      Secp256k1Instance.reg, Secp256k1Instance.blocksWires,
+      List.append_assoc]
+  rw [hlayout]
+  have h := blocksWires_upper blocks 10 (by
+    intro block hblock
+    simp only [blocks, List.mem_append, List.mem_cons,
+      List.not_mem_nil, or_false] at hblock
+    rcases hblock with (rfl | rfl | rfl) | hblock
+    · norm_num [Secp256k1Instance.baseId]
+    · norm_num [Secp256k1Instance.exponentId]
+    · norm_num [Secp256k1Instance.outId]
+    · simp [Secp256k1Instance.addScratchBlocks] at hblock
+      rcases hblock with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+      all_goals norm_num [Secp256k1Instance.initialAccId])
+  intro w hw
+  have h2 := h w hw
+  rwa [show Secp256k1Instance.fieldWidth * 10 = 2570 from rfl] at h2
+
+private theorem secpMulLayout_tight :
+    ∀ w ∈ Secp256k1Instance.secpMulLayout.allWires, w < 2570 := by
+  let blocks :=
+    [Secp256k1Instance.regBlock Secp256k1Instance.baseId,
+      Secp256k1Instance.regBlock Secp256k1Instance.exponentId,
+      Secp256k1Instance.regBlock Secp256k1Instance.outId] ++
+      Secp256k1Instance.mulWorkBlocks
+        Secp256k1Instance.initialAccId
+        Secp256k1Instance.historyStartId
+  have hlayout :
+      Secp256k1Instance.secpMulLayout.allWires =
+        Secp256k1Instance.blocksWires blocks := by
+    simp only [Secp256k1Instance.secpMulLayout,
+      RegisterLayout.allWires]
+    rw [Secp256k1Instance.mulWork_eq_blocksWires]
+    simp [blocks, Secp256k1Instance.blocksWires,
+      Secp256k1Instance.reg, List.append_assoc]
+  rw [hlayout]
+  have h := blocksWires_upper blocks 10 (by
+    intro block hblock
+    simp only [blocks, List.mem_append, List.mem_cons,
+      List.not_mem_nil, or_false] at hblock
+    rcases hblock with (rfl | rfl | rfl) | hprivate
+    · norm_num [Secp256k1Instance.baseId]
+    · norm_num [Secp256k1Instance.exponentId]
+    · norm_num [Secp256k1Instance.outId]
+    · have hid : block.id ∈
+          (Secp256k1Instance.mulWorkBlocks
+            Secp256k1Instance.initialAccId
+            Secp256k1Instance.historyStartId).map
+              Secp256k1Instance.Block.id :=
+          List.mem_map_of_mem hprivate
+      rw [Secp256k1Instance.mulWorkBlocks_ids] at hid
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hid
+      norm_num [Secp256k1Instance.initialAccId,
+        Secp256k1Instance.historyStartId] at hid ⊢
+      omega)
+  intro w hw
+  have h2 := h w hw
+  rwa [show Secp256k1Instance.fieldWidth * 10 = 2570 from rfl] at h2
+
+theorem pointAddArithmeticWork_tight :
+    ∀ w ∈ pointAddArithmeticWork 2052,
+      w < 6164 + 8224 ∨ w = 6164 + 8224 ∨ w = 6164 + 8481 ∨ w = 6164 + 8738 := by
+  intro w hw
+  simp only [pointAddArithmeticWork, List.mem_dedup,
+    List.mem_append] at hw
+  rcases hw with (hadd | hmul) | hexp
+  · simp only [shiftWires, List.mem_map] at hadd
+    obtain ⟨source, hsource, rfl⟩ := hadd
+    have hs := secpAddLayout_tight source hsource
+    have hoffset : pointAddArithmeticOffset 2052 = 6164 := rfl
+    rw [hoffset]
+    exact Or.inl (Nat.add_lt_add_left (lt_trans hs (by norm_num)) 6164)
+  · simp only [shiftWires, List.mem_map] at hmul
+    obtain ⟨source, hsource, rfl⟩ := hmul
+    have hs := secpMulLayout_tight source hsource
+    have hoffset : pointAddArithmeticOffset 2052 = 6164 := rfl
+    rw [hoffset]
+    exact Or.inl (Nat.add_lt_add_left (lt_trans hs (by norm_num)) 6164)
+  · simp only [shiftWires, List.mem_map] at hexp
+    obtain ⟨source, hsource, rfl⟩ := hexp
+    have hoffset : pointAddArithmeticOffset 2052 = 6164 := rfl
+    rw [hoffset]
+    rcases Engine.allWires_tight source hsource with h | h | h | h
+    · exact Or.inl (Nat.add_lt_add_left h 6164)
+    · exact Or.inr (Or.inl (by rw [h]))
+    · exact Or.inr (Or.inr (Or.inl (by rw [h])))
+    · exact Or.inr (Or.inr (Or.inr (by rw [h])))
+
 private theorem v2ScalarMulWork_upper :
     ∀ w ∈ scalarMulWork bitcoinWorkStart,
       w < v2QubitCount := by

@@ -797,6 +797,19 @@ theorem lowLayout_allWires_lt : ∀ w : Nat, w ∈ lowLayout.allWires → w < 25
   simp only [Block.wires, Secp256k1Instance.fieldWidth, List.mem_range'_1] at hwb
   omega
 
+theorem lowBlocks_tight : ∀ b ∈ lowBlocks,
+    257 * b.id + b.size ≤ 8224 ∨ (b.size = 1 ∧ (b.id = 32 ∨ b.id = 33 ∨ b.id = 34)) := by
+  decide
+
+theorem lowLayout_allWires_tight : ∀ w : Nat, w ∈ lowLayout.allWires →
+    w < 8224 ∨ w = 8224 ∨ w = 8481 ∨ w = 8738 := by
+  intro w hw
+  rw [lowLayout_allWires_eq, Secp256k1Instance.blocksWires, List.mem_flatMap] at hw
+  obtain ⟨b, hb, hwb⟩ := hw
+  have htight := lowBlocks_tight b hb
+  simp only [Block.wires, Secp256k1Instance.fieldWidth, List.mem_range'_1] at hwb
+  omega
+
 theorem lowProgram_length_le : lowProgram.length ≤ 4140000000 := (lowProgram_good 0).len
 
 theorem lowCost_eq : lowCost = 10425834650 := by

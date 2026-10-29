@@ -55,6 +55,9 @@ theorem rhs_nodup : layout.rhs.Nodup := (Secp256k1Instance.regBlock 1).wires_nod
 
 theorem out_nodup : layout.out.Nodup := (Secp256k1Instance.regBlock 2).wires_nodup
 
+theorem allWires_tight :
+    ∀ w ∈ layout.allWires, w < 8224 ∨ w = 8224 ∨ w = 8481 ∨ w = 8738 :=
+  Entrant.LowInv.lowLayout_allWires_tight
 theorem allWires_lt : ∀ w ∈ layout.allWires, w < wireBound :=
   Entrant.LowInv.lowLayout_allWires_lt
 
