@@ -55,7 +55,7 @@ def fastBlock (control flag anc : Wire) (K : Circuit) (cand outReg : List Wire) 
 
 def fastGenericK (pw : Wire) (xC yC : Fp) : Circuit :=
   genericPointCompute pw xC yC ++
-    packFinitePoint (pointAddT5 pw) (pointAddT4 pw) (pointAddCandidate pw)
+    packFinitePoint (pointAddT2 pw) (pointAddT4 pw) (pointAddCandidate pw)
 
 def fastBlocks (control anc : Wire) (outReg : List Wire) (pw : Wire) (C : Point) :
     Circuit :=
@@ -510,7 +510,7 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
           hload _ (encode _).isLt hbw]
         rfl
       | @some xR yR hR =>
-        obtain ⟨hxReg, hyReg, hinf, hgen, hdbl, hbw, hT5⟩ := pointAddSetup_some_correct pointReg outReg
+        obtain ⟨hxReg, hyReg, hinf, hgen, hdbl, hbw⟩ := pointAddSetup_some_correct pointReg outReg
           pw (xC := xC) (yC := yC) hR st hpointLength hPOWnd hpoint hcleanWork
         have hinf' : s2 (pointAddInfinityFlag pw) = false := hinf
         by_cases hx : xR = xC
@@ -549,7 +549,7 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
             change Classical.run setup st (pointAddDoubleFlag pw) = false
             rw [hdbl]; simp [hx]
           obtain ⟨ht2, ht4, hcc2⟩ := genericPointCompute_correct pw xR yR xC yC hx s2
-            hxReg hyReg hbw hT5
+            hxReg hyReg hbw
           have hpack := packFinitePoint_correct pw (generic_nonsingular hR hC hx)
             (Classical.run (genericPointCompute pw xC yC) s2) ht2 ht4 hcc2
           have hgv : regValue cand (Classical.run (fastGenericK pw xC yC) s2) =
@@ -858,7 +858,7 @@ theorem fastBlock_tCount (control flag anc : Wire) (K : Circuit) (cand outReg : 
 omit [Fact (Nat.Prime p)] in
 theorem fastOut_tCount (control : Wire) (pointReg outReg : List Wire) (workStart : Wire)
     (C : Point) (hP : pointReg.length = pointWidth) (hO : outReg.length = pointWidth) :
-    tCount (fastOut control pointReg outReg workStart C) = 21015284696 := by
+    tCount (fastOut control pointReg outReg workStart C) = 11128635532 := by
   have hc : (pointAddCandidate (controlledPointAddPointWorkStart workStart)).length =
       outReg.length := by rw [hO]; simp [pointAddCandidate]
   simp only [fastOut, fastBlocks, fastPass, tCount_append, tCount_reverse,
@@ -874,7 +874,7 @@ theorem fastCPA2_tCount (control : Wire) (pointReg : List Wire) (workStart : Wir
         (controlledPointAddAuxStart workStart) C ++
       pointSwapReg pointReg (controlledPointAddTemp workStart) ++
       (fastOut control pointReg (controlledPointAddTemp workStart)
-        (controlledPointAddAuxStart workStart) C').reverse) = 42030569392 := by
+        (controlledPointAddAuxStart workStart) C').reverse) = 22257271064 := by
   have ht : (controlledPointAddTemp workStart).length = pointWidth := by
     simp [controlledPointAddTemp]
   simp only [tCount_append, tCount_reverse, fastOut_tCount _ _ _ _ _ hP ht, pointSwapReg_tCount]

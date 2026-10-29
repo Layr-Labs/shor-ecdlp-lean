@@ -85,12 +85,12 @@ theorem secret_mod_ne_zero (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
 /-- The oracle specification, for whichever proof of primality of `p` the circuit carries. -/
 theorem spec_any (inst : Fact (Nat.Prime p)) (Q : Point) (hn : Q ≠ 0) (ho : order • Q = 0) :
     ECDLPOracleSpec pointEncoding
-      (Quantum.run (V2.fastOracle regA regB bitcoinPointReg bitcoinWorkStart G Q))
+      (Quantum.run (@V2.fastOracle inst regA regB bitcoinPointReg bitcoinWorkStart G Q))
       G Q regA regB bitcoinPointReg (V2.scalarMulWork bitcoinWorkStart) :=
   @V2.fastOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
     (V2.doublingTable_ne_zero _ G G_ne_zero generator_nsmul_eq_zero)
     (V2.doublingTable_ne_zero _ Q hn ho)
-    V2.v2WireLayout.2.2.1 layoutE.1
+    bitcoinWireLayout.2.2.1 layoutE.1
 
 theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99 : ℝ) / 100 ≤ recordMass
@@ -132,7 +132,7 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
   rw [heq, trialV2_run]
   refine le_trans ?_ (success_of_window_mass pointEncoding _ G Q regA regB bitcoinPointReg
     (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting
-    (spec_any ⟨p_prime⟩ Q hn (by rw [hd]; exact dlogPoint_order d))
+    (spec_any _ Q hn (by rw [hd]; exact dlogPoint_order d))
     hsetup (secret_mod_ne_zero Q d hn hd) (200 / 201) (by norm_num) hwinE)
   rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
   norm_num [order]
@@ -167,11 +167,9 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
-/-- The declared T bound is the certified count 22108080533782 rounded up to a multiple of
-10^3, so the qubit × T product 329786237325678000 has fifteen significant digits. -/
 def bounds : Bounds where
-  qubits := 14917
-  tModel := 22108080534000
+  qubits := 77624
+  tModel := 11707325620000
   measurements := 526
 
 attribute [local irreducible] tableE progE Straight.WellFormed

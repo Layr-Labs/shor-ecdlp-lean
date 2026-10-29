@@ -72,20 +72,19 @@ def genericPointGates {n : Nat} (row : Fin n) (workStart : Wire) : List (Templat
   let t2 := pointAddT2 workStart
   let t3 := pointAddT3 workStart
   let t4 := pointAddT4 workStart
-  let t5 := pointAddT5 workStart
-  let numerator := fieldSubConstGates row .y offset y t0
-  let denominator := fieldSubConstGates row .x offset x t1
-  let inverse := (fieldInv offset t1 t2).map TemplateGate.literal
-  let slope := (fieldMul offset t0 t2 t3).map TemplateGate.literal
-  let slopeSq := (fieldMul offset t3 t3 t0).map TemplateGate.literal
-  let minusX := (fieldSub offset t0 x t1).map TemplateGate.literal
-  let xOut := fieldSubConstGates row .x offset t1 t5
-  let xDifference := (fieldSub offset x t5 t0).map TemplateGate.literal
-  let yProduct := (fieldMul offset t3 t0 t1).map TemplateGate.literal
+  let numerator := fieldSubConstGates row .y offset y t2
+  let denominator := fieldSubConstGates row .x offset x t4
+  let inverse := (fieldInv offset t4 t0).map TemplateGate.literal
+  let slope := (fieldMul offset t2 t0 t3).map TemplateGate.literal
+  let slopeSq := (fieldMul offset t3 t3 t1).map TemplateGate.literal
+  let minusX := (fieldSub offset t1 x t4).map TemplateGate.literal
+  let xOut := fieldSubConstGates row .x offset t4 t2
+  let xDifference := (fieldSub offset x t2 t4).map TemplateGate.literal
+  let yProduct := (fieldMul offset t3 t4 t1).map TemplateGate.literal
   let yOut := (fieldSub offset t1 y t4).map TemplateGate.literal
   numerator ++ denominator ++ inverse ++ slope ++ denominator.reverse ++
     numerator.reverse ++ slopeSq ++ minusX ++ xOut ++ minusX.reverse ++ slopeSq.reverse ++
-    xDifference ++ yProduct ++ yOut
+    xDifference ++ yProduct ++ xDifference.reverse ++ yOut
 
 theorem genericPointGates_source {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Point)
     (row : Fin n) (workStart : Wire) :
@@ -132,7 +131,7 @@ theorem pointFlagGates_source {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Poi
 
 def genericBranchGates {n : Nat} (row : Fin n) (workStart : Wire) : List (TemplateGate n) :=
   let compute := genericPointGates row workStart
-  let pack := packFinitePoint (pointAddT5 workStart) (pointAddT4 workStart)
+  let pack := packFinitePoint (pointAddT2 workStart) (pointAddT4 workStart)
     (pointAddCandidate workStart)
   compute ++ pack.map TemplateGate.literal ++
     (controlledCopyReg (pointAddGenericFlag workStart) (pointAddCandidate workStart)
@@ -495,8 +494,7 @@ theorem controlledOut_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hlen : pointReg.length = pointWidth) :
-    templateT (controlledPointGates row control pointReg workStart) = 168774609556 := by
-  let read := readConstant (fun _ : Fin n => qCoefficient) G
+    templateT (controlledPointGates row control pointReg workStart) = 89681416244 := by
   have hr : read ⟨row, .infinity, 0⟩ = false := by
     simp [read, readConstant, qCoefficient_point, fieldValue, pointCoordinates, G]
   have hn : (fun r => read (negRowRef row r)) ⟨0, .infinity, 0⟩ = false := hr
@@ -512,7 +510,7 @@ theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem scalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : Wire)
     (hlen : pointReg.length = pointWidth) (cs : List Wire) (rs : List (Fin n)) :
-    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 168774609556 := by
+    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 89681416244 := by
   induction cs generalizing rs with
   | nil => cases rs <;> simp [scalarGates, templateT]
   | cons c cs ih =>
@@ -924,8 +922,6 @@ theorem fieldSubConstGates_length_le {n : Nat} (row : Fin n) (field : PointField
 
 @[simp] theorem pointAddT2_length (w : Wire) : (pointAddT2 w).length = 257 := by
   simp only [pointAddT2, List.length_range']; rfl
-@[simp] theorem pointAddT5_length (w : Wire) : (pointAddT5 w).length = 257 := by
-  simp only [pointAddT5, List.length_range']; rfl
 
 @[simp] theorem pointAddT3_length (w : Wire) : (pointAddT3 w).length = 257 := by
   simp only [pointAddT3, List.length_range']; rfl
@@ -962,18 +958,16 @@ theorem genericPointGates_length_le {n : Nat} (row : Fin n) (w : Wire) :
   simp only [genericPointGates, List.length_append, List.length_reverse, List.length_map]
   grind only [fieldSubConstGates_length_le, fieldInv_length_le, fieldMul_length_le,
     fieldSub_length_le, pointAddX_length, pointAddY_length, pointAddT0_length,
-    pointAddT1_length, pointAddT2_length, pointAddT3_length, pointAddT4_length,
-    pointAddT5_length]
+    pointAddT1_length, pointAddT2_length, pointAddT3_length, pointAddT4_length]
 
 theorem doublePointCompute_length_le (w : Wire) :
     (doublePointCompute w).length ≤ 17000000000 := by
   have hn := threeXSquared_length_le (pointAddArithmeticOffset w) (pointAddX w)
-    (pointAddT0 w) (pointAddT4 w) (pointAddT2 w) (by simp) (by simp) (by simp) (by simp)
+    (pointAddT1 w) (pointAddT4 w) (pointAddT2 w) (by simp) (by simp) (by simp) (by simp)
   simp only [doublePointCompute, List.length_append, List.length_reverse]
   grind only [fieldInv_length_le, fieldMul_length_le, fieldAdd_length_le,
     fieldSub_length_le, pointAddX_length, pointAddY_length, pointAddT0_length,
-    pointAddT1_length, pointAddT2_length, pointAddT3_length, pointAddT4_length,
-    pointAddT5_length]
+    pointAddT1_length, pointAddT2_length, pointAddT3_length, pointAddT4_length]
 
 theorem zeroCompute_length_le (ws hs : List Wire) : (zeroCompute ws hs).length ≤ 3*ws.length := by
   induction ws using List.twoStepInduction generalizing hs with

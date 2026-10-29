@@ -1,17 +1,5 @@
-import ShorECDLP.Submission.Entrant.V2.LowInv
+import ShorECDLP.Submission.Entrant.V2.InvChain
 
-/-! EDITABLE. The field-inversion engine used by the V2 point arithmetic.
-
-PointAdd reaches the inversion only through the names below:
-
-* `Engine.program`, a clean circuit on the block-structured `Engine.layout`;
-* `Engine.contract`: `out = lhs ^ (p - 2) mod p`, with `rhs` an untouched port;
-* `Engine.wireBound`: every layout wire lies below it; `Engine.blocks` bounds the block ids
-  of the add and multiply engines that share the same offset.
-
-The engine is `LowInv.lowProgram`: the libsecp256k1 addition chain evaluated with
-two-level checkpoint pebbling, so only checkpoints and one segment's scratch are live.
-Swapping in a different inversion means changing this file only. -/
 
 namespace ShorECDLP
 namespace Secp256k1
@@ -20,45 +8,38 @@ namespace Engine
 
 open Arithmetic
 
-def program : Circuit := Entrant.LowInv.lowProgram
+def program : Circuit := InvChain.invProgramFused
 
-def layout : RegisterLayout := Entrant.LowInv.lowLayout
+def layout : RegisterLayout := InvChain.invLayout
 
-def cost : Nat := 10425834650
+def cost : Nat := 5482463294
 
-/-- Number of 257-wire blocks spanned by the engine's full registers. -/
-def blocks : Nat := 34
-
-/-- Every engine wire lies below this bound: the last multiplier flag is the first wire of
-block 34. -/
-def wireBound : Nat := 257 * 34 + 1
+def blocks : Nat := 278
 
 theorem contract :
-    CleanBinaryContract program layout ShorECDLP.p (fun a _ => a ^ (ShorECDLP.p - 2)) cost := by
-  have h := Entrant.LowInv.lowProgram_contract
-  rw [Entrant.LowInv.lowCost_eq] at h
-  exact h
+    CleanBinaryContract program layout ShorECDLP.p (fun a _ => a ^ (ShorECDLP.p - 2)) cost :=
+  InvChain.inv_contract
 
-theorem layout_valid : layout.Valid := Entrant.LowInv.lowLayout_valid
+theorem layout_valid : layout.Valid := InvChain.invLayout_valid
 
 theorem program_tCount : tCount program = cost := contract.counted
 
 theorem lhs_length : layout.lhs.length = 257 := (Secp256k1Instance.reg 0).length_eq
 
-theorem rhs_length : layout.rhs.length = 257 := (Secp256k1Instance.reg 1).length_eq
+theorem rhs_length : layout.rhs.length = 257 := (Secp256k1Instance.reg 271).length_eq
 
-theorem out_length : layout.out.length = 257 := (Secp256k1Instance.reg 2).length_eq
+theorem out_length : layout.out.length = 257 := (Secp256k1Instance.reg 270).length_eq
 
 theorem lhs_nodup : layout.lhs.Nodup := (Secp256k1Instance.regBlock 0).wires_nodup
 
-theorem rhs_nodup : layout.rhs.Nodup := (Secp256k1Instance.regBlock 1).wires_nodup
+theorem rhs_nodup : layout.rhs.Nodup := (Secp256k1Instance.regBlock 271).wires_nodup
 
-theorem out_nodup : layout.out.Nodup := (Secp256k1Instance.regBlock 2).wires_nodup
+theorem out_nodup : layout.out.Nodup := (Secp256k1Instance.regBlock 270).wires_nodup
 
-theorem allWires_lt : ∀ w ∈ layout.allWires, w < wireBound :=
-  Entrant.LowInv.lowLayout_allWires_lt
+theorem allWires_lt : ∀ w ∈ layout.allWires, w < 257 * blocks :=
+  InvChain.invLayout_allWires_lt
 
-theorem program_length_le : program.length ≤ 4140000000 := Entrant.LowInv.lowProgram_length_le
+theorem program_length_le : program.length ≤ 2176334853 := InvChain.invProgramFused_length_le
 
 end Engine
 end V2
