@@ -595,6 +595,7 @@ theorem scalarMulCore_correct
           intro R' st' hnodup' hpoint' hclean'
           exact ih points R' st' hnodup' hpoint' hclean'
 
+omit [Fact (Nat.Prime p)] in
 theorem scalarMulTable_cons
     (w : Wire)
     (ws : List Wire)
@@ -606,6 +607,7 @@ theorem scalarMulTable_cons
   rw [Nat.pow_succ, two_nsmul, nsmul_add,
     ← add_nsmul, Nat.mul_two]
 
+omit [Fact (Nat.Prime p)] in
 theorem controlledPointSum_scalarMulTable
     (scalarReg : List Wire)
     (P : Point)
@@ -636,6 +638,7 @@ theorem controlledPointSum_scalarMulTable
 
 /-! ## Exact T-count -/
 
+omit [Fact (Nat.Prime p)] in
 private theorem scalarMulCore_tCount_of_all_ne_zero
     (controls pointReg : List Wire)
     (points : List Point)
@@ -644,7 +647,7 @@ private theorem scalarMulCore_tCount_of_all_ne_zero
     (hlength : points.length = controls.length)
     (hnonzero : ∀ C ∈ points, C ≠ 0) :
     tCount (scalarMulCore pointReg workStart controls points) =
-      335943043380 * controls.length := by
+      177400080564 * controls.length := by
   induction controls generalizing points with
   | nil =>
       simp [scalarMulCore]
@@ -665,6 +668,7 @@ private theorem scalarMulCore_tCount_of_all_ne_zero
           simp only [List.length_cons]
           omega
 
+omit [Fact (Nat.Prime p)] in
 /--
 Exact T-count of scalar multiplication when every precomputed classical
 doubling-table entry is finite.
@@ -676,7 +680,7 @@ theorem scalarMul_tCount_of_table_ne_zero
     (hpointLength : pointReg.length = pointWidth)
     (hnonzero : ∀ C ∈ scalarMulTable scalarReg P, C ≠ 0) :
     tCount (scalarMul scalarReg pointReg workStart P) =
-      335943043380 * scalarReg.length := by
+      177400080564 * scalarReg.length := by
   exact scalarMulCore_tCount_of_all_ne_zero
     scalarReg pointReg (scalarMulTable scalarReg P) workStart
     hpointLength (by simp [scalarMulTable]) hnonzero
@@ -785,6 +789,7 @@ private theorem scalarMulCore_wellFormed
               (by simpa [scalarMulWork] using hhead),
             ih points htail⟩
 
+omit [Fact (Nat.Prime p)] in
 /-- The concrete doubling-table scalar multiplication stays inside its scalar
 register, point register, and reusable workspace. -/
 theorem scalarMul_usesOnly
@@ -797,6 +802,7 @@ theorem scalarMul_usesOnly
   exact scalarMulCore_usesOnly
     scalarReg pointReg (scalarMulTable scalarReg P) workStart
 
+omit [Fact (Nat.Prime p)] in
 /-- The concrete doubling-table scalar multiplication is H/P-free. -/
 theorem scalarMul_HPFree
     (scalarReg pointReg : List Wire)
@@ -807,6 +813,7 @@ theorem scalarMul_HPFree
   exact scalarMulCore_HPFree
     scalarReg pointReg (scalarMulTable scalarReg P) workStart
 
+omit [Fact (Nat.Prime p)] in
 /--
 The concrete doubling-table scalar multiplication is well formed under the
 same register-layout hypothesis used by `scalarMul_correct`.

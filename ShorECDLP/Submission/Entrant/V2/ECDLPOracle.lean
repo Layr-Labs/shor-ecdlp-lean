@@ -34,6 +34,7 @@ def ecdlpOracle
   scalarMul aReg pointReg workStart P ++
     scalarMul bReg pointReg workStart Q
 
+omit [Fact (Nat.Prime p)] in
 /--
 Exact T-count of the two-scalar-multiplication oracle when both classical
 doubling tables contain only finite points.
@@ -46,7 +47,7 @@ theorem ecdlpOracle_tCount_of_tables_ne_zero
     (hP : ∀ C ∈ scalarMulTable aReg P, C ≠ 0)
     (hQ : ∀ C ∈ scalarMulTable bReg Q, C ≠ 0) :
     tCount (ecdlpOracle aReg bReg pointReg workStart P Q) =
-      335943043380 * (aReg.length + bReg.length) := by
+      177400080564 * (aReg.length + bReg.length) := by
   rw [ecdlpOracle, tCount_append,
     scalarMul_tCount_of_table_ne_zero
       aReg pointReg workStart P hpointLength hP,
@@ -279,6 +280,7 @@ theorem ecdlpOracle_correct
         (regValue bReg st) • Q)).val st hpointNodup]
   simp only [ecdlpFunction, add_assoc]
 
+omit [Fact (Nat.Prime p)] in
 /-- The two-call oracle stays inside its two scalar registers, point
 accumulator, and shared scalar-multiplication workspace. -/
 theorem ecdlpOracle_usesOnly
@@ -307,6 +309,7 @@ theorem ecdlpOracle_usesOnly
     · exact Or.inl (Or.inr hpoint)
     · exact Or.inr hwork
 
+omit [Fact (Nat.Prime p)] in
 /-- The exact concrete oracle circuit is H/P-free. -/
 theorem ecdlpOracle_HPFree
     (aReg bReg pointReg : List Wire)
@@ -318,6 +321,7 @@ theorem ecdlpOracle_HPFree
   exact ⟨scalarMul_HPFree aReg pointReg workStart P,
     scalarMul_HPFree bReg pointReg workStart Q⟩
 
+omit [Fact (Nat.Prime p)] in
 /-- The exact concrete oracle circuit is well formed on a disjoint layout. -/
 theorem ecdlpOracle_wellFormed
     (aReg bReg pointReg : List Wire)
