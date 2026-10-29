@@ -4,18 +4,18 @@ import ShorECDLP.Submission.Naive.Correctness.EndToEnd
 /-! EDITABLE. Wire layout of the V2 workspace with the `Engine` inversion.
 
 The Naive public registers (phase registers, point register, QFT ancilla) are kept.  The
-workspace is V2's `scalarMulWork`, whose arithmetic engine lies below `Engine.wireBound`
-above offset 6164; the whole trial lies below `v2QubitCount`. -/
+workspace is V2's `scalarMulWork`, whose arithmetic engine spans `Engine.blocks` blocks of
+257 wires above offset 6164; the whole trial lies below `v2QubitCount`. -/
 
 namespace ShorECDLP
 namespace Secp256k1
 namespace V2
 
 /-- Dense envelope of the V2 trial (without the phase-register extension). -/
-def v2QubitCount : Nat := 6164 + Engine.wireBound
+def v2QubitCount : Nat := 6164 + 257 * Engine.blocks
 
-theorem v2QubitCount_eq : v2QubitCount = 14903 := by
-  simp [v2QubitCount, Engine.wireBound]
+theorem v2QubitCount_eq : v2QubitCount = 77610 := by
+  simp [v2QubitCount, Engine.blocks]
 
 def v2AllWires : List Wire := List.range v2QubitCount
 
@@ -106,8 +106,10 @@ private theorem secpMulLayout_upper :
     omega
 
 private theorem secpLayout_upper :
-    ∀ w ∈ Engine.layout.allWires, w < Engine.wireBound :=
-  Engine.allWires_lt
+    ∀ w ∈ Engine.layout.allWires,
+      w < Secp256k1Instance.fieldWidth * Engine.blocks := by
+  intro w hw
+  simpa [Secp256k1Instance.fieldWidth] using Engine.allWires_lt w hw
 
 private theorem pointAddArithmeticWork_upper :
     ∀ w ∈ pointAddArithmeticWork 2052,
@@ -118,26 +120,40 @@ private theorem pointAddArithmeticWork_upper :
   rcases hw with (hadd | hmul) | hexp
   · simp only [shiftWires, List.mem_map] at hadd
     obtain ⟨source, hsource, rfl⟩ := hadd
-    have hsourceUpper : source < Engine.wireBound :=
-      lt_of_lt_of_le (secpAddLayout_upper source hsource)
-        (by norm_num [Engine.wireBound, Engine.blocks, Secp256k1Instance.fieldWidth])
+    have hsourceUpper := secpAddLayout_upper source hsource
     have hoffset : pointAddArithmeticOffset 2052 = 6164 := rfl
-    rw [hoffset, v2QubitCount]
-    exact Nat.add_lt_add_left hsourceUpper 6164
+    calc
+      pointAddArithmeticOffset 2052 + source <
+          6164 + Secp256k1Instance.fieldWidth * Engine.blocks := by
+        rw [hoffset]
+        exact Nat.add_lt_add_left hsourceUpper 6164
+      _ = v2QubitCount := by
+        norm_num [v2QubitCount, Engine.blocks,
+          Secp256k1Instance.fieldWidth]
   · simp only [shiftWires, List.mem_map] at hmul
     obtain ⟨source, hsource, rfl⟩ := hmul
-    have hsourceUpper : source < Engine.wireBound :=
-      lt_of_lt_of_le (secpMulLayout_upper source hsource)
-        (by norm_num [Engine.wireBound, Engine.blocks, Secp256k1Instance.fieldWidth])
+    have hsourceUpper := secpMulLayout_upper source hsource
     have hoffset : pointAddArithmeticOffset 2052 = 6164 := rfl
-    rw [hoffset, v2QubitCount]
-    exact Nat.add_lt_add_left hsourceUpper 6164
+    calc
+      pointAddArithmeticOffset 2052 + source <
+          6164 + Secp256k1Instance.fieldWidth * Engine.blocks := by
+        rw [hoffset]
+        exact Nat.add_lt_add_left hsourceUpper 6164
+      _ = v2QubitCount := by
+        norm_num [v2QubitCount, Engine.blocks,
+          Secp256k1Instance.fieldWidth]
   · simp only [shiftWires, List.mem_map] at hexp
     obtain ⟨source, hsource, rfl⟩ := hexp
     have hsourceUpper := secpLayout_upper source hsource
     have hoffset : pointAddArithmeticOffset 2052 = 6164 := rfl
-    rw [hoffset, v2QubitCount]
-    exact Nat.add_lt_add_left hsourceUpper 6164
+    calc
+      pointAddArithmeticOffset 2052 + source <
+          6164 + Secp256k1Instance.fieldWidth * Engine.blocks := by
+        rw [hoffset]
+        exact Nat.add_lt_add_left hsourceUpper 6164
+      _ = v2QubitCount := by
+        norm_num [v2QubitCount, Engine.blocks,
+          Secp256k1Instance.fieldWidth]
 
 private theorem v2ScalarMulWork_upper :
     ∀ w ∈ scalarMulWork bitcoinWorkStart,
@@ -150,7 +166,7 @@ private theorem v2ScalarMulWork_upper :
     calc
       w < 1026 + pointWidth := hbound.2
       _ < v2QubitCount := by
-        norm_num [pointWidth, v2QubitCount, Engine.wireBound]
+        norm_num [pointWidth, v2QubitCount, Engine.blocks]
   · change w ∈ List.range' 1539 pointWidth ++
       pointAddWork 2052 at hw
     rcases List.mem_append.mp hw with hchoice | hw
@@ -158,7 +174,7 @@ private theorem v2ScalarMulWork_upper :
       calc
         w < 1539 + pointWidth := hbound.2
         _ < v2QubitCount := by
-          norm_num [pointWidth, v2QubitCount, Engine.wireBound]
+          norm_num [pointWidth, v2QubitCount, Engine.blocks]
     · change w ∈ List.range' 2052 4112 ++
         pointAddArithmeticWork 2052 at hw
       rcases List.mem_append.mp hw with hlocal | harithmetic
@@ -166,7 +182,7 @@ private theorem v2ScalarMulWork_upper :
         calc
           w < 2052 + 4112 := hbound.2
           _ < v2QubitCount := by
-            norm_num [v2QubitCount, Engine.wireBound]
+            norm_num [v2QubitCount, Engine.blocks]
       · exact pointAddArithmeticWork_upper w harithmetic
 
 /--
@@ -345,22 +361,22 @@ theorem v2DeclaredWires_subset :
   rcases hw with (((ha | hb) | hpoint) | hwork) | hancilla
   · change w ∈ List.range' 0 256 at ha
     have hbound := (List.mem_range'_1.mp ha).2
-    simpa [v2AllWires, v2QubitCount, Engine.wireBound] using
-      (hbound.trans (by norm_num : 256 < 14903))
+    simpa [v2AllWires, v2QubitCount, Engine.blocks] using
+      (hbound.trans (by norm_num : 256 < 77610))
   · change w ∈ List.range' 256 256 at hb
     have hbound := (List.mem_range'_1.mp hb).2
-    simpa [v2AllWires, v2QubitCount, Engine.wireBound] using
-      (hbound.trans (by norm_num : 512 < 14903))
+    simpa [v2AllWires, v2QubitCount, Engine.blocks] using
+      (hbound.trans (by norm_num : 512 < 77610))
   · change w ∈ List.range' 512 pointWidth at hpoint
     have hbound := (List.mem_range'_1.mp hpoint).2
     have hlt : w < v2QubitCount := by
       exact hbound.trans (by
-        norm_num [pointWidth, v2QubitCount, Engine.wireBound])
+        norm_num [pointWidth, v2QubitCount, Engine.blocks])
     simpa [v2AllWires] using hlt
   · have hlt := v2ScalarMulWork_upper w hwork
     simpa [v2AllWires] using hlt
   · subst w
-    simp [v2AllWires, v2QubitCount, Engine.wireBound,
+    simp [v2AllWires, v2QubitCount, Engine.blocks,
       bitcoinQFTAncilla]
 
 end V2

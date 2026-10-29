@@ -495,7 +495,7 @@ theorem controlledOut_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hlen : pointReg.length = pointWidth) :
-    templateT (controlledPointGates row control pointReg workStart) = 168774609556 := by
+    templateT (controlledPointGates row control pointReg workStart) = 89680667860 := by
   let read := readConstant (fun _ : Fin n => qCoefficient) G
   have hr : read ⟨row, .infinity, 0⟩ = false := by
     simp [read, readConstant, qCoefficient_point, fieldValue, pointCoordinates, G]
@@ -512,7 +512,7 @@ theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem scalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : Wire)
     (hlen : pointReg.length = pointWidth) (cs : List Wire) (rs : List (Fin n)) :
-    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 168774609556 := by
+    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 89680667860 := by
   induction cs generalizing rs with
   | nil => cases rs <;> simp [scalarGates, templateT]
   | cons c cs ih =>
