@@ -379,7 +379,7 @@ theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits �
   simpa only [resources, AdaptiveCircuit.qubitCount, List.card_toFinset,
     List.dedup_eq_self.mpr List.nodup_range, List.length_range] using hc
 
-theorem templateT_trialE : templateT trialGatesE = 22131525418406 := by
+theorem templateT_trialE : templateT trialGatesE = 22131427005910 := by
   have hh (ws : List Wire) : tCount (PhaseEstimation.hadamards ws) = 0 := by
     induction ws with
     | nil => rfl
@@ -390,13 +390,13 @@ theorem templateT_trialE : templateT trialGatesE = 22131525418406 := by
     regA_length, regB_length, gRows, qRows, List.length_ofFn]
   norm_num
 
-theorem straightT_entryE : straightT entryE.program = 22131525418406 := by
+theorem straightT_entryE : straightT entryE.program = 22131427005910 := by
   change straightT (castTable tableE_length.symm progE) = _
   rw [straightT_castTable, progE, straightT_castFinish, progRaw, straightT_append,
     straightT_constant, straightT_observe, templateT_trialE]
 
 theorem entryE_tModel (Q : Point) :
-    (resources (entryE.instantiate Q)).tModel ≤ 22131525418406 := by
+    (resources (entryE.instantiate Q)).tModel ≤ 22131427005910 := by
   have h := straight_t_bound entryE.program (readConstant entryE.coefficients.get Q) Fin.elim0
   rw [straightT_entryE] at h
   exact h

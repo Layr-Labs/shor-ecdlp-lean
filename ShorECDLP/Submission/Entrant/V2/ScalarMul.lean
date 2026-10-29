@@ -644,7 +644,7 @@ private theorem scalarMulCore_tCount_of_all_ne_zero
     (hlength : points.length = controls.length)
     (hnonzero : ∀ C ∈ points, C ≠ 0) :
     tCount (scalarMulCore pointReg workStart controls points) =
-      168952897652 * controls.length := by
+      168952149268 * controls.length := by
   induction controls generalizing points with
   | nil =>
       simp [scalarMulCore]
@@ -676,7 +676,7 @@ theorem scalarMul_tCount_of_table_ne_zero
     (hpointLength : pointReg.length = pointWidth)
     (hnonzero : ∀ C ∈ scalarMulTable scalarReg P, C ≠ 0) :
     tCount (scalarMul scalarReg pointReg workStart P) =
-      168952897652 * scalarReg.length := by
+      168952149268 * scalarReg.length := by
   exact scalarMulCore_tCount_of_all_ne_zero
     scalarReg pointReg (scalarMulTable scalarReg P) workStart
     hpointLength (by simp [scalarMulTable]) hnonzero

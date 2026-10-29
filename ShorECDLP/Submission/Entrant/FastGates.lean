@@ -104,7 +104,7 @@ def fastOutGates {n : Nat} (row : Fin n) (control : Wire) (pointReg outReg : Lis
     fastSetupGates row pointReg pw ++
     (fastBlockGates control (pointAddGenericFlag pw) workStart
         (genericPointGates row pw ++
-          (packFinitePoint (pointAddT2 pw) (pointAddT4 pw) cand).map TemplateGate.literal)
+          (packFinitePoint (pointAddT5 pw) (pointAddT4 pw) cand).map TemplateGate.literal)
         cand outReg ++
       fastBlockGates control (pointAddDoubleFlag pw) workStart (dpackedLoadGates row cand 0)
         cand outReg ++
@@ -297,7 +297,7 @@ theorem fastCPAGates_instantiate {n : Nat} (coeffs : Fin n → PointCoeff) (Q : 
 
 theorem fastCPAGates_templateT {n : Nat} (row negRow : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hP : pointReg.length = pointWidth) :
-    templateT (fastCPAGates row negRow control pointReg workStart) = 42075141416 := by
+    templateT (fastCPAGates row negRow control pointReg workStart) = 42074954320 := by
   rw [xSlots_templateT _ (xSlots_fastCPAGates row negRow control pointReg workStart)
     (readConstant (fun _ : Fin n => qCoefficient) G), fastCPAGates_instantiate]
   exact fastCPA2_tCount control pointReg workStart _ _ hP
@@ -344,7 +344,7 @@ theorem fastOutGates_length_le {n : Nat} (row : Fin n) (control : Wire)
     (controlledPointAddPointWorkStart workStart)
   have h3 := pointFlagGates_length_le row pointReg (controlledPointAddPointWorkStart workStart)
   have h4 := genericPointGates_length_le row (controlledPointAddPointWorkStart workStart)
-  have h5 := packFinitePoint_length_le (pointAddT2 (controlledPointAddPointWorkStart workStart))
+  have h5 := packFinitePoint_length_le (pointAddT5 (controlledPointAddPointWorkStart workStart))
     (pointAddT4 (controlledPointAddPointWorkStart workStart))
     (pointAddCandidate (controlledPointAddPointWorkStart workStart))
   have h6 := controlledCopyReg_length_le workStart
@@ -377,7 +377,7 @@ theorem fastScalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : 
     (hP : pointReg.length = pointWidth) :
     ∀ (cs : List Wire) (rs : List (Fin n × Fin n)),
       templateT (fastScalarGates pointReg workStart cs rs) =
-        min cs.length rs.length * 42075141416 := by
+        min cs.length rs.length * 42074954320 := by
   intro cs
   induction cs with
   | nil => intro rs; cases rs <;> simp [fastScalarGates, templateT]
