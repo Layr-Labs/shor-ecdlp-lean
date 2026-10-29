@@ -167,11 +167,11 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
-/-- The declared T bound is the certified count 11707227200758 rounded up to a multiple of
-10^3, so the qubit × T product 908761804250424000 has fifteen significant digits. -/
+/-- The declared T bound is the certified count 21765665609238 rounded up to a multiple of
+10^3, so the qubit × T product 375000652794690000 has fourteen significant digits. -/
 def bounds : Bounds where
-  qubits := 77624
-  tModel := 11707227201000
+  qubits := 17229
+  tModel := 21765665610000
   measurements := 526
 
 attribute [local irreducible] tableE progE Straight.WellFormed

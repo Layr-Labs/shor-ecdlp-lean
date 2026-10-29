@@ -858,7 +858,7 @@ theorem fastBlock_tCount (control flag anc : Wire) (K : Circuit) (cand outReg : 
 omit [Fact (Nat.Prime p)] in
 theorem fastOut_tCount (control : Wire) (pointReg outReg : List Wire) (workStart : Wire)
     (C : Point) (hP : pointReg.length = pointWidth) (hO : outReg.length = pointWidth) :
-    tCount (fastOut control pointReg outReg workStart C) = 11128541984 := by
+    tCount (fastOut control pointReg outReg workStart C) = 20689795224 := by
   have hc : (pointAddCandidate (controlledPointAddPointWorkStart workStart)).length =
       outReg.length := by rw [hO]; simp [pointAddCandidate]
   simp only [fastOut, fastBlocks, fastPass, tCount_append, tCount_reverse,
@@ -874,7 +874,7 @@ theorem fastCPA2_tCount (control : Wire) (pointReg : List Wire) (workStart : Wir
         (controlledPointAddAuxStart workStart) C ++
       pointSwapReg pointReg (controlledPointAddTemp workStart) ++
       (fastOut control pointReg (controlledPointAddTemp workStart)
-        (controlledPointAddAuxStart workStart) C').reverse) = 22257083968 := by
+        (controlledPointAddAuxStart workStart) C').reverse) = 41379590448 := by
   have ht : (controlledPointAddTemp workStart).length = pointWidth := by
     simp [controlledPointAddTemp]
   simp only [tCount_append, tCount_reverse, fastOut_tCount _ _ _ _ _ hP ht, pointSwapReg_tCount]
