@@ -747,6 +747,66 @@ theorem genericPointComputeD_tCount (pw : Wire) (xC yC : Fp) :
   simp only [Engine.fwdCost]
   omega
 
+/-! ## Exact wire lists -/
+
+/-- The wires of the add and multiply engines (blocks 0 … 9, with the bit blocks 6 and 8). -/
+def addMulList : List Wire :=
+  List.range' 0 1542 ++ List.range' 1542 1 ++ List.range' 1799 257 ++ List.range' 2056 1 ++
+    List.range' 2313 257
+
+theorem addLayout_sub_list : ∀ v ∈ Secp256k1Instance.secpAddLayout.allWires, v ∈ addMulList := by
+  intro v hv
+  simp only [Secp256k1Instance.secpAddLayout, RegisterLayout.allWires,
+    Secp256k1Instance.addWork, Secp256k1Instance.addScratchBlocks,
+    Secp256k1Instance.blocksWires, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+    Secp256k1Instance.Block.wires, Secp256k1Instance.reg, Secp256k1Instance.regBlock,
+    Secp256k1Instance.bitBlock, Secp256k1Instance.fieldWidth, Secp256k1Instance.baseId,
+    Secp256k1Instance.exponentId, Secp256k1Instance.outId, Secp256k1Instance.initialAccId,
+    List.mem_append, List.mem_range'_1] at hv
+  simp only [addMulList, List.mem_append, List.mem_range'_1]
+  omega
+
+theorem mulLayout_sub_list : ∀ v ∈ Secp256k1Instance.secpMulLayout.allWires, v ∈ addMulList := by
+  intro v hv
+  simp only [Secp256k1Instance.secpMulLayout, RegisterLayout.allWires,
+    Secp256k1Instance.mulWork, LowSpaceModMul.work, Secp256k1Instance.reg,
+    Secp256k1Instance.regBlock, Secp256k1Instance.Block.wires, Secp256k1Instance.bitWire,
+    Secp256k1Instance.mulCarry, Secp256k1Instance.mulBranch, Secp256k1Instance.mulOverflow,
+    Secp256k1Instance.fieldWidth, Secp256k1Instance.baseId, Secp256k1Instance.exponentId,
+    Secp256k1Instance.outId, Secp256k1Instance.initialAccId,
+    Secp256k1Instance.historyStartId, List.mem_append, List.mem_cons, List.mem_range'_1,
+    List.not_mem_nil, or_false] at hv
+  simp only [addMulList, List.mem_append, List.mem_range'_1]
+  rcases hv with (((h | h) | h) | ((h | h) | h) | h | h) <;> first | omega | (subst h; decide)
+
+def dirtyEng (pw : Wire) : List Wire := shiftWires (dirtyOffset pw) Engine.engList
+
+theorem dirtyInv_usesOnly_tight (pw : Wire) (input out : List Wire) :
+    CircuitUsesOnly (input ++ out ++ dirtyEng pw) (dirtyInv pw input out) := by
+  have hbase : ∀ w ∈ dirtyBase pw, w ∈ dirtyEng pw := shift_sub Engine.core_lhs_eng
+  have hres : ∀ w ∈ dirtyOut pw, w ∈ dirtyEng pw := shift_sub Engine.core_out_eng
+  refine usesOnly_append (usesOnly_append ?_ ?_) ?_
+  · apply Arithmetic.copyReg_usesOnly
+    · intro w h; exact List.mem_append_left _ (List.mem_append_left _ h)
+    · intro w h; exact List.mem_append_right _ (hbase w h)
+  · exact usesOnly_mono (shiftCircuit_usesOnly _ _ _ Engine.fwd_usesOnly_eng)
+      (fun w h => List.mem_append_right _ h)
+  · apply Arithmetic.copyReg_usesOnly
+    · intro w h; exact List.mem_append_right _ (hres w h)
+    · intro w h; exact List.mem_append_left _ (List.mem_append_right _ h)
+
+theorem genericPrefix_usesOnly (pw : Wire) (xC yC : Fp) :
+    CircuitUsesOnly (suffixSupport pw) (genericPrefix pw xC yC) := by
+  have hx : ∀ w ∈ pointAddX pw, w ∈ suffixSupport pw := by
+    intro w h; simp only [suffixSupport, List.mem_append]; tauto
+  have hy : ∀ w ∈ pointAddY pw, w ∈ suffixSupport pw := by
+    intro w h; simp only [suffixSupport, List.mem_append]; tauto
+  have h0 : ∀ w ∈ pointAddT0 pw, w ∈ suffixSupport pw := by
+    intro w h; simp only [suffixSupport, List.mem_append]; tauto
+  have h1 : ∀ w ∈ pointAddT1 pw, w ∈ suffixSupport pw := by
+    intro w h; simp only [suffixSupport, List.mem_append]; tauto
+  exact usesOnly_append (subc_in pw _ _ _ hy h0) (subc_in pw _ _ _ hx h1)
+
 end V2
 end Secp256k1
 end ShorECDLP

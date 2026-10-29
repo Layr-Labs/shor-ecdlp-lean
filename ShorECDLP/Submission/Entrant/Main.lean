@@ -202,7 +202,7 @@ def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
 def bounds : Bounds where
-  qubits := 16413
+  qubits := 15132
   tModel := 10131447168000
   measurements := 477
 

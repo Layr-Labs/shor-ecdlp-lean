@@ -94,6 +94,24 @@ theorem fwd_correct (st : BasisState) (hlhs : regValue core.lhs st < ShorECDLP.p
 theorem fwd_usesOnly : CircuitUsesOnly core.allWires fwdProgram :=
   Entrant.LowInv.lowFwd_usesOnly
 
+/-- The wires the forward sweep actually touches. -/
+def engList : List Wire := Entrant.LowInv.engList
+
+theorem fwd_usesOnly_eng : CircuitUsesOnly engList fwdProgram :=
+  Entrant.LowInv.lowFwd_usesOnly_eng
+
+theorem core_lhs_eng : ∀ w ∈ core.lhs, w ∈ engList := by
+  intro w hw
+  have h := Entrant.LowInv.mem_reg.mp hw
+  simp only [engList, Entrant.LowInv.engList, List.mem_append, List.mem_range'_1]
+  omega
+
+theorem core_out_eng : ∀ w ∈ core.out, w ∈ engList := by
+  intro w hw
+  have h := Entrant.LowInv.mem_reg.mp hw
+  simp only [engList, Entrant.LowInv.engList, List.mem_append, List.mem_range'_1]
+  omega
+
 theorem fwd_HPFree : Classical.HPFree fwdProgram := (Entrant.LowInv.lowFwd_good 0).hp
 
 theorem fwd_wellFormed : CircuitWellFormed fwdProgram := (Entrant.LowInv.lowFwd_good 0).wf

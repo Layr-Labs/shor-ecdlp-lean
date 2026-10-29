@@ -342,87 +342,113 @@ theorem entryE_wellFormed : entryE.program.WellFormed :=
 
 /-! ## Resources -/
 
-/-- Every wire the trial can touch: the phase registers, the point register through the
-first branch ancilla (512 … 1539), the local point-addition block below the unused
-`selected` register, and the arithmetic engine region. -/
-def qubitWires : List Wire :=
-  regA ++ regB ++ List.range' 512 1028 ++ List.range' 2052 3599 ++
-    List.range' 6164 V2.Engine.wireBound
+/-- Every wire the trial can touch, as disjoint ranges: the phase registers, the point
+register through the first branch ancilla (512 … 1539), the local point-addition block below
+the unused `selected` register, the add and multiply engines, and the blocks of the shifted
+inversion engine that its forward sweep touches. -/
+def qubitRanges : List (Nat × Nat) :=
+  [(0, 263), (263, 214), (512, 1028), (2052, 3599), (6164, 1542), (7706, 1), (7963, 257),
+    (8220, 1), (8477, 257), (8734, 257), (9248, 7710), (16958, 1), (17215, 1), (17472, 1)]
 
-theorem qubitWires_length : qubitWires.length = 16413 := by
-  simp [qubitWires, regA_length, regB_length, V2.Engine.wireBound]
+def qubitWires : List Wire := qubitRanges.flatMap (fun r => List.range' r.1 r.2)
 
-open private pointAddArithmeticWork_lower from ShorECDLP.Submission.Entrant.V2.PointAdd
-open private pointAddArithmeticWork_upper from ShorECDLP.Submission.Entrant.V2.Layout
+theorem qubitWires_length : qubitWires.length = 15132 := by
+  simp [qubitWires, qubitRanges]
 
-theorem qubitWires_nodup : qubitWires.Nodup := by
-  have hlo : ∀ w : ℕ, w ∈ regA ++ regB → w < 477 := by
-    intro w hw
-    simp only [regA, regB, List.mem_append, List.mem_range'_1] at hw
+def sortedRanges : List (Nat × Nat) → Bool
+  | [] => true
+  | [_] => true
+  | a :: b :: t => decide (a.1 + a.2 ≤ b.1) && sortedRanges (b :: t)
+
+theorem sortedRanges_head : ∀ (r : Nat × Nat) (rs : List (Nat × Nat)),
+    sortedRanges (r :: rs) = true → ∀ s ∈ rs, r.1 + r.2 ≤ s.1
+  | _, [], _, s, hs => by simp at hs
+  | r, b :: t, h, s, hs => by
+    simp only [sortedRanges, Bool.and_eq_true, decide_eq_true_eq] at h
+    rcases List.mem_cons.mp hs with rfl | hs
+    · exact h.1
+    · have := sortedRanges_head b t h.2 s hs
+      omega
+
+theorem sortedRanges_tail : ∀ (r : Nat × Nat) (rs : List (Nat × Nat)),
+    sortedRanges (r :: rs) = true → sortedRanges rs = true
+  | _, [], _ => rfl
+  | _, _ :: _, h => by
+    simp only [sortedRanges, Bool.and_eq_true] at h
+    exact h.2
+
+theorem ranges_nodup : ∀ (rs : List (Nat × Nat)), sortedRanges rs = true →
+    (rs.flatMap (fun r => List.range' r.1 r.2)).Nodup
+  | [], _ => List.nodup_nil
+  | r :: rs, h => by
+    rw [List.flatMap_cons, List.nodup_append]
+    refine ⟨List.nodup_range', ranges_nodup rs (sortedRanges_tail r rs h), ?_⟩
+    intro a ha b hb hab
+    subst hab
+    obtain ⟨s, hs, hbs⟩ := List.mem_flatMap.mp hb
+    have h1 := sortedRanges_head r rs h s hs
+    simp only [List.mem_range'_1] at ha hbs
     omega
-  have hab : (regA ++ regB).Nodup := by
-    rw [List.nodup_append]
-    refine ⟨List.nodup_range', List.nodup_range', ?_⟩
-    intro a ha b hb hab; subst hab
-    simp only [regA, regB, List.mem_range'_1] at ha hb
-    omega
-  have hblocks : V2.Engine.wireBound = 11309 := by simp [V2.Engine.wireBound]
-  unfold qubitWires
-  rw [hblocks]
-  refine List.nodup_append.mpr ⟨List.nodup_append.mpr ⟨List.nodup_append.mpr
-    ⟨hab, List.nodup_range', ?_⟩, List.nodup_range', ?_⟩, List.nodup_range', ?_⟩
-  · intro a ha b hb hab; subst hab
-    have := hlo a ha
-    simp only [List.mem_range'_1] at hb; omega
-  · intro a ha b hb hab; subst hab
-    simp only [List.mem_range'_1] at hb
-    rcases List.mem_append.mp ha with ha | ha
-    · have := hlo a ha; omega
-    · simp only [List.mem_range'_1] at ha; omega
-  · intro a ha b hb hab; subst hab
-    simp only [List.mem_range'_1] at hb
-    rcases List.mem_append.mp ha with ha | ha
-    · rcases List.mem_append.mp ha with ha | ha
-      · have := hlo a ha; omega
-      · simp only [List.mem_range'_1] at ha; omega
-    · simp only [List.mem_range'_1] at ha; omega
+
+theorem qubitWires_nodup : qubitWires.Nodup := ranges_nodup qubitRanges (by decide)
+
+theorem qw_of (a n : Nat) (hmem : (a, n) ∈ qubitRanges) (w : Wire) (h : w ∈ List.range' a n) :
+    w ∈ qubitWires :=
+  List.mem_flatMap.mpr ⟨(a, n), hmem, h⟩
+
+theorem qw_range (a n x m : Nat) (hmem : (a, n) ∈ qubitRanges) (hx : a ≤ x) (hm : x + m ≤ a + n)
+    (w : Wire) (h : w ∈ List.range' x m) : w ∈ qubitWires := by
+  apply qw_of a n hmem
+  simp only [List.mem_range'_1] at h ⊢
+  omega
+
+theorem qw_shift (o a n : Nat) (hmem : (o + a, n) ∈ qubitRanges) (w : Wire)
+    (h : w ∈ V2.shiftWires o (List.range' a n)) : w ∈ qubitWires := by
+  obtain ⟨v, hv, rfl⟩ := List.mem_map.mp h
+  apply qw_of (o + a) n hmem
+  simp only [List.mem_range'_1] at hv ⊢
+  omega
 
 theorem tight_sub : ∀ w : ℕ, w ∈ regA ++ regB ++ bitcoinPointReg ++
     V2.tightWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ qubitWires := by
   intro w hw
-  have hR (a n : Nat) (h : w ∈ List.range' a n) (h1 : 512 ≤ a) (h2 : a + n ≤ 1540) :
-      w ∈ qubitWires := by
-    simp only [List.mem_range'_1] at h
-    simp only [qubitWires, List.mem_append, List.mem_range'_1]
-    left; left; right; omega
   simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hw
-  rcases hw with (((hab | hp) | hwk) | hanc)
-  · simp only [qubitWires, List.mem_append]; left; left; left; exact hab
-  · exact hR 512 513 hp (by norm_num) (by norm_num)
+  rcases hw with ((((ha | hb) | hp) | hwk) | hanc)
+  · exact qw_of 0 263 (by decide) w ha
+  · exact qw_of 263 214 (by decide) w hb
+  · exact qw_range 512 1028 512 513 (by decide) (by norm_num) (by norm_num) w hp
   · simp only [V2.tightWork, V2.tightPW, List.mem_append, List.mem_cons, List.not_mem_nil,
       or_false] at hwk
     have ht : V2.controlledPointAddTemp bitcoinWorkStart = List.range' 1026 513 := rfl
     have ha : V2.controlledPointAddAuxStart bitcoinWorkStart = 1539 := rfl
     have hpw : V2.controlledPointAddPointWorkStart 1539 = 2052 := rfl
+    have hoff : V2.pointAddArithmeticOffset 2052 = 6164 := rfl
+    have hdo : V2.dirtyOffset 2052 = 8734 := rfl
     rw [ht, ha, hpw] at hwk
-    rcases hwk with (h | h) | (h | h)
-    · exact hR 1026 513 h (by norm_num) (by norm_num)
-    · exact hR 1539 1 (by rw [h]; exact List.mem_range'_1.mpr ⟨le_rfl, by norm_num⟩)
-        (by norm_num) (by norm_num)
-    · simp only [List.mem_range'_1] at h
-      simp only [qubitWires, List.mem_append, List.mem_range'_1]
-      left; right; omega
-    · have hl := pointAddArithmeticWork_lower 2052 w h
-      have hu := pointAddArithmeticWork_upper w h
-      have hoff : V2.pointAddArithmeticOffset 2052 = 6164 := rfl
-      rw [hoff] at hl
-      have hv : V2.v2QubitCount = 6164 + V2.Engine.wireBound := rfl
-      rw [hv] at hu
-      have hl' : (6164 : ℕ) ≤ w := hl
-      have hu' : (w : ℕ) < 6164 + V2.Engine.wireBound := hu
-      simp only [qubitWires, List.mem_append, List.mem_range'_1]
-      right; omega
-  · subst hanc; exact hR 1025 1 (by simp [bitcoinQFTAncilla]) (by norm_num) (by norm_num)
+    rcases hwk with (h | h) | (h | (h | h))
+    · exact qw_range 512 1028 1026 513 (by decide) (by norm_num) (by norm_num) w h
+    · exact qw_range 512 1028 1539 1 (by decide) (by norm_num) (by norm_num) w
+        (by rw [h]; exact List.mem_range'_1.mpr ⟨le_rfl, by norm_num⟩)
+    · exact qw_of 2052 3599 (by decide) w h
+    · rw [hoff] at h
+      simp only [V2.addMulList, V2.shiftWires, List.map_append, List.mem_append] at h
+      rcases h with (((h | h) | h) | h) | h
+      · exact qw_shift 6164 0 1542 (by decide) w h
+      · exact qw_shift 6164 1542 1 (by decide) w h
+      · exact qw_shift 6164 1799 257 (by decide) w h
+      · exact qw_shift 6164 2056 1 (by decide) w h
+      · exact qw_shift 6164 2313 257 (by decide) w h
+    · simp only [V2.dirtyEng, hdo, V2.Engine.engList, Entrant.LowInv.engList, V2.shiftWires,
+        List.map_append, List.mem_append] at h
+      rcases h with ((((h | h) | h) | h) | h)
+      · exact qw_shift 8734 0 257 (by decide) w h
+      · exact qw_shift 8734 514 7710 (by decide) w h
+      · exact qw_shift 8734 8224 1 (by decide) w h
+      · exact qw_shift 8734 8481 1 (by decide) w h
+      · exact qw_shift 8734 8738 1 (by decide) w h
+  · subst hanc
+    exact qw_range 512 1028 1025 1 (by decide) (by norm_num) (by norm_num) _
+      (List.mem_range'_1.mpr ⟨le_rfl, by simp [bitcoinQFTAncilla]⟩)
 
 theorem trialGatesE_support (Q : Point) :
     circuitWires (trialGatesE.flatMap (TemplateGate.instantiate
@@ -483,7 +509,7 @@ theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ qubitWires
   · have h := zObserve_support _ hw
     exact tight_sub w (by simp only [List.mem_append] at h ⊢; tauto)
 
-theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 16413 := by
+theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 15132 := by
   have hs : (entryE.instantiate Q).wires.toFinset ⊆ qubitWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (entryE_support Q (List.mem_toFinset.mp hw))

@@ -1003,4 +1003,38 @@ set_option maxRecDepth 100000 in
 theorem lowFwdCost_eq : lowFwdCost = 5228174644 := by
   decide +kernel
 
+
+/-! ## The wires the engine actually touches -/
+
+/-- Block 0, blocks 2 … 31, and the three multiplier flags; block 1 and the flag blocks'
+other wires are never touched. -/
+def engList : List Wire :=
+  List.range' 0 257 ++ List.range' 514 7710 ++ List.range' 8224 1 ++ List.range' 8481 1 ++
+    List.range' 8738 1
+
+theorem engW_sub_engList : ∀ v ∈ engW msE, v ∈ engList := by
+  intro v hv
+  simp only [engList, List.mem_append, List.mem_range'_1]
+  rcases (mem_engW msE).mp hv with ⟨i, hi, hvi⟩ | hvw
+  · rw [mem_ids] at hi
+    have h := mem_reg.mp hvi
+    rcases hi with rfl | ⟨h1, h2⟩ <;> omega
+  · simp only [msE, Secp256k1Instance.mulWork, LowSpaceModMul.work, List.mem_cons,
+      List.mem_append, List.not_mem_nil, or_false] at hvw
+    rcases hvw with ((h | h) | h) | h | h
+    · subst h
+      simp [Secp256k1Instance.mulBranch, Secp256k1Instance.bitWire, Secp256k1Instance.fieldWidth]
+    · have := mem_reg.mp h
+      omega
+    · have := mem_reg.mp h
+      omega
+    · subst h
+      simp [Secp256k1Instance.mulCarry, Secp256k1Instance.bitWire, Secp256k1Instance.fieldWidth]
+    · subst h
+      simp [Secp256k1Instance.mulOverflow, Secp256k1Instance.bitWire,
+        Secp256k1Instance.fieldWidth]
+
+theorem lowFwd_usesOnly_eng : CircuitUsesOnly engList lowFwd :=
+  usesOnly_mono (lowFwd_good 0).uses engW_sub_engList
+
 end ShorECDLP.Entrant.LowInv

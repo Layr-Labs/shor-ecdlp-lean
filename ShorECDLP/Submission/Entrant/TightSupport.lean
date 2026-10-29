@@ -19,10 +19,12 @@ open Challenge
 
 open private pointAddBranchActiveSupport genericPointCompute_usesOnly
   packFinitePoint_usesOnly_pointAdd pointAddFlags_usesOnly controlledCopyReg_usesOnly
+  packFinitePoint_usesOnly
   from ShorECDLP.Submission.Entrant.V2.PointAdd
 
 /-- Local point-addition wires below `selected`, followed by the arithmetic engines. -/
-def tightPW (pw : Wire) : List Wire := List.range' pw 3599 ++ pointAddArithmeticWork pw
+def tightPW (pw : Wire) : List Wire :=
+  List.range' pw 3599 ++ (shiftWires (pointAddArithmeticOffset pw) addMulList ++ dirtyEng pw)
 
 private theorem range_sub (pw a n : Nat) (h : a + n ≤ 3599) :
     ∀ w ∈ List.range' (pw + a) n, w ∈ tightPW pw := by
@@ -31,18 +33,15 @@ private theorem range_sub (pw a n : Nat) (h : a + n ≤ 3599) :
   simp only [List.mem_range'_1] at hw ⊢
   omega
 
-private theorem engine_sub (pw w : Wire)
-    (hw : w ∈ shiftWires (pointAddArithmeticOffset pw) Secp256k1Instance.secpAddLayout.allWires ∨
-      w ∈ shiftWires (pointAddArithmeticOffset pw) Secp256k1Instance.secpMulLayout.allWires ∨
-        w ∈ shiftWires (pointAddArithmeticOffset pw) Engine.layout.allWires) :
-    w ∈ tightPW pw := by
-  apply List.mem_append_right
-  unfold pointAddArithmeticWork
-  rw [List.mem_dedup]
-  rcases hw with h | h | h
-  · exact List.mem_append_left _ (List.mem_append_left _ h)
-  · exact List.mem_append_left _ (List.mem_append_right _ h)
-  · exact List.mem_append_right _ h
+private theorem add_tight (pw w : Wire)
+    (h : w ∈ shiftWires (pointAddArithmeticOffset pw) Secp256k1Instance.secpAddLayout.allWires) :
+    w ∈ tightPW pw :=
+  List.mem_append_right _ (List.mem_append_left _ (shift_sub addLayout_sub_list w h))
+
+private theorem mul_tight (pw w : Wire)
+    (h : w ∈ shiftWires (pointAddArithmeticOffset pw) Secp256k1Instance.secpMulLayout.allWires) :
+    w ∈ tightPW pw :=
+  List.mem_append_right _ (List.mem_append_left _ (shift_sub mulLayout_sub_list w h))
 
 theorem tight_x (pw : Wire) : ∀ w ∈ pointAddX pw, w ∈ tightPW pw := by
   have e : pointAddX pw = List.range' (pw + 0) 257 := rfl
@@ -105,22 +104,6 @@ theorem tight_flagWork (pw : Wire) : ∀ w ∈ pointAddFlagWork pw, w ∈ tightP
   · subst h; exact one_sub pw 3084 (by norm_num)
   · subst h; exact one_sub pw 3085 (by norm_num)
 
-theorem tight_activeSupport (pw : Wire) :
-    ∀ w ∈ pointAddBranchActiveSupport pw, w ∈ tightPW pw := by
-  intro w hw
-  simp only [pointAddBranchActiveSupport, List.mem_append] at hw
-  rcases hw with h | h | h | h | h | h | h | h | h | h
-  · exact tight_x pw w h
-  · exact tight_y pw w h
-  · exact tight_t0 pw w h
-  · exact tight_t1 pw w h
-  · exact tight_t2 pw w h
-  · exact tight_t3 pw w h
-  · exact tight_t4 pw w h
-  · exact tight_t5 pw w h
-  · exact tight_cand pw w h
-  · exact engine_sub pw w h
-
 theorem setup_usesOnly_tight (pointReg : List Wire) (pw : Wire) (xC yC : Fp) :
     CircuitUsesOnly (pointReg ++ tightPW pw) (pointAddSetup pointReg pw xC yC) := by
   have hx : CircuitUsesOnly (pointReg ++ tightPW pw) (pointAddCopyX pointReg pw) := by
@@ -146,10 +129,42 @@ theorem setup_usesOnly_tight (pointReg : List Wire) (pw : Wire) (xC yC : Fp) :
   rw [pointAddSetup, pointAddCoordinateCopies]
   exact usesOnly_append (usesOnly_append hx hy) hflags
 
+theorem suffix_tight (pw : Wire) : ∀ w ∈ suffixSupport pw, w ∈ tightPW pw := by
+  intro w hw
+  simp only [suffixSupport, List.mem_append] at hw
+  rcases hw with (((((((((h | h) | h) | h) | h) | h) | h) | h) | h) | h)
+  · exact tight_x pw w h
+  · exact tight_y pw w h
+  · exact tight_t0 pw w h
+  · exact tight_t1 pw w h
+  · exact tight_t2 pw w h
+  · exact tight_t3 pw w h
+  · exact tight_t4 pw w h
+  · exact tight_t5 pw w h
+  · exact add_tight pw w h
+  · exact mul_tight pw w h
+
 theorem genericK_usesOnly_tight (pw : Wire) (xC yC : Fp) :
-    CircuitUsesOnly (tightPW pw) (fastGenericK pw xC yC) :=
-  usesOnly_mono (usesOnly_append (genericPointComputeD_usesOnly pw xC yC)
-    (packFinitePoint_usesOnly_pointAdd pw)) (tight_activeSupport pw)
+    CircuitUsesOnly (tightPW pw) (fastGenericK pw xC yC) := by
+  have hpre := usesOnly_mono (genericPrefix_usesOnly pw xC yC) (suffix_tight pw)
+  have hsuf := usesOnly_mono (genericSuffix_usesOnly pw xC yC) (suffix_tight pw)
+  have hinv := usesOnly_mono (dirtyInv_usesOnly_tight pw (pointAddT1 pw) (pointAddT2 pw)) (by
+    intro w hw
+    rcases List.mem_append.mp hw with hw | hw
+    · rcases List.mem_append.mp hw with hw | hw
+      · exact tight_t1 pw w hw
+      · exact tight_t2 pw w hw
+    · exact List.mem_append_right _ (List.mem_append_right _ hw))
+  have hpack := usesOnly_mono
+    (packFinitePoint_usesOnly (pointAddT5 pw) (pointAddT4 pw) (pointAddCandidate pw)) (by
+      intro w hw
+      rcases List.mem_append.mp hw with hw | hw
+      · rcases List.mem_append.mp hw with hw | hw
+        · exact tight_t5 pw w hw
+        · exact tight_t4 pw w hw
+      · exact tight_cand pw w hw)
+  rw [fastGenericK, genericPointComputeD]
+  exact usesOnly_append (usesOnly_append (usesOnly_append hpre hinv) hsuf) hpack
 
 theorem loadCand_usesOnly_tight (pw : Wire) (v : Nat) :
     CircuitUsesOnly (tightPW pw) (loadConst (pointAddCandidate pw) v) :=
