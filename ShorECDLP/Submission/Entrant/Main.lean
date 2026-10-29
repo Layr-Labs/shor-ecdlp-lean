@@ -873,18 +873,22 @@ end
 end ShorECDLP.Entrant.Optimization
 namespace ShorECDLP.Entrant.Optimization
 open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ShorECDLP.Entrant.ZeroAdaptive
 noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
-attribute [local irreducible] sequenceProgram appendCompiled literalProgram coordinateProgram zeroDivisionProgram
+attribute [local irreducible] sequenceProgram appendCompiled literalProgram tailCoordinateProgram zDivisionProgram
   Single.axis Single.entry
 
-def zeroDivisionPatch (n start : Nat) : Patch (zeroDivisionProgram n start).2 1156680 := by
-  unfold zeroDivisionProgram
-  exact Patch.surroundCompiled _ _ _ (divisionPatch n start)
+def zeroDivisionPatch (n start : Nat) : Patch (zDivisionProgram n start).2 1156680 := by
+  unfold zDivisionProgram
+  dsimp only
+  refine (Patch.appendCompiled (d := 0) (f := 1156680) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  apply Patch.prependCompiled
+  exact (Patch.appendCompiled (d := 1156680) (f := 0) _ _ (divisionPatch n _) (Patch.refl _)).castSaving (by omega)
 
-def coordinatePatch (start : Nat) : Patch (coordinateProgram start).2 1156680 := by
-  unfold coordinateProgram coordinateSegments
+def coordinatePatch (start : Nat) : Patch (tailCoordinateProgram start).2 1156680 := by
+  unfold tailCoordinateProgram tailCoordinateSegments
   refine (Patch.sequenceCons (d := 0) (f := 1156680) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 0) (f := 1156680) _ _ (Patch.refl _) ?_).castSaving (by omega)
   exact (Patch.sequenceCons _ _ (zeroDivisionPatch 32768 _) (Patch.refl _)).castSaving (by omega)
@@ -978,7 +982,7 @@ namespace ShorECDLP.Entrant
 open Challenge
 noncomputable def entry : StraightEntry := Optimization.replaceEntry Single.entry Optimization.entryPatch.program
 def layout : DecodeLayout := Single.layout
-def bounds : Bounds := ⟨Single.bounds.qubits, Single.bounds.tModel - 38170440, Single.bounds.measurements⟩
+def bounds : Bounds := ⟨855, 16900071158, 1013156652⟩
 theorem certificate : Certificate officialLimits layout entry bounds :=
   Optimization.replacement_certificate Single.certificate Optimization.entryPatch.drops Optimization.entryPatch.rewrites
 end ShorECDLP.Entrant
