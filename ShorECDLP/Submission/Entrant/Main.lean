@@ -5,7 +5,7 @@ import ShorECDLP.Submission.«2607_13816».EEA.BlockAPrimitiveCounts
 import ShorECDLP.Challenge.Contract
 import ShorECDLP.Submission.«2607_13816».Challenge.OuterResources
 import ShorECDLP.Submission.«2607_13816».Challenge.CursorShift
-import ShorECDLP.Submission.Entrant.Single.Certificate
+import ShorECDLP.Submission.Entrant.Streaming.Certificate
 
 section
 
@@ -1080,34 +1080,29 @@ end
 end ShorECDLP.Entrant.Optimization
 namespace ShorECDLP.Entrant.Optimization
 open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ShorECDLP.Entrant.ZeroAdaptive
 noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
-attribute [local irreducible] sequenceProgram appendCompiled literalProgram coordinateProgram zeroDivisionProgram zeroMultiplicationProgram
-  Single.axis Single.entry ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram
-  ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram
-  ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram
+attribute [local irreducible] sequenceProgram appendCompiled literalProgram tailCoordinateProgram zDivisionProgram zMultiplicationProgram
+  Single.axis Single.entry
 
-def zeroDivisionPatch (n start : Nat) :
-    Patch (ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram n start).2 2313360 := by
-  unfold ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram
+def zeroDivisionPatch (n start : Nat) : Patch (zDivisionProgram n start).2 2313360 := by
+  unfold zDivisionProgram
   dsimp only
   refine (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine Patch.prependCompiled _ _ ?_
-  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _
-    (divisionPatch n _) (Patch.refl _)).castSaving (by omega)
+  apply Patch.prependCompiled
+  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _ (divisionPatch n _) (Patch.refl _)).castSaving (by omega)
 
-def zeroMultiplicationPatch (n start : Nat) :
-    Patch (ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram n start).2 2313360 := by
-  unfold ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram
+def zeroMultiplicationPatch (n start : Nat) : Patch (zMultiplicationProgram n start).2 2313360 := by
+  unfold zMultiplicationProgram
   dsimp only
   refine (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine Patch.prependCompiled _ _ ?_
-  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _
-    (multiplicationPatch n _) (Patch.refl _)).castSaving (by omega)
+  apply Patch.prependCompiled
+  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _ (multiplicationPatch n _) (Patch.refl _)).castSaving (by omega)
 
-def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram start).2 4626720 := by
-  unfold ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateSegments
+def coordinatePatch (start : Nat) : Patch (tailCoordinateProgram start).2 4626720 := by
+  unfold tailCoordinateProgram tailCoordinateSegments
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 2313360) (f := 2313360) _ _ (zeroDivisionPatch 32768 _) ?_).castSaving (by omega)
@@ -1204,7 +1199,7 @@ namespace ShorECDLP.Entrant
 open Challenge
 noncomputable def entry : StraightEntry := Optimization.replaceEntry Single.entry Optimization.entryPatch.program
 def layout : DecodeLayout := Single.layout
-def bounds : Bounds := ⟨Single.bounds.qubits, Single.bounds.tModel - 152681760, Single.bounds.measurements⟩
+def bounds : Bounds := ⟨855, 16784146118, 1013358612⟩
 theorem certificate : Certificate officialLimits layout entry bounds :=
   Optimization.replacement_certificate Single.certificate Optimization.entryPatch.drops Optimization.entryPatch.rewrites
 end ShorECDLP.Entrant
