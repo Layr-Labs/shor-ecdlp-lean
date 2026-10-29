@@ -1056,13 +1056,13 @@ attribute [local irreducible] sequenceProgram appendCompiled literalProgram
   remainderBlockProgram coefficientBlockProgram phaseProgram hProgram intervalProgram coefficientProgram
   preprocessProgram productionParityProgram measuredStepProgram measuredScheduleProgram
   measuredEEAForwardProgram measuredForwardWrapperProgram multiplyWorkProgram divisionAfterResetProgram
+  divisionProgram zeroDivisionProgram fieldLookupAddProgram signedFieldProgram pointSquareProgram
+  zeroMultiplicationProgram xNegateProgram coordinateProgram
   measuredInverseStepProgram measuredEEAReverseProgram measuredReverseWrapperProgram
   hInverseProgram phaseInverseProgram coefficientInverseProgram intervalInverseProgram
   measuredForwardDataBankProgram measuredReverseDataBankProgram multiplicationProgram
   multiplicationAfterResetProgram multiplicationCorrectionProgram multiplicationCleanupProgram
   multiplyDataProgram unmultiplyDataProgram divisionCorrectionProgram collectProgram
-  divisionProgram zeroDivisionProgram fieldLookupAddProgram signedFieldProgram pointSquareProgram
-  zeroMultiplicationProgram xNegateProgram coordinateProgram
 
 
 def Patch.prependCompiled {n start d} (gs : Circuit)
@@ -1462,7 +1462,6 @@ def multiplicationPatch (n start : Nat) : Patch (multiplicationProgram n start).
   unfold multiplicationProgram
   exact (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _)
     (collectPatch _ (multiplicationAfterResetPatch n) _ _ _)).castSaving (by omega)
-
 
 
 
