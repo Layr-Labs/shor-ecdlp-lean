@@ -6,6 +6,7 @@ import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
 import ShorECDLP.Framework.Quantum.TerminalInterference
 import ShorECDLP.Submission.«2607_13816».Window.Uniform
 
+open ShorECDLP.Entrant.ZeroAdaptive
 
 /-! EDITABLE. Single-trial entrant: inherited coherent physical and Fourier lemmas.
 Concatenated in dependency order to bound parallel kernel replay memory.
@@ -351,14 +352,229 @@ theorem batchedWindow_coordinate_ready (Q : Point) (hQ : order • Q=0) (w : Odd
 def BatchedWindowValid (s : BasisState) : Prop :=
   BatchedPointReady s ∧ ∃ P : Point, pointStateCoordinates s=fig14PointEncoding P
 
+/-! ### The coordinate tail without its final negation
+
+`tailCoordinateCircuit` runs the first eight coordinate stages, the negation `N` and the table
+addition `A`. The upstream coordinate program runs `N` once more. Since `N` is an involution on
+reduced words, the tail implements `N` after the upstream coordinate map. -/
+
+private theorem tail_division_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (zeroAllowedDivisionOutputState s) := by
+  refine ⟨fig14Division_ready s hs.1,?_⟩
+  rw [zeroAllowedDivisionOutputState_frame s hs.1]
+  simpa using hs.2
+private theorem tail_multiplication_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (zeroAllowedMultiplicationOutputState s) := by
+  refine ⟨fig14Multiplication_ready s hs.1,?_⟩
+  rw [zeroAllowedMultiplicationOutputState_frame s hs.1]
+  simpa using hs.2
+private theorem tail_square_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (fig14SquareSubtractState s) :=
+  ⟨fig14SquareSubtractState_ready s hs.1,
+    ((fig14SquareSubtractState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+private theorem tail_negate_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (fig14NegateState s) :=
+  ⟨fig14NegateState_ready s hs.1,
+    ((fig14NegateState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+private theorem tail_yneg_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (windowYNegateState s) :=
+  ⟨windowYNegateState_ready s hs.1,
+    ((windowYNegateState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+
+/-- The state after the first eight coordinate stages, as in `signedLookupCoordinateState`. -/
+noncomputable def coord8State (x y : Nat → Nat) (s : BasisState) : BasisState :=
+  let s1 := fig14LookupXState (fun a => (ShorECDLP.p-x a)%ShorECDLP.p) s
+  let s2 := signedPointLookupYState (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) s1
+  let s3 := zeroAllowedDivisionOutputState s2
+  let s4 := fig14SquareSubtractState s3
+  let s5 := fig14LookupXState (fun a => (3*x a)%ShorECDLP.p) s4
+  let s6 := zeroAllowedMultiplicationOutputState s5
+  let s7 := fig14NegateState s6
+  fig14LookupXState (fun a => x a%ShorECDLP.p) s7
+
+noncomputable def coordYAddState (y : Nat → Nat) : BasisState → BasisState :=
+  lookupModularAddState (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) pointLookupAddress
+    (List.range' 7 256) (List.range' 580 256) secp256k1ReductionConstantBits ShorECDLP.p 836 559 558
+
+theorem coord8Circuit_coherent (x y : Nat → Nat) :
+    CoherentlyImplementsOn (coord8Circuit x y) (Finsupp.lmapDomain ℂ ℂ (coord8State x y))
+      PointLookupValid ∧ ∀ s, PointLookupValid s → PointLookupValid (coord8State x y s) := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have h1 := fig14LookupX_coherent (fun a => (ShorECDLP.p-x a)%ShorECDLP.p) (fun _ => hk _)
+  have r1 := fig14LookupXState_ready (fun a => (ShorECDLP.p-x a)%ShorECDLP.p) (fun _ => hk _)
+  have h2 := signedPointLookupY_coherent (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) (fun _ => hk _)
+  have r2 := signedPointLookupYState_ready (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) (fun _ => hk _)
+  have h3 : CoherentlyImplementsOn division
+      (Finsupp.lmapDomain ℂ ℂ zeroAllowedDivisionOutputState) PointLookupValid :=
+    restrictCoherent division_coherent (fun s hs => hs.1)
+  have h4 : CoherentlyImplementsOn fig14SquareSubtract
+      (Finsupp.lmapDomain ℂ ℂ fig14SquareSubtractState) PointLookupValid :=
+    restrictCoherent fig14SquareSubtract_coherent (fun s hs => hs.1)
+  have h5 := fig14LookupX_coherent (fun a => (3*x a)%ShorECDLP.p) (fun _ => hk _)
+  have r5 := fig14LookupXState_ready (fun a => (3*x a)%ShorECDLP.p) (fun _ => hk _)
+  have h6 : CoherentlyImplementsOn multiplication
+      (Finsupp.lmapDomain ℂ ℂ zeroAllowedMultiplicationOutputState) PointLookupValid :=
+    restrictCoherent multiplication_coherent (fun s hs => hs.1)
+  have h7 : CoherentlyImplementsOn fig14Negate
+      (Finsupp.lmapDomain ℂ ℂ fig14NegateState) PointLookupValid :=
+    restrictCoherent fig14Negate_coherent (fun s hs => hs.1)
+  have h8 := fig14LookupX_coherent (fun a => x a%ShorECDLP.p) (fun _ => hk _)
+  have r8 := fig14LookupXState_ready (fun a => x a%ShorECDLP.p) (fun _ => hk _)
+  have c2 := composeCoherent h1 h2 r1
+  have v2 := fun s hs => r2 _ (r1 s hs)
+  have c3 := composeCoherent c2 h3 v2
+  have v3 := fun s hs => tail_division_ready _ (v2 s hs)
+  have c4 := composeCoherent c3 h4 v3
+  have v4 := fun s hs => tail_square_ready _ (v3 s hs)
+  have c5 := composeCoherent c4 h5 v4
+  have v5 := fun s hs => r5 _ (v4 s hs)
+  have c6 := composeCoherent c5 h6 v5
+  have v6 := fun s hs => tail_multiplication_ready _ (v5 s hs)
+  have c7 := composeCoherent c6 h7 v6
+  have v7 := fun s hs => tail_negate_ready _ (v6 s hs)
+  have c8 := composeCoherent c7 h8 v7
+  exact ⟨c8,fun s hs => r8 _ (v7 s hs)⟩
+
+private theorem tail_input_disjoint :
+    (836::pointLookupAddress++pointLookupPath).Disjoint (List.range' 7 256) := by
+  apply List.disjoint_left.mpr
+  intro w hw ht
+  simp only [pointLookupAddress,pointLookupPath,List.mem_cons,List.mem_append,List.mem_range'] at hw ht
+  rcases hw with (rfl | ⟨i,hi,hwi⟩) | ⟨i,hi,hwi⟩ <;> obtain ⟨j,hj,hwj⟩ := ht <;> omega
+
+private theorem tail_path_disjoint : pointLookupPath.Disjoint (List.range' 580 256) := by
+  apply List.disjoint_left.mpr
+  intro w hw ht
+  simp only [pointLookupPath,List.mem_range'] at hw ht
+  omega
+
+private theorem tail_address_disjoint : pointLookupAddress.Disjoint (List.range' 580 256) := by
+  apply List.disjoint_left.mpr
+  intro w hw ht
+  simp only [pointLookupAddress,List.mem_range'] at hw ht
+  omega
+
+private theorem tail_add_layout :
+    ([836,559,560,561,558] ++ List.range' 7 256 ++ List.range' 580 256 : List Wire).Nodup := by
+  decide +kernel
+
+private theorem tail_point_valid (s : BasisState) (hs : PointLookupValid s) :
+    LookupModularValid pointLookupPath (List.range' 7 256) (List.range' 580 256)
+      ShorECDLP.p 836 559 560 561 558 s := by
+  refine ⟨?_,?_,hs.2,?_,?_,?_,?_,hs.1.2.2.2⟩
+  · intro w hw
+    apply hs.1.1 w
+    simp [pointLookupPath] at hw ⊢
+    omega
+  · intro w hw
+    apply hs.1.1 w
+    simp at hw ⊢
+    omega
+  · exact hs.1.1 559 (by decide +kernel)
+  · exact hs.1.1 560 (by decide +kernel)
+  · exact hs.1.1 561 (by decide +kernel)
+  · exact hs.1.1 558 (by decide +kernel)
+
+theorem coordYAdd_coherent (y : Nat → Nat) :
+    CoherentlyImplementsOn (coordYAdd y) (Finsupp.lmapDomain ℂ ℂ (coordYAddState y))
+      PointLookupValid := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have h := lookupModularAddProgram_coherent (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+    pointLookupAddress pointLookupPath (List.range' 7 256) (List.range' 580 256)
+    secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558
+    (by decide +kernel) (by decide +kernel) tail_input_disjoint tail_path_disjoint
+    (by simp) (by simp) (by simp [secp256k1ReductionConstantBits]) tail_add_layout
+    ShorECDLP.Secp256k1.p_prime.pos (by decide +kernel)
+    (by rw [secp256k1ReductionConstant_value]; decide +kernel) (fun _ => hk _)
+  exact restrictCoherent h tail_point_valid
+
+/-- The sign negation of `Y` is an involution on reduced words. -/
+theorem windowYNegateState_twice (t : BasisState) (h558 : t 558 = false)
+    (hy : boolWordToNat (wireValues (List.range' 580 256) t) < ShorECDLP.p) :
+    windowYNegateState (windowYNegateState t) = t := by
+  have hc (u : BasisState) (h5 : u 558 = false)
+      (hu : boolWordToNat (wireValues (List.range' 580 256) u) < ShorECDLP.p) :
+      boolWordToNat (wireValues (List.range' 580 256) (windowYNegateState u)) =
+        (if u 854 then boolWordToNat (wireValues (List.range' 580 256) u)
+          else (ShorECDLP.p-boolWordToNat (wireValues (List.range' 580 256) u))%ShorECDLP.p) ∧
+      ∀ w, w ∉ List.range' 580 256 → windowYNegateState u w = u w :=
+    negativeModularNegateState_correct _ _ ShorECDLP.p 854 558 u
+      (by simp) (by simp) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+      (by decide +kernel) h5 (by simp; decide +kernel) hu
+      (by rw [boolWordToNat_constantBits,Nat.mod_eq_of_lt (by decide +kernel)])
+  have h1 := hc t h558 hy
+  have h558' : windowYNegateState t 558 = false := (h1.2 558 (by decide +kernel)).trans h558
+  have hy' : boolWordToNat (wireValues (List.range' 580 256) (windowYNegateState t)) <
+      ShorECDLP.p := by
+    rw [h1.1]
+    split
+    · exact hy
+    · exact Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have h2 := hc _ h558' hy'
+  have hs : windowYNegateState t 854 = t 854 := h1.2 854 (by decide +kernel)
+  have hv : boolWordToNat (wireValues (List.range' 580 256)
+      (windowYNegateState (windowYNegateState t))) =
+        boolWordToNat (wireValues (List.range' 580 256) t) := by
+    rw [h2.1,hs,h1.1]
+    generalize boolWordToNat (wireValues (List.range' 580 256) t) = v at hy ⊢
+    cases t 854
+    · simp only [Bool.false_eq_true,if_false]
+      rcases Nat.eq_zero_or_pos v with rfl | hv0
+      · simp
+      · rw [Nat.mod_eq_of_lt (show ShorECDLP.p - v < ShorECDLP.p by omega),
+          show ShorECDLP.p - (ShorECDLP.p - v) = v by omega, Nat.mod_eq_of_lt hy]
+    · simp
+  have he := boolWordToNat_injective_of_length (by simp [wireValues]) hv
+  funext w
+  by_cases hw : w ∈ List.range' 580 256
+  · exact List.map_inj_left.mp he w hw
+  · exact (h2.2 w hw).trans (h1.2 w hw)
+
+theorem tailCoordinateState_eq (x y : Nat → Nat) (s : BasisState) (hs : PointLookupValid s) :
+    coordYAddState y (windowYNegateState (coord8State x y s)) =
+      windowYNegateState (signedLookupCoordinateState x y s) := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have ht := tail_yneg_ready _ ((coord8Circuit_coherent x y).2 s hs)
+  have hv := tail_point_valid _ ht
+  have hu := lookupModularAddState_correct (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+    pointLookupAddress pointLookupPath (List.range' 7 256) (List.range' 580 256)
+    secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558
+    tail_input_disjoint tail_address_disjoint (by simp) (by simp [secp256k1ReductionConstantBits])
+    tail_add_layout (by decide +kernel) (by rw [secp256k1ReductionConstant_value]; decide +kernel)
+    (fun _ => hk _) _ hv
+  have hsplit : signedLookupCoordinateState x y s =
+      windowYNegateState (coordYAddState y (windowYNegateState (coord8State x y s))) := by
+    simp only [signedLookupCoordinateState,coord8State,coordYAddState,signedPointLookupYState,
+      signedLookupModularAddState,windowYNegateState,List.length_range']
+  rw [hsplit,windowYNegateState_twice]
+  · exact (hu.2 558 (by decide +kernel)).trans hv.2.2.2.2.2.2.1
+  · change boolWordToNat (wireValues (List.range' 580 256) (lookupModularAddState _ _ _ _ _ _ _ _ _ _)) < _
+    rw [hu.1]
+    exact Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+
+theorem tailCoordinateCircuit_coherent (x y : Nat → Nat) :
+    CoherentlyImplementsOn (tailCoordinateCircuit x y)
+      (Finsupp.lmapDomain ℂ ℂ (fun s => windowYNegateState (signedLookupCoordinateState x y s)))
+      PointLookupValid := by
+  obtain ⟨c8,v8⟩ := coord8Circuit_coherent x y
+  have hN : CoherentlyImplementsOn windowYNegate
+      (Finsupp.lmapDomain ℂ ℂ windowYNegateState) PointLookupValid :=
+    restrictCoherent windowYNegate_coherent (fun s hs => hs.1)
+  have c9 := composeCoherent c8 hN v8
+  have c10 := composeCoherent c9 (coordYAdd_coherent y) (fun s hs => tail_yneg_ready _ (v8 s hs))
+  apply c10.congrIdeal
+  intro s hs
+  simp only [Finsupp.lmapDomain_apply,ket,Finsupp.mapDomain_single]
+  rw [tailCoordinateState_eq x y s hs]
+
 theorem ipxWindowSources_coherent (Q : Point) (hQ : order • Q=0) (hn : Q≠0) (w : OddWindow) :
     CoherentlyImplementsOn (sequenceCircuit (ipxWindowSources Q w))
       (Finsupp.lmapDomain ℂ ℂ (batchedWindowState Q w)) BatchedWindowValid := by
   let xs := fun a => fieldValue (windowPoint Q w a) .x
   let ys := fun a => fieldValue (windowPoint Q w a) .y
-  have hfirst : CoherentlyImplementsOn (signedLookupCoordinateProgram xs ys)
+  have hfirst : CoherentlyImplementsOn (ShorECDLP.Entrant.ZeroAdaptive.coordinateSource xs ys)
       (Finsupp.lmapDomain ℂ ℂ (signedLookupCoordinateState xs ys)) BatchedWindowValid :=
-    restrictCoherent (signedLookupCoordinateProgram_coherent xs ys) (fun s hs => hs.1.1)
+    restrictCoherent (ShorECDLP.Entrant.ZeroAdaptive.coordinateSource_coherent xs ys) (fun s hs => hs.1.1)
   have h := composeCoherent hfirst (signedBatchSource_coherent Q w) (by
     intro s hs
     obtain ⟨hs,P,hP⟩ := hs
@@ -3146,12 +3362,33 @@ theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgra
   unfold multiplicationProgram
   exact appendCompiled_wellFormed _ _ (multiplyWorkProgram_wellFormed _ _)
     (collectProgram_wellFormed _ _ (multiplicationAfterResetProgram_wellFormed n) _ _ _)
-attribute [local irreducible] divisionProgram multiplicationProgram
-theorem zeroDivisionProgram_wellFormed (n start : Nat) : (zeroDivisionProgram n start).2.WellFormed :=
-  surroundCompiled_wellFormed _ _ _ fig15ZeroPrepare_wellFormed fig15ZeroRestore_wellFormed (divisionProgram_wellFormed _ _)
+attribute [local irreducible] divisionProgram multiplicationProgram equalityProgram
+private theorem zero_cx_wellFormed : CircuitWellFormed cx := by
+  intro g hg
+  have he := List.mem_singleton.mp hg
+  subst g
+  change (837 : Wire) ≠ 263
+  decide +kernel
 
-theorem zeroMultiplicationProgram_wellFormed (n start : Nat) : (zeroMultiplicationProgram n start).2.WellFormed :=
-  surroundCompiled_wellFormed _ _ _ fig15ZeroPrepare_wellFormed fig15ZeroRestore_wellFormed (multiplicationProgram_wellFormed _ _)
+theorem zDivisionProgram_wellFormed (n start : Nat) : (zDivisionProgram n start).2.WellFormed := by
+  unfold zDivisionProgram
+  apply appendCompiled_wellFormed
+  · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
+  · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
+    apply appendCompiled_wellFormed
+    · exact divisionProgram_wellFormed _ _
+    · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
+      exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
+
+theorem zMultiplicationProgram_wellFormed (n start : Nat) : (zMultiplicationProgram n start).2.WellFormed := by
+  unfold zMultiplicationProgram
+  apply appendCompiled_wellFormed
+  · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
+  · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
+    apply appendCompiled_wellFormed
+    · exact multiplicationProgram_wellFormed _ _
+    · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
+      exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
 
 attribute [local irreducible] squareSubtractProgram
 
@@ -3249,23 +3486,40 @@ theorem signedFieldProgram_wellFormed (field : PointField) (start : Nat) :
   exact appendCompiled_wellFormed _ _ (yNegateProgram_wellFormed _)
     (appendCompiled_wellFormed _ _ (fieldLookupYProgram_wellFormed _ _) (yNegateProgram_wellFormed _))
 
-attribute [local irreducible] zeroDivisionProgram zeroMultiplicationProgram pointSquareProgram signedFieldProgram xNegateProgram
+attribute [local irreducible] zDivisionProgram zMultiplicationProgram pointSquareProgram signedFieldProgram xNegateProgram
 
-theorem coordinateProgram_wellFormed (start : Nat) : (coordinateProgram start).2.WellFormed := by
-  unfold coordinateProgram
+theorem adaptiveCoordinateProgram_wellFormed (start : Nat) : (adaptiveCoordinateProgram start).2.WellFormed := by
+  unfold adaptiveCoordinateProgram
   apply sequenceProgram_wellFormed
   intro p hp cursor
-  simp only [coordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
+  simp only [adaptiveCoordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
   rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · exact fieldLookupXProgram_wellFormed _ _
   · exact signedFieldProgram_wellFormed _ _
-  · exact zeroDivisionProgram_wellFormed _ _
+  · exact zDivisionProgram_wellFormed _ _
   · exact pointSquareProgram_wellFormed _ _
   · exact fieldLookupXProgram_wellFormed _ _
-  · exact zeroMultiplicationProgram_wellFormed _ _
+  · exact zMultiplicationProgram_wellFormed _ _
   · exact xNegateProgram_wellFormed _ _
   · exact fieldLookupXProgram_wellFormed _ _
   · exact signedFieldProgram_wellFormed _ _
+theorem tailCoordinateProgram_wellFormed (start : Nat) :
+    (tailCoordinateProgram start).2.WellFormed := by
+  unfold tailCoordinateProgram
+  apply sequenceProgram_wellFormed
+  intro p hp cursor
+  simp only [tailCoordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
+  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact fieldLookupXProgram_wellFormed _ _
+  · exact signedFieldProgram_wellFormed _ _
+  · exact zDivisionProgram_wellFormed _ _
+  · exact pointSquareProgram_wellFormed _ _
+  · exact fieldLookupXProgram_wellFormed _ _
+  · exact zMultiplicationProgram_wellFormed _ _
+  · exact xNegateProgram_wellFormed _ _
+  · exact fieldLookupXProgram_wellFormed _ _
+  · exact yNegateProgram_wellFormed _
+  · exact fieldLookupYProgram_wellFormed _ _
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
 end
@@ -3281,13 +3535,13 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 /-! Physical validity of the actual first and signed windows and their outer composition. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge
-attribute [local irreducible] coordinateProgram
+attribute [local irreducible] adaptiveCoordinateProgram
 
-theorem sharedCoordinateProgram_wellFormed (w : OddWindow) (start : Nat) :
-    (sharedCoordinateProgram w start).2.WellFormed :=
-  (reindexCompiled_wellFormed _ _).mpr (coordinateProgram_wellFormed start)
+theorem sharedAdaptiveCoordinateProgram_wellFormed (w : OddWindow) (start : Nat) :
+    (sharedAdaptiveCoordinateProgram w start).2.WellFormed :=
+  (reindexCompiled_wellFormed _ _).mpr (adaptiveCoordinateProgram_wellFormed start)
 
-attribute [local irreducible] sharedCoordinateProgram sharedYNegateProgram ipxProgram
+attribute [local irreducible] sharedAdaptiveCoordinateProgram sharedYNegateProgram ipxProgram
 
 theorem ipxWindowCore_wellFormed (w : OddWindow) (start : Nat) :
     (ipxWindowCore w start).2.WellFormed := by
@@ -3295,7 +3549,7 @@ theorem ipxWindowCore_wellFormed (w : OddWindow) (start : Nat) :
   intro p hp cursor
   simp only [ipxWindowSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
   rcases hp with rfl | rfl | rfl | rfl
-  · exact sharedCoordinateProgram_wellFormed _ _
+  · exact sharedAdaptiveCoordinateProgram_wellFormed _ _
   · exact sharedYNegateProgram_wellFormed _ _
   · exact ipxProgram_wellFormed _ _
   · exact sharedYNegateProgram_wellFormed _ _
