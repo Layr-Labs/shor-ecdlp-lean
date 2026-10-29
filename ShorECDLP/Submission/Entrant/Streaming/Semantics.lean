@@ -1,3 +1,8 @@
+import ShorECDLP.Submission.«2607_13816».OrderFinding.ReducedVerified
+import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
+import Mathlib.Analysis.SpecialFunctions.Trigonometric.Deriv
+import Mathlib.Analysis.Calculus.Deriv.MeanValue
+import Mathlib.Analysis.Real.Pi.Bounds
 import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowNegation
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
@@ -13,7 +18,7 @@ import ShorECDLP.Submission.«2607_13816».Window.StreamSamplingSuccess
 
 /-! EDITABLE. Streaming entrant, module `Semantics`: physical execution of the compiled rounds and the per-round success bound.
 
-This module concatenates the former per-file modules `BatchBoundary`, `BatchedWindowState`,
+This module concatenates the former per-file modules `AveragedSuccess`, `BatchBoundary`, `BatchedWindowState`,
 `BatchedWindowCoherent`, `PreparedBatch`, `ActualWindow`, `WindowPhysical`, `ModularPhysical`,
 `EEACenterPhysical`, `EEAStructuralPhysical`, `EEAIntervalPhysical`, `MeasuredEEAPhysical`,
 `SquarePhysical`, `InPlacePhysical`, `InPlaceCompletePhysical`, `CoordinatePhysical`,
@@ -30,6 +35,508 @@ to `support_linear_firstValidity`.
 Why few modules: the kernel replay loads the complete import closure (about 4.3 GB) once per
 Entrant module, in parallel across its worker threads, so its peak memory grows with the number
 of Entrant modules. -/
+
+-- ==== part: AveragedSuccess ====
+
+/-! EDITABLE. An averaged per-round success bound for the reduced two-axis decoder.
+
+The protected bound `reducedVerifiedMass_lower` keeps, for every nonzero character `k`, only the
+mass at the nearest Fourier pair and bounds each axis by the worst case `4/π²`, which gives
+`((r-1)/r)(4/π²)² ≈ 0.164`. Here the same peak outputs are used, but the two axis probabilities
+are averaged over `k` instead of bounded pointwise:
+
+* each axis probability at its nearest bin is at least `sinc²(t)`, where `t ∈ [-1/2, 1/2]` is the
+  signed distance (in bins) to that bin, and `sinc²(t) ≥ 1 - x²/3 + 2x⁴/45 - x⁶/315` with
+  `x = πt` (from the eighth-order Taylor upper bound of `cos`, proved by derivative comparison);
+* since `r` is an odd prime, `k ↦ 2ⁿk mod r` and `k ↦ 2ᵐdk mod r` are bijections of `ℤ/r`, so
+  the bin distances of both axes run exactly over the grid `{s/r : |s| ≤ (r-1)/2}`; the grid
+  average of the polynomial is a closed form in `r` (power sums of degree 2, 4, 6);
+* `xy ≥ x + y - 1` on `[0,1]²` joins the two axes.
+
+For a prime `r ≥ 10⁶` this gives at least `27/50` per round, for every nonzero `d`. -/
+
+namespace ShorECDLP.Entrant.Averaged
+open Real ShorECDLP.Paper2607_13816 ShorECDLP.Quantum.PhaseEstimation
+open scoped BigOperators
+
+noncomputable section
+
+/-! ### Taylor bounds for `sin` and `cos` -/
+
+/-- Comparison on `[0, ∞)` by derivatives. -/
+theorem le_of_deriv_le {f g f' g' : ℝ → ℝ}
+    (hf : ∀ x, HasDerivAt f (f' x) x) (hg : ∀ x, HasDerivAt g (g' x) x)
+    (h0 : f 0 = g 0) (hd : ∀ x, 0 ≤ x → f' x ≤ g' x) {x : ℝ} (hx : 0 ≤ x) : f x ≤ g x := by
+  have hmono : MonotoneOn (fun y => g y - f y) (Set.Ici 0) := by
+    apply monotoneOn_of_hasDerivWithinAt_nonneg (f' := fun y => g' y - f' y) (convex_Ici 0)
+    · exact (continuous_iff_continuousAt.2 fun y => ((hg y).sub (hf y)).continuousAt).continuousOn
+    · intro y _
+      exact ((hg y).sub (hf y)).hasDerivWithinAt
+    · intro y hy
+      rw [interior_Ici] at hy
+      exact sub_nonneg.2 (hd y (le_of_lt hy))
+  have h := hmono (Set.mem_Ici.2 le_rfl) (Set.mem_Ici.2 hx) hx
+  simp only [h0, sub_self] at h
+  linarith
+
+theorem sin_ge3 {x : ℝ} (hx : 0 ≤ x) : x - x^3/6 ≤ sin x :=
+  le_of_deriv_le (f := fun y => y - y^3/6) (f' := fun y => 1 - y^2/2)
+    (fun y => by
+      refine ((hasDerivAt_id y).sub ((hasDerivAt_pow 3 y).div_const 6)).congr_deriv ?_
+      norm_num; ring)
+    hasDerivAt_sin (by simp) (fun _ _ => one_sub_sq_div_two_le_cos) hx
+
+theorem cos_le4 {x : ℝ} (hx : 0 ≤ x) : cos x ≤ 1 - x^2/2 + x^4/24 :=
+  le_of_deriv_le (g := fun y => 1 - y^2/2 + y^4/24) (g' := fun y => -y + y^3/6)
+    hasDerivAt_cos
+    (fun y => by
+      refine (((hasDerivAt_const y (1:ℝ)).sub ((hasDerivAt_pow 2 y).div_const 2)).add
+        ((hasDerivAt_pow 4 y).div_const 24)).congr_deriv ?_
+      norm_num; ring)
+    (by simp) (fun y hy => by have := sin_ge3 hy; linarith) hx
+
+theorem sin_le5 {x : ℝ} (hx : 0 ≤ x) : sin x ≤ x - x^3/6 + x^5/120 :=
+  le_of_deriv_le (g := fun y => y - y^3/6 + y^5/120) (g' := fun y => 1 - y^2/2 + y^4/24)
+    hasDerivAt_sin
+    (fun y => by
+      refine (((hasDerivAt_id y).sub ((hasDerivAt_pow 3 y).div_const 6)).add
+        ((hasDerivAt_pow 5 y).div_const 120)).congr_deriv ?_
+      norm_num; ring)
+    (by simp) (fun _ hy => cos_le4 hy) hx
+
+theorem cos_ge6 {x : ℝ} (hx : 0 ≤ x) : 1 - x^2/2 + x^4/24 - x^6/720 ≤ cos x :=
+  le_of_deriv_le (f := fun y => 1 - y^2/2 + y^4/24 - y^6/720)
+    (f' := fun y => -y + y^3/6 - y^5/120)
+    (fun y => by
+      refine ((((hasDerivAt_const y (1:ℝ)).sub ((hasDerivAt_pow 2 y).div_const 2)).add
+        ((hasDerivAt_pow 4 y).div_const 24)).sub
+        ((hasDerivAt_pow 6 y).div_const 720)).congr_deriv ?_
+      norm_num; ring)
+    hasDerivAt_cos (by simp) (fun y hy => by have := sin_le5 hy; linarith) hx
+
+theorem sin_ge7 {x : ℝ} (hx : 0 ≤ x) : x - x^3/6 + x^5/120 - x^7/5040 ≤ sin x :=
+  le_of_deriv_le (f := fun y => y - y^3/6 + y^5/120 - y^7/5040)
+    (f' := fun y => 1 - y^2/2 + y^4/24 - y^6/720)
+    (fun y => by
+      refine ((((hasDerivAt_id y).sub ((hasDerivAt_pow 3 y).div_const 6)).add
+        ((hasDerivAt_pow 5 y).div_const 120)).sub
+        ((hasDerivAt_pow 7 y).div_const 5040)).congr_deriv ?_
+      norm_num; ring)
+    hasDerivAt_sin (by simp) (fun _ hy => cos_ge6 hy) hx
+
+theorem cos_le8_nonneg {x : ℝ} (hx : 0 ≤ x) :
+    cos x ≤ 1 - x^2/2 + x^4/24 - x^6/720 + x^8/40320 :=
+  le_of_deriv_le (g := fun y => 1 - y^2/2 + y^4/24 - y^6/720 + y^8/40320)
+    (g' := fun y => -y + y^3/6 - y^5/120 + y^7/5040)
+    hasDerivAt_cos
+    (fun y => by
+      refine (((((hasDerivAt_const y (1:ℝ)).sub ((hasDerivAt_pow 2 y).div_const 2)).add
+        ((hasDerivAt_pow 4 y).div_const 24)).sub
+        ((hasDerivAt_pow 6 y).div_const 720)).add
+        ((hasDerivAt_pow 8 y).div_const 40320)).congr_deriv ?_
+      norm_num; ring)
+    (by simp) (fun y hy => by have := sin_ge7 hy; linarith) hx
+
+theorem cos_le8 (x : ℝ) : cos x ≤ 1 - x^2/2 + x^4/24 - x^6/720 + x^8/40320 := by
+  rcases le_total 0 x with hx | hx
+  · exact cos_le8_nonneg hx
+  · calc cos x = cos (-x) := (cos_neg x).symm
+      _ ≤ 1 - (-x)^2/2 + (-x)^4/24 - (-x)^6/720 + (-x)^8/40320 := cos_le8_nonneg (by linarith)
+      _ = 1 - x^2/2 + x^4/24 - x^6/720 + x^8/40320 := by ring
+
+/-- The even polynomial lower bound of `sinc²`, as a function of `x²`. -/
+def sincPoly (y : ℝ) : ℝ := 1 - y/3 + 2*y^2/45 - y^3/315
+
+theorem sq_mul_sincPoly_le (x : ℝ) : x^2 * sincPoly (x^2) ≤ sin x ^ 2 := by
+  rw [sin_sq_eq_half_sub]
+  have h := cos_le8 (2*x)
+  have e : 1/2 - (1 - (2*x)^2/2 + (2*x)^4/24 - (2*x)^6/720 + (2*x)^8/40320)/2 =
+      x^2 * sincPoly (x^2) := by
+    unfold sincPoly; ring
+  linarith
+
+/-! ### One Fourier axis -/
+
+private theorem norm_eigenvalue_sub_one' (delta : ℝ) :
+    ‖eigenvalue delta - 1‖ = ‖2 * Real.sin (Real.pi * delta)‖ := by
+  unfold eigenvalue
+  convert Complex.norm_exp_I_mul_ofReal_sub_one (2 * Real.pi * delta) using 1 ; ring_nf
+
+private theorem norm_eigenvalue_pow_sub_one' (N : Nat) (delta : ℝ) :
+    ‖eigenvalue delta ^ N - 1‖ = ‖2 * Real.sin (Real.pi * (N : ℝ) * delta)‖ := by
+  rw [eigenvalue_pow_eq_eigenvalue_mul]
+  convert norm_eigenvalue_sub_one' ((N : ℝ) * delta) using 1 ; ring_nf
+
+/-- The normalized geometric average is at least `sincPoly ((π N δ)²)`, for every `δ`. -/
+theorem average_normSq_ge (N : Nat) (hN : 0 < N) (delta : ℝ) :
+    sincPoly ((Real.pi * N * delta)^2) ≤
+      Complex.normSq (((N:ℂ)⁻¹) * ∑ y ∈ Finset.range N, eigenvalue delta ^ y) := by
+  have hNR : (0:ℝ) < N := by exact_mod_cast hN
+  by_cases hdelta : delta = 0
+  · subst hdelta
+    have hsum : (∑ y ∈ Finset.range N, eigenvalue 0 ^ y) = (N:ℂ) := by simp [eigenvalue]
+    rw [hsum, inv_mul_cancel₀ (by exact_mod_cast hN.ne')]
+    simp [sincPoly]
+  · set S := ∑ y ∈ Finset.range N, eigenvalue delta ^ y with hS
+    have hgeom : S * (eigenvalue delta - 1) = eigenvalue delta ^ N - 1 := geom_sum_mul _ N
+    have hn : ‖S‖ * ‖eigenvalue delta - 1‖ = ‖eigenvalue delta ^ N - 1‖ := by
+      rw [← norm_mul, hgeom]
+    rw [norm_eigenvalue_sub_one', norm_eigenvalue_pow_sub_one', Real.norm_eq_abs,
+      Real.norm_eq_abs] at hn
+    have hsq : ‖S‖^2 * Real.sin (Real.pi * delta)^2 = Real.sin (Real.pi * N * delta)^2 := by
+      have h2 := congrArg (fun t : ℝ => t^2) hn
+      simp only [mul_pow, sq_abs] at h2
+      linarith
+    set X := Real.pi * N * delta with hX
+    have hX0 : X ≠ 0 := mul_ne_zero (mul_ne_zero Real.pi_ne_zero hNR.ne') hdelta
+    have h1 := sq_mul_sincPoly_le X
+    have h2 : Real.sin (Real.pi * delta)^2 ≤ (Real.pi * delta)^2 := sin_sq_le_sq
+    have hpd : (Real.pi * delta)^2 = X^2 / (N:ℝ)^2 := by
+      rw [hX]; field_simp
+    have h3 : X^2 * sincPoly (X^2) ≤ X^2 * (‖S‖^2 / (N:ℝ)^2) := by
+      calc X^2 * sincPoly (X^2) ≤ Real.sin X ^ 2 := h1
+        _ = ‖S‖^2 * Real.sin (Real.pi * delta)^2 := hsq.symm
+        _ ≤ ‖S‖^2 * (Real.pi * delta)^2 := mul_le_mul_of_nonneg_left h2 (by positivity)
+        _ = X^2 * (‖S‖^2 / (N:ℝ)^2) := by rw [hpd]; ring
+    have hnorm : Complex.normSq ((N:ℂ)⁻¹ * S) = ‖S‖^2 / (N:ℝ)^2 := by
+      rw [Complex.normSq_eq_norm_sq, norm_mul, norm_inv, Complex.norm_natCast]
+      field_simp
+    rw [hnorm]
+    exact le_of_mul_le_mul_left h3 (by positivity)
+
+/-- Folded grid distance `min(c, r - c)` of a residue `c < r`. -/
+def foldDist (r c : Nat) : Nat := if 2*c < r then c else r - c
+
+/-- The nearest-bin probability for numerator `j/r` at `2^p` bins, in grid form. -/
+theorem axis_lower (p r j : Nat) (hr : 0 < r) (hodd : r % 2 = 1) :
+    sincPoly ((Real.pi * (foldDist r ((2^p*j) % r) : ℝ) / r)^2) ≤
+      Complex.normSq (paperPhaseAmplitude p ((j:ℝ)/r) ((2*2^p*j + r)/(2*r))) := by
+  unfold paperPhaseAmplitude
+  refine le_trans (le_of_eq ?_) (average_normSq_ge (2^p) (by positivity) _)
+  congr 1
+  set A := 2^p*j with hA
+  set q := A / r
+  set c := A % r
+  have hdm : r * q + c = A := Nat.div_add_mod A r
+  have hc : c < r := Nat.mod_lt A hr
+  have hv : (2*2^p*j + r)/(2*r) = (2*c + r)/(2*r) + q := by
+    have e : 2*2^p*j + r = (2*c + r) + 2*r*q := by rw [mul_assoc, ← hA, ← hdm]; ring
+    rw [e, Nat.add_mul_div_left _ _ (by omega : 0 < 2*r)]
+  have hrR : (0:ℝ) < r := by exact_mod_cast hr
+  have hNR : (0:ℝ) < ((2^p:Nat):ℝ) := by positivity
+  have hAR : ((2^p:Nat):ℝ) * (j:ℝ) = (r:ℝ) * q + c := by exact_mod_cast hdm.symm
+  unfold foldDist
+  by_cases h2c : 2*c < r
+  · have hb : (2*c + r)/(2*r) = 0 := Nat.div_eq_of_lt (by omega)
+    rw [hv, hb, zero_add, if_pos h2c]
+    have e : ((2^p:Nat):ℝ) * ((j:ℝ)/r - (q:ℝ)/((2^p:Nat):ℝ)) = (c:ℝ)/r := by
+      field_simp; linarith
+    rw [mul_assoc, e]; ring
+  · have hb : (2*c + r)/(2*r) = 1 := Nat.div_eq_of_lt_le (by omega) (by omega)
+    rw [hv, hb, if_neg h2c, Nat.cast_sub hc.le]
+    push_cast
+    have e : ((2^p:Nat):ℝ) * ((j:ℝ)/r - ((1:ℝ) + q)/((2^p:Nat):ℝ)) = ((c:ℝ) - r)/r := by
+      field_simp; linarith
+    push_cast at e
+    rw [mul_assoc, e]; ring
+
+private theorem eigenvalue_period' (phase : ℝ) : eigenvalue (phase-1)=eigenvalue phase := by
+  unfold eigenvalue
+  rw [Complex.exp_eq_exp_iff_exists_int]
+  refine ⟨-1, ?_⟩
+  push_cast
+  ring
+
+private theorem amplitude_endpoint' (precision : Nat) (phase : ℝ) :
+    paperPhaseAmplitude precision phase (2^precision) = paperPhaseAmplitude precision phase 0 := by
+  unfold paperPhaseAmplitude
+  simp only [Nat.cast_zero, zero_div, sub_zero]
+  have hN : ((2^precision:Nat):ℝ) ≠ 0 := by positivity
+  simp only [div_self hN, eigenvalue_period']
+
+/-- The wrapped second-axis peak has the same amplitude as its unwrapped rounding. -/
+theorem reducedPeak_amplitude (r precision : Nat) (k : Fin r) (phase : ℝ) :
+    paperPhaseAmplitude precision phase (reducedPeak r precision k).val =
+      paperPhaseAmplitude precision phase (reducedPeakRaw r precision k) := by
+  have hle := reducedPeakRaw_le r precision k
+  by_cases heq : reducedPeakRaw r precision k = 2^precision
+  · simp only [reducedPeak, heq, Nat.mod_self, amplitude_endpoint']
+  · simp only [reducedPeak,
+      Nat.mod_eq_of_lt (by omega : reducedPeakRaw r precision k < 2^precision)]
+
+/-! ### Grid averages -/
+
+/-- Multiplication by a unit permutes the residues. -/
+theorem sum_mulMod (r a : Nat) (hr : r.Prime) (ha : ¬ r ∣ a) (H : ℕ → ℝ) :
+    ∑ k : Fin r, H ((a * k.val) % r) = ∑ c ∈ Finset.range r, H c := by
+  rw [Fin.sum_univ_eq_sum_range (fun k => H ((a*k) % r))]
+  haveI := Fact.mk hr
+  have hinj : Set.InjOn (fun k => (a*k) % r) (Finset.range r) := by
+    intro x hx y hy hxy
+    simp only [Finset.coe_range, Set.mem_Iio] at hx hy
+    have h1 : ((a*x : ℕ) : ZMod r) = ((a*y : ℕ) : ZMod r) :=
+      (ZMod.natCast_eq_natCast_iff' _ _ _).2 hxy
+    have ha' : (a : ZMod r) ≠ 0 := by rwa [Ne, ZMod.natCast_eq_zero_iff]
+    push_cast at h1
+    have h2 : (x : ZMod r) = y := mul_left_cancel₀ ha' h1
+    have h3 := (ZMod.natCast_eq_natCast_iff' x y r).1 h2
+    rwa [Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt hy] at h3
+  have himage : (Finset.range r).image (fun k => (a*k) % r) = Finset.range r := by
+    apply Finset.eq_of_subset_of_card_le
+    · intro c hc
+      obtain ⟨k, _, rfl⟩ := Finset.mem_image.1 hc
+      exact Finset.mem_range.2 (Nat.mod_lt _ hr.pos)
+    · rw [Finset.card_image_of_injOn hinj]
+  conv_rhs => rw [← himage]
+  rw [Finset.sum_image hinj]
+
+/-- Folding the residues `0, …, 2M` onto `0, …, M`. -/
+theorem sum_fold (M : Nat) (F : ℕ → ℝ) :
+    ∑ c ∈ Finset.range (2*M+1), F (foldDist (2*M+1) c) =
+      2 * ∑ s ∈ Finset.range (M+1), F s - F 0 := by
+  rw [show 2*M+1 = (M+1) + M by ring, Finset.sum_range_add]
+  have h1 : ∑ c ∈ Finset.range (M+1), F (foldDist (M+1+M) c) = ∑ c ∈ Finset.range (M+1), F c := by
+    apply Finset.sum_congr rfl
+    intro c hc
+    have := Finset.mem_range.1 hc
+    unfold foldDist
+    rw [if_pos (by omega)]
+  have h2 : ∑ x ∈ Finset.range M, F (foldDist (M+1+M) (M+1+x)) =
+      ∑ x ∈ Finset.range M, F (x+1) := by
+    rw [← Finset.sum_range_reflect (fun x => F (x+1)) M]
+    apply Finset.sum_congr rfl
+    intro x hx
+    have := Finset.mem_range.1 hx
+    unfold foldDist
+    rw [if_neg (by omega)]
+    congr 1
+    omega
+  rw [h1, h2, Finset.sum_range_succ' F M]
+  ring
+
+/-- Closed form of the polynomial summed over `s = 0, …, m` at `a·s²`. -/
+def closedForm (m a : ℝ) : ℝ :=
+  (m+1) - a/3 * (m*(m+1)*(2*m+1)/6)
+    + 2*a^2/45 * (m*(m+1)*(2*m+1)*(3*m^2+3*m-1)/30)
+    - a^3/315 * (m*(m+1)*(2*m+1)*(3*m^4+6*m^3-3*m+1)/42)
+
+theorem sum_sincPoly (M : Nat) (a : ℝ) :
+    ∑ s ∈ Finset.range (M+1), sincPoly (a * (s:ℝ)^2) = closedForm M a := by
+  induction M with
+  | zero => simp [closedForm, sincPoly]
+  | succ M ih =>
+    rw [Finset.sum_range_succ, ih]
+    unfold closedForm sincPoly
+    push_cast
+    ring
+
+/-- The terms of the grid average below `1 - 1/r`, written in `w = a·m(m+1) ≈ π²/4`. -/
+def gridDeficit (a w : ℝ) : ℝ :=
+  (2/9)*w - (4/675)*(3*w^2 - a*w) + (2/6615)*(3*w^3 - 3*a*w^2 + a^2*w)
+
+theorem closedForm_identity (m a : ℝ) :
+    2*(2*closedForm m a - 1) - (2*m+1) - 1 = 2*m - (2*m+1) * gridDeficit a (a*(m*(m+1))) := by
+  unfold closedForm gridDeficit
+  ring
+
+theorem gridDeficit_le (a w : ℝ) (ha0 : 0 ≤ a) (ha1 : a ≤ 1/10^11) (hw1 : w ≤ 2.4675) :
+    gridDeficit a w ≤ 0.45373 := by
+  unfold gridDeficit
+  have hg : (2/9)*w - (4/225)*w^2 + (2/2205)*w^3 ≤ 0.45372 := by
+    have hb : 0 ≤ 2/9 - (4/225)*(w + 2.4675) + (2/2205)*(w^2 + w*2.4675 + 2.4675^2) := by
+      nlinarith
+    nlinarith [mul_nonneg (sub_nonneg.2 hw1) hb]
+  have h1 : a*w ≤ 3/10^11 := by nlinarith
+  have h2 : 0 ≤ a*w^2 := by positivity
+  have h3 : a^2*w ≤ 3/10^11 := by nlinarith
+  nlinarith
+
+/-- The numerical bound at a large odd modulus `r = 2m+1`. -/
+theorem averaged_numeric (m : ℝ) (hm : 500000 ≤ m) :
+    (27:ℝ)/50 ≤ (1/(2*m+1)) *
+      (2*(2*closedForm m (Real.pi^2/(2*m+1)^2) - 1) - (2*m+1) - 1) := by
+  rw [closedForm_identity]
+  have hr0 : 0 < 2*m+1 := by linarith
+  have hpi1 := Real.pi_lt_d4
+  have hpi0 := Real.pi_pos
+  have hpi2 : Real.pi^2 < 9.8697 := by nlinarith
+  have hr2 : (10:ℝ)^12 ≤ (2*m+1)^2 := by nlinarith
+  have ha0 : 0 ≤ Real.pi^2/(2*m+1)^2 := by positivity
+  have ha1 : Real.pi^2/(2*m+1)^2 ≤ 1/10^11 := by
+    rw [div_le_iff₀ (by positivity)]
+    nlinarith
+  have hq : m*(m+1) ≤ (2*m+1)^2/4 := by nlinarith
+  have hw1 : Real.pi^2/(2*m+1)^2 * (m*(m+1)) ≤ 2.4675 := by
+    have h := mul_le_mul_of_nonneg_left hq ha0
+    have e : Real.pi^2/(2*m+1)^2 * ((2*m+1)^2/4) = Real.pi^2/4 := by field_simp
+    linarith
+  have hB := gridDeficit_le _ _ ha0 ha1 hw1
+  have hinv : 1/(2*m+1) ≤ 1/1000000 := by
+    rw [div_le_div_iff₀ hr0 (by norm_num)]; linarith
+  have e : ∀ B : ℝ, (1/(2*m+1))*(2*m - (2*m+1)*B) = 1 - 1/(2*m+1) - B := by
+    intro B; field_simp; ring
+  rw [e]
+  linarith
+
+theorem grid_sum (r M : Nat) (hM : r = 2*M+1) :
+    ∑ c ∈ Finset.range r, sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2) =
+      2 * closedForm M (Real.pi^2/(r:ℝ)^2) - 1 := by
+  subst hM
+  have h := sum_fold M (fun s => sincPoly ((Real.pi * (s:ℝ) / ((2*M+1:ℕ):ℝ))^2))
+  beta_reduce at h
+  rw [h, ← sum_sincPoly M]
+  have e : ∀ s : ℕ, sincPoly ((Real.pi * (s:ℝ) / ((2*M+1:ℕ):ℝ))^2) =
+      sincPoly (Real.pi^2/((2*M+1:ℕ):ℝ)^2 * (s:ℝ)^2) := by
+    intro s; congr 1; ring
+  have h0 : sincPoly ((Real.pi * ((0:ℕ):ℝ) / ((2*M+1:ℕ):ℝ))^2) = 1 := by simp [sincPoly]
+  rw [h0, Finset.sum_congr rfl (fun s _ => e s)]
+
+/-! ### The averaged coverage bound -/
+
+/-- Averaged success of the reduced decoder: at least `27/50` for a prime `r > 10⁶`. -/
+theorem reducedCoverageMass_averaged (r n m d : Nat) [Fact (Nat.Prime r)]
+    (hprecision : r < 2^n) (hr : 1000001 ≤ r) (hd : ¬ r ∣ d) :
+    (27:ℝ)/50 ≤ reducedCoverageMass r n m d := by
+  classical
+  have hrp := Fact.out (p := Nat.Prime r)
+  have hr0 : 0 < r := hrp.pos
+  have hodd : r % 2 = 1 := Nat.odd_iff.1 (hrp.odd_of_ne_two (by omega))
+  have hpow : ∀ p, ¬ r ∣ 2^p := by
+    intro p h
+    have h2 := Nat.le_of_dvd two_pos (hrp.dvd_of_dvd_pow h)
+    omega
+  have hmd : ¬ r ∣ 2^m * d := by
+    intro h
+    rcases (Nat.Prime.dvd_mul hrp).1 h with h1 | h1
+    · exact hpow m h1
+    · exact hd h1
+  obtain ⟨M, hM⟩ : ∃ M, r = 2*M+1 := ⟨r/2, by omega⟩
+  let S : Finset (Fin r) := Finset.univ.filter (fun k => k.val ≠ 0)
+  let peak := asymmetricPairPeak r n m d hprecision
+  let f : (Fin (2^n) × Fin (2^m)) → ℝ := fun out =>
+    if (d:ZMod r) ∈ reducedShiftCandidates r n m out
+      then asymmetricPairMass r n m d out else 0
+  let PL : Fin r → ℝ := fun k =>
+    Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) (paperPeak r n hprecision k).val)
+  let PR : Fin r → ℝ := fun k =>
+    Complex.normSq (paperPhaseAmplitude m ((((d*k.val)%r:Nat):ℝ)/r)
+      (reducedPeak r m (paperCharacterProduct d k)).val)
+  let T : ℝ := ∑ c ∈ Finset.range r, sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2)
+  have hf : ∀ out, 0 ≤ f out := by
+    intro out
+    dsimp [f]
+    split
+    · exact asymmetricPairMass_nonneg _ _ _ _ _
+    · rfl
+  -- the k-th summand at the k-th peak
+  have hp : ∀ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) ≤ f (peak k) := by
+    intro k hk
+    have hn : k.val ≠ 0 := (Finset.mem_filter.mp hk).2
+    have hkz : (k.val : ZMod r) ≠ 0 := by
+      intro hz
+      have hv := congrArg ZMod.val hz
+      simp only [ZMod.val_natCast_of_lt k.isLt, ZMod.val_zero] at hv
+      exact hn hv
+    have hm : (d:ZMod r) ∈ reducedShiftCandidates r n m (asymmetricPairPeak r n m d hprecision k) :=
+      reducedShiftCandidates_correct r n m d hprecision k hkz
+    dsimp only [f, peak]
+    rw [if_pos hm]
+    unfold asymmetricPairMass
+    apply mul_le_mul_of_nonneg_left _ (by positivity)
+    exact Finset.single_le_sum
+      (f := fun i : Fin r =>
+        Complex.normSq (paperPhaseAmplitude n ((i.val:ℝ)/r) (paperPeak r n hprecision k).val) *
+        Complex.normSq (paperPhaseAmplitude m ((((d*i.val)%r:Nat):ℝ)/r)
+          (reducedPeak r m (paperCharacterProduct d k)).val))
+      (fun i _ => mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _))
+      (Finset.mem_univ k)
+  have hSe : S = Finset.univ.erase (⟨0, hr0⟩ : Fin r) := by
+    ext k
+    simp only [S, Finset.mem_filter, Finset.mem_univ, true_and, Finset.mem_erase, and_true]
+    constructor
+    · intro hn he; exact hn (congrArg Fin.val he)
+    · intro hn he; exact hn (Fin.ext he)
+  have hsum_le : ∑ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) ≤ reducedCoverageMass r n m d := by
+    calc
+      ∑ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) ≤ ∑ k ∈ S, f (peak k) := Finset.sum_le_sum hp
+      _ = ∑ out ∈ S.image peak, f out := by
+        rw [Finset.sum_image]
+        intro k _ l _ he
+        exact asymmetricPairPeak_injective r n m d hprecision he
+      _ ≤ ∑ out, f out := Finset.sum_le_sum_of_subset_of_nonneg
+        (Finset.subset_univ _) (fun out _ _ => hf out)
+      _ = reducedCoverageMass r n m d := rfl
+  -- both axis probabilities lie in [0, 1]
+  have hPL1 : ∀ k, PL k ≤ 1 := fun k =>
+    (Finset.single_le_sum
+      (f := fun v : Fin (2^n) => Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) v.val))
+      (fun v _ => Complex.normSq_nonneg _)
+      (Finset.mem_univ (paperPeak r n hprecision k))).trans_eq
+      (paperPhaseAmplitude_totalMass ((k.val:ℝ)/r) n)
+  have hPR1 : ∀ k, PR k ≤ 1 := fun k =>
+    (Finset.single_le_sum
+      (f := fun v : Fin (2^m) =>
+        Complex.normSq (paperPhaseAmplitude m ((((d*k.val)%r:Nat):ℝ)/r) v.val))
+      (fun v _ => Complex.normSq_nonneg _)
+      (Finset.mem_univ (reducedPeak r m (paperCharacterProduct d k)))).trans_eq
+      (paperPhaseAmplitude_totalMass ((((d*k.val)%r:Nat):ℝ)/r) m)
+  have hprod : ∀ k, PL k + PR k - 1 ≤ PL k * PR k := by
+    intro k
+    nlinarith [mul_nonneg (sub_nonneg.2 (hPL1 k)) (sub_nonneg.2 (hPR1 k))]
+  -- both axis averages are exact grid averages
+  have hL : T ≤ ∑ k : Fin r, PL k := by
+    have e := sum_mulMod r (2^n) hrp (hpow n)
+      (fun c => sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2))
+    rw [show T = _ from e.symm]
+    apply Finset.sum_le_sum
+    intro k _
+    exact axis_lower n r k.val hr0 hodd
+  have hR : T ≤ ∑ k : Fin r, PR k := by
+    have e := sum_mulMod r (2^m * d) hrp hmd
+      (fun c => sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2))
+    rw [show T = _ from e.symm]
+    apply Finset.sum_le_sum
+    intro k _
+    have hj : (2^m * d * k.val) % r = (2^m * ((d*k.val) % r)) % r := by
+      rw [Nat.mul_mod_mod, mul_assoc]
+    dsimp only [PR]
+    rw [hj, reducedPeak_amplitude]
+    exact axis_lower m r ((d*k.val)%r) hr0 hodd
+  have hS : ∑ k : Fin r, (PL k + PR k - 1) ≤ ∑ k ∈ S, (PL k + PR k - 1) + 1 := by
+    rw [hSe, ← Finset.add_sum_erase _ _ (Finset.mem_univ (⟨0, hr0⟩ : Fin r))]
+    linarith [hPL1 ⟨0, hr0⟩, hPR1 ⟨0, hr0⟩]
+  have hsplit : ∑ k : Fin r, (PL k + PR k - 1) =
+      ∑ k : Fin r, PL k + ∑ k : Fin r, PR k - r := by
+    rw [Finset.sum_sub_distrib, Finset.sum_add_distrib]
+    simp
+  have key : (1/(r:ℝ)) * (2*T - r - 1) ≤ reducedCoverageMass r n m d := by
+    calc (1/(r:ℝ)) * (2*T - r - 1) ≤ (1/(r:ℝ)) * ∑ k ∈ S, (PL k + PR k - 1) :=
+          mul_le_mul_of_nonneg_left (by linarith) (by positivity)
+      _ = ∑ k ∈ S, (1/(r:ℝ)) * (PL k + PR k - 1) := Finset.mul_sum _ _ _
+      _ ≤ ∑ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) :=
+          Finset.sum_le_sum (fun k _ => mul_le_mul_of_nonneg_left (hprod k) (by positivity))
+      _ ≤ reducedCoverageMass r n m d := hsum_le
+  have hT : T = 2 * closedForm M (Real.pi^2/(r:ℝ)^2) - 1 := grid_sum r M hM
+  have hrR : (r:ℝ) = 2*(M:ℝ)+1 := by rw [hM]; push_cast; ring
+  rw [hT, hrR] at key
+  have hM5 : (500000:ℝ) ≤ M := by
+    have : 500000 ≤ M := by omega
+    exact_mod_cast this
+  exact (averaged_numeric M hM5).trans key
+
+/-- The averaged per-round bound for secp256k1 at the protected 256/208-bit precisions. -/
+theorem reducedVerifiedMass_averaged (Q : Secp256k1.Point) (d : Nat) (hQd : Q = d • Secp256k1.G)
+    (hQ : Q ≠ 0) : (27:ℝ)/50 ≤ reducedVerifiedMass Q d := by
+  letI : Fact (Nat.Prime order) := ⟨Secp256k1.order_prime⟩
+  rw [reducedVerifiedMass_eq Q d hQd]
+  refine reducedCoverageMass_averaged order 256 208 d reducedLeftPrecision_order
+    (by decide +kernel) ?_
+  rintro ⟨t, rfl⟩
+  apply hQ
+  rw [hQd, mul_smul, smul_comm, Secp256k1.generator_nsmul_eq_zero, nsmul_zero]
+
+end
+end ShorECDLP.Entrant.Averaged
 
 -- ==== part: BatchBoundary ====
 
@@ -4590,10 +5097,11 @@ theorem wrappedIdeal_mass_eq (Q : Point) (hG : G≠0) (hQ : Q≠0) (hrQ : order 
 
 theorem wrappedIdeal_mass_lower (Q : Point) (hG : G≠0) (hQ : Q≠0) (hrQ : order • Q=0)
     (d : Nat) (hQd : Q=d • G) :
-    (163:ℝ)/1000 ≤ reducedRawIdealFourierEventMass G Q
+    (27:ℝ)/50 ≤ reducedRawIdealFourierEventMass G Q
       (fun xy => wrappedPairAccept legacyDecoderParams Q (fourierWordLSB xy.1) (fourierWordLSB xy.2)) := by
-  rw [wrappedIdeal_mass_eq Q hG hQ hrQ,reducedRawIdealDecoder_eq Q hG hQ hrQ d hQd]
-  exact secpSuccessBound_numeric.trans (reducedPhysicalVerifiedMass_lower Q hG hQ hrQ d hQd)
+  rw [wrappedIdeal_mass_eq Q hG hQ hrQ,reducedRawIdealDecoder_eq Q hG hQ hrQ d hQd,
+    reducedPhysicalVerifiedMass_eq Q hG hQ hrQ d hQd]
+  exact ShorECDLP.Entrant.Averaged.reducedVerifiedMass_averaged Q d hQd hQ
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
 -- ==== part: RoundBoundary ====

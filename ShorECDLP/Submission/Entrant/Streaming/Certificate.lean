@@ -3,7 +3,7 @@ import ShorECDLP.Submission.Entrant.Streaming.Semantics
 import ShorECDLP.Submission.«2607_13816».Challenge.Outer
 import ShorECDLP.Submission.«2607_13816».Window.PhysicalRepetition
 
-/-! EDITABLE. Streaming entrant, module `Certificate`: the 26-round instantiation, retry event and final certificate.
+/-! EDITABLE. Streaming entrant, module `Certificate`: the 6-round instantiation, retry event and final certificate.
 
 This module concatenates the former per-file modules `Rounds`, `ResourceCertificate`,
 `RoundReset`, `RepeatEvent`, `FinalCertificate` (in this order). Each former file is one
@@ -87,38 +87,38 @@ theorem fixedTableEntry_measurements {n e : Nat} (f : Fin n → PointCoeff)
     (resources ((fixedTableEntry f p).instantiate Q)).measurements = e := by
   rw [resource_m,fixedTableEntry_instantiate,Straight.measurementCount,Nat.sub_zero]
 
-/-- The entrant's fixed producer: the first 26 rounds of the upstream 56-round outer plan,
+/-- The entrant's fixed producer: the first 6 rounds of the upstream 56-round outer plan,
 using the public coefficient table. -/
-def streamingEntry : StraightEntry := fixedTableEntry coefficientAt (ipxOuterPlan.repeat 26 0)
+def streamingEntry : StraightEntry := fixedTableEntry coefficientAt (ipxOuterPlan.repeat 6 0)
 
-/-- The protected wrappedShift layout restricted to the 26 actual rounds. -/
-def streamingLayout : DecodeLayout := ipxOuterPlan.roundsLayout 26 (by decide)
+/-- The protected wrappedShift layout restricted to the 6 actual rounds. -/
+def streamingLayout : DecodeLayout := ipxOuterPlan.roundsLayout 6 (by decide)
 
 theorem streamingEntry_instantiate (Q : Point) :
     streamingEntry.instantiate Q =
-      (ipxOuterPlan.repeat 26 0).instantiate (readConstant coefficientAt Q) Fin.elim0 :=
+      (ipxOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0 :=
   fixedTableEntry_instantiate _ _ Q
 
 attribute [local irreducible] streamingEntry fixedTableEntry
 
 /-- Upper bounds; the qubit bound is not an exact cardinality claim. -/
-def streamingBounds : Bounds := ⟨855,373705956130,22351860154⟩
+def streamingBounds : Bounds := ⟨855,86239836030,5158121574⟩
 
 theorem streamingEntry_qubitCount (Q : Point) :
     (streamingEntry.instantiate Q).qubitCount ≤ 855 := by
   rw [streamingEntry_instantiate]
   simpa only [AdaptiveCircuit.qubitCount,List.card_toFinset] using
-    ipxOuter_qubits_le_855 26 0 (readConstant coefficientAt Q) Fin.elim0
+    ipxOuter_qubits_le_855 6 0 (readConstant coefficientAt Q) Fin.elim0
 
 theorem streamingEntry_tModel (Q : Point) :
-    (resources (streamingEntry.instantiate Q)).tModel ≤ 373705956130 := by
+    (resources (streamingEntry.instantiate Q)).tModel ≤ 86239836030 := by
   rw [resource_t,streamingEntry_instantiate]
   exact ipxOuterPlan_rounds_t_uniform Q
 
 theorem streamingEntry_measurements (Q : Point) :
-    (resources (streamingEntry.instantiate Q)).measurements = 22351860154 := by
+    (resources (streamingEntry.instantiate Q)).measurements = 5158121574 := by
   rw [streamingEntry,fixedTableEntry_measurements,Nat.zero_add]
-  exact ipxOuterPlan_finalCursor26
+  exact ipxOuterPlan_finalCursor6
 
 theorem streamingEntry_resources (Q : Point) :
     (resources (streamingEntry.instantiate Q)).qubits ≤ streamingBounds.qubits ∧
@@ -133,10 +133,10 @@ theorem streamingEntry_gateSlots : streamingEntry.program.gateSlots ≤ 50000000
 theorem streamingEntry_gateBudget : streamingEntry.program.gateSlots ≤ officialLimits.gateSlots :=
   streamingEntry_gateSlots.trans (by decide)
 
-theorem streamingEntry_finalCursor : streamingEntry.finalCursor = 22351860154 := by
+theorem streamingEntry_finalCursor : streamingEntry.finalCursor = 5158121574 := by
   unfold streamingEntry
-  exact (fixedTableEntry_cursor coefficientAt (ipxOuterPlan.repeat 26 0)).trans
-    ((Nat.zero_add _).trans ipxOuterPlan_finalCursor26)
+  exact (fixedTableEntry_cursor coefficientAt (ipxOuterPlan.repeat 6 0)).trans
+    ((Nat.zero_add _).trans ipxOuterPlan_finalCursor6)
 
 theorem streamingEntry_recordBudget : streamingEntry.finalCursor ≤ officialLimits.measurements :=
   streamingEntry_finalCursor.le.trans (by decide)
@@ -153,7 +153,7 @@ theorem streamingEntry_candidateBudget :
 
 theorem streamingEntry_wellFormed : streamingEntry.program.WellFormed := by
   rw [streamingEntry]
-  exact (fixedTableEntry_wellFormed _ _).mpr (ipxOuterPlan_repeat_wellFormed 26 0)
+  exact (fixedTableEntry_wellFormed _ _).mpr (ipxOuterPlan_repeat_wellFormed 6 0)
 
 /-- Only success remains an input: all physical, syntactic and resource fields
 refer to this actual fixed entry. This conditional shell is not an accepted submission. -/
@@ -523,32 +523,32 @@ theorem actualRoundAcceptedMass_le_one (Q : Point) (hQ : order • Q=0) :
       (ket zeroBasisState) ≤ 1 := by
   exact (Instrument.bornMass_filter_le _ _ _).trans_eq (actualRoundSource_total Q hQ)
 
-/-- 26 independent rounds suffice: `1 - (837/1000)^26 ≥ 99/100` (25 rounds would not). -/
-theorem retry26_success :
-    (99:ℝ)/100 ≤ independentRetrySuccessProbability ((163:ℝ)/1000) 26 := by
+/-- 6 independent rounds suffice: `1 - (23/50)^6 ≥ 99/100`. -/
+theorem retry6_success :
+    (99:ℝ)/100 ≤ independentRetrySuccessProbability ((27:ℝ)/50) 6 := by
   norm_num [independentRetrySuccessProbability]
 
 theorem actualCompiledRounds_success_of_round (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (h : (163:ℝ)/1000 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
+    (h : (27:ℝ)/50 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
       (fun b => actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) b.history))
       (ket zeroBasisState)) :
     (99:ℝ)/100 ≤ Instrument.bornMass
-      ((((ipxOuterPlan.repeat 26 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
+      ((((ipxOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
         (fun b => (verifiedCandidate streamingLayout Q b.history).isSome)) (ket zeroBasisState) := by
-  rw [streamingLayout,actualCompiledRounds_verified_mass Q hQ hn 26 (by decide)]
-  have hm := independentRetrySuccessProbability_mono 26 (actualRoundAcceptedMass_le_one Q hQ) h
-  exact retry26_success.trans hm
+  rw [streamingLayout,actualCompiledRounds_verified_mass Q hQ hn 6 (by decide)]
+  have hm := independentRetrySuccessProbability_mono 6 (actualRoundAcceptedMass_le_one Q hQ) h
+  exact retry6_success.trans hm
 
 /-- Actual single-round accepted mass, with the protected decoder and no loss term. -/
 theorem streamingRound_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d • G) :
-    (163:ℝ)/1000 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
+    (27:ℝ)/50 ≤ Instrument.bornMass ((actualRoundSource Q).run.filter
       (fun b => actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) b.history))
       (ket zeroBasisState) := by
   have hQ := publicPoint_order Q d hd
   rw [actualRoundSource_fixedPair_mass Q hQ hn,selectedIdealTwoAxes_event_eq Q hQ hn]
   exact wrappedIdeal_mass_lower Q G_ne_zero hn hQ d hd
 
-/-- Success of the actual fixed 26-round entry, measured by the protected final decoder. -/
+/-- Success of the actual fixed 6-round entry, measured by the protected final decoder. -/
 theorem streamingEntry_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d • G) :
     (99:ℝ)/100 ≤ Instrument.bornMass
       ((streamingEntry.instantiate Q).run.filter
@@ -558,7 +558,7 @@ theorem streamingEntry_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d • 
   exact actualCompiledRounds_success_of_round Q (publicPoint_order Q d hd) hn
     (streamingRound_success Q d hn hd)
 
-/-- Unconditional protected certificate for the entrant's fixed 26-round streaming program. -/
+/-- Unconditional protected certificate for the entrant's fixed 6-round streaming program. -/
 theorem streamingEntry_certificate_unconditional :
     Certificate officialLimits streamingLayout streamingEntry streamingBounds :=
   streamingEntry_certificate streamingEntry_success

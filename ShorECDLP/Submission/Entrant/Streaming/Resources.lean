@@ -2362,10 +2362,10 @@ theorem ipxOuterPlan_slots (start : Nat) :
     (ipxOuterPlan.repeat 56 start).gateSlots≤5000000000000 := by
   exact (ipxOuterPlan.repeat_slots_le 3000000000 ipxOuterPlan_windowSlots 56 start).trans (by decide)
 
-/-- Syntactic slots of the entrant's 26-round program. -/
+/-- Syntactic slots of the entrant's 6-round program. -/
 theorem ipxOuterPlan_rounds_slots (start : Nat) :
-    (ipxOuterPlan.repeat 26 start).gateSlots≤5000000000000 := by
-  exact (ipxOuterPlan.repeat_slots_le 3000000000 ipxOuterPlan_windowSlots 26 start).trans (by decide)
+    (ipxOuterPlan.repeat 6 start).gateSlots≤5000000000000 := by
+  exact (ipxOuterPlan.repeat_slots_le 3000000000 ipxOuterPlan_windowSlots 6 start).trans (by decide)
 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -2622,8 +2622,8 @@ all Fourier measurements, and the full 854-wire reset in each of 56 rounds. -/
 theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48142468024 := by
   rw [ipxOuterPlan_stride]
 
-/-- Exact final record count of the entrant's 26-round program. -/
-theorem ipxOuterPlan_finalCursor26 : 26 * ipxOuterPlan.stride = 22351860154 := by
+/-- Exact final record count of the entrant's 6-round program. -/
+theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5158121574 := by
   rw [ipxOuterPlan_stride]
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -2760,10 +2760,10 @@ theorem ipxOuterPlan_exceeds_old_measurement_limit :
     47471340504 < 56 * ipxOuterPlan.stride := by
   rw [ipxOuterPlan_finalCursor]
   decide
-/-- The published cap admits the entrant's 26-round program. -/
-theorem ipxOuterPlan_measurements_fit26 :
-    26 * ipxOuterPlan.stride ≤ officialLimits.measurements := by
-  rw [ipxOuterPlan_finalCursor26]
+/-- The published cap admits the entrant's 6-round program. -/
+theorem ipxOuterPlan_measurements_fit6 :
+    6 * ipxOuterPlan.stride ≤ officialLimits.measurements := by
+  rw [ipxOuterPlan_finalCursor6]
   decide
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
@@ -2968,12 +2968,12 @@ theorem ipxOuterPlan_total_t_uniform (Q : Point) :
   exact ipxOuterPlan.repeat_t_le_of_round 14373306005 (readConstant coefficientAt Q)
     (ipxOuterPlan_round_t_uniform Q) 56 0 Fin.elim0
 
-/-- T upper bound of the entrant's 26-round program: 26 × 14,373,306,005. -/
+/-- T upper bound of the entrant's 6-round program: 6 × 14,373,306,005. -/
 theorem ipxOuterPlan_rounds_t_uniform (Q : Point) :
-    ((ipxOuterPlan.repeat 26 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      373705956130 := by
+    ((ipxOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
+      86239836030 := by
   exact ipxOuterPlan.repeat_t_le_of_round 14373306005 (readConstant coefficientAt Q)
-    (ipxOuterPlan_round_t_uniform Q) 26 0 Fin.elim0
+    (ipxOuterPlan_round_t_uniform Q) 6 0 Fin.elim0
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
