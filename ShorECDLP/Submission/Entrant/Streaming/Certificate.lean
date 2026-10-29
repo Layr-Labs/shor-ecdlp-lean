@@ -3,7 +3,7 @@ import ShorECDLP.Submission.Entrant.Streaming.Semantics
 import ShorECDLP.Submission.«2607_13816».Challenge.Outer
 import ShorECDLP.Submission.«2607_13816».Window.PhysicalRepetition
 
-/-! EDITABLE. Streaming entrant, module `Certificate`: the 6-round instantiation, retry event and final certificate.
+/-! EDITABLE. Streaming entrant, module `Certificate`: the round-count instantiation, retry event and final certificate.
 
 This module concatenates the former per-file modules `Rounds`, `ResourceCertificate`,
 `RoundReset`, `RepeatEvent`, `FinalCertificate` (in this order). Each former file is one
@@ -87,7 +87,7 @@ theorem fixedTableEntry_measurements {n e : Nat} (f : Fin n → PointCoeff)
     (resources ((fixedTableEntry f p).instantiate Q)).measurements = e := by
   rw [resource_m,fixedTableEntry_instantiate,Straight.measurementCount,Nat.sub_zero]
 
-/-- The entrant's fixed producer: the first 6 rounds of the upstream 56-round outer plan,
+/-- The entrant's fixed producer: the first 6 rounds of the 56-round outer plan,
 using the public coefficient table. -/
 def streamingEntry : StraightEntry := fixedTableEntry coefficientAt (ipxOuterPlan.repeat 6 0)
 
@@ -102,7 +102,7 @@ theorem streamingEntry_instantiate (Q : Point) :
 attribute [local irreducible] streamingEntry fixedTableEntry
 
 /-- Upper bounds; the qubit bound is not an exact cardinality claim. -/
-def streamingBounds : Bounds := ⟨855,86239836030,5158121574⟩
+def streamingBounds : Bounds := ⟨855,86238641214,5158292262⟩
 
 theorem streamingEntry_qubitCount (Q : Point) :
     (streamingEntry.instantiate Q).qubitCount ≤ 855 := by
@@ -111,12 +111,12 @@ theorem streamingEntry_qubitCount (Q : Point) :
     ipxOuter_qubits_le_855 6 0 (readConstant coefficientAt Q) Fin.elim0
 
 theorem streamingEntry_tModel (Q : Point) :
-    (resources (streamingEntry.instantiate Q)).tModel ≤ 86239836030 := by
+    (resources (streamingEntry.instantiate Q)).tModel ≤ 86238641214 := by
   rw [resource_t,streamingEntry_instantiate]
   exact ipxOuterPlan_rounds_t_uniform Q
 
 theorem streamingEntry_measurements (Q : Point) :
-    (resources (streamingEntry.instantiate Q)).measurements = 5158121574 := by
+    (resources (streamingEntry.instantiate Q)).measurements = 5158292262 := by
   rw [streamingEntry,fixedTableEntry_measurements,Nat.zero_add]
   exact ipxOuterPlan_finalCursor6
 
@@ -133,7 +133,7 @@ theorem streamingEntry_gateSlots : streamingEntry.program.gateSlots ≤ 50000000
 theorem streamingEntry_gateBudget : streamingEntry.program.gateSlots ≤ officialLimits.gateSlots :=
   streamingEntry_gateSlots.trans (by decide)
 
-theorem streamingEntry_finalCursor : streamingEntry.finalCursor = 5158121574 := by
+theorem streamingEntry_finalCursor : streamingEntry.finalCursor = 5158292262 := by
   unfold streamingEntry
   exact (fixedTableEntry_cursor coefficientAt (ipxOuterPlan.repeat 6 0)).trans
     ((Nat.zero_add _).trans ipxOuterPlan_finalCursor6)
@@ -523,7 +523,7 @@ theorem actualRoundAcceptedMass_le_one (Q : Point) (hQ : order • Q=0) :
       (ket zeroBasisState) ≤ 1 := by
   exact (Instrument.bornMass_filter_le _ _ _).trans_eq (actualRoundSource_total Q hQ)
 
-/-- 6 independent rounds suffice: `1 - (23/50)^6 ≥ 99/100`. -/
+/-- 6 independent rounds suffice: `1 - (23/50)^6 ≥ 99/100` (5 rounds would not). -/
 theorem retry6_success :
     (99:ℝ)/100 ≤ independentRetrySuccessProbability ((27:ℝ)/50) 6 := by
   norm_num [independentRetrySuccessProbability]

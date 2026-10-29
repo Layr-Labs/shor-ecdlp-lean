@@ -4,6 +4,7 @@ import ShorECDLP.Submission.«2607_13816».Challenge.AccumulatorEncoding
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
 import ShorECDLP.Submission.«2607_13816».Challenge.GidneyAdd
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowBody
+import ShorECDLP.Submission.Entrant.Streaming.ZeroAdaptive
 
 /-! EDITABLE. Streaming entrant, module `Correction`: the in-place XOR exceptional-point correction (word model, circuit, semantics, window).
 
@@ -1198,15 +1199,15 @@ body is unchanged except that the five-word correction block `placedBatchProgram
 `resetWires` (854 wires) instead of `batchedResetWires` (3931 wires). -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
+open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1 ShorECDLP.Entrant.ZeroAdaptive
+attribute [local irreducible] sharedAdaptiveCoordinateProgram yNegateProgram ipxProgram
 
 /-- Internal additions only; address preparation and Fourier are outside this list. -/
 def ipxWindowSegments (w : OddWindow) : List (FixedSegment 983040) :=
-  [sharedCoordinateProgram w, sharedYNegateProgram w, ipxProgram w, sharedYNegateProgram w]
+  [sharedAdaptiveCoordinateProgram w, sharedYNegateProgram w, ipxProgram w, sharedYNegateProgram w]
 
 noncomputable def ipxWindowSources (Q : Point) (w : OddWindow) : List AdaptiveCircuit :=
-  [signedLookupCoordinateProgram (fun l => fieldValue (windowPoint Q w l) .x)
+  [coordinateSource (fun l => fieldValue (windowPoint Q w l) .x)
     (fun l => fieldValue (windowPoint Q w l) .y),windowYNegate,ipxSource Q w,windowYNegate]
 
 def ipxWindowCore (w : OddWindow) (start : Nat) :
@@ -1219,7 +1220,7 @@ theorem ipxWindowCore_run (w : OddWindow) (start : Nat) (Q : Point) (hQ : order 
       (sequenceCircuit (ipxWindowSources Q w)).run := by
   apply sequenceProgram_run
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact sharedCoordinateProgram_run w cursor Q hQ h
+  · intro cursor h; exact sharedAdaptiveCoordinateProgram_run w cursor Q hQ h
   · intro cursor h; exact sharedYNegateProgram_run w cursor _ h
   · intro cursor h; exact ipxProgram_run w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_run w cursor _ h
