@@ -32,8 +32,8 @@ theorem trialV2_run (aReg bReg pointReg : List Wire) (workStart qftAncilla : Wir
 
 /-! ## Wire layout -/
 
-def extA : List Wire := List.range' 17215 7
-def extB : List Wire := List.range' 17222 7
+def extA : List Wire := List.range' 16959 7
+def extB : List Wire := List.range' 16966 7
 def regA : List Wire := bitcoinAReg ++ extA
 def regB : List Wire := bitcoinBReg ++ extB
 
@@ -44,13 +44,13 @@ theorem regB_length : regB.length = 263 := by
   simp [regB, extB, bitcoinBReg]
 
 theorem old_lt : ∀ w : ℕ, w ∈ bitcoinAReg ++ bitcoinBReg ++ bitcoinPointReg ++
-    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w < 17215 := by
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w < 16959 := by
   intro w hw
   have h := V2.v2DeclaredWires_subset w hw
   have h' := List.mem_range.mp h
   rwa [V2.v2QubitCount_eq] at h'
 
-theorem ext_bounds : ∀ w : ℕ, w ∈ extA ++ extB → 17215 ≤ w ∧ w < 17229 := by
+theorem ext_bounds : ∀ w : ℕ, w ∈ extA ++ extB → 16959 ≤ w ∧ w < 16973 := by
   intro w hw
   simp only [extA, extB, List.mem_append, List.mem_range'_1] at hw
   omega
@@ -89,7 +89,7 @@ theorem layoutE :
       simp [bitcoinQFTAncilla] at this
 
 theorem support_sub : ∀ w : ℕ, w ∈ regA ++ regB ++ bitcoinPointReg ++
-    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ List.range 17229 := by
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ List.range 16973 := by
   intro w hw
   rw [List.mem_range]
   simp only [regA, regB, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hw
@@ -310,7 +310,7 @@ theorem entryE_wellFormed : entryE.program.WellFormed :=
 
 theorem trialGatesE_support (Q : Point) :
     circuitWires (trialGatesE.flatMap (TemplateGate.instantiate
-      (readConstant coeffE Q))) ⊆ List.range 17229 := by
+      (readConstant coeffE Q))) ⊆ List.range 16973 := by
   let support := regA ++ regB ++ bitcoinPointReg ++
     V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla]
   have hh : CircuitUsesOnly support (PhaseEstimation.hadamards (regA ++ regB)) := by
@@ -360,7 +360,7 @@ theorem trialGatesE_support (Q : Point) :
         (hq _ (fun _ h => List.mem_append_right _ h)))
   · exact support_sub
 
-theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range 17229 := by
+theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range 16973 := by
   intro w hw
   rw [entryE_instantiate, wires_seq] at hw
   rcases hw with hw | hw
@@ -369,8 +369,8 @@ theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range
   · have h := zObserve_support _ hw
     exact support_sub w (by simp only [List.mem_append] at h ⊢; tauto)
 
-theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 17229 := by
-  have hs : (entryE.instantiate Q).wires.toFinset ⊆ (List.range 17229).toFinset := by
+theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 16973 := by
+  have hs : (entryE.instantiate Q).wires.toFinset ⊆ (List.range 16973).toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (entryE_support Q (List.mem_toFinset.mp hw))
   have hc := Finset.card_le_card hs

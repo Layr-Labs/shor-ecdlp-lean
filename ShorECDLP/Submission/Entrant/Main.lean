@@ -168,9 +168,9 @@ def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
 /-- The declared T bound is the certified count 21765665609238 rounded up to a multiple of
-10^3, so the qubit × T product 375000652794690000 has fourteen significant digits. -/
+10^3, so the qubit × T product 369428642398530000 has fourteen significant digits. -/
 def bounds : Bounds where
-  qubits := 17229
+  qubits := 16973
   tModel := 21765665610000
   measurements := 526
 

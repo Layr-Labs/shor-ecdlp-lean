@@ -6,7 +6,8 @@ PointAdd reaches the inversion only through the names below:
 
 * `Engine.program`, a clean circuit on the block-structured `Engine.layout`;
 * `Engine.contract`: `out = lhs ^ (p - 2) mod p`, with `rhs` an untouched port;
-* `Engine.blocks`: every layout wire lies below `257 * Engine.blocks`.
+* `Engine.wireBound`: every layout wire lies below it; `Engine.blocks` bounds the block ids
+  of the add and multiply engines that share the same offset.
 
 The engine is `LowInv.lowProgram`: the libsecp256k1 addition chain evaluated with
 two-level checkpoint pebbling, so only checkpoints and one segment's scratch are live.
@@ -25,8 +26,12 @@ def layout : RegisterLayout := Entrant.LowInv.lowLayout
 
 def cost : Nat := 10263089914
 
-/-- Number of 257-wire blocks spanned by the engine layout. -/
-def blocks : Nat := 43
+/-- Number of 257-wire blocks spanned by the engine's full registers. -/
+def blocks : Nat := 42
+
+/-- Every engine wire lies below this bound: the last multiplier flag is the first wire of
+block 42. -/
+def wireBound : Nat := 257 * 42 + 1
 
 theorem contract :
     CleanBinaryContract program layout ShorECDLP.p (fun a _ => a ^ (ShorECDLP.p - 2)) cost := by
@@ -50,7 +55,7 @@ theorem rhs_nodup : layout.rhs.Nodup := (Secp256k1Instance.regBlock 1).wires_nod
 
 theorem out_nodup : layout.out.Nodup := (Secp256k1Instance.regBlock 2).wires_nodup
 
-theorem allWires_lt : ∀ w ∈ layout.allWires, w < 257 * blocks :=
+theorem allWires_lt : ∀ w ∈ layout.allWires, w < wireBound :=
   Entrant.LowInv.lowLayout_allWires_lt
 
 theorem program_length_le : program.length ≤ 4075000000 := Entrant.LowInv.lowProgram_length_le

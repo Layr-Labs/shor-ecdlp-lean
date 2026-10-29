@@ -778,21 +778,16 @@ theorem lowLayout_valid : lowLayout.Valid := by
   rw [lowBlocks_ids]
   decide
 
-theorem lowLayout_allWires_lt : ∀ w ∈ lowLayout.allWires, w < 257 * 43 := by
+theorem lowBlocks_top : ∀ b ∈ lowBlocks, 257 * b.id + b.size ≤ 257 * 42 + 1 := by
+  decide
+
+theorem lowLayout_allWires_lt : ∀ w : Nat, w ∈ lowLayout.allWires → w < 257 * 42 + 1 := by
   intro w hw
   rw [lowLayout_allWires_eq, Secp256k1Instance.blocksWires, List.mem_flatMap] at hw
   obtain ⟨b, hb, hwb⟩ := hw
-  have hid : b.id < 43 := by
-    have hmem : b.id ∈ lowBlocks.map Block.id := List.mem_map_of_mem hb
-    rw [lowBlocks_ids] at hmem
-    simp only [List.mem_append, List.mem_cons, List.not_mem_nil, List.mem_range'_1,
-      or_false] at hmem
-    omega
-  have hbound := (Secp256k1Instance.Block.mem_bounds hwb).2
-  have hle : Secp256k1Instance.fieldWidth * (b.id + 1) ≤ 257 * 43 := by
-    simp only [Secp256k1Instance.fieldWidth]
-    omega
-  exact Nat.lt_of_lt_of_le hbound hle
+  have htop := lowBlocks_top b hb
+  simp only [Block.wires, Secp256k1Instance.fieldWidth, List.mem_range'_1] at hwb
+  omega
 
 theorem lowProgram_length_le : lowProgram.length ≤ 4075000000 := (lowProgram_good 0).len
 
