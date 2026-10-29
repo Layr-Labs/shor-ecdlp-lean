@@ -1,545 +1,18 @@
-import ShorECDLP.Submission.«2607_13816».OrderFinding.ReducedVerified
-import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
-import Mathlib.Analysis.SpecialFunctions.Trigonometric.Deriv
-import Mathlib.Analysis.Calculus.Deriv.MeanValue
-import Mathlib.Analysis.Real.Pi.Bounds
-import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowNegation
-import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
-import ShorECDLP.Submission.«2607_13816».Window.StreamHistory
-import ShorECDLP.Framework.Quantum.TerminalInterference
+import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».Window.StreamKernel
 import ShorECDLP.Submission.«2607_13816».Window.ScalarWindows
-import ShorECDLP.Submission.«2607_13816».Window.RawDistribution
-import ShorECDLP.Submission.«2607_13816».Window.Repetition
-import ShorECDLP.Framework.Quantum.AdaptiveFrame
+import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
+import ShorECDLP.Framework.Quantum.TerminalInterference
 import ShorECDLP.Submission.«2607_13816».Window.Uniform
-import ShorECDLP.Submission.«2607_13816».Window.StreamSamplingSuccess
 
-/-! EDITABLE. Streaming entrant, module `Semantics`: physical execution of the compiled rounds and the per-round success bound.
+/-! EDITABLE. Single-trial entrant: inherited coherent physical and Fourier lemmas.
+Concatenated in dependency order to bound parallel kernel replay memory.
+Original provenance comments are retained beside each source part. -/
 
-This module concatenates the former per-file modules `AveragedSuccess`, `BatchBoundary`, `BatchedWindowState`,
-`BatchedWindowCoherent`, `PreparedBatch`, `ActualWindow`, `WindowPhysical`, `ModularPhysical`,
-`EEACenterPhysical`, `EEAStructuralPhysical`, `EEAIntervalPhysical`, `MeasuredEEAPhysical`,
-`SquarePhysical`, `InPlacePhysical`, `InPlaceCompletePhysical`, `CoordinatePhysical`,
-`ActualPhysical`, `HistoryExecution`, `OuterExecution`, `ActualExecution`, `SourceAxis`,
-`TaggedProbability`, `WindowValidity`, `AxisProbability`, `FirstValidity`, `CrossWindowWeights`,
-`CrossWindowPoint`, `TwoAxisProbability`, `FixedWord`, `TaggedAxis`, `TaggedTwoAxes`,
-`ActualPair`, `DecoderBridge`, `RoundBoundary`, `WindowBranchSum`, `IdealDistribution` (in this
-order). Each former file is one `namespace` block below, marked `-- ==== part: <Name> ====`,
-with its provenance note. Only the import lines changed. Dropped because an identical private
-copy occurs earlier in this module: `FirstValidity.support_add`, `FirstValidity.support_smul`.
-Renamed because an earlier part has a different private lemma of the same name: `support_linear`
-to `support_linear_firstValidity`.
+-- ==== part: Streaming/BatchBoundary ====
 
-Why few modules: the kernel replay loads the complete import closure (about 4.3 GB) once per
-Entrant module, in parallel across its worker threads, so its peak memory grows with the number
-of Entrant modules. -/
-
--- ==== part: AveragedSuccess ====
-
-/-! EDITABLE. An averaged per-round success bound for the reduced two-axis decoder.
-
-The protected bound `reducedVerifiedMass_lower` keeps, for every nonzero character `k`, only the
-mass at the nearest Fourier pair and bounds each axis by the worst case `4/π²`, which gives
-`((r-1)/r)(4/π²)² ≈ 0.164`. Here the same peak outputs are used, but the two axis probabilities
-are averaged over `k` instead of bounded pointwise:
-
-* each axis probability at its nearest bin is at least `sinc²(t)`, where `t ∈ [-1/2, 1/2]` is the
-  signed distance (in bins) to that bin, and `sinc²(t) ≥ 1 - x²/3 + 2x⁴/45 - x⁶/315` with
-  `x = πt` (from the eighth-order Taylor upper bound of `cos`, proved by derivative comparison);
-* since `r` is an odd prime, `k ↦ 2ⁿk mod r` and `k ↦ 2ᵐdk mod r` are bijections of `ℤ/r`, so
-  the bin distances of both axes run exactly over the grid `{s/r : |s| ≤ (r-1)/2}`; the grid
-  average of the polynomial is a closed form in `r` (power sums of degree 2, 4, 6);
-* `xy ≥ x + y - 1` on `[0,1]²` joins the two axes.
-
-For a prime `r ≥ 10⁶` this gives at least `27/50` per round, for every nonzero `d`. -/
-
-namespace ShorECDLP.Entrant.Averaged
-open Real ShorECDLP.Paper2607_13816 ShorECDLP.Quantum.PhaseEstimation
-open scoped BigOperators
-
-noncomputable section
-
-/-! ### Taylor bounds for `sin` and `cos` -/
-
-/-- Comparison on `[0, ∞)` by derivatives. -/
-theorem le_of_deriv_le {f g f' g' : ℝ → ℝ}
-    (hf : ∀ x, HasDerivAt f (f' x) x) (hg : ∀ x, HasDerivAt g (g' x) x)
-    (h0 : f 0 = g 0) (hd : ∀ x, 0 ≤ x → f' x ≤ g' x) {x : ℝ} (hx : 0 ≤ x) : f x ≤ g x := by
-  have hmono : MonotoneOn (fun y => g y - f y) (Set.Ici 0) := by
-    apply monotoneOn_of_hasDerivWithinAt_nonneg (f' := fun y => g' y - f' y) (convex_Ici 0)
-    · exact (continuous_iff_continuousAt.2 fun y => ((hg y).sub (hf y)).continuousAt).continuousOn
-    · intro y _
-      exact ((hg y).sub (hf y)).hasDerivWithinAt
-    · intro y hy
-      rw [interior_Ici] at hy
-      exact sub_nonneg.2 (hd y (le_of_lt hy))
-  have h := hmono (Set.mem_Ici.2 le_rfl) (Set.mem_Ici.2 hx) hx
-  simp only [h0, sub_self] at h
-  linarith
-
-theorem sin_ge3 {x : ℝ} (hx : 0 ≤ x) : x - x^3/6 ≤ sin x :=
-  le_of_deriv_le (f := fun y => y - y^3/6) (f' := fun y => 1 - y^2/2)
-    (fun y => by
-      refine ((hasDerivAt_id y).sub ((hasDerivAt_pow 3 y).div_const 6)).congr_deriv ?_
-      norm_num; ring)
-    hasDerivAt_sin (by simp) (fun _ _ => one_sub_sq_div_two_le_cos) hx
-
-theorem cos_le4 {x : ℝ} (hx : 0 ≤ x) : cos x ≤ 1 - x^2/2 + x^4/24 :=
-  le_of_deriv_le (g := fun y => 1 - y^2/2 + y^4/24) (g' := fun y => -y + y^3/6)
-    hasDerivAt_cos
-    (fun y => by
-      refine (((hasDerivAt_const y (1:ℝ)).sub ((hasDerivAt_pow 2 y).div_const 2)).add
-        ((hasDerivAt_pow 4 y).div_const 24)).congr_deriv ?_
-      norm_num; ring)
-    (by simp) (fun y hy => by have := sin_ge3 hy; linarith) hx
-
-theorem sin_le5 {x : ℝ} (hx : 0 ≤ x) : sin x ≤ x - x^3/6 + x^5/120 :=
-  le_of_deriv_le (g := fun y => y - y^3/6 + y^5/120) (g' := fun y => 1 - y^2/2 + y^4/24)
-    hasDerivAt_sin
-    (fun y => by
-      refine (((hasDerivAt_id y).sub ((hasDerivAt_pow 3 y).div_const 6)).add
-        ((hasDerivAt_pow 5 y).div_const 120)).congr_deriv ?_
-      norm_num; ring)
-    (by simp) (fun _ hy => cos_le4 hy) hx
-
-theorem cos_ge6 {x : ℝ} (hx : 0 ≤ x) : 1 - x^2/2 + x^4/24 - x^6/720 ≤ cos x :=
-  le_of_deriv_le (f := fun y => 1 - y^2/2 + y^4/24 - y^6/720)
-    (f' := fun y => -y + y^3/6 - y^5/120)
-    (fun y => by
-      refine ((((hasDerivAt_const y (1:ℝ)).sub ((hasDerivAt_pow 2 y).div_const 2)).add
-        ((hasDerivAt_pow 4 y).div_const 24)).sub
-        ((hasDerivAt_pow 6 y).div_const 720)).congr_deriv ?_
-      norm_num; ring)
-    hasDerivAt_cos (by simp) (fun y hy => by have := sin_le5 hy; linarith) hx
-
-theorem sin_ge7 {x : ℝ} (hx : 0 ≤ x) : x - x^3/6 + x^5/120 - x^7/5040 ≤ sin x :=
-  le_of_deriv_le (f := fun y => y - y^3/6 + y^5/120 - y^7/5040)
-    (f' := fun y => 1 - y^2/2 + y^4/24 - y^6/720)
-    (fun y => by
-      refine ((((hasDerivAt_id y).sub ((hasDerivAt_pow 3 y).div_const 6)).add
-        ((hasDerivAt_pow 5 y).div_const 120)).sub
-        ((hasDerivAt_pow 7 y).div_const 5040)).congr_deriv ?_
-      norm_num; ring)
-    hasDerivAt_sin (by simp) (fun _ hy => cos_ge6 hy) hx
-
-theorem cos_le8_nonneg {x : ℝ} (hx : 0 ≤ x) :
-    cos x ≤ 1 - x^2/2 + x^4/24 - x^6/720 + x^8/40320 :=
-  le_of_deriv_le (g := fun y => 1 - y^2/2 + y^4/24 - y^6/720 + y^8/40320)
-    (g' := fun y => -y + y^3/6 - y^5/120 + y^7/5040)
-    hasDerivAt_cos
-    (fun y => by
-      refine (((((hasDerivAt_const y (1:ℝ)).sub ((hasDerivAt_pow 2 y).div_const 2)).add
-        ((hasDerivAt_pow 4 y).div_const 24)).sub
-        ((hasDerivAt_pow 6 y).div_const 720)).add
-        ((hasDerivAt_pow 8 y).div_const 40320)).congr_deriv ?_
-      norm_num; ring)
-    (by simp) (fun y hy => by have := sin_ge7 hy; linarith) hx
-
-theorem cos_le8 (x : ℝ) : cos x ≤ 1 - x^2/2 + x^4/24 - x^6/720 + x^8/40320 := by
-  rcases le_total 0 x with hx | hx
-  · exact cos_le8_nonneg hx
-  · calc cos x = cos (-x) := (cos_neg x).symm
-      _ ≤ 1 - (-x)^2/2 + (-x)^4/24 - (-x)^6/720 + (-x)^8/40320 := cos_le8_nonneg (by linarith)
-      _ = 1 - x^2/2 + x^4/24 - x^6/720 + x^8/40320 := by ring
-
-/-- The even polynomial lower bound of `sinc²`, as a function of `x²`. -/
-def sincPoly (y : ℝ) : ℝ := 1 - y/3 + 2*y^2/45 - y^3/315
-
-theorem sq_mul_sincPoly_le (x : ℝ) : x^2 * sincPoly (x^2) ≤ sin x ^ 2 := by
-  rw [sin_sq_eq_half_sub]
-  have h := cos_le8 (2*x)
-  have e : 1/2 - (1 - (2*x)^2/2 + (2*x)^4/24 - (2*x)^6/720 + (2*x)^8/40320)/2 =
-      x^2 * sincPoly (x^2) := by
-    unfold sincPoly; ring
-  linarith
-
-/-! ### One Fourier axis -/
-
-private theorem norm_eigenvalue_sub_one' (delta : ℝ) :
-    ‖eigenvalue delta - 1‖ = ‖2 * Real.sin (Real.pi * delta)‖ := by
-  unfold eigenvalue
-  convert Complex.norm_exp_I_mul_ofReal_sub_one (2 * Real.pi * delta) using 1 ; ring_nf
-
-private theorem norm_eigenvalue_pow_sub_one' (N : Nat) (delta : ℝ) :
-    ‖eigenvalue delta ^ N - 1‖ = ‖2 * Real.sin (Real.pi * (N : ℝ) * delta)‖ := by
-  rw [eigenvalue_pow_eq_eigenvalue_mul]
-  convert norm_eigenvalue_sub_one' ((N : ℝ) * delta) using 1 ; ring_nf
-
-/-- The normalized geometric average is at least `sincPoly ((π N δ)²)`, for every `δ`. -/
-theorem average_normSq_ge (N : Nat) (hN : 0 < N) (delta : ℝ) :
-    sincPoly ((Real.pi * N * delta)^2) ≤
-      Complex.normSq (((N:ℂ)⁻¹) * ∑ y ∈ Finset.range N, eigenvalue delta ^ y) := by
-  have hNR : (0:ℝ) < N := by exact_mod_cast hN
-  by_cases hdelta : delta = 0
-  · subst hdelta
-    have hsum : (∑ y ∈ Finset.range N, eigenvalue 0 ^ y) = (N:ℂ) := by simp [eigenvalue]
-    rw [hsum, inv_mul_cancel₀ (by exact_mod_cast hN.ne')]
-    simp [sincPoly]
-  · set S := ∑ y ∈ Finset.range N, eigenvalue delta ^ y with hS
-    have hgeom : S * (eigenvalue delta - 1) = eigenvalue delta ^ N - 1 := geom_sum_mul _ N
-    have hn : ‖S‖ * ‖eigenvalue delta - 1‖ = ‖eigenvalue delta ^ N - 1‖ := by
-      rw [← norm_mul, hgeom]
-    rw [norm_eigenvalue_sub_one', norm_eigenvalue_pow_sub_one', Real.norm_eq_abs,
-      Real.norm_eq_abs] at hn
-    have hsq : ‖S‖^2 * Real.sin (Real.pi * delta)^2 = Real.sin (Real.pi * N * delta)^2 := by
-      have h2 := congrArg (fun t : ℝ => t^2) hn
-      simp only [mul_pow, sq_abs] at h2
-      linarith
-    set X := Real.pi * N * delta with hX
-    have hX0 : X ≠ 0 := mul_ne_zero (mul_ne_zero Real.pi_ne_zero hNR.ne') hdelta
-    have h1 := sq_mul_sincPoly_le X
-    have h2 : Real.sin (Real.pi * delta)^2 ≤ (Real.pi * delta)^2 := sin_sq_le_sq
-    have hpd : (Real.pi * delta)^2 = X^2 / (N:ℝ)^2 := by
-      rw [hX]; field_simp
-    have h3 : X^2 * sincPoly (X^2) ≤ X^2 * (‖S‖^2 / (N:ℝ)^2) := by
-      calc X^2 * sincPoly (X^2) ≤ Real.sin X ^ 2 := h1
-        _ = ‖S‖^2 * Real.sin (Real.pi * delta)^2 := hsq.symm
-        _ ≤ ‖S‖^2 * (Real.pi * delta)^2 := mul_le_mul_of_nonneg_left h2 (by positivity)
-        _ = X^2 * (‖S‖^2 / (N:ℝ)^2) := by rw [hpd]; ring
-    have hnorm : Complex.normSq ((N:ℂ)⁻¹ * S) = ‖S‖^2 / (N:ℝ)^2 := by
-      rw [Complex.normSq_eq_norm_sq, norm_mul, norm_inv, Complex.norm_natCast]
-      field_simp
-    rw [hnorm]
-    exact le_of_mul_le_mul_left h3 (by positivity)
-
-/-- Folded grid distance `min(c, r - c)` of a residue `c < r`. -/
-def foldDist (r c : Nat) : Nat := if 2*c < r then c else r - c
-
-/-- The nearest-bin probability for numerator `j/r` at `2^p` bins, in grid form. -/
-theorem axis_lower (p r j : Nat) (hr : 0 < r) (hodd : r % 2 = 1) :
-    sincPoly ((Real.pi * (foldDist r ((2^p*j) % r) : ℝ) / r)^2) ≤
-      Complex.normSq (paperPhaseAmplitude p ((j:ℝ)/r) ((2*2^p*j + r)/(2*r))) := by
-  unfold paperPhaseAmplitude
-  refine le_trans (le_of_eq ?_) (average_normSq_ge (2^p) (by positivity) _)
-  congr 1
-  set A := 2^p*j with hA
-  set q := A / r
-  set c := A % r
-  have hdm : r * q + c = A := Nat.div_add_mod A r
-  have hc : c < r := Nat.mod_lt A hr
-  have hv : (2*2^p*j + r)/(2*r) = (2*c + r)/(2*r) + q := by
-    have e : 2*2^p*j + r = (2*c + r) + 2*r*q := by rw [mul_assoc, ← hA, ← hdm]; ring
-    rw [e, Nat.add_mul_div_left _ _ (by omega : 0 < 2*r)]
-  have hrR : (0:ℝ) < r := by exact_mod_cast hr
-  have hNR : (0:ℝ) < ((2^p:Nat):ℝ) := by positivity
-  have hAR : ((2^p:Nat):ℝ) * (j:ℝ) = (r:ℝ) * q + c := by exact_mod_cast hdm.symm
-  unfold foldDist
-  by_cases h2c : 2*c < r
-  · have hb : (2*c + r)/(2*r) = 0 := Nat.div_eq_of_lt (by omega)
-    rw [hv, hb, zero_add, if_pos h2c]
-    have e : ((2^p:Nat):ℝ) * ((j:ℝ)/r - (q:ℝ)/((2^p:Nat):ℝ)) = (c:ℝ)/r := by
-      field_simp; linarith
-    rw [mul_assoc, e]; ring
-  · have hb : (2*c + r)/(2*r) = 1 := Nat.div_eq_of_lt_le (by omega) (by omega)
-    rw [hv, hb, if_neg h2c, Nat.cast_sub hc.le]
-    push_cast
-    have e : ((2^p:Nat):ℝ) * ((j:ℝ)/r - ((1:ℝ) + q)/((2^p:Nat):ℝ)) = ((c:ℝ) - r)/r := by
-      field_simp; linarith
-    push_cast at e
-    rw [mul_assoc, e]; ring
-
-private theorem eigenvalue_period' (phase : ℝ) : eigenvalue (phase-1)=eigenvalue phase := by
-  unfold eigenvalue
-  rw [Complex.exp_eq_exp_iff_exists_int]
-  refine ⟨-1, ?_⟩
-  push_cast
-  ring
-
-private theorem amplitude_endpoint' (precision : Nat) (phase : ℝ) :
-    paperPhaseAmplitude precision phase (2^precision) = paperPhaseAmplitude precision phase 0 := by
-  unfold paperPhaseAmplitude
-  simp only [Nat.cast_zero, zero_div, sub_zero]
-  have hN : ((2^precision:Nat):ℝ) ≠ 0 := by positivity
-  simp only [div_self hN, eigenvalue_period']
-
-/-- The wrapped second-axis peak has the same amplitude as its unwrapped rounding. -/
-theorem reducedPeak_amplitude (r precision : Nat) (k : Fin r) (phase : ℝ) :
-    paperPhaseAmplitude precision phase (reducedPeak r precision k).val =
-      paperPhaseAmplitude precision phase (reducedPeakRaw r precision k) := by
-  have hle := reducedPeakRaw_le r precision k
-  by_cases heq : reducedPeakRaw r precision k = 2^precision
-  · simp only [reducedPeak, heq, Nat.mod_self, amplitude_endpoint']
-  · simp only [reducedPeak,
-      Nat.mod_eq_of_lt (by omega : reducedPeakRaw r precision k < 2^precision)]
-
-/-! ### Grid averages -/
-
-/-- Multiplication by a unit permutes the residues. -/
-theorem sum_mulMod (r a : Nat) (hr : r.Prime) (ha : ¬ r ∣ a) (H : ℕ → ℝ) :
-    ∑ k : Fin r, H ((a * k.val) % r) = ∑ c ∈ Finset.range r, H c := by
-  rw [Fin.sum_univ_eq_sum_range (fun k => H ((a*k) % r))]
-  haveI := Fact.mk hr
-  have hinj : Set.InjOn (fun k => (a*k) % r) (Finset.range r) := by
-    intro x hx y hy hxy
-    simp only [Finset.coe_range, Set.mem_Iio] at hx hy
-    have h1 : ((a*x : ℕ) : ZMod r) = ((a*y : ℕ) : ZMod r) :=
-      (ZMod.natCast_eq_natCast_iff' _ _ _).2 hxy
-    have ha' : (a : ZMod r) ≠ 0 := by rwa [Ne, ZMod.natCast_eq_zero_iff]
-    push_cast at h1
-    have h2 : (x : ZMod r) = y := mul_left_cancel₀ ha' h1
-    have h3 := (ZMod.natCast_eq_natCast_iff' x y r).1 h2
-    rwa [Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt hy] at h3
-  have himage : (Finset.range r).image (fun k => (a*k) % r) = Finset.range r := by
-    apply Finset.eq_of_subset_of_card_le
-    · intro c hc
-      obtain ⟨k, _, rfl⟩ := Finset.mem_image.1 hc
-      exact Finset.mem_range.2 (Nat.mod_lt _ hr.pos)
-    · rw [Finset.card_image_of_injOn hinj]
-  conv_rhs => rw [← himage]
-  rw [Finset.sum_image hinj]
-
-/-- Folding the residues `0, …, 2M` onto `0, …, M`. -/
-theorem sum_fold (M : Nat) (F : ℕ → ℝ) :
-    ∑ c ∈ Finset.range (2*M+1), F (foldDist (2*M+1) c) =
-      2 * ∑ s ∈ Finset.range (M+1), F s - F 0 := by
-  rw [show 2*M+1 = (M+1) + M by ring, Finset.sum_range_add]
-  have h1 : ∑ c ∈ Finset.range (M+1), F (foldDist (M+1+M) c) = ∑ c ∈ Finset.range (M+1), F c := by
-    apply Finset.sum_congr rfl
-    intro c hc
-    have := Finset.mem_range.1 hc
-    unfold foldDist
-    rw [if_pos (by omega)]
-  have h2 : ∑ x ∈ Finset.range M, F (foldDist (M+1+M) (M+1+x)) =
-      ∑ x ∈ Finset.range M, F (x+1) := by
-    rw [← Finset.sum_range_reflect (fun x => F (x+1)) M]
-    apply Finset.sum_congr rfl
-    intro x hx
-    have := Finset.mem_range.1 hx
-    unfold foldDist
-    rw [if_neg (by omega)]
-    congr 1
-    omega
-  rw [h1, h2, Finset.sum_range_succ' F M]
-  ring
-
-/-- Closed form of the polynomial summed over `s = 0, …, m` at `a·s²`. -/
-def closedForm (m a : ℝ) : ℝ :=
-  (m+1) - a/3 * (m*(m+1)*(2*m+1)/6)
-    + 2*a^2/45 * (m*(m+1)*(2*m+1)*(3*m^2+3*m-1)/30)
-    - a^3/315 * (m*(m+1)*(2*m+1)*(3*m^4+6*m^3-3*m+1)/42)
-
-theorem sum_sincPoly (M : Nat) (a : ℝ) :
-    ∑ s ∈ Finset.range (M+1), sincPoly (a * (s:ℝ)^2) = closedForm M a := by
-  induction M with
-  | zero => simp [closedForm, sincPoly]
-  | succ M ih =>
-    rw [Finset.sum_range_succ, ih]
-    unfold closedForm sincPoly
-    push_cast
-    ring
-
-/-- The terms of the grid average below `1 - 1/r`, written in `w = a·m(m+1) ≈ π²/4`. -/
-def gridDeficit (a w : ℝ) : ℝ :=
-  (2/9)*w - (4/675)*(3*w^2 - a*w) + (2/6615)*(3*w^3 - 3*a*w^2 + a^2*w)
-
-theorem closedForm_identity (m a : ℝ) :
-    2*(2*closedForm m a - 1) - (2*m+1) - 1 = 2*m - (2*m+1) * gridDeficit a (a*(m*(m+1))) := by
-  unfold closedForm gridDeficit
-  ring
-
-theorem gridDeficit_le (a w : ℝ) (ha0 : 0 ≤ a) (ha1 : a ≤ 1/10^11) (hw1 : w ≤ 2.4675) :
-    gridDeficit a w ≤ 0.45373 := by
-  unfold gridDeficit
-  have hg : (2/9)*w - (4/225)*w^2 + (2/2205)*w^3 ≤ 0.45372 := by
-    have hb : 0 ≤ 2/9 - (4/225)*(w + 2.4675) + (2/2205)*(w^2 + w*2.4675 + 2.4675^2) := by
-      nlinarith
-    nlinarith [mul_nonneg (sub_nonneg.2 hw1) hb]
-  have h1 : a*w ≤ 3/10^11 := by nlinarith
-  have h2 : 0 ≤ a*w^2 := by positivity
-  have h3 : a^2*w ≤ 3/10^11 := by nlinarith
-  nlinarith
-
-/-- The numerical bound at a large odd modulus `r = 2m+1`. -/
-theorem averaged_numeric (m : ℝ) (hm : 500000 ≤ m) :
-    (27:ℝ)/50 ≤ (1/(2*m+1)) *
-      (2*(2*closedForm m (Real.pi^2/(2*m+1)^2) - 1) - (2*m+1) - 1) := by
-  rw [closedForm_identity]
-  have hr0 : 0 < 2*m+1 := by linarith
-  have hpi1 := Real.pi_lt_d4
-  have hpi0 := Real.pi_pos
-  have hpi2 : Real.pi^2 < 9.8697 := by nlinarith
-  have hr2 : (10:ℝ)^12 ≤ (2*m+1)^2 := by nlinarith
-  have ha0 : 0 ≤ Real.pi^2/(2*m+1)^2 := by positivity
-  have ha1 : Real.pi^2/(2*m+1)^2 ≤ 1/10^11 := by
-    rw [div_le_iff₀ (by positivity)]
-    nlinarith
-  have hq : m*(m+1) ≤ (2*m+1)^2/4 := by nlinarith
-  have hw1 : Real.pi^2/(2*m+1)^2 * (m*(m+1)) ≤ 2.4675 := by
-    have h := mul_le_mul_of_nonneg_left hq ha0
-    have e : Real.pi^2/(2*m+1)^2 * ((2*m+1)^2/4) = Real.pi^2/4 := by field_simp
-    linarith
-  have hB := gridDeficit_le _ _ ha0 ha1 hw1
-  have hinv : 1/(2*m+1) ≤ 1/1000000 := by
-    rw [div_le_div_iff₀ hr0 (by norm_num)]; linarith
-  have e : ∀ B : ℝ, (1/(2*m+1))*(2*m - (2*m+1)*B) = 1 - 1/(2*m+1) - B := by
-    intro B; field_simp; ring
-  rw [e]
-  linarith
-
-theorem grid_sum (r M : Nat) (hM : r = 2*M+1) :
-    ∑ c ∈ Finset.range r, sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2) =
-      2 * closedForm M (Real.pi^2/(r:ℝ)^2) - 1 := by
-  subst hM
-  have h := sum_fold M (fun s => sincPoly ((Real.pi * (s:ℝ) / ((2*M+1:ℕ):ℝ))^2))
-  beta_reduce at h
-  rw [h, ← sum_sincPoly M]
-  have e : ∀ s : ℕ, sincPoly ((Real.pi * (s:ℝ) / ((2*M+1:ℕ):ℝ))^2) =
-      sincPoly (Real.pi^2/((2*M+1:ℕ):ℝ)^2 * (s:ℝ)^2) := by
-    intro s; congr 1; ring
-  have h0 : sincPoly ((Real.pi * ((0:ℕ):ℝ) / ((2*M+1:ℕ):ℝ))^2) = 1 := by simp [sincPoly]
-  rw [h0, Finset.sum_congr rfl (fun s _ => e s)]
-
-/-! ### The averaged coverage bound -/
-
-/-- Averaged success of the reduced decoder: at least `27/50` for a prime `r > 10⁶`. -/
-theorem reducedCoverageMass_averaged (r n m d : Nat) [Fact (Nat.Prime r)]
-    (hprecision : r < 2^n) (hr : 1000001 ≤ r) (hd : ¬ r ∣ d) :
-    (27:ℝ)/50 ≤ reducedCoverageMass r n m d := by
-  classical
-  have hrp := Fact.out (p := Nat.Prime r)
-  have hr0 : 0 < r := hrp.pos
-  have hodd : r % 2 = 1 := Nat.odd_iff.1 (hrp.odd_of_ne_two (by omega))
-  have hpow : ∀ p, ¬ r ∣ 2^p := by
-    intro p h
-    have h2 := Nat.le_of_dvd two_pos (hrp.dvd_of_dvd_pow h)
-    omega
-  have hmd : ¬ r ∣ 2^m * d := by
-    intro h
-    rcases (Nat.Prime.dvd_mul hrp).1 h with h1 | h1
-    · exact hpow m h1
-    · exact hd h1
-  obtain ⟨M, hM⟩ : ∃ M, r = 2*M+1 := ⟨r/2, by omega⟩
-  let S : Finset (Fin r) := Finset.univ.filter (fun k => k.val ≠ 0)
-  let peak := asymmetricPairPeak r n m d hprecision
-  let f : (Fin (2^n) × Fin (2^m)) → ℝ := fun out =>
-    if (d:ZMod r) ∈ reducedShiftCandidates r n m out
-      then asymmetricPairMass r n m d out else 0
-  let PL : Fin r → ℝ := fun k =>
-    Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) (paperPeak r n hprecision k).val)
-  let PR : Fin r → ℝ := fun k =>
-    Complex.normSq (paperPhaseAmplitude m ((((d*k.val)%r:Nat):ℝ)/r)
-      (reducedPeak r m (paperCharacterProduct d k)).val)
-  let T : ℝ := ∑ c ∈ Finset.range r, sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2)
-  have hf : ∀ out, 0 ≤ f out := by
-    intro out
-    dsimp [f]
-    split
-    · exact asymmetricPairMass_nonneg _ _ _ _ _
-    · rfl
-  -- the k-th summand at the k-th peak
-  have hp : ∀ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) ≤ f (peak k) := by
-    intro k hk
-    have hn : k.val ≠ 0 := (Finset.mem_filter.mp hk).2
-    have hkz : (k.val : ZMod r) ≠ 0 := by
-      intro hz
-      have hv := congrArg ZMod.val hz
-      simp only [ZMod.val_natCast_of_lt k.isLt, ZMod.val_zero] at hv
-      exact hn hv
-    have hm : (d:ZMod r) ∈ reducedShiftCandidates r n m (asymmetricPairPeak r n m d hprecision k) :=
-      reducedShiftCandidates_correct r n m d hprecision k hkz
-    dsimp only [f, peak]
-    rw [if_pos hm]
-    unfold asymmetricPairMass
-    apply mul_le_mul_of_nonneg_left _ (by positivity)
-    exact Finset.single_le_sum
-      (f := fun i : Fin r =>
-        Complex.normSq (paperPhaseAmplitude n ((i.val:ℝ)/r) (paperPeak r n hprecision k).val) *
-        Complex.normSq (paperPhaseAmplitude m ((((d*i.val)%r:Nat):ℝ)/r)
-          (reducedPeak r m (paperCharacterProduct d k)).val))
-      (fun i _ => mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _))
-      (Finset.mem_univ k)
-  have hSe : S = Finset.univ.erase (⟨0, hr0⟩ : Fin r) := by
-    ext k
-    simp only [S, Finset.mem_filter, Finset.mem_univ, true_and, Finset.mem_erase, and_true]
-    constructor
-    · intro hn he; exact hn (congrArg Fin.val he)
-    · intro hn he; exact hn (Fin.ext he)
-  have hsum_le : ∑ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) ≤ reducedCoverageMass r n m d := by
-    calc
-      ∑ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) ≤ ∑ k ∈ S, f (peak k) := Finset.sum_le_sum hp
-      _ = ∑ out ∈ S.image peak, f out := by
-        rw [Finset.sum_image]
-        intro k _ l _ he
-        exact asymmetricPairPeak_injective r n m d hprecision he
-      _ ≤ ∑ out, f out := Finset.sum_le_sum_of_subset_of_nonneg
-        (Finset.subset_univ _) (fun out _ _ => hf out)
-      _ = reducedCoverageMass r n m d := rfl
-  -- both axis probabilities lie in [0, 1]
-  have hPL1 : ∀ k, PL k ≤ 1 := fun k =>
-    (Finset.single_le_sum
-      (f := fun v : Fin (2^n) => Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) v.val))
-      (fun v _ => Complex.normSq_nonneg _)
-      (Finset.mem_univ (paperPeak r n hprecision k))).trans_eq
-      (paperPhaseAmplitude_totalMass ((k.val:ℝ)/r) n)
-  have hPR1 : ∀ k, PR k ≤ 1 := fun k =>
-    (Finset.single_le_sum
-      (f := fun v : Fin (2^m) =>
-        Complex.normSq (paperPhaseAmplitude m ((((d*k.val)%r:Nat):ℝ)/r) v.val))
-      (fun v _ => Complex.normSq_nonneg _)
-      (Finset.mem_univ (reducedPeak r m (paperCharacterProduct d k)))).trans_eq
-      (paperPhaseAmplitude_totalMass ((((d*k.val)%r:Nat):ℝ)/r) m)
-  have hprod : ∀ k, PL k + PR k - 1 ≤ PL k * PR k := by
-    intro k
-    nlinarith [mul_nonneg (sub_nonneg.2 (hPL1 k)) (sub_nonneg.2 (hPR1 k))]
-  -- both axis averages are exact grid averages
-  have hL : T ≤ ∑ k : Fin r, PL k := by
-    have e := sum_mulMod r (2^n) hrp (hpow n)
-      (fun c => sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2))
-    rw [show T = _ from e.symm]
-    apply Finset.sum_le_sum
-    intro k _
-    exact axis_lower n r k.val hr0 hodd
-  have hR : T ≤ ∑ k : Fin r, PR k := by
-    have e := sum_mulMod r (2^m * d) hrp hmd
-      (fun c => sincPoly ((Real.pi * (foldDist r c : ℝ) / r)^2))
-    rw [show T = _ from e.symm]
-    apply Finset.sum_le_sum
-    intro k _
-    have hj : (2^m * d * k.val) % r = (2^m * ((d*k.val) % r)) % r := by
-      rw [Nat.mul_mod_mod, mul_assoc]
-    dsimp only [PR]
-    rw [hj, reducedPeak_amplitude]
-    exact axis_lower m r ((d*k.val)%r) hr0 hodd
-  have hS : ∑ k : Fin r, (PL k + PR k - 1) ≤ ∑ k ∈ S, (PL k + PR k - 1) + 1 := by
-    rw [hSe, ← Finset.add_sum_erase _ _ (Finset.mem_univ (⟨0, hr0⟩ : Fin r))]
-    linarith [hPL1 ⟨0, hr0⟩, hPR1 ⟨0, hr0⟩]
-  have hsplit : ∑ k : Fin r, (PL k + PR k - 1) =
-      ∑ k : Fin r, PL k + ∑ k : Fin r, PR k - r := by
-    rw [Finset.sum_sub_distrib, Finset.sum_add_distrib]
-    simp
-  have key : (1/(r:ℝ)) * (2*T - r - 1) ≤ reducedCoverageMass r n m d := by
-    calc (1/(r:ℝ)) * (2*T - r - 1) ≤ (1/(r:ℝ)) * ∑ k ∈ S, (PL k + PR k - 1) :=
-          mul_le_mul_of_nonneg_left (by linarith) (by positivity)
-      _ = ∑ k ∈ S, (1/(r:ℝ)) * (PL k + PR k - 1) := Finset.mul_sum _ _ _
-      _ ≤ ∑ k ∈ S, (1/(r:ℝ)) * (PL k * PR k) :=
-          Finset.sum_le_sum (fun k _ => mul_le_mul_of_nonneg_left (hprod k) (by positivity))
-      _ ≤ reducedCoverageMass r n m d := hsum_le
-  have hT : T = 2 * closedForm M (Real.pi^2/(r:ℝ)^2) - 1 := grid_sum r M hM
-  have hrR : (r:ℝ) = 2*(M:ℝ)+1 := by rw [hM]; push_cast; ring
-  rw [hT, hrR] at key
-  have hM5 : (500000:ℝ) ≤ M := by
-    have : 500000 ≤ M := by omega
-    exact_mod_cast this
-  exact (averaged_numeric M hM5).trans key
-
-/-- The averaged per-round bound for secp256k1 at the protected 256/208-bit precisions. -/
-theorem reducedVerifiedMass_averaged (Q : Secp256k1.Point) (d : Nat) (hQd : Q = d • Secp256k1.G)
-    (hQ : Q ≠ 0) : (27:ℝ)/50 ≤ reducedVerifiedMass Q d := by
-  letI : Fact (Nat.Prime order) := ⟨Secp256k1.order_prime⟩
-  rw [reducedVerifiedMass_eq Q d hQd]
-  refine reducedCoverageMass_averaged order 256 208 d reducedLeftPrecision_order
-    (by decide +kernel) ?_
-  rintro ⟨t, rfl⟩
-  apply hQ
-  rw [hQd, mul_smul, smul_comm, Secp256k1.generator_nsmul_eq_zero, nsmul_zero]
-
-end
-end ShorECDLP.Entrant.Averaged
-
--- ==== part: BatchBoundary ====
-
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/BatchBoundary.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -608,8 +81,11 @@ theorem pointWrite_batchedReady (P : Point) (s : BasisState) (hs : BatchedPointR
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: BatchedWindowState ====
+end
 
+-- ==== part: Streaming/BatchedWindowState ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/BatchedWindowState.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -781,8 +257,11 @@ def SignedBatchReady (Q : Point) (w : OddWindow) (s : BasisState) : Prop :=
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: BatchedWindowCoherent ====
+end
 
+-- ==== part: Streaming/BatchedWindowCoherent ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/BatchedWindowCoherent.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -900,8 +379,11 @@ theorem ipxWindowCore_coherent (Q : Point) (hQ : order • Q=0) (hn : Q≠0) (w 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: PreparedBatch ====
+end
 
+-- ==== part: Streaming/PreparedBatch ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/PreparedBatch.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1022,8 +504,11 @@ theorem ipxWindowPrepared_coherent (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: ActualWindow ====
+end
 
+-- ==== part: Streaming/ActualWindow ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ActualWindow.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1201,8 +686,642 @@ theorem actualFirstWindow_coherent (Q : Point) (hQ : order • Q=0)
   exact physicalPointLookup_coherent _
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: WindowPhysical ====
+end
 
+-- ==== part: Streaming/WindowValidity ====
+
+section
+/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
+`ShorECDLP/Submission/2607_13816/Challenge/WindowValidity.lean`, Apache-2.0 (see the repository
+LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
+
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open Quantum ShorECDLP.Challenge Secp256k1
+
+theorem batchedWindowValid_address_update (s : BasisState) (hs : BatchedWindowValid s)
+    (w : Wire) (hw : w ∈ streamAddress) (b : Bool) : BatchedWindowValid (s[w ↦ b]) := by
+  have hw' : 855 ≤ w ∧ w < 871 := by simpa [streamAddress,List.mem_range'_1] using hw
+  have hcore (v : Wire) (hv : v < 839) : (s[w ↦ b]) v = s v := by
+    simp only [upd]
+    rw [if_neg (by dsimp only [Wire] at *; omega)]
+  have hx : wireValues (List.range' 263 256) (s[w ↦ b]) = wireValues (List.range' 263 256) s := by
+    apply List.map_congr_left
+    intro v hv
+    exact hcore v (by simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)
+  have hy : wireValues (List.range' 580 256) (s[w ↦ b]) = wireValues (List.range' 580 256) s := by
+    apply List.map_congr_left
+    intro v hv
+    exact hcore v (by simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)
+  obtain ⟨⟨⟨hclean,hzero,hxbound,hybound⟩,hq⟩,-⟩ := hs.1
+  refine ⟨⟨⟨⟨?_,?_,?_,?_⟩,?_⟩,?_⟩,?_⟩
+  · intro v hv
+    rw [hcore v (by simp only [List.mem_append,List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)]
+    exact hclean v hv
+  · rw [hcore 837 (by decide)]; exact hzero
+  · rw [hx]; exact hxbound
+  · rw [hy]; exact hybound
+  · rw [hcore 836 (by decide)]; exact hq
+  · intro v hv
+    simp [batchWorkspace] at hv
+  · obtain ⟨P,hP⟩ := hs.2
+    refine ⟨P,?_⟩
+    simpa only [pointStateCoordinates,hcore 838 (by decide),hx,hy] using hP
+
+
+private theorem support_add {V : BasisState → Prop} {ψ φ : State}
+    (hψ : SupportedOn V ψ) (hφ : SupportedOn V φ) : SupportedOn V (ψ+φ) := by
+  intro s hs
+  by_cases h : ψ s=0
+  · exact hφ s (by simpa [h] using hs)
+  · exact hψ s h
+private theorem support_smul {V : BasisState → Prop} {ψ : State} (c : ℂ)
+    (hψ : SupportedOn V ψ) : SupportedOn V (c • ψ) := by
+  intro s hs
+  apply hψ s
+  intro h
+  exact hs (by simp [h])
+private theorem support_linear (V : BasisState → Prop) (L : State →ₗ[ℂ] State)
+    (hL : ∀ s, V s → SupportedOn V (L (ket s))) (ψ : State)
+    (hψ : SupportedOn V ψ) : SupportedOn V (L ψ) := by
+  classical
+  induction ψ using Finsupp.induction with
+  | zero => simp
+  | single_add s c ψ hs hc ih =>
+    have hz : ψ s=0 := by simpa using hs
+    have hvs : V s := hψ s (by simp [hz,hc])
+    have hvψ : SupportedOn V ψ := by
+      intro u hu
+      apply hψ u
+      by_cases he : u=s
+      · subst u; exact (hu hz).elim
+      · simpa [he] using hu
+    have he : Finsupp.single s c=c • ket s := by ext u; simp [ket]
+    rw [map_add,he,map_smul]
+    exact support_add (support_smul c (hL s hvs)) (ih hvψ)
+
+theorem batchedWindowValid_fourierClear (ws : List Wire)
+    (hws : ∀ w ∈ ws, w ∈ streamAddress) (s : BasisState)
+    (hs : BatchedWindowValid s) : BatchedWindowValid (fourierClear ws s) := by
+  induction ws generalizing s with
+  | nil => exact hs
+  | cons w ws ih =>
+    exact ih (fun v hv => hws v (List.mem_cons_of_mem w hv)) _
+      (batchedWindowValid_address_update s hs w (hws w (by simp)) false)
+
+theorem batchedWindowValid_fourierBranch (dir : PhaseDir) (ws : List Wire)
+    (hws : ∀ w ∈ ws, w ∈ streamAddress) (prior bs : List Bool)
+    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
+    SupportedOn BatchedWindowValid (fourierBranch dir ws prior bs ψ) := by
+  apply support_linear _ _ ?_ ψ hψ
+  intro s hs
+  rw [fourierBranch_ket]
+  exact support_smul _ (supportedOn_ket _ _
+    (batchedWindowValid_fourierClear ws hws s hs))
+
+theorem batchedWindowValid_H (w : Wire) (hw : w ∈ streamAddress)
+    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
+    SupportedOn BatchedWindowValid (applyGate (.H w) ψ) := by
+  apply support_linear _ _ ?_ ψ hψ
+  intro s hs
+  rw [applyGate_ket]
+  exact support_add
+    (support_smul _ (supportedOn_ket _ _ (batchedWindowValid_address_update s hs w hw false)))
+    (support_smul _ (supportedOn_ket _ _ (batchedWindowValid_address_update s hs w hw true)))
+
+theorem batchedWindowValid_prepare (ws : List Wire)
+    (hws : ∀ w ∈ ws, w ∈ streamAddress) (ψ : State)
+    (hψ : SupportedOn BatchedWindowValid ψ) :
+    SupportedOn BatchedWindowValid (Quantum.run (ws.map Gate.H) ψ) := by
+  induction ws generalizing ψ with
+  | nil => exact hψ
+  | cons w ws ih =>
+    exact ih (fun v hv => hws v (List.mem_cons_of_mem w hv)) _
+      (batchedWindowValid_H w (hws w (by simp)) ψ hψ)
+
+
+theorem actualIpxWindowState_supported (Q : Point) (hQ : order • Q = 0)
+    (hn : Q ≠ 0) (w : OddWindow) (ψ : State)
+    (hψ : SupportedOn BatchedWindowValid ψ) :
+    SupportedOn BatchedWindowValid
+      (Finsupp.lmapDomain ℂ ℂ (actualIpxWindowState Q w) ψ) := by
+  apply support_linear _ _ ?_ ψ hψ
+  intro s hs
+  simpa [ket] using supportedOn_ket BatchedWindowValid _
+    (actualIpxWindowState_valid Q hQ hn w s hs)
+
+theorem actualIpxWindow_branch_supported (Q : Point) (hQ : order • Q = 0)
+    (hn : Q ≠ 0) (w : OddWindow) (start : Nat) (history : Fin start → Bool)
+    (b : InstrumentBranch)
+    (hb : b ∈ (((actualIpxWindow w).program start).instantiate
+      (readConstant coefficientAt Q) history).run)
+    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
+    SupportedOn BatchedWindowValid (b.kraus ψ) := by
+  obtain ⟨c,hc⟩ := (actualIpxWindow_coherent Q hQ hn w start history).branch_coefficient b hb
+  rw [hc.on_supported hψ]
+  exact support_smul c (actualIpxWindowState_supported Q hQ hn w ψ hψ)
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+end
+
+-- ==== part: Streaming/FirstValidity ====
+
+section
+/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
+`ShorECDLP/Submission/2607_13816/Challenge/FirstValidity.lean`, Apache-2.0 (see the repository
+LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
+
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open Quantum ShorECDLP.Challenge Secp256k1
+
+private theorem zero_word (n : Nat) : boolWordToNat (List.replicate n false) = 0 := by
+  induction n with
+  | zero => rfl
+  | succ n ih => simp [List.replicate_succ,ih]
+private theorem zero_read (ws : List Wire) (s : BasisState)
+    (hs : ∀ w ∈ ws, s w = false) :
+    wireValues ws s = List.replicate ws.length false := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    simp only [wireValues,List.map_cons,List.length_cons,List.replicate_succ]
+    rw [hs w (by simp)]
+    exact congrArg (false :: ·) (ih (fun v hv => hs v (List.mem_cons_of_mem w hv)))
+
+/-- Before direct loading, only the query flag and address register may be nonzero. -/
+def FirstWindowInput (s : BasisState) : Prop :=
+  s 836 = true ∧ ∀ v, v ≠ 836 → v ∉ streamAddress → s v = false
+
+theorem firstWindowInput_start : FirstWindowInput (zeroBasisState[836 ↦ true]) := by
+  constructor
+  · simp [upd]
+  · intro v hv _
+    simp [upd,hv,zeroBasisState]
+
+theorem firstWindowInput_update (s : BasisState) (hs : FirstWindowInput s)
+    (w : Wire) (hw : w ∈ streamAddress) (b : Bool) : FirstWindowInput (s[w ↦ b]) := by
+  have hw' : 855 ≤ w ∧ w < 871 := by simpa [streamAddress,List.mem_range'_1] using hw
+  have hwb : 855 ≤ w := hw'.1
+  constructor
+  · simpa only [upd,if_neg (by dsimp only [Wire] at *; omega : (836:Wire) ≠ w)] using hs.1
+  · intro v hv ha
+    have hvw : v ≠ w := by intro he; subst v; exact ha hw
+    simpa only [upd,if_neg hvw] using hs.2 v hv ha
+
+theorem firstWindowInput_ready (s : BasisState) (hs : FirstWindowInput s) :
+    BatchedPointReady s := by
+  have hz (v : Wire) (hv : v < 836) : s v = false :=
+    hs.2 v (by dsimp only [Wire] at *; omega) (by
+      simp only [streamAddress,List.mem_range'_1]; try dsimp only [Wire] at *
+      omega)
+  have hx : wireValues (List.range' 263 256) s = List.replicate 256 false := by
+    exact (zero_read _ s (fun v hv => hz v (by
+      simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega))).trans
+      (by simp only [List.length_range'])
+  have hy : wireValues (List.range' 580 256) s = List.replicate 256 false := by
+    exact (zero_read _ s (fun v hv => hz v (by
+      simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega))).trans
+      (by simp only [List.length_range'])
+  refine ⟨⟨⟨?_,?_,?_,?_⟩,hs.1⟩,?_⟩
+  · intro v hv
+    exact hz v (by simp only [List.mem_append,List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)
+  · exact hs.2 837 (by decide) (by simp [streamAddress])
+  · rw [hx]; rw [zero_word]; norm_num [ShorECDLP.p]
+  · rw [hy]; rw [zero_word]; norm_num [ShorECDLP.p]
+  · intro v hv
+    simp [batchWorkspace] at hv
+
+theorem firstWindowInput_lookup (s : BasisState) (hs : FirstWindowInput s) :
+    DirectPointLookupValid (List.range' 519 16) 836 s := by
+  refine ⟨?_,?_,hs.1⟩
+  · intro v hv
+    apply hs.2
+    · simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega
+    · simp only [List.mem_range'_1] at hv
+      simp only [streamAddress,List.mem_range'_1]; try dsimp only [Wire] at *
+      omega
+  · intro v hv
+    have hb : v < 839 := by
+      simp only [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,
+        List.mem_append,List.mem_cons,List.not_mem_nil,or_false,List.mem_range'_1] at hv
+      dsimp only [Wire] at *; omega
+    have hn : v ≠ 836 := by
+      simp only [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,
+        List.mem_append,List.mem_cons,List.not_mem_nil,or_false,List.mem_range'_1] at hv
+      dsimp only [Wire] at *; omega
+    exact hs.2 v hn (by
+      simp only [streamAddress,List.mem_range'_1]; try dsimp only [Wire] at *
+      omega)
+
+theorem firstWindowInput_pointWrite (s : BasisState) (hs : FirstWindowInput s) (P : Point) :
+    BatchedWindowValid (pointWrite P s) :=
+  ⟨pointWrite_batchedReady P s (firstWindowInput_ready s hs),P,pointWrite_coordinates P s⟩
+
+
+
+private theorem support_linear_FirstValidity (V W : BasisState → Prop) (L : State →ₗ[ℂ] State)
+    (hL : ∀ s, V s → SupportedOn W (L (ket s))) (ψ : State)
+    (hψ : SupportedOn V ψ) : SupportedOn W (L ψ) := by
+  classical
+  induction ψ using Finsupp.induction with
+  | zero => simp
+  | single_add s c ψ hs hc ih =>
+    have hz : ψ s=0 := by simpa using hs
+    have hvs : V s := hψ s (by simp [hz,hc])
+    have hvψ : SupportedOn V ψ := by
+      intro u hu
+      apply hψ u
+      by_cases he : u=s
+      · subst u; exact (hu hz).elim
+      · simpa [he] using hu
+    have he : Finsupp.single s c=c • ket s := by ext u; simp [ket]
+    rw [map_add,he,map_smul]
+    exact support_add (support_smul c (hL s hvs)) (ih hvψ)
+
+theorem firstWindowInput_H (w : Wire) (hw : w ∈ streamAddress)
+    (ψ : State) (hψ : SupportedOn FirstWindowInput ψ) :
+    SupportedOn FirstWindowInput (applyGate (.H w) ψ) := by
+  apply support_linear_FirstValidity FirstWindowInput FirstWindowInput (applyGate (.H w)) ?_ ψ hψ
+  intro s hs
+  rw [applyGate_ket]
+  exact support_add
+    (support_smul _ (supportedOn_ket _ _ (firstWindowInput_update s hs w hw false)))
+    (support_smul _ (supportedOn_ket _ _ (firstWindowInput_update s hs w hw true)))
+
+theorem firstWindowInput_prepare (ws : List Wire)
+    (hws : ∀ w ∈ ws, w ∈ streamAddress) (ψ : State)
+    (hψ : SupportedOn FirstWindowInput ψ) :
+    SupportedOn FirstWindowInput (Quantum.run (ws.map Gate.H) ψ) := by
+  induction ws generalizing ψ with
+  | nil => exact hψ
+  | cons w ws ih =>
+    exact ih (fun v hv => hws v (List.mem_cons_of_mem w hv)) _
+      (firstWindowInput_H w (hws w (by simp)) ψ hψ)
+
+noncomputable def actualFirstWindowState (Q : Point) (s : BasisState) : BasisState :=
+  pointWrite (firstWindowTable (axisWindowOffset G 16 + axisWindowOffset Q 13)
+    ((2^(16*15)) • G) (tableAddressValue (List.range' 855 16) s)) s
+
+theorem actualFirstWindowState_supported (Q : Point) (ψ : State)
+    (hψ : SupportedOn FirstWindowInput ψ) :
+    SupportedOn BatchedWindowValid
+      (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q) ψ) := by
+  apply support_linear_FirstValidity FirstWindowInput BatchedWindowValid _ ?_ ψ hψ
+  intro s hs
+  rw [show Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q) (ket s) =
+      ket (actualFirstWindowState Q s) from by simp only [ket,Finsupp.lmapDomain_apply,Finsupp.mapDomain_single]]
+  exact supportedOn_ket _ _ (firstWindowInput_pointWrite s hs _)
+
+theorem actualFirstWindow_coherent_input (Q : Point) (hQ : order • Q = 0)
+    (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((actualFirstWindow.program start).instantiate
+      (readConstant coefficientAt Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q)) FirstWindowInput := by
+  obtain ⟨cs,ha,hm⟩ := actualFirstWindow_coherent Q hQ start history
+  exact ⟨cs,ha.imp (fun _ _ hb s hs => hb s (firstWindowInput_lookup s hs)),hm⟩
+
+theorem actualFirstWindow_branch_supported (Q : Point) (hQ : order • Q = 0)
+    (start : Nat) (history : Fin start → Bool) (b : InstrumentBranch)
+    (hb : b ∈ ((actualFirstWindow.program start).instantiate
+      (readConstant coefficientAt Q) history).run)
+    (ψ : State) (hψ : SupportedOn FirstWindowInput ψ) :
+    SupportedOn BatchedWindowValid (b.kraus ψ) := by
+  obtain ⟨c,hc⟩ := (actualFirstWindow_coherent_input Q hQ start history).branch_coefficient b hb
+  rw [hc.on_supported hψ]
+  exact support_smul c (actualFirstWindowState_supported Q ψ hψ)
+
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+end
+
+-- ==== part: Streaming/CrossWindowWeights ====
+
+section
+/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
+`ShorECDLP/Submission/2607_13816/Challenge/CrossWindowWeights.lean`, Apache-2.0 (see the repository
+LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
+
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+
+/-- Chronological outputs from later windows have the higher binary weights. -/
+theorem fourierWordLSB_append (xs ys : List Bool) :
+    fourierWordLSB (xs ++ ys) = fourierWordLSB xs + 2 ^ xs.length * fourierWordLSB ys := by
+  induction xs with
+  | nil => simp [fourierWordLSB]
+  | cons b xs ih =>
+    simp only [List.cons_append, fourierWordLSB, List.length_cons, ih, pow_succ]
+    ring
+
+/-- Reversing the newest-first feedback history restores chronological output. -/
+theorem fourierWordLSB_updated_history (bits prior : List Bool) :
+    fourierWordLSB (bits.reverse ++ prior).reverse =
+      fourierWordLSB prior.reverse + 2 ^ prior.length * fourierWordLSB bits := by
+  rw [List.reverse_append, List.reverse_reverse, fourierWordLSB_append, List.length_reverse]
+
+/-- Input words use the opposite convention: the first window is most significant. -/
+theorem fourierWordMSB_append (xs ys : List Bool) :
+    fourierWordMSB (xs ++ ys) = fourierWordMSB xs * 2 ^ ys.length + fourierWordMSB ys := by
+  induction xs with
+  | nil => simp [fourierWordMSB]
+  | cons b xs ih =>
+    simp only [List.cons_append, fourierWordMSB, List.length_append, ih, pow_add]
+    ring
+
+-- Both sides of the signed-address boundary, including both extreme addresses.
+example : [0, 32767, 32768, 65535].map (signedTableOdd 32768) =
+    [-65535, -1, 1, 65535] := by decide +kernel
+
+-- Two radix-65536 input windows. The fixed offset cancels both centered digits.
+example : ([0, 32767, 32768, 65535] : List Nat).all (fun a =>
+    [0, 32767, 32768, 65535].all (fun b =>
+      65535 * (65536 + 1) + signedTableOdd 32768 a * 65536 +
+        signedTableOdd 32768 b == 2 * ((a : Int) * 65536 + b))) = true := by
+  decide +kernel
+
+example : fourierWordLSB (List.replicate 16 false ++ true :: List.replicate 15 false) =
+    65536 := by decide +kernel
+
+/-- The offset cancellation holds for every pair of input digits, including the
+sign boundary. Multiplication by a half-point turns the right side into the
+ordinary unsigned two-window scalar. -/
+theorem two_window_signed_offset (a b : Nat) :
+    65535 * (65536 + 1) + signedTableOdd 32768 a * 65536 + signedTableOdd 32768 b =
+      2 * ((a : Int) * 65536 + b) := by
+  rw [signedTableOdd_value, signedTableOdd_value]
+  ring
+
+/-- Splitting a Fourier word at a window boundary retains all feedback phases. -/
+theorem fourierBitAmplitude_append (dir : PhaseDir) (xs ys prior bs cs : List Bool)
+    (hl : bs.length = xs.length) :
+    fourierBitAmplitude dir (xs ++ ys) prior (bs ++ cs) =
+      fourierBitAmplitude dir xs prior bs *
+        fourierBitAmplitude dir ys (bs.reverse ++ prior) cs := by
+  induction xs generalizing prior bs with
+  | nil =>
+    have hb : bs = [] := List.length_eq_zero_iff.mp hl
+    subst bs
+    simp [fourierBitAmplitude]
+  | cons a xs ih =>
+    cases bs with
+    | nil => simp at hl
+    | cons b bs =>
+      simp only [List.cons_append, fourierBitAmplitude]
+      rw [ih (b :: prior) bs (by simpa using hl)]
+      simp only [List.reverse_cons, List.append_assoc, List.singleton_append]
+      ring
+
+/-- Actual feedback order for any number of complete windows. -/
+theorem window_history_fold (windows : List (List Bool)) (prior : List Bool) :
+    windows.foldl (fun history bits => bits.reverse ++ history) prior =
+      windows.flatten.reverse ++ prior := by
+  induction windows generalizing prior with
+  | nil => simp
+  | cons bits windows ih =>
+    simp only [List.foldl_cons, ih, List.flatten_cons, List.reverse_append, List.append_assoc]
+
+/-- Product of the individual window amplitudes, with the actual newest-first
+history carried from one window to the next. -/
+noncomputable def windowFourierAmplitude (dir : PhaseDir) :
+    List (List Bool × List Bool) → List Bool → ℂ
+  | [], _ => 1
+  | (input, output) :: windows, prior =>
+      fourierBitAmplitude dir input prior output *
+        windowFourierAmplitude dir windows (output.reverse ++ prior)
+
+theorem windowFourierAmplitude_flatten (dir : PhaseDir)
+    (windows : List (List Bool × List Bool)) (prior : List Bool)
+    (hl : ∀ w ∈ windows, w.2.length = w.1.length) :
+    windowFourierAmplitude dir windows prior =
+      fourierBitAmplitude dir (windows.map Prod.fst).flatten prior
+        (windows.map Prod.snd).flatten := by
+  induction windows generalizing prior with
+  | nil => simp [windowFourierAmplitude, fourierBitAmplitude]
+  | cons w windows ih =>
+    simp only [windowFourierAmplitude, List.map_cons, List.flatten_cons]
+    rw [fourierBitAmplitude_append dir _ _ _ _ _ (hl w (by simp)),
+      ih _ (fun v hv => hl v (List.mem_cons_of_mem w hv))]
+
+/-- The entire axis has one Fourier kernel; window feedback introduces no
+extra phase when the axis starts with empty history. -/
+theorem windowFourierAmplitude_kernel (dir : PhaseDir)
+    (windows : List (List Bool × List Bool))
+    (hl : ∀ w ∈ windows, w.2.length = w.1.length) :
+    windowFourierAmplitude dir windows List.nil =
+      ((((Real.sqrt 2)⁻¹ : ℝ) : ℂ) ^ (windows.map Prod.fst).flatten.length) *
+        dyadicFourierKernel dir (windows.map Prod.fst).flatten.length
+          (fourierWordMSB (windows.map Prod.fst).flatten)
+          (fourierWordLSB (windows.map Prod.snd).flatten) := by
+  have he : (windows.map Prod.snd).flatten.length =
+      (windows.map Prod.fst).flatten.length := by
+    induction windows with
+    | nil => rfl
+    | cons w windows ih =>
+      simp only [List.map_cons, List.flatten_cons, List.length_append]
+      rw [hl w (by simp), ih (fun v hv => hl v (List.mem_cons_of_mem w hv))]
+  rw [windowFourierAmplitude_flatten dir windows List.nil hl,
+    fourierBitAmplitude_eq dir _ List.nil _ he]
+  simp [fourierHistoryPhase, fourierHistoryAngle]
+
+/-- All centered odd digits, including the first mixed-table digit, reconstruct
+an unsigned scalar after its fixed initial offset is added. -/
+theorem signed_odd_digits_reconstruct (digits : List Nat) :
+    signedWindowValue 65536 (digits.map (signedTableOdd 32768)) +
+      (65535 * radixGeometric digits.length : Nat) =
+      2 * (windowValue 65536 digits : Int) := by
+  induction digits with
+  | nil => simp [signedWindowValue, windowValue, radixGeometric]
+  | cons d ds ih =>
+    simp only [List.map_cons, List.length_cons, signedWindowValue,
+      windowValue, radixGeometric, signedTableOdd_value]
+    push_cast at ih ⊢
+    linear_combination 65536 * ih
+
+/-- Group-level reconstruction uses only the subgroup order, and imposes no
+exceptional-point exclusion on the accumulator. -/
+theorem signed_odd_digits_point {A : Type} [AddCommGroup A]
+    (P : A) (r : Nat) (hr : Odd r) (hP : r • P = 0) (digits : List Nat) :
+    signedWindowValue 65536 (digits.map (signedTableOdd 32768)) •
+        signedWindowHalfPoint P r +
+      (65535 * radixGeometric digits.length) • signedWindowHalfPoint P r =
+        windowValue 65536 digits • P := by
+  rw [← natCast_zsmul (signedWindowHalfPoint P r) (65535 * radixGeometric digits.length),
+    ← add_zsmul, signed_odd_digits_reconstruct]
+  rw [show 2 * (windowValue 65536 digits : Int) =
+    (windowValue 65536 digits : Int) + (windowValue 65536 digits : Int) by ring,
+    add_zsmul, natCast_zsmul, ← nsmul_add,
+    signedWindowHalfPoint_double P r hr hP]
+
+/-- A fixed-width list of windows retains leading zero windows. -/
+theorem fixed_windows_flatten_length (w : Nat) (windows : List (List Bool))
+    (hw : ∀ bits ∈ windows, bits.length = w) :
+    windows.flatten.length = w * windows.length := by
+  induction windows with
+  | nil => simp
+  | cons bits windows ih =>
+    simp only [List.flatten_cons, List.length_append, List.length_cons]
+    rw [hw bits (by simp), ih (fun bs hb => hw bs (List.mem_cons_of_mem bits hb))]
+    ring
+
+/-- Chronological window outputs are the little-endian radix digits of the
+integer accepted by the decoder. -/
+theorem output_windows_value (w : Nat) (windows : List (List Bool))
+    (hw : ∀ bits ∈ windows, bits.length = w) :
+    fourierWordLSB windows.flatten = windowValue (2 ^ w) (windows.map fourierWordLSB) := by
+  induction windows with
+  | nil => rfl
+  | cons bits windows ih =>
+    simp only [List.flatten_cons, List.map_cons, windowValue, fourierWordLSB_append]
+    rw [hw bits (by simp), ih (fun bs hb => hw bs (List.mem_cons_of_mem bits hb))]
+
+private theorem windowValue_append (base : Nat) (xs ys : List Nat) :
+    windowValue base (xs ++ ys) = windowValue base xs + base ^ xs.length * windowValue base ys := by
+  induction xs with
+  | nil => simp [windowValue]
+  | cons x xs ih =>
+    simp only [List.cons_append, windowValue, List.length_cons, ih, pow_succ]
+    ring
+
+/-- Input windows run in descending significance, opposite to emitted output
+weights. This is the unsigned scalar reconstructed by the signed point tables. -/
+theorem input_windows_value (w : Nat) (windows : List (List Bool))
+    (hw : ∀ bits ∈ windows, bits.length = w) :
+    fourierWordMSB windows.flatten =
+      windowValue (2 ^ w) (windows.map fourierWordMSB).reverse := by
+  induction windows with
+  | nil => rfl
+  | cons bits windows ih =>
+    have ht := fun bs hb => hw bs (List.mem_cons_of_mem bits hb)
+    simp only [List.flatten_cons, List.map_cons, List.reverse_cons,
+      fourierWordMSB_append, windowValue_append, List.length_reverse, List.length_map,
+      windowValue]
+    rw [ih ht, fixed_windows_flatten_length w windows ht, pow_mul]
+    ring
+
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+end
+
+-- ==== part: Streaming/CrossWindowPoint ====
+
+section
+/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
+`ShorECDLP/Submission/2607_13816/Challenge/CrossWindowPoint.lean`, Apache-2.0 (see the repository
+LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
+
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open Quantum Secp256k1
+
+/-- The sign bit and the unsigned value agree even at the two central digits. -/
+theorem reused_window_digit_low (s : BasisState) :
+    windowRawDigit 0 s < 32768 ↔ s 870 = false := by
+  have hb := boolWordToNat_lt_pow_two (wireValues (windowAddressBits 0) s)
+  simp only [wireValues, List.length_map, windowAddressBits, List.length_range'] at hb
+  change boolWordToNat (wireValues (windowAddressBits 0) s) < 32768 at hb
+  cases hh : s 870 <;> simp_all [windowRawDigit, windowBankStart]
+
+/-- Actual signed table selection gives a centered odd scalar at its fixed
+power-of-two weight. No accumulator point is excluded. -/
+theorem reused_window_selected_odd (P : Point) (j : Nat) (s : BasisState) :
+    (if s 870 then oddWindowPoint P j (signedTableAddress 32768 (windowRawDigit 0 s))
+      else -oddWindowPoint P j (signedTableAddress 32768 (windowRawDigit 0 s))) =
+    signedTableOdd 32768 (windowRawDigit 0 s) •
+      ((2 ^ (16 * j)) • signedWindowHalfPoint P order) := by
+  have ha := signedTableAddress_bound 32768 (windowRawDigit 0 s) (windowRawDigit_bound 0 s)
+  simp only [oddWindowPoint, Nat.mod_eq_of_lt ha, signedTableOdd]
+  cases hs : s 870
+  · rw [if_neg (by decide), if_pos ((reused_window_digit_low s).mpr hs)]
+    simp only [neg_zsmul, natCast_zsmul]
+  · rw [if_pos rfl, if_neg (by intro h; have hh := (reused_window_digit_low s).mp h; simp [hs] at hh)]
+    simp only [natCast_zsmul]
+
+/-- The corrected actual left window has precisely its scalar digit action. -/
+theorem actual_left_window_digit (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (j : Fin 15) (s : BasisState) (hs : BatchedPointReady s)
+    (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
+    actualIpxWindowState Q (.left j) s =
+      pointWrite (P + signedTableOdd 32768 (windowRawDigit 0 s) •
+        ((2 ^ (16 * j.val)) • signedWindowHalfPoint G order)) s := by
+  rw [actualIpxWindowState_selected Q hQ hn (.left j) s hs P hP]
+  simp only [windowPoint, reused_window_selected_odd]
+
+/-- The corrected actual right window has precisely its scalar digit action. -/
+theorem actual_right_window_digit (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (j : Fin 13) (s : BasisState) (hs : BatchedPointReady s)
+    (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
+    actualIpxWindowState Q (.right j) s =
+      pointWrite (P + signedTableOdd 32768 (windowRawDigit 0 s) •
+        ((2 ^ (16 * j.val)) • signedWindowHalfPoint Q order)) s := by
+  rw [actualIpxWindowState_selected Q hQ hn (.right j) s hs P hP]
+  simp only [windowPoint, reused_window_selected_odd]
+/-- The mixed first table obeys the same centered odd-digit formula as the
+later tables, including any row whose resulting point is infinity. -/
+theorem actual_first_window_digit (Q : Point) (s : BasisState) :
+    actualFirstWindowState Q s =
+      pointWrite (axisWindowOffset G 16 + axisWindowOffset Q 13 +
+        signedTableOdd 32768 (windowRawDigit 0 s) •
+          ((2 ^ (16 * 15)) • signedWindowHalfPoint G order)) s := by
+  have ha : tableAddressValue (List.range' 855 16) s = windowRawDigit 0 s := by
+    simp [tableAddressValue, windowRawDigit, windowAddressBits, windowBankStart,
+      List.range', wireValues, boolWordToNat]
+    omega
+  have hd : (2 ^ (16 * 15)) • signedWindowHalfPoint G order +
+      (2 ^ (16 * 15)) • signedWindowHalfPoint G order = (2 ^ (16 * 15)) • G := by
+    rw [← nsmul_add, signedWindowHalfPoint_double G order (by decide +kernel)
+      generator_nsmul_eq_zero]
+  have he := signedTable_point ((2 ^ (16 * 15)) • signedWindowHalfPoint G order)
+    32768 (windowRawDigit 0 s)
+  rw [hd] at he
+  have hh : signedWindowHalfPoint ((2 ^ (16 * 15)) • G) order =
+      (2 ^ (16 * 15)) • signedWindowHalfPoint G order := by
+    exact smul_comm ((order + 1) / 2) (2 ^ (16 * 15)) G
+  simp only [actualFirstWindowState, firstWindowTable, ha, hh]
+  rw [sub_eq_iff_eq_add.mp he]
+  rfl
+
+/-- Once the actual signed digits have been accumulated, the two initial
+ offsets cancel exactly. This is an exact group identity, without a loss term. -/
+theorem two_axis_signed_digits (Q : Point) (hQ : order • Q = 0)
+    (left right : List Nat) (hl : left.length = 16) (hr : right.length = 13) :
+    axisWindowOffset G 16 + axisWindowOffset Q 13 +
+      signedWindowValue 65536 (left.map (signedTableOdd 32768)) •
+        signedWindowHalfPoint G order +
+      signedWindowValue 65536 (right.map (signedTableOdd 32768)) •
+        signedWindowHalfPoint Q order =
+      windowValue 65536 left • G + windowValue 65536 right • Q := by
+  have hleft := signed_odd_digits_point G order (by decide +kernel)
+    generator_nsmul_eq_zero left
+  have hright := signed_odd_digits_point Q order (by decide +kernel) hQ right
+  rw [hl] at hleft
+  rw [hr] at hright
+  change _ + axisWindowOffset G 16 = _ at hleft
+  change _ + axisWindowOffset Q 13 = _ at hright
+  rw [← hleft, ← hright]
+  abel
+
+/-- In bit-word form, the signed tables reconstruct exactly the two integers
+used as input exponents by the 256/208 Fourier kernels. -/
+theorem two_axis_input_words (Q : Point) (hQ : order • Q = 0)
+    (left right : List (List Bool)) (hl : left.length = 16) (hr : right.length = 13)
+    (hlw : ∀ bits ∈ left, bits.length = 16) (hrw : ∀ bits ∈ right, bits.length = 16) :
+    axisWindowOffset G 16 + axisWindowOffset Q 13 +
+      signedWindowValue 65536 ((left.map fourierWordMSB).reverse.map (signedTableOdd 32768)) •
+        signedWindowHalfPoint G order +
+      signedWindowValue 65536 ((right.map fourierWordMSB).reverse.map (signedTableOdd 32768)) •
+        signedWindowHalfPoint Q order =
+      fourierWordMSB left.flatten • G + fourierWordMSB right.flatten • Q := by
+  rw [input_windows_value 16 left hlw, input_windows_value 16 right hrw]
+  exact two_axis_signed_digits Q hQ _ _ (by simpa using hl) (by simpa using hr)
+
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+end
+
+-- ==== part: Streaming/WindowPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/WindowPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1504,8 +1623,11 @@ theorem xNegateProgram_wellFormed (n start : Nat) : (xNegateProgram n start).2.W
     omega
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: ModularPhysical ====
+end
 
+-- ==== part: Streaming/ModularPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ModularPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1664,8 +1786,11 @@ theorem hornerInverseProgram_wellFormed (n start : Nat) (controls input : List W
         · exact ih _ (horner_tail_layout q qs input (a::rest) c r t f hnd)
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: EEACenterPhysical ====
+end
 
+-- ==== part: Streaming/EEACenterPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEACenterPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -1793,8 +1918,11 @@ theorem productionParityProgram_wellFormed (n start : Nat) : (productionParityPr
   exact eeaParityProgram_wellFormed _ _ _ _ _ _ _ _ _ (by simp) (by simp [secp256k1ModulusBits]) parity_layout
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: EEAStructuralPhysical ====
+end
 
+-- ==== part: Streaming/EEAStructuralPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEAStructuralPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2011,14 +2139,17 @@ theorem coefficientInverseProgram_wellFormed (n start : Nat) (r : CoefficientPre
   coefficientProgram_wellFormed _ _ _ _ _ _ _ _ h
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: EEAIntervalPhysical ====
+end
 
+-- ==== part: Streaming/EEAIntervalPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/EEAIntervalPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
 Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
-/-! Structural preservation of gate validity. Generic lemmas assume source syntax validity;
+/-! Structural preservation of gate validity. Generic lemmas assume validity of the source gates;
 production wrapper lemmas discharge that premise using the fixed source layouts. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge
@@ -2397,14 +2528,17 @@ theorem reverseWrapperProgram_wellFormed (n start : Nat) : (reverseWrapperProgra
     exact unpreprocessProgram_wellFormed n cursor
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: MeasuredEEAPhysical ====
+end
 
+-- ==== part: Streaming/MeasuredEEAPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/MeasuredEEAPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
 Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
-/-! Structural preservation of gate validity. Generic lemmas assume source syntax validity;
+/-! Structural preservation of gate validity. Generic lemmas assume validity of the source gates;
 production wrapper lemmas discharge that premise using the fixed source layouts. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge
@@ -2751,8 +2885,11 @@ theorem measuredReverseDataBankProgram_wellFormed (n start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: SquarePhysical ====
+end
 
+-- ==== part: Streaming/SquarePhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/SquarePhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2857,8 +2994,11 @@ theorem squareSubtractProgram_wellFormed (n start : Nat) (x y : List Wire) (a : 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: InPlacePhysical ====
+end
 
+-- ==== part: Streaming/InPlacePhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/InPlacePhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -2915,8 +3055,11 @@ theorem unmultiplyDataProgram_wellFormed (n start : Nat) : (unmultiplyDataProgra
   · rw [← ha]; exact figure15_data_layout
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: InPlaceCompletePhysical ====
+end
 
+-- ==== part: Streaming/InPlaceCompletePhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/InPlaceCompletePhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3031,8 +3174,11 @@ theorem pointSquareProgram_wellFormed (n start : Nat) : (pointSquareProgram n st
       all_goals first | omega | (rcases h with rfl | ⟨hl,hu⟩ <;> omega)
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: CoordinatePhysical ====
+end
 
+-- ==== part: Streaming/CoordinatePhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/CoordinatePhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3121,8 +3267,11 @@ theorem coordinateProgram_wellFormed (start : Nat) : (coordinateProgram start).2
   · exact signedFieldProgram_wellFormed _ _
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: ActualPhysical ====
+end
 
+-- ==== part: Streaming/ActualPhysical ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ActualPhysical.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3217,8 +3366,11 @@ theorem ipxOuterPlan_repeat_wellFormed (count start : Nat) :
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: HistoryExecution ====
+end
 
+-- ==== part: Streaming/HistoryExecution ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/HistoryExecution.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3311,8 +3463,11 @@ theorem fourierProgram_append_run_history {n e : Nat} (dir : PhaseDir) (ws : Lis
   rw [straight_append_run_history,fourierProgram_run,semiclassicalFourier_run,List.flatMap_map]
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: OuterExecution ====
+end
 
+-- ==== part: Streaming/OuterExecution ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/OuterExecution.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3436,8 +3591,11 @@ theorem outerPlan_repeat_run {n : Nat} (p : OuterPlan n) (source : AdaptiveCircu
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: ActualExecution ====
+end
 
+-- ==== part: Streaming/ActualExecution ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/ActualExecution.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3500,44 +3658,11 @@ theorem ipxOuterPlan_repeat_run (Q : Point) (hQ : order • Q=0) (count start : 
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: SourceAxis ====
+end
 
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/SourceAxis.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
+-- ==== part: Streaming/TaggedProbability ====
 
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge
-
-theorem fourierContinue_seq (dir : PhaseDir) (ws : List Wire) (prior : List Bool)
-    (next : List Bool → AdaptiveCircuit) (tail : AdaptiveCircuit) :
-    (fourierContinue dir ws prior next).seq tail =
-      fourierContinue dir ws prior (fun h => (next h).seq tail) := by
-  induction ws generalizing prior with
-  | nil => rfl
-  | cons w ws ih => simp only [fourierContinue,AdaptiveCircuit.seq,ih]
-
-theorem sourceOuterAxis_seq_streamAxis (calls : List AdaptiveCircuit) (prior : List Bool)
-    (tail : AdaptiveCircuit) :
-    (sourceOuterAxis streamAddress.reverse calls prior).seq tail = streamAxis calls prior tail := by
-  induction calls generalizing prior with
-  | nil => rfl
-  | cons call calls ih =>
-    simp only [sourceOuterAxis,streamAxis,List.reverse_reverse,AdaptiveCircuit.seq]
-    rw [circuit_seq_assoc,fourierContinue_seq]
-    simp only [ih]
-
-theorem sourceOuterRound_streamAxis (left right : List AdaptiveCircuit) (reset : List Wire) :
-    sourceOuterRound streamAddress.reverse left right reset =
-      AdaptiveCircuit.unitary [.X 836] (streamAxis left List.nil
-        (streamAxis right List.nil (.unitary [.X 836] (measureResetWithCorrection reset (fun _ => []))))) := by
-  simp only [sourceOuterRound,sourceOuterAxis_seq_streamAxis]
-
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: TaggedProbability ====
-
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/TaggedProbability.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3622,141 +3747,11 @@ theorem fourierContinuationInstrument_mass_congr (prior : List Bool)
   exact List.map_congr_left h
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: WindowValidity ====
+end
 
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/WindowValidity.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
+-- ==== part: Streaming/AxisProbability ====
 
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-
-theorem batchedWindowValid_address_update (s : BasisState) (hs : BatchedWindowValid s)
-    (w : Wire) (hw : w ∈ streamAddress) (b : Bool) : BatchedWindowValid (s[w ↦ b]) := by
-  have hw' : 855 ≤ w ∧ w < 871 := by simpa [streamAddress,List.mem_range'_1] using hw
-  have hcore (v : Wire) (hv : v < 839) : (s[w ↦ b]) v = s v := by
-    simp only [upd]
-    rw [if_neg (by dsimp only [Wire] at *; omega)]
-  have hx : wireValues (List.range' 263 256) (s[w ↦ b]) = wireValues (List.range' 263 256) s := by
-    apply List.map_congr_left
-    intro v hv
-    exact hcore v (by simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)
-  have hy : wireValues (List.range' 580 256) (s[w ↦ b]) = wireValues (List.range' 580 256) s := by
-    apply List.map_congr_left
-    intro v hv
-    exact hcore v (by simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)
-  obtain ⟨⟨⟨hclean,hzero,hxbound,hybound⟩,hq⟩,-⟩ := hs.1
-  refine ⟨⟨⟨⟨?_,?_,?_,?_⟩,?_⟩,?_⟩,?_⟩
-  · intro v hv
-    rw [hcore v (by simp only [List.mem_append,List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)]
-    exact hclean v hv
-  · rw [hcore 837 (by decide)]; exact hzero
-  · rw [hx]; exact hxbound
-  · rw [hy]; exact hybound
-  · rw [hcore 836 (by decide)]; exact hq
-  · intro v hv
-    simp [batchWorkspace] at hv
-  · obtain ⟨P,hP⟩ := hs.2
-    refine ⟨P,?_⟩
-    simpa only [pointStateCoordinates,hcore 838 (by decide),hx,hy] using hP
-
-
-private theorem support_add {V : BasisState → Prop} {ψ φ : State}
-    (hψ : SupportedOn V ψ) (hφ : SupportedOn V φ) : SupportedOn V (ψ+φ) := by
-  intro s hs
-  by_cases h : ψ s=0
-  · exact hφ s (by simpa [h] using hs)
-  · exact hψ s h
-private theorem support_smul {V : BasisState → Prop} {ψ : State} (c : ℂ)
-    (hψ : SupportedOn V ψ) : SupportedOn V (c • ψ) := by
-  intro s hs
-  apply hψ s
-  intro h
-  exact hs (by simp [h])
-private theorem support_linear (V : BasisState → Prop) (L : State →ₗ[ℂ] State)
-    (hL : ∀ s, V s → SupportedOn V (L (ket s))) (ψ : State)
-    (hψ : SupportedOn V ψ) : SupportedOn V (L ψ) := by
-  classical
-  induction ψ using Finsupp.induction with
-  | zero => simp
-  | single_add s c ψ hs hc ih =>
-    have hz : ψ s=0 := by simpa using hs
-    have hvs : V s := hψ s (by simp [hz,hc])
-    have hvψ : SupportedOn V ψ := by
-      intro u hu
-      apply hψ u
-      by_cases he : u=s
-      · subst u; exact (hu hz).elim
-      · simpa [he] using hu
-    have he : Finsupp.single s c=c • ket s := by ext u; simp [ket]
-    rw [map_add,he,map_smul]
-    exact support_add (support_smul c (hL s hvs)) (ih hvψ)
-
-theorem batchedWindowValid_fourierClear (ws : List Wire)
-    (hws : ∀ w ∈ ws, w ∈ streamAddress) (s : BasisState)
-    (hs : BatchedWindowValid s) : BatchedWindowValid (fourierClear ws s) := by
-  induction ws generalizing s with
-  | nil => exact hs
-  | cons w ws ih =>
-    exact ih (fun v hv => hws v (List.mem_cons_of_mem w hv)) _
-      (batchedWindowValid_address_update s hs w (hws w (by simp)) false)
-
-theorem batchedWindowValid_fourierBranch (dir : PhaseDir) (ws : List Wire)
-    (hws : ∀ w ∈ ws, w ∈ streamAddress) (prior bs : List Bool)
-    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
-    SupportedOn BatchedWindowValid (fourierBranch dir ws prior bs ψ) := by
-  apply support_linear _ _ ?_ ψ hψ
-  intro s hs
-  rw [fourierBranch_ket]
-  exact support_smul _ (supportedOn_ket _ _
-    (batchedWindowValid_fourierClear ws hws s hs))
-
-theorem batchedWindowValid_H (w : Wire) (hw : w ∈ streamAddress)
-    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
-    SupportedOn BatchedWindowValid (applyGate (.H w) ψ) := by
-  apply support_linear _ _ ?_ ψ hψ
-  intro s hs
-  rw [applyGate_ket]
-  exact support_add
-    (support_smul _ (supportedOn_ket _ _ (batchedWindowValid_address_update s hs w hw false)))
-    (support_smul _ (supportedOn_ket _ _ (batchedWindowValid_address_update s hs w hw true)))
-
-theorem batchedWindowValid_prepare (ws : List Wire)
-    (hws : ∀ w ∈ ws, w ∈ streamAddress) (ψ : State)
-    (hψ : SupportedOn BatchedWindowValid ψ) :
-    SupportedOn BatchedWindowValid (Quantum.run (ws.map Gate.H) ψ) := by
-  induction ws generalizing ψ with
-  | nil => exact hψ
-  | cons w ws ih =>
-    exact ih (fun v hv => hws v (List.mem_cons_of_mem w hv)) _
-      (batchedWindowValid_H w (hws w (by simp)) ψ hψ)
-
-
-theorem actualIpxWindowState_supported (Q : Point) (hQ : order • Q = 0)
-    (hn : Q ≠ 0) (w : OddWindow) (ψ : State)
-    (hψ : SupportedOn BatchedWindowValid ψ) :
-    SupportedOn BatchedWindowValid
-      (Finsupp.lmapDomain ℂ ℂ (actualIpxWindowState Q w) ψ) := by
-  apply support_linear _ _ ?_ ψ hψ
-  intro s hs
-  simpa [ket] using supportedOn_ket BatchedWindowValid _
-    (actualIpxWindowState_valid Q hQ hn w s hs)
-
-theorem actualIpxWindow_branch_supported (Q : Point) (hQ : order • Q = 0)
-    (hn : Q ≠ 0) (w : OddWindow) (start : Nat) (history : Fin start → Bool)
-    (b : InstrumentBranch)
-    (hb : b ∈ (((actualIpxWindow w).program start).instantiate
-      (readConstant coefficientAt Q) history).run)
-    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
-    SupportedOn BatchedWindowValid (b.kraus ψ) := by
-  obtain ⟨c,hc⟩ := (actualIpxWindow_coherent Q hQ hn w start history).branch_coefficient b hb
-  rw [hc.on_supported hψ]
-  exact support_smul c (actualIpxWindowState_supported Q hQ hn w ψ hψ)
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: AxisProbability ====
-
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/AxisProbability.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -3828,494 +3823,11 @@ theorem selectedSourceAxis_constant (call : OddWindow → AdaptiveCircuit)
       streamBlockContinuation,ih]
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: FirstValidity ====
+end
 
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/FirstValidity.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
+-- ==== part: Streaming/TwoAxisProbability ====
 
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-
-private theorem zero_word (n : Nat) : boolWordToNat (List.replicate n false) = 0 := by
-  induction n with
-  | zero => rfl
-  | succ n ih => simp [List.replicate_succ,ih]
-private theorem zero_read (ws : List Wire) (s : BasisState)
-    (hs : ∀ w ∈ ws, s w = false) :
-    wireValues ws s = List.replicate ws.length false := by
-  induction ws with
-  | nil => rfl
-  | cons w ws ih =>
-    simp only [wireValues,List.map_cons,List.length_cons,List.replicate_succ]
-    rw [hs w (by simp)]
-    exact congrArg (false :: ·) (ih (fun v hv => hs v (List.mem_cons_of_mem w hv)))
-
-/-- Before direct loading, only the query flag and address register may be nonzero. -/
-def FirstWindowInput (s : BasisState) : Prop :=
-  s 836 = true ∧ ∀ v, v ≠ 836 → v ∉ streamAddress → s v = false
-
-theorem firstWindowInput_start : FirstWindowInput (zeroBasisState[836 ↦ true]) := by
-  constructor
-  · simp [upd]
-  · intro v hv _
-    simp [upd,hv,zeroBasisState]
-
-theorem firstWindowInput_update (s : BasisState) (hs : FirstWindowInput s)
-    (w : Wire) (hw : w ∈ streamAddress) (b : Bool) : FirstWindowInput (s[w ↦ b]) := by
-  have hw' : 855 ≤ w ∧ w < 871 := by simpa [streamAddress,List.mem_range'_1] using hw
-  have hwb : 855 ≤ w := hw'.1
-  constructor
-  · simpa only [upd,if_neg (by dsimp only [Wire] at *; omega : (836:Wire) ≠ w)] using hs.1
-  · intro v hv ha
-    have hvw : v ≠ w := by intro he; subst v; exact ha hw
-    simpa only [upd,if_neg hvw] using hs.2 v hv ha
-
-theorem firstWindowInput_ready (s : BasisState) (hs : FirstWindowInput s) :
-    BatchedPointReady s := by
-  have hz (v : Wire) (hv : v < 836) : s v = false :=
-    hs.2 v (by dsimp only [Wire] at *; omega) (by
-      simp only [streamAddress,List.mem_range'_1]; try dsimp only [Wire] at *
-      omega)
-  have hx : wireValues (List.range' 263 256) s = List.replicate 256 false := by
-    exact (zero_read _ s (fun v hv => hz v (by
-      simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega))).trans
-      (by simp only [List.length_range'])
-  have hy : wireValues (List.range' 580 256) s = List.replicate 256 false := by
-    exact (zero_read _ s (fun v hv => hz v (by
-      simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega))).trans
-      (by simp only [List.length_range'])
-  refine ⟨⟨⟨?_,?_,?_,?_⟩,hs.1⟩,?_⟩
-  · intro v hv
-    exact hz v (by simp only [List.mem_append,List.mem_range'_1] at hv; dsimp only [Wire] at *; omega)
-  · exact hs.2 837 (by decide) (by simp [streamAddress])
-  · rw [hx]; rw [zero_word]; norm_num [ShorECDLP.p]
-  · rw [hy]; rw [zero_word]; norm_num [ShorECDLP.p]
-  · intro v hv
-    simp [batchWorkspace] at hv
-
-theorem firstWindowInput_lookup (s : BasisState) (hs : FirstWindowInput s) :
-    DirectPointLookupValid (List.range' 519 16) 836 s := by
-  refine ⟨?_,?_,hs.1⟩
-  · intro v hv
-    apply hs.2
-    · simp only [List.mem_range'_1] at hv; dsimp only [Wire] at *; omega
-    · simp only [List.mem_range'_1] at hv
-      simp only [streamAddress,List.mem_range'_1]; try dsimp only [Wire] at *
-      omega
-  · intro v hv
-    have hb : v < 839 := by
-      simp only [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,
-        List.mem_append,List.mem_cons,List.not_mem_nil,or_false,List.mem_range'_1] at hv
-      dsimp only [Wire] at *; omega
-    have hn : v ≠ 836 := by
-      simp only [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,
-        List.mem_append,List.mem_cons,List.not_mem_nil,or_false,List.mem_range'_1] at hv
-      dsimp only [Wire] at *; omega
-    exact hs.2 v hn (by
-      simp only [streamAddress,List.mem_range'_1]; try dsimp only [Wire] at *
-      omega)
-
-theorem firstWindowInput_pointWrite (s : BasisState) (hs : FirstWindowInput s) (P : Point) :
-    BatchedWindowValid (pointWrite P s) :=
-  ⟨pointWrite_batchedReady P s (firstWindowInput_ready s hs),P,pointWrite_coordinates P s⟩
-
-
-
-private theorem support_linear_firstValidity (V W : BasisState → Prop) (L : State →ₗ[ℂ] State)
-    (hL : ∀ s, V s → SupportedOn W (L (ket s))) (ψ : State)
-    (hψ : SupportedOn V ψ) : SupportedOn W (L ψ) := by
-  classical
-  induction ψ using Finsupp.induction with
-  | zero => simp
-  | single_add s c ψ hs hc ih =>
-    have hz : ψ s=0 := by simpa using hs
-    have hvs : V s := hψ s (by simp [hz,hc])
-    have hvψ : SupportedOn V ψ := by
-      intro u hu
-      apply hψ u
-      by_cases he : u=s
-      · subst u; exact (hu hz).elim
-      · simpa [he] using hu
-    have he : Finsupp.single s c=c • ket s := by ext u; simp [ket]
-    rw [map_add,he,map_smul]
-    exact support_add (support_smul c (hL s hvs)) (ih hvψ)
-
-theorem firstWindowInput_H (w : Wire) (hw : w ∈ streamAddress)
-    (ψ : State) (hψ : SupportedOn FirstWindowInput ψ) :
-    SupportedOn FirstWindowInput (applyGate (.H w) ψ) := by
-  apply support_linear_firstValidity FirstWindowInput FirstWindowInput (applyGate (.H w)) ?_ ψ hψ
-  intro s hs
-  rw [applyGate_ket]
-  exact support_add
-    (support_smul _ (supportedOn_ket _ _ (firstWindowInput_update s hs w hw false)))
-    (support_smul _ (supportedOn_ket _ _ (firstWindowInput_update s hs w hw true)))
-
-theorem firstWindowInput_prepare (ws : List Wire)
-    (hws : ∀ w ∈ ws, w ∈ streamAddress) (ψ : State)
-    (hψ : SupportedOn FirstWindowInput ψ) :
-    SupportedOn FirstWindowInput (Quantum.run (ws.map Gate.H) ψ) := by
-  induction ws generalizing ψ with
-  | nil => exact hψ
-  | cons w ws ih =>
-    exact ih (fun v hv => hws v (List.mem_cons_of_mem w hv)) _
-      (firstWindowInput_H w (hws w (by simp)) ψ hψ)
-
-noncomputable def actualFirstWindowState (Q : Point) (s : BasisState) : BasisState :=
-  pointWrite (firstWindowTable (axisWindowOffset G 16 + axisWindowOffset Q 13)
-    ((2^(16*15)) • G) (tableAddressValue (List.range' 855 16) s)) s
-
-theorem actualFirstWindowState_supported (Q : Point) (ψ : State)
-    (hψ : SupportedOn FirstWindowInput ψ) :
-    SupportedOn BatchedWindowValid
-      (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q) ψ) := by
-  apply support_linear_firstValidity FirstWindowInput BatchedWindowValid _ ?_ ψ hψ
-  intro s hs
-  rw [show Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q) (ket s) =
-      ket (actualFirstWindowState Q s) from by simp only [ket,Finsupp.lmapDomain_apply,Finsupp.mapDomain_single]]
-  exact supportedOn_ket _ _ (firstWindowInput_pointWrite s hs _)
-
-theorem actualFirstWindow_coherent_input (Q : Point) (hQ : order • Q = 0)
-    (start : Nat) (history : Fin start → Bool) :
-    CoherentlyImplementsOn ((actualFirstWindow.program start).instantiate
-      (readConstant coefficientAt Q) history)
-      (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q)) FirstWindowInput := by
-  obtain ⟨cs,ha,hm⟩ := actualFirstWindow_coherent Q hQ start history
-  exact ⟨cs,ha.imp (fun _ _ hb s hs => hb s (firstWindowInput_lookup s hs)),hm⟩
-
-theorem actualFirstWindow_branch_supported (Q : Point) (hQ : order • Q = 0)
-    (start : Nat) (history : Fin start → Bool) (b : InstrumentBranch)
-    (hb : b ∈ ((actualFirstWindow.program start).instantiate
-      (readConstant coefficientAt Q) history).run)
-    (ψ : State) (hψ : SupportedOn FirstWindowInput ψ) :
-    SupportedOn BatchedWindowValid (b.kraus ψ) := by
-  obtain ⟨c,hc⟩ := (actualFirstWindow_coherent_input Q hQ start history).branch_coefficient b hb
-  rw [hc.on_supported hψ]
-  exact support_smul c (actualFirstWindowState_supported Q ψ hψ)
-
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: CrossWindowWeights ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/CrossWindowWeights.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-
-/-- Chronological outputs from later windows have the higher binary weights. -/
-theorem fourierWordLSB_append (xs ys : List Bool) :
-    fourierWordLSB (xs ++ ys) = fourierWordLSB xs + 2 ^ xs.length * fourierWordLSB ys := by
-  induction xs with
-  | nil => simp [fourierWordLSB]
-  | cons b xs ih =>
-    simp only [List.cons_append, fourierWordLSB, List.length_cons, ih, pow_succ]
-    ring
-
-/-- Reversing the newest-first feedback history restores chronological output. -/
-theorem fourierWordLSB_updated_history (bits prior : List Bool) :
-    fourierWordLSB (bits.reverse ++ prior).reverse =
-      fourierWordLSB prior.reverse + 2 ^ prior.length * fourierWordLSB bits := by
-  rw [List.reverse_append, List.reverse_reverse, fourierWordLSB_append, List.length_reverse]
-
-/-- Input words use the opposite convention: the first window is most significant. -/
-theorem fourierWordMSB_append (xs ys : List Bool) :
-    fourierWordMSB (xs ++ ys) = fourierWordMSB xs * 2 ^ ys.length + fourierWordMSB ys := by
-  induction xs with
-  | nil => simp [fourierWordMSB]
-  | cons b xs ih =>
-    simp only [List.cons_append, fourierWordMSB, List.length_append, ih, pow_add]
-    ring
-
--- Both sides of the signed-address boundary, including both extreme addresses.
-example : [0, 32767, 32768, 65535].map (signedTableOdd 32768) =
-    [-65535, -1, 1, 65535] := by decide +kernel
-
--- Two radix-65536 input windows. The fixed offset cancels both centered digits.
-example : ([0, 32767, 32768, 65535] : List Nat).all (fun a =>
-    [0, 32767, 32768, 65535].all (fun b =>
-      65535 * (65536 + 1) + signedTableOdd 32768 a * 65536 +
-        signedTableOdd 32768 b == 2 * ((a : Int) * 65536 + b))) = true := by
-  decide +kernel
-
-example : fourierWordLSB (List.replicate 16 false ++ true :: List.replicate 15 false) =
-    65536 := by decide +kernel
-
-/-- The offset cancellation holds for every pair of input digits, including the
-sign boundary. Multiplication by a half-point turns the right side into the
-ordinary unsigned two-window scalar. -/
-theorem two_window_signed_offset (a b : Nat) :
-    65535 * (65536 + 1) + signedTableOdd 32768 a * 65536 + signedTableOdd 32768 b =
-      2 * ((a : Int) * 65536 + b) := by
-  rw [signedTableOdd_value, signedTableOdd_value]
-  ring
-
-/-- Splitting a Fourier word at a window boundary retains all feedback phases. -/
-theorem fourierBitAmplitude_append (dir : PhaseDir) (xs ys prior bs cs : List Bool)
-    (hl : bs.length = xs.length) :
-    fourierBitAmplitude dir (xs ++ ys) prior (bs ++ cs) =
-      fourierBitAmplitude dir xs prior bs *
-        fourierBitAmplitude dir ys (bs.reverse ++ prior) cs := by
-  induction xs generalizing prior bs with
-  | nil =>
-    have hb : bs = [] := List.length_eq_zero_iff.mp hl
-    subst bs
-    simp [fourierBitAmplitude]
-  | cons a xs ih =>
-    cases bs with
-    | nil => simp at hl
-    | cons b bs =>
-      simp only [List.cons_append, fourierBitAmplitude]
-      rw [ih (b :: prior) bs (by simpa using hl)]
-      simp only [List.reverse_cons, List.append_assoc, List.singleton_append]
-      ring
-
-/-- Actual feedback order for any number of complete windows. -/
-theorem window_history_fold (windows : List (List Bool)) (prior : List Bool) :
-    windows.foldl (fun history bits => bits.reverse ++ history) prior =
-      windows.flatten.reverse ++ prior := by
-  induction windows generalizing prior with
-  | nil => simp
-  | cons bits windows ih =>
-    simp only [List.foldl_cons, ih, List.flatten_cons, List.reverse_append, List.append_assoc]
-
-/-- Product of the individual window amplitudes, with the actual newest-first
-history carried from one window to the next. -/
-noncomputable def windowFourierAmplitude (dir : PhaseDir) :
-    List (List Bool × List Bool) → List Bool → ℂ
-  | [], _ => 1
-  | (input, output) :: windows, prior =>
-      fourierBitAmplitude dir input prior output *
-        windowFourierAmplitude dir windows (output.reverse ++ prior)
-
-theorem windowFourierAmplitude_flatten (dir : PhaseDir)
-    (windows : List (List Bool × List Bool)) (prior : List Bool)
-    (hl : ∀ w ∈ windows, w.2.length = w.1.length) :
-    windowFourierAmplitude dir windows prior =
-      fourierBitAmplitude dir (windows.map Prod.fst).flatten prior
-        (windows.map Prod.snd).flatten := by
-  induction windows generalizing prior with
-  | nil => simp [windowFourierAmplitude, fourierBitAmplitude]
-  | cons w windows ih =>
-    simp only [windowFourierAmplitude, List.map_cons, List.flatten_cons]
-    rw [fourierBitAmplitude_append dir _ _ _ _ _ (hl w (by simp)),
-      ih _ (fun v hv => hl v (List.mem_cons_of_mem w hv))]
-
-/-- The entire axis has one Fourier kernel; window feedback introduces no
-extra phase when the axis starts with empty history. -/
-theorem windowFourierAmplitude_kernel (dir : PhaseDir)
-    (windows : List (List Bool × List Bool))
-    (hl : ∀ w ∈ windows, w.2.length = w.1.length) :
-    windowFourierAmplitude dir windows List.nil =
-      ((((Real.sqrt 2)⁻¹ : ℝ) : ℂ) ^ (windows.map Prod.fst).flatten.length) *
-        dyadicFourierKernel dir (windows.map Prod.fst).flatten.length
-          (fourierWordMSB (windows.map Prod.fst).flatten)
-          (fourierWordLSB (windows.map Prod.snd).flatten) := by
-  have he : (windows.map Prod.snd).flatten.length =
-      (windows.map Prod.fst).flatten.length := by
-    induction windows with
-    | nil => rfl
-    | cons w windows ih =>
-      simp only [List.map_cons, List.flatten_cons, List.length_append]
-      rw [hl w (by simp), ih (fun v hv => hl v (List.mem_cons_of_mem w hv))]
-  rw [windowFourierAmplitude_flatten dir windows List.nil hl,
-    fourierBitAmplitude_eq dir _ List.nil _ he]
-  simp [fourierHistoryPhase, fourierHistoryAngle]
-
-/-- All centered odd digits, including the first mixed-table digit, reconstruct
-an unsigned scalar after its fixed initial offset is added. -/
-theorem signed_odd_digits_reconstruct (digits : List Nat) :
-    signedWindowValue 65536 (digits.map (signedTableOdd 32768)) +
-      (65535 * radixGeometric digits.length : Nat) =
-      2 * (windowValue 65536 digits : Int) := by
-  induction digits with
-  | nil => simp [signedWindowValue, windowValue, radixGeometric]
-  | cons d ds ih =>
-    simp only [List.map_cons, List.length_cons, signedWindowValue,
-      windowValue, radixGeometric, signedTableOdd_value]
-    push_cast at ih ⊢
-    linear_combination 65536 * ih
-
-/-- Group-level reconstruction uses only the subgroup order, and imposes no
-exceptional-point exclusion on the accumulator. -/
-theorem signed_odd_digits_point {A : Type} [AddCommGroup A]
-    (P : A) (r : Nat) (hr : Odd r) (hP : r • P = 0) (digits : List Nat) :
-    signedWindowValue 65536 (digits.map (signedTableOdd 32768)) •
-        signedWindowHalfPoint P r +
-      (65535 * radixGeometric digits.length) • signedWindowHalfPoint P r =
-        windowValue 65536 digits • P := by
-  rw [← natCast_zsmul (signedWindowHalfPoint P r) (65535 * radixGeometric digits.length),
-    ← add_zsmul, signed_odd_digits_reconstruct]
-  rw [show 2 * (windowValue 65536 digits : Int) =
-    (windowValue 65536 digits : Int) + (windowValue 65536 digits : Int) by ring,
-    add_zsmul, natCast_zsmul, ← nsmul_add,
-    signedWindowHalfPoint_double P r hr hP]
-
-/-- A fixed-width list of windows retains leading zero windows. -/
-theorem fixed_windows_flatten_length (w : Nat) (windows : List (List Bool))
-    (hw : ∀ bits ∈ windows, bits.length = w) :
-    windows.flatten.length = w * windows.length := by
-  induction windows with
-  | nil => simp
-  | cons bits windows ih =>
-    simp only [List.flatten_cons, List.length_append, List.length_cons]
-    rw [hw bits (by simp), ih (fun bs hb => hw bs (List.mem_cons_of_mem bits hb))]
-    ring
-
-/-- Chronological window outputs are the little-endian radix digits of the
-integer accepted by the decoder. -/
-theorem output_windows_value (w : Nat) (windows : List (List Bool))
-    (hw : ∀ bits ∈ windows, bits.length = w) :
-    fourierWordLSB windows.flatten = windowValue (2 ^ w) (windows.map fourierWordLSB) := by
-  induction windows with
-  | nil => rfl
-  | cons bits windows ih =>
-    simp only [List.flatten_cons, List.map_cons, windowValue, fourierWordLSB_append]
-    rw [hw bits (by simp), ih (fun bs hb => hw bs (List.mem_cons_of_mem bits hb))]
-
-private theorem windowValue_append (base : Nat) (xs ys : List Nat) :
-    windowValue base (xs ++ ys) = windowValue base xs + base ^ xs.length * windowValue base ys := by
-  induction xs with
-  | nil => simp [windowValue]
-  | cons x xs ih =>
-    simp only [List.cons_append, windowValue, List.length_cons, ih, pow_succ]
-    ring
-
-/-- Input windows run in descending significance, opposite to emitted output
-weights. This is the unsigned scalar reconstructed by the signed point tables. -/
-theorem input_windows_value (w : Nat) (windows : List (List Bool))
-    (hw : ∀ bits ∈ windows, bits.length = w) :
-    fourierWordMSB windows.flatten =
-      windowValue (2 ^ w) (windows.map fourierWordMSB).reverse := by
-  induction windows with
-  | nil => rfl
-  | cons bits windows ih =>
-    have ht := fun bs hb => hw bs (List.mem_cons_of_mem bits hb)
-    simp only [List.flatten_cons, List.map_cons, List.reverse_cons,
-      fourierWordMSB_append, windowValue_append, List.length_reverse, List.length_map,
-      windowValue]
-    rw [ih ht, fixed_windows_flatten_length w windows ht, pow_mul]
-    ring
-
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: CrossWindowPoint ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/CrossWindowPoint.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum Secp256k1
-
-/-- The sign bit and the unsigned value agree even at the two central digits. -/
-theorem reused_window_digit_low (s : BasisState) :
-    windowRawDigit 0 s < 32768 ↔ s 870 = false := by
-  have hb := boolWordToNat_lt_pow_two (wireValues (windowAddressBits 0) s)
-  simp only [wireValues, List.length_map, windowAddressBits, List.length_range'] at hb
-  change boolWordToNat (wireValues (windowAddressBits 0) s) < 32768 at hb
-  cases hh : s 870 <;> simp_all [windowRawDigit, windowBankStart]
-
-/-- Actual signed table selection gives a centered odd scalar at its fixed
-power-of-two weight. No accumulator point is excluded. -/
-theorem reused_window_selected_odd (P : Point) (j : Nat) (s : BasisState) :
-    (if s 870 then oddWindowPoint P j (signedTableAddress 32768 (windowRawDigit 0 s))
-      else -oddWindowPoint P j (signedTableAddress 32768 (windowRawDigit 0 s))) =
-    signedTableOdd 32768 (windowRawDigit 0 s) •
-      ((2 ^ (16 * j)) • signedWindowHalfPoint P order) := by
-  have ha := signedTableAddress_bound 32768 (windowRawDigit 0 s) (windowRawDigit_bound 0 s)
-  simp only [oddWindowPoint, Nat.mod_eq_of_lt ha, signedTableOdd]
-  cases hs : s 870
-  · rw [if_neg (by decide), if_pos ((reused_window_digit_low s).mpr hs)]
-    simp only [neg_zsmul, natCast_zsmul]
-  · rw [if_pos rfl, if_neg (by intro h; have hh := (reused_window_digit_low s).mp h; simp [hs] at hh)]
-    simp only [natCast_zsmul]
-
-/-- The corrected actual left window has precisely its scalar digit action. -/
-theorem actual_left_window_digit (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (j : Fin 15) (s : BasisState) (hs : BatchedPointReady s)
-    (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
-    actualIpxWindowState Q (.left j) s =
-      pointWrite (P + signedTableOdd 32768 (windowRawDigit 0 s) •
-        ((2 ^ (16 * j.val)) • signedWindowHalfPoint G order)) s := by
-  rw [actualIpxWindowState_selected Q hQ hn (.left j) s hs P hP]
-  simp only [windowPoint, reused_window_selected_odd]
-
-/-- The corrected actual right window has precisely its scalar digit action. -/
-theorem actual_right_window_digit (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (j : Fin 13) (s : BasisState) (hs : BatchedPointReady s)
-    (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
-    actualIpxWindowState Q (.right j) s =
-      pointWrite (P + signedTableOdd 32768 (windowRawDigit 0 s) •
-        ((2 ^ (16 * j.val)) • signedWindowHalfPoint Q order)) s := by
-  rw [actualIpxWindowState_selected Q hQ hn (.right j) s hs P hP]
-  simp only [windowPoint, reused_window_selected_odd]
-/-- The mixed first table obeys the same centered odd-digit formula as the
-later tables, including any row whose resulting point is infinity. -/
-theorem actual_first_window_digit (Q : Point) (s : BasisState) :
-    actualFirstWindowState Q s =
-      pointWrite (axisWindowOffset G 16 + axisWindowOffset Q 13 +
-        signedTableOdd 32768 (windowRawDigit 0 s) •
-          ((2 ^ (16 * 15)) • signedWindowHalfPoint G order)) s := by
-  have ha : tableAddressValue (List.range' 855 16) s = windowRawDigit 0 s := by
-    simp [tableAddressValue, windowRawDigit, windowAddressBits, windowBankStart,
-      List.range', wireValues, boolWordToNat]
-    omega
-  have hd : (2 ^ (16 * 15)) • signedWindowHalfPoint G order +
-      (2 ^ (16 * 15)) • signedWindowHalfPoint G order = (2 ^ (16 * 15)) • G := by
-    rw [← nsmul_add, signedWindowHalfPoint_double G order (by decide +kernel)
-      generator_nsmul_eq_zero]
-  have he := signedTable_point ((2 ^ (16 * 15)) • signedWindowHalfPoint G order)
-    32768 (windowRawDigit 0 s)
-  rw [hd] at he
-  have hh : signedWindowHalfPoint ((2 ^ (16 * 15)) • G) order =
-      (2 ^ (16 * 15)) • signedWindowHalfPoint G order := by
-    exact smul_comm ((order + 1) / 2) (2 ^ (16 * 15)) G
-  simp only [actualFirstWindowState, firstWindowTable, ha, hh]
-  rw [sub_eq_iff_eq_add.mp he]
-  rfl
-
-/-- Once the actual signed digits have been accumulated, the two initial
- offsets cancel exactly. This is an exact group identity, without a loss term. -/
-theorem two_axis_signed_digits (Q : Point) (hQ : order • Q = 0)
-    (left right : List Nat) (hl : left.length = 16) (hr : right.length = 13) :
-    axisWindowOffset G 16 + axisWindowOffset Q 13 +
-      signedWindowValue 65536 (left.map (signedTableOdd 32768)) •
-        signedWindowHalfPoint G order +
-      signedWindowValue 65536 (right.map (signedTableOdd 32768)) •
-        signedWindowHalfPoint Q order =
-      windowValue 65536 left • G + windowValue 65536 right • Q := by
-  have hleft := signed_odd_digits_point G order (by decide +kernel)
-    generator_nsmul_eq_zero left
-  have hright := signed_odd_digits_point Q order (by decide +kernel) hQ right
-  rw [hl] at hleft
-  rw [hr] at hright
-  change _ + axisWindowOffset G 16 = _ at hleft
-  change _ + axisWindowOffset Q 13 = _ at hright
-  rw [← hleft, ← hright]
-  abel
-
-/-- In bit-word form, the signed tables reconstruct exactly the two integers
-used as input exponents by the 256/208 Fourier kernels. -/
-theorem two_axis_input_words (Q : Point) (hQ : order • Q = 0)
-    (left right : List (List Bool)) (hl : left.length = 16) (hr : right.length = 13)
-    (hlw : ∀ bits ∈ left, bits.length = 16) (hrw : ∀ bits ∈ right, bits.length = 16) :
-    axisWindowOffset G 16 + axisWindowOffset Q 13 +
-      signedWindowValue 65536 ((left.map fourierWordMSB).reverse.map (signedTableOdd 32768)) •
-        signedWindowHalfPoint G order +
-      signedWindowValue 65536 ((right.map fourierWordMSB).reverse.map (signedTableOdd 32768)) •
-        signedWindowHalfPoint Q order =
-      fourierWordMSB left.flatten • G + fourierWordMSB right.flatten • Q := by
-  rw [input_windows_value 16 left hlw, input_windows_value 16 right hrw]
-  exact two_axis_signed_digits Q hQ _ _ (by simpa using hl) (by simpa using hr)
-
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: TwoAxisProbability ====
-
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/TwoAxisProbability.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4447,8 +3959,11 @@ theorem actualSourcesTwoAxes_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠
     (supportedOn_ket _ _ firstWindowInput_start)
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: FixedWord ====
+end
 
+-- ==== part: Streaming/FixedWord ====
+
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/FixedWord.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -4635,605 +4150,11 @@ theorem OuterPlan.entry_actualWords (coefficients : List PointCoeff)
     List.nil_append,List.append_nil,Nat.zero_add] using h
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: TaggedAxis ====
+end
 
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/TaggedAxis.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
+-- ==== part: Streaming/WindowBranchSum ====
 
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] fourierOutcomes streamAddress
-
-noncomputable def taggedSourceAxis (call : OddWindow → AdaptiveCircuit) :
-    List OddWindow → List Bool → List (List Bool × InstrumentBranch)
-  | [], prior => [(prior,⟨[],LinearMap.id⟩)]
-  | w :: ws, prior => (streamBlockOutcomes (call w) prior).flatMap (fun a =>
-      (taggedSourceAxis call ws (a.1.reverse ++ prior)).map (fun b => (b.1,a.2.seq b.2)))
-
-theorem selectedSourceAxis_tagged (call : OddWindow → AdaptiveCircuit)
-    (ws : List OddWindow) (prior : List Bool) (terminal : List Bool → Instrument) :
-    selectedSourceAxis call ws prior terminal =
-      (taggedSourceAxis call ws prior).flatMap (fun a =>
-        (terminal a.1).map a.2.seq) := by
-  induction ws generalizing prior with
-  | nil =>
-    simp only [selectedSourceAxis,taggedSourceAxis,List.flatMap_cons,List.flatMap_nil,List.append_nil]
-    have he : (InstrumentBranch.seq ⟨[],LinearMap.id⟩) = (fun b => b) := by
-      funext b
-      cases b
-      simp [InstrumentBranch.seq]
-    rw [he,List.map_id']
-  | cons w ws ih =>
-    simp only [selectedSourceAxis,streamBlockContinuation,taggedSourceAxis,ih,
-      List.flatMap_assoc,List.flatMap_map,List.map_flatMap,List.map_map,Function.comp_def]
-    apply List.flatMap_congr
-    intro a ha
-    apply List.flatMap_congr
-    intro b hb
-    apply List.map_congr_left
-    intro c hc
-    cases a with | mk atag a =>
-      cases b with | mk btag b =>
-        cases a; cases b; cases c
-        simp only [InstrumentBranch.seq,List.append_assoc,LinearMap.comp_assoc]
-
-theorem streamBlockOutcomes_split (call : AdaptiveCircuit) (count : Nat)
-    (hcount : ∀ b ∈ call.run, b.history.length = count) (prior : List Bool)
-    (tagged : List Bool × InstrumentBranch) (ht : tagged ∈ streamBlockOutcomes call prior) :
-    ∃ a : List Bool, a.length = count ∧ tagged.1.length = 16 ∧
-      tagged.2.history = a ++ tagged.1 := by
-  obtain ⟨a,ha,ht⟩ := List.mem_flatMap.mp ht
-  obtain ⟨bs,hbs,rfl⟩ := List.mem_map.mp ht
-  have hl : bs.length = 16 := by
-    simpa only [streamAddress,List.length_range'] using
-      (fourierOutcomes_mem streamAddress.length bs).mp hbs
-  simp only [AdaptiveCircuit.seq,AdaptiveCircuit.run] at ha
-  obtain ⟨b,hb,rfl⟩ := List.mem_map.mp ha
-  exact ⟨b.history,hcount b hb,hl,rfl⟩
-
-theorem taggedSourceAxis_transcript (call : OddWindow → AdaptiveCircuit)
-    (ws : List OddWindow)
-    (hcount : ∀ w ∈ ws, ∀ b ∈ (call w).run, b.history.length = (actualIpxWindow w).count)
-    (prior : List Bool) (tagged : List Bool × InstrumentBranch)
-    (ht : tagged ∈ taggedSourceAxis call ws prior) :
-    ∃ bits, AxisTranscript (ws.map actualIpxWindow) tagged.2.history bits ∧
-      tagged.1 = bits.reverse ++ prior := by
-  induction ws generalizing prior tagged with
-  | nil =>
-    simp only [taggedSourceAxis,List.mem_singleton] at ht
-    subst tagged
-    exact ⟨[],AxisTranscript.nil,rfl⟩
-  | cons w ws ih =>
-    obtain ⟨a,ha,ht⟩ := List.mem_flatMap.mp ht
-    obtain ⟨b,hb,rfl⟩ := List.mem_map.mp ht
-    obtain ⟨ar,har,hbits,hhist⟩ := streamBlockOutcomes_split (call w) _ (hcount w (by simp)) prior a ha
-    obtain ⟨bits,htrans,hprior⟩ := ih (fun v hv => hcount v (List.mem_cons_of_mem w hv)) _ b hb
-    refine ⟨a.1 ++ bits,?_,?_⟩
-    · simpa only [List.map_cons,InstrumentBranch.seq,hhist,List.append_assoc] using
-        AxisTranscript.cons (actualIpxWindow w) (ws.map actualIpxWindow)
-          ar a.1 b.2.history bits har hbits htrans
-    · simpa only [List.reverse_append,List.append_assoc] using hprior
-
-theorem actualOddSource_history_length (Q : Point) (hQ : order • Q = 0) (w : OddWindow)
-    (b : InstrumentBranch) (hb : b ∈ (actualOddSource Q w).run) :
-    b.history.length = (actualIpxWindow w).count := by
-  have he := actualIpxWindow_run w 0 Q hQ Fin.elim0
-  change _ = (actualOddSource Q w).run at he
-  rw [← he] at hb
-  simpa only [Nat.zero_add,Nat.sub_zero] using
-    straight_history_length ((actualIpxWindow w).program 0) (readConstant coefficientAt Q) Fin.elim0 b hb
-
-
-/-- Fixed positions read the same Fourier tag used by selectedSourceAxis, not arithmetic records. -/
-theorem taggedSourceAxis_readWord (call : OddWindow → AdaptiveCircuit)
-    (ws : List OddWindow)
-    (hcount : ∀ w ∈ ws, ∀ b ∈ (call w).run, b.history.length = (actualIpxWindow w).count)
-    (tagged : List Bool × InstrumentBranch)
-    (ht : tagged ∈ taggedSourceAxis call ws List.nil)
-    (before after : List Bool) :
-    readWord (before ++ tagged.2.history ++ after)
-      (axisPositions (ws.map actualIpxWindow) before.length) =
-        some (fourierWordLSB tagged.1.reverse) := by
-  obtain ⟨bits,htrans,htag⟩ := taggedSourceAxis_transcript call ws hcount List.nil tagged ht
-  rw [htag,List.append_nil,List.reverse_reverse]
-  exact htrans.readWord before after
-
-theorem actualTaggedAxis_readWord (Q : Point) (hQ : order • Q = 0)
-    (ws : List OddWindow) (tagged : List Bool × InstrumentBranch)
-    (ht : tagged ∈ taggedSourceAxis (actualOddSource Q) ws List.nil)
-    (before after : List Bool) :
-    readWord (before ++ tagged.2.history ++ after)
-      (axisPositions (ws.map actualIpxWindow) before.length) =
-        some (fourierWordLSB tagged.1.reverse) :=
-  taggedSourceAxis_readWord _ ws (fun w _ b hb => actualOddSource_history_length Q hQ w b hb)
-    tagged ht before after
-
-
-/-- Event filtering by fixed record positions is exactly Fourier-tag selection. -/
-theorem selectedSourceAxis_fixed_filter (call : OddWindow → AdaptiveCircuit)
-    (ws : List OddWindow)
-    (hcount : ∀ w ∈ ws, ∀ b ∈ (call w).run, b.history.length = (actualIpxWindow w).count)
-    (tail : AdaptiveCircuit) (accept : Nat → Bool) :
-    selectedSourceAxis call ws List.nil
-      (fun tag => if accept (fourierWordLSB tag.reverse) then tail.run else []) =
-      (streamAxis (ws.map call) List.nil tail).run.filter
-        (fun b => (readWord b.history (axisPositions (ws.map actualIpxWindow) 0)).any accept) := by
-  rw [← selectedSourceAxis_constant call ws List.nil tail]
-  rw [selectedSourceAxis_tagged,selectedSourceAxis_tagged,List.filter_flatMap]
-  apply List.flatMap_congr
-  intro a ha
-  have hp (b : InstrumentBranch) :
-      (readWord (a.2.seq b).history (axisPositions (ws.map actualIpxWindow) 0)).any accept =
-        accept (fourierWordLSB a.1.reverse) := by
-    have h := taggedSourceAxis_readWord call ws hcount a ha List.nil b.history
-    change (readWord (a.2.history ++ b.history) _).any accept = _
-    simpa only [List.nil_append,List.length_nil,Option.any_some] using congrArg (fun x => x.any accept) h
-  rw [List.filter_map]
-  simp only [Function.comp_def,hp]
-  split <;> simp_all
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: TaggedTwoAxes ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/TaggedTwoAxes.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] fourierOutcomes streamAddress
-
-theorem AxisTranscript.history_length {n : Nat} {ws : List (OuterWindow n)}
-    {history bits : List Bool} (h : AxisTranscript ws history bits) :
-    history.length = axisCount ws := by
-  induction h with
-  | nil => rfl
-  | cons w ws a bs rest out ha hb ht ih =>
-    simp only [List.length_append,ha,hb,ih,axisCount]
-
-noncomputable def taggedSourceTwoAxes (first : AdaptiveCircuit)
-    (call : OddWindow → AdaptiveCircuit) (left right : List OddWindow) :
-    List ((List Bool × List Bool) × InstrumentBranch) :=
-  (streamBlockOutcomes first List.nil).flatMap (fun a =>
-    (taggedSourceAxis call left a.1.reverse).flatMap (fun l =>
-      (taggedSourceAxis call right List.nil).map (fun r => ((l.1,r.1),a.2.seq (l.2.seq r.2)))))
-
-theorem selectedSourceTwoAxes_tagged (first : AdaptiveCircuit)
-    (call : OddWindow → AdaptiveCircuit) (left right : List OddWindow)
-    (terminal : List Bool → List Bool → Instrument) :
-    selectedSourceTwoAxes first call left right terminal =
-      (taggedSourceTwoAxes first call left right).flatMap (fun a =>
-        (terminal a.1.1 a.1.2).map a.2.seq) := by
-  simp only [selectedSourceTwoAxes,streamBlockContinuation,selectedSourceAxis_tagged,
-    taggedSourceTwoAxes,List.flatMap_assoc,List.flatMap_map,List.map_flatMap,
-    List.map_map,Function.comp_def]
-  apply List.flatMap_congr
-  intro a ha
-  apply List.flatMap_congr
-  intro l hl
-  apply List.flatMap_congr
-  intro r hr
-  apply List.map_congr_left
-  intro b hb
-  rcases a with ⟨atag,a⟩; rcases l with ⟨lt,l⟩; rcases r with ⟨rt,r⟩
-  cases a; cases l; cases r; cases b
-  simp only [InstrumentBranch.seq,List.append_assoc,LinearMap.comp_assoc]
-
-theorem taggedSourceTwoAxes_readWords (first : AdaptiveCircuit)
-    (hfirst : ∀ b ∈ first.run, b.history.length = actualFirstWindow.count)
-    (call : OddWindow → AdaptiveCircuit) (left right : List OddWindow)
-    (hcall : ∀ w ∈ left ++ right, ∀ b ∈ (call w).run,
-      b.history.length = (actualIpxWindow w).count)
-    (tagged : (List Bool × List Bool) × InstrumentBranch)
-    (ht : tagged ∈ taggedSourceTwoAxes first call left right) (before after : List Bool) :
-    readWord (before ++ tagged.2.history ++ after)
-      (axisPositions (actualFirstWindow :: left.map actualIpxWindow) before.length) =
-        some (fourierWordLSB tagged.1.1.reverse) ∧
-    readWord (before ++ tagged.2.history ++ after)
-      (axisPositions (right.map actualIpxWindow)
-        (before.length + axisCount (actualFirstWindow :: left.map actualIpxWindow))) =
-        some (fourierWordLSB tagged.1.2.reverse) := by
-  obtain ⟨a,ha,ht⟩ := List.mem_flatMap.mp ht
-  obtain ⟨l,hl,ht⟩ := List.mem_flatMap.mp ht
-  obtain ⟨r,hr,rfl⟩ := List.mem_map.mp ht
-  obtain ⟨ar,har,hbs,hah⟩ := streamBlockOutcomes_split first _ hfirst List.nil a ha
-  obtain ⟨lbs,hlt,hltag⟩ := taggedSourceAxis_transcript call left
-    (fun w hw => hcall w (List.mem_append_left _ hw)) a.1.reverse l hl
-  obtain ⟨rbs,hrt,hrtag⟩ := taggedSourceAxis_transcript call right
-    (fun w hw => hcall w (List.mem_append_right _ hw)) List.nil r hr
-  have hleft : AxisTranscript (actualFirstWindow :: left.map actualIpxWindow)
-      (a.2.history ++ l.2.history) (a.1 ++ lbs) := by
-    rw [hah]
-    exact AxisTranscript.cons _ _ ar a.1 l.2.history lbs har hbs hlt
-  have hlword := hleft.readWord before (r.2.history ++ after)
-  have hrword := hrt.readWord (before ++ a.2.history ++ l.2.history) after
-  have hllength := hleft.history_length
-  constructor
-  · simpa only [InstrumentBranch.seq,List.append_assoc,hltag,← List.reverse_append,
-      List.reverse_reverse] using hlword
-  · have he : (before ++ a.2.history ++ l.2.history).length =
-        before.length + axisCount (actualFirstWindow :: left.map actualIpxWindow) := by
-      simpa only [List.length_append,Nat.add_assoc] using congrArg (before.length + ·) hllength
-    rw [he] at hrword
-    simpa only [InstrumentBranch.seq,List.append_assoc,hrtag,List.append_nil,
-      List.reverse_reverse] using hrword
-
-theorem actualFirstSource_history_length (Q : Point) (hQ : order • Q = 0)
-    (b : InstrumentBranch) (hb : b ∈ (actualFirstSource Q).run) :
-    b.history.length = actualFirstWindow.count := by
-  have he := actualFirstWindow_run 0 Q hQ Fin.elim0
-  change _ = (actualFirstSource Q).run at he
-  rw [← he] at hb
-  simpa only [Nat.zero_add,Nat.sub_zero] using
-    straight_history_length (actualFirstWindow.program 0) (readConstant coefficientAt Q) Fin.elim0 b hb
-
-
-/-- Select a pair of evaluator words, rejecting either missing word. -/
-def fixedPairAccept (left right : List Nat) (accept : Nat → Nat → Bool)
-    (history : List Bool) : Bool :=
-  ((readWord history left).bind (fun lhs => (readWord history right).map (accept lhs))).getD false
-
-theorem selectedSourceTwoAxes_fixed_filter (first : AdaptiveCircuit)
-    (hfirst : ∀ b ∈ first.run, b.history.length = actualFirstWindow.count)
-    (call : OddWindow → AdaptiveCircuit) (left right : List OddWindow)
-    (hcall : ∀ w ∈ left ++ right, ∀ b ∈ (call w).run,
-      b.history.length = (actualIpxWindow w).count)
-    (tail : AdaptiveCircuit) (accept : Nat → Nat → Bool) :
-    selectedSourceTwoAxes first call left right (fun lhs rhs =>
-      if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then tail.run else []) =
-      (streamAxis (first :: left.map call) List.nil
-        (streamAxis (right.map call) List.nil tail)).run.filter (fun (b : InstrumentBranch) =>
-          fixedPairAccept (axisPositions (actualFirstWindow :: left.map actualIpxWindow) 0)
-            (axisPositions (right.map actualIpxWindow)
-              (axisCount (actualFirstWindow :: left.map actualIpxWindow))) accept b.history) := by
-  rw [← selectedSourceTwoAxes_constant first call left right tail]
-  rw [selectedSourceTwoAxes_tagged,selectedSourceTwoAxes_tagged,List.filter_flatMap]
-  apply List.flatMap_congr
-  intro a ha
-  have hp (b : InstrumentBranch) :
-      fixedPairAccept (axisPositions (actualFirstWindow :: left.map actualIpxWindow) 0)
-        (axisPositions (right.map actualIpxWindow)
-          (axisCount (actualFirstWindow :: left.map actualIpxWindow))) accept (a.2.seq b).history =
-      accept (fourierWordLSB a.1.1.reverse) (fourierWordLSB a.1.2.reverse) := by
-    have h := taggedSourceTwoAxes_readWords first hfirst call left right hcall a ha List.nil b.history
-    simp only [List.nil_append,List.length_nil,Nat.zero_add] at h
-    simp only [fixedPairAccept,InstrumentBranch.seq,h.1,h.2,Option.bind_some,
-      Option.map_some,Option.getD_some]
-  rw [List.filter_map]
-  simp only [Function.comp_def,hp]
-  split <;> simp_all
-
-/-- The same two fixed words drive event selection on the actual source and on its ideal image. -/
-theorem actualSources_fixedPair_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (left right : List OddWindow) (tail : AdaptiveCircuit) (accept : Nat → Nat → Bool) :
-    Instrument.bornMass ((streamAxis (actualFirstSource Q :: left.map (actualOddSource Q)) List.nil
-      (streamAxis (right.map (actualOddSource Q)) List.nil tail)).run.filter (fun (b : InstrumentBranch) =>
-        fixedPairAccept (axisPositions (actualFirstWindow :: left.map actualIpxWindow) 0)
-          (axisPositions (right.map actualIpxWindow)
-            (axisCount (actualFirstWindow :: left.map actualIpxWindow))) accept b.history))
-      (ket (zeroBasisState[836 ↦ true])) =
-    (selectedIdealTwoAxes Q left right (fun lhs rhs =>
-      if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then tail.run else [])).bornMass
-      (ket (zeroBasisState[836 ↦ true])) := by
-  rw [← selectedSourceTwoAxes_fixed_filter (actualFirstSource Q)
-    (fun b hb => actualFirstSource_history_length Q hQ b hb) (actualOddSource Q) left right
-    (fun w _ b hb => actualOddSource_history_length Q hQ w b hb) tail accept]
-  exact actualSourcesTwoAxes_mass Q hQ hn left right _
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: ActualPair ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/ActualPair.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] actualFirstWindow actualIpxWindow actualFirstSource actualOddSource
-attribute [local irreducible] streamAddress fourierOutcomes streamAxis sourceOuterRound measureResetWithCorrection resetWires actualRoundSource selectedIdealTwoAxes
-
-def leftOddIndices : List OddWindow := List.ofFn (fun k : Fin 15 => .left ⟨14-k.val,by omega⟩)
-def rightOddIndices : List OddWindow := List.ofFn (fun k : Fin 13 => .right ⟨12-k.val,by omega⟩)
-
-theorem actualLeftSources_indices (Q : Point) : actualLeftSources Q =
-    actualFirstSource Q :: leftOddIndices.map (actualOddSource Q) := by
-  simp only [actualLeftSources,leftOddIndices,List.map_ofFn,Function.comp_def]
-theorem actualRightSources_indices (Q : Point) : actualRightSources Q =
-    rightOddIndices.map (actualOddSource Q) := by
-  simp only [actualRightSources,rightOddIndices,List.map_ofFn,Function.comp_def]
-theorem ipxLeftWindows_indices : ipxLeftWindows =
-    actualFirstWindow :: leftOddIndices.map actualIpxWindow := by
-  simp only [ipxLeftWindows,leftOddIndices,List.map_ofFn,Function.comp_def]
-theorem ipxRightWindows_indices : ipxRightWindows =
-    rightOddIndices.map actualIpxWindow := by
-  simp only [ipxRightWindows,rightOddIndices,List.map_ofFn,Function.comp_def]
-
-theorem unitary_history_filter_mass (g : Circuit) (next : AdaptiveCircuit)
-    (accept : List Bool → Bool) (ψ : State) :
-    Instrument.bornMass ((AdaptiveCircuit.unitary g next).run.filter (fun b => accept b.history)) ψ =
-      Instrument.bornMass (next.run.filter (fun b => accept b.history)) (Quantum.run g ψ) := by
-  simp only [AdaptiveCircuit.run,List.filter_map,Instrument.bornMass,List.map_map,Function.comp_def]
-  rfl
-
-def actualRoundFixedAccept (accept : Nat → Nat → Bool) (history : List Bool) : Bool :=
-  fixedPairAccept (ipxOuterPlan.positions ⟨0,by decide⟩).left.toList
-    (ipxOuterPlan.positions ⟨0,by decide⟩).right.toList accept history
-
-private theorem positions_zero {n : Nat} (p : OuterPlan n) :
-    (p.positions ⟨0,by decide⟩).left.toList = axisPositions p.left.toList 0 ∧
-    (p.positions ⟨0,by decide⟩).right.toList = axisPositions p.right.toList (axisCount p.left.toList) := by
-  simp only [OuterPlan.positions,Vector.toList,List.toList_toArray,Nat.zero_mul,Nat.zero_add]
-  trivial
-
-private theorem actual_left : ipxOuterPlan.left.toList = ipxLeftWindows := by
-  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
-private theorem actual_right : ipxOuterPlan.right.toList = ipxRightWindows := by
-  simp only [ipxOuterPlan,standardOuterPlan,Vector.toList,List.toList_toArray]
-
-theorem actualRoundFixedAccept_positions (accept : Nat → Nat → Bool) (history : List Bool) :
-    actualRoundFixedAccept accept history =
-      fixedPairAccept (axisPositions (actualFirstWindow :: leftOddIndices.map actualIpxWindow) 0)
-        (axisPositions (rightOddIndices.map actualIpxWindow)
-          (axisCount (actualFirstWindow :: leftOddIndices.map actualIpxWindow))) accept history := by
-  rw [actualRoundFixedAccept,(positions_zero ipxOuterPlan).1,(positions_zero ipxOuterPlan).2,
-    actual_left,actual_right,ipxLeftWindows_indices,ipxRightWindows_indices]
-
-/-- Fixed positions of the actual layout select the same event in the actual round and ideal two-axis model. -/
-theorem actualRoundSource_fixedPair_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (accept : Nat → Nat → Bool) :
-    Instrument.bornMass ((actualRoundSource Q).run.filter
-      (fun b => actualRoundFixedAccept accept b.history)) (ket zeroBasisState) =
-    (selectedIdealTwoAxes Q leftOddIndices rightOddIndices (fun lhs rhs =>
-      if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then
-        (AdaptiveCircuit.unitary [.X 836] (measureResetWithCorrection resetWires (fun _ => []))).run
-      else [])).bornMass (ket (zeroBasisState[836 ↦ true])) := by
-  rw [actualRoundSource,sourceOuterRound_streamAxis,unitary_history_filter_mass]
-  have hx : Quantum.run [.X 836] (ket zeroBasisState) = ket (zeroBasisState[836 ↦ true]) := by
-    simp [Quantum.run,applyGate_ket,onKet,zeroBasisState]
-  rw [hx,actualLeftSources_indices,actualRightSources_indices]
-  simp only [actualRoundFixedAccept_positions]
-  exact actualSources_fixedPair_mass Q hQ hn leftOddIndices rightOddIndices _ accept
-
-
-noncomputable def wrappedPairAccept (params : DecoderParams) (Q : Point) (left right : Nat) : Bool := by
-  classical
-  exact ((fixedCandidates params left right).toList.find? (fun c => decide (c.val • G = Q))).isSome
-
-def actualSingleRoundLayout : DecodeLayout :=
-  ⟨.wrappedShift,legacyDecoderParams,[ipxOuterPlan.positions ⟨0,by decide⟩],by decide⟩
-
-theorem wrappedTrial_verified_isSome (params : DecoderParams) (Q : Point)
-    (positions : TrialPositions params) (history : List Bool) :
-    (verifiedCandidate ⟨.wrappedShift,params,[positions],by simp⟩ Q history).isSome =
-      fixedPairAccept positions.left.toList positions.right.toList (wrappedPairAccept params Q) history := by
-  classical
-  simp only [verifiedCandidate,candidates,List.flatMap_cons,List.flatMap_nil,List.append_nil,
-    decodeTrial,trialCandidates,fixedPairAccept]
-  cases hl : readWord history positions.left.toList <;>
-    cases hr : readWord history positions.right.toList <;>
-    simp only [Option.bind_none,Option.bind_some,Option.map_none,Option.map_some,
-      Option.getD_none,Option.getD_some,List.find?_nil,Option.isSome_none,fixedCandidates_take]
-  rfl
-
-theorem actualSingleRound_verified_isSome (Q : Point) (history : List Bool) :
-    (verifiedCandidate actualSingleRoundLayout Q history).isSome =
-      actualRoundFixedAccept (wrappedPairAccept legacyDecoderParams Q) history :=
-  wrappedTrial_verified_isSome _ Q _ history
-
-/-- The compiled round's acceptance is evaluated by the protected verifiedCandidate function. -/
-theorem actualCompiledRound_verified_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    Instrument.bornMass
-      (((ipxOuterPlan.round 0).instantiate (readConstant coefficientAt Q) Fin.elim0).run.filter
-        (fun b => (verifiedCandidate actualSingleRoundLayout Q b.history).isSome)) (ket zeroBasisState) =
-    (selectedIdealTwoAxes Q leftOddIndices rightOddIndices (fun lhs rhs =>
-      if wrappedPairAccept legacyDecoderParams Q (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then
-        (AdaptiveCircuit.unitary [.X 836] (measureResetWithCorrection resetWires (fun _ => []))).run
-      else [])).bornMass (ket (zeroBasisState[836 ↦ true])) := by
-  rw [ipxOuterPlan_round_run Q hQ 0 Fin.elim0]
-  simp only [actualSingleRound_verified_isSome]
-  exact actualRoundSource_fixedPair_mass Q hQ hn _
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: DecoderBridge ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/DecoderBridge.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-open scoped BigOperators
-
-theorem fixedCandidates_legacy_eq (out : Fin (2^256) × Fin (2^208)) :
-    fixedCandidates legacyDecoderParams out.1.val out.2.val = reducedShiftCandidates order 256 208 out := rfl
-
-theorem wrappedPairAccept_legacy_iff (Q : Point) (out : Fin (2^256) × Fin (2^208)) :
-    wrappedPairAccept legacyDecoderParams Q out.1.val out.2.val = true ↔
-      (reducedVerifiedCandidate Q out).isSome = true := by
-  classical
-  rw [wrappedPairAccept,fixedCandidates_legacy_eq]
-  simp only [List.find?_isSome,Finset.mem_toList,decide_eq_true_eq]
-  unfold reducedVerifiedCandidate
-  split_ifs with h
-  · simp only [Option.isSome_some,iff_true]; exact h
-  · simp only [Option.isSome_none,Bool.false_eq_true,iff_false]; exact h
-
-attribute [local irreducible] wrappedPairAccept reducedVerifiedCandidate
-
-theorem old_accept_implies_wrapped (Q : Point) (out : List Bool × List Bool)
-    (h : reducedRawDecoderAccept Q out = true) :
-    wrappedPairAccept legacyDecoderParams Q (fourierWordLSB out.1) (fourierWordLSB out.2) = true := by
-  unfold reducedRawDecoderAccept reducedRawPublicDecode at h
-  split_ifs at h with hl
-  · let out' : Fin (2^256) × Fin (2^208) :=
-      (⟨fourierWordLSB out.1, by simpa [hl.1] using fourierWordLSB_lt out.1⟩,
-       ⟨fourierWordLSB out.2, by simpa [hl.2] using fourierWordLSB_lt out.2⟩)
-    exact (wrappedPairAccept_legacy_iff Q out').mpr h
-  · simp at h
-
-theorem wrappedAccept_paperOutcomes (Q : Point) (out : Fin (2^256) × Fin (2^208)) :
-    wrappedPairAccept legacyDecoderParams Q
-      (fourierWordLSB (paperOutcomeBits 256 out.1)) (fourierWordLSB (paperOutcomeBits 208 out.2)) =
-      reducedRawDecoderAccept Q (paperOutcomeBits 256 out.1,paperOutcomeBits 208 out.2) := by
-  apply Bool.eq_iff_iff.mpr
-  simp only [paperOutcomeBits_word]
-  rw [wrappedPairAccept_legacy_iff]
-  simp [reducedRawDecoderAccept,reducedRawPublicDecode,paperOutcomeBits_length,paperOutcomeBits_word]
-
-theorem wrappedIdeal_mass_eq (Q : Point) (hG : G≠0) (hQ : Q≠0) (hrQ : order • Q=0) :
-    reducedRawIdealFourierEventMass G Q
-      (fun xy => wrappedPairAccept legacyDecoderParams Q (fourierWordLSB xy.1) (fourierWordLSB xy.2)) =
-      reducedRawIdealFourierEventMass G Q (reducedRawDecoderAccept Q) := by
-  rw [reducedRawIdealFourierEventMass_distribution G Q hG hQ generator_nsmul_eq_zero hrQ,
-      reducedRawIdealFourierEventMass_distribution G Q hG hQ generator_nsmul_eq_zero hrQ]
-  apply Finset.sum_congr rfl
-  intro out _
-  rw [wrappedAccept_paperOutcomes]
-
-theorem wrappedIdeal_mass_lower (Q : Point) (hG : G≠0) (hQ : Q≠0) (hrQ : order • Q=0)
-    (d : Nat) (hQd : Q=d • G) :
-    (27:ℝ)/50 ≤ reducedRawIdealFourierEventMass G Q
-      (fun xy => wrappedPairAccept legacyDecoderParams Q (fourierWordLSB xy.1) (fourierWordLSB xy.2)) := by
-  rw [wrappedIdeal_mass_eq Q hG hQ hrQ,reducedRawIdealDecoder_eq Q hG hQ hrQ d hQd,
-    reducedPhysicalVerifiedMass_eq Q hG hQ hrQ d hQd]
-  exact ShorECDLP.Entrant.Averaged.reducedVerifiedMass_averaged Q d hQd hQ
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: RoundBoundary ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/RoundBoundary.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum ShorECDLP.Challenge Secp256k1
-attribute [local irreducible] streamAddress fourierOutcomes actualFirstSource actualOddSource fourierBranch Quantum.run
-private theorem smul_support {V : BasisState → Prop} (c : ℂ) {ψ : State}
-    (h : SupportedOn V ψ) : SupportedOn V (c • ψ) := by
-  intro s hs
-  apply h s
-  intro he
-  exact hs (by simp [he])
-
-/-- Continuation composition preserves reached-state predicates branch by branch. -/
-theorem streamBlockContinuation_supported {V W : BasisState → Prop}
-    (call : AdaptiveCircuit) (prior : List Bool) (next : List Bool → Instrument)
-    (hcall : ∀ b ∈ call.run, ∀ ψ, SupportedOn V ψ → SupportedOn BatchedWindowValid (b.kraus ψ))
-    (hnext : ∀ bits b, b ∈ next bits → ∀ ψ, SupportedOn BatchedWindowValid ψ → SupportedOn W (b.kraus ψ))
-    (ψ : State) (hψ : SupportedOn V (Quantum.run (streamAddress.map Gate.H) ψ))
-    (b : InstrumentBranch) (hb : b ∈ streamBlockContinuation call prior next) :
-    SupportedOn W (b.kraus ψ) := by
-  rw [streamBlockContinuation_eq] at hb
-  have hu : (AdaptiveCircuit.unitary (streamAddress.map Gate.H) .done).run =
-      [⟨List.nil, Quantum.run (streamAddress.map Gate.H)⟩] := AdaptiveCircuit.run_unitary_done _
-  rw [hu] at hb
-  simp only [Instrument.seq,List.flatMap_cons,List.flatMap_nil,List.append_nil] at hb
-  obtain ⟨bc,hbc,rfl⟩ := List.mem_map.mp hb
-  obtain ⟨c,hc,hmap⟩ := List.mem_flatMap.mp hbc
-  obtain ⟨f,hf,rfl⟩ := List.mem_map.mp hmap
-  rw [fourierContinuationInstrument] at hf
-  obtain ⟨bits,hbits,hfm⟩ := List.mem_flatMap.mp hf
-  obtain ⟨d,hd,rfl⟩ := List.mem_map.mp hfm
-  change SupportedOn W (d.kraus (fourierBranch .inverse streamAddress.reverse prior bits
-    (c.kraus (Quantum.run (streamAddress.map Gate.H) ψ))))
-  exact hnext bits d hd _ (batchedWindowValid_fourierBranch .inverse streamAddress.reverse
-    (fun w hw => List.mem_reverse.mp hw) prior bits _ (hcall c hc _ hψ))
-
-theorem actualSourceAxis_supported (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (ws : List OddWindow) (prior : List Bool) (next : List Bool → Instrument)
-    (W : BasisState → Prop)
-    (hnext : ∀ bits b, b ∈ next bits → ∀ ψ, SupportedOn BatchedWindowValid ψ → SupportedOn W (b.kraus ψ))
-    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ)
-    (b : InstrumentBranch) (hb : b ∈ selectedSourceAxis (actualOddSource Q) ws prior next) :
-    SupportedOn W (b.kraus ψ) := by
-  induction ws generalizing prior ψ b with
-  | nil => exact hnext prior b hb ψ hψ
-  | cons w ws ih =>
-    apply streamBlockContinuation_supported (V := BatchedWindowValid) (W := W) (actualOddSource Q w) prior _ ?_ ?_ ψ
-      (batchedWindowValid_prepare _ (fun _ h => h) ψ hψ) b hb
-    · intro c hc φ hφ
-      obtain ⟨a,ha⟩ := (actualOddSource_coherent Q hQ hn w).branch_coefficient c hc
-      rw [ha.on_supported hφ]
-      exact smul_support a (actualIpxWindowState_supported Q hQ hn w φ hφ)
-    · intro bits c hc φ hφ
-      exact ih _ φ hφ c hc
-
-theorem actualSourceTwoAxes_supported (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (left right : List OddWindow) (next : List Bool → List Bool → Instrument)
-    (W : BasisState → Prop)
-    (hnext : ∀ lhs rhs b, b ∈ next lhs rhs → ∀ ψ,
-      SupportedOn BatchedWindowValid ψ → SupportedOn W (b.kraus ψ))
-    (ψ : State) (hψ : SupportedOn FirstWindowInput ψ)
-    (b : InstrumentBranch)
-    (hb : b ∈ selectedSourceTwoAxes (actualFirstSource Q) (actualOddSource Q) left right next) :
-    SupportedOn W (b.kraus ψ) := by
-  apply streamBlockContinuation_supported (V := FirstWindowInput) (W := W)
-    (actualFirstSource Q) List.nil _ ?_ ?_ ψ
-    (firstWindowInput_prepare _ (fun _ h => h) ψ hψ) b hb
-  · intro c hc φ hφ
-    obtain ⟨a,ha⟩ := (actualFirstSource_coherent_input Q hQ).branch_coefficient c hc
-    rw [ha.on_supported hφ]
-    exact smul_support a (actualFirstWindowState_supported Q φ hφ)
-  · intro bits c hc φ hφ
-    apply actualSourceAxis_supported Q hQ hn left bits.reverse _ W ?_ φ hφ c hc
-    intro lhs d hd χ hχ
-    exact actualSourceAxis_supported Q hQ hn right List.nil _ W (hnext lhs) χ hχ d hd
-
-theorem batchedReset_flag_absent : 837 ∉ resetWires := by
-  simp [resetWires]
-
-theorem actualRoundTail_zeroFlag (b : InstrumentBranch)
-    (hb : b ∈ (AdaptiveCircuit.unitary [.X 836]
-      (measureResetWithCorrection resetWires (fun _ => []))).run)
-    (ψ : State) (hψ : SupportedOn BatchedWindowValid ψ) :
-    SupportedOn (fun s => s 837=false) (b.kraus ψ) := by
-  refine AdaptiveCircuit.branch_frame _ 837 false ?_ b hb ψ ?_
-  · simp only [AdaptiveCircuit.wires,List.mem_append,not_or]
-    constructor
-    · simp [circuitWires,gateWires]
-    · intro h
-      exact batchedReset_flag_absent (resetRegister_support _ h)
-  · intro s hs
-    exact (hψ s hs).1.1.1.2.1
-
-theorem actualAxesTail_zeroFlag (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (left right : List OddWindow) (b : InstrumentBranch)
-    (hb : b ∈ selectedSourceTwoAxes (actualFirstSource Q) (actualOddSource Q) left right
-      (fun _ _ => (AdaptiveCircuit.unitary [.X 836]
-        (measureResetWithCorrection resetWires (fun _ => []))).run)) :
-    SupportedOn (fun s => s 837=false) (b.kraus (ket (zeroBasisState[836 ↦ true]))) := by
-  exact actualSourceTwoAxes_supported Q hQ hn left right _ _
-    (fun _ _ => actualRoundTail_zeroFlag) _
-    (supportedOn_ket _ _ firstWindowInput_start) b hb
-
-theorem actualRoundSource_zeroFlag (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (b : InstrumentBranch) (hb : b ∈ (actualRoundSource Q).run) :
-    SupportedOn (fun s => s 837=false) (b.kraus (ket zeroBasisState)) := by
-  rw [actualRoundSource,sourceOuterRound_streamAxis,actualLeftSources_indices,actualRightSources_indices] at hb
-  rw [AdaptiveCircuit.run, ← selectedSourceTwoAxes_constant] at hb
-  obtain ⟨c,hc,rfl⟩ := List.mem_map.mp hb
-  have hx : Quantum.run [.X 836] (ket zeroBasisState) = ket (zeroBasisState[836 ↦ true]) := by
-    simp [Quantum.run,applyGate_ket,onKet,zeroBasisState]
-  change SupportedOn (fun s => s 837=false) (c.kraus (Quantum.run [.X 836] (ket zeroBasisState)))
-  rw [hx]
-  exact actualAxesTail_zeroFlag Q hQ hn leftOddIndices rightOddIndices c hc
-
-theorem actualCompiledRound_zeroFlag (Q : Point) (hQ : order • Q=0) (hn : Q≠0)
-    (start : Nat) (history : Fin start → Bool) (b : InstrumentBranch)
-    (hb : b ∈ ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).run) :
-    SupportedOn (fun s => s 837=false) (b.kraus (ket zeroBasisState)) := by
-  rw [ipxOuterPlan_round_run Q hQ start history] at hb
-  exact actualRoundSource_zeroFlag Q hQ hn b hb
-end ShorECDLP.Paper2607_13816.ChallengeMigration
-
--- ==== part: WindowBranchSum ====
-
+section
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/WindowBranchSum.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
@@ -5592,686 +4513,4 @@ theorem selectedIdealAxis_point_mass (Q : Point) (hQ : order • Q = 0) (hn : Q 
 end
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
--- ==== part: IdealDistribution ====
-
-/-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
-`ShorECDLP/Submission/2607_13816/Challenge/IdealDistribution.lean`, Apache-2.0 (see the repository
-LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
-
-namespace ShorECDLP.Paper2607_13816.ChallengeMigration
-open Quantum Secp256k1
-noncomputable section
-attribute [local irreducible] fourierOutcomes
-
-def axisInputWords : Nat → List (List (List Bool))
-  | 0 => [[]]
-  | n+1 => (fourierOutcomes 16).flatMap (fun input =>
-      (axisInputWords n).map (fun rest => input :: rest))
-
-def axisInputEnd (Q : Point) : List (OddWindow × List Bool) → List (List Bool) → Point → Point
-  | (w, _) :: windows, input :: inputs, P =>
-      axisInputEnd Q windows inputs (P + windowDigitPoint Q w (boolWordToNat input))
-  | _, _, P => P
-
-def axisInputWeight : List (OddWindow × List Bool) → List Bool → List (List Bool) → ℂ
-  | (_, output) :: windows, prior, input :: inputs =>
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 16) *
-        fourierBitAmplitude .inverse input.reverse prior output *
-          axisInputWeight windows (output.reverse ++ prior) inputs
-  | _, _, _ => 1
-
-private theorem flat_sum {A B : Type} [AddCommMonoid B] (xs : List A) (f : A → List B) :
-    (xs.flatMap f).sum = (xs.map (fun x => (f x).sum)).sum := by
-  induction xs with
-  | nil => rfl
-  | cons x xs ih => simp [List.flatMap_cons, ih]
-
-theorem pointAxisKernel_inputs (Q : Point) (s : BasisState)
-    (windows : List (OddWindow × List Bool)) (prior : List Bool) (P : Point) :
-    pointAxisKernel Q s windows prior P =
-      ((axisInputWords windows.length).map (fun inputs =>
-        axisInputWeight windows prior inputs • ket (pointWrite (axisInputEnd Q windows inputs P) s))).sum := by
-  induction windows generalizing prior P with
-  | nil => simp [pointAxisKernel, axisInputWords, axisInputWeight, axisInputEnd]
-  | cons w windows ih =>
-    simp only [pointAxisKernel, List.length_cons, axisInputWords, List.map_flatMap,
-      List.map_map, Function.comp_def, axisInputWeight, axisInputEnd, flat_sum]
-    simp_rw [ih]
-    simp only [smul_smul, List.smul_sum, List.map_map, Function.comp_def]
-    congr 1
-    apply List.map_congr_left
-    intro input hi
-    congr 1
-    apply List.map_congr_left
-    intro inputs his
-    rw [mul_assoc]
-def axisInputPairs (windows : List (OddWindow × List Bool)) (inputs : List (List Bool)) :
-    List (List Bool × List Bool) :=
-  (windows.zip inputs).map (fun p => (p.2.reverse, p.1.2))
-
-theorem axisInputWeight_amplitude (windows : List (OddWindow × List Bool))
-    (prior : List Bool) (inputs : List (List Bool)) (hl : inputs.length = windows.length) :
-    axisInputWeight windows prior inputs =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (16 * windows.length)) *
-        windowFourierAmplitude .inverse (axisInputPairs windows inputs) prior := by
-  induction windows generalizing prior inputs with
-  | nil =>
-    have he : inputs = [] := List.length_eq_zero_iff.mp hl
-    subst inputs
-    simp [axisInputWeight, axisInputPairs, windowFourierAmplitude]
-  | cons w windows ih =>
-    cases inputs with
-    | nil => simp at hl
-    | cons input inputs =>
-      have ht : inputs.length = windows.length := by simpa using hl
-      simp only [axisInputWeight, axisInputPairs, List.zip_cons_cons, List.map_cons,
-        windowFourierAmplitude, List.length_cons]
-      rw [ih _ inputs ht]
-      change _ = _ * (fourierBitAmplitude .inverse input.reverse prior w.2 *
-        windowFourierAmplitude .inverse (axisInputPairs windows inputs) (w.2.reverse ++ prior))
-      rw [show 16 * (windows.length + 1) = 16 + 16 * windows.length by omega, pow_add]
-      ring
-
-theorem axisInputPairs_lengths (windows : List (OddWindow × List Bool))
-    (inputs : List (List Bool))
-    (ho : ∀ w ∈ windows, w.2.length = 16) (hi : ∀ input ∈ inputs, input.length = 16) :
-    ∀ pair ∈ axisInputPairs windows inputs, pair.2.length = pair.1.length := by
-  intro pair hp
-  unfold axisInputPairs at hp
-  obtain ⟨p, hzip, he⟩ := List.mem_map.mp hp
-  subst pair
-  have hw := List.of_mem_zip hzip
-  simp only [List.length_reverse]
-  rw [ho p.1 hw.1, hi p.2 hw.2]
-
-/-- The coefficient of a whole input path has the exact full-axis kernel,
-including both Hadamard preparation and Fourier normalization. -/
-theorem axisInputWeight_kernel (windows : List (OddWindow × List Bool))
-    (inputs : List (List Bool)) (hl : inputs.length = windows.length)
-    (ho : ∀ w ∈ windows, w.2.length = 16) (hi : ∀ input ∈ inputs, input.length = 16) :
-    axisInputWeight windows List.nil inputs =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (16 * windows.length)) *
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ ((axisInputPairs windows inputs).map Prod.fst).flatten.length) *
-        dyadicFourierKernel .inverse ((axisInputPairs windows inputs).map Prod.fst).flatten.length
-          (fourierWordMSB ((axisInputPairs windows inputs).map Prod.fst).flatten)
-          (fourierWordLSB ((axisInputPairs windows inputs).map Prod.snd).flatten) := by
-  rw [axisInputWeight_amplitude windows List.nil inputs hl,
-    windowFourierAmplitude_kernel .inverse _ (axisInputPairs_lengths windows inputs ho hi)]
-  ring
-
-theorem fourierOutcomes_reverse_perm (n : Nat) :
-    ((fourierOutcomes n).map List.reverse).Perm (fourierOutcomes n) := by
-  apply (List.perm_ext_iff_of_nodup
-    ((fourierOutcomes_nodup n).map List.reverse_injective) (fourierOutcomes_nodup n)).mpr
-  intro bits
-  simp only [List.mem_map, fourierOutcomes_mem]
-  constructor
-  · rintro ⟨xs, hx, rfl⟩
-    simpa only [List.length_reverse] using hx
-  · intro hb
-    exact ⟨bits.reverse, by simpa using hb, List.reverse_reverse bits⟩
-
-theorem fourierOutcomes_append (n m : Nat) : fourierOutcomes (n + m) =
-    (fourierOutcomes n).flatMap (fun a => (fourierOutcomes m).map (fun b => a ++ b)) := by
-  induction n with
-  | zero => simp [fourierOutcomes]
-  | succ n ih =>
-    simp only [Nat.succ_add, fourierOutcomes, ih, List.flatMap_append, List.flatMap_map,
-      List.map_flatMap, List.map_map, Function.comp_def, List.cons_append]
-
-theorem axisInputWords_flatten (n : Nat) :
-    (axisInputWords n).map List.flatten = fourierOutcomes (16 * n) := by
-  induction n with
-  | zero => simp [axisInputWords, fourierOutcomes]
-  | succ n ih =>
-    rw [show 16 * (n + 1) = 16 + 16 * n by omega, fourierOutcomes_append]
-    simp only [axisInputWords, List.map_flatMap, List.map_map, Function.comp_def, List.flatten_cons]
-    apply congrArg (List.flatMap · (fourierOutcomes 16))
-    funext input
-    simpa only [List.map_map, Function.comp_def] using congrArg (List.map (input ++ ·)) ih
-
-theorem axisInputWords_mem (n : Nat) (inputs : List (List Bool)) :
-    inputs ∈ axisInputWords n ↔ inputs.length = n ∧ ∀ bits ∈ inputs, bits.length = 16 := by
-  induction n generalizing inputs with
-  | zero => cases inputs <;> simp [axisInputWords]
-  | succ n ih =>
-    cases inputs with
-    | nil => simp [axisInputWords, List.mem_flatMap]
-    | cons input inputs =>
-      simp [axisInputWords, List.mem_flatMap, List.mem_map, List.cons.injEq,
-        fourierOutcomes_mem, ih, and_assoc, and_left_comm, and_comm]
-
-theorem axisInputWords_reverse_perm (n : Nat) :
-    ((axisInputWords n).map (List.map List.reverse)).Perm (axisInputWords n) := by
-  induction n with
-  | zero => simp [axisInputWords]
-  | succ n ih =>
-    simp only [axisInputWords]
-    have he : ((fourierOutcomes 16).flatMap (fun input =>
-        (axisInputWords n).map (fun rest => input :: rest))).map (List.map List.reverse) =
-      ((fourierOutcomes 16).map List.reverse).flatMap (fun input =>
-        ((axisInputWords n).map (List.map List.reverse)).map (fun rest => input :: rest)) := by
-      simp only [List.map_flatMap, List.flatMap_map, List.map_map, Function.comp_def, List.map_cons]
-    rw [he]
-    exact (fourierOutcomes_reverse_perm 16).flatMap (fun input _ => ih.map (input :: ·))
-
-/-- Reversing each physical input window gives every full MSB-first input word
-exactly once, so regrouping the coherent sum does not change multiplicity. -/
-theorem axisInputWords_msb_perm (n : Nat) :
-    ((axisInputWords n).map (fun inputs => (inputs.map List.reverse).flatten)).Perm
-      (fourierOutcomes (16 * n)) := by
-  have hp := (axisInputWords_reverse_perm n).map List.flatten
-  simpa only [List.map_map, Function.comp_def, axisInputWords_flatten] using hp
-
-theorem axisInputEnd_sum (Q : Point) (windows : List (OddWindow × List Bool))
-    (inputs : List (List Bool)) (P : Point) :
-    axisInputEnd Q windows inputs P = P +
-      ((windows.zip inputs).map (fun p => windowDigitPoint Q p.1.1 (boolWordToNat p.2))).sum := by
-  induction windows generalizing inputs P with
-  | nil => simp [axisInputEnd]
-  | cons w windows ih =>
-    cases inputs with
-    | nil => simp [axisInputEnd]
-    | cons input inputs =>
-      simp only [axisInputEnd, List.zip_cons_cons, List.map_cons, List.sum_cons, ih]
-      exact add_assoc _ _ _
-
-theorem axisInputPairs_fst (windows : List (OddWindow × List Bool))
-    (inputs : List (List Bool)) (hl : inputs.length = windows.length) :
-    (axisInputPairs windows inputs).map Prod.fst = inputs.map List.reverse := by
-  induction windows generalizing inputs with
-  | nil =>
-    have he : inputs = [] := List.length_eq_zero_iff.mp hl
-    subst inputs; rfl
-  | cons w windows ih =>
-    cases inputs with
-    | nil => simp at hl
-    | cons input inputs =>
-      simp only [axisInputPairs, List.zip_cons_cons, List.map_cons]
-      congr 1
-      exact ih inputs (by simpa using hl)
-
-theorem axisInputPairs_snd (windows : List (OddWindow × List Bool))
-    (inputs : List (List Bool)) (hl : inputs.length = windows.length) :
-    (axisInputPairs windows inputs).map Prod.snd = windows.map Prod.snd := by
-  induction windows generalizing inputs with
-  | nil =>
-    have he : inputs = [] := List.length_eq_zero_iff.mp hl
-    subst inputs; rfl
-  | cons w windows ih =>
-    cases inputs with
-    | nil => simp at hl
-    | cons input inputs =>
-      simp only [axisInputPairs, List.zip_cons_cons, List.map_cons]
-      congr 1
-      exact ih inputs (by simpa using hl)
-
-/-- A path has one preparation factor and one Fourier factor per input bit. -/
-theorem axisInputWeight_full_kernel (windows : List (OddWindow × List Bool))
-    (inputs : List (List Bool)) (hl : inputs.length = windows.length)
-    (ho : ∀ w ∈ windows, w.2.length = 16) (hi : ∀ input ∈ inputs, input.length = 16) :
-    axisInputWeight windows List.nil inputs =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (32 * windows.length)) *
-        dyadicFourierKernel .inverse (16 * windows.length)
-          (fourierWordMSB (inputs.map List.reverse).flatten)
-          (fourierWordLSB (windows.map Prod.snd).flatten) := by
-  have hlen : (inputs.map List.reverse).flatten.length = 16 * windows.length := by
-    rw [fixed_windows_flatten_length 16 _]
-    · simp only [List.length_map, hl]
-    · intro bits hb
-      obtain ⟨input, hm, he⟩ := List.mem_map.mp hb
-      subst bits
-      simpa only [List.length_reverse] using hi input hm
-  rw [axisInputWeight_kernel windows inputs hl ho hi,
-    axisInputPairs_fst windows inputs hl, axisInputPairs_snd windows inputs hl, hlen,
-    ← pow_add, show 16 * windows.length + 16 * windows.length = 32 * windows.length by omega]
-
-def descendingOddValue : List Nat → Int
-  | [] => 0
-  | d :: ds => signedTableOdd 32768 d * 65536 ^ ds.length + descendingOddValue ds
-
-private theorem signedValue_append (xs ys : List Int) :
-    signedWindowValue 65536 (xs ++ ys) =
-      signedWindowValue 65536 xs + (65536 : Int) ^ xs.length * signedWindowValue 65536 ys := by
-  induction xs with
-  | nil => simp [signedWindowValue]
-  | cons x xs ih =>
-    simp only [List.cons_append, signedWindowValue, List.length_cons, ih, pow_succ]
-    ring
-
-theorem descendingOddValue_reverse (digits : List Nat) :
-    descendingOddValue digits = signedWindowValue 65536 (digits.reverse.map (signedTableOdd 32768)) := by
-  induction digits with
-  | nil => rfl
-  | cons d ds ih =>
-    simp only [descendingOddValue, List.reverse_cons, List.map_append, List.map_cons,
-      List.map_nil, signedValue_append, List.length_map, List.length_reverse,
-      signedWindowValue, ih]
-    ring
-
-/-- Each chronological window uses the descending power belonging to its
-remaining suffix. This proposition concerns only fixed labels and weights. -/
-def DescendingAxisWeights (Q P : Point) : List (OddWindow × List Bool) → Prop
-  | [] => True
-  | (w, _) :: windows =>
-      (∀ digit, windowDigitPoint Q w digit =
-        signedTableOdd 32768 digit • (65536 ^ windows.length • signedWindowHalfPoint P order)) ∧
-      DescendingAxisWeights Q P windows
-
-theorem axisInputEnd_weighted (Q P : Point) (windows : List (OddWindow × List Bool))
-    (hw : DescendingAxisWeights Q P windows) (inputs : List (List Bool))
-    (hl : inputs.length = windows.length) (A : Point) :
-    axisInputEnd Q windows inputs A =
-      A + descendingOddValue (inputs.map boolWordToNat) • signedWindowHalfPoint P order := by
-  induction windows generalizing inputs A with
-  | nil =>
-    have he : inputs = [] := List.length_eq_zero_iff.mp hl
-    subst inputs
-    simp [axisInputEnd, descendingOddValue]
-  | cons w windows ih =>
-    cases inputs with
-    | nil => simp at hl
-    | cons input inputs =>
-      have ht : inputs.length = windows.length := by simpa using hl
-      simp only [axisInputEnd]
-      rw [ih hw.2 inputs ht, hw.1]
-      simp only [List.map_cons, descendingOddValue, List.length_map, ht, add_zsmul]
-      rw [mul_zsmul, show (65536 : Int) ^ windows.length = ((65536 ^ windows.length : Nat) : Int) by norm_cast, natCast_zsmul]
-      exact add_assoc _ _ _
-
-def DescendingLabelWeights (Q P : Point) : List OddWindow → Prop
-  | [] => True
-  | w :: windows =>
-      (∀ digit, windowDigitPoint Q w digit =
-        signedTableOdd 32768 digit • (65536 ^ windows.length • signedWindowHalfPoint P order)) ∧
-      DescendingLabelWeights Q P windows
-
-theorem descendingLabelWeights_zip (Q P : Point) (windows : List OddWindow)
-    (hw : DescendingLabelWeights Q P windows) (outputs : List (List Bool))
-    (hl : outputs.length = windows.length) : DescendingAxisWeights Q P (windows.zip outputs) := by
-  induction windows generalizing outputs with
-  | nil => simp [DescendingAxisWeights]
-  | cons w windows ih =>
-    cases outputs with
-    | nil => simp at hl
-    | cons output outputs =>
-      have ht : outputs.length = windows.length := by simpa using hl
-      simp only [List.zip_cons_cons, DescendingAxisWeights, List.length_zip, ht, min_self]
-      exact ⟨hw.1, ih hw.2 outputs ht⟩
-
-theorem left_labels_weights (Q : Point) : DescendingLabelWeights Q G leftOddIndices := by
-  norm_num [leftOddIndices, List.ofFn_succ, DescendingLabelWeights, windowDigitPoint, pow_mul]
-
-theorem right_labels_weights (Q : Point) : DescendingLabelWeights Q Q rightOddIndices := by
-  norm_num [rightOddIndices, List.ofFn_succ, DescendingLabelWeights, windowDigitPoint, pow_mul]
-
-theorem left_axis_input_end (Q : Point) (outputs inputs : List (List Bool))
-    (ho : outputs.length = 15) (hi : inputs.length = 15) (A : Point) :
-    axisInputEnd Q (leftOddIndices.zip outputs) inputs A =
-      A + descendingOddValue (inputs.map boolWordToNat) • signedWindowHalfPoint G order := by
-  apply axisInputEnd_weighted
-  · apply descendingLabelWeights_zip Q G _ (left_labels_weights Q) outputs
-    simpa only [leftOddIndices, List.length_ofFn] using ho
-  · simpa only [List.length_zip, leftOddIndices, List.length_ofFn, ho, min_self] using hi
-
-theorem right_axis_input_end (Q : Point) (outputs inputs : List (List Bool))
-    (ho : outputs.length = 13) (hi : inputs.length = 13) (A : Point) :
-    axisInputEnd Q (rightOddIndices.zip outputs) inputs A =
-      A + descendingOddValue (inputs.map boolWordToNat) • signedWindowHalfPoint Q order := by
-  apply axisInputEnd_weighted
-  · apply descendingLabelWeights_zip Q Q _ (right_labels_weights Q) outputs
-    simpa only [rightOddIndices, List.length_ofFn] using ho
-  · simpa only [List.length_zip, rightOddIndices, List.length_ofFn, ho, min_self] using hi
-
-theorem actual_two_axes_input_end (Q : Point) (hQ : order • Q = 0)
-    (first : List Bool) (left right outputsL outputsR : List (List Bool))
-    (hl : left.length = 15) (hr : right.length = 13)
-    (hol : outputsL.length = 15) (hor : outputsR.length = 13) :
-    axisInputEnd Q (rightOddIndices.zip outputsR) right
-      (axisInputEnd Q (leftOddIndices.zip outputsL) left
-        (axisWindowOffset G 16 + axisWindowOffset Q 13 +
-          signedTableOdd 32768 (boolWordToNat first) •
-            ((2 ^ (16 * 15)) • signedWindowHalfPoint G order))) =
-      windowValue 65536 ((first :: left).map boolWordToNat).reverse • G +
-        windowValue 65536 (right.map boolWordToNat).reverse • Q := by
-  rw [right_axis_input_end Q outputsR right hor hr,
-    left_axis_input_end Q outputsL left hol hl]
-  have hgroup := two_axis_signed_digits Q hQ
-    ((first :: left).map boolWordToNat).reverse (right.map boolWordToNat).reverse
-    (by simp only [List.length_reverse, List.length_map, List.length_cons, hl])
-    (by simp only [List.length_reverse, List.length_map, hr])
-  rw [← descendingOddValue_reverse, ← descendingOddValue_reverse] at hgroup
-  rw [← hgroup]
-  simp only [List.map_cons, descendingOddValue, List.length_map, hl, add_zsmul, mul_zsmul]
-  rw [show (65536 : Int) ^ 15 = ((65536 ^ 15 : Nat) : Int) by norm_cast, natCast_zsmul,
-    show 2 ^ (16 * 15) = 65536 ^ 15 by decide +kernel]
-  abel
-
-/-- The actual two-axis branch is one coherent sum over all three input
-blocks: the direct first load, the remaining left windows, and the right axis. -/
-theorem actual_two_axes_state_sum (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (firstOutput : List Bool) (left right : List (OddWindow × List Bool))
-    (s : BasisState) (hs : FirstWindowInput s) (hz : Clean streamAddress s) :
-    actualAxisBranch Q right List.nil
-      (actualAxisBranch Q left firstOutput.reverse
-        (fourierBranch .inverse streamAddress.reverse List.nil firstOutput
-          (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q)
-            (Quantum.run (streamAddress.map Gate.H) (ket s))))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 16) •
-        ((fourierOutcomes 16).map (fun firstInput =>
-          fourierBitAmplitude .inverse firstInput.reverse List.nil firstOutput •
-            ((axisInputWords left.length).map (fun inputsL =>
-              axisInputWeight left firstOutput.reverse inputsL •
-                ((axisInputWords right.length).map (fun inputsR =>
-                  axisInputWeight right List.nil inputsR •
-                    ket (pointWrite
-                      (axisInputEnd Q right inputsR
-                        (axisInputEnd Q left inputsL
-                          (axisWindowOffset G 16 + axisWindowOffset Q 13 +
-                            signedTableOdd 32768 (boolWordToNat firstInput) •
-                              ((2 ^ (16 * 15)) • signedWindowHalfPoint G order)))) s))).sum)).sum)).sum := by
-  rw [actual_first_point_sum Q List.nil firstOutput s hz]
-  simp only [map_smul, map_list_sum, List.map_map, Function.comp_def,
-    actualAxisBranch_point Q hQ hn s hs hz]
-  simp_rw [pointAxisKernel_inputs]
-  simp only [map_smul, map_list_sum, List.map_map, Function.comp_def,
-    actualAxisBranch_point Q hQ hn s hs hz, pointAxisKernel_inputs]
-
-def inputScalarWord (inputs : List (List Bool)) : List Bool :=
-  (inputs.map List.reverse).flatten.reverse
-
-theorem inputScalarWord_perm (n : Nat) :
-    ((axisInputWords n).map inputScalarWord).Perm (fourierOutcomes (16 * n)) := by
-  have hp := (axisInputWords_msb_perm n).map List.reverse
-  simpa only [List.map_map, Function.comp_def, inputScalarWord] using
-    hp.trans (fourierOutcomes_reverse_perm (16 * n))
-
-theorem inputScalarWord_value (inputs : List (List Bool))
-    (hi : ∀ bits ∈ inputs, bits.length = 16) :
-    boolWordToNat (inputScalarWord inputs) =
-      windowValue 65536 (inputs.map boolWordToNat).reverse := by
-  rw [← fourierWordMSB_reverse]
-  simp only [inputScalarWord, List.reverse_reverse]
-  have h := input_windows_value 16 (inputs.map List.reverse) (by
-    intro bits hb
-    obtain ⟨input, hm, he⟩ := List.mem_map.mp hb
-    subst bits
-    simpa only [List.length_reverse] using hi input hm)
-  simpa only [List.map_map, Function.comp_def, fourierWordMSB_reverse] using h
-
-theorem two_axis_input_kernel (left right : List (OddWindow × List Bool))
-    (inputsL inputsR : List (List Bool)) (hl : left.length = 16) (hr : right.length = 13)
-    (hil : inputsL.length = left.length) (hir : inputsR.length = right.length)
-    (hol : ∀ w ∈ left, w.2.length = 16) (hor : ∀ w ∈ right, w.2.length = 16)
-    (hbl : ∀ bits ∈ inputsL, bits.length = 16) (hbr : ∀ bits ∈ inputsR, bits.length = 16) :
-    axisInputWeight left List.nil inputsL * axisInputWeight right List.nil inputsR =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 928) *
-        dyadicFourierKernel .inverse 256 (boolWordToNat (inputScalarWord inputsL))
-          (fourierWordLSB (left.map Prod.snd).flatten) *
-        dyadicFourierKernel .inverse 208 (boolWordToNat (inputScalarWord inputsR))
-          (fourierWordLSB (right.map Prod.snd).flatten) := by
-  rw [axisInputWeight_full_kernel left inputsL hil hol hbl,
-    axisInputWeight_full_kernel right inputsR hir hor hbr, hl, hr]
-  have hw (inputs : List (List Bool)) :
-      fourierWordMSB (inputs.map List.reverse).flatten = boolWordToNat (inputScalarWord inputs) := by
-    simpa only [inputScalarWord, List.reverse_reverse] using
-      fourierWordMSB_reverse (inputScalarWord inputs)
-  rw [hw, hw, show (928 : Nat) = 32 * 16 + 32 * 13 by decide, pow_add]
-  ring
-
-theorem axisInputWords_sum_succ {A : Type} [AddCommMonoid A] (n : Nat)
-    (f : List (List Bool) → A) :
-    ((axisInputWords (n + 1)).map f).sum =
-      ((fourierOutcomes 16).map (fun input =>
-        ((axisInputWords n).map (fun inputs => f (input :: inputs))).sum)).sum := by
-  simp only [axisInputWords, List.map_flatMap, List.map_map, Function.comp_def, flat_sum]
-
-def twoAxisInputState (Q : Point) (s : BasisState) (x y : List Bool) : State :=
-  ((axisInputWords 16).map (fun inputsL =>
-    ((axisInputWords 13).map (fun inputsR =>
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 928 *
-        dyadicFourierKernel .inverse 256 (boolWordToNat (inputScalarWord inputsL)) (fourierWordLSB x) *
-        dyadicFourierKernel .inverse 208 (boolWordToNat (inputScalarWord inputsR)) (fourierWordLSB y)) •
-      ket (pointWrite (boolWordToNat (inputScalarWord inputsL) • G +
-        boolWordToNat (inputScalarWord inputsR) • Q) s))).sum)).sum
-
-theorem actual_two_axes_input_state (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (firstOutput : List Bool) (outputsL outputsR : List (List Bool))
-    (ho0 : firstOutput.length = 16) (hol : outputsL.length = 15) (hor : outputsR.length = 13)
-    (hbl : ∀ bits ∈ outputsL, bits.length = 16) (hbr : ∀ bits ∈ outputsR, bits.length = 16)
-    (s : BasisState) (hs : FirstWindowInput s) (hz : Clean streamAddress s) :
-    actualAxisBranch Q (rightOddIndices.zip outputsR) List.nil
-      (actualAxisBranch Q (leftOddIndices.zip outputsL) firstOutput.reverse
-        (fourierBranch .inverse streamAddress.reverse List.nil firstOutput
-          (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q)
-            (Quantum.run (streamAddress.map Gate.H) (ket s))))) =
-      twoAxisInputState Q s (firstOutput :: outputsL).flatten outputsR.flatten := by
-  have hll : (leftOddIndices.zip outputsL).length = 15 := by
-    simp only [List.length_zip, leftOddIndices, List.length_ofFn, hol, min_self]
-  have hrl : (rightOddIndices.zip outputsR).length = 13 := by
-    simp only [List.length_zip, rightOddIndices, List.length_ofFn, hor, min_self]
-  rw [actual_two_axes_state_sum Q hQ hn firstOutput _ _ s hs hz, hll, hrl,
-    twoAxisInputState, axisInputWords_sum_succ 15]
-  simp only [List.smul_sum, List.map_map, Function.comp_def, smul_smul]
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro firstInput hf
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro inputsL hlm
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro inputsR hrm
-  have hf' := (fourierOutcomes_mem 16 firstInput).mp hf
-  have hl' := (axisInputWords_mem 15 inputsL).mp hlm
-  have hr' := (axisInputWords_mem 13 inputsR).mp hrm
-  have hli : ∀ bits ∈ firstInput :: inputsL, bits.length = 16 := by
-    intro bits hb
-    rcases List.mem_cons.mp hb with rfl | hb
-    · exact hf'
-    · exact hl'.2 bits hb
-  rw [actual_two_axes_input_end Q hQ firstInput inputsL inputsR outputsL outputsR
-    hl'.1 hr'.1 hol hor,
-    ← inputScalarWord_value (firstInput :: inputsL) hli,
-    ← inputScalarWord_value inputsR hr'.2]
-  apply congrArg (fun c : ℂ => c • ket (pointWrite
-    (boolWordToNat (inputScalarWord (firstInput :: inputsL)) • G +
-      boolWordToNat (inputScalarWord inputsR) • Q) s))
-  let left : List (OddWindow × List Bool) := (.left ⟨0, by decide⟩, firstOutput) :: leftOddIndices.zip outputsL
-  have hcoef := two_axis_input_kernel left (rightOddIndices.zip outputsR)
-    (firstInput :: inputsL) inputsR (by simp only [left, List.length_cons, hll]) hrl
-    (by simp only [left, List.length_cons, hll, hl'.1]) (hr'.1.trans hrl.symm)
-    (by
-      intro w hw
-      rcases List.mem_cons.mp hw with rfl | hw
-      · exact ho0
-      · exact hbl w.2 (List.of_mem_zip hw).2)
-    (fun w hw => hbr w.2 (List.of_mem_zip hw).2) hli hr'.2
-  have hls : (leftOddIndices.zip outputsL).map Prod.snd = outputsL :=
-    List.map_snd_zip (by simp only [leftOddIndices, List.length_ofFn, hol, le_refl])
-  have hrs : (rightOddIndices.zip outputsR).map Prod.snd = outputsR :=
-    List.map_snd_zip (by simp only [rightOddIndices, List.length_ofFn, hor, le_refl])
-  simpa only [left, axisInputWeight, List.map_cons, hls, hrs, List.nil_append, List.append_nil,
-    mul_assoc] using hcoef
-
-theorem inputScalarWord_sum {A : Type} [AddCommMonoid A] (n : Nat) (f : List Bool → A) :
-    ((axisInputWords n).map (fun inputs => f (inputScalarWord inputs))).sum =
-      ((fourierOutcomes (16 * n)).map f).sum := by
-  simpa only [List.map_map, Function.comp_def] using ((inputScalarWord_perm n).map f).sum_eq
-
-def idealPointState (Q : Point) (s : BasisState) (x y : List Bool) : State :=
-  ((fourierOutcomes 256).map (fun a =>
-    ((fourierOutcomes 208).map (fun b =>
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 928 *
-        dyadicFourierKernel .inverse 256 (boolWordToNat a) (fourierWordLSB x) *
-        dyadicFourierKernel .inverse 208 (boolWordToNat b) (fourierWordLSB y)) •
-      ket (pointWrite (boolWordToNat a • G + boolWordToNat b • Q) s))).sum)).sum
-
-theorem twoAxisInputState_ideal (Q : Point) (s : BasisState) (x y : List Bool) :
-    twoAxisInputState Q s x y = idealPointState Q s x y := by
-  let f (a b : List Bool) : State :=
-    (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 928 *
-      dyadicFourierKernel .inverse 256 (boolWordToNat a) (fourierWordLSB x) *
-      dyadicFourierKernel .inverse 208 (boolWordToNat b) (fourierWordLSB y)) •
-      ket (pointWrite (boolWordToNat a • G + boolWordToNat b • Q) s)
-  change ((axisInputWords 16).map (fun inputs =>
-    ((axisInputWords 13).map (fun other => f (inputScalarWord inputs) (inputScalarWord other))).sum)).sum =
-    ((fourierOutcomes 256).map (fun a => ((fourierOutcomes 208).map (f a)).sum)).sum
-  simp_rw [inputScalarWord_sum (A := State) 13]
-  exact inputScalarWord_sum (A := State) 16 (fun a => ((fourierOutcomes 208).map (f a)).sum)
-
-theorem stream_kernel_idealPointState (Q : Point) (x y : List Bool) :
-    measuredFourierKernel .inverse (streamFourierWires (indexedStreamCalls 17 (streamRawRightCalls Q))) y
-      (measuredFourierKernel .inverse (streamFourierWires (indexedStreamCalls 1 (streamRawLeftCalls G Q))) x
-        (Finsupp.lmapDomain ℂ ℂ (streamPreparedScalarOutput G Q) (streamPreparedEntry G Q))) =
-      idealPointState Q (scalarRootFlip zeroBasisState) x y := by
-  rw [streamFourierKernel_point_sum]
-  simp only [List.smul_sum, List.map_map, Function.comp_def, smul_smul, idealPointState]
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro a ha
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro b hb
-  apply congrArg (fun c : ℂ => c • ket (pointWrite (boolWordToNat a • G + boolWordToNat b • Q)
-    (scalarRootFlip zeroBasisState)))
-  rw [show (928 : Nat) = 464 + 464 by decide, pow_add]
-  ring
-
-theorem windowOutputPaths_zip (windows : List OddWindow) :
-    windowOutputPaths windows = (axisInputWords windows.length).map (windows.zip ·) := by
-  induction windows with
-  | nil => rfl
-  | cons w windows ih =>
-    simp only [windowOutputPaths, List.length_cons, axisInputWords, List.map_flatMap,
-      List.map_map, Function.comp_def, List.zip_cons_cons, ih]
-
-/-- Expose both chronological output paths while preserving the terminal event. -/
-theorem selectedIdealTwoAxes_paths_mass (Q : Point) (left right : List OddWindow)
-    (terminal : List Bool → List Bool → Instrument) (ψ : State) :
-    (selectedIdealTwoAxes Q left right terminal).bornMass ψ =
-      ((fourierOutcomes 16).map (fun first =>
-        ((windowOutputPaths left).map (fun lp =>
-          ((windowOutputPaths right).map (fun rp =>
-            (terminal ((lp.map Prod.snd).flatten.reverse ++ first.reverse)
-              (rp.map Prod.snd).flatten.reverse).bornMass
-                (actualAxisBranch Q rp List.nil (actualAxisBranch Q lp first.reverse
-                  (fourierBranch .inverse streamAddress.reverse List.nil first
-                    (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q)
-                      (Quantum.run (streamAddress.map Gate.H) ψ))))))).sum)).sum)).sum := by
-  have he : (selectedIdealTwoAxes Q left right terminal).bornMass ψ =
-      (fourierContinuationInstrument List.nil (fun bits =>
-        selectedIdealAxis Q left bits.reverse (fun lhs =>
-          selectedIdealAxis Q right List.nil (terminal lhs)))).bornMass
-        (Finsupp.lmapDomain ℂ ℂ (actualFirstWindowState Q)
-          (Quantum.run (streamAddress.map Gate.H) ψ)) := by
-    simp only [selectedIdealTwoAxes, Instrument.bornMass, List.map_map, Function.comp_def,
-      InstrumentBranch.seq, LinearMap.comp_apply]
-  rw [he, fourierContinuationInstrument_mass]
-  simp_rw [selectedIdealAxis_paths_mass]
-  simp only [List.append_nil]
-
-theorem selectedIdealTwoAxes_word_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (terminal : List Bool → List Bool → Instrument)
-    (s : BasisState) (hs : FirstWindowInput s) (hz : Clean streamAddress s) :
-    (selectedIdealTwoAxes Q leftOddIndices rightOddIndices terminal).bornMass (ket s) =
-      ((axisInputWords 16).map (fun outputsL =>
-        ((axisInputWords 13).map (fun outputsR =>
-          (terminal outputsL.flatten.reverse outputsR.flatten.reverse).bornMass
-            (idealPointState Q s outputsL.flatten outputsR.flatten))).sum)).sum := by
-  rw [selectedIdealTwoAxes_paths_mass, windowOutputPaths_zip, windowOutputPaths_zip]
-  simp only [show leftOddIndices.length = 15 by simp [leftOddIndices],
-    show rightOddIndices.length = 13 by simp [rightOddIndices], List.map_map, Function.comp_def]
-  rw [axisInputWords_sum_succ (A := ℝ) 15]
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro firstOutput hf
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro outputsL hlm
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro outputsR hrm
-  have hf' := (fourierOutcomes_mem 16 firstOutput).mp hf
-  have hl' := (axisInputWords_mem 15 outputsL).mp hlm
-  have hr' := (axisInputWords_mem 13 outputsR).mp hrm
-  have hls : (leftOddIndices.zip outputsL).map Prod.snd = outputsL :=
-    List.map_snd_zip (by simp only [leftOddIndices, List.length_ofFn, hl'.1, le_refl])
-  have hrs : (rightOddIndices.zip outputsR).map Prod.snd = outputsR :=
-    List.map_snd_zip (by simp only [rightOddIndices, List.length_ofFn, hr'.1, le_refl])
-  rw [hls, hrs, actual_two_axes_input_state Q hQ hn firstOutput outputsL outputsR
-    hf' hl'.1 hr'.1 hl'.2 hr'.2 s hs hz, twoAxisInputState_ideal]
-  simp only [List.flatten_cons, List.reverse_append]
-
-theorem outputWords_sum {A : Type} [AddCommMonoid A] (n : Nat) (f : List Bool → A) :
-    ((axisInputWords n).map (fun outputs => f outputs.flatten)).sum =
-      ((fourierOutcomes (16 * n)).map f).sum := by
-  simpa only [List.map_map, Function.comp_def] using
-    congrArg (fun xs => (xs.map f).sum) (axisInputWords_flatten n)
-
-/-- Exact output distribution of the full corrected 256/208-bit streaming
-computation, expressed against an arbitrary output-dependent terminal instrument. -/
-theorem selectedIdealTwoAxes_output_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (terminal : List Bool → List Bool → Instrument)
-    (s : BasisState) (hs : FirstWindowInput s) (hz : Clean streamAddress s) :
-    (selectedIdealTwoAxes Q leftOddIndices rightOddIndices terminal).bornMass (ket s) =
-      ((fourierOutcomes 256).map (fun lhs =>
-        ((fourierOutcomes 208).map (fun rhs =>
-          (terminal lhs.reverse rhs.reverse).bornMass (idealPointState Q s lhs rhs))).sum)).sum := by
-  rw [selectedIdealTwoAxes_word_mass Q hQ hn terminal s hs hz]
-  let f (lhs rhs : List Bool) : ℝ :=
-    (terminal lhs.reverse rhs.reverse).bornMass (idealPointState Q s lhs rhs)
-  change ((axisInputWords 16).map (fun outputs =>
-    ((axisInputWords 13).map (fun other => f outputs.flatten other.flatten)).sum)).sum =
-    ((fourierOutcomes 256).map (fun lhs => ((fourierOutcomes 208).map (f lhs)).sum)).sum
-  simp_rw [outputWords_sum (A := ℝ) 13]
-  exact outputWords_sum (A := ℝ) 16 (fun lhs => ((fourierOutcomes 208).map (f lhs)).sum)
-
-private theorem unitary_prefix_mass (c : Circuit) (tail : AdaptiveCircuit) (ψ : State) :
-    (AdaptiveCircuit.unitary c tail).run.bornMass ψ = tail.run.bornMass (Quantum.run c ψ) := by
-  simp only [AdaptiveCircuit.run, Instrument.bornMass, List.map_map, Function.comp_def]
-  rfl
-
-theorem actual_terminal_mass (ψ : State) :
-    (AdaptiveCircuit.unitary [.X 836]
-      (measureResetWithCorrection resetWires (fun _ => []))).run.bornMass ψ = normSq ψ := by
-  calc
-    _ = (measureResetWithCorrection resetWires (fun _ => [])).run.bornMass
-        (Quantum.run [.X 836] ψ) := unitary_prefix_mass _ _ _
-    _ = normSq (Quantum.run [.X 836] ψ) := resetRegister_mass _ _
-    _ = normSq ψ := normSq_run _ (by simp [CircuitWellFormed, Gate.WellFormed]) ψ
-
-/-- The complete corrected streaming computation has exactly the ideal 256/208
-Fourier event distribution, for any Boolean acceptance predicate. -/
-theorem selectedIdealTwoAxes_event_eq (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (accept : Nat → Nat → Bool) :
-    (selectedIdealTwoAxes Q leftOddIndices rightOddIndices (fun lhs rhs =>
-      if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then
-        (AdaptiveCircuit.unitary [.X 836]
-          (measureResetWithCorrection resetWires (fun _ => []))).run
-      else [])).bornMass (ket (zeroBasisState[836 ↦ true])) =
-      reducedRawIdealFourierEventMass G Q (fun xy =>
-        accept (fourierWordLSB xy.1) (fourierWordLSB xy.2)) := by
-  rw [selectedIdealTwoAxes_output_mass Q hQ hn _ _ firstWindowInput_start
-    (by
-      intro v hv
-      have hb : 855 ≤ v := by simpa [streamAddress, List.mem_range'_1] using (And.left (by
-        simpa [streamAddress, List.mem_range'_1] using hv : 855 ≤ v ∧ v < 855 + 16))
-      simp [upd, zeroBasisState, show v ≠ 836 by dsimp only [Wire] at *; omega])]
-  rw [← streamIdealFourierEventMass_eq G Q G_ne_zero hn generator_nsmul_eq_zero hQ]
-  unfold streamFourierKernelEventMass
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro lhs hl
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro rhs hr
-  simp only [List.reverse_reverse]
-  split_ifs
-  · rw [actual_terminal_mass, stream_kernel_idealPointState]
-    rfl
-  · rfl
-
 end
-end ShorECDLP.Paper2607_13816.ChallengeMigration
