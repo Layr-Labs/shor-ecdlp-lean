@@ -614,7 +614,7 @@ theorem residue_away (u : ℝ) (hu0 : 0 ≤ u) (hu1 : u < 1) (ε : ℝ)
     linarith
 
 /-- Exact arithmetic for the proposed public resource bounds. -/
-theorem target_score : 855 * 15399939344 = 13166948139120 := by norm_num
+theorem target_score : 855 * 15398440784 = 13165666870320 := by norm_num
 
 theorem one_trial_budget :
     2 * (ShorECDLP.order / 2 ^ 203 + 2) ≤ 56 * (2 ^ 49 + 2) := by decide +kernel
@@ -3311,7 +3311,7 @@ structure Setup {n : Nat} (coeffs : Fin n → PointCoeff) where
   firstWires : first.wires = (bank 16).reverse
   signedWires : ∀ w, (signed w).wires = (bank w.width).reverse
   firstCount : first.count = 65535
-  signedCount : ∀ w, (signed w).count = 30700717
+  signedCount : ∀ w, (signed w).count = 30707853
 
 def Setup.firstModel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : WindowModel (readConstant coeffs Q) :=
@@ -3483,7 +3483,7 @@ theorem Setup.right_metadata {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setu
 
 theorem Setup.left_count {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 491277270 := by
+    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 491391446 := by
   rw [← recordCount_eq_axisCount, s.left_metadata, left_record_count]
 
 theorem Setup.left_positions {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
