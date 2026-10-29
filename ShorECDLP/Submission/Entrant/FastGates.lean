@@ -1,5 +1,6 @@
 import ShorECDLP.Submission.Entrant.FastOracle
 import ShorECDLP.Submission.Entrant.V2.Gates
+import ShorECDLP.Submission.Entrant.DirtyInv
 
 /-! EDITABLE. Fixed template gates for `fastCPA`.
 
@@ -96,6 +97,60 @@ def fastSetupGates {n : Nat} (row : Fin n) (pointReg : List Wire) (pw : Wire) :
   (pointAddCoordinateCopies pointReg pw).map TemplateGate.literal ++
     pointFlagGates row pointReg pw
 
+/-- The generic branch with the dirty inversion, with fixed field references. -/
+def genericPointGatesD {n : Nat} (row : Fin n) (workStart : Wire) : List (TemplateGate n) :=
+  let offset := pointAddArithmeticOffset workStart
+  let x := pointAddX workStart
+  let y := pointAddY workStart
+  let t0 := pointAddT0 workStart
+  let t1 := pointAddT1 workStart
+  let t2 := pointAddT2 workStart
+  let t3 := pointAddT3 workStart
+  let t4 := pointAddT4 workStart
+  let t5 := pointAddT5 workStart
+  let numerator := fieldSubConstGates row .y offset y t0
+  let denominator := fieldSubConstGates row .x offset x t1
+  let inverse := (dirtyInv workStart t1 t2).map TemplateGate.literal
+  let slope := (fieldMul offset t0 t2 t3).map TemplateGate.literal
+  let slopeSq := (fieldMul offset t3 t3 t0).map TemplateGate.literal
+  let minusX := (fieldSub offset t0 x t1).map TemplateGate.literal
+  let xOut := fieldSubConstGates row .x offset t1 t5
+  let xDifference := (fieldSub offset x t5 t0).map TemplateGate.literal
+  let yProduct := (fieldMul offset t3 t0 t1).map TemplateGate.literal
+  let yOut := (fieldSub offset t1 y t4).map TemplateGate.literal
+  numerator ++ denominator ++ inverse ++ slope ++ denominator.reverse ++
+    numerator.reverse ++ slopeSq ++ minusX ++ xOut ++ minusX.reverse ++ slopeSq.reverse ++
+    xDifference ++ yProduct ++ yOut
+
+theorem genericPointGatesD_source {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Point)
+    (row : Fin n) (workStart : Wire) :
+    (genericPointGatesD row workStart).flatMap
+      (TemplateGate.instantiate (readConstant coeffs Q)) =
+      genericPointComputeD workStart (pointCoordinates (constantPoint Q (coeffs row))).2.1
+        (pointCoordinates (constantPoint Q (coeffs row))).2.2 := by
+  simp only [genericPointGatesD, List.flatMap_append, template_reverse,
+    literalGates_instantiate, fieldSubConstGates_source, fieldValue, genericPointComputeD,
+    genericPrefix, genericSuffix, List.append_assoc]
+
+theorem dirtyInv_length_le (w : Wire) (input out : List Wire) :
+    (dirtyInv w input out).length ≤ input.length + 4140000000 + 257 := by
+  have h1 := copyReg_length_le input (dirtyBase w)
+  have h2 := copyReg_length_le (dirtyOut w) out
+  have h3 := Engine.fwd_length_le
+  have h4 : (dirtyOut w).length = 257 := by
+    simp only [dirtyOut, shiftWires, List.length_map, Engine.core_out_length]
+  simp only [dirtyInv, List.length_append, shiftCircuit, List.length_map]
+  omega
+
+theorem genericPointGatesD_length_le {n : Nat} (row : Fin n) (w : Wire) :
+    (genericPointGatesD row w).length ≤ 17000000000 := by
+  have hd := dirtyInv_length_le w (pointAddT1 w) (pointAddT2 w)
+  simp only [genericPointGatesD, List.length_append, List.length_reverse, List.length_map]
+  grind only [fieldSubConstGates_length_le, fieldMul_length_le,
+    fieldSub_length_le, pointAddX_length, pointAddY_length, pointAddT0_length,
+    pointAddT1_length, pointAddT2_length, pointAddT3_length, pointAddT4_length,
+    pointAddT5_length]
+
 def fastOutGates {n : Nat} (row : Fin n) (control : Wire) (pointReg outReg : List Wire)
     (workStart : Wire) : List (TemplateGate n) :=
   let pw := controlledPointAddPointWorkStart workStart
@@ -103,7 +158,7 @@ def fastOutGates {n : Nat} (row : Fin n) (control : Wire) (pointReg outReg : Lis
   (fastPass control pointReg outReg).map TemplateGate.literal ++
     fastSetupGates row pointReg pw ++
     (fastBlockGates control (pointAddGenericFlag pw) workStart
-        (genericPointGates row pw ++
+        (genericPointGatesD row pw ++
           (packFinitePoint (pointAddT5 pw) (pointAddT4 pw) cand).map TemplateGate.literal)
         cand outReg ++
       fastBlockGates control (pointAddDoubleFlag pw) workStart (dpackedLoadGates row cand 0)
@@ -127,7 +182,7 @@ theorem fastOutGates_source {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Point
       fastOut control pointReg outReg workStart (constantPoint Q (coeffs row)) := by
   simp only [fastOutGates, fastSetupGates, List.flatMap_append, template_reverse,
     literalGates_instantiate, fastBlockGates_source, pointFlagGates_source,
-    genericPointGates_source, packedLoadGates_source, dpackedLoadGates_source]
+    genericPointGatesD_source, packedLoadGates_source, dpackedLoadGates_source]
   rfl
 
 def fastCPAGates {n : Nat} (row negRow : Fin n) (control : Wire) (pointReg : List Wire)
@@ -248,7 +303,7 @@ theorem xSlots_fastCPAGates {n : Nat} (row negRow : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) :
     XSlots (fastCPAGates row negRow control pointReg workStart) := by
   simp only [fastCPAGates, fastOutGates, fastSetupGates, fastBlockGates, pointFlagGates,
-    genericPointGates, fieldSubConstGates, xSlots_append, xSlots_reverse, xSlots_literal,
+    genericPointGatesD, fieldSubConstGates, xSlots_append, xSlots_reverse, xSlots_literal,
     xSlots_singleton, xSlots_fieldLoad, xSlots_packedLoad, xSlots_dpackedLoad, and_self]
 
 theorem xSlots_templateT {n : Nat} (gs : List (TemplateGate n)) (h : XSlots gs)
@@ -297,7 +352,7 @@ theorem fastCPAGates_instantiate {n : Nat} (coeffs : Fin n → PointCoeff) (Q : 
 
 theorem fastCPAGates_templateT {n : Nat} (row negRow : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hP : pointReg.length = pointWidth) :
-    templateT (fastCPAGates row negRow control pointReg workStart) = 42030569392 := by
+    templateT (fastCPAGates row negRow control pointReg workStart) = 21239929368 := by
   rw [xSlots_templateT _ (xSlots_fastCPAGates row negRow control pointReg workStart)
     (readConstant (fun _ : Fin n => qCoefficient) G), fastCPAGates_instantiate]
   exact fastCPA2_tCount control pointReg workStart _ _ hP
@@ -343,7 +398,7 @@ theorem fastOutGates_length_le {n : Nat} (row : Fin n) (control : Wire)
   have h2 := pointAddCoordinateCopies_length_le pointReg
     (controlledPointAddPointWorkStart workStart)
   have h3 := pointFlagGates_length_le row pointReg (controlledPointAddPointWorkStart workStart)
-  have h4 := genericPointGates_length_le row (controlledPointAddPointWorkStart workStart)
+  have h4 := genericPointGatesD_length_le row (controlledPointAddPointWorkStart workStart)
   have h5 := packFinitePoint_length_le (pointAddT5 (controlledPointAddPointWorkStart workStart))
     (pointAddT4 (controlledPointAddPointWorkStart workStart))
     (pointAddCandidate (controlledPointAddPointWorkStart workStart))
@@ -377,7 +432,7 @@ theorem fastScalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : 
     (hP : pointReg.length = pointWidth) :
     ∀ (cs : List Wire) (rs : List (Fin n × Fin n)),
       templateT (fastScalarGates pointReg workStart cs rs) =
-        min cs.length rs.length * 42030569392 := by
+        min cs.length rs.length * 21239929368 := by
   intro cs
   induction cs with
   | nil => intro rs; cases rs <;> simp [fastScalarGates, templateT]

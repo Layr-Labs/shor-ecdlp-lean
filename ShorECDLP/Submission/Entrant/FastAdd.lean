@@ -1,4 +1,5 @@
 import ShorECDLP.Submission.Entrant.V2.Controlled_PointAdd
+import ShorECDLP.Submission.Entrant.DirtyInv
 import ShorECDLP.Challenge.Template
 import Batteries.Tactic.OpenPrivate
 
@@ -54,7 +55,7 @@ def fastBlock (control flag anc : Wire) (K : Circuit) (cand outReg : List Wire) 
     [Gate.CCX control flag anc]
 
 def fastGenericK (pw : Wire) (xC yC : Fp) : Circuit :=
-  genericPointCompute pw xC yC ++
+  genericPointComputeD pw xC yC ++
     packFinitePoint (pointAddT5 pw) (pointAddT4 pw) (pointAddCandidate pw)
 
 def fastBlocks (control anc : Wire) (outReg : List Wire) (pw : Wire) (C : Point) :
@@ -278,18 +279,18 @@ theorem writeReg_zero_of_clean (ws : List Wire) (s : BasisState) (h : Clean ws s
 omit [Fact (Nat.Prime p)] in
 theorem fastGenericK_HPFree (pw : Wire) (xC yC : Fp) : HPFree (fastGenericK pw xC yC) := by
   simp only [fastGenericK, hpFree_append]
-  exact ⟨genericPointCompute_HPFree pw xC yC, packFinitePoint_HPFree _ _ _⟩
+  exact ⟨genericPointComputeD_HPFree pw xC yC, packFinitePoint_HPFree _ _ _⟩
 
 omit [Fact (Nat.Prime p)] in
 theorem fastGenericK_wellFormed (pw : Wire) (xC yC : Fp) :
     CircuitWellFormed (fastGenericK pw xC yC) := by
   rw [fastGenericK, circuitWellFormed_append]
-  exact ⟨genericPointCompute_wellFormed pw xC yC, packFinitePoint_wellFormed pw⟩
+  exact ⟨genericPointComputeD_wellFormed pw xC yC, packFinitePoint_wellFormed pw⟩
 
 omit [Fact (Nat.Prime p)] in
 theorem fastGenericK_usesOnly (pw : Wire) (xC yC : Fp) :
     CircuitUsesOnly (pointAddWork pw) (fastGenericK pw xC yC) :=
-  usesOnly_mono (usesOnly_append (genericPointCompute_usesOnly pw xC yC)
+  usesOnly_mono (usesOnly_append (genericPointComputeD_usesOnly pw xC yC)
     (packFinitePoint_usesOnly_pointAdd pw)) (pointAddBranchActiveSupport_mem_work pw)
 
 omit [Fact (Nat.Prime p)] in
@@ -548,10 +549,10 @@ theorem fastOut_correct (control : Wire) (pointReg outReg : List Wire) (workStar
           have hdbl' : s2 (pointAddDoubleFlag pw) = false := by
             change Classical.run setup st (pointAddDoubleFlag pw) = false
             rw [hdbl]; simp [hx]
-          obtain ⟨ht2, ht4, hcc2⟩ := genericPointCompute_correct pw xR yR xC yC hx s2
+          obtain ⟨ht2, ht4, hcc2⟩ := genericPointComputeD_correct pw xR yR xC yC hx s2
             hxReg hyReg hbw hT5
           have hpack := packFinitePoint_correct pw (generic_nonsingular hR hC hx)
-            (Classical.run (genericPointCompute pw xC yC) s2) ht2 ht4 hcc2
+            (Classical.run (genericPointComputeD pw xC yC) s2) ht2 ht4 hcc2
           have hgv : regValue cand (Classical.run (fastGenericK pw xC yC) s2) =
               (encode ((.some hR : Point) + .some hC)).val := by
             rw [fastGenericK, Classical.run_append, hpack, encode_val, ← genericAdd_correct hR hC hx]
@@ -858,12 +859,12 @@ theorem fastBlock_tCount (control flag anc : Wire) (K : Circuit) (cand outReg : 
 omit [Fact (Nat.Prime p)] in
 theorem fastOut_tCount (control : Wire) (pointReg outReg : List Wire) (workStart : Wire)
     (C : Point) (hP : pointReg.length = pointWidth) (hO : outReg.length = pointWidth) :
-    tCount (fastOut control pointReg outReg workStart C) = 21015284696 := by
+    tCount (fastOut control pointReg outReg workStart C) = 10619964684 := by
   have hc : (pointAddCandidate (controlledPointAddPointWorkStart workStart)).length =
       outReg.length := by rw [hO]; simp [pointAddCandidate]
   simp only [fastOut, fastBlocks, fastPass, tCount_append, tCount_reverse,
     fastBlock_tCount _ _ _ _ _ _ hc, controlledCopyReg_tCount control pointReg outReg
-      (by rw [hP, hO]), pointAddSetup_tCount, fastGenericK, genericPointCompute_tCount,
+      (by rw [hP, hO]), pointAddSetup_tCount, fastGenericK, genericPointComputeD_tCount,
     packFinitePoint_tCount, loadConst_tCount, hO]
   simp [tCount, tCost, pointWidth]
 
@@ -874,7 +875,7 @@ theorem fastCPA2_tCount (control : Wire) (pointReg : List Wire) (workStart : Wir
         (controlledPointAddAuxStart workStart) C ++
       pointSwapReg pointReg (controlledPointAddTemp workStart) ++
       (fastOut control pointReg (controlledPointAddTemp workStart)
-        (controlledPointAddAuxStart workStart) C').reverse) = 42030569392 := by
+        (controlledPointAddAuxStart workStart) C').reverse) = 21239929368 := by
   have ht : (controlledPointAddTemp workStart).length = pointWidth := by
     simp [controlledPointAddTemp]
   simp only [tCount_append, tCount_reverse, fastOut_tCount _ _ _ _ _ hP ht, pointSwapReg_tCount]

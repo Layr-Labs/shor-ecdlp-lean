@@ -22,24 +22,25 @@ open Arithmetic
 
 def program : Circuit := Entrant.LowInv.lowProgram
 
-def layout : RegisterLayout := Entrant.LowInv.lowLayout
+def layout : RegisterLayout := Entrant.LowInv.lowLayoutX
 
 def cost : Nat := 10425834650
 
 /-- Number of 257-wire blocks spanned by the engine's full registers. -/
 def blocks : Nat := 34
 
-/-- Every engine wire lies below this bound: the last multiplier flag is the first wire of
-block 34. -/
-def wireBound : Nat := 257 * 34 + 1
+/-- Every engine wire lies below this bound.  The engine itself ends with the multiplier flag
+at the first wire of block 34; the layout also reserves the 2570 wires above it, so that a
+copy of the engine shifted ten blocks up stays inside the layout. -/
+def wireBound : Nat := 257 * 34 + 1 + 2570
 
 theorem contract :
     CleanBinaryContract program layout ShorECDLP.p (fun a _ => a ^ (ShorECDLP.p - 2)) cost := by
-  have h := Entrant.LowInv.lowProgram_contract
+  have h := Entrant.LowInv.lowProgram_contractX
   rw [Entrant.LowInv.lowCost_eq] at h
   exact h
 
-theorem layout_valid : layout.Valid := Entrant.LowInv.lowLayout_valid
+theorem layout_valid : layout.Valid := Entrant.LowInv.lowLayoutX_valid
 
 theorem program_tCount : tCount program = cost := contract.counted
 
@@ -56,7 +57,52 @@ theorem rhs_nodup : layout.rhs.Nodup := (Secp256k1Instance.regBlock 1).wires_nod
 theorem out_nodup : layout.out.Nodup := (Secp256k1Instance.regBlock 2).wires_nodup
 
 theorem allWires_lt : ∀ w ∈ layout.allWires, w < wireBound :=
+  Entrant.LowInv.lowLayoutX_allWires_lt
+
+/-- Every wire below the bound belongs to the layout. -/
+theorem allWires_covers : ∀ w : Nat, w < wireBound → w ∈ layout.allWires :=
+  Entrant.LowInv.lowLayoutX_covers
+
+/-! ## The forward sweep
+
+`fwdProgram` runs the engine's checkpoint chain forward only: it leaves `lhs ^ (p - 2)` in
+`out` and its checkpoints in the work wires.  Its reverse uncomputes them. -/
+
+def fwdProgram : Circuit := Entrant.LowInv.lowFwd
+
+def fwdCost : Nat := 5228174644
+
+/-- The engine's own registers, without the reserved headroom. -/
+def core : RegisterLayout := Entrant.LowInv.lowLayout
+
+theorem core_valid : core.Valid := Entrant.LowInv.lowLayout_valid
+
+theorem core_lt : ∀ w ∈ core.allWires, w < 257 * 34 + 1 :=
   Entrant.LowInv.lowLayout_allWires_lt
+
+theorem core_lhs_length : core.lhs.length = 257 := (Secp256k1Instance.reg 0).length_eq
+
+theorem core_out_length : core.out.length = 257 := (Secp256k1Instance.reg 2).length_eq
+
+theorem fwd_correct (st : BasisState) (hlhs : regValue core.lhs st < ShorECDLP.p)
+    (hclean : Clean (core.out ++ core.work) st) :
+    regValue core.out (Classical.run fwdProgram st) =
+        regValue core.lhs st ^ (ShorECDLP.p - 2) % ShorECDLP.p ∧
+      ∀ w, w ∉ core.allWires → Classical.run fwdProgram st w = st w :=
+  Entrant.LowInv.lowFwd_correct st hlhs hclean
+
+theorem fwd_usesOnly : CircuitUsesOnly core.allWires fwdProgram :=
+  Entrant.LowInv.lowFwd_usesOnly
+
+theorem fwd_HPFree : Classical.HPFree fwdProgram := (Entrant.LowInv.lowFwd_good 0).hp
+
+theorem fwd_wellFormed : CircuitWellFormed fwdProgram := (Entrant.LowInv.lowFwd_good 0).wf
+
+theorem fwd_tCount : tCount fwdProgram = fwdCost := by
+  rw [show fwdCost = Entrant.LowInv.lowFwdCost from Entrant.LowInv.lowFwdCost_eq.symm]
+  exact (Entrant.LowInv.lowFwd_good 0).tc
+
+theorem fwd_length_le : fwdProgram.length ≤ 4140000000 := (Entrant.LowInv.lowFwd_good 0).len
 
 theorem program_length_le : program.length ≤ 4140000000 := Entrant.LowInv.lowProgram_length_le
 

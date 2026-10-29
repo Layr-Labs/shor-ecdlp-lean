@@ -536,6 +536,62 @@ theorem bennett_good {α : Type} {step : α → Nat → Nat → Circuit} {f : α
         omega
 
 
+
+/-! ## The forward half of the Bennett scheme -/
+
+/-- The forward half of `bennett`: every intermediate result is kept, the last one is written
+into `dst`.  Its reverse is the matching uncompute, so `fwd ++ (fwd).reverse` is clean. -/
+def fwd {α : Type} (step : α → Nat → Nat → Circuit) :
+    Nat → Nat → List α → List Nat → Circuit
+  | src, dst, [a], _ => step a src dst
+  | src, dst, a :: b :: as, s :: ss => step a src s ++ fwd step s dst (b :: as) ss
+  | _, _, _, _ => []
+
+def fcost {α : Type} (T : α → Nat) : List α → Nat
+  | [] => 0
+  | [a] => T a
+  | a :: b :: as => T a + fcost T (b :: as)
+
+/-- The valuation after `fwd`: the kept intermediate results, then `dst`. -/
+def fval {α : Type} (f : α → Nat → Nat) : Nat → Nat → List α → List Nat → Val → Nat → Val
+  | _, dst, [a], _, σ, e => upd σ dst (some (f a e))
+  | _, dst, a :: b :: as, s :: ss, σ, e =>
+      fval f s dst (b :: as) ss (upd σ s (some (f a e))) (f a e)
+  | _, _, _, _, σ, _ => σ
+
+theorem fwd_good {α : Type} {step : α → Nat → Nat → Circuit} {f : α → Nat → Nat}
+    {R : α → Nat → Nat → Val → Nat → Bool} {T L : α → Nat} {x : Nat}
+    (hstep : ∀ a src dst σ e, R a src dst σ e = true →
+      Good ms x σ (upd σ dst (some (f a e))) (step a src dst) (T a) (L a) ∧ σ dst = none) :
+    ∀ (items : List α) (src dst : Nat) (scratch : List Nat) (σ : Val) (e : Nat),
+      chainOK R f src dst items scratch σ e = true →
+      Good ms x σ (fval f src dst items scratch σ e) (fwd step src dst items scratch)
+        (fcost T items) (fcost L items)
+  | [], _, _, _, _, _, h => by simp [chainOK] at h
+  | [a], src, dst, scratch, σ, e, h => by
+      simp only [chainOK] at h
+      simpa [fwd, fval, fcost] using (hstep a src dst σ e h).1
+  | _ :: _ :: _, _, _, [], _, _, h => by simp [chainOK] at h
+  | a :: b :: as, src, dst, s :: ss, σ, e, h => by
+      simp only [chainOK, Bool.and_eq_true, decide_eq_true_eq] at h
+      obtain ⟨⟨⟨h1, _⟩, _⟩, h4⟩ := h
+      have g1 := (hstep a src s σ e h1).1
+      have g2 := fwd_good hstep (b :: as) s dst ss _ _ h4
+      exact g1.append g2
+
+theorem fval_dst {α : Type} {f : α → Nat → Nat} {R : α → Nat → Nat → Val → Nat → Bool} :
+    ∀ (items : List α) (src dst : Nat) (scratch : List Nat) (σ : Val) (e : Nat),
+      chainOK R f src dst items scratch σ e = true →
+      fval f src dst items scratch σ e dst = some (foldE f items e)
+  | [], _, _, _, _, _, h => by simp [chainOK] at h
+  | [a], _, dst, _, σ, e, _ => by simp [fval, foldE]
+  | _ :: _ :: _, _, _, [], _, _, h => by simp [chainOK] at h
+  | a :: b :: as, _, dst, s :: ss, σ, e, h => by
+      simp only [chainOK, Bool.and_eq_true, decide_eq_true_eq] at h
+      obtain ⟨⟨⟨_, _⟩, _⟩, h4⟩ := h
+      rw [fval, fval_dst (b :: as) s dst ss _ _ h4]
+      rfl
+
 /-! ## Two-level pebbling -/
 
 /-- A segment of chain steps from `src` into `dst`, through the scratch blocks `scr`. -/
@@ -675,6 +731,34 @@ theorem lowProgram_good (x : Nat) :
   exact h.cast plan_cost plan_len
 
 
+/-! ## The forward half of the engine -/
+
+/-- The engine's forward sweep: all checkpoints kept, `x ^ (p - 2)` in block `2`. -/
+def lowFwd : Circuit := fwd (segStep msE dupE scrE) 0 2 plan ckptsE
+
+def lowFwdVal : Val := fval segExp 0 2 plan ckptsE σ₀ 1
+
+def lowFwdMults : Nat := fcost (fun seg => bcost (fun _ => 1) seg) plan
+
+def lowFwdCost : Nat := lowFwdMults * Secp256k1Instance.mulCost
+
+set_option maxRecDepth 100000 in
+theorem lowFwd_cost :
+    fcost (fun seg => bcost (fun _ => Secp256k1Instance.mulCost) seg) plan = lowFwdCost := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+theorem lowFwd_len :
+    fcost (fun seg => bcost (stepLen msE) seg) plan ≤ 4140000000 := by
+  decide +kernel
+
+theorem lowFwd_good (x : Nat) : Good msE x σ₀ lowFwdVal lowFwd lowFwdCost 4140000000 :=
+  (fwd_good (fun seg a c σ e h => seg_good scrE seg a c σ e h) plan 0 2 ckptsE σ₀ 1
+    plan_ok).cast lowFwd_cost lowFwd_len
+
+theorem lowFwdVal_two : lowFwdVal 2 = some (p - 2) := by
+  rw [lowFwdVal, fval_dst plan 0 2 ckptsE σ₀ 1 plan_ok, plan_exp]
+
 /-! ## Contract packaging -/
 
 /-- Base in block 0, untouched port in block 1, result in block 2; everything else is work. -/
@@ -801,5 +885,122 @@ theorem lowProgram_length_le : lowProgram.length ≤ 4140000000 := (lowProgram_g
 
 theorem lowCost_eq : lowCost = 10425834650 := by
   simp [lowCost, lowMults, Secp256k1Instance.mulCost, Secp256k1Instance.fieldWidth]
+
+
+/-! ## Extended layout and the forward sweep
+
+The layout below reserves every wire under `extBound`, which leaves room for a copy of the
+engine shifted ten blocks up.  The clean engine never touches the extra wires. -/
+
+def extBound : Nat := 257 * 34 + 1 + 2570
+
+def extraW : List Wire :=
+  (List.range extBound).filter (fun w => decide (w ∉ lowLayout.allWires))
+
+def lowLayoutX : RegisterLayout :=
+  { lhs := lowLayout.lhs, rhs := lowLayout.rhs, out := lowLayout.out,
+    work := lowLayout.work ++ extraW }
+
+theorem lowLayoutX_allWires : lowLayoutX.allWires = lowLayout.allWires ++ extraW := by
+  simp [lowLayoutX, RegisterLayout.allWires, List.append_assoc]
+
+theorem mem_extraW {w : Wire} : w ∈ extraW ↔ w < extBound ∧ w ∉ lowLayout.allWires := by
+  simp [extraW]
+
+theorem lowLayoutX_valid : lowLayoutX.Valid := by
+  obtain ⟨h1, h2, h3⟩ := lowLayout_valid
+  refine ⟨h1, h2, ?_⟩
+  rw [lowLayoutX_allWires, List.nodup_append]
+  refine ⟨h3, List.Nodup.filter _ List.nodup_range, ?_⟩
+  intro a ha b hb hab
+  subst hab
+  exact (mem_extraW.mp hb).2 ha
+
+theorem lowLayoutX_allWires_lt : ∀ w : Nat, w ∈ lowLayoutX.allWires → w < extBound := by
+  intro w hw
+  rw [lowLayoutX_allWires, List.mem_append] at hw
+  rcases hw with hw | hw
+  · have := lowLayout_allWires_lt w hw
+    simp only [extBound]
+    omega
+  · exact (mem_extraW.mp hw).1
+
+theorem lowLayoutX_covers : ∀ w : Nat, w < extBound → w ∈ lowLayoutX.allWires := by
+  intro w hw
+  rw [lowLayoutX_allWires, List.mem_append]
+  by_cases h : w ∈ lowLayout.allWires
+  · exact Or.inl h
+  · exact Or.inr (mem_extraW.mpr ⟨hw, h⟩)
+
+theorem lowProgram_contractX :
+    CleanBinaryContract lowProgram lowLayoutX p (fun a _ => a ^ (p - 2)) lowCost where
+  correct := by
+    intro st _ hlhs hrhs hclean
+    have hclean' : Clean (lowLayout.out ++ lowLayout.work) st := by
+      intro w hw
+      apply hclean w
+      change w ∈ lowLayout.out ++ (lowLayout.work ++ extraW)
+      rcases List.mem_append.mp hw with h | h
+      · exact List.mem_append_left _ h
+      · exact List.mem_append_right _ (List.mem_append_left _ h)
+    obtain ⟨ha, hb, hc, hd⟩ :=
+      lowProgram_contract.correct st lowLayout_valid hlhs hrhs hclean'
+    refine ⟨ha, hb, hc, ?_⟩
+    intro w hw
+    change w ∈ lowLayout.work ++ extraW at hw
+    rcases List.mem_append.mp hw with hw | hw
+    · exact hd w hw
+    · rw [lowProgram_contract.usesOnly.preservesOutside st w (mem_extraW.mp hw).2]
+      exact hclean w (List.mem_append_right _ (List.mem_append_right _ hw))
+  usesOnly := usesOnly_mono lowProgram_contract.usesOnly (by
+    intro w hw
+    rw [lowLayoutX_allWires]
+    exact List.mem_append_left _ hw)
+  counted := lowProgram_contract.counted
+  hpFree := lowProgram_contract.hpFree
+  wellFormed := fun _ => lowProgram_contract.wellFormed lowLayout_valid
+
+/-- The forward sweep leaves `x ^ (p - 2)` in the output block and touches only engine wires. -/
+theorem lowFwd_correct (st : BasisState) (hlhs : regValue lowLayout.lhs st < p)
+    (hclean : Clean (lowLayout.out ++ lowLayout.work) st) :
+    regValue lowLayout.out (Classical.run lowFwd st) =
+        regValue lowLayout.lhs st ^ (p - 2) % p ∧
+      ∀ w, w ∉ lowLayout.allWires → Classical.run lowFwd st w = st w := by
+  change regValue (reg 0).wires st < p at hlhs
+  let x := regValue (reg 0).wires st
+  have hx : x % p = x := Nat.mod_eq_of_lt hlhs
+  have hg := lowFwd_good x
+  have hinv : Inv msE x σ₀ st := by
+    refine ⟨fun i hi => ?_, fun w hw => hclean w ?_⟩
+    · rw [mem_ids] at hi
+      rcases hi with rfl | ⟨h1, h2⟩
+      · change regValue _ st = x ^ 1 % p
+        rw [pow_one, hx]
+      · have hσ : σ₀ i = none := by
+          simp only [σ₀, upd]
+          rw [if_neg (by omega)]
+        rw [hσ]
+        intro w hw
+        by_cases h2' : i = 2
+        · subst h2'
+          exact hclean w (List.mem_append_left _ hw)
+        · exact hclean w (List.mem_append_right _ (List.mem_append_left _
+            (mem_lowWork_regs.mpr ⟨i, by omega, h2, hw⟩)))
+    · exact List.mem_append_right _ (List.mem_append_right _ hw)
+  obtain ⟨hinv', hframe⟩ := hg.moves st hinv
+  have h2 := hinv'.1 2 (mem_ids.mpr (Or.inr ⟨le_refl _, by decide⟩))
+  rw [lowFwdVal_two] at h2
+  refine ⟨h2, ?_⟩
+  intro w hw
+  apply hframe w
+  intro hmem
+  exact hw (engW_sub_allWires w hmem)
+
+theorem lowFwd_usesOnly : CircuitUsesOnly lowLayout.allWires lowFwd :=
+  usesOnly_mono (lowFwd_good 0).uses engW_sub_allWires
+
+set_option maxRecDepth 100000 in
+theorem lowFwdCost_eq : lowFwdCost = 5228174644 := by
+  decide +kernel
 
 end ShorECDLP.Entrant.LowInv

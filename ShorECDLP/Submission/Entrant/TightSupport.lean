@@ -148,7 +148,7 @@ theorem setup_usesOnly_tight (pointReg : List Wire) (pw : Wire) (xC yC : Fp) :
 
 theorem genericK_usesOnly_tight (pw : Wire) (xC yC : Fp) :
     CircuitUsesOnly (tightPW pw) (fastGenericK pw xC yC) :=
-  usesOnly_mono (usesOnly_append (genericPointCompute_usesOnly pw xC yC)
+  usesOnly_mono (usesOnly_append (genericPointComputeD_usesOnly pw xC yC)
     (packFinitePoint_usesOnly_pointAdd pw)) (tight_activeSupport pw)
 
 theorem loadCand_usesOnly_tight (pw : Wire) (v : Nat) :

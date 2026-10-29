@@ -5,14 +5,11 @@ import ShorECDLP.Submission.Entrant.Shift.Phase
 import ShorECDLP.Submission.Entrant.Shift.Fourier
 import ShorECDLP.Challenge.Official
 
-/-! EDITABLE. One trial with a narrow, half-bin-shifted right phase register.
+/-! EDITABLE. One extended-precision trial.
 
 The V2 point arithmetic (Naive circuits with a swap-based field inversion) and the Naive
-wire allocation are used; each controlled point addition is the single-pass `fastCPA`.
-The left phase register has 263 qubits (wires `0 … 262`) and is decoded exactly as before.
-The right phase register has only 214 qubits (wires `263 … 476`); before its inverse QFT a
-diagonal `halfShift` adds half a coarse bin, and only its top 203 bits are decoded by the
-protected `wrappedShift` interval.  Wires `477 … 511` of the phase block stay unused. -/
+wire allocation are used; each controlled point addition is the single-pass `fastCPA`.  The left phase register has 263 qubits and the right one 214 (wires `0 … 476`); a half-bin
+shift precedes the right register's inverse QFT and only its top 203 bits are decoded. -/
 
 namespace ShorECDLP.Entrant
 open Quantum Secp256k1 Challenge NaiveChallenge Arithmetic
@@ -65,7 +62,7 @@ theorem phase_split : bitcoinAReg ++ bitcoinBReg = (regA ++ regB) ++ List.range'
   rw [phase_block, regA, regB, h1, h2]
 
 theorem old_lt : ∀ w : ℕ, w ∈ bitcoinAReg ++ bitcoinBReg ++ bitcoinPointReg ++
-    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w < 14903 := by
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w < 17473 := by
   intro w hw
   have h := V2.v2DeclaredWires_subset w hw
   have h' := List.mem_range.mp h
@@ -82,6 +79,54 @@ theorem layoutE :
     simp only [List.append_assoc]
     exact (List.Sublist.refl _).append ((List.Sublist.refl _).append (List.sublist_append_right _ _))
   exact ⟨hsub.nodup hn, fun h => hf (hsub.subset h)⟩
+
+/-- Wires `0 … 476` and `512 … 17472`. -/
+def supportList : List Wire := List.range' 0 477 ++ List.range' 512 16961
+
+theorem supportList_nodup : supportList.Nodup := by
+  rw [supportList, List.nodup_append]
+  refine ⟨List.nodup_range', List.nodup_range', ?_⟩
+  intro a ha b hb hab
+  subst hab
+  simp only [List.mem_range'_1] at ha hb
+  omega
+
+theorem supportList_length : supportList.length = 17438 := by simp [supportList]
+
+theorem support_sub : ∀ w : ℕ, w ∈ regA ++ regB ++ bitcoinPointReg ++
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ supportList := by
+  obtain ⟨_, _, _, hn, hf⟩ := V2.v2WireLayout
+  have hdisj : ∀ w ∈ bitcoinPointReg ++ V2.scalarMulWork bitcoinWorkStart,
+      w ∉ bitcoinAReg ++ bitcoinBReg := by
+    rw [List.append_assoc] at hn
+    have h := (List.nodup_append.mp hn).2.2
+    intro w hw hab
+    exact h w hab w hw rfl
+  have hanc : bitcoinQFTAncilla ∉ bitcoinAReg ++ bitcoinBReg := by
+    intro h; exact hf (List.mem_append_left _ (List.mem_append_left _ h))
+  have hhigh : ∀ w, w ∉ bitcoinAReg ++ bitcoinBReg → w < 17473 → w ∈ supportList := by
+    intro w hw hlt
+    have h512 : 512 ≤ w := by
+      rcases Nat.lt_or_ge w 512 with h | h
+      · refine absurd ?_ hw
+        rw [phase_block]
+        exact List.mem_range'_1.mpr ⟨Nat.zero_le _, by simpa using h⟩
+      · exact h
+    exact List.mem_append_right _ (List.mem_range'_1.mpr ⟨h512, by omega⟩)
+  intro w hw
+  simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hw
+  rcases hw with (((hab | hp) | hwk) | hanc')
+  · have hlt : w < 477 := by
+      rcases hab with h | h
+      · have := List.mem_range'_1.mp (show w ∈ List.range' 0 263 from h); omega
+      · have := List.mem_range'_1.mp (show w ∈ List.range' 263 214 from h); omega
+    exact List.mem_append_left _ (List.mem_range'_1.mpr ⟨by omega, by omega⟩)
+  · exact hhigh w (hdisj w (List.mem_append_left _ hp))
+      (old_lt w (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ hp))))
+  · exact hhigh w (hdisj w (List.mem_append_right _ hwk))
+      (old_lt w (List.mem_append_left _ (List.mem_append_right _ hwk)))
+  · subst hanc'
+    exact hhigh _ hanc (by simp [bitcoinQFTAncilla])
 
 /-! ## Coefficient table and trial gates -/
 
@@ -297,14 +342,14 @@ theorem entryE_wellFormed : entryE.program.WellFormed :=
 
 /-! ## Resources -/
 
-/-- Every wire the trial can touch: the phase registers (`0 … 476`), the point register through
-the first branch ancilla (512 … 1539), the local point-addition block below the unused
+/-- Every wire the trial can touch: the phase registers, the point register through the
+first branch ancilla (512 … 1539), the local point-addition block below the unused
 `selected` register, and the arithmetic engine region. -/
 def qubitWires : List Wire :=
   regA ++ regB ++ List.range' 512 1028 ++ List.range' 2052 3599 ++
     List.range' 6164 V2.Engine.wireBound
 
-theorem qubitWires_length : qubitWires.length = 13843 := by
+theorem qubitWires_length : qubitWires.length = 16413 := by
   simp [qubitWires, regA_length, regB_length, V2.Engine.wireBound]
 
 open private pointAddArithmeticWork_lower from ShorECDLP.Submission.Entrant.V2.PointAdd
@@ -321,7 +366,7 @@ theorem qubitWires_nodup : qubitWires.Nodup := by
     intro a ha b hb hab; subst hab
     simp only [regA, regB, List.mem_range'_1] at ha hb
     omega
-  have hblocks : V2.Engine.wireBound = 8739 := by simp [V2.Engine.wireBound]
+  have hblocks : V2.Engine.wireBound = 11309 := by simp [V2.Engine.wireBound]
   unfold qubitWires
   rw [hblocks]
   refine List.nodup_append.mpr ⟨List.nodup_append.mpr ⟨List.nodup_append.mpr
@@ -438,7 +483,7 @@ theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ qubitWires
   · have h := zObserve_support _ hw
     exact tight_sub w (by simp only [List.mem_append] at h ⊢; tauto)
 
-theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 13843 := by
+theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 16413 := by
   have hs : (entryE.instantiate Q).wires.toFinset ⊆ qubitWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (entryE_support Q (List.mem_toFinset.mp hw))
@@ -446,7 +491,7 @@ theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits �
   rw [List.toFinset_card_of_nodup qubitWires_nodup, qubitWires_length] at hc
   simpa only [resources, AdaptiveCircuit.qubitCount, List.card_toFinset] using hc
 
-theorem templateT_trialE : templateT trialGatesE = 20048582458848 := by
+theorem templateT_trialE : templateT trialGatesE = 10131447167400 := by
   have hh (ws : List Wire) : tCount (PhaseEstimation.hadamards ws) = 0 := by
     induction ws with
     | nil => rfl
@@ -459,13 +504,13 @@ theorem templateT_trialE : templateT trialGatesE = 20048582458848 := by
     regA_length, regB_length, gRows, qRows, List.length_ofFn]
   norm_num
 
-theorem straightT_entryE : straightT entryE.program = 20048582458848 := by
+theorem straightT_entryE : straightT entryE.program = 10131447167400 := by
   change straightT (castTable tableE_length.symm progE) = _
   rw [straightT_castTable, progE, straightT_castFinish, progRaw, straightT_append,
     straightT_constant, straightT_observe, templateT_trialE]
 
 theorem entryE_tModel (Q : Point) :
-    (resources (entryE.instantiate Q)).tModel ≤ 20048582458848 := by
+    (resources (entryE.instantiate Q)).tModel ≤ 10131447167400 := by
   have h := straight_t_bound entryE.program (readConstant entryE.coefficients.get Q) Fin.elim0
   rw [straightT_entryE] at h
   exact h
