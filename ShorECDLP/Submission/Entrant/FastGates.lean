@@ -297,7 +297,7 @@ theorem fastCPAGates_instantiate {n : Nat} (coeffs : Fin n → PointCoeff) (Q : 
 
 theorem fastCPAGates_templateT {n : Nat} (row negRow : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hP : pointReg.length = pointWidth) :
-    templateT (fastCPAGates row negRow control pointReg workStart) = 42074954320 := by
+    templateT (fastCPAGates row negRow control pointReg workStart) = 22257083968 := by
   rw [xSlots_templateT _ (xSlots_fastCPAGates row negRow control pointReg workStart)
     (readConstant (fun _ : Fin n => qCoefficient) G), fastCPAGates_instantiate]
   exact fastCPA2_tCount control pointReg workStart _ _ hP
@@ -377,7 +377,7 @@ theorem fastScalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : 
     (hP : pointReg.length = pointWidth) :
     ∀ (cs : List Wire) (rs : List (Fin n × Fin n)),
       templateT (fastScalarGates pointReg workStart cs rs) =
-        min cs.length rs.length * 42074954320 := by
+        min cs.length rs.length * 22257083968 := by
   intro cs
   induction cs with
   | nil => intro rs; cases rs <;> simp [fastScalarGates, templateT]

@@ -495,7 +495,7 @@ theorem controlledOut_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hlen : pointReg.length = pointWidth) :
-    templateT (controlledPointGates row control pointReg workStart) = 168952149268 := by
+    templateT (controlledPointGates row control pointReg workStart) = 89680667860 := by
   let read := readConstant (fun _ : Fin n => qCoefficient) G
   have hr : read ⟨row, .infinity, 0⟩ = false := by
     simp [read, readConstant, qCoefficient_point, fieldValue, pointCoordinates, G]
@@ -512,7 +512,7 @@ theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem scalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : Wire)
     (hlen : pointReg.length = pointWidth) (cs : List Wire) (rs : List (Fin n)) :
-    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 168952149268 := by
+    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 89680667860 := by
   induction cs generalizing rs with
   | nil => cases rs <;> simp [scalarGates, templateT]
   | cons c cs ih =>
@@ -840,15 +840,14 @@ theorem swapWrapper_length_le (a b r lhs out : List Wire) (core : Circuit) (c : 
 theorem fieldInv_length_le (offset : Wire) (input out : List Wire) :
     (fieldInv offset input out).length ≤ 2*input.length+out.length+8302097160 := by
   have h := swapWrapper_length_le
-    (shiftWires offset Secp256k1Instance.secpLayout.lhs)
-    (shiftWires offset Secp256k1Instance.secpLayout.rhs)
-    (shiftWires offset Secp256k1Instance.secpLayout.out) input out
-    (shiftCircuit offset Secp256k1Instance.secpProgram) (p-2)
+    (shiftWires offset Engine.layout.lhs)
+    (shiftWires offset Engine.layout.rhs)
+    (shiftWires offset Engine.layout.out) input out
+    (shiftCircuit offset Engine.program) (p-2)
   change (fieldInv offset input out).length ≤ _ at h
   simp only [shiftCircuit, List.length_map, shiftWires,
-    Secp256k1Instance.secpLayout, ModExp.Plan.layout, Secp256k1Instance.secpPlan,
-    ModExp.Reg.length_eq, Secp256k1Instance.fieldWidth] at h
-  have hc := secpProgram_length_le
+    Engine.rhs_length, Engine.out_length] at h
+  have hc := Engine.program_length_le
   omega
 
 open Secp256k1Instance in

@@ -3,6 +3,7 @@ import ShorECDLP.Submission.Naive.EllipticCurve.PointRegister
 import ShorECDLP.Submission.Naive.Arithmetic.ModSub
 import ShorECDLP.Submission.Naive.Arithmetic.Predicates
 import ShorECDLP.Submission.Naive.Arithmetic.Secp256k1Instance
+import ShorECDLP.Submission.Entrant.V2.Engine
 
 namespace ShorECDLP
 namespace Secp256k1
@@ -451,7 +452,7 @@ def pointAddArithmeticWork (workStart : Wire) : List Wire :=
       Secp256k1Instance.secpMulLayout.allWires ++
     shiftWires
       (pointAddArithmeticOffset workStart)
-      Secp256k1Instance.secpLayout.allWires).dedup
+      Engine.layout.allWires).dedup
 
 private theorem pointAddArithmeticWork_lower
     (workStart : Wire) :
@@ -933,13 +934,13 @@ the whole engine is clean without a second exponentiation.
 -/
 
 private def engineInvBase (offset : Wire) : List Wire :=
-  shiftWires offset Secp256k1Instance.secpLayout.lhs
+  shiftWires offset Engine.layout.lhs
 
 private def engineInvExponent (offset : Wire) : List Wire :=
-  shiftWires offset Secp256k1Instance.secpLayout.rhs
+  shiftWires offset Engine.layout.rhs
 
 private def engineInvOut (offset : Wire) : List Wire :=
-  shiftWires offset Secp256k1Instance.secpLayout.out
+  shiftWires offset Engine.layout.out
 
 /-- Bitwise register swap, three CNOT gates per bit. -/
 def fieldSwapReg :
@@ -961,7 +962,7 @@ def fieldInv
   let exponent := engineInvExponent offset
   let result := engineInvOut offset
   let core :=
-    shiftCircuit offset Secp256k1Instance.secpProgram
+    shiftCircuit offset Engine.program
   circuit! {
     Arithmetic.copyReg input base;
     loadConst exponent (p - 2);
@@ -1204,9 +1205,9 @@ private theorem secpMulProgram_wellFormed :
     secpMulLayout_valid
 
 private theorem secpProgram_wellFormed :
-    CircuitWellFormed Secp256k1Instance.secpProgram :=
-  Secp256k1Instance.secp_modExp_contract.wellFormed
-    Secp256k1Instance.secpPlan_layout_valid
+    CircuitWellFormed Engine.program :=
+  Engine.contract.wellFormed
+    Engine.layout_valid
 
 private theorem fieldAdd_HPFree
     (offset : Wire) (lhs rhs out : List Wire) :
@@ -1606,9 +1607,9 @@ private theorem fieldInv_HPFree
     Classical.HPFree (fieldInv offset input out) := by
   have hcore :
       Classical.HPFree
-        (shiftCircuit offset Secp256k1Instance.secpProgram) :=
+        (shiftCircuit offset Engine.program) :=
     shiftCircuit_HPFree _ _
-      Secp256k1Instance.secp_modExp_contract.hpFree
+      Engine.contract.hpFree
   simp [fieldInv, hcore, fieldSwapReg_HPFree,
     loadConst_HPFree]
 
@@ -1622,31 +1623,16 @@ private theorem fieldInv_wellFormed
   let base := engineInvBase offset
   let exponent := engineInvExponent offset
   let result := engineInvOut offset
-  let core := shiftCircuit offset Secp256k1Instance.secpProgram
-  have hbaseNodup : Secp256k1Instance.secpLayout.lhs.Nodup := by
-    change
-      (Secp256k1Instance.reg Secp256k1Instance.baseId).wires.Nodup
-    exact
-      (Secp256k1Instance.regBlock
-        Secp256k1Instance.baseId).wires_nodup
+  let core := shiftCircuit offset Engine.program
+  have hbaseNodup : Engine.layout.lhs.Nodup := Engine.lhs_nodup
   have hexponentNodup :
-      Secp256k1Instance.secpLayout.rhs.Nodup := by
-    change
-      (Secp256k1Instance.reg Secp256k1Instance.exponentId).wires.Nodup
-    exact
-      (Secp256k1Instance.regBlock
-        Secp256k1Instance.exponentId).wires_nodup
-  have hresultNodup : Secp256k1Instance.secpLayout.out.Nodup := by
-    change
-      (Secp256k1Instance.reg Secp256k1Instance.outId).wires.Nodup
-    exact
-      (Secp256k1Instance.regBlock
-        Secp256k1Instance.outId).wires_nodup
+      Engine.layout.rhs.Nodup := Engine.rhs_nodup
+  have hresultNodup : Engine.layout.out.Nodup := Engine.out_nodup
   have hcopyBase :
       CircuitWellFormed (Arithmetic.copyReg input base) := by
     simpa [base, offset, engineInvBase] using
       (copyReg_pointAdd_to_shifted_wellFormed workStart input
-        Secp256k1Instance.secpLayout.lhs hinput hbaseNodup)
+        Engine.layout.lhs hinput hbaseNodup)
   have hloadExponent :
       CircuitWellFormed (loadConst exponent (p - 2)) :=
     loadConst_wellFormed _ _
@@ -1655,7 +1641,7 @@ private theorem fieldInv_wellFormed
     apply fieldSwapReg_wellFormed
     simpa [result, offset, engineInvOut] using
       (shifted_pointAddField_nodup workStart
-        Secp256k1Instance.secpLayout.out out hout hresultNodup)
+        Engine.layout.out out hout hresultNodup)
   have hcore : CircuitWellFormed core :=
     shiftCircuit_wellFormed _ _ secpProgram_wellFormed
   simp [fieldInv, base, exponent, result, core, offset,
@@ -1953,10 +1939,10 @@ private theorem fieldInv_usesOnly
     (offset : Wire) (input out : List Wire) :
     CircuitUsesOnly
       (input ++ out ++
-        shiftWires offset Secp256k1Instance.secpLayout.allWires)
+        shiftWires offset Engine.layout.allWires)
       (fieldInv offset input out) := by
   let engineWires :=
-    shiftWires offset Secp256k1Instance.secpLayout.allWires
+    shiftWires offset Engine.layout.allWires
   have ha : ∀ w ∈ engineInvBase offset, w ∈ engineWires := by
     apply shiftWires_mono
     intro w hw
@@ -1972,14 +1958,14 @@ private theorem fieldInv_usesOnly
     simp [RegisterLayout.allWires, hw]
   have hcore :
       CircuitUsesOnly engineWires
-        (shiftCircuit offset Secp256k1Instance.secpProgram) :=
+        (shiftCircuit offset Engine.program) :=
     shiftCircuit_usesOnly _ _ _
-      Secp256k1Instance.secp_modExp_contract.usesOnly
+      Engine.contract.usesOnly
   simpa [fieldInv, engineWires] using
     (unaryConstSwapWrapper_usesOnly input out
       (engineInvBase offset) (engineInvExponent offset)
       (engineInvOut offset) engineWires (p - 2)
-      (shiftCircuit offset Secp256k1Instance.secpProgram)
+      (shiftCircuit offset Engine.program)
       ha hb hr hcore)
 
 /-! -------------------------------------------------------------------------
@@ -2576,7 +2562,7 @@ private def pointAddBranchActiveSupport
                       (shiftWires (pointAddArithmeticOffset workStart)
                             Secp256k1Instance.secpMulLayout.allWires ++
                         shiftWires (pointAddArithmeticOffset workStart)
-                          Secp256k1Instance.secpLayout.allWires))))))))))
+                          Engine.layout.allWires))))))))))
 
 private theorem pointAddFieldRegister_mem_activeSupport
     (workStart : Wire) (register : List Wire)
@@ -2606,7 +2592,7 @@ private theorem pointAddMulEngine_mem_activeSupport
 private theorem pointAddInvEngine_mem_activeSupport
     (workStart : Wire) :
     ∀ w ∈ shiftWires (pointAddArithmeticOffset workStart)
-        Secp256k1Instance.secpLayout.allWires,
+        Engine.layout.allWires,
       w ∈ pointAddBranchActiveSupport workStart := by
   intro w hw
   simp [pointAddBranchActiveSupport, hw]
@@ -2923,7 +2909,7 @@ private theorem pointAddControl_not_mem_activeSupport
       (hcandidateBeforeArithmetic.trans hlower)
   · have hlower := shiftWires_lower
         (pointAddArithmeticOffset workStart)
-        Secp256k1Instance.secpLayout.allWires _ hinv
+        Engine.layout.allWires _ hinv
     have hcandidateBeforeArithmetic :
         workStart + candidateOffset ≤
           pointAddArithmeticOffset workStart := by
@@ -3282,14 +3268,14 @@ private theorem fieldMul_tCount
 
 private theorem fieldInv_tCount
     (offset : Wire) (input out : List Wire) :
-    tCount (fieldInv offset input out) = 10436930882 := by
+    tCount (fieldInv offset input out) = 5482463294 := by
   simp [fieldInv, tCount_append, copyReg_tCount, loadConst_tCount,
     fieldSwapReg_tCount, shiftCircuit_tCount,
-    Secp256k1Instance.secpProgram_tCount]
+    Engine.program_tCount, Engine.cost]
 
 private theorem genericPointCompute_tCount
     (workStart : Wire) (xC yC : Fp) :
-    tCount (genericPointCompute workStart xC yC) = 10518724216 := by
+    tCount (genericPointCompute workStart xC yC) = 5564256628 := by
   simp [genericPointCompute, tCount_append, tCount_reverse,
     fieldSubConst_tCount, fieldInv_tCount, fieldMul_tCount,
     fieldSub_tCount]
@@ -3301,7 +3287,7 @@ private theorem threeXSquared_tCount
     fieldMul_tCount, fieldAdd_tCount]
 
 private theorem doublePointCompute_tCount (workStart : Wire) :
-    tCount (doublePointCompute workStart) = 10600283680 := by
+    tCount (doublePointCompute workStart) = 5645816092 := by
   simp [doublePointCompute, tCount_append, tCount_reverse,
     threeXSquared_tCount, fieldAdd_tCount, fieldInv_tCount,
     fieldMul_tCount, fieldSub_tCount]
@@ -3341,14 +3327,14 @@ private theorem pointAddSetup_tCount
 
 private theorem genericPointBranch_tCount
     (workStart : Wire) (xC yC : Fp) :
-    tCount (genericPointBranch workStart xC yC) = 21037452023 := by
+    tCount (genericPointBranch workStart xC yC) = 11128516847 := by
   simp [genericPointBranch, tCount_append, tCount_reverse,
     genericPointCompute_tCount, packFinitePoint_tCount,
     controlledCopyReg_tCount, pointAddCandidate, pointAddSelected,
     pointWidth]
 
 private theorem doublePointBranch_tCount (workStart : Wire) :
-    tCount (doublePointBranch workStart) = 21200570951 := by
+    tCount (doublePointBranch workStart) = 11291635775 := by
   simp [doublePointBranch, tCount_append, tCount_reverse,
     doublePointCompute_tCount, packFinitePoint_tCount,
     controlledCopyReg_tCount, pointAddCandidate, pointAddSelected,
@@ -3369,7 +3355,7 @@ private theorem infinityPointBranch_tCount
 private theorem pointAddBranches_tCount
     (workStart : Wire) {xC yC : Fp}
     (hC : curve.toAffine.Nonsingular xC yC) :
-    tCount (pointAddBranches workStart hC) = 42238026565 := by
+    tCount (pointAddBranches workStart hC) = 22420156213 := by
   simp [pointAddBranches, tCount_append, genericPointBranch_tCount,
     doublePointBranch_tCount, infinityPointBranch_tCount]
 
@@ -3378,7 +3364,7 @@ theorem pointAddFiniteCompute_tCount
     (pointReg : List Wire) (workStart : Wire)
     {xC yC : Fp} (hC : curve.toAffine.Nonsingular xC yC) :
     tCount (pointAddFiniteCompute pointReg workStart hC) =
-      42238033726 := by
+      22420163374 := by
   simp [pointAddFiniteCompute, tCount_append, pointAddSetup_tCount,
     pointAddBranches_tCount]
 
@@ -3506,7 +3492,7 @@ theorem pointAdd_finite_tCount
     (workStart : Wire)
     {xC yC : Fp} (hC : curve.toAffine.Nonsingular xC yC) :
     tCount (pointAdd pointReg outReg workStart (.some hC)) =
-      84476067452 := by
+      44840326748 := by
   simp [pointAdd, tCount_append, tCount_reverse, copyReg_tCount,
     pointAddFiniteCompute_tCount]
 
@@ -6356,7 +6342,7 @@ private theorem fieldInv_correct
     (hcleanOut : Clean out st)
     (hcleanEngine : Clean
       (shiftWires (pointAddArithmeticOffset workStart)
-        Secp256k1Instance.secpLayout.allWires) st)
+        Engine.layout.allWires) st)
     (hinputBound : regValue input st < p)
     (hnonzero : ((regValue input st : Nat) : Fp) ≠ 0) :
     let after := Classical.run
@@ -6371,25 +6357,17 @@ private theorem fieldInv_correct
     have hpos := Secp256k1Instance.p_pos
     omega
   have hexponentFits : p - 2 <
-      2 ^ Secp256k1Instance.secpLayout.rhs.length := by
+      2 ^ Engine.layout.rhs.length := by
     exact hexponentBound.trans (by
-      simpa [Secp256k1Instance.secpLayout, ModExp.Plan.layout,
-        Secp256k1Instance.secpPlan,
-        Secp256k1Instance.reg, Secp256k1Instance.regBlock,
-        Secp256k1Instance.fieldWidth,
-        Secp256k1Instance.exponentId] using hpPow)
+      simpa [Engine.rhs_length, Secp256k1Instance.fieldWidth] using hpPow)
   have hresult := pointAddUnaryConstFieldSwap_correct
-    Secp256k1Instance.secpProgram
-    Secp256k1Instance.secpLayout p Nat.pow
-    Secp256k1Instance.secpCost
-    Secp256k1Instance.secp_modExp_contract
-    Secp256k1Instance.secpPlan_layout_valid
+    Engine.program
+    Engine.layout p (fun a _ => a ^ (p - 2))
+    Engine.cost
+    Engine.contract
+    Engine.layout_valid
     (by
-      simp [Secp256k1Instance.secpLayout, ModExp.Plan.layout,
-        Secp256k1Instance.secpPlan,
-        Secp256k1Instance.reg, Secp256k1Instance.regBlock,
-        fieldWidth, Secp256k1Instance.fieldWidth,
-        Secp256k1Instance.baseId])
+      simp [Engine.lhs_length, fieldWidth, Secp256k1Instance.fieldWidth])
     workStart input out (p - 2) hinput hout houtInput st
     hcleanOut hcleanEngine hinputBound hexponentBound hexponentFits
   dsimp only at hresult ⊢
@@ -6464,7 +6442,7 @@ private theorem cleanInvEngine_of_branchWork
     (hclean : Clean (pointAddBranchWork workStart) st) :
     Clean
       (shiftWires (pointAddArithmeticOffset workStart)
-        Secp256k1Instance.secpLayout.allWires) st := by
+        Engine.layout.allWires) st := by
   intro w hw
   apply hclean w
   simp [pointAddBranchWork, pointAddArithmeticWork,
@@ -9259,7 +9237,7 @@ private theorem pointAddActiveSupport_selected_disjoint
     subst selected
     have hlower := shiftWires_lower
       (pointAddArithmeticOffset workStart)
-      Secp256k1Instance.secpLayout.allWires active hinv
+      Engine.layout.allWires active hinv
     rw [← hselectedEnd] at hlower
     exact (Nat.not_lt_of_ge hlower) hselectedBounds.2
 
@@ -10034,12 +10012,12 @@ private theorem genericPointCompute_correct
     hT2T1 hcleanT2N hd.2
   have hcleanInvN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpLayout.allWires
+      Engine.layout.allWires
       (pointAddT0 workStart) hT0)
     hcleanInv hn.2
   have hcleanInvD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpLayout.allWires
+      Engine.layout.allWires
       (pointAddT1 workStart) hT1)
     hcleanInvN hd.2
   have hdenNonzero :
@@ -10940,12 +10918,12 @@ private theorem doublePointCompute_correct
     hT1T0 hcleanT1N hd.2
   have hcleanInvN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpLayout.allWires
+      Engine.layout.allWires
       (pointAddT2 workStart) hT2)
     hcleanInv hn.2
   have hcleanInvD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpLayout.allWires
+      Engine.layout.allWires
       (pointAddT0 workStart) hT0)
     hcleanInvN hd.2
   have hdenNonzero :
