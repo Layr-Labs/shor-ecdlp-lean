@@ -165,7 +165,10 @@ def layout : DecodeLayout := layoutE'
 
 def bounds : Bounds where
   qubits := 206642
-  tModel := 355060161799520
+  -- Declared T-model bound: the next multiple of 10^5 above the proved count
+  -- 355060161799520 (see `entryE_tModel`), so that qubits × tModel = 73370341954675600000
+  -- has fifteen significant digits.
+  tModel := 355060161800000
   measurements := 530
 
 attribute [local irreducible] tableE progE Straight.WellFormed
@@ -182,7 +185,10 @@ theorem certificate : Certificate officialLimits layout entry bounds where
   candidateBudget := by
     simp [layout, layoutE', decoderCandidateLimit, officialLimits, budget55]
   wellFormed := entryE_wellFormed
-  resources := fun Q => ⟨entryE_qubits Q, entryE_tModel Q, (entryE_measurements Q).le⟩
+  resources := fun Q =>
+    ⟨entryE_qubits Q,
+      Nat.le_trans (entryE_tModel Q) (show (355060161799520 : ℕ) ≤ 355060161800000 by norm_num),
+      (entryE_measurements Q).le⟩
   success := fun Q d hn hd => entryE_success Q d hn hd
 
 end
