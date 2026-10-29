@@ -84,14 +84,14 @@ theorem secret_mod_ne_zero (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
 /-- The oracle specification, for whichever proof of primality of `p` the circuit carries. -/
 theorem spec_any (inst : Fact (Nat.Prime p)) (Q : Point) :
     ECDLPOracleSpec pointEncoding
-      (Quantum.run (@ecdlpOracle inst regA regB bitcoinPointReg bitcoinWorkStart G Q))
-      G Q regA regB bitcoinPointReg (scalarMulWork bitcoinWorkStart) :=
-  @ecdlpOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
+      (Quantum.run (@V2.ecdlpOracle inst regA regB bitcoinPointReg bitcoinWorkStart G Q))
+      G Q regA regB bitcoinPointReg (V2.scalarMulWork bitcoinWorkStart) :=
+  @V2.ecdlpOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
     bitcoinWireLayout.2.2.1 layoutE.1
 
 theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99 : ℝ) / 100 ≤ recordMass
-      (observedTrial (ecdlpTrial regA regB bitcoinPointReg bitcoinWorkStart
+      (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
         bitcoinQFTAncilla Q) regA regB).run
       (pairEvent 265 (recoveredE d)) (ket zeroBasisState) := by
   have hfresh := layoutE.2
@@ -100,7 +100,7 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
       order_P := generator_order
       Q_eq := hd }
   have hsetup : OrderFindingSetup pointEncoding regA regB bitcoinPointReg
-      (scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla 265 zeroBasisState :=
+      (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla 265 zeroBasisState :=
     { a_width := regA_length
       b_width := regB_length
       a_zero := regValue_zeroBasisState regA
@@ -112,23 +112,23 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
       ancilla_fresh := hfresh }
   rw [observedTrial_recordMass]
   have h := zObserve_eventProbability regA regB 265 regA_length regB_length (recoveredE d)
-    (Quantum.run (ecdlpTrial regA regB bitcoinPointReg bitcoinWorkStart
+    (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
       bitcoinQFTAncilla Q) (ket zeroBasisState))
   rw [regA_length] at h
   rw [h]
   have heq : (∑ a : Fin (2 ^ 265), ∑ b : Fin (2 ^ 265),
       if recoveredE d a.val b.val then
         jointRegisterProbability regA regB a.val b.val
-          (Quantum.run (ecdlpTrial regA regB bitcoinPointReg bitcoinWorkStart
+          (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
             bitcoinQFTAncilla Q) (ket zeroBasisState)) else 0) =
       orderFindingSuccessProbability order 265 d order_prime regA regB
-        (Quantum.run (ecdlpTrial regA regB bitcoinPointReg bitcoinWorkStart
+        (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
           bitcoinQFTAncilla Q) (ket zeroBasisState)) := by
     unfold orderFindingSuccessProbability
     simp only [recoveredE, Fin.ofNat_eq_cast, Fin.cast_val_eq_self, decide_eq_true_eq]
-  rw [heq, ecdlpTrial_run]
+  rw [heq, trialV2_run]
   refine le_trans ?_ (success_of_window_mass pointEncoding _ G Q regA regB bitcoinPointReg
-    (scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting (spec_any _ Q)
+    (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting (spec_any _ Q)
     hsetup (secret_mod_ne_zero Q d hn hd) (199 / 200) (by norm_num) hwinE)
   rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
   norm_num [order]
@@ -139,7 +139,7 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
       (fun b => (verifiedCandidate layoutE' Q b.history).isSome)) (ket zeroBasisState) := by
   have ho : order • Q = 0 := by rw [hd]; exact dlogPoint_order d
   rw [entryE_run Q ho]
-  have hlen : ∀ b ∈ (observedTrial (ecdlpTrial regA regB bitcoinPointReg bitcoinWorkStart
+  have hlen : ∀ b ∈ (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
       bitcoinQFTAncilla Q) regA regB).run, b.history.length = 530 := by
     intro b hb
     have h := observedTrial_history_length _ regA regB b hb
@@ -147,11 +147,11 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     exact h
   calc
     (99 : ℝ) / 100 ≤ recordMass
-        (observedTrial (ecdlpTrial regA regB bitcoinPointReg bitcoinWorkStart
+        (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
           bitcoinQFTAncilla Q) regA regB).run
         (pairEvent 265 (recoveredE d)) (ket zeroBasisState) :=
       trialE_probability Q d hn hd
-    _ = Instrument.bornMass ((observedTrial (ecdlpTrial regA regB bitcoinPointReg
+    _ = Instrument.bornMass ((observedTrial (trialV2 regA regB bitcoinPointReg
           bitcoinWorkStart bitcoinQFTAncilla Q) regA regB).run.filter
           (fun b => pairEvent 265 (recoveredE d) b.history)) (ket zeroBasisState) :=
       recordMass_filter _ _ _
@@ -163,12 +163,11 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
+/-- The declared T bound is the certified count rounded up to a multiple of 10^5, so the
+qubit × T product has at most fifteen significant digits. -/
 def bounds : Bounds where
   qubits := 206642
-  -- Declared T-model bound: the next multiple of 10^5 above the proved count
-  -- 355060161799520 (see `entryE_tModel`), so that qubits × tModel = 73370341954675600000
-  -- has fifteen significant digits.
-  tModel := 355060161800000
+  tModel := 178049814100000
   measurements := 530
 
 attribute [local irreducible] tableE progE Straight.WellFormed
@@ -186,9 +185,7 @@ theorem certificate : Certificate officialLimits layout entry bounds where
     simp [layout, layoutE', decoderCandidateLimit, officialLimits, budget55]
   wellFormed := entryE_wellFormed
   resources := fun Q =>
-    ⟨entryE_qubits Q,
-      Nat.le_trans (entryE_tModel Q) (show (355060161799520 : ℕ) ≤ 355060161800000 by norm_num),
-      (entryE_measurements Q).le⟩
+    ⟨entryE_qubits Q, (entryE_tModel Q).trans (by simp [bounds]), (entryE_measurements Q).le⟩
   success := fun Q d hn hd => entryE_success Q d hn hd
 
 end
