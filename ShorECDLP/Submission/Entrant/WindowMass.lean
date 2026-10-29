@@ -1,13 +1,6 @@
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
 import Mathlib.Analysis.SpecialFunctions.Complex.Log
 
-/-! Window mass for quantum phase estimation.
-
-With `N = 2 ^ t ≥ 512 r` outcomes, the QPE outcome distribution for the phase `n / r`
-puts mass at least `199 / 200` on the outcomes `a` whose rounding `round (r a / N)`
-equals `n`.  The proof combines Parseval (total mass `1`) with the pointwise bound
-`|amplitude a|² ≤ 1 / (4 u²) + 1 / (4 (N - u)²)`, `u = |a - N n / r|`, obtained from
-the geometric series and Jordan's inequality, and a telescoping tail estimate. -/
 
 namespace ShorECDLP.Entrant
 
@@ -46,7 +39,7 @@ lemma sum_range_inv_sq_le (L : ℝ) (hL : 1 < L) (M : ℕ) :
 
 lemma sum_inv_sq_le (S : Finset ℕ) (φ : ℕ → ℝ) (L : ℝ) (hL : 1 < L)
     (hφ : ∀ a ∈ S, L ≤ φ a)
-    (hsep : ∀ a b : ℕ, φ a - φ b = a - b ∨ φ a - φ b = b - a) :
+    (hsep : ∀ a ∈ S, ∀ b ∈ S, a ≠ b → φ a + 1 ≤ φ b ∨ φ b + 1 ≤ φ a) :
     ∑ a ∈ S, 1 / (4 * (φ a) ^ 2) ≤ 1 / (4 * (L - 1)) := by
   set g : ℕ → ℕ := fun a => ⌊φ a - L⌋₊ with hg
   have hinj : Set.InjOn g S := by
@@ -57,10 +50,8 @@ lemma sum_inv_sq_le (S : Finset ℕ) (φ : ℕ → ℝ) (L : ℝ) (hL : 1 < L)
     have h4 := Nat.lt_floor_add_one (φ b - L)
     simp only [hg] at hab
     rw [hab] at h1 h2
-    apply nat_eq_of_abs_lt
-    rcases hsep a b with h | h
-    · rw [abs_lt]; constructor <;> linarith
-    · rw [abs_lt]; constructor <;> linarith
+    by_contra hne
+    rcases hsep a ha b hb hne with h | h <;> linarith
   have step1 : ∑ a ∈ S, 1 / (4 * (φ a) ^ 2) ≤ ∑ a ∈ S, 1 / (4 * (L + g a) ^ 2) := by
     apply sum_le_sum
     intro a ha
@@ -286,8 +277,8 @@ lemma window_cases (r N n a : ℕ) (hN : 0 < N) (h : ¬ (2 * r * a + N) / (2 * N
     rw [Nat.le_div_iff_mul_le (by omega)] at h'
     linarith [h']
 
-lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 512 * r ≤ N) :
-    (199 : ℝ) / 200 ≤ ∑ a ∈ range N,
+lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 256 * r ≤ N) :
+    (249 : ℝ) / 250 ≤ ∑ a ∈ range N,
       if (2 * r * a + N) / (2 * N) = n then ampSq N ((n : ℝ) / (r : ℝ)) a else 0 := by
   have hr : 0 < r := by omega
   have hN : 0 < N := by omega
@@ -300,8 +291,8 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 512 * r �
   have hLr : L * (2 * r) = N := by rw [hL]; field_simp
   have hn1 : (1 : ℝ) ≤ n := by exact_mod_cast hn0
   have hnr' : (n : ℝ) + 1 ≤ r := by exact_mod_cast hnr
-  have hrN' : 512 * (r : ℝ) ≤ N := by exact_mod_cast hrN
-  have hL256 : 256 ≤ L := by nlinarith
+  have hrN' : 256 * (r : ℝ) ≤ N := by exact_mod_cast hrN
+  have hL128 : 128 ≤ L := by nlinarith
   have hc2L : 2 * L ≤ c := by nlinarith
   have hcN : c ≤ N - 2 * L := by nlinarith
   have htot := parseval N hN β
@@ -342,33 +333,94 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 512 * r �
             1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2) := hb
         linarith
   have hL1 : (1 : ℝ) < L := by linarith
-  -- the four tail sums
-  have s1 := sum_inv_sq_le ((range N).filter (fun a : ℕ => c + L ≤ (a : ℝ)))
-    (fun a : ℕ => (a : ℝ) - c) L hL1
-    (fun a ha => by rw [mem_filter] at ha; linarith [ha.2])
-    (fun a b => Or.inl (by ring))
-  have s2 := sum_inv_sq_le ((range N).filter (fun a : ℕ => c + L ≤ (a : ℝ)))
-    (fun a : ℕ => (N : ℝ) - ((a : ℝ) - c)) L hL1
-    (fun a ha => by
+  have s1 := sum_inv_sq_le
+    ((range N).filter (fun a : ℕ => c + L ≤ (a : ℝ) ∨ (a : ℝ) + L ≤ c))
+    (fun a : ℕ => if c + L ≤ (a : ℝ) then (a : ℝ) - c else (N : ℝ) - (c - (a : ℝ))) L hL1
+    (by
+      intro a ha
+      have ha0 : (0 : ℝ) ≤ a := Nat.cast_nonneg _
+      show L ≤ (if c + L ≤ (a : ℝ) then (a : ℝ) - c else (N : ℝ) - (c - (a : ℝ)))
+      split_ifs with h
+      · linarith
+      · linarith)
+    (by
+      intro a ha b hb hab
+      rw [mem_filter, mem_range] at ha hb
+      have ha0 : (0 : ℝ) ≤ a := Nat.cast_nonneg _
+      have hb0 : (0 : ℝ) ≤ b := Nat.cast_nonneg _
+      have haN : a + 1 ≤ N := ha.1
+      have hbN : b + 1 ≤ N := hb.1
+      have haN' : (a : ℝ) + 1 ≤ N := by exact_mod_cast haN
+      have hbN' : (b : ℝ) + 1 ≤ N := by exact_mod_cast hbN
+      have hab' : (a : ℝ) + 1 ≤ b ∨ (b : ℝ) + 1 ≤ a := by
+        rcases Nat.lt_or_gt_of_ne hab with h | h
+        · have h' : a + 1 ≤ b := h
+          left; exact_mod_cast h'
+        · have h' : b + 1 ≤ a := h
+          right; exact_mod_cast h'
+      show (if c + L ≤ (a : ℝ) then (a : ℝ) - c else (N : ℝ) - (c - (a : ℝ))) + 1 ≤
+          (if c + L ≤ (b : ℝ) then (b : ℝ) - c else (N : ℝ) - (c - (b : ℝ))) ∨
+        (if c + L ≤ (b : ℝ) then (b : ℝ) - c else (N : ℝ) - (c - (b : ℝ))) + 1 ≤
+          (if c + L ≤ (a : ℝ) then (a : ℝ) - c else (N : ℝ) - (c - (a : ℝ)))
+      split_ifs <;> rcases hab' with h | h <;> first | (left; linarith) | (right; linarith))
+  have s2 := sum_inv_sq_le
+    ((range N).filter (fun a : ℕ => c + L ≤ (a : ℝ) ∨ (a : ℝ) + L ≤ c))
+    (fun a : ℕ => if (a : ℝ) + L ≤ c then c - (a : ℝ) else (N : ℝ) - ((a : ℝ) - c)) L hL1
+    (by
+      intro a ha
       rw [mem_filter, mem_range] at ha
-      have : (a : ℝ) < N := by exact_mod_cast ha.1
-      linarith)
-    (fun a b => Or.inr (by ring))
-  have s3 := sum_inv_sq_le ((range N).filter (fun a : ℕ => (a : ℝ) + L ≤ c))
-    (fun a : ℕ => c - (a : ℝ)) L hL1
-    (fun a ha => by rw [mem_filter] at ha; linarith [ha.2])
-    (fun a b => Or.inr (by ring))
-  have s4 := sum_inv_sq_le ((range N).filter (fun a : ℕ => (a : ℝ) + L ≤ c))
-    (fun a : ℕ => (N : ℝ) - (c - (a : ℝ))) L hL1
-    (fun a _ => by
-      have : (0 : ℝ) ≤ a := Nat.cast_nonneg _
-      linarith)
-    (fun a b => Or.inl (by ring))
+      have haN : (a : ℝ) < N := by exact_mod_cast ha.1
+      show L ≤ (if (a : ℝ) + L ≤ c then c - (a : ℝ) else (N : ℝ) - ((a : ℝ) - c))
+      split_ifs with h
+      · linarith
+      · linarith)
+    (by
+      intro a ha b hb hab
+      rw [mem_filter, mem_range] at ha hb
+      have ha0 : (0 : ℝ) ≤ a := Nat.cast_nonneg _
+      have hb0 : (0 : ℝ) ≤ b := Nat.cast_nonneg _
+      have haN : a + 1 ≤ N := ha.1
+      have hbN : b + 1 ≤ N := hb.1
+      have haN' : (a : ℝ) + 1 ≤ N := by exact_mod_cast haN
+      have hbN' : (b : ℝ) + 1 ≤ N := by exact_mod_cast hbN
+      have hab' : (a : ℝ) + 1 ≤ b ∨ (b : ℝ) + 1 ≤ a := by
+        rcases Nat.lt_or_gt_of_ne hab with h | h
+        · have h' : a + 1 ≤ b := h
+          left; exact_mod_cast h'
+        · have h' : b + 1 ≤ a := h
+          right; exact_mod_cast h'
+      show (if (a : ℝ) + L ≤ c then c - (a : ℝ) else (N : ℝ) - ((a : ℝ) - c)) + 1 ≤
+          (if (b : ℝ) + L ≤ c then c - (b : ℝ) else (N : ℝ) - ((b : ℝ) - c)) ∨
+        (if (b : ℝ) + L ≤ c then c - (b : ℝ) else (N : ℝ) - ((b : ℝ) - c)) + 1 ≤
+          (if (a : ℝ) + L ≤ c then c - (a : ℝ) else (N : ℝ) - ((a : ℝ) - c))
+      split_ifs <;> rcases hab' with h | h <;> first | (left; linarith) | (right; linarith))
+  have hcomb : ∀ a ∈ range N,
+      ((if c + L ≤ (a : ℝ) then
+          1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2) else 0) +
+        (if (a : ℝ) + L ≤ c then
+          1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2) else 0)) ≤
+      (if c + L ≤ (a : ℝ) ∨ (a : ℝ) + L ≤ c then
+          1 / (4 * (if c + L ≤ (a : ℝ) then (a : ℝ) - c else (N : ℝ) - (c - (a : ℝ))) ^ 2) +
+          1 / (4 * (if (a : ℝ) + L ≤ c then c - (a : ℝ) else (N : ℝ) - ((a : ℝ) - c)) ^ 2)
+        else 0) := by
+    intro a _
+    by_cases h1 : c + L ≤ (a : ℝ)
+    · have h2 : ¬ ((a : ℝ) + L ≤ c) := by intro h; linarith
+      have hP : c + L ≤ (a : ℝ) ∨ (a : ℝ) + L ≤ c := Or.inl h1
+      simp only [if_pos h1, if_neg h2, if_pos hP] <;> linarith
+    · by_cases h2 : (a : ℝ) + L ≤ c
+      · have hP : c + L ≤ (a : ℝ) ∨ (a : ℝ) + L ≤ c := Or.inr h2
+        simp only [if_neg h1, if_pos h2, if_pos hP] <;> linarith
+      · have hP : ¬ (c + L ≤ (a : ℝ) ∨ (a : ℝ) + L ≤ c) := by
+          rintro (h | h)
+          · exact h1 h
+          · exact h2 h
+        simp only [if_neg h1, if_neg h2, if_neg hP] <;> linarith
   have htail : ∑ a ∈ range N, (if (2 * r * a + N) / (2 * N) = n then 0 else ampSq N β a) ≤
-      4 * (1 / (4 * (L - 1))) := by
-    refine (sum_le_sum hpt).trans ?_
-    rw [sum_add_distrib, ← sum_filter, ← sum_filter, sum_add_distrib, sum_add_distrib]
-    linarith
+      2 * (1 / (4 * (L - 1))) := by
+    refine (sum_le_sum hpt).trans ((sum_le_sum hcomb).trans ?_)
+    rw [← sum_filter, sum_add_distrib]
+    linarith [s1, s2]
   have hsplit : ∑ a ∈ range N,
       (if (2 * r * a + N) / (2 * N) = n then ampSq N β a else 0) =
       ∑ a ∈ range N, ampSq N β a -
@@ -376,17 +428,15 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 512 * r �
     rw [eq_sub_iff_add_eq, ← sum_add_distrib]
     refine sum_congr rfl (fun a _ => ?_)
     split_ifs <;> simp
-  have hfin : 4 * (1 / (4 * (L - 1))) ≤ 1 / 200 := by
-    rw [show 4 * (1 / (4 * (L - 1))) = 1 / (L - 1) by field_simp]
-    apply one_div_le_one_div_of_le (by norm_num)
-    linarith
+  have hfin : 1 / (4 * (L - 1)) ≤ 1 / 500 :=
+    one_div_le_one_div_of_le (by norm_num) (by linarith)
   rw [hsplit, htot]
   linarith
 
 end WindowMassProof
 
-theorem window_mass (r t n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrt : 512 * r ≤ 2 ^ t) :
-    (199 : ℝ) / 200 ≤ ∑ a ∈ Finset.range (2 ^ t),
+theorem window_mass (r t n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrt : 256 * r ≤ 2 ^ t) :
+    (249 : ℝ) / 250 ≤ ∑ a ∈ Finset.range (2 ^ t),
       if (2 * r * a + 2 ^ t) / (2 * 2 ^ t) = n then
         Complex.normSq ((((2 ^ t : ℕ) : ℂ)⁻¹) * ∑ y ∈ Finset.range (2 ^ t),
           Complex.exp (Complex.I * ((2 * Real.pi * ((n : ℝ) / (r : ℝ) - (a : ℝ) / ((2 ^ t : ℕ) : ℝ)) : ℝ) : ℂ)) ^ y)
