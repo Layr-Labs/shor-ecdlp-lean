@@ -3,7 +3,7 @@ import ShorECDLP.Submission.Entrant.Streaming.Semantics
 import ShorECDLP.Submission.«2607_13816».Challenge.Outer
 import ShorECDLP.Submission.«2607_13816».Window.PhysicalRepetition
 
-/-! EDITABLE. Streaming entrant, module `Certificate`: the 6-round instantiation, retry event and final certificate.
+/-! EDITABLE. Streaming entrant, module `Certificate`: the round-count instantiation, retry event and final certificate.
 
 This module concatenates the former per-file modules `Rounds`, `ResourceCertificate`,
 `RoundReset`, `RepeatEvent`, `FinalCertificate` (in this order). Each former file is one
@@ -87,7 +87,7 @@ theorem fixedTableEntry_measurements {n e : Nat} (f : Fin n → PointCoeff)
     (resources ((fixedTableEntry f p).instantiate Q)).measurements = e := by
   rw [resource_m,fixedTableEntry_instantiate,Straight.measurementCount,Nat.sub_zero]
 
-/-- The entrant's fixed producer: the first 6 rounds of the upstream 56-round outer plan,
+/-- The entrant's fixed producer: the first 6 rounds of the 56-round outer plan,
 using the public coefficient table. -/
 def streamingEntry : StraightEntry := fixedTableEntry coefficientAt (ipxOuterPlan.repeat 6 0)
 
@@ -523,7 +523,7 @@ theorem actualRoundAcceptedMass_le_one (Q : Point) (hQ : order • Q=0) :
       (ket zeroBasisState) ≤ 1 := by
   exact (Instrument.bornMass_filter_le _ _ _).trans_eq (actualRoundSource_total Q hQ)
 
-/-- 6 independent rounds suffice: `1 - (23/50)^6 ≥ 99/100`. -/
+/-- 6 independent rounds suffice: `1 - (23/50)^6 ≥ 99/100` (5 rounds would not). -/
 theorem retry6_success :
     (99:ℝ)/100 ≤ independentRetrySuccessProbability ((27:ℝ)/50) 6 := by
   norm_num [independentRetrySuccessProbability]

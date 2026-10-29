@@ -1,9 +1,9 @@
+import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».OrderFinding.ReducedVerified
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Deriv
 import Mathlib.Analysis.Calculus.Deriv.MeanValue
 import Mathlib.Analysis.Real.Pi.Bounds
-import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowNegation
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
 import ShorECDLP.Submission.«2607_13816».Window.StreamHistory
@@ -18,19 +18,19 @@ import ShorECDLP.Submission.«2607_13816».Window.StreamSamplingSuccess
 
 /-! EDITABLE. Streaming entrant, module `Semantics`: physical execution of the compiled rounds and the per-round success bound.
 
-This module concatenates the former per-file modules `AveragedSuccess`, `BatchBoundary`, `BatchedWindowState`,
-`BatchedWindowCoherent`, `PreparedBatch`, `ActualWindow`, `WindowPhysical`, `ModularPhysical`,
-`EEACenterPhysical`, `EEAStructuralPhysical`, `EEAIntervalPhysical`, `MeasuredEEAPhysical`,
-`SquarePhysical`, `InPlacePhysical`, `InPlaceCompletePhysical`, `CoordinatePhysical`,
-`ActualPhysical`, `HistoryExecution`, `OuterExecution`, `ActualExecution`, `SourceAxis`,
-`TaggedProbability`, `WindowValidity`, `AxisProbability`, `FirstValidity`, `CrossWindowWeights`,
-`CrossWindowPoint`, `TwoAxisProbability`, `FixedWord`, `TaggedAxis`, `TaggedTwoAxes`,
-`ActualPair`, `DecoderBridge`, `RoundBoundary`, `WindowBranchSum`, `IdealDistribution` (in this
-order). Each former file is one `namespace` block below, marked `-- ==== part: <Name> ====`,
-with its provenance note. Only the import lines changed. Dropped because an identical private
-copy occurs earlier in this module: `FirstValidity.support_add`, `FirstValidity.support_smul`.
-Renamed because an earlier part has a different private lemma of the same name: `support_linear`
-to `support_linear_firstValidity`.
+This module concatenates the former per-file modules `AveragedSuccess`, `BatchBoundary`,
+`BatchedWindowState`, `BatchedWindowCoherent`, `PreparedBatch`, `ActualWindow`,
+`WindowPhysical`, `ModularPhysical`, `EEACenterPhysical`, `EEAStructuralPhysical`,
+`EEAIntervalPhysical`, `MeasuredEEAPhysical`, `SquarePhysical`, `InPlacePhysical`,
+`InPlaceCompletePhysical`, `CoordinatePhysical`, `ActualPhysical`, `HistoryExecution`,
+`OuterExecution`, `ActualExecution`, `SourceAxis`, `TaggedProbability`, `WindowValidity`,
+`AxisProbability`, `FirstValidity`, `CrossWindowWeights`, `CrossWindowPoint`,
+`TwoAxisProbability`, `FixedWord`, `TaggedAxis`, `TaggedTwoAxes`, `ActualPair`, `DecoderBridge`,
+`RoundBoundary`, `WindowBranchSum`, `IdealDistribution` (in this order). Each former file is one
+`namespace` block below, marked `-- ==== part: <Name> ====`, with its provenance note. Only the
+import lines changed. Dropped because an identical private copy occurs earlier in this module:
+`FirstValidity.support_add`, `FirstValidity.support_smul`. Renamed because an earlier part has a
+different private lemma of the same name: `support_linear` to `support_linear_firstValidity`.
 
 Why few modules: the kernel replay loads the complete import closure (about 4.3 GB) once per
 Entrant module, in parallel across its worker threads, so its peak memory grows with the number
@@ -5043,7 +5043,9 @@ end ShorECDLP.Paper2607_13816.ChallengeMigration
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/DecoderBridge.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. -/
+Moved into the editable Entrant tree; module imports renamed accordingly. The per-round lower
+bound `wrappedIdeal_mass_lower` is now the averaged bound `27/50` of `AveragedSuccess` instead of
+the protected pointwise bound `163/1000`. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge Secp256k1
