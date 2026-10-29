@@ -5,7 +5,7 @@ import ShorECDLP.Submission.«2607_13816».EEA.BlockAPrimitiveCounts
 import ShorECDLP.Challenge.Contract
 import ShorECDLP.Submission.«2607_13816».Challenge.OuterResources
 import ShorECDLP.Submission.«2607_13816».Challenge.CursorShift
-import ShorECDLP.Submission.Entrant.Streaming.Certificate
+import ShorECDLP.Submission.Entrant.Single.Certificate
 
 section
 
@@ -1084,18 +1084,30 @@ noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 attribute [local irreducible] sequenceProgram appendCompiled literalProgram coordinateProgram zeroDivisionProgram zeroMultiplicationProgram
-  Single.axis Single.entry
+  Single.axis Single.entry ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram
+  ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram
+  ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram
 
-def zeroDivisionPatch (n start : Nat) : Patch (zeroDivisionProgram n start).2 2313360 := by
-  unfold zeroDivisionProgram
-  exact Patch.surroundCompiled _ _ _ (divisionPatch n start)
+def zeroDivisionPatch (n start : Nat) :
+    Patch (ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram n start).2 2313360 := by
+  unfold ShorECDLP.Entrant.ZeroAdaptive.zDivisionProgram
+  dsimp only
+  refine (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine Patch.prependCompiled _ _ ?_
+  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _
+    (divisionPatch n _) (Patch.refl _)).castSaving (by omega)
 
-def zeroMultiplicationPatch (n start : Nat) : Patch (zeroMultiplicationProgram n start).2 2313360 := by
-  unfold zeroMultiplicationProgram
-  exact Patch.surroundCompiled _ _ _ (multiplicationPatch n start)
+def zeroMultiplicationPatch (n start : Nat) :
+    Patch (ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram n start).2 2313360 := by
+  unfold ShorECDLP.Entrant.ZeroAdaptive.zMultiplicationProgram
+  dsimp only
+  refine (Patch.appendCompiled (d := 0) (f := 2313360) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine Patch.prependCompiled _ _ ?_
+  exact (Patch.appendCompiled (d := 2313360) (f := 0) _ _
+    (multiplicationPatch n _) (Patch.refl _)).castSaving (by omega)
 
-def coordinatePatch (start : Nat) : Patch (coordinateProgram start).2 4626720 := by
-  unfold coordinateProgram coordinateSegments
+def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram start).2 4626720 := by
+  unfold ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateProgram ShorECDLP.Entrant.ZeroAdaptive.adaptiveCoordinateSegments
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 2313360) (f := 2313360) _ _ (zeroDivisionPatch 32768 _) ?_).castSaving (by omega)
