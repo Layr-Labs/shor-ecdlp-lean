@@ -1,4 +1,5 @@
-import ShorECDLP.Submission.Entrant.FastGates
+import ShorECDLP.Submission.Entrant.TightSupport
+import Batteries.Tactic.OpenPrivate
 import ShorECDLP.Submission.Entrant.V2.Layout
 import ShorECDLP.Challenge.Official
 
@@ -308,23 +309,113 @@ theorem entryE_wellFormed : entryE.program.WellFormed :=
 
 /-! ## Resources -/
 
+/-- Every wire the trial can touch: the phase registers, the point register through the
+first branch ancilla (512 … 1539), the local point-addition block below the unused
+`selected` register, and the arithmetic engine region. -/
+def qubitWires : List Wire :=
+  regA ++ regB ++ List.range' 512 1028 ++ List.range' 2052 3599 ++
+    List.range' 6164 V2.Engine.wireBound
+
+theorem qubitWires_length : qubitWires.length = 13892 := by
+  simp [qubitWires, regA_length, regB_length, V2.Engine.wireBound]
+
+open private pointAddArithmeticWork_lower from ShorECDLP.Submission.Entrant.V2.PointAdd
+open private pointAddArithmeticWork_upper from ShorECDLP.Submission.Entrant.V2.Layout
+
+theorem qubitWires_nodup : qubitWires.Nodup := by
+  have hlo : ∀ w : ℕ, w ∈ regA ++ regB → w < 512 ∨ (14903 ≤ w ∧ w < 14917) := by
+    intro w hw
+    simp only [regA, regB, extA, extB, bitcoinAReg, bitcoinBReg, List.mem_append,
+      List.mem_range'_1] at hw
+    omega
+  have hab : (regA ++ regB).Nodup := by
+    rw [List.nodup_append]
+    refine ⟨?_, ?_, ?_⟩
+    · rw [regA, List.nodup_append]
+      refine ⟨List.nodup_range', List.nodup_range', ?_⟩
+      intro a ha b hb hab; subst hab
+      simp only [bitcoinAReg, extA, List.mem_range'_1] at ha hb; omega
+    · rw [regB, List.nodup_append]
+      refine ⟨List.nodup_range', List.nodup_range', ?_⟩
+      intro a ha b hb hab; subst hab
+      simp only [bitcoinBReg, extB, List.mem_range'_1] at ha hb; omega
+    · intro a ha b hb hab; subst hab
+      simp only [regA, regB, extA, extB, bitcoinAReg, bitcoinBReg, List.mem_append,
+        List.mem_range'_1] at ha hb
+      omega
+  have hblocks : V2.Engine.wireBound = 8739 := by simp [V2.Engine.wireBound]
+  unfold qubitWires
+  rw [hblocks]
+  refine List.nodup_append.mpr ⟨List.nodup_append.mpr ⟨List.nodup_append.mpr
+    ⟨hab, List.nodup_range', ?_⟩, List.nodup_range', ?_⟩, List.nodup_range', ?_⟩
+  · intro a ha b hb hab; subst hab
+    have := hlo a ha
+    simp only [List.mem_range'_1] at hb; omega
+  · intro a ha b hb hab; subst hab
+    simp only [List.mem_range'_1] at hb
+    rcases List.mem_append.mp ha with ha | ha
+    · have := hlo a ha; omega
+    · simp only [List.mem_range'_1] at ha; omega
+  · intro a ha b hb hab; subst hab
+    simp only [List.mem_range'_1] at hb
+    rcases List.mem_append.mp ha with ha | ha
+    · rcases List.mem_append.mp ha with ha | ha
+      · have := hlo a ha; omega
+      · simp only [List.mem_range'_1] at ha; omega
+    · simp only [List.mem_range'_1] at ha; omega
+
+theorem tight_sub : ∀ w : ℕ, w ∈ regA ++ regB ++ bitcoinPointReg ++
+    V2.tightWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ qubitWires := by
+  intro w hw
+  have hR (a n : Nat) (h : w ∈ List.range' a n) (h1 : 512 ≤ a) (h2 : a + n ≤ 1540) :
+      w ∈ qubitWires := by
+    simp only [List.mem_range'_1] at h
+    simp only [qubitWires, List.mem_append, List.mem_range'_1]
+    left; left; right; omega
+  simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hw
+  rcases hw with (((hab | hp) | hwk) | hanc)
+  · simp only [qubitWires, List.mem_append]; left; left; left; exact hab
+  · exact hR 512 513 hp (by norm_num) (by norm_num)
+  · simp only [V2.tightWork, V2.tightPW, List.mem_append, List.mem_cons, List.not_mem_nil,
+      or_false] at hwk
+    have ht : V2.controlledPointAddTemp bitcoinWorkStart = List.range' 1026 513 := rfl
+    have ha : V2.controlledPointAddAuxStart bitcoinWorkStart = 1539 := rfl
+    have hpw : V2.controlledPointAddPointWorkStart 1539 = 2052 := rfl
+    rw [ht, ha, hpw] at hwk
+    rcases hwk with (h | h) | (h | h)
+    · exact hR 1026 513 h (by norm_num) (by norm_num)
+    · exact hR 1539 1 (by rw [h]; exact List.mem_range'_1.mpr ⟨le_rfl, by norm_num⟩)
+        (by norm_num) (by norm_num)
+    · simp only [List.mem_range'_1] at h
+      simp only [qubitWires, List.mem_append, List.mem_range'_1]
+      left; right; omega
+    · have hl := pointAddArithmeticWork_lower 2052 w h
+      have hu := pointAddArithmeticWork_upper w h
+      have hoff : V2.pointAddArithmeticOffset 2052 = 6164 := rfl
+      rw [hoff] at hl
+      have hv : V2.v2QubitCount = 6164 + V2.Engine.wireBound := rfl
+      rw [hv] at hu
+      have hl' : (6164 : ℕ) ≤ w := hl
+      have hu' : (w : ℕ) < 6164 + V2.Engine.wireBound := hu
+      simp only [qubitWires, List.mem_append, List.mem_range'_1]
+      right; omega
+  · subst hanc; exact hR 1025 1 (by simp [bitcoinQFTAncilla]) (by norm_num) (by norm_num)
+
 theorem trialGatesE_support (Q : Point) :
     circuitWires (trialGatesE.flatMap (TemplateGate.instantiate
-      (readConstant coeffE Q))) ⊆ List.range 14917 := by
+      (readConstant coeffE Q))) ⊆ qubitWires := by
   let support := regA ++ regB ++ bitcoinPointReg ++
-    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla]
+    V2.tightWork bitcoinWorkStart ++ [bitcoinQFTAncilla]
   have hh : CircuitUsesOnly support (PhaseEstimation.hadamards (regA ++ regB)) := by
     apply usesOnly_mono (hadamards_usesOnly _)
     intro w hw
     simp only [support, List.mem_append] at hw ⊢
     tauto
   have hs (cs : List Wire) (rs : List (Fin 1052 × Fin 1052))
-      (hc : ∀ w ∈ cs, w ∈ regA ++ regB)
-      (hnd : (cs ++ (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup) :
+      (hc : ∀ w ∈ cs, w ∈ regA ++ regB) :
       CircuitUsesOnly support ((V2.fastScalarGates bitcoinPointReg bitcoinWorkStart cs rs).flatMap
         (TemplateGate.instantiate (readConstant coeffE Q))) := by
-    apply usesOnly_mono (V2.fastScalarGates_usesOnly coeffE Q _ _ cs rs hnd)
-    clear hnd
+    apply usesOnly_mono (V2.fastScalarGates_usesOnly_tight coeffE Q _ _ cs rs)
     intro w hw
     simp only [List.mem_append] at hw
     rcases hw with hw | hw | hw
@@ -332,7 +423,7 @@ theorem trialGatesE_support (Q : Point) :
       simp only [support, List.mem_append] at h ⊢
       tauto
     · simp only [support, List.mem_append]; tauto
-    · simp only [support, V2.scalarMulWork, List.mem_append]; tauto
+    · simp only [support, List.mem_append]; tauto
   have hq (cs : List Wire) (hc : ∀ w ∈ cs, w ∈ regA ++ regB) :
       CircuitUsesOnly support (iqft cs bitcoinQFTAncilla) := by
     apply usesOnly_mono (iqft_usesOnly cs bitcoinQFTAncilla)
@@ -344,38 +435,32 @@ theorem trialGatesE_support (Q : Point) :
       tauto
     · simp only [support, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
       tauto
-  obtain ⟨hn, _⟩ := layoutE
-  have hn' : ((regA ++ regB) ++
-      (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup := by
-    simpa only [V2.scalarMulWork, List.append_assoc] using hn
   apply (ModAddSupport.circuitUsesOnly_iff_support _ _).mp
   apply usesOnly_mono (xs := support)
   · simp only [trialGatesE, List.flatMap_append, literalGates_instantiate]
     exact usesOnly_append (usesOnly_append (usesOnly_append hh
-      (hs _ _ (fun _ h => List.mem_append_left _ h)
-        ((List.sublist_append_left regA regB).append (List.Sublist.refl _) |>.nodup hn')))
-      (hs _ _ (fun _ h => List.mem_append_right _ h)
-        ((List.sublist_append_right regA regB).append (List.Sublist.refl _) |>.nodup hn')))
+      (hs _ _ (fun _ h => List.mem_append_left _ h)))
+      (hs _ _ (fun _ h => List.mem_append_right _ h)))
       (usesOnly_append (hq _ (fun _ h => List.mem_append_left _ h))
         (hq _ (fun _ h => List.mem_append_right _ h)))
-  · exact support_sub
+  · exact tight_sub
 
-theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range 14917 := by
+theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ qubitWires := by
   intro w hw
   rw [entryE_instantiate, wires_seq] at hw
   rcases hw with hw | hw
   · rw [constantGateProgram_instantiate, gateNative_wires] at hw
     exact trialGatesE_support Q hw
   · have h := zObserve_support _ hw
-    exact support_sub w (by simp only [List.mem_append] at h ⊢; tauto)
+    exact tight_sub w (by simp only [List.mem_append] at h ⊢; tauto)
 
-theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 14917 := by
-  have hs : (entryE.instantiate Q).wires.toFinset ⊆ (List.range 14917).toFinset := by
+theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 13892 := by
+  have hs : (entryE.instantiate Q).wires.toFinset ⊆ qubitWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (entryE_support Q (List.mem_toFinset.mp hw))
   have hc := Finset.card_le_card hs
-  simpa only [resources, AdaptiveCircuit.qubitCount, List.card_toFinset,
-    List.dedup_eq_self.mpr List.nodup_range, List.length_range] using hc
+  rw [List.toFinset_card_of_nodup qubitWires_nodup, qubitWires_length] at hc
+  simpa only [resources, AdaptiveCircuit.qubitCount, List.card_toFinset] using hc
 
 theorem templateT_trialE : templateT trialGatesE = 22108080533782 := by
   have hh (ws : List Wire) : tCount (PhaseEstimation.hadamards ws) = 0 := by
