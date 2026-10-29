@@ -1,15 +1,13 @@
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
 import Mathlib.Analysis.SpecialFunctions.Complex.Log
-import Mathlib.Analysis.Real.Pi.Bounds
 
 /-! Window mass for quantum phase estimation.
 
-With `N = 2 ^ t ≥ 128 r` outcomes, the QPE outcome distribution for the phase `n / r`
-puts mass at least `9951 / 10000` on the outcomes `a` whose rounding `round (r a / N)`
+With `N = 2 ^ t ≥ 512 r` outcomes, the QPE outcome distribution for the phase `n / r`
+puts mass at least `199 / 200` on the outcomes `a` whose rounding `round (r a / N)`
 equals `n`.  The proof combines Parseval (total mass `1`) with the pointwise bound
-`|amplitude a|² ≤ (4 / π²) (1 / (4 u²) + 1 / (4 (N - u)²)) + 1 / N²`, `u = |a - N n / r|`,
-obtained from the geometric series and `x ≤ tan x`, and a telescoping tail estimate in which
-the wrap-around terms start at distance `2 N / (2 r)`. -/
+`|amplitude a|² ≤ 1 / (4 u²) + 1 / (4 (N - u)²)`, `u = |a - N n / r|`, obtained from
+the geometric series and Jordan's inequality, and a telescoping tail estimate. -/
 
 namespace ShorECDLP.Entrant
 
@@ -94,72 +92,31 @@ lemma sum_inv_sq_le (S : Finset ℕ) (φ : ℕ → ℝ) (L : ℝ) (hL : 1 < L)
     positivity
   linarith
 
-/-- `x² ≤ sin² x · (1 + x²)` on `(0, π / 2]`, from `x ≤ tan x`. -/
-lemma sq_le_sin_sq_mul (x : ℝ) (h0 : 0 < x) (h1 : x ≤ Real.pi / 2) :
-    x ^ 2 ≤ Real.sin x ^ 2 * (1 + x ^ 2) := by
-  rcases h1.lt_or_eq with h1 | h1
-  · have hc : 0 < Real.cos x := Real.cos_pos_of_mem_Ioo ⟨by linarith [Real.pi_pos], h1⟩
-    have ht := Real.lt_tan h0 h1
-    rw [Real.tan_eq_sin_div_cos, lt_div_iff₀ hc] at ht
-    have hxc : 0 ≤ x * Real.cos x := by positivity
-    have h2 : (x * Real.cos x) ^ 2 ≤ Real.sin x ^ 2 := pow_le_pow_left₀ hxc ht.le 2
-    have hc2 : Real.cos x ^ 2 = 1 - Real.sin x ^ 2 := by linarith [Real.sin_sq_add_cos_sq x]
-    rw [mul_pow, hc2] at h2
-    nlinarith
-  · rw [h1, Real.sin_pi_div_two]
-    nlinarith
-
-/-- Sharp inverse-sine bound: `1 / (N sin (π v / N))² ≤ 1 / (π v)² + 1 / N²` for `v ≤ N / 2`. -/
-lemma inv_sin_sq_le (N v : ℝ) (hN : 0 < N) (hv : 0 < v) (hvN : v ≤ N / 2) :
-    1 / (N * Real.sin (Real.pi * v / N)) ^ 2 ≤ 1 / (Real.pi ^ 2 * v ^ 2) + 1 / N ^ 2 := by
-  set x := Real.pi * v / N with hx
-  have hx0 : 0 < x := by positivity
-  have hx1 : x ≤ Real.pi / 2 := by
-    rw [hx, div_le_iff₀ hN]
-    nlinarith [Real.pi_pos]
-  have key := sq_le_sin_sq_mul x hx0 hx1
-  have hs : 0 < Real.sin x := Real.sin_pos_of_pos_of_lt_pi hx0 (by linarith [Real.pi_pos])
-  have hNx : (Real.pi * v) ^ 2 = N ^ 2 * x ^ 2 := by
-    rw [hx]; field_simp
-  calc 1 / (N * Real.sin x) ^ 2 ≤ (1 + x ^ 2) / (Real.pi * v) ^ 2 := by
-        rw [div_le_div_iff₀ (by positivity) (by positivity), hNx]
-        have h3 := mul_le_mul_of_nonneg_left key (sq_nonneg N)
-        have e : (1 + x ^ 2) * (N * Real.sin x) ^ 2 = N ^ 2 * (Real.sin x ^ 2 * (1 + x ^ 2)) := by
-          ring
-        rw [e]
-        linarith
-    _ = 1 / (Real.pi ^ 2 * v ^ 2) + 1 / N ^ 2 := by
-        rw [hx]
-        field_simp
-
-/-- The pointwise tail bound on the circle, with the constant `4 / π² ≤ 406 / 1000`. -/
-lemma inv_sin_sq_le' (N u : ℝ) (hN : 0 < N) (hu0 : 0 < u) (huN : u < N) :
-    1 / (N * Real.sin (Real.pi * u / N)) ^ 2 ≤
-      (406 / 1000) * (1 / (4 * u ^ 2) + 1 / (4 * (N - u) ^ 2)) + 1 / N ^ 2 := by
-  have hpi : 4 / Real.pi ^ 2 ≤ 406 / 1000 := by
-    rw [div_le_div_iff₀ (by positivity) (by norm_num)]
-    nlinarith [Real.pi_gt_d2]
-  have hK : ∀ v : ℝ, 0 < v → 1 / (Real.pi ^ 2 * v ^ 2) ≤ (406 / 1000) * (1 / (4 * v ^ 2)) := by
-    intro v hv
-    have e : 1 / (Real.pi ^ 2 * v ^ 2) = (4 / Real.pi ^ 2) * (1 / (4 * v ^ 2)) := by
+lemma sin_lower (N u : ℝ) (hN : 0 < N) (hu0 : 0 < u) (huN : u < N) :
+    2 * min u (N - u) ≤ N * Real.sin (Real.pi * u / N) := by
+  have key : ∀ v : ℝ, 0 ≤ v → v ≤ N / 2 → 2 * v ≤ N * Real.sin (Real.pi * v / N) := by
+    intro v hv0 hv1
+    have hx0 : 0 ≤ Real.pi * v / N := by positivity
+    have hx1 : Real.pi * v / N ≤ Real.pi / 2 := by
+      rw [div_le_iff₀ hN]
+      have := Real.pi_pos
+      nlinarith
+    have h := Real.mul_le_sin hx0 hx1
+    have e : 2 / Real.pi * (Real.pi * v / N) = 2 * v / N := by
       field_simp
-    rw [e]
-    exact mul_le_mul_of_nonneg_right hpi (by positivity)
+    rw [e, div_le_iff₀ hN] at h
+    linarith
   rcases le_total u (N / 2) with h | h
-  · have h1 := inv_sin_sq_le N u hN hu0 h
-    have h2 := hK u hu0
-    have h3 : 0 ≤ (406 / 1000 : ℝ) * (1 / (4 * (N - u) ^ 2)) := by positivity
-    rw [mul_add]
+  · have := key u hu0.le h
+    have : min u (N - u) ≤ u := min_le_left _ _
     linarith
   · have e : Real.sin (Real.pi * u / N) = Real.sin (Real.pi * (N - u) / N) := by
       rw [← Real.sin_pi_sub]
       congr 1
       field_simp
+    have := key (N - u) (by linarith) (by linarith)
+    have : min u (N - u) ≤ N - u := min_le_right _ _
     rw [e]
-    have h1 := inv_sin_sq_le N (N - u) hN (by linarith) (by linarith)
-    have h2 := hK (N - u) (by linarith)
-    have h3 : 0 ≤ (406 / 1000 : ℝ) * (1 / (4 * u ^ 2)) := by positivity
-    rw [mul_add]
     linarith
 
 lemma amp_normSq_le (N : ℕ) (x : ℝ) (hs : Real.sin (x / 2) ≠ 0) :
@@ -289,8 +246,9 @@ lemma parseval (N : ℕ) (hN : 0 < N) (β : ℝ) :
 lemma point_bound (N : ℕ) (hN : 0 < N) (x u : ℝ) (hu0 : 0 < u) (huN : u < N)
     (hx : x / 2 = Real.pi * u / N ∨ x / 2 = -(Real.pi * u / N)) :
     Complex.normSq ((N : ℂ)⁻¹ * ∑ y ∈ range N, Complex.exp (Complex.I * (x : ℂ)) ^ y)
-      ≤ (406 / 1000) * (1 / (4 * u ^ 2) + 1 / (4 * ((N : ℝ) - u) ^ 2)) + 1 / (N : ℝ) ^ 2 := by
+      ≤ 1 / (4 * u ^ 2) + 1 / (4 * ((N : ℝ) - u) ^ 2) := by
   have hNR : (0 : ℝ) < N := by exact_mod_cast hN
+  have hsin := sin_lower N u hNR hu0 huN
   have hspos : 0 < Real.sin (Real.pi * u / N) := by
     apply Real.sin_pos_of_pos_of_lt_pi (by positivity)
     rw [div_lt_iff₀ hNR]
@@ -302,8 +260,20 @@ lemma point_bound (N : ℕ) (hN : 0 < N) (x u : ℝ) (hu0 : 0 < u) (huN : u < N)
   have hne : Real.sin (x / 2) ≠ 0 := by
     intro h; rw [h, abs_zero] at habs; linarith
   have h1 := amp_normSq_le N x hne
-  rw [habs, div_pow, one_pow] at h1
-  exact h1.trans (inv_sin_sq_le' N u hNR hu0 huN)
+  rw [habs] at h1
+  refine h1.trans ?_
+  have hm : 0 < min u (N - u) := lt_min hu0 (by linarith)
+  have h2 : (1 / ((N : ℝ) * Real.sin (Real.pi * u / N))) ^ 2 ≤
+      1 / (4 * (min u (N - u)) ^ 2) := by
+    rw [div_pow, one_pow]
+    apply one_div_le_one_div_of_le (by positivity)
+    nlinarith [mul_le_mul hsin hsin (by positivity) (by positivity)]
+  refine h2.trans ?_
+  rcases min_choice u (N - u) with h | h <;> rw [h]
+  · have : 0 ≤ 1 / (4 * ((N : ℝ) - u) ^ 2) := by positivity
+    linarith
+  · have : 0 ≤ 1 / (4 * u ^ 2) := by positivity
+    linarith
 
 lemma window_cases (r N n a : ℕ) (hN : 0 < N) (h : ¬ (2 * r * a + N) / (2 * N) = n) :
     2 * N * n + N ≤ 2 * r * a ∨ 2 * r * a + N < 2 * N * n := by
@@ -316,10 +286,8 @@ lemma window_cases (r N n a : ℕ) (hN : 0 < N) (h : ¬ (2 * r * a + N) / (2 * N
     rw [Nat.le_div_iff_mul_le (by omega)] at h'
     linarith [h']
 
-set_option maxHeartbeats 1000000 in
-lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 128 * r ≤ N)
-    (hNbig : 1000000 ≤ N) :
-    (9951 : ℝ) / 10000 ≤ ∑ a ∈ range N,
+lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 512 * r ≤ N) :
+    (199 : ℝ) / 200 ≤ ∑ a ∈ range N,
       if (2 * r * a + N) / (2 * N) = n then ampSq N ((n : ℝ) / (r : ℝ)) a else 0 := by
   have hr : 0 < r := by omega
   have hN : 0 < N := by omega
@@ -332,34 +300,25 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 128 * r �
   have hLr : L * (2 * r) = N := by rw [hL]; field_simp
   have hn1 : (1 : ℝ) ≤ n := by exact_mod_cast hn0
   have hnr' : (n : ℝ) + 1 ≤ r := by exact_mod_cast hnr
-  have hrN' : 128 * (r : ℝ) ≤ N := by exact_mod_cast hrN
-  have hNbig' : (1000000 : ℝ) ≤ N := by exact_mod_cast hNbig
-  have hL64 : 64 ≤ L := by nlinarith
+  have hrN' : 512 * (r : ℝ) ≤ N := by exact_mod_cast hrN
+  have hL256 : 256 ≤ L := by nlinarith
   have hc2L : 2 * L ≤ c := by nlinarith
   have hcN : c ≤ N - 2 * L := by nlinarith
   have htot := parseval N hN β
-  set K : ℝ := 406 / 1000 with hK
-  have hK0 : 0 ≤ K := by norm_num [hK]
-  set e : ℝ := 1 / (N : ℝ) ^ 2 with he
   -- pointwise domination of the tail
   have hpt : ∀ a ∈ range N, (if (2 * r * a + N) / (2 * N) = n then 0 else ampSq N β a) ≤
       (if c + L ≤ (a : ℝ) then
-          K * (1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2)) + e
-        else 0) +
+          1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2) else 0) +
       (if (a : ℝ) + L ≤ c then
-          K * (1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2)) + e
-        else 0) := by
+          1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2) else 0) := by
     intro a ha
     have haN : (a : ℝ) < N := by exact_mod_cast mem_range.mp ha
     have ha0 : (0 : ℝ) ≤ a := Nat.cast_nonneg _
-    have he0 : 0 ≤ e := by positivity
     have hi₂ : 0 ≤ (if c + L ≤ (a : ℝ) then
-        K * (1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2)) + e
-          else 0) := by
+        1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2) else 0) := by
       split_ifs <;> positivity
     have hi₁ : 0 ≤ (if (a : ℝ) + L ≤ c then
-        K * (1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2)) + e
-          else 0) := by
+        1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2) else 0) := by
       split_ifs <;> positivity
     by_cases hw : (2 * r * a + N) / (2 * N) = n
     · rw [if_pos hw]
@@ -372,7 +331,7 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 128 * r �
         have hb := point_bound N hN (2 * Real.pi * (β - a / N)) ((a : ℝ) - c)
           (by linarith) (by linarith) (Or.inr (by rw [hc, hβ]; field_simp; ring))
         have : ampSq N β a ≤
-            K * (1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2)) + e := hb
+            1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2) := hb
         linarith
       · have h' : (2 * r * a + N : ℝ) < 2 * N * n := by exact_mod_cast h
         have hA : (a : ℝ) + L ≤ c := by nlinarith
@@ -380,65 +339,36 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 128 * r �
         have hb := point_bound N hN (2 * Real.pi * (β - a / N)) (c - (a : ℝ))
           (by linarith) (by linarith) (Or.inl (by rw [hc, hβ]; field_simp))
         have : ampSq N β a ≤
-            K * (1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2)) + e := hb
+            1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2) := hb
         linarith
   have hL1 : (1 : ℝ) < L := by linarith
-  set SA := (range N).filter (fun a : ℕ => c + L ≤ (a : ℝ)) with hSA
-  set SB := (range N).filter (fun a : ℕ => (a : ℝ) + L ≤ c) with hSB
-  -- the four tail sums; the wrap-around ones start at distance `2 L`
-  have s1 := sum_inv_sq_le SA (fun a : ℕ => (a : ℝ) - c) L hL1
-    (fun a ha => by rw [hSA, mem_filter] at ha; linarith [ha.2])
+  -- the four tail sums
+  have s1 := sum_inv_sq_le ((range N).filter (fun a : ℕ => c + L ≤ (a : ℝ)))
+    (fun a : ℕ => (a : ℝ) - c) L hL1
+    (fun a ha => by rw [mem_filter] at ha; linarith [ha.2])
     (fun a b => Or.inl (by ring))
-  have s2 := sum_inv_sq_le SA (fun a : ℕ => (N : ℝ) - ((a : ℝ) - c)) (2 * L + 1)
-    (by linarith)
+  have s2 := sum_inv_sq_le ((range N).filter (fun a : ℕ => c + L ≤ (a : ℝ)))
+    (fun a : ℕ => (N : ℝ) - ((a : ℝ) - c)) L hL1
     (fun a ha => by
-      rw [hSA, mem_filter, mem_range] at ha
-      have : (a : ℝ) + 1 ≤ N := by exact_mod_cast ha.1
+      rw [mem_filter, mem_range] at ha
+      have : (a : ℝ) < N := by exact_mod_cast ha.1
       linarith)
     (fun a b => Or.inr (by ring))
-  have s3 := sum_inv_sq_le SB (fun a : ℕ => c - (a : ℝ)) L hL1
-    (fun a ha => by rw [hSB, mem_filter] at ha; linarith [ha.2])
+  have s3 := sum_inv_sq_le ((range N).filter (fun a : ℕ => (a : ℝ) + L ≤ c))
+    (fun a : ℕ => c - (a : ℝ)) L hL1
+    (fun a ha => by rw [mem_filter] at ha; linarith [ha.2])
     (fun a b => Or.inr (by ring))
-  have s4 := sum_inv_sq_le SB (fun a : ℕ => (N : ℝ) - (c - (a : ℝ))) (2 * L) (by linarith)
+  have s4 := sum_inv_sq_le ((range N).filter (fun a : ℕ => (a : ℝ) + L ≤ c))
+    (fun a : ℕ => (N : ℝ) - (c - (a : ℝ))) L hL1
     (fun a _ => by
       have : (0 : ℝ) ≤ a := Nat.cast_nonneg _
       linarith)
     (fun a b => Or.inl (by ring))
-  have hcardA : (SA.card : ℝ) ≤ N := by
-    exact_mod_cast (card_filter_le _ _).trans (card_range N).le
-  have hcardB : (SB.card : ℝ) ≤ N := by
-    exact_mod_cast (card_filter_le _ _).trans (card_range N).le
-  have hsumA : ∑ a ∈ SA,
-      (K * (1 / (4 * ((a : ℝ) - c) ^ 2) + 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2)) + e) =
-      K * (∑ a ∈ SA, 1 / (4 * ((a : ℝ) - c) ^ 2) +
-        ∑ a ∈ SA, 1 / (4 * ((N : ℝ) - ((a : ℝ) - c)) ^ 2)) + SA.card * e := by
-    rw [sum_add_distrib, ← mul_sum, sum_add_distrib, sum_const, nsmul_eq_mul]
-  have hsumB : ∑ a ∈ SB,
-      (K * (1 / (4 * (c - (a : ℝ)) ^ 2) + 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2)) + e) =
-      K * (∑ a ∈ SB, 1 / (4 * (c - (a : ℝ)) ^ 2) +
-        ∑ a ∈ SB, 1 / (4 * ((N : ℝ) - (c - (a : ℝ))) ^ 2)) + SB.card * e := by
-    rw [sum_add_distrib, ← mul_sum, sum_add_distrib, sum_const, nsmul_eq_mul]
-  have hce : ∀ m : ℝ, m ≤ N → m * e ≤ 1 / 1000000 := by
-    intro m hm
-    rw [he, mul_one_div, div_le_div_iff₀ (by positivity) (by norm_num), one_mul, sq]
-    have h2 : (N : ℝ) * 1000000 ≤ (N : ℝ) * N := mul_le_mul_of_nonneg_left hNbig' hNR.le
-    linarith
-  have hb1 : 1 / (4 * (L - 1)) ≤ 1 / 252 :=
-    one_div_le_one_div_of_le (by norm_num) (by linarith)
-  have hb2 : 1 / (4 * (2 * L + 1 - 1)) ≤ 1 / 512 :=
-    one_div_le_one_div_of_le (by norm_num) (by linarith)
-  have hb4 : 1 / (4 * (2 * L - 1)) ≤ 1 / 508 :=
-    one_div_le_one_div_of_le (by norm_num) (by linarith)
   have htail : ∑ a ∈ range N, (if (2 * r * a + N) / (2 * N) = n then 0 else ampSq N β a) ≤
-      49 / 10000 := by
+      4 * (1 / (4 * (L - 1))) := by
     refine (sum_le_sum hpt).trans ?_
-    rw [sum_add_distrib, ← sum_filter, ← sum_filter, ← hSA, ← hSB, hsumA, hsumB]
-    have hA1 := mul_le_mul_of_nonneg_left (add_le_add (s1.trans hb1) (s2.trans hb2)) hK0
-    have hB1 := mul_le_mul_of_nonneg_left (add_le_add (s3.trans hb1) (s4.trans hb4)) hK0
-    have hA2 := hce _ hcardA
-    have hB2 := hce _ hcardB
-    simp only at hA1 hB1
-    linarith only [hA1, hB1, hA2, hB2, hK]
+    rw [sum_add_distrib, ← sum_filter, ← sum_filter, sum_add_distrib, sum_add_distrib]
+    linarith
   have hsplit : ∑ a ∈ range N,
       (if (2 * r * a + N) / (2 * N) = n then ampSq N β a else 0) =
       ∑ a ∈ range N, ampSq N β a -
@@ -446,18 +376,21 @@ lemma window_mass_aux (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrN : 128 * r �
     rw [eq_sub_iff_add_eq, ← sum_add_distrib]
     refine sum_congr rfl (fun a _ => ?_)
     split_ifs <;> simp
+  have hfin : 4 * (1 / (4 * (L - 1))) ≤ 1 / 200 := by
+    rw [show 4 * (1 / (4 * (L - 1))) = 1 / (L - 1) by field_simp]
+    apply one_div_le_one_div_of_le (by norm_num)
+    linarith
   rw [hsplit, htot]
   linarith
 
 end WindowMassProof
 
-theorem window_mass (r t n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrt : 128 * r ≤ 2 ^ t)
-    (hbig : 1000000 ≤ 2 ^ t) :
-    (9951 : ℝ) / 10000 ≤ ∑ a ∈ Finset.range (2 ^ t),
+theorem window_mass (r t n : ℕ) (hn0 : 0 < n) (hnr : n < r) (hrt : 512 * r ≤ 2 ^ t) :
+    (199 : ℝ) / 200 ≤ ∑ a ∈ Finset.range (2 ^ t),
       if (2 * r * a + 2 ^ t) / (2 * 2 ^ t) = n then
         Complex.normSq ((((2 ^ t : ℕ) : ℂ)⁻¹) * ∑ y ∈ Finset.range (2 ^ t),
           Complex.exp (Complex.I * ((2 * Real.pi * ((n : ℝ) / (r : ℝ) - (a : ℝ) / ((2 ^ t : ℕ) : ℝ)) : ℝ) : ℂ)) ^ y)
       else 0 :=
-  WindowMassProof.window_mass_aux r (2 ^ t) n hn0 hnr hrt hbig
+  WindowMassProof.window_mass_aux r (2 ^ t) n hn0 hnr hrt
 
 end ShorECDLP.Entrant
