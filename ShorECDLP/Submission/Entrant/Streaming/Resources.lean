@@ -44,8 +44,6 @@ Why few modules: the kernel replay loads the complete import closure (about 4.3 
 Entrant module, in parallel across its worker threads, so its peak memory grows with the number
 of Entrant modules. -/
 
-open ShorECDLP.Entrant.ZeroAdaptive
-
 -- ==== part: LookupSlots ====
 
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
@@ -61,6 +59,14 @@ def lookupSlots {n : Nat} : List (LookupOp n) → Nat
   | [] => 0
   | .gates gs :: ops => gs.length + lookupSlots ops
   | .erase _ _ _ :: ops => 3 + lookupSlots ops
+
+theorem lookupSlots_skeleton_le {n : Nat} (ops : List (LookupOp n)) :
+    lookupSlots ops ≤ 3 * (equalitySkeleton ops).length := by
+  induction ops with
+  | nil => simp [lookupSlots,equalitySkeleton]
+  | cons op ops ih =>
+    cases op <;> simp only [lookupSlots,equalitySkeleton,List.flatMap_cons,
+      equalityOpSkeleton,List.length_append,List.length_map,List.length_singleton] at * <;> omega
 
 theorem recordGates_slots {n s e : Nat} (i : Fin s) (gs : Circuit) (next : Straight n s e) :
     (recordGates i gs next).gateSlots = gs.length + next.gateSlots := by
@@ -266,7 +272,7 @@ theorem ipxLeaf_length_le {n : Nat} (row : Fin n) (q : Wire) (u : Fin 8) (v : Op
 def ipxSlotBound (nodes : Nat) : List IpxOp → Nat
   | [] => 0
   | .query _ _ _ :: ops => 1026*(nodes+1)+10*nodes+ipxSlotBound nodes ops
-  | .test _ :: ops => 3075+ipxSlotBound nodes ops
+  | .test _ :: ops => 9225+ipxSlotBound nodes ops
 
 theorem ipxOps_slots_le {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire)
     (ops : List IpxOp) :
@@ -281,12 +287,14 @@ theorem ipxOps_slots_le {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree
       simp only [ipxOps,lookupSlots_append,ipxSlotBound]
       omega
     | test k =>
-      have h := ipxTest_length_le k
-      simp only [ipxOps,lookupSlots,ordinaryOp,List.length_map,ipxSlotBound]
+      have h := lookupSlots_skeleton_le (@ipxMeasuredTestOps n k)
+      rw [ipxMeasuredTestOps_skeleton] at h
+      have hl := ipxTest_length_le k
+      simp only [ipxOps,lookupSlots_append,ipxSlotBound]
       omega
 
 theorem ipxSlotBound_schedule (nodes : Nat) :
-    ipxSlotBound nodes ipxSchedule = 13*(1026*(nodes+1)+10*nodes)+8*3075 := by
+    ipxSlotBound nodes ipxSchedule = 13*(1026*(nodes+1)+10*nodes)+8*9225 := by
   simp only [ipxSchedule,ipxPhase1,ipxPhase2,ipxPhase3,List.cons_append,List.nil_append,ipxSlotBound]
   omega
 
@@ -2253,7 +2261,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge
 attribute [local irreducible] divisionProgram multiplicationProgram
-attribute [local irreducible] zDivisionProgram zMultiplicationProgram modularNegateProgram squareSubtractProgram adaptiveCoordinateProgram
+attribute [local irreducible] zeroDivisionProgram zeroMultiplicationProgram modularNegateProgram squareSubtractProgram coordinateProgram
 
 theorem fig15ZeroPrepare_length : fig15ZeroPrepare.length=1022 := by
   rw [circuit_length_primitive,fig15ZeroPrepare_primitive]; rfl
@@ -2261,26 +2269,16 @@ theorem fig15ZeroPrepare_length : fig15ZeroPrepare.length=1022 := by
 theorem fig15ZeroRestore_length : fig15ZeroRestore.length=1022 := by
   rw [circuit_length_primitive,fig15ZeroRestore_primitive]; rfl
 
-theorem zDivisionProgram_slots (n start : Nat) :
-    (zDivisionProgram n start).2.gateSlots≤676000000 := by
-  have h := divisionProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
-  have h1 := equalityProgram_slots n start reg 0 837 scratch
-  have h2 := equalityProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1 +
-    (divisionProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
-  simp only [reg, List.length_cons, List.length_range'] at h1 h2
-  simp only [zDivisionProgram, appendCompiled_slots, prependCompiled_slots, cx, List.length_singleton]
-  simp only [reg] at *
+theorem zeroDivisionProgram_slots (n start : Nat) :
+    (zeroDivisionProgram n start).2.gateSlots≤676000000 := by
+  have h := divisionProgram_slots n start
+  simp only [zeroDivisionProgram,surroundCompiled_slots,fig15ZeroPrepare_length,fig15ZeroRestore_length]
   omega
 
-theorem zMultiplicationProgram_slots (n start : Nat) :
-    (zMultiplicationProgram n start).2.gateSlots≤676000000 := by
-  have h := multiplicationProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
-  have h1 := equalityProgram_slots n start reg 0 837 scratch
-  have h2 := equalityProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1 +
-    (multiplicationProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
-  simp only [reg, List.length_cons, List.length_range'] at h1 h2
-  simp only [zMultiplicationProgram, appendCompiled_slots, prependCompiled_slots, cx, List.length_singleton]
-  simp only [reg] at *
+theorem zeroMultiplicationProgram_slots (n start : Nat) :
+    (zeroMultiplicationProgram n start).2.gateSlots≤676000000 := by
+  have h := multiplicationProgram_slots n start
+  simp only [zeroMultiplicationProgram,surroundCompiled_slots,fig15ZeroPrepare_length,fig15ZeroRestore_length]
   omega
 
 theorem xNegateProgram_slots (n start : Nat) :
@@ -2294,23 +2292,23 @@ theorem pointSquareProgram_slots (n start : Nat) :
   exact squareSubtractProgram_slots256 n start _ _ _ _ _ _ _ _ _ _ _ _
     (by simp) (by simp) (by simp) (by simp [secp256k1ReductionConstantBits]) (by simp)
 
-theorem adaptiveCoordinateProgram_slots (start : Nat) :
-    (adaptiveCoordinateProgram start).2.gateSlots≤1500000000 := by
-  have h := sequenceProgram_slots_le 32768 adaptiveCoordinateSegments
+theorem coordinateProgram_slots (start : Nat) :
+    (coordinateProgram start).2.gateSlots≤1500000000 := by
+  have h := sequenceProgram_slots_le 32768 coordinateSegments
     ([17449459,17502203,676000000,15750663,17449459,676000000,26370,17449459,17502203] : List Nat) (by
-      unfold adaptiveCoordinateSegments
+      unfold coordinateSegments
       refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ List.Forall₂.nil))))))))
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact signedFieldProgram_slots _ s
-      · intro s; exact zDivisionProgram_slots _ s
+      · intro s; exact zeroDivisionProgram_slots _ s
       · intro s; exact pointSquareProgram_slots _ s
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
-      · intro s; exact zMultiplicationProgram_slots _ s
+      · intro s; exact zeroMultiplicationProgram_slots _ s
       · intro s; exact xNegateProgram_slots _ s
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact signedFieldProgram_slots _ s) start
   simp only [List.sum_cons,List.sum_nil] at h
-  unfold adaptiveCoordinateProgram
+  unfold coordinateProgram
   omega
 
 
@@ -2319,14 +2317,14 @@ theorem reindexCompiled_slots {n m start : Nat} (f : Fin n → Fin m)
     (reindexCompiled f p).2.gateSlots=p.2.gateSlots := by
   exact reindexStraight_gateSlots f p.2
 
-attribute [local irreducible] reindexCompiled sharedAdaptiveCoordinateProgram sharedYNegateProgram
+attribute [local irreducible] reindexCompiled sharedCoordinateProgram sharedYNegateProgram
   ipxProgram ipxWindowCore ipxWindowPrepared actualIpxWindow actualFirstWindow
   ipxLeftWindows ipxRightWindows ipxOuterPlan
 
-theorem sharedAdaptiveCoordinateProgram_slots (w : OddWindow) (start : Nat) :
-    (sharedAdaptiveCoordinateProgram w start).2.gateSlots≤1500000000 := by
-  simp only [sharedAdaptiveCoordinateProgram,reindexCompiled_slots]
-  exact adaptiveCoordinateProgram_slots start
+theorem sharedCoordinateProgram_slots (w : OddWindow) (start : Nat) :
+    (sharedCoordinateProgram w start).2.gateSlots≤1500000000 := by
+  simp only [sharedCoordinateProgram,reindexCompiled_slots]
+  exact coordinateProgram_slots start
 
 theorem sharedYNegateProgram_slots (w : OddWindow) (start : Nat) :
     (sharedYNegateProgram w start).2.gateSlots≤26372 := by
@@ -2339,7 +2337,7 @@ theorem ipxWindowCore_slots (w : OddWindow) (start : Nat) :
     ([1500000000,26372,1183793236,26372] : List Nat) (by
       unfold ipxWindowSegments
       refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-      · intro s; exact sharedAdaptiveCoordinateProgram_slots w s
+      · intro s; exact sharedCoordinateProgram_slots w s
       · intro s; exact sharedYNegateProgram_slots w s
       · intro s; exact ipxProgram_slots w s
       · intro s; exact sharedYNegateProgram_slots w s) start
@@ -2452,7 +2450,7 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] sharedAdaptiveCoordinateProgram yNegateProgram ipxProgram
+attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
   ipxWindowCore ipxWindowPrepared signedLookupCoordinateProgram primitiveResources
   sharedYNegateProgram actualIpxWindow ipxLeftWindows ipxRightWindows
   ipxSource windowYNegate sequenceCircuit ipxWindowSources
@@ -2468,7 +2466,7 @@ private theorem lookup_counts (table : Nat → Nat) :
   decide
 
 /-- Source coordinate arithmetic includes both zero-allowed field operations. -/
-theorem old_coordinate_numeric_counts (x y : Nat → Nat) :
+theorem coordinate_numeric_counts (x y : Nat → Nat) :
     (signedLookupCoordinateProgram x y).tCount = 510203526 ∧
     (signedLookupCoordinateProgram x y).measurementCount = 30272702 := by
   have h : (primitiveResources (signedLookupCoordinateProgram x y)).toffoli = 72886218 ∧
@@ -2481,19 +2479,6 @@ theorem old_coordinate_numeric_counts (x y : Nat → Nat) :
   have ht := primitiveResources_T_of_no_phase _ h.2.1
   rw [h.1] at ht
   exact ⟨ht,by simpa only [primitiveResources] using h.2.2⟩
-
-/-- The two measured guards in each field operation preserve the coordinate map. -/
-theorem coordinate_numeric_counts (x y : Nat → Nat) :
-    (coordinateSource x y).tCount = 510196414 ∧
-    (coordinateSource x y).measurementCount = 30273718 := by
-  have h := old_coordinate_numeric_counts x y
-  have hd := division_counts
-  have hm := multiplication_counts
-  have od := secp256k1ZeroAllowedDivision_resources
-  have om := secp256k1ZeroAllowedMultiplication_resources
-  simp only [coordinateSource, signedLookupCoordinateProgram, adaptive_tCount_seq,
-    modularMeasurements_seq] at h ⊢
-  omega
 
 /-- One actual sign-negation segment, including its two X wrappers. -/
 theorem windowYNegate_numeric_counts :
@@ -2515,11 +2500,11 @@ theorem windowYNegate_numeric_counts :
   · exact ht
   · simpa only [primitiveResources] using hm
 
-theorem sharedAdaptiveCoordinateProgram_count (w : OddWindow) (start : Nat) :
-    (sharedAdaptiveCoordinateProgram w start).1 = 30273718 := by
-  have h := compiled_count_of_run (sharedAdaptiveCoordinateProgram w start)
+theorem sharedCoordinateProgram_count (w : OddWindow) (start : Nat) :
+    (sharedCoordinateProgram w start).1 = 30272702 := by
+  have h := compiled_count_of_run (sharedCoordinateProgram w start)
     (readConstant coefficientAt (0 : Point)) (fun _ => false) _
-    (sharedAdaptiveCoordinateProgram_run w start 0 (by simp) (fun _ => false))
+    (sharedCoordinateProgram_run w start 0 (by simp) (fun _ => false))
   exact h.trans (coordinate_numeric_counts _ _).2
 
 theorem sharedYNegateProgram_count (w : OddWindow) (start : Nat) :
@@ -2543,7 +2528,7 @@ theorem ipxWindowCore_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : ord
   apply sequenceProgram_tCount
   unfold ipxWindowSegments ipxWindowSources
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact sharedAdaptiveCoordinateProgram_tCount w cursor Q hQ h
+  · intro cursor h; exact sharedCoordinateProgram_tCount w cursor Q hQ h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
   · intro cursor h; exact ipxProgram_tCount w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
@@ -2554,7 +2539,7 @@ theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
   omega
 
 theorem ipxWindowSources_tCount (Q : Point) (w : OddWindow) :
-    (sequenceCircuit (ipxWindowSources Q w)).tCount = 513306927 := by
+    (sequenceCircuit (ipxWindowSources Q w)).tCount = 513271199 := by
   unfold ipxWindowSources
   rw [sequenceCircuit_four_tCount,(coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1,ipxSource_tCount]
@@ -2569,7 +2554,7 @@ theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0
 theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
     (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      513306927 := by
+      513271199 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
     (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
@@ -2582,9 +2567,9 @@ theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : o
   exact h
 
 theorem ipxWindowCore_count (w : OddWindow) (start : Nat) :
-    (ipxWindowCore w start).1 = 30701733 := by
+    (ipxWindowCore w start).1 = 30706837 := by
   simp only [ipxWindowCore,ipxWindowSegments,sequenceProgram,appendCompiled,
-    sharedAdaptiveCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
+    sharedCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
 
 theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
     (p : (count : Nat) × Straight n start (start+count)) :
@@ -2592,9 +2577,9 @@ theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
   simp only [surroundCompiled,prependCompiled,appendCompiled,Nat.add_zero]
 
 theorem actualIpxWindow_count (w : OddWindow) :
-    (actualIpxWindow w).count = 30701733 := by
+    (actualIpxWindow w).count = 30706837 := by
   unfold actualIpxWindow closedWindow
-  change 0 + (ipxWindowPrepared w 0).1 = 30701733
+  change 0 + (ipxWindowPrepared w 0).1 = 30706837
   rw [Nat.zero_add]
   have hp : (ipxWindowPrepared w 0).1 = (ipxWindowCore w 0).1 := by
     unfold ipxWindowPrepared
@@ -2612,18 +2597,18 @@ theorem axisCount_constant {n : Nat} (ws : List (OuterWindow n)) (m : Nat)
     simp only [List.length_cons,Nat.add_mul,Nat.one_mul]
     omega
 
-theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 460591786 := by
+theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 460668346 := by
   unfold ipxLeftWindows
   rw [axisCount,actualFirstWindow_count]
-  rw [axisCount_constant _ 30701733]
+  rw [axisCount_constant _ 30706837]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
     exact actualIpxWindow_count _
 
-theorem ipxRightWindows_count : axisCount ipxRightWindows = 399122737 := by
+theorem ipxRightWindows_count : axisCount ipxRightWindows = 399189089 := by
   unfold ipxRightWindows
-  rw [axisCount_constant _ 30701733]
+  rw [axisCount_constant _ 30706837]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
@@ -2636,7 +2621,7 @@ theorem standardOuterPlan_lists_stride {n : Nat} (left right : List (OuterWindow
       axisCount left + axisCount right + reset.length := by
   simp only [OuterPlan.stride,standardOuterPlan,Vector.toList,List.toList_toArray]
 
-theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859715377 := by
+theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859858289 := by
   have h := standardOuterPlan_lists_stride ipxLeftWindows ipxRightWindows
     ipxLeftWindows_length ipxRightWindows_length resetWires
   apply h.trans
@@ -2644,11 +2629,11 @@ theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 859715377 := by
 
 /-- Exact final record count includes the first lookup, all 28 addition windows,
 all Fourier measurements, and the full 854-wire reset in each of 56 rounds. -/
-theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48144061112 := by
+theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48152064184 := by
   rw [ipxOuterPlan_stride]
 
 /-- Exact final record count of the entrant's 6-round program. -/
-theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5158292262 := by
+theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5159149734 := by
   rw [ipxOuterPlan_stride]
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -2717,12 +2702,12 @@ theorem OuterPlan.round_weighted_t_le {n : Nat} (p : OuterPlan n)
         ShorECDLP.tCount,tCost,resetProgram_t]
 
 def actualWindowTCost (w : OuterWindow 983040) : Nat :=
-  if w.count = 65535 then 458745 else 513306927
+  if w.count = 65535 then 458745 else 513271199
 
 theorem actualWindowTCost_first : actualWindowTCost actualFirstWindow = 458745 := by
   simp only [actualWindowTCost,actualFirstWindow_count,ite_true]
 theorem actualWindowTCost_batched (w : OddWindow) :
-    actualWindowTCost (actualIpxWindow w) = 513306927 := by
+    actualWindowTCost (actualIpxWindow w) = 513271199 := by
   simp only [actualWindowTCost,actualIpxWindow_count]
   decide
 
@@ -2738,7 +2723,7 @@ theorem actualWindowTCost_bound (Q : Point) (hQ : order • Q = 0) :
 
 theorem actualWindowTCost_total :
     (ipxLeftWindows.map actualWindowTCost).sum +
-      (ipxRightWindows.map actualWindowTCost).sum = 14373052701 := by
+      (ipxRightWindows.map actualWindowTCost).sum = 14372052317 := by
   simp only [ipxLeftWindows,ipxRightWindows,List.map_cons,List.sum_cons,List.map_ofFn,
     Function.comp_def,actualWindowTCost_first,actualWindowTCost_batched]
   simp
@@ -2751,7 +2736,7 @@ theorem ipxOuterPlan_right : ipxOuterPlan.right.toList = ipxRightWindows := by
 theorem ipxOuterPlan_round_t_le (Q : Point) (hQ : order • Q = 0)
     (start : Nat) (history : Fin start → Bool) :
     ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
-      14373106869 := by
+      14372106485 := by
   have h := ipxOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
     (by rw [ipxOuterPlan_left,ipxOuterPlan_right]; exact actualWindowTCost_bound Q hQ) start history
   rw [ipxOuterPlan_left,ipxOuterPlan_right,actualWindowTCost_total] at h
@@ -2776,8 +2761,8 @@ theorem OuterPlan.repeat_t_le_of_round {n : Nat} (p : OuterPlan n) (cost : Nat)
 feedback. -/
 theorem ipxOuterPlan_total_t_le (Q : Point) (hQ : order • Q = 0) :
     ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      804893984664 := by
-  exact ipxOuterPlan.repeat_t_le_of_round 14373106869 (readConstant coefficientAt Q)
+      804837963160 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14372106485 (readConstant coefficientAt Q)
     (ipxOuterPlan_round_t_le Q hQ) 56 0 Fin.elim0
 
 /-- All 56 rounds would exceed the published measurement limit. -/
@@ -2893,28 +2878,28 @@ private theorem signed_field_uniform (field : PointField) (start : Nat)
     · intro h
       exact yNegateProgram_tCount _ _ h
 
-theorem adaptiveCoordinateProgram_tCount_uniform (start : Nat) (read : ConstantBit 32768 → Bool)
+theorem coordinateProgram_tCount_uniform (start : Nat) (read : ConstantBit 32768 → Bool)
     (history : Fin start → Bool) :
-    compiledTCount (adaptiveCoordinateProgram start) read history =
-      (coordinateSource (fun l => fieldValue (windowPoint 0 (.left 0) l) .x)
+    compiledTCount (coordinateProgram start) read history =
+      (signedLookupCoordinateProgram (fun l => fieldValue (windowPoint 0 (.left 0) l) .x)
         (fun l => fieldValue (windowPoint 0 (.left 0) l) .y)).tCount := by
-  unfold adaptiveCoordinateProgram
-  rw [← adaptiveCoordinateSources_eq]
+  unfold coordinateProgram
+  rw [← coordinateSources_eq]
   apply sequenceProgram_tCount
-  unfold adaptiveCoordinateSegments adaptiveCoordinateSources
+  unfold coordinateSegments coordinateSources
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))
   · intro cursor h
     exact field_add_source .negX _ cursor read (by simp) h
   · intro cursor h
     exact signed_field_uniform .negY cursor read h
   · intro cursor h
-    exact zDivisionProgram_tCount 32768 cursor _ h
+    exact zeroDivisionProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact pointSquareProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact field_add_source .tripleX _ cursor read (by simp) h
   · intro cursor h
-    exact zMultiplicationProgram_tCount 32768 cursor _ h
+    exact zeroMultiplicationProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact xNegateProgram_tCount 32768 cursor _ h
   · intro cursor h
@@ -2922,16 +2907,16 @@ theorem adaptiveCoordinateProgram_tCount_uniform (start : Nat) (read : ConstantB
   · intro cursor h
     exact signed_field_uniform .negY cursor read h
 
-attribute [local irreducible] sharedAdaptiveCoordinateProgram yNegateProgram ipxProgram
-  ipxWindowCore ipxWindowPrepared coordinateSource
+attribute [local irreducible] sharedCoordinateProgram yNegateProgram ipxProgram
+  ipxWindowCore ipxWindowPrepared signedLookupCoordinateProgram
   sharedYNegateProgram actualIpxWindow ipxLeftWindows ipxRightWindows
   ipxSource windowYNegate sequenceCircuit ipxWindowSources
 
-theorem sharedAdaptiveCoordinateProgram_tCount_uniform (w : OddWindow) (start : Nat)
+theorem sharedCoordinateProgram_tCount_uniform (w : OddWindow) (start : Nat)
     (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
-    compiledTCount (sharedAdaptiveCoordinateProgram w start) read history = 510196414 := by
-  simp only [sharedAdaptiveCoordinateProgram,reindexCompiled,compiledTCount,reindexStraight_instantiate]
-  exact (adaptiveCoordinateProgram_tCount_uniform start _ history).trans (coordinate_numeric_counts _ _).1
+    compiledTCount (sharedCoordinateProgram w start) read history = 510203526 := by
+  simp only [sharedCoordinateProgram,reindexCompiled,compiledTCount,reindexStraight_instantiate]
+  exact (coordinateProgram_tCount_uniform start _ history).trans (coordinate_numeric_counts _ _).1
 
 theorem ipxWindowCore_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
@@ -2941,7 +2926,7 @@ theorem ipxWindowCore_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
   apply sequenceProgram_tCount
   unfold ipxWindowSegments ipxWindowSources
   refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact (sharedAdaptiveCoordinateProgram_tCount_uniform w cursor _ h).trans (coordinate_numeric_counts _ _).1.symm
+  · intro cursor h; exact (sharedCoordinateProgram_tCount_uniform w cursor _ h).trans (coordinate_numeric_counts _ _).1.symm
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
   · intro cursor h; exact ipxProgram_tCount w cursor Q h
   · intro cursor h; exact sharedYNegateProgram_tCount w cursor _ h
@@ -2955,7 +2940,7 @@ theorem actualFirstWindow_tCount_uniform (start : Nat) (Q : Point)
 theorem actualIpxWindow_tCount_uniform (w : OddWindow) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
     (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      513306927 := by
+      513271199 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
     (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
@@ -2981,7 +2966,7 @@ attribute [local irreducible] ipxOuterPlan
 theorem ipxOuterPlan_round_t_uniform (Q : Point)
     (start : Nat) (history : Fin start → Bool) :
     ((ipxOuterPlan.round start).instantiate (readConstant coefficientAt Q) history).tCount ≤
-      14373106869 := by
+      14372106485 := by
   have h := ipxOuterPlan.round_weighted_t_le actualWindowTCost (readConstant coefficientAt Q)
     (by rw [ipxOuterPlan_left,ipxOuterPlan_right]; exact actualWindowTCost_bound_uniform Q) start history
   rw [ipxOuterPlan_left,ipxOuterPlan_right,actualWindowTCost_total] at h
@@ -2989,15 +2974,15 @@ theorem ipxOuterPlan_round_t_uniform (Q : Point)
 
 theorem ipxOuterPlan_total_t_uniform (Q : Point) :
     ((ipxOuterPlan.repeat 56 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      804893984664 := by
-  exact ipxOuterPlan.repeat_t_le_of_round 14373106869 (readConstant coefficientAt Q)
+      804837963160 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14372106485 (readConstant coefficientAt Q)
     (ipxOuterPlan_round_t_uniform Q) 56 0 Fin.elim0
 
-/-- T upper bound of the entrant's 6-round program: 6 × 14,373,106,869. -/
+/-- T upper bound of the entrant's 6-round program: 6 × 14,373,306,005. -/
 theorem ipxOuterPlan_rounds_t_uniform (Q : Point) :
     ((ipxOuterPlan.repeat 6 0).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount ≤
-      86238641214 := by
-  exact ipxOuterPlan.repeat_t_le_of_round 14373106869 (readConstant coefficientAt Q)
+      86232638910 := by
+  exact ipxOuterPlan.repeat_t_le_of_round 14372106485 (readConstant coefficientAt Q)
     (ipxOuterPlan_round_t_uniform Q) 6 0 Fin.elim0
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -3156,6 +3141,25 @@ theorem compiled_support_of_static {n start : Nat}
 def lookupOpWires {n : Nat} : LookupOp n → List Wire
   | .gates gs => gs.flatMap templateGateWires
   | .erase a b t => t :: circuitWires (controlledZ a b)
+
+theorem equalitySkeleton_op_support {n : Nat} (op : LookupOp n) :
+    lookupOpWires op ⊆ circuitWires (equalityOpSkeleton op) := by
+  cases op with
+  | gates gs =>
+    have h (g : TemplateGate n) : templateGateWires g = gateWires (equalityTemplateGate g) := by
+      cases g <;> rfl
+    simp only [lookupOpWires,equalityOpSkeleton,circuitWires,List.flatMap_map,← h]
+    exact List.Subset.refl _
+  | erase a b t =>
+    simp [lookupOpWires,equalityOpSkeleton,controlledZ,circuitWires,gateWires,List.subset_def]
+
+theorem equalitySkeleton_support {n : Nat} (ops : List (LookupOp n))
+    (op : LookupOp n) (ho : op ∈ ops) :
+    lookupOpWires op ⊆ circuitWires (equalitySkeleton ops) := by
+  intro w hw
+  have h := equalitySkeleton_op_support op hw
+  simp only [equalitySkeleton,circuitWires,List.flatMap_assoc]
+  exact List.mem_flatMap.mpr ⟨op,ho,h⟩
 
 theorem lookupProgram_support (n : Nat) (ops : List (LookupOp n)) (start : Nat) :
     straightWires (lookupProgram n ops start)=ops.flatMap lookupOpWires := by
@@ -3472,8 +3476,12 @@ theorem ipxOps_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree)
       exact ⟨unaryLookupOps_support _ _ _ _ _ (hc c) hp ht
         (fun l q hq => ipxLeaf_support _ _ _ _ hq),ih⟩
     | test k =>
-      simp only [ipxOps,List.forall_mem_cons,ordinaryOp_support]
-      exact ⟨ipxTest_support k,ih⟩
+      simp only [ipxOps,List.forall_mem_append]
+      refine ⟨?_,ih⟩
+      intro op ho
+      have h := equalitySkeleton_support (@ipxMeasuredTestOps n k) op ho
+      rw [ipxMeasuredTestOps_skeleton] at h
+      exact h.trans (ipxTest_support k)
 
 theorem ipxProgramOf_support {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree)
     (paths : List Wire) (hc : ∀ c, ipxControl c ∈ ipxRawSupport) (hp : paths ⊆ ipxRawSupport)
@@ -4164,7 +4172,7 @@ theorem signedAddressCircuit_support_static :
 /-- The remaining arithmetic obligation is explicit. The correction and both
 negation segments have unconditional concrete support proofs. -/
 theorem actualIpxWindow_support_of_coordinate (w : OddWindow)
-    (hc : ∀ start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
+    (hc : ∀ start, (straightWires (sharedCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires) (start : Nat) :
     straightWires ((actualIpxWindow w).program start) ⊆ resetWires := by
   have hcore cursor : (straightWires (ipxWindowCore w cursor).2).map
@@ -4180,7 +4188,7 @@ theorem actualIpxWindow_support_of_coordinate (w : OddWindow)
 
 
 theorem actualWindows_support_of_coordinate
-    (hc : ∀ w start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
+    (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (window : OuterWindow 983040) (hw : window ∈ ipxLeftWindows ++ ipxRightWindows)
     (start : Nat) : straightWires (window.program start) ⊆ resetWires := by
@@ -4191,7 +4199,7 @@ theorem actualWindows_support_of_coordinate
   · exact actualIpxWindow_support_of_coordinate _ (hc _) start
 
 theorem ipxOuter_support_of_coordinate
-    (hc : ∀ w start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
+    (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
     ((ipxOuterPlan.repeat count start).instantiate read history).wires ⊆ resetWires := by
@@ -4209,7 +4217,7 @@ theorem ipxOuter_support_of_coordinate
 /-- Conditional assembly only: the concrete coordinate compiler support must
 still be supplied. This is not an unconditional Streaming resource certificate. -/
 theorem ipxOuter_qubits_le_of_coordinate
-    (hc : ∀ w start, (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
+    (hc : ∀ w start, (straightWires (sharedCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ resetWires)
     (count start : Nat) (read : ConstantBit 983040 → Bool) (history : Fin start → Bool) :
     ((ipxOuterPlan.repeat count start).instantiate read history).wires.toFinset.card ≤ 854 := by
@@ -6294,40 +6302,21 @@ private theorem zero_wrapper_literals :
     simp only [secp256k1ZeroAllowedDivision,modularWires_seq,AdaptiveCircuit.wires,List.mem_append,List.not_mem_nil,or_false]
     exact Or.inr hw
 
-private theorem zero_eq_support (n start : Nat) :
-    straightWires (equalityProgram n start reg 0 837 scratch).2 ⊆ coordinateBaseSupport := by
-  apply equalityProgram_support
-  · intro w hw
-    simp [reg] at hw
-    simp [coordinateBaseSupport,windowBaseSupport]
-    dsimp only [Wire] at *
-    omega
-  · simp [coordinateBaseSupport]
-  · intro w hw
-    simp [scratch] at hw
-    simp [coordinateBaseSupport,windowBaseSupport]
-    dsimp only [Wire] at *
-    omega
-private theorem zero_cx_support : circuitWires cx ⊆ coordinateBaseSupport := by
-  simp [cx,circuitWires,gateWires,coordinateBaseSupport,windowBaseSupport]
+theorem zeroDivisionProgram_support_static (n start : Nat) :
+    straightWires (zeroDivisionProgram n start).2 ⊆ coordinateBaseSupport := by
+  simp only [zeroDivisionProgram,surroundCompiled_support,List.append_subset]
+  exact ⟨⟨zero_wrapper_literals.1,(divisionProgram_support_static n start).trans old_in_complete⟩,zero_wrapper_literals.2⟩
 
-theorem zDivisionProgram_support_static (n start : Nat) :
-    straightWires (zDivisionProgram n start).2 ⊆ coordinateBaseSupport := by
-  simp only [zDivisionProgram,appendCompiled_support,prependCompiled_support,List.append_subset]
-  exact ⟨zero_eq_support _ _,zero_cx_support,(divisionProgram_support_static _ _).trans old_in_complete,
-    zero_cx_support,zero_eq_support _ _⟩
+theorem zeroMultiplicationProgram_support_static (n start : Nat) :
+    straightWires (zeroMultiplicationProgram n start).2 ⊆ coordinateBaseSupport := by
+  simp only [zeroMultiplicationProgram,surroundCompiled_support,List.append_subset]
+  exact ⟨⟨zero_wrapper_literals.1,(multiplicationProgram_support_static n start).trans old_in_complete⟩,zero_wrapper_literals.2⟩
 
-theorem zMultiplicationProgram_support_static (n start : Nat) :
-    straightWires (zMultiplicationProgram n start).2 ⊆ coordinateBaseSupport := by
-  simp only [zMultiplicationProgram,appendCompiled_support,prependCompiled_support,List.append_subset]
-  exact ⟨zero_eq_support _ _,zero_cx_support,(multiplicationProgram_support_static _ _).trans old_in_complete,
-    zero_cx_support,zero_eq_support _ _⟩
+attribute [local irreducible] fieldLookupAddProgram signedFieldProgram zeroDivisionProgram
+  pointSquareProgram zeroMultiplicationProgram xNegateProgram
 
-attribute [local irreducible] fieldLookupAddProgram signedFieldProgram zDivisionProgram
-  pointSquareProgram zMultiplicationProgram xNegateProgram
-
-theorem adaptiveCoordinateProgram_support_static (start : Nat) :
-    straightWires (adaptiveCoordinateProgram start).2 ⊆ coordinateBaseSupport := by
+theorem coordinateProgram_support_static (start : Nat) :
+    straightWires (coordinateProgram start).2 ⊆ coordinateBaseSupport := by
   have ha : List.range' 263 256 ⊆ windowBaseSupport := by
     intro w hw
     simp only [List.mem_range'_1] at hw
@@ -6335,21 +6324,32 @@ theorem adaptiveCoordinateProgram_support_static (start : Nat) :
     omega
   have hf field cursor := (fieldLookupAddProgram_support_static field _ ha (by simp) cursor).trans old_in_complete
   have hs field cursor := (signedFieldProgram_support_static field cursor).trans old_in_complete
-  unfold adaptiveCoordinateProgram
+  unfold coordinateProgram
   apply sequenceProgram_support
   intro seg hseg cursor
-  simp only [adaptiveCoordinateSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
+  simp only [coordinateSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
   rcases hseg with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl
   · exact hf _ _
   · exact hs _ _
-  · exact zDivisionProgram_support_static _ _
+  · exact zeroDivisionProgram_support_static _ _
   · exact (pointSquareProgram_support_static _ _).trans old_in_complete
   · exact hf _ _
-  · exact zMultiplicationProgram_support_static _ _
+  · exact zeroMultiplicationProgram_support_static _ _
   · exact (xNegateProgram_support_static _ _).trans old_in_complete
   · exact hf _ _
   · exact hs _ _
+theorem zeroDivision_touches837 (n start : Nat) :
+    837 ∈ straightWires (zeroDivisionProgram n start).2 := by
+  simp only [zeroDivisionProgram,surroundCompiled_support,List.mem_append]
+  left; left
+  simp only [fig15ZeroPrepare,nonzeroInputPrepare,circuitWires,List.flatMap_append,List.mem_append]
+  right
+  simp [gateWires]
 
+theorem coordinateProgram_touches837 (start : Nat) :
+    837 ∈ straightWires (coordinateProgram start).2 := by
+  simp only [coordinateProgram,coordinateSegments,sequenceProgram,appendCompiled_support,List.mem_append]
+  exact Or.inr (Or.inr (Or.inl (zeroDivision_touches837 _ _)))
 end ShorECDLP.Paper2607_13816.ChallengeMigration
 
 -- ==== part: CompleteSupport ====
@@ -6370,13 +6370,13 @@ theorem completeBatchedSupport_length : completeBatchedSupport.length = 855 := b
 private theorem old_in_complete_completeSupport : resetWires ⊆ completeBatchedSupport :=
   List.subset_cons_of_subset 837 (List.Subset.refl _)
 
-theorem sharedAdaptiveCoordinateProgram_support_static (w : OddWindow) (start : Nat) :
-    (straightWires (sharedAdaptiveCoordinateProgram w start).2).map
+theorem sharedCoordinateProgram_support_static (w : OddWindow) (start : Nat) :
+    (straightWires (sharedCoordinateProgram w start).2).map
       (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
-  simp only [sharedAdaptiveCoordinateProgram,reindexCompiled_support]
+  simp only [sharedCoordinateProgram,reindexCompiled_support]
   intro z hz
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hz
-  have h := adaptiveCoordinateProgram_support_static start hv
+  have h := coordinateProgram_support_static start hv
   rcases List.mem_cons.mp h with rfl | h
   · have he : windowAddressPerm 855 (by decide) 837 = 837 := by decide +kernel
     rw [he]
@@ -6389,7 +6389,7 @@ theorem actualIpxWindow_support_static (w : OddWindow) (start : Nat) :
       (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
     apply sequenceProgram_mapped_support
     simp only [ipxWindowSegments,List.forall_mem_cons,List.mem_nil_iff,false_implies,implies_true,and_true]
-    exact ⟨sharedAdaptiveCoordinateProgram_support_static w,
+    exact ⟨sharedCoordinateProgram_support_static w,
       fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_completeSupport,
       fun cursor => (ipxProgram_support_static w cursor).trans old_in_complete_completeSupport,
       fun cursor => (sharedYNegateProgram_support_static w cursor).trans old_in_complete_completeSupport⟩
@@ -6425,6 +6425,18 @@ theorem ipxOuter_support_static
 theorem wire837_not_in_old_allocation : 837 ∉ resetWires := by
   simp only [resetWires,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
   norm_num
+
+theorem sharedCoordinateProgram_touches837 (w : OddWindow) (start : Nat) :
+    837 ∈ (straightWires (sharedCoordinateProgram w start).2).map
+      (windowAddressPerm 855 (by decide)) := by
+  simp only [sharedCoordinateProgram,reindexCompiled_support]
+  exact List.mem_map.mpr ⟨837,coordinateProgram_touches837 start,by decide +kernel⟩
+
+theorem old_coordinate_support_false (w : OddWindow) (start : Nat) :
+    ¬ (straightWires (sharedCoordinateProgram w start).2).map
+      (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
+  intro h
+  exact wire837_not_in_old_allocation (h (sharedCoordinateProgram_touches837 w start))
 
 /-- An upper bound on the actual program's deduplicated wire set, not an exact usage count. -/
 theorem ipxOuter_qubits_le_855

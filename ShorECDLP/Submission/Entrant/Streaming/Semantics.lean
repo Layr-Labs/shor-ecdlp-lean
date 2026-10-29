@@ -1,9 +1,9 @@
-import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».OrderFinding.ReducedVerified
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Bounds
 import Mathlib.Analysis.SpecialFunctions.Trigonometric.Deriv
 import Mathlib.Analysis.Calculus.Deriv.MeanValue
 import Mathlib.Analysis.Real.Pi.Bounds
+import ShorECDLP.Submission.Entrant.Streaming.Correction
 import ShorECDLP.Submission.«2607_13816».Challenge.WindowNegation
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchTemplate
 import ShorECDLP.Submission.«2607_13816».Window.StreamHistory
@@ -18,25 +18,23 @@ import ShorECDLP.Submission.«2607_13816».Window.StreamSamplingSuccess
 
 /-! EDITABLE. Streaming entrant, module `Semantics`: physical execution of the compiled rounds and the per-round success bound.
 
-This module concatenates the former per-file modules `AveragedSuccess`, `BatchBoundary`,
-`BatchedWindowState`, `BatchedWindowCoherent`, `PreparedBatch`, `ActualWindow`,
-`WindowPhysical`, `ModularPhysical`, `EEACenterPhysical`, `EEAStructuralPhysical`,
-`EEAIntervalPhysical`, `MeasuredEEAPhysical`, `SquarePhysical`, `InPlacePhysical`,
-`InPlaceCompletePhysical`, `CoordinatePhysical`, `ActualPhysical`, `HistoryExecution`,
-`OuterExecution`, `ActualExecution`, `SourceAxis`, `TaggedProbability`, `WindowValidity`,
-`AxisProbability`, `FirstValidity`, `CrossWindowWeights`, `CrossWindowPoint`,
-`TwoAxisProbability`, `FixedWord`, `TaggedAxis`, `TaggedTwoAxes`, `ActualPair`, `DecoderBridge`,
-`RoundBoundary`, `WindowBranchSum`, `IdealDistribution` (in this order). Each former file is one
-`namespace` block below, marked `-- ==== part: <Name> ====`, with its provenance note. Only the
-import lines changed. Dropped because an identical private copy occurs earlier in this module:
-`FirstValidity.support_add`, `FirstValidity.support_smul`. Renamed because an earlier part has a
-different private lemma of the same name: `support_linear` to `support_linear_firstValidity`.
+This module concatenates the former per-file modules `AveragedSuccess`, `BatchBoundary`, `BatchedWindowState`,
+`BatchedWindowCoherent`, `PreparedBatch`, `ActualWindow`, `WindowPhysical`, `ModularPhysical`,
+`EEACenterPhysical`, `EEAStructuralPhysical`, `EEAIntervalPhysical`, `MeasuredEEAPhysical`,
+`SquarePhysical`, `InPlacePhysical`, `InPlaceCompletePhysical`, `CoordinatePhysical`,
+`ActualPhysical`, `HistoryExecution`, `OuterExecution`, `ActualExecution`, `SourceAxis`,
+`TaggedProbability`, `WindowValidity`, `AxisProbability`, `FirstValidity`, `CrossWindowWeights`,
+`CrossWindowPoint`, `TwoAxisProbability`, `FixedWord`, `TaggedAxis`, `TaggedTwoAxes`,
+`ActualPair`, `DecoderBridge`, `RoundBoundary`, `WindowBranchSum`, `IdealDistribution` (in this
+order). Each former file is one `namespace` block below, marked `-- ==== part: <Name> ====`,
+with its provenance note. Only the import lines changed. Dropped because an identical private
+copy occurs earlier in this module: `FirstValidity.support_add`, `FirstValidity.support_smul`.
+Renamed because an earlier part has a different private lemma of the same name: `support_linear`
+to `support_linear_firstValidity`.
 
 Why few modules: the kernel replay loads the complete import closure (about 4.3 GB) once per
 Entrant module, in parallel across its worker threads, so its peak memory grows with the number
 of Entrant modules. -/
-
-open ShorECDLP.Entrant.ZeroAdaptive
 
 -- ==== part: AveragedSuccess ====
 
@@ -878,9 +876,9 @@ theorem ipxWindowSources_coherent (Q : Point) (hQ : order • Q=0) (hn : Q≠0) 
       (Finsupp.lmapDomain ℂ ℂ (batchedWindowState Q w)) BatchedWindowValid := by
   let xs := fun a => fieldValue (windowPoint Q w a) .x
   let ys := fun a => fieldValue (windowPoint Q w a) .y
-  have hfirst : CoherentlyImplementsOn (ShorECDLP.Entrant.ZeroAdaptive.coordinateSource xs ys)
+  have hfirst : CoherentlyImplementsOn (signedLookupCoordinateProgram xs ys)
       (Finsupp.lmapDomain ℂ ℂ (signedLookupCoordinateState xs ys)) BatchedWindowValid :=
-    restrictCoherent (ShorECDLP.Entrant.ZeroAdaptive.coordinateSource_coherent xs ys) (fun s hs => hs.1.1)
+    restrictCoherent (signedLookupCoordinateProgram_coherent xs ys) (fun s hs => hs.1.1)
   have h := composeCoherent hfirst (signedBatchSource_coherent Q w) (by
     intro s hs
     obtain ⟨hs,P,hP⟩ := hs
@@ -3004,33 +3002,12 @@ theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgra
   unfold multiplicationProgram
   exact appendCompiled_wellFormed _ _ (multiplyWorkProgram_wellFormed _ _)
     (collectProgram_wellFormed _ _ (multiplicationAfterResetProgram_wellFormed n) _ _ _)
-attribute [local irreducible] divisionProgram multiplicationProgram equalityProgram
-private theorem zero_cx_wellFormed : CircuitWellFormed cx := by
-  intro g hg
-  have he := List.mem_singleton.mp hg
-  subst g
-  change (837 : Wire) ≠ 263
-  decide +kernel
+attribute [local irreducible] divisionProgram multiplicationProgram
+theorem zeroDivisionProgram_wellFormed (n start : Nat) : (zeroDivisionProgram n start).2.WellFormed :=
+  surroundCompiled_wellFormed _ _ _ fig15ZeroPrepare_wellFormed fig15ZeroRestore_wellFormed (divisionProgram_wellFormed _ _)
 
-theorem zDivisionProgram_wellFormed (n start : Nat) : (zDivisionProgram n start).2.WellFormed := by
-  unfold zDivisionProgram
-  apply appendCompiled_wellFormed
-  · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
-  · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
-    apply appendCompiled_wellFormed
-    · exact divisionProgram_wellFormed _ _
-    · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
-      exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
-
-theorem zMultiplicationProgram_wellFormed (n start : Nat) : (zMultiplicationProgram n start).2.WellFormed := by
-  unfold zMultiplicationProgram
-  apply appendCompiled_wellFormed
-  · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
-  · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
-    apply appendCompiled_wellFormed
-    · exact multiplicationProgram_wellFormed _ _
-    · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
-      exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
+theorem zeroMultiplicationProgram_wellFormed (n start : Nat) : (zeroMultiplicationProgram n start).2.WellFormed :=
+  surroundCompiled_wellFormed _ _ _ fig15ZeroPrepare_wellFormed fig15ZeroRestore_wellFormed (multiplicationProgram_wellFormed _ _)
 
 attribute [local irreducible] squareSubtractProgram
 
@@ -3125,20 +3102,20 @@ theorem signedFieldProgram_wellFormed (field : PointField) (start : Nat) :
   exact appendCompiled_wellFormed _ _ (yNegateProgram_wellFormed _)
     (appendCompiled_wellFormed _ _ (fieldLookupYProgram_wellFormed _ _) (yNegateProgram_wellFormed _))
 
-attribute [local irreducible] zDivisionProgram zMultiplicationProgram pointSquareProgram signedFieldProgram xNegateProgram
+attribute [local irreducible] zeroDivisionProgram zeroMultiplicationProgram pointSquareProgram signedFieldProgram xNegateProgram
 
-theorem adaptiveCoordinateProgram_wellFormed (start : Nat) : (adaptiveCoordinateProgram start).2.WellFormed := by
-  unfold adaptiveCoordinateProgram
+theorem coordinateProgram_wellFormed (start : Nat) : (coordinateProgram start).2.WellFormed := by
+  unfold coordinateProgram
   apply sequenceProgram_wellFormed
   intro p hp cursor
-  simp only [adaptiveCoordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
+  simp only [coordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
   rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · exact fieldLookupXProgram_wellFormed _ _
   · exact signedFieldProgram_wellFormed _ _
-  · exact zDivisionProgram_wellFormed _ _
+  · exact zeroDivisionProgram_wellFormed _ _
   · exact pointSquareProgram_wellFormed _ _
   · exact fieldLookupXProgram_wellFormed _ _
-  · exact zMultiplicationProgram_wellFormed _ _
+  · exact zeroMultiplicationProgram_wellFormed _ _
   · exact xNegateProgram_wellFormed _ _
   · exact fieldLookupXProgram_wellFormed _ _
   · exact signedFieldProgram_wellFormed _ _
@@ -3154,13 +3131,13 @@ Moved into the editable Entrant tree; module imports renamed accordingly. -/
 /-! Physical validity of the actual first and signed windows and their outer composition. -/
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge
-attribute [local irreducible] adaptiveCoordinateProgram
+attribute [local irreducible] coordinateProgram
 
-theorem sharedAdaptiveCoordinateProgram_wellFormed (w : OddWindow) (start : Nat) :
-    (sharedAdaptiveCoordinateProgram w start).2.WellFormed :=
-  (reindexCompiled_wellFormed _ _).mpr (adaptiveCoordinateProgram_wellFormed start)
+theorem sharedCoordinateProgram_wellFormed (w : OddWindow) (start : Nat) :
+    (sharedCoordinateProgram w start).2.WellFormed :=
+  (reindexCompiled_wellFormed _ _).mpr (coordinateProgram_wellFormed start)
 
-attribute [local irreducible] sharedAdaptiveCoordinateProgram sharedYNegateProgram ipxProgram
+attribute [local irreducible] sharedCoordinateProgram sharedYNegateProgram ipxProgram
 
 theorem ipxWindowCore_wellFormed (w : OddWindow) (start : Nat) :
     (ipxWindowCore w start).2.WellFormed := by
@@ -3168,7 +3145,7 @@ theorem ipxWindowCore_wellFormed (w : OddWindow) (start : Nat) :
   intro p hp cursor
   simp only [ipxWindowSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
   rcases hp with rfl | rfl | rfl | rfl
-  · exact sharedAdaptiveCoordinateProgram_wellFormed _ _
+  · exact sharedCoordinateProgram_wellFormed _ _
   · exact sharedYNegateProgram_wellFormed _ _
   · exact ipxProgram_wellFormed _ _
   · exact sharedYNegateProgram_wellFormed _ _
@@ -5066,9 +5043,7 @@ end ShorECDLP.Paper2607_13816.ChallengeMigration
 /-! Ported from VerifiedQC/ShorECDLP, branch `streaming-dev` (PR #551), file
 `ShorECDLP/Submission/2607_13816/Challenge/DecoderBridge.lean`, Apache-2.0 (see the repository
 LICENSE and NOTICE). Construction: arXiv:2607.13816v2 (Luo, Yang, Luo, Wang, Su, Sun, Li, Li).
-Moved into the editable Entrant tree; module imports renamed accordingly. The per-round lower
-bound `wrappedIdeal_mass_lower` is now the averaged bound `27/50` of `AveragedSuccess` instead of
-the protected pointwise bound `163/1000`. -/
+Moved into the editable Entrant tree; module imports renamed accordingly. -/
 
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge Secp256k1
