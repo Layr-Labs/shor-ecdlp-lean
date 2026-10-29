@@ -1,15 +1,16 @@
 import ShorECDLP.Submission.Entrant.FastAdd
-import ShorECDLP.Submission.Naive.EllipticCurve.ECDLPOracle
+import ShorECDLP.Submission.Entrant.V2.ECDLPOracle
 
 /-! EDITABLE. ECDLP oracle built from `fastCPA`.
 
-Each `fastCPA` agrees with the Naive `controlledPointAdd` on every basis state whose
+Each `fastCPA` agrees with the V2 `controlledPointAdd` on every basis state whose
 point register holds a valid encoding and whose workspace is clean, and both preserve
-that set of states.  The Naive classical correctness theorem then transfers to the new
+that set of states.  The V2 classical correctness theorem then transfers to the new
 circuit, which gives the oracle specification used by order finding. -/
 
 namespace ShorECDLP
 namespace Secp256k1
+namespace V2
 
 open Classical
 open Arithmetic
@@ -204,5 +205,6 @@ theorem doublingTable_ne_zero (n : Nat) (P : Point) (hP : P ≠ 0) (ho : order �
   have : order ≤ 2 := Nat.le_of_dvd (by norm_num) h2
   norm_num [order] at this
 
+end V2
 end Secp256k1
 end ShorECDLP

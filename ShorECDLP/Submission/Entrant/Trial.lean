@@ -3,9 +3,9 @@ import ShorECDLP.Challenge.Official
 
 /-! EDITABLE. One extended-precision trial.
 
-The Naive wire allocation and arithmetic are reused; each controlled point addition is
-the single-pass `fastCPA` construction.  Each phase register gains nine high-order qubits (placed above the Naive
-dense envelope), so the register precision is 265 bits and one observed trial
+The V2 point arithmetic (Naive circuits with a swap-based field inversion) and the Naive
+wire allocation are used; each controlled point addition is the single-pass `fastCPA`.  Each phase register gains seven high-order qubits (placed above the Naive
+dense envelope), so the register precision is 263 bits and one observed trial
 already meets the success requirement; no reset or repetition is needed. -/
 
 namespace ShorECDLP.Entrant
@@ -13,26 +13,45 @@ open Quantum Secp256k1 Challenge NaiveChallenge Arithmetic
 
 local instance : Fact (Nat.Prime p) := ⟨p_prime⟩
 
+/-- One order-finding trial over the single-pass V2 point arithmetic. -/
+def trialV2 (aReg bReg pointReg : List Wire) (workStart qftAncilla : Wire) (Q : Point) :
+    Circuit :=
+  Quantum.PhaseEstimation.hadamards (aReg ++ bReg) ++
+    V2.fastOracle aReg bReg pointReg workStart G Q ++
+    Quantum.iqft aReg qftAncilla ++
+    Quantum.iqft bReg qftAncilla
+
+theorem trialV2_run (aReg bReg pointReg : List Wire) (workStart qftAncilla : Wire)
+    (Q : Point) (s : BasisState) :
+    Quantum.run (trialV2 aReg bReg pointReg workStart qftAncilla Q) (Quantum.ket s) =
+      Quantum.OrderFinding.orderFinding aReg bReg qftAncilla
+        (Quantum.run (V2.fastOracle aReg bReg pointReg workStart G Q)) (Quantum.ket s) := by
+  simp [trialV2, Quantum.OrderFinding.orderFinding, Quantum.run_append, LinearMap.comp_apply]
+
+/-- The V2 workspace is the Naive workspace, wire for wire. -/
+theorem scalarMulWork_eq (w : Wire) : V2.scalarMulWork w = scalarMulWork w := rfl
+
 /-! ## Wire layout -/
 
-def extA : List Wire := List.range' 206624 9
-def extB : List Wire := List.range' 206633 9
+def extA : List Wire := List.range' 206624 7
+def extB : List Wire := List.range' 206631 7
 def regA : List Wire := bitcoinAReg ++ extA
 def regB : List Wire := bitcoinBReg ++ extB
 
-theorem regA_length : regA.length = 265 := by
+theorem regA_length : regA.length = 263 := by
   simp [regA, extA, bitcoinAReg]
 
-theorem regB_length : regB.length = 265 := by
+theorem regB_length : regB.length = 263 := by
   simp [regB, extB, bitcoinBReg]
 
 theorem old_lt : ∀ w : ℕ, w ∈ bitcoinAReg ++ bitcoinBReg ++ bitcoinPointReg ++
-    scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w < 206624 := by
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w < 206624 := by
   intro w hw
+  rw [scalarMulWork_eq] at hw
   have h := bitcoinDeclaredWires_subset w hw
   exact List.mem_range.mp h
 
-theorem ext_bounds : ∀ w : ℕ, w ∈ extA ++ extB → 206624 ≤ w ∧ w < 206642 := by
+theorem ext_bounds : ∀ w : ℕ, w ∈ extA ++ extB → 206624 ≤ w ∧ w < 206638 := by
   intro w hw
   simp only [extA, extB, List.mem_append, List.mem_range'_1] at hw
   omega
@@ -46,11 +65,12 @@ theorem ext_nodup : (extA ++ extB).Nodup := by
   omega
 
 theorem layoutE :
-    (regA ++ regB ++ bitcoinPointReg ++ scalarMulWork bitcoinWorkStart).Nodup ∧
-    bitcoinQFTAncilla ∉ regA ++ regB ++ bitcoinPointReg ++ scalarMulWork bitcoinWorkStart := by
+    (regA ++ regB ++ bitcoinPointReg ++ V2.scalarMulWork bitcoinWorkStart).Nodup ∧
+    bitcoinQFTAncilla ∉ regA ++ regB ++ bitcoinPointReg ++ V2.scalarMulWork bitcoinWorkStart := by
   obtain ⟨_, _, _, hn, hf⟩ := bitcoinWireLayout
-  have hperm : (regA ++ regB ++ bitcoinPointReg ++ scalarMulWork bitcoinWorkStart).Perm
-      ((bitcoinAReg ++ bitcoinBReg ++ bitcoinPointReg ++ scalarMulWork bitcoinWorkStart) ++
+  rw [← scalarMulWork_eq] at hn hf
+  have hperm : (regA ++ regB ++ bitcoinPointReg ++ V2.scalarMulWork bitcoinWorkStart).Perm
+      ((bitcoinAReg ++ bitcoinBReg ++ bitcoinPointReg ++ V2.scalarMulWork bitcoinWorkStart) ++
         (extA ++ extB)) := by
     rw [List.perm_iff_count]
     intro x
@@ -71,7 +91,7 @@ theorem layoutE :
       simp [bitcoinQFTAncilla] at this
 
 theorem support_sub : ∀ w : ℕ, w ∈ regA ++ regB ++ bitcoinPointReg ++
-    scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ List.range 206642 := by
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla] → w ∈ List.range 206638 := by
   intro w hw
   rw [List.mem_range]
   simp only [regA, regB, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hw
@@ -116,48 +136,48 @@ theorem qNegCoefficient_point (Q : Point) (h : order • Q = 0) (i : Nat) :
   exact negPow_nsmul Q h i
 
 /-- Powers of `G`, powers of `Q`, then their negatives; fixed before `Q` is known. -/
-def coeffE (row : Fin 1060) : PointCoeff :=
-  if row.val < 265 then gPowerCoefficient row.val
-  else if row.val < 530 then qPowerCoefficient (row.val - 265)
-  else if row.val < 795 then gNegCoefficient (row.val - 530)
-  else qNegCoefficient (row.val - 795)
+def coeffE (row : Fin 1052) : PointCoeff :=
+  if row.val < 263 then gPowerCoefficient row.val
+  else if row.val < 526 then qPowerCoefficient (row.val - 263)
+  else if row.val < 789 then gNegCoefficient (row.val - 526)
+  else qNegCoefficient (row.val - 789)
 
 def tableE : List PointCoeff := List.ofFn coeffE
 
-theorem tableE_length : tableE.length = 1060 := by
+theorem tableE_length : tableE.length = 1052 := by
   simp only [tableE, List.length_ofFn]
 
-theorem tableE_get (i : Fin 1060) :
+theorem tableE_get (i : Fin 1052) :
     tableE.get ⟨i.val, by rw [tableE_length]; exact i.isLt⟩ = coeffE i := by
   simp only [tableE, List.get_ofFn]
   rfl
 
 attribute [local irreducible] tableE
 
-def gRows : List (Fin 1060 × Fin 1060) :=
-  List.ofFn fun i : Fin 265 => (⟨i.val, by omega⟩, ⟨530 + i.val, by omega⟩)
-def qRows : List (Fin 1060 × Fin 1060) :=
-  List.ofFn fun i : Fin 265 => (⟨265 + i.val, by omega⟩, ⟨795 + i.val, by omega⟩)
+def gRows : List (Fin 1052 × Fin 1052) :=
+  List.ofFn fun i : Fin 263 => (⟨i.val, by omega⟩, ⟨526 + i.val, by omega⟩)
+def qRows : List (Fin 1052 × Fin 1052) :=
+  List.ofFn fun i : Fin 263 => (⟨263 + i.val, by omega⟩, ⟨789 + i.val, by omega⟩)
 
-theorem coeffE_g (Q : Point) (i : Fin 265) :
+theorem coeffE_g (Q : Point) (i : Fin 263) :
     constantPoint Q (coeffE ⟨i.val, by omega⟩) = (2 ^ i.val) • G := by
   simp only [coeffE, if_pos i.isLt, gPowerCoefficient_point]
 
-theorem coeffE_q (Q : Point) (h : order • Q = 0) (i : Fin 265) :
-    constantPoint Q (coeffE ⟨265 + i.val, by omega⟩) = (2 ^ i.val) • Q := by
-  simp only [coeffE, show ¬265 + i.val < 265 by omega, show 265 + i.val < 530 by omega,
+theorem coeffE_q (Q : Point) (h : order • Q = 0) (i : Fin 263) :
+    constantPoint Q (coeffE ⟨263 + i.val, by omega⟩) = (2 ^ i.val) • Q := by
+  simp only [coeffE, show ¬263 + i.val < 263 by omega, show 263 + i.val < 526 by omega,
     if_false, if_true, Nat.add_sub_cancel_left, qPowerCoefficient_point Q h]
 
-theorem coeffE_gneg (Q : Point) (i : Fin 265) :
-    constantPoint Q (coeffE ⟨530 + i.val, by omega⟩) = -((2 ^ i.val) • G) := by
-  simp only [coeffE, show ¬530 + i.val < 265 by omega, show ¬530 + i.val < 530 by omega,
-    show 530 + i.val < 795 by omega, if_false, if_true, Nat.add_sub_cancel_left,
+theorem coeffE_gneg (Q : Point) (i : Fin 263) :
+    constantPoint Q (coeffE ⟨526 + i.val, by omega⟩) = -((2 ^ i.val) • G) := by
+  simp only [coeffE, show ¬526 + i.val < 263 by omega, show ¬526 + i.val < 526 by omega,
+    show 526 + i.val < 789 by omega, if_false, if_true, Nat.add_sub_cancel_left,
     gNegCoefficient_point]
 
-theorem coeffE_qneg (Q : Point) (h : order • Q = 0) (i : Fin 265) :
-    constantPoint Q (coeffE ⟨795 + i.val, by omega⟩) = -((2 ^ i.val) • Q) := by
-  simp only [coeffE, show ¬795 + i.val < 265 by omega, show ¬795 + i.val < 530 by omega,
-    show ¬795 + i.val < 795 by omega, if_false, Nat.add_sub_cancel_left,
+theorem coeffE_qneg (Q : Point) (h : order • Q = 0) (i : Fin 263) :
+    constantPoint Q (coeffE ⟨789 + i.val, by omega⟩) = -((2 ^ i.val) • Q) := by
+  simp only [coeffE, show ¬789 + i.val < 263 by omega, show ¬789 + i.val < 526 by omega,
+    show ¬789 + i.val < 789 by omega, if_false, Nat.add_sub_cancel_left,
     qNegCoefficient_point Q h]
 
 theorem gRows_neg (Q : Point) :
@@ -175,66 +195,51 @@ theorem qRows_neg (Q : Point) (h : order • Q = 0) :
   rw [coeffE_qneg Q h, coeffE_q Q h]
 
 theorem gRows_source (Q : Point) :
-    gRows.map (fun r => constantPoint Q (coeffE r.1)) = Precompute.doublingTable 265 G := by
+    gRows.map (fun r => constantPoint Q (coeffE r.1)) = Precompute.doublingTable 263 G := by
   simp only [gRows, List.map_ofFn, Precompute.doublingTable]
   apply congrArg List.ofFn
   funext i
   exact coeffE_g Q i
 
 theorem qRows_source (Q : Point) (h : order • Q = 0) :
-    qRows.map (fun r => constantPoint Q (coeffE r.1)) = Precompute.doublingTable 265 Q := by
+    qRows.map (fun r => constantPoint Q (coeffE r.1)) = Precompute.doublingTable 263 Q := by
   simp only [qRows, List.map_ofFn, Precompute.doublingTable]
   apply congrArg List.ofFn
   funext i
   exact coeffE_q Q h i
 
-/-- The submitted trial: Hadamards, the single-pass oracle, two inverse QFTs. -/
-def fastTrial (aReg bReg pointReg : List Wire) (workStart qftAncilla : Wire) (Q : Point) :
-    Circuit :=
-  PhaseEstimation.hadamards (aReg ++ bReg) ++
-    fastOracle aReg bReg pointReg workStart G Q ++
-    Quantum.iqft aReg qftAncilla ++
-    Quantum.iqft bReg qftAncilla
-
-theorem fastTrial_run (aReg bReg pointReg : List Wire) (workStart qftAncilla : Wire)
-    (Q : Point) (s : BasisState) :
-    Quantum.run (fastTrial aReg bReg pointReg workStart qftAncilla Q) (Quantum.ket s) =
-      Quantum.OrderFinding.orderFinding aReg bReg qftAncilla
-        (Quantum.run (fastOracle aReg bReg pointReg workStart G Q)) (Quantum.ket s) := by
-  simp [fastTrial, Quantum.OrderFinding.orderFinding, Quantum.run_append, LinearMap.comp_apply]
-
-def trialGatesE : List (TemplateGate 1060) :=
+def trialGatesE : List (TemplateGate 1052) :=
   (PhaseEstimation.hadamards (regA ++ regB)).map TemplateGate.literal ++
-    fastScalarGates bitcoinPointReg bitcoinWorkStart regA gRows ++
-    fastScalarGates bitcoinPointReg bitcoinWorkStart regB qRows ++
+    V2.fastScalarGates bitcoinPointReg bitcoinWorkStart regA gRows ++
+    V2.fastScalarGates bitcoinPointReg bitcoinWorkStart regB qRows ++
     (iqft regA bitcoinQFTAncilla ++ iqft regB bitcoinQFTAncilla).map TemplateGate.literal
 
 theorem trialGatesE_source (Q : Point) (h : order • Q = 0) :
     trialGatesE.flatMap (TemplateGate.instantiate (readConstant coeffE Q)) =
-      fastTrial regA regB bitcoinPointReg bitcoinWorkStart bitcoinQFTAncilla Q := by
+      trialV2 regA regB bitcoinPointReg bitcoinWorkStart bitcoinQFTAncilla Q := by
   simp only [trialGatesE, List.flatMap_append, literalGates_instantiate,
-    fastScalarGates_source coeffE Q _ _ _ gRows (gRows_neg Q),
-    fastScalarGates_source coeffE Q _ _ _ qRows (qRows_neg Q h),
-    gRows_source, qRows_source Q h, fastTrial, fastOracle, scalarMulTable,
+    V2.fastScalarGates_source coeffE Q _ _ _ gRows (gRows_neg Q),
+    V2.fastScalarGates_source coeffE Q _ _ _ qRows (qRows_neg Q h),
+    gRows_source, qRows_source Q h, trialV2, V2.fastOracle, V2.scalarMulTable,
     regA_length, regB_length, List.append_assoc]
 
 /-! ## The submitted straight-line program -/
 
-def progRaw : Straight 1060 0 (0 + (regA ++ regB).length) :=
+def progRaw : Straight 1052 0 (0 + (regA ++ regB).length) :=
   (constantGateProgram trialGatesE 0).append (observeWires (regA ++ regB) 0)
 
-theorem prog_end : 0 + (regA ++ regB).length = 530 := by
+theorem prog_end : 0 + (regA ++ regB).length = 526 := by
   rw [List.length_append, regA_length, regB_length]
 
-def progE : Straight 1060 0 530 := castFinish prog_end progRaw
+def progE : Straight 1052 0 526 := castFinish prog_end progRaw
 
 def entryE : StraightEntry where
   coefficients := tableE
-  finalCursor := 530
+  finalCursor := 526
   program := castTable tableE_length.symm progE
 
 theorem tableE_read (Q : Point) :
-    (fun r : ConstantBit 1060 => readConstant tableE.get Q
+    (fun r : ConstantBit 1052 => readConstant tableE.get Q
       ⟨Fin.cast tableE_length.symm r.point, r.field, r.bit⟩) = readConstant coeffE Q := by
   funext r
   have hg : tableE.get (Fin.cast tableE_length.symm r.point) = coeffE r.point :=
@@ -252,7 +257,7 @@ theorem entryE_instantiate (Q : Point) :
 
 theorem entryE_run (Q : Point) (h : order • Q = 0) :
     (entryE.instantiate Q).run =
-      (observedTrial (fastTrial regA regB bitcoinPointReg bitcoinWorkStart
+      (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
         bitcoinQFTAncilla Q) regA regB).run := by
   rw [entryE_instantiate, AdaptiveCircuit.run_seq, constantGateProgram_run,
     trialGatesE_source Q h, ← AdaptiveCircuit.run_seq]
@@ -264,11 +269,11 @@ theorem trialGatesE_wellFormed : ∀ g ∈ trialGatesE, g.WellFormed := by
   obtain ⟨hn, hf⟩ := layoutE
   have hp : bitcoinPointReg.length = pointWidth := bitcoinWireLayout.2.2.1
   have hn' : ((regA ++ regB) ++
-      (bitcoinPointReg ++ controlledPointAddWork bitcoinWorkStart)).Nodup := by
-    simpa only [scalarMulWork, List.append_assoc] using hn
-  have ha' : (regA ++ (bitcoinPointReg ++ controlledPointAddWork bitcoinWorkStart)).Nodup := by
+      (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup := by
+    simpa only [V2.scalarMulWork, List.append_assoc] using hn
+  have ha' : (regA ++ (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup := by
     exact (List.sublist_append_left regA regB).append (List.Sublist.refl _) |>.nodup hn'
-  have hb' : (regB ++ (bitcoinPointReg ++ controlledPointAddWork bitcoinWorkStart)).Nodup := by
+  have hb' : (regB ++ (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup := by
     exact (List.sublist_append_right regA regB).append (List.Sublist.refl _) |>.nodup hn'
   have hab := hn'.of_append_left
   have hfa : bitcoinQFTAncilla ∉ regA := by
@@ -284,8 +289,8 @@ theorem trialGatesE_wellFormed : ∀ g ∈ trialGatesE, g.WellFormed := by
       obtain ⟨w, _, rfl⟩ := List.mem_map.mp hg
       trivial
     exact hh a ha
-  · exact fastScalarGates_wellFormed _ _ _ _ ha' g hg
-  · exact fastScalarGates_wellFormed _ _ _ _ hb' g hg
+  · exact V2.fastScalarGates_wellFormed _ _ _ _ ha' g hg
+  · exact V2.fastScalarGates_wellFormed _ _ _ _ hb' g hg
   · obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hg
     exact ((circuitWellFormed_append _ _).mpr ⟨iqft_wellFormed _ _ hfa hab.of_append_left,
       iqft_wellFormed _ _ hfb hab.of_append_right⟩) a ha
@@ -307,20 +312,20 @@ theorem entryE_wellFormed : entryE.program.WellFormed :=
 
 theorem trialGatesE_support (Q : Point) :
     circuitWires (trialGatesE.flatMap (TemplateGate.instantiate
-      (readConstant coeffE Q))) ⊆ List.range 206642 := by
+      (readConstant coeffE Q))) ⊆ List.range 206638 := by
   let support := regA ++ regB ++ bitcoinPointReg ++
-    scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla]
+    V2.scalarMulWork bitcoinWorkStart ++ [bitcoinQFTAncilla]
   have hh : CircuitUsesOnly support (PhaseEstimation.hadamards (regA ++ regB)) := by
     apply usesOnly_mono (hadamards_usesOnly _)
     intro w hw
     simp only [support, List.mem_append] at hw ⊢
     tauto
-  have hs (cs : List Wire) (rs : List (Fin 1060 × Fin 1060))
+  have hs (cs : List Wire) (rs : List (Fin 1052 × Fin 1052))
       (hc : ∀ w ∈ cs, w ∈ regA ++ regB)
-      (hnd : (cs ++ (bitcoinPointReg ++ controlledPointAddWork bitcoinWorkStart)).Nodup) :
-      CircuitUsesOnly support ((fastScalarGates bitcoinPointReg bitcoinWorkStart cs rs).flatMap
+      (hnd : (cs ++ (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup) :
+      CircuitUsesOnly support ((V2.fastScalarGates bitcoinPointReg bitcoinWorkStart cs rs).flatMap
         (TemplateGate.instantiate (readConstant coeffE Q))) := by
-    apply usesOnly_mono (fastScalarGates_usesOnly coeffE Q _ _ cs rs hnd)
+    apply usesOnly_mono (V2.fastScalarGates_usesOnly coeffE Q _ _ cs rs hnd)
     clear hnd
     intro w hw
     simp only [List.mem_append] at hw
@@ -329,7 +334,7 @@ theorem trialGatesE_support (Q : Point) :
       simp only [support, List.mem_append] at h ⊢
       tauto
     · simp only [support, List.mem_append]; tauto
-    · simp only [support, scalarMulWork, List.mem_append]; tauto
+    · simp only [support, V2.scalarMulWork, List.mem_append]; tauto
   have hq (cs : List Wire) (hc : ∀ w ∈ cs, w ∈ regA ++ regB) :
       CircuitUsesOnly support (iqft cs bitcoinQFTAncilla) := by
     apply usesOnly_mono (iqft_usesOnly cs bitcoinQFTAncilla)
@@ -343,8 +348,8 @@ theorem trialGatesE_support (Q : Point) :
       tauto
   obtain ⟨hn, _⟩ := layoutE
   have hn' : ((regA ++ regB) ++
-      (bitcoinPointReg ++ controlledPointAddWork bitcoinWorkStart)).Nodup := by
-    simpa only [scalarMulWork, List.append_assoc] using hn
+      (bitcoinPointReg ++ V2.controlledPointAddWork bitcoinWorkStart)).Nodup := by
+    simpa only [V2.scalarMulWork, List.append_assoc] using hn
   apply (ModAddSupport.circuitUsesOnly_iff_support _ _).mp
   apply usesOnly_mono (xs := support)
   · simp only [trialGatesE, List.flatMap_append, literalGates_instantiate]
@@ -357,7 +362,7 @@ theorem trialGatesE_support (Q : Point) :
         (hq _ (fun _ h => List.mem_append_right _ h)))
   · exact support_sub
 
-theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range 206642 := by
+theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range 206638 := by
   intro w hw
   rw [entryE_instantiate, wires_seq] at hw
   rcases hw with hw | hw
@@ -366,50 +371,50 @@ theorem entryE_support (Q : Point) : (entryE.instantiate Q).wires ⊆ List.range
   · have h := zObserve_support _ hw
     exact support_sub w (by simp only [List.mem_append] at h ⊢; tauto)
 
-theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 206642 := by
-  have hs : (entryE.instantiate Q).wires.toFinset ⊆ (List.range 206642).toFinset := by
+theorem entryE_qubits (Q : Point) : (resources (entryE.instantiate Q)).qubits ≤ 206638 := by
+  have hs : (entryE.instantiate Q).wires.toFinset ⊆ (List.range 206638).toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (entryE_support Q (List.mem_toFinset.mp hw))
   have hc := Finset.card_le_card hs
   simpa only [resources, AdaptiveCircuit.qubitCount, List.card_toFinset,
     List.dedup_eq_self.mpr List.nodup_range, List.length_range] using hc
 
-theorem templateT_trialE : templateT trialGatesE = 88678607248520 := by
+theorem templateT_trialE : templateT trialGatesE = 44090729581638 := by
   have hh (ws : List Wire) : tCount (PhaseEstimation.hadamards ws) = 0 := by
     induction ws with
     | nil => rfl
     | cons w ws ih => simpa [PhaseEstimation.hadamards, tCount, tCost] using ih
   have hp : bitcoinPointReg.length = pointWidth := by simp [bitcoinPointReg, pointWidth]
   simp only [trialGatesE, templateT_append, templateT_literal, hh,
-    fastScalarGates_templateT _ _ hp, tCount_append, tCount_iqft,
+    V2.fastScalarGates_templateT _ _ hp, tCount_append, tCount_iqft,
     regA_length, regB_length, gRows, qRows, List.length_ofFn]
   norm_num
 
-theorem straightT_entryE : straightT entryE.program = 88678607248520 := by
+theorem straightT_entryE : straightT entryE.program = 44090729581638 := by
   change straightT (castTable tableE_length.symm progE) = _
   rw [straightT_castTable, progE, straightT_castFinish, progRaw, straightT_append,
     straightT_constant, straightT_observe, templateT_trialE]
 
 theorem entryE_tModel (Q : Point) :
-    (resources (entryE.instantiate Q)).tModel ≤ 88678607248520 := by
+    (resources (entryE.instantiate Q)).tModel ≤ 44090729581638 := by
   have h := straight_t_bound entryE.program (readConstant entryE.coefficients.get Q) Fin.elim0
   rw [straightT_entryE] at h
   exact h
 
 theorem entryE_measurements (Q : Point) :
-    (resources (entryE.instantiate Q)).measurements = 530 := by
-  change (entryE.program.instantiate _ _).measurementCount = 530
+    (resources (entryE.instantiate Q)).measurements = 526 := by
+  change (entryE.program.instantiate _ _).measurementCount = 526
   rw [Straight.measurementCount]
   rfl
 
 theorem hadamards_length (ws : List Wire) : (PhaseEstimation.hadamards ws).length = ws.length := by
   simp [PhaseEstimation.hadamards]
 
-theorem trialGatesE_length_le : trialGatesE.length ≤ 36100000000000 := by
+theorem trialGatesE_length_le : trialGatesE.length ≤ 35800000000000 := by
   have hp : bitcoinPointReg.length = 513 := by
     simp only [bitcoinPointReg, List.length_range']; rfl
-  have h1 := fastScalarGates_length_le bitcoinPointReg bitcoinWorkStart hp regA gRows
-  have h2 := fastScalarGates_length_le bitcoinPointReg bitcoinWorkStart hp regB qRows
+  have h1 := V2.fastScalarGates_length_le bitcoinPointReg bitcoinWorkStart hp regA gRows
+  have h2 := V2.fastScalarGates_length_le bitcoinPointReg bitcoinWorkStart hp regB qRows
   have h3 := iqft_length_le regA bitcoinQFTAncilla
   have h4 := iqft_length_le regB bitcoinQFTAncilla
   simp only [regA_length] at h1 h3
@@ -418,7 +423,7 @@ theorem trialGatesE_length_le : trialGatesE.length ≤ 36100000000000 := by
     regA_length, regB_length]
   omega
 
-theorem entryE_gateSlots : entryE.program.gateSlots ≤ 36100000001060 := by
+theorem entryE_gateSlots : entryE.program.gateSlots ≤ 35800000001052 := by
   change (castTable tableE_length.symm progE).gateSlots ≤ _
   rw [gateSlots_castTable, progE, gateSlots_castFinish, progRaw, observedGateProgram_slots]
   have h := trialGatesE_length_le
