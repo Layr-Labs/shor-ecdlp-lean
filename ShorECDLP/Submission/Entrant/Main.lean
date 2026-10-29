@@ -1,12 +1,12 @@
 import ShorECDLP.Submission.Entrant.Trial
 import ShorECDLP.Submission.Entrant.Success
-import ShorECDLP.Submission.Entrant.WindowMass
+import ShorECDLP.Submission.Entrant.WindowMassSharp
 import ShorECDLP.Challenge.Official
 
-/-! EDITABLE. Entrant: one observed trial at 265-bit phase precision.
+/-! EDITABLE. Entrant: one observed trial at 263-bit phase precision.
 
 The circuit is the Naive construction (same point arithmetic, same dense workspace)
-with nine extra high-order qubits per phase register.  The extra precision makes the
+with seven extra high-order qubits per phase register.  The extra precision makes the
 canonical nearest-numerator decoder succeed with probability at least 99 % in a single
 trial, so the 26 sequential repetitions of the baseline are dropped. -/
 
@@ -17,11 +17,11 @@ noncomputable section
 
 /-! ## Decoder layout -/
 
-def paramsE : DecoderParams := ⟨265, 265, by omega, by omega, by omega, by omega⟩
+def paramsE : DecoderParams := ⟨263, 263, by omega, by omega, by omega, by omega⟩
 
 def positionsE : TrialPositions paramsE where
-  left := ⟨(List.range' 0 265).toArray, by simp [paramsE]⟩
-  right := ⟨(List.range' 265 265).toArray, by simp [paramsE]⟩
+  left := ⟨(List.range' 0 263).toArray, by simp [paramsE]⟩
+  right := ⟨(List.range' 263 263).toArray, by simp [paramsE]⟩
 
 def layoutE' : DecodeLayout where
   kind := .nearestPair
@@ -30,20 +30,20 @@ def layoutE' : DecodeLayout where
   trials_le := by simp
 
 def recoveredE (d a b : Nat) : Bool :=
-  decide (orderFindingPostprocess order 265 order_prime
-    (Fin.ofNat (2 ^ 265) a, Fin.ofNat (2 ^ 265) b) = some (d : ZMod order))
+  decide (orderFindingPostprocess order 263 order_prime
+    (Fin.ofNat (2 ^ 263) a, Fin.ofNat (2 ^ 263) b) = some (d : ZMod order))
 
-theorem successE_candidate (d : Nat) (history : List Bool) (hl : history.length = 530)
-    (hs : pairEvent 265 (recoveredE d) history = true) :
+theorem successE_candidate (d : Nat) (history : List Bool) (hl : history.length = 526)
+    (hs : pairEvent 263 (recoveredE d) history = true) :
     (d : ZMod order) ∈ candidates layoutE' history := by
   have hleft : readWord history positionsE.left.toList =
-      some (bitsValue (history.take 265)) := by
+      some (bitsValue (history.take 263)) := by
     simp only [positionsE, Vector.toList, List.toList_toArray]
-    simpa using readWord_range history 0 265 (by omega)
+    simpa using readWord_range history 0 263 (by omega)
   have hright : readWord history positionsE.right.toList =
-      some (bitsValue (history.drop 265)) := by
+      some (bitsValue (history.drop 263)) := by
     simp only [positionsE, Vector.toList, List.toList_toArray]
-    have h := readWord_range history 265 265 (by omega)
+    have h := readWord_range history 263 263 (by omega)
     rwa [List.take_of_length_le (by simp only [List.length_drop]; omega)] at h
   simp only [pairEvent, recoveredE, decide_eq_true_eq] at hs
   change (d : ZMod order) ∈ decodeTrial .nearestPair paramsE history positionsE ++ []
@@ -51,8 +51,8 @@ theorem successE_candidate (d : Nat) (history : List Bool) (hl : history.length 
     Option.toList_some, List.append_nil, List.mem_singleton]
 
 theorem successE_verified (Q : Point) (d : Nat) (hd : Q = d • G)
-    (history : List Bool) (hl : history.length = 530)
-    (hs : pairEvent 265 (recoveredE d) history = true) :
+    (history : List Bool) (hl : history.length = 526)
+    (hs : pairEvent 263 (recoveredE d) history = true) :
     (verifiedCandidate layoutE' Q history).isSome = true := by
   classical
   have hm := successE_candidate d history hl hs
@@ -66,12 +66,12 @@ theorem successE_verified (Q : Point) (d : Nat) (hd : Q = d • G)
 
 set_option exponentiation.threshold 300 in
 theorem hwinE (n : ℕ) (hn0 : 0 < n) (hnr : n < order) :
-    (199 : ℝ) / 200 ≤ ∑ a : Fin (2 ^ 265),
-      if Quantum.OrderFinding.nearestNumerator order 265 a.val = n then
-        Complex.normSq (qpeAmplitude 265 ((n : ℝ) / (order : ℝ)) a.val) else 0 := by
-  have h := window_mass order 265 n hn0 hnr (by decide)
-  rw [Fin.sum_univ_eq_sum_range (fun a => if Quantum.OrderFinding.nearestNumerator order 265 a = n then
-    Complex.normSq (qpeAmplitude 265 ((n : ℝ) / (order : ℝ)) a) else 0)]
+    (200 : ℝ) / 201 ≤ ∑ a : Fin (2 ^ 263),
+      if Quantum.OrderFinding.nearestNumerator order 263 a.val = n then
+        Complex.normSq (qpeAmplitude 263 ((n : ℝ) / (order : ℝ)) a.val) else 0 := by
+  have h := window_mass_sharp order 263 n hn0 hnr (by decide)
+  rw [Fin.sum_univ_eq_sum_range (fun a => if Quantum.OrderFinding.nearestNumerator order 263 a = n then
+    Complex.normSq (qpeAmplitude 263 ((n : ℝ) / (order : ℝ)) a) else 0)]
   simpa only [Quantum.OrderFinding.nearestNumerator, qpeAmplitude, eigenvalue] using h
 
 theorem secret_mod_ne_zero (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
@@ -93,14 +93,14 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
     (99 : ℝ) / 100 ≤ recordMass
       (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
         bitcoinQFTAncilla Q) regA regB).run
-      (pairEvent 265 (recoveredE d)) (ket zeroBasisState) := by
+      (pairEvent 263 (recoveredE d)) (ket zeroBasisState) := by
   have hfresh := layoutE.2
   let hsetting : ECDLPSetting G Q order d :=
     { prime_order := order_prime
       order_P := generator_order
       Q_eq := hd }
   have hsetup : OrderFindingSetup pointEncoding regA regB bitcoinPointReg
-      (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla 265 zeroBasisState :=
+      (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla 263 zeroBasisState :=
     { a_width := regA_length
       b_width := regB_length
       a_zero := regValue_zeroBasisState regA
@@ -111,17 +111,17 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
       ancilla_zero := zeroBasisState_apply bitcoinQFTAncilla
       ancilla_fresh := hfresh }
   rw [observedTrial_recordMass]
-  have h := zObserve_eventProbability regA regB 265 regA_length regB_length (recoveredE d)
+  have h := zObserve_eventProbability regA regB 263 regA_length regB_length (recoveredE d)
     (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
       bitcoinQFTAncilla Q) (ket zeroBasisState))
   rw [regA_length] at h
   rw [h]
-  have heq : (∑ a : Fin (2 ^ 265), ∑ b : Fin (2 ^ 265),
+  have heq : (∑ a : Fin (2 ^ 263), ∑ b : Fin (2 ^ 263),
       if recoveredE d a.val b.val then
         jointRegisterProbability regA regB a.val b.val
           (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
             bitcoinQFTAncilla Q) (ket zeroBasisState)) else 0) =
-      orderFindingSuccessProbability order 265 d order_prime regA regB
+      orderFindingSuccessProbability order 263 d order_prime regA regB
         (Quantum.run (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
           bitcoinQFTAncilla Q) (ket zeroBasisState)) := by
     unfold orderFindingSuccessProbability
@@ -129,7 +129,7 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
   rw [heq, trialV2_run]
   refine le_trans ?_ (success_of_window_mass pointEncoding _ G Q regA regB bitcoinPointReg
     (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting (spec_any _ Q)
-    hsetup (secret_mod_ne_zero Q d hn hd) (199 / 200) (by norm_num) hwinE)
+    hsetup (secret_mod_ne_zero Q d hn hd) (200 / 201) (by norm_num) hwinE)
   rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
   norm_num [order]
 
@@ -140,7 +140,7 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
   have ho : order • Q = 0 := by rw [hd]; exact dlogPoint_order d
   rw [entryE_run Q ho]
   have hlen : ∀ b ∈ (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
-      bitcoinQFTAncilla Q) regA regB).run, b.history.length = 530 := by
+      bitcoinQFTAncilla Q) regA regB).run, b.history.length = 526 := by
     intro b hb
     have h := observedTrial_history_length _ regA regB b hb
     rw [regA_length, regB_length] at h
@@ -149,11 +149,11 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99 : ℝ) / 100 ≤ recordMass
         (observedTrial (trialV2 regA regB bitcoinPointReg bitcoinWorkStart
           bitcoinQFTAncilla Q) regA regB).run
-        (pairEvent 265 (recoveredE d)) (ket zeroBasisState) :=
+        (pairEvent 263 (recoveredE d)) (ket zeroBasisState) :=
       trialE_probability Q d hn hd
     _ = Instrument.bornMass ((observedTrial (trialV2 regA regB bitcoinPointReg
           bitcoinWorkStart bitcoinQFTAncilla Q) regA regB).run.filter
-          (fun b => pairEvent 265 (recoveredE d) b.history)) (ket zeroBasisState) :=
+          (fun b => pairEvent 263 (recoveredE d) b.history)) (ket zeroBasisState) :=
       recordMass_filter _ _ _
     _ ≤ _ := bornMass_filter_mono _ _ _
       (fun b hb hs => successE_verified Q d hd b.history (hlen b hb) hs) _
@@ -166,16 +166,16 @@ def layout : DecodeLayout := layoutE'
 /-- The declared T bound is the certified count rounded up to a multiple of 10^5, so the
 qubit × T product has at most fifteen significant digits. -/
 def bounds : Bounds where
-  qubits := 206642
-  tModel := 178049814100000
-  measurements := 530
+  qubits := 206638
+  tModel := 176706041900000
+  measurements := 526
 
 attribute [local irreducible] tableE progE Straight.WellFormed
 
 theorem certificate : Certificate officialLimits layout entry bounds where
   gateBudget := entryE_gateSlots.trans (by simp [officialLimits])
   recordBudget := by
-    change (530 : ℕ) ≤ officialLimits.measurements
+    change (526 : ℕ) ≤ officialLimits.measurements
     simp [officialLimits]
   tableBudget := by
     change tableE.length ≤ officialLimits.coefficientRows
