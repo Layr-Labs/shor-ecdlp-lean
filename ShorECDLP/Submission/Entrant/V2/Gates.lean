@@ -72,19 +72,19 @@ def genericPointGates {n : Nat} (row : Fin n) (workStart : Wire) : List (Templat
   let t2 := pointAddT2 workStart
   let t3 := pointAddT3 workStart
   let t4 := pointAddT4 workStart
-  let numerator := fieldSubConstGates row .y offset y t0
-  let denominator := fieldSubConstGates row .x offset x t1
-  let inverse := (fieldInv offset t1 t2).map TemplateGate.literal
-  let slope := (fieldMul offset t0 t2 t3).map TemplateGate.literal
-  let slopeSq := (fieldMul offset t3 t3 t0).map TemplateGate.literal
-  let minusX := (fieldSub offset t0 x t1).map TemplateGate.literal
-  let xOut := fieldSubConstGates row .x offset t1 t2
-  let xDifference := (fieldSub offset x t2 t0).map TemplateGate.literal
-  let yProduct := (fieldMul offset t3 t0 t1).map TemplateGate.literal
+  let numerator := fieldSubConstGates row .y offset y t2
+  let denominator := fieldSubConstGates row .x offset x t4
+  let inverse := (fieldInv offset t4 t0).map TemplateGate.literal
+  let slope := (fieldMul offset t2 t0 t3).map TemplateGate.literal
+  let slopeSq := (fieldMul offset t3 t3 t1).map TemplateGate.literal
+  let minusX := (fieldSub offset t1 x t4).map TemplateGate.literal
+  let xOut := fieldSubConstGates row .x offset t4 t2
+  let xDifference := (fieldSub offset x t2 t4).map TemplateGate.literal
+  let yProduct := (fieldMul offset t3 t4 t1).map TemplateGate.literal
   let yOut := (fieldSub offset t1 y t4).map TemplateGate.literal
-  numerator ++ denominator ++ inverse ++ slope ++ inverse.reverse ++ denominator.reverse ++
+  numerator ++ denominator ++ inverse ++ slope ++ denominator.reverse ++
     numerator.reverse ++ slopeSq ++ minusX ++ xOut ++ minusX.reverse ++ slopeSq.reverse ++
-    xDifference ++ yProduct ++ yOut
+    xDifference ++ yProduct ++ xDifference.reverse ++ yOut
 
 theorem genericPointGates_source {n : Nat} (coeffs : Fin n → PointCoeff) (Q : Point)
     (row : Fin n) (workStart : Wire) :
@@ -494,7 +494,7 @@ theorem controlledOut_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
     (pointReg : List Wire) (workStart : Wire) (hlen : pointReg.length = pointWidth) :
-    templateT (controlledPointGates row control pointReg workStart) = 177400080564 := by
+    templateT (controlledPointGates row control pointReg workStart) = 168952897652 := by
   let read := readConstant (fun _ : Fin n => qCoefficient) G
   have hr : read ⟨row, .infinity, 0⟩ = false := by
     simp [read, readConstant, qCoefficient_point, fieldValue, pointCoordinates, G]
@@ -511,7 +511,7 @@ theorem controlledPoint_templateT {n : Nat} (row : Fin n) (control : Wire)
 
 theorem scalarGates_templateT {n : Nat} (pointReg : List Wire) (workStart : Wire)
     (hlen : pointReg.length = pointWidth) (cs : List Wire) (rs : List (Fin n)) :
-    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 177400080564 := by
+    templateT (scalarGates pointReg workStart cs rs) = min cs.length rs.length * 168952897652 := by
   induction cs generalizing rs with
   | nil => cases rs <;> simp [scalarGates, templateT]
   | cons c cs ih =>
@@ -839,14 +839,15 @@ theorem swapWrapper_length_le (a b r lhs out : List Wire) (core : Circuit) (c : 
 theorem fieldInv_length_le (offset : Wire) (input out : List Wire) :
     (fieldInv offset input out).length ≤ 2*input.length+out.length+8302097160 := by
   have h := swapWrapper_length_le
-    (shiftWires offset Engine.layout.lhs)
-    (shiftWires offset Engine.layout.rhs)
-    (shiftWires offset Engine.layout.out) input out
-    (shiftCircuit offset Engine.program) (p-2)
+    (shiftWires offset Secp256k1Instance.secpLayout.lhs)
+    (shiftWires offset Secp256k1Instance.secpLayout.rhs)
+    (shiftWires offset Secp256k1Instance.secpLayout.out) input out
+    (shiftCircuit offset Secp256k1Instance.secpProgram) (p-2)
   change (fieldInv offset input out).length ≤ _ at h
   simp only [shiftCircuit, List.length_map, shiftWires,
-    Engine.rhs_length, Engine.out_length] at h
-  have hc := Engine.program_length_le
+    Secp256k1Instance.secpLayout, ModExp.Plan.layout, Secp256k1Instance.secpPlan,
+    ModExp.Reg.length_eq, Secp256k1Instance.fieldWidth] at h
+  have hc := secpProgram_length_le
   omega
 
 open Secp256k1Instance in
@@ -964,7 +965,7 @@ theorem genericPointGates_length_le {n : Nat} (row : Fin n) (w : Wire) :
 theorem doublePointCompute_length_le (w : Wire) :
     (doublePointCompute w).length ≤ 17000000000 := by
   have hn := threeXSquared_length_le (pointAddArithmeticOffset w) (pointAddX w)
-    (pointAddT0 w) (pointAddT1 w) (pointAddT2 w) (by simp) (by simp) (by simp) (by simp)
+    (pointAddT1 w) (pointAddT4 w) (pointAddT2 w) (by simp) (by simp) (by simp) (by simp)
   simp only [doublePointCompute, List.length_append, List.length_reverse]
   grind only [fieldInv_length_le, fieldMul_length_le, fieldAdd_length_le,
     fieldSub_length_le, pointAddX_length, pointAddY_length, pointAddT0_length,

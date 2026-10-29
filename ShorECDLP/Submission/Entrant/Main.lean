@@ -5,8 +5,9 @@ import ShorECDLP.Challenge.Official
 
 /-! EDITABLE. Entrant: one observed trial at 263-bit phase precision.
 
-The circuit is the Naive construction (same point arithmetic, same dense workspace)
-with seven extra high-order qubits per phase register.  The extra precision makes the
+The circuit uses the V2 field arithmetic and the Naive dense workspace, with seven extra
+high-order qubits per phase register; each controlled point addition is the single-pass
+`fastCPA` construction.  The extra precision makes the
 canonical nearest-numerator decoder succeed with probability at least 99 % in a single
 trial, so the 26 sequential repetitions of the baseline are dropped. -/
 
@@ -82,12 +83,14 @@ theorem secret_mod_ne_zero (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
     nsmul_zero]
 
 /-- The oracle specification, for whichever proof of primality of `p` the circuit carries. -/
-theorem spec_any (inst : Fact (Nat.Prime p)) (Q : Point) :
+theorem spec_any (inst : Fact (Nat.Prime p)) (Q : Point) (hn : Q ≠ 0) (ho : order • Q = 0) :
     ECDLPOracleSpec pointEncoding
-      (Quantum.run (V2.ecdlpOracle regA regB bitcoinPointReg bitcoinWorkStart G Q))
+      (Quantum.run (@V2.fastOracle inst regA regB bitcoinPointReg bitcoinWorkStart G Q))
       G Q regA regB bitcoinPointReg (V2.scalarMulWork bitcoinWorkStart) :=
-  @V2.ecdlpOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
-    V2.v2WireLayout.2.2.1 layoutE.1
+  @V2.fastOracle_spec inst regA regB bitcoinPointReg bitcoinWorkStart G Q
+    (V2.doublingTable_ne_zero _ G G_ne_zero generator_nsmul_eq_zero)
+    (V2.doublingTable_ne_zero _ Q hn ho)
+    bitcoinWireLayout.2.2.1 layoutE.1
 
 theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99 : ℝ) / 100 ≤ recordMass
@@ -128,7 +131,8 @@ theorem trialE_probability (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • 
     simp only [recoveredE, Fin.ofNat_eq_cast, Fin.cast_val_eq_self, decide_eq_true_eq]
   rw [heq, trialV2_run]
   refine le_trans ?_ (success_of_window_mass pointEncoding _ G Q regA regB bitcoinPointReg
-    (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting (spec_any ⟨p_prime⟩ Q)
+    (V2.scalarMulWork bitcoinWorkStart) bitcoinQFTAncilla zeroBasisState hsetting
+    (spec_any _ Q hn (by rw [hd]; exact dlogPoint_order d))
     hsetup (secret_mod_ne_zero Q d hn hd) (200 / 201) (by norm_num) hwinE)
   rw [div_mul_eq_mul_div, le_div_iff₀ (by norm_num [order])]
   norm_num [order]
@@ -163,11 +167,11 @@ theorem entryE_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
 def entry : StraightEntry := entryE
 def layout : DecodeLayout := layoutE'
 
-/-- The declared T bound is the certified count rounded up to a multiple of 10^4, so the
-qubit × T product has at most fifteen significant digits. -/
+/-- The declared T bound is the certified count 22131525418406 rounded up to a multiple of
+10^4, so the qubit × T product 4573214149737960000 has fifteen significant digits. -/
 def bounds : Bounds where
-  qubits := 77624
-  tModel := 93312443420000
+  qubits := 206638
+  tModel := 22131525420000
   measurements := 526
 
 attribute [local irreducible] tableE progE Straight.WellFormed

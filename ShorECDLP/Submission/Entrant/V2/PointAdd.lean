@@ -3,7 +3,6 @@ import ShorECDLP.Submission.Naive.EllipticCurve.PointRegister
 import ShorECDLP.Submission.Naive.Arithmetic.ModSub
 import ShorECDLP.Submission.Naive.Arithmetic.Predicates
 import ShorECDLP.Submission.Naive.Arithmetic.Secp256k1Instance
-import ShorECDLP.Submission.Entrant.V2.Engine
 
 namespace ShorECDLP
 namespace Secp256k1
@@ -441,7 +440,7 @@ def pointAddArithmeticWork (workStart : Wire) : List Wire :=
       Secp256k1Instance.secpMulLayout.allWires ++
     shiftWires
       (pointAddArithmeticOffset workStart)
-      Engine.layout.allWires).dedup
+      Secp256k1Instance.secpLayout.allWires).dedup
 
 private theorem pointAddArithmeticWork_lower
     (workStart : Wire) :
@@ -923,13 +922,13 @@ the whole engine is clean without a second exponentiation.
 -/
 
 private def engineInvBase (offset : Wire) : List Wire :=
-  shiftWires offset Engine.layout.lhs
+  shiftWires offset Secp256k1Instance.secpLayout.lhs
 
 private def engineInvExponent (offset : Wire) : List Wire :=
-  shiftWires offset Engine.layout.rhs
+  shiftWires offset Secp256k1Instance.secpLayout.rhs
 
 private def engineInvOut (offset : Wire) : List Wire :=
-  shiftWires offset Engine.layout.out
+  shiftWires offset Secp256k1Instance.secpLayout.out
 
 /-- Bitwise register swap, three CNOT gates per bit. -/
 def fieldSwapReg :
@@ -951,7 +950,7 @@ def fieldInv
   let exponent := engineInvExponent offset
   let result := engineInvOut offset
   let core :=
-    shiftCircuit offset Engine.program
+    shiftCircuit offset Secp256k1Instance.secpProgram
   circuit! {
     Arithmetic.copyReg input base;
     loadConst exponent (p - 2);
@@ -1180,9 +1179,9 @@ private theorem secpMulProgram_wellFormed :
     secpMulLayout_valid
 
 private theorem secpProgram_wellFormed :
-    CircuitWellFormed Engine.program :=
-  Engine.contract.wellFormed
-    Engine.layout_valid
+    CircuitWellFormed Secp256k1Instance.secpProgram :=
+  Secp256k1Instance.secp_modExp_contract.wellFormed
+    Secp256k1Instance.secpPlan_layout_valid
 
 private theorem fieldAdd_HPFree
     (offset : Wire) (lhs rhs out : List Wire) :
@@ -1582,9 +1581,9 @@ private theorem fieldInv_HPFree
     Classical.HPFree (fieldInv offset input out) := by
   have hcore :
       Classical.HPFree
-        (shiftCircuit offset Engine.program) :=
+        (shiftCircuit offset Secp256k1Instance.secpProgram) :=
     shiftCircuit_HPFree _ _
-      Engine.contract.hpFree
+      Secp256k1Instance.secp_modExp_contract.hpFree
   simp [fieldInv, hcore, fieldSwapReg_HPFree,
     loadConst_HPFree]
 
@@ -1598,16 +1597,31 @@ private theorem fieldInv_wellFormed
   let base := engineInvBase offset
   let exponent := engineInvExponent offset
   let result := engineInvOut offset
-  let core := shiftCircuit offset Engine.program
-  have hbaseNodup : Engine.layout.lhs.Nodup := Engine.lhs_nodup
+  let core := shiftCircuit offset Secp256k1Instance.secpProgram
+  have hbaseNodup : Secp256k1Instance.secpLayout.lhs.Nodup := by
+    change
+      (Secp256k1Instance.reg Secp256k1Instance.baseId).wires.Nodup
+    exact
+      (Secp256k1Instance.regBlock
+        Secp256k1Instance.baseId).wires_nodup
   have hexponentNodup :
-      Engine.layout.rhs.Nodup := Engine.rhs_nodup
-  have hresultNodup : Engine.layout.out.Nodup := Engine.out_nodup
+      Secp256k1Instance.secpLayout.rhs.Nodup := by
+    change
+      (Secp256k1Instance.reg Secp256k1Instance.exponentId).wires.Nodup
+    exact
+      (Secp256k1Instance.regBlock
+        Secp256k1Instance.exponentId).wires_nodup
+  have hresultNodup : Secp256k1Instance.secpLayout.out.Nodup := by
+    change
+      (Secp256k1Instance.reg Secp256k1Instance.outId).wires.Nodup
+    exact
+      (Secp256k1Instance.regBlock
+        Secp256k1Instance.outId).wires_nodup
   have hcopyBase :
       CircuitWellFormed (Arithmetic.copyReg input base) := by
     simpa [base, offset, engineInvBase] using
       (copyReg_pointAdd_to_shifted_wellFormed workStart input
-        Engine.layout.lhs hinput hbaseNodup)
+        Secp256k1Instance.secpLayout.lhs hinput hbaseNodup)
   have hloadExponent :
       CircuitWellFormed (loadConst exponent (p - 2)) :=
     loadConst_wellFormed _ _
@@ -1616,7 +1630,7 @@ private theorem fieldInv_wellFormed
     apply fieldSwapReg_wellFormed
     simpa [result, offset, engineInvOut] using
       (shifted_pointAddField_nodup workStart
-        Engine.layout.out out hout hresultNodup)
+        Secp256k1Instance.secpLayout.out out hout hresultNodup)
   have hcore : CircuitWellFormed core :=
     shiftCircuit_wellFormed _ _ secpProgram_wellFormed
   simp [fieldInv, base, exponent, result, core, offset,
@@ -1914,10 +1928,10 @@ private theorem fieldInv_usesOnly
     (offset : Wire) (input out : List Wire) :
     CircuitUsesOnly
       (input ++ out ++
-        shiftWires offset Engine.layout.allWires)
+        shiftWires offset Secp256k1Instance.secpLayout.allWires)
       (fieldInv offset input out) := by
   let engineWires :=
-    shiftWires offset Engine.layout.allWires
+    shiftWires offset Secp256k1Instance.secpLayout.allWires
   have ha : ∀ w ∈ engineInvBase offset, w ∈ engineWires := by
     apply shiftWires_mono
     intro w hw
@@ -1933,14 +1947,14 @@ private theorem fieldInv_usesOnly
     simp [RegisterLayout.allWires, hw]
   have hcore :
       CircuitUsesOnly engineWires
-        (shiftCircuit offset Engine.program) :=
+        (shiftCircuit offset Secp256k1Instance.secpProgram) :=
     shiftCircuit_usesOnly _ _ _
-      Engine.contract.usesOnly
+      Secp256k1Instance.secp_modExp_contract.usesOnly
   simpa [fieldInv, engineWires] using
     (unaryConstSwapWrapper_usesOnly input out
       (engineInvBase offset) (engineInvExponent offset)
       (engineInvOut offset) engineWires (p - 2)
-      (shiftCircuit offset Engine.program)
+      (shiftCircuit offset Secp256k1Instance.secpProgram)
       ha hb hr hcore)
 
 /-! -------------------------------------------------------------------------
@@ -1959,11 +1973,13 @@ Only five temporary field registers are used.
 
 At the end:
 
+    t0 = (x₁ - x₂)⁻¹
     t2 = x₃
     t4 = y₃
 
 while the other temporaries contain reversible history that is removed when
-this circuit is run backwards.
+this circuit is run backwards.  The inverse is left in t0 as history, so the
+exponentiation runs once per compute pass.
 -/
 def genericPointCompute
     (workStart : Wire)
@@ -1979,48 +1995,48 @@ def genericPointCompute
   let t3 := pointAddT3 workStart
   let t4 := pointAddT4 workStart
 
-  /- t0 = y₁ - y₂ -/
+  /- t2 = y₁ - y₂ -/
   let numerator :=
-    fieldSubConst offset y yC.val t0
+    fieldSubConst offset y yC.val t2
 
-  /- t1 = x₁ - x₂ -/
+  /- t4 = x₁ - x₂ -/
   let denominator :=
-    fieldSubConst offset x xC.val t1
+    fieldSubConst offset x xC.val t4
 
-  /- t2 = (x₁ - x₂)⁻¹ -/
+  /- t0 = (x₁ - x₂)⁻¹ -/
   let inverse :=
-    fieldInv offset t1 t2
+    fieldInv offset t4 t0
 
   /- t3 = λ -/
   let slope :=
-    fieldMul offset t0 t2 t3
+    fieldMul offset t2 t0 t3
 
-  /- After λ has been obtained, numerator/denominator/inverse are no
-     longer needed.  Uncomputing them frees t0,t1,t2 for reuse. -/
+  /- The inverse stays in t0 as history; only the numerator and the
+     denominator are uncomputed, which frees t2 and t4 for reuse. -/
 
-  /- t0 = λ² -/
+  /- t1 = λ² -/
   let slopeSq :=
-    fieldMul offset t3 t3 t0
+    fieldMul offset t3 t3 t1
 
-  /- t1 = λ² - x₁ -/
+  /- t4 = λ² - x₁ -/
   let minusX :=
-    fieldSub offset t0 x t1
+    fieldSub offset t1 x t4
 
   /- t2 = x₃ = λ² - x₁ - x₂ -/
   let xOut :=
-    fieldSubConst offset t1 xC.val t2
+    fieldSubConst offset t4 xC.val t2
 
   /- Once x₃ is available, λ² and λ²-x₁ can be uncomputed. -/
 
-  /- t0 = x₁ - x₃ -/
+  /- t4 = x₁ - x₃ -/
   let xDifference :=
-    fieldSub offset x t2 t0
+    fieldSub offset x t2 t4
 
   /- t1 = λ(x₁-x₃) -/
   let yProduct :=
-    fieldMul offset t3 t0 t1
+    fieldMul offset t3 t4 t1
 
-  /- t4 = y₃ -/
+  /- t4 = y₃, after x₁ - x₃ has been uncomputed -/
   let yOut :=
     fieldSub offset t1 y t4
 
@@ -2030,7 +2046,6 @@ def genericPointCompute
     inverse;
     slope;
 
-    inverse.reverse;
     denominator.reverse;
     numerator.reverse;
 
@@ -2043,6 +2058,8 @@ def genericPointCompute
 
     xDifference;
     yProduct;
+    xDifference.reverse;
+
     yOut
   }
 
@@ -2097,43 +2114,43 @@ def doublePointCompute
   let t3 := pointAddT3 workStart
   let t4 := pointAddT4 workStart
 
-  /- t2 = 3x₁²; t0,t1 are returned to zero. -/
+  /- t2 = 3x₁²; t1,t4 are returned to zero. -/
   let numerator :=
-    threeXSquared offset x t0 t1 t2
+    threeXSquared offset x t1 t4 t2
 
-  /- t0 = 2y₁ -/
+  /- t4 = 2y₁ -/
   let denominator :=
-    fieldAdd offset y y t0
+    fieldAdd offset y y t4
 
-  /- t1 = (2y₁)⁻¹ -/
+  /- t0 = (2y₁)⁻¹ -/
   let inverse :=
-    fieldInv offset t0 t1
+    fieldInv offset t4 t0
 
   /- t3 = λ -/
   let slope :=
-    fieldMul offset t2 t1 t3
+    fieldMul offset t2 t0 t3
 
-  /- t0 = λ² -/
+  /- t1 = λ² -/
   let slopeSq :=
-    fieldMul offset t3 t3 t0
+    fieldMul offset t3 t3 t1
 
-  /- t1 = 2x₁ -/
+  /- t4 = 2x₁ -/
   let twoX :=
-    fieldAdd offset x x t1
+    fieldAdd offset x x t4
 
   /- t2 = x₃ = λ² - 2x₁ -/
   let xOut :=
-    fieldSub offset t0 t1 t2
+    fieldSub offset t1 t4 t2
 
-  /- t0 = x₁ - x₃ -/
+  /- t4 = x₁ - x₃ -/
   let xDifference :=
-    fieldSub offset x t2 t0
+    fieldSub offset x t2 t4
 
   /- t1 = λ(x₁-x₃) -/
   let yProduct :=
-    fieldMul offset t3 t0 t1
+    fieldMul offset t3 t4 t1
 
-  /- t4 = y₃ -/
+  /- t4 = y₃, after x₁ - x₃ has been uncomputed -/
   let yOut :=
     fieldSub offset t1 y t4
 
@@ -2143,7 +2160,6 @@ def doublePointCompute
     inverse;
     slope;
 
-    inverse.reverse;
     denominator.reverse;
     numerator.reverse;
 
@@ -2156,8 +2172,11 @@ def doublePointCompute
 
     xDifference;
     yProduct;
+    xDifference.reverse;
+
     yOut
   }
+
 
 private theorem genericPointCompute_HPFree
     (workStart : Wire) (xC yC : Fp) :
@@ -2526,7 +2545,7 @@ private def pointAddBranchActiveSupport
                     (shiftWires (pointAddArithmeticOffset workStart)
                           Secp256k1Instance.secpMulLayout.allWires ++
                       shiftWires (pointAddArithmeticOffset workStart)
-                        Engine.layout.allWires)))))))))
+                        Secp256k1Instance.secpLayout.allWires)))))))))
 
 private theorem pointAddFieldRegister_mem_activeSupport
     (workStart : Wire) (register : List Wire)
@@ -2556,7 +2575,7 @@ private theorem pointAddMulEngine_mem_activeSupport
 private theorem pointAddInvEngine_mem_activeSupport
     (workStart : Wire) :
     ∀ w ∈ shiftWires (pointAddArithmeticOffset workStart)
-        Engine.layout.allWires,
+        Secp256k1Instance.secpLayout.allWires,
       w ∈ pointAddBranchActiveSupport workStart := by
   intro w hw
   simp [pointAddBranchActiveSupport, hw]
@@ -2869,7 +2888,7 @@ private theorem pointAddControl_not_mem_activeSupport
       (hcandidateBeforeArithmetic.trans hlower)
   · have hlower := shiftWires_lower
         (pointAddArithmeticOffset workStart)
-        Engine.layout.allWires _ hinv
+        Secp256k1Instance.secpLayout.allWires _ hinv
     have hcandidateBeforeArithmetic :
         workStart + candidateOffset ≤
           pointAddArithmeticOffset workStart := by
@@ -3228,14 +3247,14 @@ private theorem fieldMul_tCount
 
 private theorem fieldInv_tCount
     (offset : Wire) (input out : List Wire) :
-    tCount (fieldInv offset input out) = 5482463294 := by
+    tCount (fieldInv offset input out) = 10436930882 := by
   simp [fieldInv, tCount_append, copyReg_tCount, loadConst_tCount,
     fieldSwapReg_tCount, shiftCircuit_tCount,
-    Engine.program_tCount, Engine.cost]
+    Secp256k1Instance.secpProgram_tCount]
 
 private theorem genericPointCompute_tCount
     (workStart : Wire) (xC yC : Fp) :
-    tCount (genericPointCompute workStart xC yC) = 11046719922 := by
+    tCount (genericPointCompute workStart xC yC) = 10518770990 := by
   simp [genericPointCompute, tCount_append, tCount_reverse,
     fieldSubConst_tCount, fieldInv_tCount, fieldMul_tCount,
     fieldSub_tCount]
@@ -3247,7 +3266,7 @@ private theorem threeXSquared_tCount
     fieldMul_tCount, fieldAdd_tCount]
 
 private theorem doublePointCompute_tCount (workStart : Wire) :
-    tCount (doublePointCompute workStart) = 11128279386 := by
+    tCount (doublePointCompute workStart) = 10600330454 := by
   simp [doublePointCompute, tCount_append, tCount_reverse,
     threeXSquared_tCount, fieldAdd_tCount, fieldInv_tCount,
     fieldMul_tCount, fieldSub_tCount]
@@ -3287,14 +3306,14 @@ private theorem pointAddSetup_tCount
 
 private theorem genericPointBranch_tCount
     (workStart : Wire) (xC yC : Fp) :
-    tCount (genericPointBranch workStart xC yC) = 22093443435 := by
+    tCount (genericPointBranch workStart xC yC) = 21037545571 := by
   simp [genericPointBranch, tCount_append, tCount_reverse,
     genericPointCompute_tCount, packFinitePoint_tCount,
     controlledCopyReg_tCount, pointAddCandidate, pointAddSelected,
     pointWidth]
 
 private theorem doublePointBranch_tCount (workStart : Wire) :
-    tCount (doublePointBranch workStart) = 22256562363 := by
+    tCount (doublePointBranch workStart) = 21200664499 := by
   simp [doublePointBranch, tCount_append, tCount_reverse,
     doublePointCompute_tCount, packFinitePoint_tCount,
     controlledCopyReg_tCount, pointAddCandidate, pointAddSelected,
@@ -3315,7 +3334,7 @@ private theorem infinityPointBranch_tCount
 private theorem pointAddBranches_tCount
     (workStart : Wire) {xC yC : Fp}
     (hC : curve.toAffine.Nonsingular xC yC) :
-    tCount (pointAddBranches workStart hC) = 44350009389 := by
+    tCount (pointAddBranches workStart hC) = 42238213661 := by
   simp [pointAddBranches, tCount_append, genericPointBranch_tCount,
     doublePointBranch_tCount, infinityPointBranch_tCount]
 
@@ -3324,7 +3343,7 @@ theorem pointAddFiniteCompute_tCount
     (pointReg : List Wire) (workStart : Wire)
     {xC yC : Fp} (hC : curve.toAffine.Nonsingular xC yC) :
     tCount (pointAddFiniteCompute pointReg workStart hC) =
-      44350016550 := by
+      42238220822 := by
   simp [pointAddFiniteCompute, tCount_append, pointAddSetup_tCount,
     pointAddBranches_tCount]
 
@@ -3452,7 +3471,7 @@ theorem pointAdd_finite_tCount
     (workStart : Wire)
     {xC yC : Fp} (hC : curve.toAffine.Nonsingular xC yC) :
     tCount (pointAdd pointReg outReg workStart (.some hC)) =
-      88700033100 := by
+      84476441644 := by
   simp [pointAdd, tCount_append, tCount_reverse, copyReg_tCount,
     pointAddFiniteCompute_tCount]
 
@@ -6302,7 +6321,7 @@ private theorem fieldInv_correct
     (hcleanOut : Clean out st)
     (hcleanEngine : Clean
       (shiftWires (pointAddArithmeticOffset workStart)
-        Engine.layout.allWires) st)
+        Secp256k1Instance.secpLayout.allWires) st)
     (hinputBound : regValue input st < p)
     (hnonzero : ((regValue input st : Nat) : Fp) ≠ 0) :
     let after := Classical.run
@@ -6317,17 +6336,25 @@ private theorem fieldInv_correct
     have hpos := Secp256k1Instance.p_pos
     omega
   have hexponentFits : p - 2 <
-      2 ^ Engine.layout.rhs.length := by
+      2 ^ Secp256k1Instance.secpLayout.rhs.length := by
     exact hexponentBound.trans (by
-      simpa [Engine.rhs_length, Secp256k1Instance.fieldWidth] using hpPow)
+      simpa [Secp256k1Instance.secpLayout, ModExp.Plan.layout,
+        Secp256k1Instance.secpPlan,
+        Secp256k1Instance.reg, Secp256k1Instance.regBlock,
+        Secp256k1Instance.fieldWidth,
+        Secp256k1Instance.exponentId] using hpPow)
   have hresult := pointAddUnaryConstFieldSwap_correct
-    Engine.program
-    Engine.layout p (fun a _ => a ^ (p - 2))
-    Engine.cost
-    Engine.contract
-    Engine.layout_valid
+    Secp256k1Instance.secpProgram
+    Secp256k1Instance.secpLayout p Nat.pow
+    Secp256k1Instance.secpCost
+    Secp256k1Instance.secp_modExp_contract
+    Secp256k1Instance.secpPlan_layout_valid
     (by
-      simp [Engine.lhs_length, fieldWidth, Secp256k1Instance.fieldWidth])
+      simp [Secp256k1Instance.secpLayout, ModExp.Plan.layout,
+        Secp256k1Instance.secpPlan,
+        Secp256k1Instance.reg, Secp256k1Instance.regBlock,
+        fieldWidth, Secp256k1Instance.fieldWidth,
+        Secp256k1Instance.baseId])
     workStart input out (p - 2) hinput hout houtInput st
     hcleanOut hcleanEngine hinputBound hexponentBound hexponentFits
   dsimp only at hresult ⊢
@@ -6402,7 +6429,7 @@ private theorem cleanInvEngine_of_branchWork
     (hclean : Clean (pointAddBranchWork workStart) st) :
     Clean
       (shiftWires (pointAddArithmeticOffset workStart)
-        Engine.layout.allWires) st := by
+        Secp256k1Instance.secpLayout.allWires) st := by
   intro w hw
   apply hclean w
   simp [pointAddBranchWork, pointAddArithmeticWork,
@@ -9012,7 +9039,7 @@ private theorem pointAddActiveSupport_selected_disjoint
     subst selected
     have hlower := shiftWires_lower
       (pointAddArithmeticOffset workStart)
-      Engine.layout.allWires active hinv
+      Secp256k1Instance.secpLayout.allWires active hinv
     rw [← hselectedEnd] at hlower
     exact (Nat.not_lt_of_ge hlower) hselectedBounds.2
 
@@ -9228,6 +9255,7 @@ private theorem threeXSquared_usesOnly_exact
     (usesOnly_reverse hsquare)
   simpa [support, threeXSquared, List.append_assoc] using hall
 
+set_option linter.unusedVariables false in
 private theorem threeXSquared_correct
     [Fact (Nat.Prime p)]
     (workStart : Wire) (xR : Fp) (st : BasisState)
@@ -9237,8 +9265,8 @@ private theorem threeXSquared_correct
       (threeXSquared
         (pointAddArithmeticOffset workStart)
         (pointAddX workStart)
-        (pointAddT0 workStart)
         (pointAddT1 workStart)
+        (pointAddT4 workStart)
         (pointAddT2 workStart)) st
     regValue (pointAddT2 workStart) after =
         (doubleNumerator xR).val ∧
@@ -9246,47 +9274,47 @@ private theorem threeXSquared_correct
   have hX : IsPointAddFieldRegister workStart
       (pointAddX workStart) := by
     simp [IsPointAddFieldRegister]
-  have hT0 : IsPointAddFieldRegister workStart
-      (pointAddT0 workStart) := by
-    simp [IsPointAddFieldRegister]
   have hT1 : IsPointAddFieldRegister workStart
       (pointAddT1 workStart) := by
+    simp [IsPointAddFieldRegister]
+  have hT4 : IsPointAddFieldRegister workStart
+      (pointAddT4 workStart) := by
     simp [IsPointAddFieldRegister]
   have hT2 : IsPointAddFieldRegister workStart
       (pointAddT2 workStart) := by
     simp [IsPointAddFieldRegister]
-  have hT0T1 : ModExp.Schedule.WireDisjoint
-      (pointAddT0 workStart) (pointAddT1 workStart) := by
-    simpa [pointAddT0, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 2 3 (by norm_num)
-  have hT0T2 : ModExp.Schedule.WireDisjoint
-      (pointAddT0 workStart) (pointAddT2 workStart) := by
-    simpa [pointAddT0, pointAddT2] using
-      pointAddFieldAt_disjoint workStart 2 4 (by norm_num)
-  have hT1T0 : ModExp.Schedule.WireDisjoint
-      (pointAddT1 workStart) (pointAddT0 workStart) := by
-    simpa [pointAddT1, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 3 2 (by norm_num)
+  have hT1T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT1 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT1, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 3 6 (by norm_num)
   have hT1T2 : ModExp.Schedule.WireDisjoint
       (pointAddT1 workStart) (pointAddT2 workStart) := by
     simpa [pointAddT1, pointAddT2] using
       pointAddFieldAt_disjoint workStart 3 4 (by norm_num)
-  have hT2T0 : ModExp.Schedule.WireDisjoint
-      (pointAddT2 workStart) (pointAddT0 workStart) := by
-    simpa [pointAddT2, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 4 2 (by norm_num)
+  have hT4T1 : ModExp.Schedule.WireDisjoint
+      (pointAddT4 workStart) (pointAddT1 workStart) := by
+    simpa [pointAddT4, pointAddT1] using
+      pointAddFieldAt_disjoint workStart 6 3 (by norm_num)
+  have hT4T2 : ModExp.Schedule.WireDisjoint
+      (pointAddT4 workStart) (pointAddT2 workStart) := by
+    simpa [pointAddT4, pointAddT2] using
+      pointAddFieldAt_disjoint workStart 6 4 (by norm_num)
   have hT2T1 : ModExp.Schedule.WireDisjoint
       (pointAddT2 workStart) (pointAddT1 workStart) := by
     simpa [pointAddT2, pointAddT1] using
       pointAddFieldAt_disjoint workStart 4 3 (by norm_num)
+  have hT2T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT2 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT2, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 4 6 (by norm_num)
   have hXT2 : ModExp.Schedule.WireDisjoint
       (pointAddX workStart) (pointAddT2 workStart) := by
     simpa [pointAddX, pointAddT2] using
       pointAddFieldAt_disjoint workStart 0 4 (by norm_num)
-  have hcleanT0 : Clean (pointAddT0 workStart) st := by
+  have hcleanT1 : Clean (pointAddT1 workStart) st := by
     intro w hw
     exact hclean w (by simp [pointAddBranchWork, hw])
-  have hcleanT1 : Clean (pointAddT1 workStart) st := by
+  have hcleanT4 : Clean (pointAddT4 workStart) st := by
     intro w hw
     exact hclean w (by simp [pointAddBranchWork, hw])
   have hcleanT2 : Clean (pointAddT2 workStart) st := by
@@ -9298,99 +9326,99 @@ private theorem threeXSquared_correct
   let square := fieldMul
     (pointAddArithmeticOffset workStart)
     (pointAddX workStart) (pointAddX workStart)
-    (pointAddT0 workStart)
+    (pointAddT1 workStart)
   let afterSquare := Classical.run square st
   have hsquare := fieldMul_correct workStart
     (pointAddX workStart) (pointAddX workStart)
-    (pointAddT0 workStart) hX hX hT0
+    (pointAddT1 workStart) hX hX hT1
     (by
-      simpa [pointAddT0, pointAddX] using
-        pointAddFieldAt_ne workStart 2 0 (by norm_num))
+      simpa [pointAddT1, pointAddX] using
+        pointAddFieldAt_ne workStart 3 0 (by norm_num))
     (by
-      simpa [pointAddT0, pointAddX] using
-        pointAddFieldAt_ne workStart 2 0 (by norm_num))
-    st hcleanT0 hcleanMul
+      simpa [pointAddT1, pointAddX] using
+        pointAddFieldAt_ne workStart 3 0 (by norm_num))
+    st hcleanT1 hcleanMul
     (by rw [hxReg]; exact xR.val_lt)
     (by rw [hxReg]; exact xR.val_lt)
   dsimp only at hsquare
-  change regValue (pointAddT0 workStart) afterSquare =
+  change regValue (pointAddT1 workStart) afterSquare =
       regValue (pointAddX workStart) st *
         regValue (pointAddX workStart) st % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT1 workStart →
       afterSquare w = st w at hsquare
-  have hsquareVal : regValue (pointAddT0 workStart) afterSquare =
+  have hsquareVal : regValue (pointAddT1 workStart) afterSquare =
       (xR ^ 2).val := by
     calc
-      regValue (pointAddT0 workStart) afterSquare =
+      regValue (pointAddT1 workStart) afterSquare =
           xR.val * xR.val % p := by simpa [hxReg] using hsquare.1
       _ = (xR * xR).val := by rw [ZMod.val_mul]
       _ = (xR ^ 2).val := by rw [pow_two]
 
   let twice := fieldAdd
     (pointAddArithmeticOffset workStart)
-    (pointAddT0 workStart) (pointAddT0 workStart)
-    (pointAddT1 workStart)
+    (pointAddT1 workStart) (pointAddT1 workStart)
+    (pointAddT4 workStart)
   let afterTwice := Classical.run twice afterSquare
-  have hcleanT1Square := clean_of_preserved_outside
-    hT1T0 hcleanT1 hsquare.2
+  have hcleanT4Square := clean_of_preserved_outside
+    hT4T1 hcleanT4 hsquare.2
   have hcleanAddSquare := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT1 workStart) hT1)
     hcleanAdd hsquare.2
   have htwice := fieldAdd_correct workStart
-    (pointAddT0 workStart) (pointAddT0 workStart)
-    (pointAddT1 workStart) hT0 hT0 hT1
+    (pointAddT1 workStart) (pointAddT1 workStart)
+    (pointAddT4 workStart) hT1 hT1 hT4
     (by
-      simpa [pointAddT1, pointAddT0] using
-        pointAddFieldAt_ne workStart 3 2 (by norm_num))
+      simpa [pointAddT4, pointAddT1] using
+        pointAddFieldAt_ne workStart 6 3 (by norm_num))
     (by
-      simpa [pointAddT1, pointAddT0] using
-        pointAddFieldAt_ne workStart 3 2 (by norm_num))
-    afterSquare hcleanT1Square hcleanAddSquare
+      simpa [pointAddT4, pointAddT1] using
+        pointAddFieldAt_ne workStart 6 3 (by norm_num))
+    afterSquare hcleanT4Square hcleanAddSquare
     (by rw [hsquareVal]; exact (xR ^ 2).val_lt)
     (by rw [hsquareVal]; exact (xR ^ 2).val_lt)
   dsimp only at htwice
-  change regValue (pointAddT1 workStart) afterTwice =
-      (regValue (pointAddT0 workStart) afterSquare +
-        regValue (pointAddT0 workStart) afterSquare) % p ∧
-    ∀ w, w ∉ pointAddT1 workStart →
+  change regValue (pointAddT4 workStart) afterTwice =
+      (regValue (pointAddT1 workStart) afterSquare +
+        regValue (pointAddT1 workStart) afterSquare) % p ∧
+    ∀ w, w ∉ pointAddT4 workStart →
       afterTwice w = afterSquare w at htwice
-  have htwiceVal : regValue (pointAddT1 workStart) afterTwice =
+  have htwiceVal : regValue (pointAddT4 workStart) afterTwice =
       (2 * xR ^ 2).val := by
     rw [htwice.1, hsquareVal, ← ZMod.val_add, two_mul]
-  have ht0Twice := regValue_of_preserved_outside hT0T1 htwice.2
+  have ht0Twice := regValue_of_preserved_outside hT1T4 htwice.2
 
   let three := fieldAdd
     (pointAddArithmeticOffset workStart)
-    (pointAddT1 workStart) (pointAddT0 workStart)
+    (pointAddT4 workStart) (pointAddT1 workStart)
     (pointAddT2 workStart)
   let afterThree := Classical.run three afterTwice
   have hcleanT2Square := clean_of_preserved_outside
-    hT2T0 hcleanT2 hsquare.2
+    hT2T1 hcleanT2 hsquare.2
   have hcleanT2Twice := clean_of_preserved_outside
-    hT2T1 hcleanT2Square htwice.2
+    hT2T4 hcleanT2Square htwice.2
   have hcleanAddTwice := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT1 workStart) hT1)
+      (pointAddT4 workStart) hT4)
     hcleanAddSquare htwice.2
   have hthree := fieldAdd_correct workStart
-    (pointAddT1 workStart) (pointAddT0 workStart)
-    (pointAddT2 workStart) hT1 hT0 hT2
+    (pointAddT4 workStart) (pointAddT1 workStart)
+    (pointAddT2 workStart) hT4 hT1 hT2
+    (by
+      simpa [pointAddT2, pointAddT4] using
+        pointAddFieldAt_ne workStart 4 6 (by norm_num))
     (by
       simpa [pointAddT2, pointAddT1] using
         pointAddFieldAt_ne workStart 4 3 (by norm_num))
-    (by
-      simpa [pointAddT2, pointAddT0] using
-        pointAddFieldAt_ne workStart 4 2 (by norm_num))
     afterTwice hcleanT2Twice hcleanAddTwice
     (by rw [htwiceVal]; exact (2 * xR ^ 2).val_lt)
     (by rw [ht0Twice, hsquareVal]; exact (xR ^ 2).val_lt)
   dsimp only at hthree
   change regValue (pointAddT2 workStart) afterThree =
-      (regValue (pointAddT1 workStart) afterTwice +
-        regValue (pointAddT0 workStart) afterTwice) % p ∧
+      (regValue (pointAddT4 workStart) afterTwice +
+        regValue (pointAddT1 workStart) afterTwice) % p ∧
     ∀ w, w ∉ pointAddT2 workStart →
       afterThree w = afterTwice w at hthree
   have hthreeVal : regValue (pointAddT2 workStart) afterThree =
@@ -9409,8 +9437,8 @@ private theorem threeXSquared_correct
   let preparation := square ++ twice
   let preparationSupport :=
     pointAddX workStart ++
-      (pointAddT0 workStart ++
-        (pointAddT1 workStart ++
+      (pointAddT1 workStart ++
+        (pointAddT4 workStart ++
           (shiftWires (pointAddArithmeticOffset workStart)
                 Secp256k1Instance.secpAddLayout.allWires ++
             shiftWires (pointAddArithmeticOffset workStart)
@@ -9425,7 +9453,7 @@ private theorem threeXSquared_correct
     · apply usesOnly_mono
         (fieldMul_usesOnly (pointAddArithmeticOffset workStart)
           (pointAddX workStart) (pointAddX workStart)
-          (pointAddT0 workStart))
+          (pointAddT1 workStart))
       intro w hw
       rcases List.mem_append.mp hw with hprefix | hmul
       · rcases List.mem_append.mp hprefix with hpair | ht0w
@@ -9436,8 +9464,8 @@ private theorem threeXSquared_correct
       · simp [preparationSupport, hmul]
     · apply usesOnly_mono
         (fieldAdd_usesOnly (pointAddArithmeticOffset workStart)
-          (pointAddT0 workStart) (pointAddT0 workStart)
-          (pointAddT1 workStart))
+          (pointAddT1 workStart) (pointAddT1 workStart)
+          (pointAddT4 workStart))
       intro w hw
       rcases List.mem_append.mp hw with hprefix | hadd
       · rcases List.mem_append.mp hprefix with hpair | ht1w
@@ -9459,9 +9487,9 @@ private theorem threeXSquared_correct
     rcases List.mem_append.mp hw with hxw | hrest
     · exact hXT2 w hxw v hv
     rcases List.mem_append.mp hrest with ht0w | hrest
-    · exact hT0T2 w ht0w v hv
+    · exact hT1T2 w ht0w v hv
     rcases List.mem_append.mp hrest with ht1w | hrest
-    · exact hT1T2 w ht1w v hv
+    · exact hT4T2 w ht1w v hv
     rcases List.mem_append.mp hrest with haddw | hmulw
     · exact (pointAddEngine_field_disjoint workStart
         Secp256k1Instance.secpAddLayout.allWires
@@ -9500,8 +9528,8 @@ private theorem threeXSquared_correct
         (threeXSquared
           (pointAddArithmeticOffset workStart)
           (pointAddX workStart)
-          (pointAddT0 workStart)
           (pointAddT1 workStart)
+          (pointAddT4 workStart)
           (pointAddT2 workStart)) st = after := by
     simp [threeXSquared, after, preparation, square, twice, three,
       Classical.run_append, List.reverse_append, List.append_assoc]
@@ -9509,6 +9537,17 @@ private theorem threeXSquared_correct
   rw [hrun]
   exact ⟨hresultValue, hresult.1⟩
 
+private theorem wireDisjoint_append_right_of
+    {a b c : List Wire}
+    (hb : ModExp.Schedule.WireDisjoint a b)
+    (hc : ModExp.Schedule.WireDisjoint a c) :
+    ModExp.Schedule.WireDisjoint a (b ++ c) := by
+  intro w hw v hv
+  rcases List.mem_append.mp hv with h | h
+  · exact hb w hw v h
+  · exact hc w hw v h
+
+set_option linter.unusedVariables false in
 private theorem genericPointCompute_correct
     [Fact (Nat.Prime p)]
     (workStart : Wire) (xR yR xC yC : Fp)
@@ -9671,149 +9710,162 @@ private theorem genericPointCompute_correct
   have hcleanMul := cleanMulEngine_of_branchWork workStart st hclean
   have hcleanInv := cleanInvEngine_of_branchWork workStart st hclean
 
+  have hT3T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT3 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT3, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 5 6 (by norm_num)
+  have hXT3 : ModExp.Schedule.WireDisjoint
+      (pointAddX workStart) (pointAddT3 workStart) := by
+    simpa [pointAddX, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 0 5 (by norm_num)
+  have hYT3 : ModExp.Schedule.WireDisjoint
+      (pointAddY workStart) (pointAddT3 workStart) := by
+    simpa [pointAddY, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 1 5 (by norm_num)
+
   let numerator := fieldSubConst
     (pointAddArithmeticOffset workStart)
-    (pointAddY workStart) yC.val (pointAddT0 workStart)
+    (pointAddY workStart) yC.val (pointAddT2 workStart)
   let afterNumerator := Classical.run numerator st
   have hn := fieldSubConst_correct workStart
-    (pointAddY workStart) (pointAddT0 workStart) yC.val
-    hY hT0 (by
-      simpa [pointAddY, pointAddT0] using
-        pointAddFieldAt_ne workStart 2 1 (by norm_num))
-    st hcleanT0
+    (pointAddY workStart) (pointAddT2 workStart) yC.val
+    hY hT2 (by
+      simpa [pointAddY, pointAddT2] using
+        pointAddFieldAt_ne workStart 4 1 (by norm_num))
+    st hcleanT2
     (clean_fieldSubEngine_of_addEngine workStart st hcleanAdd)
     (by simpa [hyReg] using yR.val_lt) yC.val_lt
   dsimp only at hn
-  change regValue (pointAddT0 workStart) afterNumerator =
+  change regValue (pointAddT2 workStart) afterNumerator =
       (regValue (pointAddY workStart) st + p - yC.val) % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT2 workStart →
       afterNumerator w = st w at hn
-  have hnVal : regValue (pointAddT0 workStart) afterNumerator =
+  have hnVal : regValue (pointAddT2 workStart) afterNumerator =
       (yR - yC).val := by
     calc
-      regValue (pointAddT0 workStart) afterNumerator =
+      regValue (pointAddT2 workStart) afterNumerator =
           (yR.val + p - yC.val) % p := by
         simpa [hyReg] using hn.1
       _ = (yR - yC).val := fieldSubVal yR yC
 
   let denominator := fieldSubConst
     (pointAddArithmeticOffset workStart)
-    (pointAddX workStart) xC.val (pointAddT1 workStart)
+    (pointAddX workStart) xC.val (pointAddT4 workStart)
   let afterDenominator := Classical.run denominator afterNumerator
-  have hcleanT1N := clean_of_preserved_outside
-    hT1T0 hcleanT1 hn.2
+  have hcleanT4N := clean_of_preserved_outside
+    hT4T2 hcleanT4 hn.2
   have hcleanAddN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT2 workStart) hT2)
     hcleanAdd hn.2
-  have hxN := regValue_of_preserved_outside hXT0 hn.2
+  have hxN := regValue_of_preserved_outside hXT2 hn.2
   have hd := fieldSubConst_correct workStart
-    (pointAddX workStart) (pointAddT1 workStart) xC.val
-    hX hT1 (by
-      simpa [pointAddX, pointAddT1] using
-        pointAddFieldAt_ne workStart 3 0 (by norm_num))
-    afterNumerator hcleanT1N
+    (pointAddX workStart) (pointAddT4 workStart) xC.val
+    hX hT4 (by
+      simpa [pointAddX, pointAddT4] using
+        pointAddFieldAt_ne workStart 6 0 (by norm_num))
+    afterNumerator hcleanT4N
     (clean_fieldSubEngine_of_addEngine workStart afterNumerator hcleanAddN)
     (by rw [hxN, hxReg]; exact xR.val_lt) xC.val_lt
   dsimp only at hd
-  change regValue (pointAddT1 workStart) afterDenominator =
+  change regValue (pointAddT4 workStart) afterDenominator =
       (regValue (pointAddX workStart) afterNumerator + p - xC.val) % p ∧
-    ∀ w, w ∉ pointAddT1 workStart →
+    ∀ w, w ∉ pointAddT4 workStart →
       afterDenominator w = afterNumerator w at hd
-  have hdVal : regValue (pointAddT1 workStart) afterDenominator =
+  have hdVal : regValue (pointAddT4 workStart) afterDenominator =
       (xR - xC).val := by
     calc
-      regValue (pointAddT1 workStart) afterDenominator =
+      regValue (pointAddT4 workStart) afterDenominator =
           (xR.val + p - xC.val) % p := by
         simpa [hxN, hxReg] using hd.1
       _ = (xR - xC).val := fieldSubVal xR xC
 
   let inverse := fieldInv
     (pointAddArithmeticOffset workStart)
-    (pointAddT1 workStart) (pointAddT2 workStart)
+    (pointAddT4 workStart) (pointAddT0 workStart)
   let afterInverse := Classical.run inverse afterDenominator
-  have hcleanT2N := clean_of_preserved_outside
-    hT2T0 hcleanT2 hn.2
-  have hcleanT2D := clean_of_preserved_outside
-    hT2T1 hcleanT2N hd.2
+  have hcleanT0N := clean_of_preserved_outside
+    hT0T2 hcleanT0 hn.2
+  have hcleanT0D := clean_of_preserved_outside
+    hT0T4 hcleanT0N hd.2
   have hcleanInvN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Engine.layout.allWires
-      (pointAddT0 workStart) hT0)
+      Secp256k1Instance.secpLayout.allWires
+      (pointAddT2 workStart) hT2)
     hcleanInv hn.2
   have hcleanInvD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Engine.layout.allWires
-      (pointAddT1 workStart) hT1)
+      Secp256k1Instance.secpLayout.allWires
+      (pointAddT4 workStart) hT4)
     hcleanInvN hd.2
   have hdenNonzero :
-      ((regValue (pointAddT1 workStart) afterDenominator : Nat) : Fp) ≠ 0 := by
+      ((regValue (pointAddT4 workStart) afterDenominator : Nat) : Fp) ≠ 0 := by
     rw [hdVal, ZMod.natCast_zmod_val]
     exact sub_ne_zero.mpr hx
   have hi := fieldInv_correct workStart
-    (pointAddT1 workStart) (pointAddT2 workStart)
-    hT1 hT2 (by
-      simpa [pointAddT1, pointAddT2] using
-        pointAddFieldAt_ne workStart 4 3 (by norm_num))
-    afterDenominator hcleanT2D hcleanInvD
+    (pointAddT4 workStart) (pointAddT0 workStart)
+    hT4 hT0 (by
+      simpa [pointAddT4, pointAddT0] using
+        pointAddFieldAt_ne workStart 2 6 (by norm_num))
+    afterDenominator hcleanT0D hcleanInvD
     (by rw [hdVal]; exact (xR - xC).val_lt) hdenNonzero
   dsimp only at hi
-  change regValue (pointAddT2 workStart) afterInverse =
-      (((regValue (pointAddT1 workStart) afterDenominator : Nat) : Fp)⁻¹).val ∧
-    ∀ w, w ∉ pointAddT2 workStart →
+  change regValue (pointAddT0 workStart) afterInverse =
+      (((regValue (pointAddT4 workStart) afterDenominator : Nat) : Fp)⁻¹).val ∧
+    ∀ w, w ∉ pointAddT0 workStart →
       afterInverse w = afterDenominator w at hi
-  have hiVal : regValue (pointAddT2 workStart) afterInverse =
+  have hiVal : regValue (pointAddT0 workStart) afterInverse =
       (xR - xC)⁻¹.val := by
     simpa [hdVal, ZMod.natCast_zmod_val] using hi.1
 
   let slope := fieldMul
     (pointAddArithmeticOffset workStart)
-    (pointAddT0 workStart) (pointAddT2 workStart)
+    (pointAddT2 workStart) (pointAddT0 workStart)
     (pointAddT3 workStart)
   let afterSlope := Classical.run slope afterInverse
   have hcleanT3N := clean_of_preserved_outside
-    hT3T0 hcleanT3 hn.2
+    hT3T2 hcleanT3 hn.2
   have hcleanT3D := clean_of_preserved_outside
-    hT3T1 hcleanT3N hd.2
+    hT3T4 hcleanT3N hd.2
   have hcleanT3I := clean_of_preserved_outside
-    hT3T2 hcleanT3D hi.2
+    hT3T0 hcleanT3D hi.2
   have hcleanMulN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT2 workStart) hT2)
     hcleanMul hn.2
   have hcleanMulD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT1 workStart) hT1)
+      (pointAddT4 workStart) hT4)
     hcleanMulN hd.2
   have hcleanMulI := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT2 workStart) hT2)
+      (pointAddT0 workStart) hT0)
     hcleanMulD hi.2
-  have hnD := regValue_of_preserved_outside hT0T1 hd.2
-  have hnI := regValue_of_preserved_outside hT0T2 hi.2
-  have ht0I : regValue (pointAddT0 workStart) afterInverse =
+  have hnD := regValue_of_preserved_outside hT2T4 hd.2
+  have hnI := regValue_of_preserved_outside hT2T0 hi.2
+  have ht2I : regValue (pointAddT2 workStart) afterInverse =
       (yR - yC).val := by
     rw [hnI, hnD, hnVal]
   have hs := fieldMul_correct workStart
-    (pointAddT0 workStart) (pointAddT2 workStart)
-    (pointAddT3 workStart) hT0 hT2 hT3
-    (by
-      simpa [pointAddT3, pointAddT0] using
-        pointAddFieldAt_ne workStart 5 2 (by norm_num))
+    (pointAddT2 workStart) (pointAddT0 workStart)
+    (pointAddT3 workStart) hT2 hT0 hT3
     (by
       simpa [pointAddT3, pointAddT2] using
         pointAddFieldAt_ne workStart 5 4 (by norm_num))
+    (by
+      simpa [pointAddT3, pointAddT0] using
+        pointAddFieldAt_ne workStart 5 2 (by norm_num))
     afterInverse hcleanT3I hcleanMulI
-    (by rw [ht0I]; exact (yR - yC).val_lt)
+    (by rw [ht2I]; exact (yR - yC).val_lt)
     (by rw [hiVal]; exact (xR - xC)⁻¹.val_lt)
   dsimp only at hs
   change regValue (pointAddT3 workStart) afterSlope =
-      regValue (pointAddT0 workStart) afterInverse *
-        regValue (pointAddT2 workStart) afterInverse % p ∧
+      regValue (pointAddT2 workStart) afterInverse *
+        regValue (pointAddT0 workStart) afterInverse % p ∧
     ∀ w, w ∉ pointAddT3 workStart →
       afterSlope w = afterInverse w at hs
   have hsVal : regValue (pointAddT3 workStart) afterSlope =
@@ -9821,165 +9873,158 @@ private theorem genericPointCompute_correct
     calc
       regValue (pointAddT3 workStart) afterSlope =
           (yR - yC).val * (xR - xC)⁻¹.val % p := by
-        simpa [ht0I, hiVal] using hs.1
+        simpa [ht2I, hiVal] using hs.1
       _ = ((yR - yC) * (xR - xC)⁻¹).val := by
         rw [ZMod.val_mul]
       _ = (genericSlope xR yR xC yC).val := by
         rfl
 
-  let preparation := numerator ++ denominator ++ inverse
+  /- Stage 1: the numerator and denominator are uncomputed around the
+     inverse and the slope, which both stay. -/
+  let preparation := numerator ++ denominator
+  let update := inverse ++ slope
   let preparationSupport :=
     pointAddX workStart ++
       (pointAddY workStart ++
-        (pointAddT0 workStart ++
-          (pointAddT1 workStart ++
-            (pointAddT2 workStart ++
-              (shiftWires (pointAddArithmeticOffset workStart)
-                    Secp256k1Instance.secpAddLayout.allWires ++
-                shiftWires (pointAddArithmeticOffset workStart)
-                  Engine.layout.allWires)))))
+        (pointAddT2 workStart ++
+          (pointAddT4 workStart ++
+            shiftWires (pointAddArithmeticOffset workStart)
+              Secp256k1Instance.secpAddLayout.allWires)))
   have hpreparationRun :
-      Classical.run preparation st = afterInverse := by
-    simp [preparation, inverse, afterInverse, denominator,
-      afterDenominator, numerator, afterNumerator,
+      Classical.run preparation st = afterDenominator := by
+    simp [preparation, denominator, afterDenominator, numerator,
+      afterNumerator, Classical.run_append]
+  have hupdateRun :
+      Classical.run update afterDenominator = afterSlope := by
+    simp [update, inverse, afterInverse, slope, afterSlope,
       Classical.run_append]
   have hpreparationUses : CircuitUsesOnly preparationSupport preparation := by
     apply usesOnly_append
-    · apply usesOnly_append
-      · apply usesOnly_mono
-          (fieldSubConst_usesOnly
-            (pointAddArithmeticOffset workStart)
-            (pointAddY workStart) yC.val (pointAddT0 workStart))
-        intro w hw
-        rcases List.mem_append.mp hw with hfields | haddw
-        · rcases List.mem_append.mp hfields with hyw | ht0w
-          · simp only [preparationSupport, List.mem_append]
-            exact Or.inr (Or.inl hyw)
-          · simp only [preparationSupport, List.mem_append]
-            exact Or.inr (Or.inr (Or.inl ht0w))
-        · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr
-            (Or.inr (Or.inr (Or.inl haddw)))))
-      · apply usesOnly_mono
-          (fieldSubConst_usesOnly
-            (pointAddArithmeticOffset workStart)
-            (pointAddX workStart) xC.val (pointAddT1 workStart))
-        intro w hw
-        rcases List.mem_append.mp hw with hfields | haddw
-        · rcases List.mem_append.mp hfields with hxw | ht1w
-          · simp only [preparationSupport, List.mem_append]
-            exact Or.inl hxw
-          · simp only [preparationSupport, List.mem_append]
-            exact Or.inr (Or.inr (Or.inr (Or.inl ht1w)))
-        · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr
-            (Or.inr (Or.inr (Or.inl haddw)))))
     · apply usesOnly_mono
-        (fieldInv_usesOnly
+        (fieldSubConst_usesOnly
           (pointAddArithmeticOffset workStart)
-          (pointAddT1 workStart) (pointAddT2 workStart))
+          (pointAddY workStart) yC.val (pointAddT2 workStart))
       intro w hw
-      rcases List.mem_append.mp hw with hfields | hinvw
-      · rcases List.mem_append.mp hfields with ht1w | ht2w
+      rcases List.mem_append.mp hw with hfields | haddw
+      · rcases List.mem_append.mp hfields with hyw | ht2w
         · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr (Or.inl ht1w)))
+          exact Or.inr (Or.inl hyw)
         · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ht2w))))
+          exact Or.inr (Or.inr (Or.inl ht2w))
       · simp only [preparationSupport, List.mem_append]
-        exact Or.inr (Or.inr (Or.inr
-          (Or.inr (Or.inr (Or.inr hinvw)))))
+        exact Or.inr (Or.inr (Or.inr (Or.inr haddw)))
+    · apply usesOnly_mono
+        (fieldSubConst_usesOnly
+          (pointAddArithmeticOffset workStart)
+          (pointAddX workStart) xC.val (pointAddT4 workStart))
+      intro w hw
+      rcases List.mem_append.mp hw with hfields | haddw
+      · rcases List.mem_append.mp hfields with hxw | ht4w
+        · simp only [preparationSupport, List.mem_append]
+          exact Or.inl hxw
+        · simp only [preparationSupport, List.mem_append]
+          exact Or.inr (Or.inr (Or.inr (Or.inl ht4w)))
+      · simp only [preparationSupport, List.mem_append]
+        exact Or.inr (Or.inr (Or.inr (Or.inr haddw)))
   have hpreparationFree : Classical.HPFree preparation := by
-    simp [preparation, numerator, denominator, inverse,
-      fieldSubConst_HPFree, fieldInv_HPFree]
+    simp [preparation, numerator, denominator, fieldSubConst_HPFree]
   have hpreparationWellFormed : CircuitWellFormed preparation := by
-    simp [preparation, numerator, denominator, inverse,
-      fieldSubConst_wellFormed, fieldInv_wellFormed,
-      IsPointAddFieldRegister]
-  have hpreparationT3 : ModExp.Schedule.WireDisjoint
-      preparationSupport (pointAddT3 workStart) := by
+    simp [preparation, numerator, denominator,
+      fieldSubConst_wellFormed, IsPointAddFieldRegister]
+  have hpreparationOut : ModExp.Schedule.WireDisjoint
+      preparationSupport (pointAddT0 workStart ++ pointAddT3 workStart) := by
     intro w hw v hv
     dsimp only [preparationSupport] at hw
     rcases List.mem_append.mp hw with hxw | hrest
-    · exact (pointAddFieldAt_disjoint workStart 0 5 (by norm_num))
-        w (by simpa [pointAddX] using hxw) v
-        (by simpa [pointAddT3] using hv)
+    · exact (wireDisjoint_append_right_of hXT0 hXT3) w hxw v hv
     rcases List.mem_append.mp hrest with hyw | hrest
-    · exact (pointAddFieldAt_disjoint workStart 1 5 (by norm_num))
-        w (by simpa [pointAddY] using hyw) v
-        (by simpa [pointAddT3] using hv)
-    rcases List.mem_append.mp hrest with ht0w | hrest
-    · exact hT0T3 w ht0w v hv
-    rcases List.mem_append.mp hrest with ht1w | hrest
-    · exact hT1T3 w ht1w v hv
+    · exact (wireDisjoint_append_right_of hYT0 hYT3) w hyw v hv
     rcases List.mem_append.mp hrest with ht2w | hrest
-    · exact hT2T3 w ht2w v hv
-    rcases List.mem_append.mp hrest with haddw | hinvw
-    · exact (pointAddEngine_field_disjoint workStart
-        Secp256k1Instance.secpAddLayout.allWires
-        (pointAddT3 workStart) hT3) w haddw v hv
-    · exact (pointAddEngine_field_disjoint workStart
-        Engine.layout.allWires
-        (pointAddT3 workStart) hT3) w hinvw v hv
+    · exact (wireDisjoint_append_right_of hT2T0 hT2T3) w ht2w v hv
+    rcases List.mem_append.mp hrest with ht4w | haddw
+    · exact (wireDisjoint_append_right_of hT4T0 hT4T3) w ht4w v hv
+    · exact (wireDisjoint_append_right_of
+        (pointAddEngine_field_disjoint workStart
+          Secp256k1Instance.secpAddLayout.allWires
+          (pointAddT0 workStart) hT0)
+        (pointAddEngine_field_disjoint workStart
+          Secp256k1Instance.secpAddLayout.allWires
+          (pointAddT3 workStart) hT3)) w haddw v hv
+  have hupdatePreserves : ∀ w,
+      w ∉ pointAddT0 workStart ++ pointAddT3 workStart →
+      Classical.run update (Classical.run preparation st) w =
+        Classical.run preparation st w := by
+    intro w hw
+    have hw0 : w ∉ pointAddT0 workStart := fun h =>
+      hw (List.mem_append_left _ h)
+    have hw3 : w ∉ pointAddT3 workStart := fun h =>
+      hw (List.mem_append_right _ h)
+    rw [hpreparationRun, hupdateRun, hs.2 w hw3, hi.2 w hw0]
   have hstage1 := bennett_uncompute_after_local_update
-    preparation slope preparationSupport (pointAddT3 workStart) st
+    preparation update preparationSupport
+    (pointAddT0 workStart ++ pointAddT3 workStart) st
     hpreparationUses hpreparationFree hpreparationWellFormed
-    hpreparationT3 (by
-      intro w hw
-      rw [hpreparationRun]
-      exact hs.2 w hw)
+    hpreparationOut hupdatePreserves
   dsimp only at hstage1
   let stage1 := Classical.run
-    (preparation ++ slope ++ preparation.reverse) st
-  change (∀ w, w ∉ pointAddT3 workStart → stage1 w = st w) ∧
-    (∀ w ∈ pointAddT3 workStart,
-      stage1 w = Classical.run slope
+    (preparation ++ update ++ preparation.reverse) st
+  change (∀ w, w ∉ pointAddT0 workStart ++ pointAddT3 workStart →
+      stage1 w = st w) ∧
+    (∀ w ∈ pointAddT0 workStart ++ pointAddT3 workStart,
+      stage1 w = Classical.run update
         (Classical.run preparation st) w) at hstage1
   have hstage1T3 : regValue (pointAddT3 workStart) stage1 =
       (genericSlope xR yR xC yC).val := by
     calc
       regValue (pointAddT3 workStart) stage1 =
           regValue (pointAddT3 workStart)
-            (Classical.run slope (Classical.run preparation st)) := by
+            (Classical.run update (Classical.run preparation st)) := by
         apply regValue_congr
-        exact hstage1.2
+        intro w hw
+        exact hstage1.2 w (List.mem_append_right _ hw)
       _ = regValue (pointAddT3 workStart) afterSlope := by
-        rw [hpreparationRun]
+        rw [hpreparationRun, hupdateRun]
       _ = (genericSlope xR yR xC yC).val := hsVal
 
+  /- Stage 2: x₃ into t2, with λ² in t1 and λ²-x₁ in t4 uncomputed. -/
   let slopeSq := fieldMul
     (pointAddArithmeticOffset workStart)
     (pointAddT3 workStart) (pointAddT3 workStart)
-    (pointAddT0 workStart)
+    (pointAddT1 workStart)
   let afterSlopeSq := Classical.run slopeSq stage1
-  have hcleanT0Stage1 := clean_of_preserved_outside
-    hT0T3 hcleanT0 hstage1.1
+  have hcleanT1Stage1 := clean_of_preserved_outside
+    (wireDisjoint_append_right_of hT1T0 hT1T3) hcleanT1 hstage1.1
   have hcleanMulStage1 := clean_of_preserved_outside
-    (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT3 workStart) hT3)
+    (wireDisjoint_append_right_of
+      (pointAddEngine_field_disjoint workStart
+        Secp256k1Instance.secpMulLayout.allWires
+        (pointAddT0 workStart) hT0)
+      (pointAddEngine_field_disjoint workStart
+        Secp256k1Instance.secpMulLayout.allWires
+        (pointAddT3 workStart) hT3))
     hcleanMul hstage1.1
   have hss := fieldMul_correct workStart
     (pointAddT3 workStart) (pointAddT3 workStart)
-    (pointAddT0 workStart) hT3 hT3 hT0
+    (pointAddT1 workStart) hT3 hT3 hT1
     (by
-      simpa [pointAddT0, pointAddT3] using
-        pointAddFieldAt_ne workStart 2 5 (by norm_num))
+      simpa [pointAddT1, pointAddT3] using
+        pointAddFieldAt_ne workStart 3 5 (by norm_num))
     (by
-      simpa [pointAddT0, pointAddT3] using
-        pointAddFieldAt_ne workStart 2 5 (by norm_num))
-    stage1 hcleanT0Stage1 hcleanMulStage1
+      simpa [pointAddT1, pointAddT3] using
+        pointAddFieldAt_ne workStart 3 5 (by norm_num))
+    stage1 hcleanT1Stage1 hcleanMulStage1
     (by rw [hstage1T3]; exact (genericSlope xR yR xC yC).val_lt)
     (by rw [hstage1T3]; exact (genericSlope xR yR xC yC).val_lt)
   dsimp only at hss
-  change regValue (pointAddT0 workStart) afterSlopeSq =
+  change regValue (pointAddT1 workStart) afterSlopeSq =
       regValue (pointAddT3 workStart) stage1 *
         regValue (pointAddT3 workStart) stage1 % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT1 workStart →
       afterSlopeSq w = stage1 w at hss
-  have hssVal : regValue (pointAddT0 workStart) afterSlopeSq =
+  have hssVal : regValue (pointAddT1 workStart) afterSlopeSq =
       (genericSlope xR yR xC yC ^ 2).val := by
     calc
-      regValue (pointAddT0 workStart) afterSlopeSq =
+      regValue (pointAddT1 workStart) afterSlopeSq =
           (genericSlope xR yR xC yC).val *
             (genericSlope xR yR xC yC).val % p := by
         simpa [hstage1T3] using hss.1
@@ -9991,52 +10036,53 @@ private theorem genericPointCompute_correct
 
   let minusX := fieldSub
     (pointAddArithmeticOffset workStart)
-    (pointAddT0 workStart) (pointAddX workStart)
-    (pointAddT1 workStart)
+    (pointAddT1 workStart) (pointAddX workStart)
+    (pointAddT4 workStart)
   let afterMinusX := Classical.run minusX afterSlopeSq
-  have hcleanT1Stage1 := clean_of_preserved_outside
-    hT1T3 hcleanT1 hstage1.1
-  have hcleanT1SS := clean_of_preserved_outside
-    hT1T0 hcleanT1Stage1 hss.2
+  have hcleanT4Stage1 := clean_of_preserved_outside
+    (wireDisjoint_append_right_of hT4T0 hT4T3) hcleanT4 hstage1.1
+  have hcleanT4SS := clean_of_preserved_outside
+    hT4T1 hcleanT4Stage1 hss.2
   have hcleanAddStage1 := clean_of_preserved_outside
-    (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT3 workStart) hT3)
+    (wireDisjoint_append_right_of
+      (pointAddEngine_field_disjoint workStart
+        Secp256k1Instance.secpAddLayout.allWires
+        (pointAddT0 workStart) hT0)
+      (pointAddEngine_field_disjoint workStart
+        Secp256k1Instance.secpAddLayout.allWires
+        (pointAddT3 workStart) hT3))
     hcleanAdd hstage1.1
   have hcleanAddSS := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT1 workStart) hT1)
     hcleanAddStage1 hss.2
-  have hxT3 : ModExp.Schedule.WireDisjoint
-      (pointAddX workStart) (pointAddT3 workStart) := by
-    simpa [pointAddX, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 0 5 (by norm_num)
-  have hxStage1 := regValue_of_preserved_outside hxT3 hstage1.1
-  have hxSS := regValue_of_preserved_outside hXT0 hss.2
+  have hxStage1 := regValue_of_preserved_outside
+    (wireDisjoint_append_right_of hXT0 hXT3) hstage1.1
+  have hxSS := regValue_of_preserved_outside hXT1 hss.2
   have hmx := fieldSub_correct workStart
-    (pointAddT0 workStart) (pointAddX workStart)
-    (pointAddT1 workStart) hT0 hX hT1
+    (pointAddT1 workStart) (pointAddX workStart)
+    (pointAddT4 workStart) hT1 hX hT4
     (by
-      simpa [pointAddT1, pointAddT0] using
-        pointAddFieldAt_ne workStart 3 2 (by norm_num))
+      simpa [pointAddT4, pointAddT1] using
+        pointAddFieldAt_ne workStart 6 3 (by norm_num))
     (by
-      simpa [pointAddT1, pointAddX] using
-        pointAddFieldAt_ne workStart 3 0 (by norm_num))
-    afterSlopeSq hcleanT1SS
+      simpa [pointAddT4, pointAddX] using
+        pointAddFieldAt_ne workStart 6 0 (by norm_num))
+    afterSlopeSq hcleanT4SS
     (clean_fieldSubEngine_of_addEngine workStart afterSlopeSq hcleanAddSS)
     (by rw [hssVal]; exact (genericSlope xR yR xC yC ^ 2).val_lt)
     (by rw [hxSS, hxStage1, hxReg]; exact xR.val_lt)
   dsimp only at hmx
-  change regValue (pointAddT1 workStart) afterMinusX =
-      (regValue (pointAddT0 workStart) afterSlopeSq + p -
+  change regValue (pointAddT4 workStart) afterMinusX =
+      (regValue (pointAddT1 workStart) afterSlopeSq + p -
         regValue (pointAddX workStart) afterSlopeSq) % p ∧
-    ∀ w, w ∉ pointAddT1 workStart →
+    ∀ w, w ∉ pointAddT4 workStart →
       afterMinusX w = afterSlopeSq w at hmx
-  have hmxVal : regValue (pointAddT1 workStart) afterMinusX =
+  have hmxVal : regValue (pointAddT4 workStart) afterMinusX =
       (genericSlope xR yR xC yC ^ 2 - xR).val := by
     calc
-      regValue (pointAddT1 workStart) afterMinusX =
+      regValue (pointAddT4 workStart) afterMinusX =
           ((genericSlope xR yR xC yC ^ 2).val + p - xR.val) % p := by
         simpa [hssVal, hxSS, hxStage1, hxReg] using hmx.1
       _ = (genericSlope xR yR xC yC ^ 2 - xR).val :=
@@ -10044,24 +10090,24 @@ private theorem genericPointCompute_correct
 
   let xOut := fieldSubConst
     (pointAddArithmeticOffset workStart)
-    (pointAddT1 workStart) xC.val (pointAddT2 workStart)
+    (pointAddT4 workStart) xC.val (pointAddT2 workStart)
   let afterXOut := Classical.run xOut afterMinusX
   have hcleanT2Stage1 := clean_of_preserved_outside
-    hT2T3 hcleanT2 hstage1.1
+    (wireDisjoint_append_right_of hT2T0 hT2T3) hcleanT2 hstage1.1
   have hcleanT2SS := clean_of_preserved_outside
-    hT2T0 hcleanT2Stage1 hss.2
+    hT2T1 hcleanT2Stage1 hss.2
   have hcleanT2MX := clean_of_preserved_outside
-    hT2T1 hcleanT2SS hmx.2
+    hT2T4 hcleanT2SS hmx.2
   have hcleanAddMX := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT1 workStart) hT1)
+      (pointAddT4 workStart) hT4)
     hcleanAddSS hmx.2
   have hxo := fieldSubConst_correct workStart
-    (pointAddT1 workStart) (pointAddT2 workStart) xC.val
-    hT1 hT2 (by
-      simpa [pointAddT1, pointAddT2] using
-        pointAddFieldAt_ne workStart 4 3 (by norm_num))
+    (pointAddT4 workStart) (pointAddT2 workStart) xC.val
+    hT4 hT2 (by
+      simpa [pointAddT4, pointAddT2] using
+        pointAddFieldAt_ne workStart 4 6 (by norm_num))
     afterMinusX hcleanT2MX
     (clean_fieldSubEngine_of_addEngine workStart afterMinusX hcleanAddMX)
     (by rw [hmxVal]; exact
@@ -10069,7 +10115,7 @@ private theorem genericPointCompute_correct
     xC.val_lt
   dsimp only at hxo
   change regValue (pointAddT2 workStart) afterXOut =
-      (regValue (pointAddT1 workStart) afterMinusX + p - xC.val) % p ∧
+      (regValue (pointAddT4 workStart) afterMinusX + p - xC.val) % p ∧
     ∀ w, w ∉ pointAddT2 workStart →
       afterXOut w = afterMinusX w at hxo
   have hxoVal : regValue (pointAddT2 workStart) afterXOut =
@@ -10086,8 +10132,8 @@ private theorem genericPointCompute_correct
   let xPreparation := slopeSq ++ minusX
   let xPreparationSupport :=
     pointAddX workStart ++
-      (pointAddT0 workStart ++
-        (pointAddT1 workStart ++
+      (pointAddT1 workStart ++
+        (pointAddT4 workStart ++
           (pointAddT3 workStart ++
             (shiftWires (pointAddArithmeticOffset workStart)
                   Secp256k1Instance.secpAddLayout.allWires ++
@@ -10103,34 +10149,34 @@ private theorem genericPointCompute_correct
     · apply usesOnly_mono
         (fieldMul_usesOnly (pointAddArithmeticOffset workStart)
           (pointAddT3 workStart) (pointAddT3 workStart)
-          (pointAddT0 workStart))
+          (pointAddT1 workStart))
       intro w hw
       rcases List.mem_append.mp hw with hprefix | hmul
-      · rcases List.mem_append.mp hprefix with hpair | ht0w
+      · rcases List.mem_append.mp hprefix with hpair | ht1w
         · rcases List.mem_append.mp hpair with ht3w | ht3w
           · simp only [xPreparationSupport, List.mem_append]
             exact Or.inr (Or.inr (Or.inr (Or.inl ht3w)))
           · simp only [xPreparationSupport, List.mem_append]
             exact Or.inr (Or.inr (Or.inr (Or.inl ht3w)))
         · simp only [xPreparationSupport, List.mem_append]
-          exact Or.inr (Or.inl ht0w)
+          exact Or.inr (Or.inl ht1w)
       · simp only [xPreparationSupport, List.mem_append]
         exact Or.inr (Or.inr (Or.inr
           (Or.inr (Or.inr hmul))))
     · apply usesOnly_mono
         (fieldSub_usesOnly (pointAddArithmeticOffset workStart)
-          (pointAddT0 workStart) (pointAddX workStart)
-          (pointAddT1 workStart))
+          (pointAddT1 workStart) (pointAddX workStart)
+          (pointAddT4 workStart))
       intro w hw
       rcases List.mem_append.mp hw with hprefix | hadd
-      · rcases List.mem_append.mp hprefix with hpair | ht1w
-        · rcases List.mem_append.mp hpair with ht0w | hxw
+      · rcases List.mem_append.mp hprefix with hpair | ht4w
+        · rcases List.mem_append.mp hpair with ht1w | hxw
           · simp only [xPreparationSupport, List.mem_append]
-            exact Or.inr (Or.inl ht0w)
+            exact Or.inr (Or.inl ht1w)
           · simp only [xPreparationSupport, List.mem_append]
             exact Or.inl hxw
         · simp only [xPreparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inl ht1w))
+          exact Or.inr (Or.inr (Or.inl ht4w))
       · simp only [xPreparationSupport, List.mem_append]
         exact Or.inr (Or.inr (Or.inr
           (Or.inr (Or.inl hadd))))
@@ -10146,13 +10192,11 @@ private theorem genericPointCompute_correct
     intro w hw v hv
     dsimp only [xPreparationSupport] at hw
     rcases List.mem_append.mp hw with hxw | hrest
-    · exact (pointAddFieldAt_disjoint workStart 0 4 (by norm_num))
-        w (by simpa [pointAddX] using hxw) v
-        (by simpa [pointAddT2] using hv)
-    rcases List.mem_append.mp hrest with ht0w | hrest
-    · exact hT0T2 w ht0w v hv
+    · exact hXT2 w hxw v hv
     rcases List.mem_append.mp hrest with ht1w | hrest
     · exact hT1T2 w ht1w v hv
+    rcases List.mem_append.mp hrest with ht4w | hrest
+    · exact hT4T2 w ht4w v hv
     rcases List.mem_append.mp hrest with ht3w | hrest
     · exact hT3T2 w ht3w v hv
     rcases List.mem_append.mp hrest with haddw | hmulw
@@ -10189,13 +10233,14 @@ private theorem genericPointCompute_correct
         rw [hxPreparationRun]
       _ = (genericX xR yR xC yC).val := hxoVal
 
+  /- Stage 3: λ(x₁-x₃) into t1, with x₁-x₃ in t4 uncomputed. -/
   let xDifference := fieldSub
     (pointAddArithmeticOffset workStart)
     (pointAddX workStart) (pointAddT2 workStart)
-    (pointAddT0 workStart)
+    (pointAddT4 workStart)
   let afterXDifference := Classical.run xDifference stage2
-  have hcleanT0Stage2 := clean_of_preserved_outside
-    hT0T2 hcleanT0Stage1 hstage2.1
+  have hcleanT4Stage2 := clean_of_preserved_outside
+    hT4T2 hcleanT4Stage1 hstage2.1
   have hcleanAddStage2 := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
@@ -10204,40 +10249,41 @@ private theorem genericPointCompute_correct
   have hxStage2 := regValue_of_preserved_outside hXT2 hstage2.1
   have hxd := fieldSub_correct workStart
     (pointAddX workStart) (pointAddT2 workStart)
-    (pointAddT0 workStart) hX hT2 hT0
+    (pointAddT4 workStart) hX hT2 hT4
     (by
-      simpa [pointAddT0, pointAddX] using
-        pointAddFieldAt_ne workStart 2 0 (by norm_num))
+      simpa [pointAddT4, pointAddX] using
+        pointAddFieldAt_ne workStart 6 0 (by norm_num))
     (by
-      simpa [pointAddT0, pointAddT2] using
-        pointAddFieldAt_ne workStart 2 4 (by norm_num))
-    stage2 hcleanT0Stage2
+      simpa [pointAddT4, pointAddT2] using
+        pointAddFieldAt_ne workStart 6 4 (by norm_num))
+    stage2 hcleanT4Stage2
     (clean_fieldSubEngine_of_addEngine workStart stage2 hcleanAddStage2)
     (by rw [hxStage2, hxStage1, hxReg]; exact xR.val_lt)
     (by rw [hstage2T2]; exact (genericX xR yR xC yC).val_lt)
   dsimp only at hxd
-  change regValue (pointAddT0 workStart) afterXDifference =
+  change regValue (pointAddT4 workStart) afterXDifference =
       (regValue (pointAddX workStart) stage2 + p -
         regValue (pointAddT2 workStart) stage2) % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT4 workStart →
       afterXDifference w = stage2 w at hxd
-  have hxdVal : regValue (pointAddT0 workStart) afterXDifference =
+  have hxdVal : regValue (pointAddT4 workStart) afterXDifference =
       (xR - genericX xR yR xC yC).val := by
     calc
-      regValue (pointAddT0 workStart) afterXDifference =
+      regValue (pointAddT4 workStart) afterXDifference =
           (xR.val + p - (genericX xR yR xC yC).val) % p := by
         simpa [hxStage2, hxStage1, hxReg, hstage2T2] using hxd.1
-      _ = (xR - genericX xR yR xC yC).val := fieldSubVal _ _
+      _ = (xR - genericX xR yR xC yC).val :=
+        fieldSubVal _ _
 
   let yProduct := fieldMul
     (pointAddArithmeticOffset workStart)
-    (pointAddT3 workStart) (pointAddT0 workStart)
+    (pointAddT3 workStart) (pointAddT4 workStart)
     (pointAddT1 workStart)
   let afterYProduct := Classical.run yProduct afterXDifference
   have hcleanT1Stage2 := clean_of_preserved_outside
     hT1T2 hcleanT1Stage1 hstage2.1
   have hcleanT1XD := clean_of_preserved_outside
-    hT1T0 hcleanT1Stage2 hxd.2
+    hT1T4 hcleanT1Stage2 hxd.2
   have hcleanMulStage2 := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
@@ -10246,28 +10292,27 @@ private theorem genericPointCompute_correct
   have hcleanMulXD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT4 workStart) hT4)
     hcleanMulStage2 hxd.2
   have ht3Stage2 := regValue_of_preserved_outside hT3T2 hstage2.1
-  have ht3XD := regValue_of_preserved_outside hT3T0 hxd.2
+  have ht3XD := regValue_of_preserved_outside hT3T4 hxd.2
   have hyp := fieldMul_correct workStart
-    (pointAddT3 workStart) (pointAddT0 workStart)
-    (pointAddT1 workStart) hT3 hT0 hT1
+    (pointAddT3 workStart) (pointAddT4 workStart)
+    (pointAddT1 workStart) hT3 hT4 hT1
     (by
       simpa [pointAddT1, pointAddT3] using
         pointAddFieldAt_ne workStart 3 5 (by norm_num))
     (by
-      simpa [pointAddT1, pointAddT0] using
-        pointAddFieldAt_ne workStart 3 2 (by norm_num))
+      simpa [pointAddT1, pointAddT4] using
+        pointAddFieldAt_ne workStart 3 6 (by norm_num))
     afterXDifference hcleanT1XD hcleanMulXD
     (by rw [ht3XD, ht3Stage2, hstage1T3]; exact
       (genericSlope xR yR xC yC).val_lt)
-    (by rw [hxdVal]; exact
-      (xR - genericX xR yR xC yC).val_lt)
+    (by rw [hxdVal]; exact (xR - genericX xR yR xC yC).val_lt)
   dsimp only at hyp
   change regValue (pointAddT1 workStart) afterYProduct =
       regValue (pointAddT3 workStart) afterXDifference *
-        regValue (pointAddT0 workStart) afterXDifference % p ∧
+        regValue (pointAddT4 workStart) afterXDifference % p ∧
     ∀ w, w ∉ pointAddT1 workStart →
       afterYProduct w = afterXDifference w at hyp
   have hypVal : regValue (pointAddT1 workStart) afterYProduct =
@@ -10282,37 +10327,89 @@ private theorem genericPointCompute_correct
           (xR - genericX xR yR xC yC)).val := by
         rw [ZMod.val_mul]
 
+  let yPreparationSupport :=
+    pointAddX workStart ++
+      (pointAddT2 workStart ++
+        (pointAddT4 workStart ++
+          shiftWires (pointAddArithmeticOffset workStart)
+            Secp256k1Instance.secpAddLayout.allWires))
+  have hyPreparationUses :
+      CircuitUsesOnly yPreparationSupport xDifference := by
+    apply usesOnly_mono
+      (fieldSub_usesOnly (pointAddArithmeticOffset workStart)
+        (pointAddX workStart) (pointAddT2 workStart)
+        (pointAddT4 workStart))
+    intro w hw
+    rcases List.mem_append.mp hw with hprefix | hadd
+    · rcases List.mem_append.mp hprefix with hpair | ht4w
+      · rcases List.mem_append.mp hpair with hxw | ht2w
+        · simp only [yPreparationSupport, List.mem_append]
+          exact Or.inl hxw
+        · simp only [yPreparationSupport, List.mem_append]
+          exact Or.inr (Or.inl ht2w)
+      · simp only [yPreparationSupport, List.mem_append]
+        exact Or.inr (Or.inr (Or.inl ht4w))
+    · simp only [yPreparationSupport, List.mem_append]
+      exact Or.inr (Or.inr (Or.inr hadd))
+  have hyPreparationFree : Classical.HPFree xDifference := by
+    simp [xDifference, fieldSub_HPFree]
+  have hyPreparationWellFormed : CircuitWellFormed xDifference := by
+    simp [xDifference, fieldSub_wellFormed, IsPointAddFieldRegister]
+  have hyPreparationT1 : ModExp.Schedule.WireDisjoint
+      yPreparationSupport (pointAddT1 workStart) := by
+    intro w hw v hv
+    dsimp only [yPreparationSupport] at hw
+    rcases List.mem_append.mp hw with hxw | hrest
+    · exact hXT1 w hxw v hv
+    rcases List.mem_append.mp hrest with ht2w | hrest
+    · exact hT2T1 w ht2w v hv
+    rcases List.mem_append.mp hrest with ht4w | haddw
+    · exact hT4T1 w ht4w v hv
+    · exact (pointAddEngine_field_disjoint workStart
+        Secp256k1Instance.secpAddLayout.allWires
+        (pointAddT1 workStart) hT1) w haddw v hv
+  have hstage3 := bennett_uncompute_after_local_update
+    xDifference yProduct yPreparationSupport (pointAddT1 workStart)
+    stage2 hyPreparationUses hyPreparationFree
+    hyPreparationWellFormed hyPreparationT1 (by
+      intro w hw
+      exact hyp.2 w hw)
+  dsimp only at hstage3
+  let stage3 := Classical.run
+    (xDifference ++ yProduct ++ xDifference.reverse) stage2
+  change (∀ w, w ∉ pointAddT1 workStart → stage3 w = stage2 w) ∧
+    (∀ w ∈ pointAddT1 workStart,
+      stage3 w = Classical.run yProduct
+        (Classical.run xDifference stage2) w) at hstage3
+  have hstage3T1 : regValue (pointAddT1 workStart) stage3 =
+      (genericSlope xR yR xC yC *
+        (xR - genericX xR yR xC yC)).val := by
+    calc
+      regValue (pointAddT1 workStart) stage3 =
+          regValue (pointAddT1 workStart)
+            (Classical.run yProduct
+              (Classical.run xDifference stage2)) := by
+        apply regValue_congr
+        exact hstage3.2
+      _ = (genericSlope xR yR xC yC *
+          (xR - genericX xR yR xC yC)).val := hypVal
+
   let yOut := fieldSub
     (pointAddArithmeticOffset workStart)
     (pointAddT1 workStart) (pointAddY workStart)
     (pointAddT4 workStart)
-  let afterYOut := Classical.run yOut afterYProduct
-  have hcleanT4Stage1 := clean_of_preserved_outside
-    hT4T3 hcleanT4 hstage1.1
-  have hcleanT4Stage2 := clean_of_preserved_outside
-    hT4T2 hcleanT4Stage1 hstage2.1
-  have hcleanT4XD := clean_of_preserved_outside
-    hT4T0 hcleanT4Stage2 hxd.2
-  have hcleanT4YP := clean_of_preserved_outside
-    hT4T1 hcleanT4XD hyp.2
-  have hcleanAddXD := clean_of_preserved_outside
-    (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT0 workStart) hT0)
-    hcleanAddStage2 hxd.2
-  have hcleanAddYP := clean_of_preserved_outside
+  let afterYOut := Classical.run yOut stage3
+  have hcleanT4Stage3 := clean_of_preserved_outside
+    hT4T1 hcleanT4Stage2 hstage3.1
+  have hcleanAddStage3 := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
       (pointAddT1 workStart) hT1)
-    hcleanAddXD hyp.2
-  have hyT3 : ModExp.Schedule.WireDisjoint
-      (pointAddY workStart) (pointAddT3 workStart) := by
-    simpa [pointAddY, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 1 5 (by norm_num)
-  have hyStage1 := regValue_of_preserved_outside hyT3 hstage1.1
+    hcleanAddStage2 hstage3.1
+  have hyStage1 := regValue_of_preserved_outside
+    (wireDisjoint_append_right_of hYT0 hYT3) hstage1.1
   have hyStage2 := regValue_of_preserved_outside hYT2 hstage2.1
-  have hyXD := regValue_of_preserved_outside hYT0 hxd.2
-  have hyYP := regValue_of_preserved_outside hYT1 hyp.2
+  have hyStage3 := regValue_of_preserved_outside hYT1 hstage3.1
   have hyo := fieldSub_correct workStart
     (pointAddT1 workStart) (pointAddY workStart)
     (pointAddT4 workStart) hT1 hY hT4
@@ -10322,67 +10419,66 @@ private theorem genericPointCompute_correct
     (by
       simpa [pointAddT4, pointAddY] using
         pointAddFieldAt_ne workStart 6 1 (by norm_num))
-    afterYProduct hcleanT4YP
-    (clean_fieldSubEngine_of_addEngine workStart afterYProduct hcleanAddYP)
-    (by rw [hypVal]; exact
+    stage3 hcleanT4Stage3
+    (clean_fieldSubEngine_of_addEngine workStart stage3 hcleanAddStage3)
+    (by rw [hstage3T1]; exact
       (genericSlope xR yR xC yC *
         (xR - genericX xR yR xC yC)).val_lt)
-    (by rw [hyYP, hyXD, hyStage2, hyStage1, hyReg]; exact yR.val_lt)
+    (by rw [hyStage3, hyStage2, hyStage1, hyReg]; exact yR.val_lt)
   dsimp only at hyo
   change regValue (pointAddT4 workStart) afterYOut =
-      (regValue (pointAddT1 workStart) afterYProduct + p -
-        regValue (pointAddY workStart) afterYProduct) % p ∧
+      (regValue (pointAddT1 workStart) stage3 + p -
+        regValue (pointAddY workStart) stage3) % p ∧
     ∀ w, w ∉ pointAddT4 workStart →
-      afterYOut w = afterYProduct w at hyo
+      afterYOut w = stage3 w at hyo
   have hyoVal : regValue (pointAddT4 workStart) afterYOut =
       (genericY xR yR xC yC).val := by
     calc
       regValue (pointAddT4 workStart) afterYOut =
           ((genericSlope xR yR xC yC *
               (xR - genericX xR yR xC yC)).val + p - yR.val) % p := by
-        simpa [hypVal, hyYP, hyXD, hyStage2, hyStage1, hyReg] using hyo.1
+        simpa [hstage3T1, hyStage3, hyStage2, hyStage1, hyReg] using hyo.1
       _ = (genericSlope xR yR xC yC *
           (xR - genericX xR yR xC yC) - yR).val :=
         fieldSubVal _ _
       _ = (genericY xR yR xC yC).val := by
         rfl
-  have ht2XD := regValue_of_preserved_outside hT2T0 hxd.2
-  have ht2YP := regValue_of_preserved_outside hT2T1 hyp.2
+  have ht2Stage3 := regValue_of_preserved_outside hT2T1 hstage3.1
   have ht2YO := regValue_of_preserved_outside hT2T4 hyo.2
   have hfinalT2 : regValue (pointAddT2 workStart) afterYOut =
       (genericX xR yR xC yC).val := by
-    rw [ht2YO, ht2YP, ht2XD, hstage2T2]
+    rw [ht2YO, ht2Stage3, hstage2T2]
   have hcleanCandidateStage1 := clean_of_preserved_outside
-    (pointAddCandidate_field_disjoint workStart
-      (pointAddT3 workStart) hT3)
+    (wireDisjoint_append_right_of
+      (pointAddCandidate_field_disjoint workStart
+        (pointAddT0 workStart) hT0)
+      (pointAddCandidate_field_disjoint workStart
+        (pointAddT3 workStart) hT3))
     hcleanCandidate hstage1.1
   have hcleanCandidateStage2 := clean_of_preserved_outside
     (pointAddCandidate_field_disjoint workStart
       (pointAddT2 workStart) hT2)
     hcleanCandidateStage1 hstage2.1
-  have hcleanCandidateXD := clean_of_preserved_outside
-    (pointAddCandidate_field_disjoint workStart
-      (pointAddT0 workStart) hT0)
-    hcleanCandidateStage2 hxd.2
-  have hcleanCandidateYP := clean_of_preserved_outside
+  have hcleanCandidateStage3 := clean_of_preserved_outside
     (pointAddCandidate_field_disjoint workStart
       (pointAddT1 workStart) hT1)
-    hcleanCandidateXD hyp.2
+    hcleanCandidateStage2 hstage3.1
   have hcleanCandidateYO := clean_of_preserved_outside
     (pointAddCandidate_field_disjoint workStart
       (pointAddT4 workStart) hT4)
-    hcleanCandidateYP hyo.2
+    hcleanCandidateStage3 hyo.2
   have hgenericRun :
       Classical.run (genericPointCompute workStart xC yC) st = afterYOut := by
-    simp [genericPointCompute, preparation, xPreparation,
-      stage1, stage2, numerator, denominator, inverse, slope,
+    simp [genericPointCompute, preparation, update, xPreparation,
+      stage1, stage2, stage3, numerator, denominator, inverse, slope,
       slopeSq, minusX, xOut, xDifference, yProduct, yOut,
-      afterXDifference, afterYProduct, afterYOut, Classical.run_append,
+      afterYOut, Classical.run_append,
       List.reverse_append, List.append_assoc]
   dsimp only
   rw [hgenericRun]
   exact ⟨hfinalT2, hyoVal, hcleanCandidateYO⟩
 
+set_option linter.unusedVariables false in
 set_option maxRecDepth 10000 in
 set_option exponentiation.threshold 300 in
 private theorem doublePointCompute_correct
@@ -10420,110 +10516,106 @@ private theorem doublePointCompute_correct
   have hT4 : IsPointAddFieldRegister workStart
       (pointAddT4 workStart) := by
     simp [IsPointAddFieldRegister]
-  have hT0T1 : ModExp.Schedule.WireDisjoint
-      (pointAddT0 workStart) (pointAddT1 workStart) := by
-    simpa [pointAddT0, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 2 3 (by norm_num)
-  have hT0T2 : ModExp.Schedule.WireDisjoint
-      (pointAddT0 workStart) (pointAddT2 workStart) := by
-    simpa [pointAddT0, pointAddT2] using
-      pointAddFieldAt_disjoint workStart 2 4 (by norm_num)
-  have hT0T3 : ModExp.Schedule.WireDisjoint
-      (pointAddT0 workStart) (pointAddT3 workStart) := by
-    simpa [pointAddT0, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 2 5 (by norm_num)
-  have hT0T4 : ModExp.Schedule.WireDisjoint
-      (pointAddT0 workStart) (pointAddT4 workStart) := by
-    simpa [pointAddT0, pointAddT4] using
-      pointAddFieldAt_disjoint workStart 2 6 (by norm_num)
-  have hT1T0 : ModExp.Schedule.WireDisjoint
-      (pointAddT1 workStart) (pointAddT0 workStart) := by
-    simpa [pointAddT1, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 3 2 (by norm_num)
-  have hT1T2 : ModExp.Schedule.WireDisjoint
-      (pointAddT1 workStart) (pointAddT2 workStart) := by
-    simpa [pointAddT1, pointAddT2] using
-      pointAddFieldAt_disjoint workStart 3 4 (by norm_num)
-  have hT1T3 : ModExp.Schedule.WireDisjoint
-      (pointAddT1 workStart) (pointAddT3 workStart) := by
-    simpa [pointAddT1, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 3 5 (by norm_num)
-  have hT1T4 : ModExp.Schedule.WireDisjoint
-      (pointAddT1 workStart) (pointAddT4 workStart) := by
-    simpa [pointAddT1, pointAddT4] using
-      pointAddFieldAt_disjoint workStart 3 6 (by norm_num)
-  have hT2T0 : ModExp.Schedule.WireDisjoint
-      (pointAddT2 workStart) (pointAddT0 workStart) := by
-    simpa [pointAddT2, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 4 2 (by norm_num)
-  have hT2T1 : ModExp.Schedule.WireDisjoint
-      (pointAddT2 workStart) (pointAddT1 workStart) := by
-    simpa [pointAddT2, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 4 3 (by norm_num)
-  have hT2T3 : ModExp.Schedule.WireDisjoint
-      (pointAddT2 workStart) (pointAddT3 workStart) := by
-    simpa [pointAddT2, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 4 5 (by norm_num)
-  have hT2T4 : ModExp.Schedule.WireDisjoint
-      (pointAddT2 workStart) (pointAddT4 workStart) := by
-    simpa [pointAddT2, pointAddT4] using
-      pointAddFieldAt_disjoint workStart 4 6 (by norm_num)
-  have hT3T0 : ModExp.Schedule.WireDisjoint
-      (pointAddT3 workStart) (pointAddT0 workStart) := by
-    simpa [pointAddT3, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 5 2 (by norm_num)
-  have hT3T1 : ModExp.Schedule.WireDisjoint
-      (pointAddT3 workStart) (pointAddT1 workStart) := by
-    simpa [pointAddT3, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 5 3 (by norm_num)
-  have hT3T2 : ModExp.Schedule.WireDisjoint
-      (pointAddT3 workStart) (pointAddT2 workStart) := by
-    simpa [pointAddT3, pointAddT2] using
-      pointAddFieldAt_disjoint workStart 5 4 (by norm_num)
-  have hT4T0 : ModExp.Schedule.WireDisjoint
-      (pointAddT4 workStart) (pointAddT0 workStart) := by
-    simpa [pointAddT4, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 6 2 (by norm_num)
-  have hT4T1 : ModExp.Schedule.WireDisjoint
-      (pointAddT4 workStart) (pointAddT1 workStart) := by
-    simpa [pointAddT4, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 6 3 (by norm_num)
   have hT4T2 : ModExp.Schedule.WireDisjoint
       (pointAddT4 workStart) (pointAddT2 workStart) := by
     simpa [pointAddT4, pointAddT2] using
       pointAddFieldAt_disjoint workStart 6 4 (by norm_num)
-  have hT4T3 : ModExp.Schedule.WireDisjoint
-      (pointAddT4 workStart) (pointAddT3 workStart) := by
-    simpa [pointAddT4, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 6 5 (by norm_num)
-  have hXT0 : ModExp.Schedule.WireDisjoint
-      (pointAddX workStart) (pointAddT0 workStart) := by
-    simpa [pointAddX, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 0 2 (by norm_num)
-  have hXT1 : ModExp.Schedule.WireDisjoint
-      (pointAddX workStart) (pointAddT1 workStart) := by
-    simpa [pointAddX, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 0 3 (by norm_num)
-  have hXT2 : ModExp.Schedule.WireDisjoint
-      (pointAddX workStart) (pointAddT2 workStart) := by
-    simpa [pointAddX, pointAddT2] using
-      pointAddFieldAt_disjoint workStart 0 4 (by norm_num)
-  have hYT0 : ModExp.Schedule.WireDisjoint
-      (pointAddY workStart) (pointAddT0 workStart) := by
-    simpa [pointAddY, pointAddT0] using
-      pointAddFieldAt_disjoint workStart 1 2 (by norm_num)
-  have hYT1 : ModExp.Schedule.WireDisjoint
-      (pointAddY workStart) (pointAddT1 workStart) := by
-    simpa [pointAddY, pointAddT1] using
-      pointAddFieldAt_disjoint workStart 1 3 (by norm_num)
   have hYT2 : ModExp.Schedule.WireDisjoint
       (pointAddY workStart) (pointAddT2 workStart) := by
     simpa [pointAddY, pointAddT2] using
       pointAddFieldAt_disjoint workStart 1 4 (by norm_num)
-  have hYT4 : ModExp.Schedule.WireDisjoint
-      (pointAddY workStart) (pointAddT4 workStart) := by
-    simpa [pointAddY, pointAddT4] using
-      pointAddFieldAt_disjoint workStart 1 6 (by norm_num)
+  have hT0T2 : ModExp.Schedule.WireDisjoint
+      (pointAddT0 workStart) (pointAddT2 workStart) := by
+    simpa [pointAddT0, pointAddT2] using
+      pointAddFieldAt_disjoint workStart 2 4 (by norm_num)
+  have hT0T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT0 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT0, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 2 6 (by norm_num)
+  have hT3T2 : ModExp.Schedule.WireDisjoint
+      (pointAddT3 workStart) (pointAddT2 workStart) := by
+    simpa [pointAddT3, pointAddT2] using
+      pointAddFieldAt_disjoint workStart 5 4 (by norm_num)
+  have hT3T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT3 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT3, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 5 6 (by norm_num)
+  have hT3T0 : ModExp.Schedule.WireDisjoint
+      (pointAddT3 workStart) (pointAddT0 workStart) := by
+    simpa [pointAddT3, pointAddT0] using
+      pointAddFieldAt_disjoint workStart 5 2 (by norm_num)
+  have hT2T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT2 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT2, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 4 6 (by norm_num)
+  have hT2T0 : ModExp.Schedule.WireDisjoint
+      (pointAddT2 workStart) (pointAddT0 workStart) := by
+    simpa [pointAddT2, pointAddT0] using
+      pointAddFieldAt_disjoint workStart 4 2 (by norm_num)
+  have hXT0 : ModExp.Schedule.WireDisjoint
+      (pointAddX workStart) (pointAddT0 workStart) := by
+    simpa [pointAddX, pointAddT0] using
+      pointAddFieldAt_disjoint workStart 0 2 (by norm_num)
+  have hXT3 : ModExp.Schedule.WireDisjoint
+      (pointAddX workStart) (pointAddT3 workStart) := by
+    simpa [pointAddX, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 0 5 (by norm_num)
+  have hYT0 : ModExp.Schedule.WireDisjoint
+      (pointAddY workStart) (pointAddT0 workStart) := by
+    simpa [pointAddY, pointAddT0] using
+      pointAddFieldAt_disjoint workStart 1 2 (by norm_num)
+  have hYT3 : ModExp.Schedule.WireDisjoint
+      (pointAddY workStart) (pointAddT3 workStart) := by
+    simpa [pointAddY, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 1 5 (by norm_num)
+  have hT1T0 : ModExp.Schedule.WireDisjoint
+      (pointAddT1 workStart) (pointAddT0 workStart) := by
+    simpa [pointAddT1, pointAddT0] using
+      pointAddFieldAt_disjoint workStart 3 2 (by norm_num)
+  have hT1T3 : ModExp.Schedule.WireDisjoint
+      (pointAddT1 workStart) (pointAddT3 workStart) := by
+    simpa [pointAddT1, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 3 5 (by norm_num)
+  have hT2T3 : ModExp.Schedule.WireDisjoint
+      (pointAddT2 workStart) (pointAddT3 workStart) := by
+    simpa [pointAddT2, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 4 5 (by norm_num)
+  have hT4T0 : ModExp.Schedule.WireDisjoint
+      (pointAddT4 workStart) (pointAddT0 workStart) := by
+    simpa [pointAddT4, pointAddT0] using
+      pointAddFieldAt_disjoint workStart 6 2 (by norm_num)
+  have hT4T3 : ModExp.Schedule.WireDisjoint
+      (pointAddT4 workStart) (pointAddT3 workStart) := by
+    simpa [pointAddT4, pointAddT3] using
+      pointAddFieldAt_disjoint workStart 6 5 (by norm_num)
+  have hT4T1 : ModExp.Schedule.WireDisjoint
+      (pointAddT4 workStart) (pointAddT1 workStart) := by
+    simpa [pointAddT4, pointAddT1] using
+      pointAddFieldAt_disjoint workStart 6 3 (by norm_num)
+  have hXT1 : ModExp.Schedule.WireDisjoint
+      (pointAddX workStart) (pointAddT1 workStart) := by
+    simpa [pointAddX, pointAddT1] using
+      pointAddFieldAt_disjoint workStart 0 3 (by norm_num)
+  have hT1T4 : ModExp.Schedule.WireDisjoint
+      (pointAddT1 workStart) (pointAddT4 workStart) := by
+    simpa [pointAddT1, pointAddT4] using
+      pointAddFieldAt_disjoint workStart 3 6 (by norm_num)
+  have hT2T1 : ModExp.Schedule.WireDisjoint
+      (pointAddT2 workStart) (pointAddT1 workStart) := by
+    simpa [pointAddT2, pointAddT1] using
+      pointAddFieldAt_disjoint workStart 4 3 (by norm_num)
+  have hXT2 : ModExp.Schedule.WireDisjoint
+      (pointAddX workStart) (pointAddT2 workStart) := by
+    simpa [pointAddX, pointAddT2] using
+      pointAddFieldAt_disjoint workStart 0 4 (by norm_num)
+  have hT1T2 : ModExp.Schedule.WireDisjoint
+      (pointAddT1 workStart) (pointAddT2 workStart) := by
+    simpa [pointAddT1, pointAddT2] using
+      pointAddFieldAt_disjoint workStart 3 4 (by norm_num)
+  have hYT1 : ModExp.Schedule.WireDisjoint
+      (pointAddY workStart) (pointAddT1 workStart) := by
+    simpa [pointAddY, pointAddT1] using
+      pointAddFieldAt_disjoint workStart 1 3 (by norm_num)
   have hcleanT0 : Clean (pointAddT0 workStart) st := by
     intro w hw
     exact hclean w (by simp [pointAddBranchWork, hw])
@@ -10548,8 +10640,8 @@ private theorem doublePointCompute_correct
 
   let numerator := threeXSquared
     (pointAddArithmeticOffset workStart)
-    (pointAddX workStart) (pointAddT0 workStart)
-    (pointAddT1 workStart) (pointAddT2 workStart)
+    (pointAddX workStart) (pointAddT1 workStart)
+    (pointAddT4 workStart) (pointAddT2 workStart)
   let afterNumerator := Classical.run numerator st
   have hn := threeXSquared_correct workStart xR st hxReg hclean
   dsimp only at hn
@@ -10561,10 +10653,10 @@ private theorem doublePointCompute_correct
   let denominator := fieldAdd
     (pointAddArithmeticOffset workStart)
     (pointAddY workStart) (pointAddY workStart)
-    (pointAddT0 workStart)
+    (pointAddT4 workStart)
   let afterDenominator := Classical.run denominator afterNumerator
-  have hcleanT0N := clean_of_preserved_outside
-    hT0T2 hcleanT0 hn.2
+  have hcleanT4N := clean_of_preserved_outside
+    hT4T2 hcleanT4 hn.2
   have hcleanAddN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
@@ -10573,77 +10665,77 @@ private theorem doublePointCompute_correct
   have hyN := regValue_of_preserved_outside hYT2 hn.2
   have hd := fieldAdd_correct workStart
     (pointAddY workStart) (pointAddY workStart)
-    (pointAddT0 workStart) hY hY hT0
+    (pointAddT4 workStart) hY hY hT4
     (by
-      simpa [pointAddT0, pointAddY] using
-        pointAddFieldAt_ne workStart 2 1 (by norm_num))
+      simpa [pointAddT4, pointAddY] using
+        pointAddFieldAt_ne workStart 6 1 (by norm_num))
     (by
-      simpa [pointAddT0, pointAddY] using
-        pointAddFieldAt_ne workStart 2 1 (by norm_num))
-    afterNumerator hcleanT0N hcleanAddN
+      simpa [pointAddT4, pointAddY] using
+        pointAddFieldAt_ne workStart 6 1 (by norm_num))
+    afterNumerator hcleanT4N hcleanAddN
     (by rw [hyN, hyReg]; exact yR.val_lt)
     (by rw [hyN, hyReg]; exact yR.val_lt)
   dsimp only at hd
-  change regValue (pointAddT0 workStart) afterDenominator =
+  change regValue (pointAddT4 workStart) afterDenominator =
       (regValue (pointAddY workStart) afterNumerator +
         regValue (pointAddY workStart) afterNumerator) % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT4 workStart →
       afterDenominator w = afterNumerator w at hd
-  have hdVal : regValue (pointAddT0 workStart) afterDenominator =
+  have hdVal : regValue (pointAddT4 workStart) afterDenominator =
       (doubleDenominator yR).val := by
     rw [hd.1, hyN, hyReg, ← ZMod.val_add]
     simp [doubleDenominator, two_mul]
 
   let inverse := fieldInv
     (pointAddArithmeticOffset workStart)
-    (pointAddT0 workStart) (pointAddT1 workStart)
+    (pointAddT4 workStart) (pointAddT0 workStart)
   let afterInverse := Classical.run inverse afterDenominator
-  have hcleanT1N := clean_of_preserved_outside
-    hT1T2 hcleanT1 hn.2
-  have hcleanT1D := clean_of_preserved_outside
-    hT1T0 hcleanT1N hd.2
+  have hcleanT0N := clean_of_preserved_outside
+    hT0T2 hcleanT0 hn.2
+  have hcleanT0D := clean_of_preserved_outside
+    hT0T4 hcleanT0N hd.2
   have hcleanInvN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Engine.layout.allWires
+      Secp256k1Instance.secpLayout.allWires
       (pointAddT2 workStart) hT2)
     hcleanInv hn.2
   have hcleanInvD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
-      Engine.layout.allWires
-      (pointAddT0 workStart) hT0)
+      Secp256k1Instance.secpLayout.allWires
+      (pointAddT4 workStart) hT4)
     hcleanInvN hd.2
   have hdenNonzero :
-      ((regValue (pointAddT0 workStart) afterDenominator : Nat) : Fp) ≠ 0 := by
+      ((regValue (pointAddT4 workStart) afterDenominator : Nat) : Fp) ≠ 0 := by
     rw [hdVal, ZMod.natCast_zmod_val]
     exact doubleDenominator_ne_zero hy
   have hi := fieldInv_correct workStart
-    (pointAddT0 workStart) (pointAddT1 workStart)
-    hT0 hT1 (by
-      simpa [pointAddT0, pointAddT1] using
-        pointAddFieldAt_ne workStart 3 2 (by norm_num))
-    afterDenominator hcleanT1D hcleanInvD
+    (pointAddT4 workStart) (pointAddT0 workStart)
+    hT4 hT0 (by
+      simpa [pointAddT0, pointAddT4] using
+        pointAddFieldAt_ne workStart 2 6 (by norm_num))
+    afterDenominator hcleanT0D hcleanInvD
     (by rw [hdVal]; exact (doubleDenominator yR).val_lt)
     hdenNonzero
   dsimp only at hi
-  change regValue (pointAddT1 workStart) afterInverse =
-      (((regValue (pointAddT0 workStart) afterDenominator : Nat) : Fp)⁻¹).val ∧
-    ∀ w, w ∉ pointAddT1 workStart →
+  change regValue (pointAddT0 workStart) afterInverse =
+      (((regValue (pointAddT4 workStart) afterDenominator : Nat) : Fp)⁻¹).val ∧
+    ∀ w, w ∉ pointAddT0 workStart →
       afterInverse w = afterDenominator w at hi
-  have hiVal : regValue (pointAddT1 workStart) afterInverse =
+  have hiVal : regValue (pointAddT0 workStart) afterInverse =
       (doubleDenominator yR)⁻¹.val := by
     simpa [hdVal, ZMod.natCast_zmod_val] using hi.1
 
   let slope := fieldMul
     (pointAddArithmeticOffset workStart)
-    (pointAddT2 workStart) (pointAddT1 workStart)
+    (pointAddT2 workStart) (pointAddT0 workStart)
     (pointAddT3 workStart)
   let afterSlope := Classical.run slope afterInverse
   have hcleanT3N := clean_of_preserved_outside
     hT3T2 hcleanT3 hn.2
   have hcleanT3D := clean_of_preserved_outside
-    hT3T0 hcleanT3N hd.2
+    hT3T4 hcleanT3N hd.2
   have hcleanT3I := clean_of_preserved_outside
-    hT3T1 hcleanT3D hi.2
+    hT3T0 hcleanT3D hi.2
   have hcleanMulN := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
@@ -10652,34 +10744,34 @@ private theorem doublePointCompute_correct
   have hcleanMulD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT4 workStart) hT4)
     hcleanMulN hd.2
   have hcleanMulI := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT1 workStart) hT1)
+      (pointAddT0 workStart) hT0)
     hcleanMulD hi.2
-  have hnD := regValue_of_preserved_outside hT2T0 hd.2
-  have hnI := regValue_of_preserved_outside hT2T1 hi.2
+  have hnD := regValue_of_preserved_outside hT2T4 hd.2
+  have hnI := regValue_of_preserved_outside hT2T0 hi.2
   have ht2I : regValue (pointAddT2 workStart) afterInverse =
       (doubleNumerator xR).val := by
     rw [hnI, hnD, hn.1]
   have hs := fieldMul_correct workStart
-    (pointAddT2 workStart) (pointAddT1 workStart)
-    (pointAddT3 workStart) hT2 hT1 hT3
+    (pointAddT2 workStart) (pointAddT0 workStart)
+    (pointAddT3 workStart) hT2 hT0 hT3
     (by
       simpa [pointAddT3, pointAddT2] using
         pointAddFieldAt_ne workStart 5 4 (by norm_num))
     (by
-      simpa [pointAddT3, pointAddT1] using
-        pointAddFieldAt_ne workStart 5 3 (by norm_num))
+      simpa [pointAddT3, pointAddT0] using
+        pointAddFieldAt_ne workStart 5 2 (by norm_num))
     afterInverse hcleanT3I hcleanMulI
     (by rw [ht2I]; exact (doubleNumerator xR).val_lt)
     (by rw [hiVal]; exact (doubleDenominator yR)⁻¹.val_lt)
   dsimp only at hs
   change regValue (pointAddT3 workStart) afterSlope =
       regValue (pointAddT2 workStart) afterInverse *
-        regValue (pointAddT1 workStart) afterInverse % p ∧
+        regValue (pointAddT0 workStart) afterInverse % p ∧
     ∀ w, w ∉ pointAddT3 workStart →
       afterSlope w = afterInverse w at hs
   have hsVal : regValue (pointAddT3 workStart) afterSlope =
@@ -10695,181 +10787,178 @@ private theorem doublePointCompute_correct
       _ = (doubleSlope xR yR).val := by
         rfl
 
-  let preparation := numerator ++ denominator ++ inverse
+  /- Stage 1: the numerator and the denominator are uncomputed around the
+     local update that writes the inverse (t0) and the slope (t3). -/
+  let preparation := numerator ++ denominator
   let preparationSupport :=
     pointAddX workStart ++
       (pointAddY workStart ++
-        (pointAddT0 workStart ++
-          (pointAddT1 workStart ++
-            (pointAddT2 workStart ++
+        (pointAddT1 workStart ++
+          (pointAddT2 workStart ++
+            (pointAddT4 workStart ++
               (shiftWires (pointAddArithmeticOffset workStart)
                     Secp256k1Instance.secpAddLayout.allWires ++
-                (shiftWires (pointAddArithmeticOffset workStart)
-                      Secp256k1Instance.secpMulLayout.allWires ++
-                  shiftWires (pointAddArithmeticOffset workStart)
-                    Engine.layout.allWires))))))
+                shiftWires (pointAddArithmeticOffset workStart)
+                  Secp256k1Instance.secpMulLayout.allWires)))))
   have hpreparationRun :
-      Classical.run preparation st = afterInverse := by
-    simp [preparation, inverse, afterInverse, denominator,
-      afterDenominator, numerator, afterNumerator,
-      Classical.run_append]
+      Classical.run preparation st = afterDenominator := by
+    simp [preparation, denominator, afterDenominator, numerator,
+      afterNumerator, Classical.run_append]
   have hpreparationUses :
       CircuitUsesOnly preparationSupport preparation := by
     apply usesOnly_append
-    · apply usesOnly_append
-      · apply usesOnly_mono
-          (threeXSquared_usesOnly_exact
-            (pointAddArithmeticOffset workStart)
-            (pointAddX workStart) (pointAddT0 workStart)
-            (pointAddT1 workStart) (pointAddT2 workStart))
-        intro w hw
-        rcases List.mem_append.mp hw with hprefix | hmulw
-        · rcases List.mem_append.mp hprefix with hprefix | haddw
-          · rcases List.mem_append.mp hprefix with hprefix | ht2w
-            · rcases List.mem_append.mp hprefix with hprefix | ht1w
-              · rcases List.mem_append.mp hprefix with hxw | ht0w
-                · simp only [preparationSupport, List.mem_append]
-                  exact Or.inl hxw
-                · simp only [preparationSupport, List.mem_append]
-                  exact Or.inr (Or.inr (Or.inl ht0w))
-              · simp only [preparationSupport, List.mem_append]
-                exact Or.inr (Or.inr (Or.inr (Or.inl ht1w)))
-            · simp only [preparationSupport, List.mem_append]
-              exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ht2w))))
-          · simp only [preparationSupport, List.mem_append]
-            exact Or.inr (Or.inr (Or.inr (Or.inr
-              (Or.inr (Or.inl haddw)))))
-        · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr (Or.inr
-            (Or.inr (Or.inr (Or.inl hmulw))))))
-      · apply usesOnly_mono
-          (fieldAdd_usesOnly
-            (pointAddArithmeticOffset workStart)
-            (pointAddY workStart) (pointAddY workStart)
-            (pointAddT0 workStart))
-        intro w hw
-        rcases List.mem_append.mp hw with hprefix | haddw
-        · rcases List.mem_append.mp hprefix with hpair | ht0w
-          · rcases List.mem_append.mp hpair with hyw | hyw
-            · simp only [preparationSupport, List.mem_append]
-              exact Or.inr (Or.inl hyw)
-            · simp only [preparationSupport, List.mem_append]
-              exact Or.inr (Or.inl hyw)
-          · simp only [preparationSupport, List.mem_append]
-            exact Or.inr (Or.inr (Or.inl ht0w))
-        · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr (Or.inr
-            (Or.inr (Or.inl haddw)))))
     · apply usesOnly_mono
-        (fieldInv_usesOnly
+        (threeXSquared_usesOnly_exact
           (pointAddArithmeticOffset workStart)
-          (pointAddT0 workStart) (pointAddT1 workStart))
+          (pointAddX workStart) (pointAddT1 workStart)
+          (pointAddT4 workStart) (pointAddT2 workStart))
       intro w hw
-      rcases List.mem_append.mp hw with hpair | hinvw
-      · rcases List.mem_append.mp hpair with ht0w | ht1w
-        · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inl ht0w))
-        · simp only [preparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inr (Or.inl ht1w)))
-      · simp only [preparationSupport, List.mem_append]
-        exact Or.inr (Or.inr (Or.inr (Or.inr
-          (Or.inr (Or.inr (Or.inr hinvw))))))
+      simp only [preparationSupport, List.mem_append]
+      rcases List.mem_append.mp hw with hw | hmulw
+      · rcases List.mem_append.mp hw with hw | haddw
+        · rcases List.mem_append.mp hw with hw | ht2w
+          · rcases List.mem_append.mp hw with hw | ht4w
+            · rcases List.mem_append.mp hw with hxw | ht1w
+              · exact Or.inl hxw
+              · exact Or.inr (Or.inr (Or.inl ht1w))
+            · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ht4w))))
+          · exact Or.inr (Or.inr (Or.inr (Or.inl ht2w)))
+        · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl haddw)))))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (hmulw))))))
+    · apply usesOnly_mono
+        (fieldAdd_usesOnly
+          (pointAddArithmeticOffset workStart)
+          (pointAddY workStart) (pointAddY workStart)
+          (pointAddT4 workStart))
+      intro w hw
+      simp only [preparationSupport, List.mem_append]
+      rcases List.mem_append.mp hw with hw | haddw
+      · rcases List.mem_append.mp hw with hw | ht4w
+        · rcases List.mem_append.mp hw with hyw | hyw
+          · exact Or.inr (Or.inl hyw)
+          · exact Or.inr (Or.inl hyw)
+        · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ht4w))))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl haddw)))))
   have hpreparationFree : Classical.HPFree preparation := by
-    simp [preparation, numerator, denominator, inverse,
-      threeXSquared_HPFree, fieldAdd_HPFree, fieldInv_HPFree]
+    simp [preparation, numerator, denominator,
+      threeXSquared_HPFree, fieldAdd_HPFree]
   have hpreparationWellFormed : CircuitWellFormed preparation := by
-    simp [preparation, numerator, denominator, inverse,
+    simp [preparation, numerator, denominator,
       threeXSquared_wellFormed, fieldAdd_wellFormed,
-      fieldInv_wellFormed, IsPointAddFieldRegister]
-  have hpreparationT3 : ModExp.Schedule.WireDisjoint
-      preparationSupport (pointAddT3 workStart) := by
+      IsPointAddFieldRegister]
+  have hpreparationOut : ModExp.Schedule.WireDisjoint
+      preparationSupport
+      (pointAddT0 workStart ++ pointAddT3 workStart) := by
     intro w hw v hv
     dsimp only [preparationSupport] at hw
-    rcases List.mem_append.mp hw with hxw | hrest
-    · exact (pointAddFieldAt_disjoint workStart 0 5 (by norm_num))
-        w (by simpa [pointAddX] using hxw) v
-        (by simpa [pointAddT3] using hv)
-    rcases List.mem_append.mp hrest with hyw | hrest
-    · exact (pointAddFieldAt_disjoint workStart 1 5 (by norm_num))
-        w (by simpa [pointAddY] using hyw) v
-        (by simpa [pointAddT3] using hv)
-    rcases List.mem_append.mp hrest with ht0w | hrest
-    · exact hT0T3 w ht0w v hv
-    rcases List.mem_append.mp hrest with ht1w | hrest
-    · exact hT1T3 w ht1w v hv
-    rcases List.mem_append.mp hrest with ht2w | hrest
-    · exact hT2T3 w ht2w v hv
-    rcases List.mem_append.mp hrest with haddw | hrest
-    · exact (pointAddEngine_field_disjoint workStart
-        Secp256k1Instance.secpAddLayout.allWires
-        (pointAddT3 workStart) hT3) w haddw v hv
-    rcases List.mem_append.mp hrest with hmulw | hinvw
-    · exact (pointAddEngine_field_disjoint workStart
-        Secp256k1Instance.secpMulLayout.allWires
-        (pointAddT3 workStart) hT3) w hmulw v hv
-    · exact (pointAddEngine_field_disjoint workStart
-        Engine.layout.allWires
-        (pointAddT3 workStart) hT3) w hinvw v hv
+    rcases List.mem_append.mp hv with hv0 | hv3
+    · rcases List.mem_append.mp hw with hxw | hrest
+      · exact hXT0 w hxw v hv0
+      rcases List.mem_append.mp hrest with hyw | hrest
+      · exact hYT0 w hyw v hv0
+      rcases List.mem_append.mp hrest with ht1w | hrest
+      · exact hT1T0 w ht1w v hv0
+      rcases List.mem_append.mp hrest with ht2w | hrest
+      · exact hT2T0 w ht2w v hv0
+      rcases List.mem_append.mp hrest with ht4w | hrest
+      · exact hT4T0 w ht4w v hv0
+      rcases List.mem_append.mp hrest with haddw | hmulw
+      · exact (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpAddLayout.allWires
+      (pointAddT0 workStart) hT0) w haddw v hv0
+      · exact (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpMulLayout.allWires
+      (pointAddT0 workStart) hT0) w hmulw v hv0
+    · rcases List.mem_append.mp hw with hxw | hrest
+      · exact hXT3 w hxw v hv3
+      rcases List.mem_append.mp hrest with hyw | hrest
+      · exact hYT3 w hyw v hv3
+      rcases List.mem_append.mp hrest with ht1w | hrest
+      · exact hT1T3 w ht1w v hv3
+      rcases List.mem_append.mp hrest with ht2w | hrest
+      · exact hT2T3 w ht2w v hv3
+      rcases List.mem_append.mp hrest with ht4w | hrest
+      · exact hT4T3 w ht4w v hv3
+      rcases List.mem_append.mp hrest with haddw | hmulw
+      · exact (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpAddLayout.allWires
+      (pointAddT3 workStart) hT3) w haddw v hv3
+      · exact (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpMulLayout.allWires
+      (pointAddT3 workStart) hT3) w hmulw v hv3
   have hstage1 := bennett_uncompute_after_local_update
-    preparation slope preparationSupport (pointAddT3 workStart) st
+    preparation (inverse ++ slope) preparationSupport
+    (pointAddT0 workStart ++ pointAddT3 workStart) st
     hpreparationUses hpreparationFree hpreparationWellFormed
-    hpreparationT3 (by
+    hpreparationOut (by
       intro w hw
-      rw [hpreparationRun]
-      exact hs.2 w hw)
+      have hw0 : w ∉ pointAddT0 workStart :=
+        fun h => hw (List.mem_append_left _ h)
+      have hw3 : w ∉ pointAddT3 workStart :=
+        fun h => hw (List.mem_append_right _ h)
+      rw [hpreparationRun, Classical.run_append]
+      exact (hs.2 w hw3).trans (hi.2 w hw0))
   dsimp only at hstage1
   let stage1 := Classical.run
-    (preparation ++ slope ++ preparation.reverse) st
-  change (∀ w, w ∉ pointAddT3 workStart → stage1 w = st w) ∧
-    (∀ w ∈ pointAddT3 workStart,
-      stage1 w = Classical.run slope
+    (preparation ++ (inverse ++ slope) ++ preparation.reverse) st
+  change (∀ w, w ∉ pointAddT0 workStart ++ pointAddT3 workStart →
+      stage1 w = st w) ∧
+    (∀ w ∈ pointAddT0 workStart ++ pointAddT3 workStart,
+      stage1 w = Classical.run (inverse ++ slope)
         (Classical.run preparation st) w) at hstage1
   have hstage1T3 : regValue (pointAddT3 workStart) stage1 =
       (doubleSlope xR yR).val := by
     calc
       regValue (pointAddT3 workStart) stage1 =
           regValue (pointAddT3 workStart)
-            (Classical.run slope (Classical.run preparation st)) := by
+            (Classical.run (inverse ++ slope)
+              (Classical.run preparation st)) := by
         apply regValue_congr
-        exact hstage1.2
+        intro w hw
+        exact hstage1.2 w (List.mem_append_right _ hw)
       _ = regValue (pointAddT3 workStart) afterSlope := by
-        rw [hpreparationRun]
+        rw [hpreparationRun, Classical.run_append]
       _ = (doubleSlope xR yR).val := hsVal
 
+  /- Stage 2: x₃ = λ² - 2x₁ into t2, with t1 = λ² and t4 = 2x₁ uncomputed. -/
   let slopeSq := fieldMul
     (pointAddArithmeticOffset workStart)
     (pointAddT3 workStart) (pointAddT3 workStart)
-    (pointAddT0 workStart)
+    (pointAddT1 workStart)
   let afterSlopeSq := Classical.run slopeSq stage1
-  have hcleanT0Stage1 := clean_of_preserved_outside
-    hT0T3 hcleanT0 hstage1.1
+  have hcleanT1Stage1 := clean_of_preserved_outside
+    (wireDisjoint_append_right_of hT1T0 hT1T3) hcleanT1 hstage1.1
   have hcleanMulStage1 := clean_of_preserved_outside
-    (pointAddEngine_field_disjoint workStart
+    (wireDisjoint_append_right_of
+      (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT3 workStart) hT3)
+      (pointAddT0 workStart) hT0)
+      (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpMulLayout.allWires
+      (pointAddT3 workStart) hT3))
     hcleanMul hstage1.1
   have hss := fieldMul_correct workStart
     (pointAddT3 workStart) (pointAddT3 workStart)
-    (pointAddT0 workStart) hT3 hT3 hT0
+    (pointAddT1 workStart) hT3 hT3 hT1
     (by
-      simpa [pointAddT0, pointAddT3] using
-        pointAddFieldAt_ne workStart 2 5 (by norm_num))
+      simpa [pointAddT1, pointAddT3] using
+        pointAddFieldAt_ne workStart 3 5 (by norm_num))
     (by
-      simpa [pointAddT0, pointAddT3] using
-        pointAddFieldAt_ne workStart 2 5 (by norm_num))
-    stage1 hcleanT0Stage1 hcleanMulStage1
+      simpa [pointAddT1, pointAddT3] using
+        pointAddFieldAt_ne workStart 3 5 (by norm_num))
+    stage1 hcleanT1Stage1 hcleanMulStage1
     (by rw [hstage1T3]; exact (doubleSlope xR yR).val_lt)
     (by rw [hstage1T3]; exact (doubleSlope xR yR).val_lt)
   dsimp only at hss
-  change regValue (pointAddT0 workStart) afterSlopeSq =
+  change regValue (pointAddT1 workStart) afterSlopeSq =
       regValue (pointAddT3 workStart) stage1 *
         regValue (pointAddT3 workStart) stage1 % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT1 workStart →
       afterSlopeSq w = stage1 w at hss
-  have hssVal : regValue (pointAddT0 workStart) afterSlopeSq =
+  have hssVal : regValue (pointAddT1 workStart) afterSlopeSq =
       (doubleSlope xR yR ^ 2).val := by
     calc
-      regValue (pointAddT0 workStart) afterSlopeSq =
+      regValue (pointAddT1 workStart) afterSlopeSq =
           (doubleSlope xR yR).val *
             (doubleSlope xR yR).val % p := by
         simpa [hstage1T3] using hss.1
@@ -10881,84 +10970,85 @@ private theorem doublePointCompute_correct
   let twoX := fieldAdd
     (pointAddArithmeticOffset workStart)
     (pointAddX workStart) (pointAddX workStart)
-    (pointAddT1 workStart)
+    (pointAddT4 workStart)
   let afterTwoX := Classical.run twoX afterSlopeSq
-  have hcleanT1Stage1 := clean_of_preserved_outside
-    hT1T3 hcleanT1 hstage1.1
-  have hcleanT1SS := clean_of_preserved_outside
-    hT1T0 hcleanT1Stage1 hss.2
+  have hcleanT4Stage1 := clean_of_preserved_outside
+    (wireDisjoint_append_right_of hT4T0 hT4T3) hcleanT4 hstage1.1
+  have hcleanT4SS := clean_of_preserved_outside
+    hT4T1 hcleanT4Stage1 hss.2
   have hcleanAddStage1 := clean_of_preserved_outside
-    (pointAddEngine_field_disjoint workStart
+    (wireDisjoint_append_right_of
+      (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT3 workStart) hT3)
+      (pointAddT0 workStart) hT0)
+      (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpAddLayout.allWires
+      (pointAddT3 workStart) hT3))
     hcleanAdd hstage1.1
   have hcleanAddSS := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT1 workStart) hT1)
     hcleanAddStage1 hss.2
-  have hxT3 : ModExp.Schedule.WireDisjoint
-      (pointAddX workStart) (pointAddT3 workStart) := by
-    simpa [pointAddX, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 0 5 (by norm_num)
-  have hxStage1 := regValue_of_preserved_outside hxT3 hstage1.1
-  have hxSS := regValue_of_preserved_outside hXT0 hss.2
+  have hxStage1 := regValue_of_preserved_outside
+    (wireDisjoint_append_right_of hXT0 hXT3) hstage1.1
+  have hxSS := regValue_of_preserved_outside hXT1 hss.2
   have htx := fieldAdd_correct workStart
     (pointAddX workStart) (pointAddX workStart)
-    (pointAddT1 workStart) hX hX hT1
+    (pointAddT4 workStart) hX hX hT4
     (by
-      simpa [pointAddT1, pointAddX] using
-        pointAddFieldAt_ne workStart 3 0 (by norm_num))
+      simpa [pointAddT4, pointAddX] using
+        pointAddFieldAt_ne workStart 6 0 (by norm_num))
     (by
-      simpa [pointAddT1, pointAddX] using
-        pointAddFieldAt_ne workStart 3 0 (by norm_num))
-    afterSlopeSq hcleanT1SS hcleanAddSS
+      simpa [pointAddT4, pointAddX] using
+        pointAddFieldAt_ne workStart 6 0 (by norm_num))
+    afterSlopeSq hcleanT4SS hcleanAddSS
     (by rw [hxSS, hxStage1, hxReg]; exact xR.val_lt)
     (by rw [hxSS, hxStage1, hxReg]; exact xR.val_lt)
   dsimp only at htx
-  change regValue (pointAddT1 workStart) afterTwoX =
+  change regValue (pointAddT4 workStart) afterTwoX =
       (regValue (pointAddX workStart) afterSlopeSq +
         regValue (pointAddX workStart) afterSlopeSq) % p ∧
-    ∀ w, w ∉ pointAddT1 workStart →
+    ∀ w, w ∉ pointAddT4 workStart →
       afterTwoX w = afterSlopeSq w at htx
-  have htxVal : regValue (pointAddT1 workStart) afterTwoX =
+  have htxVal : regValue (pointAddT4 workStart) afterTwoX =
       (2 * xR).val := by
     rw [htx.1, hxSS, hxStage1, hxReg, ← ZMod.val_add, two_mul]
-  have ht0TX := regValue_of_preserved_outside hT0T1 htx.2
+  have ht1TX := regValue_of_preserved_outside hT1T4 htx.2
 
   let xOut := fieldSub
     (pointAddArithmeticOffset workStart)
-    (pointAddT0 workStart) (pointAddT1 workStart)
+    (pointAddT1 workStart) (pointAddT4 workStart)
     (pointAddT2 workStart)
   let afterXOut := Classical.run xOut afterTwoX
   have hcleanT2Stage1 := clean_of_preserved_outside
-    hT2T3 hcleanT2 hstage1.1
+    (wireDisjoint_append_right_of hT2T0 hT2T3) hcleanT2 hstage1.1
   have hcleanT2SS := clean_of_preserved_outside
-    hT2T0 hcleanT2Stage1 hss.2
+    hT2T1 hcleanT2Stage1 hss.2
   have hcleanT2TX := clean_of_preserved_outside
-    hT2T1 hcleanT2SS htx.2
+    hT2T4 hcleanT2SS htx.2
   have hcleanAddTX := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT1 workStart) hT1)
+      (pointAddT4 workStart) hT4)
     hcleanAddSS htx.2
   have hxo := fieldSub_correct workStart
-    (pointAddT0 workStart) (pointAddT1 workStart)
-    (pointAddT2 workStart) hT0 hT1 hT2
-    (by
-      simpa [pointAddT2, pointAddT0] using
-        pointAddFieldAt_ne workStart 4 2 (by norm_num))
+    (pointAddT1 workStart) (pointAddT4 workStart)
+    (pointAddT2 workStart) hT1 hT4 hT2
     (by
       simpa [pointAddT2, pointAddT1] using
         pointAddFieldAt_ne workStart 4 3 (by norm_num))
+    (by
+      simpa [pointAddT2, pointAddT4] using
+        pointAddFieldAt_ne workStart 4 6 (by norm_num))
     afterTwoX hcleanT2TX
     (clean_fieldSubEngine_of_addEngine workStart afterTwoX hcleanAddTX)
-    (by rw [ht0TX, hssVal]; exact (doubleSlope xR yR ^ 2).val_lt)
+    (by rw [ht1TX, hssVal]; exact (doubleSlope xR yR ^ 2).val_lt)
     (by rw [htxVal]; exact (2 * xR).val_lt)
   dsimp only at hxo
   change regValue (pointAddT2 workStart) afterXOut =
-      (regValue (pointAddT0 workStart) afterTwoX + p -
-        regValue (pointAddT1 workStart) afterTwoX) % p ∧
+      (regValue (pointAddT1 workStart) afterTwoX + p -
+        regValue (pointAddT4 workStart) afterTwoX) % p ∧
     ∀ w, w ∉ pointAddT2 workStart →
       afterXOut w = afterTwoX w at hxo
   have hxoVal : regValue (pointAddT2 workStart) afterXOut =
@@ -10967,7 +11057,7 @@ private theorem doublePointCompute_correct
       regValue (pointAddT2 workStart) afterXOut =
           ((doubleSlope xR yR ^ 2).val + p -
             (2 * xR).val) % p := by
-        simpa [ht0TX, hssVal, htxVal] using hxo.1
+        simpa [ht1TX, hssVal, htxVal] using hxo.1
       _ = (doubleSlope xR yR ^ 2 - 2 * xR).val :=
         fieldSubVal _ _
       _ = (doubleX xR yR).val := by
@@ -10976,9 +11066,9 @@ private theorem doublePointCompute_correct
   let xPreparation := slopeSq ++ twoX
   let xPreparationSupport :=
     pointAddX workStart ++
-      (pointAddT0 workStart ++
-        (pointAddT1 workStart ++
-          (pointAddT3 workStart ++
+      (pointAddT1 workStart ++
+        (pointAddT3 workStart ++
+          (pointAddT4 workStart ++
             (shiftWires (pointAddArithmeticOffset workStart)
                   Secp256k1Instance.secpAddLayout.allWires ++
               shiftWires (pointAddArithmeticOffset workStart)
@@ -10993,37 +11083,29 @@ private theorem doublePointCompute_correct
     · apply usesOnly_mono
         (fieldMul_usesOnly (pointAddArithmeticOffset workStart)
           (pointAddT3 workStart) (pointAddT3 workStart)
-          (pointAddT0 workStart))
+          (pointAddT1 workStart))
       intro w hw
-      rcases List.mem_append.mp hw with hprefix | hmul
-      · rcases List.mem_append.mp hprefix with hpair | ht0w
-        · rcases List.mem_append.mp hpair with ht3w | ht3w
-          · simp only [xPreparationSupport, List.mem_append]
-            exact Or.inr (Or.inr (Or.inr (Or.inl ht3w)))
-          · simp only [xPreparationSupport, List.mem_append]
-            exact Or.inr (Or.inr (Or.inr (Or.inl ht3w)))
-        · simp only [xPreparationSupport, List.mem_append]
-          exact Or.inr (Or.inl ht0w)
-      · simp only [xPreparationSupport, List.mem_append]
-        exact Or.inr (Or.inr (Or.inr
-          (Or.inr (Or.inr hmul))))
+      simp only [xPreparationSupport, List.mem_append]
+      rcases List.mem_append.mp hw with hw | hmulw
+      · rcases List.mem_append.mp hw with hw | ht1w
+        · rcases List.mem_append.mp hw with ht3w | ht3w
+          · exact Or.inr (Or.inr (Or.inl ht3w))
+          · exact Or.inr (Or.inr (Or.inl ht3w))
+        · exact Or.inr (Or.inl ht1w)
+      · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (hmulw)))))
     · apply usesOnly_mono
         (fieldAdd_usesOnly (pointAddArithmeticOffset workStart)
           (pointAddX workStart) (pointAddX workStart)
-          (pointAddT1 workStart))
+          (pointAddT4 workStart))
       intro w hw
-      rcases List.mem_append.mp hw with hprefix | hadd
-      · rcases List.mem_append.mp hprefix with hpair | ht1w
-        · rcases List.mem_append.mp hpair with hxw | hxw
-          · simp only [xPreparationSupport, List.mem_append]
-            exact Or.inl hxw
-          · simp only [xPreparationSupport, List.mem_append]
-            exact Or.inl hxw
-        · simp only [xPreparationSupport, List.mem_append]
-          exact Or.inr (Or.inr (Or.inl ht1w))
-      · simp only [xPreparationSupport, List.mem_append]
-        exact Or.inr (Or.inr (Or.inr
-          (Or.inr (Or.inl hadd))))
+      simp only [xPreparationSupport, List.mem_append]
+      rcases List.mem_append.mp hw with hw | haddw
+      · rcases List.mem_append.mp hw with hw | ht4w
+        · rcases List.mem_append.mp hw with hxw | hxw
+          · exact Or.inl hxw
+          · exact Or.inl hxw
+        · exact Or.inr (Or.inr (Or.inr (Or.inl ht4w)))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl haddw))))
   have hxPreparationFree : Classical.HPFree xPreparation := by
     simp [xPreparation, slopeSq, twoX,
       fieldMul_HPFree, fieldAdd_HPFree]
@@ -11037,19 +11119,19 @@ private theorem doublePointCompute_correct
     dsimp only [xPreparationSupport] at hw
     rcases List.mem_append.mp hw with hxw | hrest
     · exact hXT2 w hxw v hv
-    rcases List.mem_append.mp hrest with ht0w | hrest
-    · exact hT0T2 w ht0w v hv
     rcases List.mem_append.mp hrest with ht1w | hrest
     · exact hT1T2 w ht1w v hv
     rcases List.mem_append.mp hrest with ht3w | hrest
     · exact hT3T2 w ht3w v hv
+    rcases List.mem_append.mp hrest with ht4w | hrest
+    · exact hT4T2 w ht4w v hv
     rcases List.mem_append.mp hrest with haddw | hmulw
     · exact (pointAddEngine_field_disjoint workStart
-        Secp256k1Instance.secpAddLayout.allWires
-        (pointAddT2 workStart) hT2) w haddw v hv
+      Secp256k1Instance.secpAddLayout.allWires
+      (pointAddT2 workStart) hT2) w haddw v hv
     · exact (pointAddEngine_field_disjoint workStart
-        Secp256k1Instance.secpMulLayout.allWires
-        (pointAddT2 workStart) hT2) w hmulw v hv
+      Secp256k1Instance.secpMulLayout.allWires
+      (pointAddT2 workStart) hT2) w hmulw v hv
   have hstage2 := bennett_uncompute_after_local_update
     xPreparation xOut xPreparationSupport (pointAddT2 workStart)
     stage1 hxPreparationUses hxPreparationFree
@@ -11077,13 +11159,14 @@ private theorem doublePointCompute_correct
         rw [hxPreparationRun]
       _ = (doubleX xR yR).val := hxoVal
 
+  /- Stage 3: λ(x₁-x₃) into t1, with t4 = x₁ - x₃ uncomputed. -/
   let xDifference := fieldSub
     (pointAddArithmeticOffset workStart)
     (pointAddX workStart) (pointAddT2 workStart)
-    (pointAddT0 workStart)
+    (pointAddT4 workStart)
   let afterXDifference := Classical.run xDifference stage2
-  have hcleanT0Stage2 := clean_of_preserved_outside
-    hT0T2 hcleanT0Stage1 hstage2.1
+  have hcleanT4Stage2 := clean_of_preserved_outside
+    hT4T2 hcleanT4Stage1 hstage2.1
   have hcleanAddStage2 := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
@@ -11092,40 +11175,40 @@ private theorem doublePointCompute_correct
   have hxStage2 := regValue_of_preserved_outside hXT2 hstage2.1
   have hxd := fieldSub_correct workStart
     (pointAddX workStart) (pointAddT2 workStart)
-    (pointAddT0 workStart) hX hT2 hT0
+    (pointAddT4 workStart) hX hT2 hT4
     (by
-      simpa [pointAddT0, pointAddX] using
-        pointAddFieldAt_ne workStart 2 0 (by norm_num))
+      simpa [pointAddT4, pointAddX] using
+        pointAddFieldAt_ne workStart 6 0 (by norm_num))
     (by
-      simpa [pointAddT0, pointAddT2] using
-        pointAddFieldAt_ne workStart 2 4 (by norm_num))
-    stage2 hcleanT0Stage2
+      simpa [pointAddT4, pointAddT2] using
+        pointAddFieldAt_ne workStart 6 4 (by norm_num))
+    stage2 hcleanT4Stage2
     (clean_fieldSubEngine_of_addEngine workStart stage2 hcleanAddStage2)
     (by rw [hxStage2, hxStage1, hxReg]; exact xR.val_lt)
     (by rw [hstage2T2]; exact (doubleX xR yR).val_lt)
   dsimp only at hxd
-  change regValue (pointAddT0 workStart) afterXDifference =
+  change regValue (pointAddT4 workStart) afterXDifference =
       (regValue (pointAddX workStart) stage2 + p -
         regValue (pointAddT2 workStart) stage2) % p ∧
-    ∀ w, w ∉ pointAddT0 workStart →
+    ∀ w, w ∉ pointAddT4 workStart →
       afterXDifference w = stage2 w at hxd
-  have hxdVal : regValue (pointAddT0 workStart) afterXDifference =
+  have hxdVal : regValue (pointAddT4 workStart) afterXDifference =
       (xR - doubleX xR yR).val := by
     calc
-      regValue (pointAddT0 workStart) afterXDifference =
+      regValue (pointAddT4 workStart) afterXDifference =
           (xR.val + p - (doubleX xR yR).val) % p := by
         simpa [hxStage2, hxStage1, hxReg, hstage2T2] using hxd.1
       _ = (xR - doubleX xR yR).val := fieldSubVal _ _
 
   let yProduct := fieldMul
     (pointAddArithmeticOffset workStart)
-    (pointAddT3 workStart) (pointAddT0 workStart)
+    (pointAddT3 workStart) (pointAddT4 workStart)
     (pointAddT1 workStart)
   let afterYProduct := Classical.run yProduct afterXDifference
   have hcleanT1Stage2 := clean_of_preserved_outside
     hT1T2 hcleanT1Stage1 hstage2.1
   have hcleanT1XD := clean_of_preserved_outside
-    hT1T0 hcleanT1Stage2 hxd.2
+    hT1T4 hcleanT1Stage2 hxd.2
   have hcleanMulStage2 := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
@@ -11134,19 +11217,19 @@ private theorem doublePointCompute_correct
   have hcleanMulXD := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpMulLayout.allWires
-      (pointAddT0 workStart) hT0)
+      (pointAddT4 workStart) hT4)
     hcleanMulStage2 hxd.2
   have ht3Stage2 := regValue_of_preserved_outside hT3T2 hstage2.1
-  have ht3XD := regValue_of_preserved_outside hT3T0 hxd.2
+  have ht3XD := regValue_of_preserved_outside hT3T4 hxd.2
   have hyp := fieldMul_correct workStart
-    (pointAddT3 workStart) (pointAddT0 workStart)
-    (pointAddT1 workStart) hT3 hT0 hT1
+    (pointAddT3 workStart) (pointAddT4 workStart)
+    (pointAddT1 workStart) hT3 hT4 hT1
     (by
       simpa [pointAddT1, pointAddT3] using
         pointAddFieldAt_ne workStart 3 5 (by norm_num))
     (by
-      simpa [pointAddT1, pointAddT0] using
-        pointAddFieldAt_ne workStart 3 2 (by norm_num))
+      simpa [pointAddT1, pointAddT4] using
+        pointAddFieldAt_ne workStart 3 6 (by norm_num))
     afterXDifference hcleanT1XD hcleanMulXD
     (by rw [ht3XD, ht3Stage2, hstage1T3]; exact
       (doubleSlope xR yR).val_lt)
@@ -11154,7 +11237,7 @@ private theorem doublePointCompute_correct
   dsimp only at hyp
   change regValue (pointAddT1 workStart) afterYProduct =
       regValue (pointAddT3 workStart) afterXDifference *
-        regValue (pointAddT0 workStart) afterXDifference % p ∧
+        regValue (pointAddT4 workStart) afterXDifference % p ∧
     ∀ w, w ∉ pointAddT1 workStart →
       afterYProduct w = afterXDifference w at hyp
   have hypVal : regValue (pointAddT1 workStart) afterYProduct =
@@ -11168,37 +11251,69 @@ private theorem doublePointCompute_correct
           (xR - doubleX xR yR)).val := by
         rw [ZMod.val_mul]
 
+  have hxDifferenceT1 : ModExp.Schedule.WireDisjoint
+      (pointAddX workStart ++ pointAddT2 workStart ++ pointAddT4 workStart ++
+        shiftWires (pointAddArithmeticOffset workStart)
+          Secp256k1Instance.secpAddLayout.allWires)
+      (pointAddT1 workStart) := by
+    intro w hw v hv
+    rcases List.mem_append.mp hw with hrest | haddw
+    · rcases List.mem_append.mp hrest with hrest | ht4w
+      · rcases List.mem_append.mp hrest with hxw | ht2w
+        · exact hXT1 w hxw v hv
+        · exact hT2T1 w ht2w v hv
+      · exact hT4T1 w ht4w v hv
+    · exact (pointAddEngine_field_disjoint workStart
+      Secp256k1Instance.secpAddLayout.allWires
+      (pointAddT1 workStart) hT1) w haddw v hv
+  have hstage3 := bennett_uncompute_after_local_update
+    xDifference yProduct
+    (pointAddX workStart ++ pointAddT2 workStart ++ pointAddT4 workStart ++
+      shiftWires (pointAddArithmeticOffset workStart)
+        Secp256k1Instance.secpAddLayout.allWires)
+    (pointAddT1 workStart) stage2
+    (fieldSub_usesOnly (pointAddArithmeticOffset workStart)
+      (pointAddX workStart) (pointAddT2 workStart) (pointAddT4 workStart))
+    (by simp [xDifference, fieldSub_HPFree])
+    (by simp [xDifference, fieldSub_wellFormed, IsPointAddFieldRegister])
+    hxDifferenceT1 (by
+      intro w hw
+      exact hyp.2 w hw)
+  dsimp only at hstage3
+  let stage3 := Classical.run
+    (xDifference ++ yProduct ++ xDifference.reverse) stage2
+  change (∀ w, w ∉ pointAddT1 workStart → stage3 w = stage2 w) ∧
+    (∀ w ∈ pointAddT1 workStart,
+      stage3 w = Classical.run yProduct
+        (Classical.run xDifference stage2) w) at hstage3
+  have hstage3T1 : regValue (pointAddT1 workStart) stage3 =
+      (doubleSlope xR yR * (xR - doubleX xR yR)).val := by
+    calc
+      regValue (pointAddT1 workStart) stage3 =
+          regValue (pointAddT1 workStart)
+            (Classical.run yProduct
+              (Classical.run xDifference stage2)) := by
+        apply regValue_congr
+        exact hstage3.2
+      _ = (doubleSlope xR yR * (xR - doubleX xR yR)).val := hypVal
+
+  /- Final step: y₃ = λ(x₁-x₃) - y₁ into the now clean t4. -/
   let yOut := fieldSub
     (pointAddArithmeticOffset workStart)
     (pointAddT1 workStart) (pointAddY workStart)
     (pointAddT4 workStart)
-  let afterYOut := Classical.run yOut afterYProduct
-  have hcleanT4Stage1 := clean_of_preserved_outside
-    hT4T3 hcleanT4 hstage1.1
-  have hcleanT4Stage2 := clean_of_preserved_outside
-    hT4T2 hcleanT4Stage1 hstage2.1
-  have hcleanT4XD := clean_of_preserved_outside
-    hT4T0 hcleanT4Stage2 hxd.2
-  have hcleanT4YP := clean_of_preserved_outside
-    hT4T1 hcleanT4XD hyp.2
-  have hcleanAddXD := clean_of_preserved_outside
-    (pointAddEngine_field_disjoint workStart
-      Secp256k1Instance.secpAddLayout.allWires
-      (pointAddT0 workStart) hT0)
-    hcleanAddStage2 hxd.2
-  have hcleanAddYP := clean_of_preserved_outside
+  let afterYOut := Classical.run yOut stage3
+  have hcleanT4Stage3 := clean_of_preserved_outside
+    hT4T1 hcleanT4Stage2 hstage3.1
+  have hcleanAddStage3 := clean_of_preserved_outside
     (pointAddEngine_field_disjoint workStart
       Secp256k1Instance.secpAddLayout.allWires
       (pointAddT1 workStart) hT1)
-    hcleanAddXD hyp.2
-  have hyT3 : ModExp.Schedule.WireDisjoint
-      (pointAddY workStart) (pointAddT3 workStart) := by
-    simpa [pointAddY, pointAddT3] using
-      pointAddFieldAt_disjoint workStart 1 5 (by norm_num)
-  have hyStage1 := regValue_of_preserved_outside hyT3 hstage1.1
+    hcleanAddStage2 hstage3.1
+  have hyStage1 := regValue_of_preserved_outside
+    (wireDisjoint_append_right_of hYT0 hYT3) hstage1.1
   have hyStage2 := regValue_of_preserved_outside hYT2 hstage2.1
-  have hyXD := regValue_of_preserved_outside hYT0 hxd.2
-  have hyYP := regValue_of_preserved_outside hYT1 hyp.2
+  have hyStage3 := regValue_of_preserved_outside hYT1 hstage3.1
   have hyo := fieldSub_correct workStart
     (pointAddT1 workStart) (pointAddY workStart)
     (pointAddT4 workStart) hT1 hY hT4
@@ -11208,60 +11323,58 @@ private theorem doublePointCompute_correct
     (by
       simpa [pointAddT4, pointAddY] using
         pointAddFieldAt_ne workStart 6 1 (by norm_num))
-    afterYProduct hcleanT4YP
-    (clean_fieldSubEngine_of_addEngine workStart afterYProduct hcleanAddYP)
-    (by rw [hypVal]; exact
+    stage3 hcleanT4Stage3
+    (clean_fieldSubEngine_of_addEngine workStart stage3 hcleanAddStage3)
+    (by rw [hstage3T1]; exact
       (doubleSlope xR yR * (xR - doubleX xR yR)).val_lt)
-    (by rw [hyYP, hyXD, hyStage2, hyStage1, hyReg]; exact yR.val_lt)
+    (by rw [hyStage3, hyStage2, hyStage1, hyReg]; exact yR.val_lt)
   dsimp only at hyo
   change regValue (pointAddT4 workStart) afterYOut =
-      (regValue (pointAddT1 workStart) afterYProduct + p -
-        regValue (pointAddY workStart) afterYProduct) % p ∧
+      (regValue (pointAddT1 workStart) stage3 + p -
+        regValue (pointAddY workStart) stage3) % p ∧
     ∀ w, w ∉ pointAddT4 workStart →
-      afterYOut w = afterYProduct w at hyo
+      afterYOut w = stage3 w at hyo
   have hyoVal : regValue (pointAddT4 workStart) afterYOut =
       (doubleY xR yR).val := by
     calc
       regValue (pointAddT4 workStart) afterYOut =
           ((doubleSlope xR yR *
               (xR - doubleX xR yR)).val + p - yR.val) % p := by
-        simpa [hypVal, hyYP, hyXD, hyStage2, hyStage1, hyReg] using hyo.1
+        simpa [hstage3T1, hyStage3, hyStage2, hyStage1, hyReg] using hyo.1
       _ = (doubleSlope xR yR *
           (xR - doubleX xR yR) - yR).val := fieldSubVal _ _
       _ = (doubleY xR yR).val := by
         rfl
-  have ht2XD := regValue_of_preserved_outside hT2T0 hxd.2
-  have ht2YP := regValue_of_preserved_outside hT2T1 hyp.2
+  have ht2Stage3 := regValue_of_preserved_outside hT2T1 hstage3.1
   have ht2YO := regValue_of_preserved_outside hT2T4 hyo.2
   have hfinalT2 : regValue (pointAddT2 workStart) afterYOut =
       (doubleX xR yR).val := by
-    rw [ht2YO, ht2YP, ht2XD, hstage2T2]
+    rw [ht2YO, ht2Stage3, hstage2T2]
   have hcleanCandidateStage1 := clean_of_preserved_outside
-    (pointAddCandidate_field_disjoint workStart
-      (pointAddT3 workStart) hT3)
+    (wireDisjoint_append_right_of
+      (pointAddCandidate_field_disjoint workStart
+        (pointAddT0 workStart) hT0)
+      (pointAddCandidate_field_disjoint workStart
+        (pointAddT3 workStart) hT3))
     hcleanCandidate hstage1.1
   have hcleanCandidateStage2 := clean_of_preserved_outside
     (pointAddCandidate_field_disjoint workStart
       (pointAddT2 workStart) hT2)
     hcleanCandidateStage1 hstage2.1
-  have hcleanCandidateXD := clean_of_preserved_outside
-    (pointAddCandidate_field_disjoint workStart
-      (pointAddT0 workStart) hT0)
-    hcleanCandidateStage2 hxd.2
-  have hcleanCandidateYP := clean_of_preserved_outside
+  have hcleanCandidateStage3 := clean_of_preserved_outside
     (pointAddCandidate_field_disjoint workStart
       (pointAddT1 workStart) hT1)
-    hcleanCandidateXD hyp.2
+    hcleanCandidateStage2 hstage3.1
   have hcleanCandidateYO := clean_of_preserved_outside
     (pointAddCandidate_field_disjoint workStart
       (pointAddT4 workStart) hT4)
-    hcleanCandidateYP hyo.2
+    hcleanCandidateStage3 hyo.2
   have hdoubleRun :
       Classical.run (doublePointCompute workStart) st = afterYOut := by
     simp [doublePointCompute, preparation, xPreparation,
-      stage1, stage2, numerator, denominator, inverse, slope,
+      stage1, stage2, stage3, numerator, denominator, inverse, slope,
       slopeSq, twoX, xOut, xDifference, yProduct, yOut,
-      afterXDifference, afterYProduct, afterYOut, Classical.run_append,
+      afterYOut, Classical.run_append,
       List.reverse_append, List.append_assoc]
   dsimp only
   rw [hdoubleRun]
