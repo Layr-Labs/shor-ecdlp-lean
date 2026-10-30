@@ -1102,18 +1102,18 @@ noncomputable section
 set_option maxRecDepth 4096
 set_option maxHeartbeats 2000000
 
-def finePositions : List (Fin 911673590) :=
+def finePositions : List (Fin 918678076) :=
   Single.trialPositions.right.toList.attach.map fun i=>
     ⟨i.val,(Single.right_position_bound i.val i.property).2.trans (by decide)⟩
 theorem finePositions_length : finePositions.length=207 := by
   simp [finePositions,Single.params]
-def fineBits : Vector (Fin 911673590) 207 := Vector.ofFn fun i=>
+def fineBits : Vector (Fin 918678076) 207 := Vector.ofFn fun i=>
   finePositions[i.val]'(by rw [finePositions_length];exact i.isLt)
 
-def readout : Straight 901120 911673590 911690566 :=
-  NeighborReadout.neighborSuffix 901120 911673590 207 fineBits
+def readout : Straight 901120 918678076 918695052 :=
+  NeighborReadout.neighborSuffix 901120 918678076 207 fineBits
 
-def program : Straight 901120 0 911690566 := Single.program.append readout
+def program : Straight 901120 0 918695052 := Single.program.append readout
 
 def positions (ps : Vector Nat 207) : TrialPositions NeighborReadout.params where
   left:=Single.trialPositions.left
@@ -1125,9 +1125,9 @@ def layout : DecodeLayout := ⟨.wrappedShift,NeighborReadout.params,
 
 theorem readout_wellFormed : readout.WellFormed :=
   NeighborReadout.neighborSuffix_wellFormed _ _ _ _
-theorem readout_t (read : ConstantBit 901120→Bool) (h : Fin 911673590→Bool) :
+theorem readout_t (read : ConstantBit 901120→Bool) (h : Fin 918678076→Bool) :
     (readout.instantiate read h).tCount=0 := NeighborReadout.neighborSuffix_t _ _ _ _ _ _
-theorem readout_support (read : ConstantBit 901120→Bool) (h : Fin 911673590→Bool) :
+theorem readout_support (read : ConstantBit 901120→Bool) (h : Fin 918678076→Bool) :
     (readout.instantiate read h).wires⊆resetWires := by
   apply (NeighborReadout.neighborSuffix_support _ _ _ _ _ _).trans
   simp [List.subset_def,resetWires]
@@ -1182,7 +1182,7 @@ theorem verified_of_reads (ps : Vector Nat 207) (hps : ps∈NeighborReadout.righ
     exact nsmul_eq_nsmul_iff_modEq.mpr (by rw [generator_order];exact Nat.mod_mod _ _)
 
 theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
-    (read : ConstantBit 901120→Bool) (history : Fin 911673590→Bool)
+    (read : ConstantBit 901120→Bool) (history : Fin 918678076→Bool)
     (ψ : State) (hψ : SupportedOn CleanReadout ψ)
     (hf : Single.Distribution.fineEvent (NeighborReadout.pairRecovered d) (List.ofFn history)=true)
     (b : InstrumentBranch) (hb : b∈(readout.instantiate read history).run)
@@ -1192,14 +1192,14 @@ theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
   rw [fineBits_vals] at hr
   obtain ⟨a,ha,hp⟩:=pairAccept_value _ _ _ _ _ hr hf
   obtain ⟨i,hi⟩:=of_decide_eq_true hp
-  obtain ⟨ps,hps,hread⟩:=NeighborReadout.neighborSuffix_reads 901120 911673590 fineBits
+  obtain ⟨ps,hps,hread⟩:=NeighborReadout.neighborSuffix_reads 901120 918678076 fineBits
     read history ψ hψ b hb hn ((i.val : ℤ)-13) (by have h:=i.isLt;omega)
   apply verified_of_reads ps hps Q d hd _ a _ _ hread hi
   rw [NeighborReadout.readWord_append_left]
   · exact ha
   · intro j hj
     have h:=Single.left_position_bound j hj
-    simpa only [List.length_ofFn] using h.trans (by decide : 503050614<911673590)
+    simpa only [List.length_ofFn] using h.trans (by decide : 506915158<918678076)
 
 theorem normSq_ge_zero (ψ : State) : 0 ≤ normSq ψ := by
   have h := normSq_interference (0 : State) ψ
@@ -1268,19 +1268,19 @@ theorem program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) 
     exact AdaptiveCircuit.run_preservesBornMass _
       (readout.instantiate_wellFormed _ _ readout_wellFormed) _
   · intro a ha hf b hb hne
-    have hlen : a.history.length = 911673590 := by
+    have hlen : a.history.length = 918678076 := by
       have h := straight_history_length Single.program (readConstant Single.mixedCoefficientAt Q) Fin.elim0 a ha
       omega
-    have hh : List.ofFn (Single.historyAfter 911673590 Fin.elim0 a.history) = a.history := by
+    have hh : List.ofFn (Single.historyAfter 918678076 Fin.elim0 a.history) = a.history := by
       simpa only [List.ofFn_zero, List.nil_append] using Single.historyAfter_list Fin.elim0 a.history (by simpa only [Nat.zero_add] using hlen)
     have h := suffix_accept Q d hd (readConstant Single.mixedCoefficientAt Q)
-      (Single.historyAfter 911673590 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
+      (Single.historyAfter 918678076 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
       (program_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
     simpa only [hh, InstrumentBranch.seq] using h
 
 def entry : StraightEntry := Single.fixedEntry Single.mixedCoefficientAt program
 
-def bounds : Bounds := ⟨854, 14591780565, 911690566⟩
+def bounds : Bounds := ⟨854, 14542749163, 918695052⟩
 
 theorem program_wellFormed : program.WellFormed :=
   straight_append_wellFormed _ _ Single.program_wellFormed readout_wellFormed
@@ -1303,11 +1303,11 @@ theorem program_qubits (read : ConstantBit 901120 → Bool) :
 attribute [local irreducible] readout
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14591780565 := by
+    (program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14542749163 := by
   have h := outer_append_t_le Single.program readout (readConstant Single.mixedCoefficientAt Q)
     Fin.elim0 0 (fun history => le_of_eq (readout_t _ history))
   rw [Nat.add_zero] at h
-  change ((Single.program.append readout).instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14591780565
+  change ((Single.program.append readout).instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14542749163
   exact h.trans (Single.program_t Q)
 
 theorem program_slots : program.gateSlots ≤ 90000176648 := by
@@ -1315,7 +1315,7 @@ theorem program_slots : program.gateSlots ≤ 90000176648 := by
   rw [Straight.gateSlots_append]
   have hr : readout.gateSlots=59416 := by
     unfold readout
-    exact NeighborReadout.neighborSuffix_slots 901120 911673590 207 fineBits
+    exact NeighborReadout.neighborSuffix_slots 901120 918678076 207 fineBits
   rw [hr]
   have h := Single.program_slots
   omega
@@ -1325,7 +1325,7 @@ theorem certificate : Certificate officialLimits layout entry bounds where
     rw [entry, Single.fixedEntry_slots]
     exact program_slots.trans (by decide)
   recordBudget := by
-    change 911690566 ≤ officialLimits.measurements
+    change 918695052 ≤ officialLimits.measurements
     decide
   tableBudget := by
     rw [entry, Single.fixedEntry_rows]
@@ -3930,27 +3930,27 @@ attribute [local irreducible] reindexStraight sequenceProgram appendCompiled fie
   BorrowFlag.adaptiveCoordinateProgram BorrowFlag.divisionProgram BorrowFlag.multiplicationProgram
   pointSquareProgram xNegateProgram yNegateProgram
 
-variable (hd : ∀ start, Patch (BorrowFlag.divisionProgram 32768 start).2 7493318)
-  (hm : ∀ start, Patch (BorrowFlag.multiplicationProgram 32768 start).2 7493318)
+variable (hd : ∀ start, Patch (BorrowFlag.divisionProgram 32768 start).2 7772030)
+  (hm : ∀ start, Patch (BorrowFlag.multiplicationProgram 32768 start).2 7772030)
 
 def coordinateAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (BorrowFlag.adaptiveCoordinateProgram start).2) 16133516 := by
+    Patch (reindexStraight aliasRow (BorrowFlag.adaptiveCoordinateProgram start).2) 16690940 := by
   unfold BorrowFlag.adaptiveCoordinateProgram BorrowFlag.adaptiveCoordinateSegments
-  refine (reindexedSequenceCons (d := 229376) (e := 15904140) aliasRow _ _ (fieldAddAliasPatch .negX _ _) ?_).castSaving (by decide)
-  refine (reindexedSequenceCons (d := 229376) (e := 15674764) aliasRow _ _ (signedFieldAliasPatch .negY _) ?_).castSaving (by decide)
-  refine (reindexedSequenceCons (d := 7493318) (e := 8181446) aliasRow _ _ ((hd _).reindex aliasRow) ?_).castSaving (by decide)
-  refine (reindexedSequenceCons (d := 0) (e := 8181446) aliasRow _ _ (Patch.refl _) ?_).castSaving (by decide)
-  refine (reindexedSequenceCons (d := 229376) (e := 7952070) aliasRow _ _ (fieldAddAliasPatch .tripleX _ _) ?_).castSaving (by decide)
-  refine (reindexedSequenceCons (d := 7493318) (e := 458752) aliasRow _ _ ((hm _).reindex aliasRow) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 229376) (e := 16461564) aliasRow _ _ (fieldAddAliasPatch .negX _ _) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 229376) (e := 16232188) aliasRow _ _ (signedFieldAliasPatch .negY _) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 7772030) (e := 8460158) aliasRow _ _ ((hd _).reindex aliasRow) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 0) (e := 8460158) aliasRow _ _ (Patch.refl _) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 229376) (e := 8230782) aliasRow _ _ (fieldAddAliasPatch .tripleX _ _) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 7772030) (e := 458752) aliasRow _ _ ((hm _).reindex aliasRow) ?_).castSaving (by decide)
   refine (reindexedSequenceCons (d := 0) (e := 458752) aliasRow _ _ (Patch.refl _) ?_).castSaving (by decide)
   refine (reindexedSequenceCons (d := 229376) (e := 229376) aliasRow _ _ (fieldAddAliasPatch .x _ _) ?_).castSaving (by decide)
   refine (reindexedSequenceCons (d := 229376) (e := 0) aliasRow _ _ (signedFieldAliasPatch .negY _) ?_).castSaving (by decide)
   exact Patch.refl _
 
 def coreAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (Single.Physical.core start).2) 17624460 := by
+    Patch (reindexStraight aliasRow (Single.Physical.core start).2) 18181884 := by
   unfold Single.Physical.core Single.Physical.segments
-  refine (reindexedSequenceCons (d := 16133516) (e := 1490944) aliasRow _ _
+  refine (reindexedSequenceCons (d := 16690940) (e := 1490944) aliasRow _ _
     (coordinateAliasPatch hd hm start) ?_).castSaving (by decide)
   refine (reindexedSequenceCons (d := 0) (e := 1490944) aliasRow _ _
     (Patch.refl _) ?_).castSaving (Nat.zero_add _)
@@ -3958,18 +3958,18 @@ def coreAliasPatch (start : Nat) :
     (placedAliasPatch _) (Patch.refl _)).castSaving (Nat.add_zero _)
 
 def preparedAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (Single.Physical.prepared start).2) 17624460 := by
+    Patch (reindexStraight aliasRow (Single.Physical.prepared start).2) 18181884 := by
   unfold Single.Physical.prepared
   exact reindexedSurround aliasRow _ _ _ (coreAliasPatch hd hm start)
 
 def actualAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (Single.Physical.actual.program start)) 17624460 := by
+    Patch (reindexStraight aliasRow (Single.Physical.actual.program start)) 18181884 := by
   unfold Single.Physical.actual closedWindow
   rw [reindex_shift,reindex_cast,reindex_relabel]
   exact (((preparedAliasPatch hd hm 0).relabel (windowAddressPerm 855 (by decide))).castFinish _).shift start
 
 def left15AliasPatch (j : Fin 10) (start : Nat) :
-    Patch ((Single.signedWindow (.left15 j)).program start) 17624460 := by
+    Patch ((Single.signedWindow (.left15 j)).program start) 18181884 := by
   have h := (actualAliasPatch hd hm start).reindex (Single.signedRow (.left15 j))
   rw [reindex_comp] at h
   have he : Single.signedRow (.left15 j) ∘ aliasRow = Single.signedRow (.left15 j) := by
@@ -3980,7 +3980,7 @@ def left15AliasPatch (j : Fin 10) (start : Nat) :
   exact h
 
 def right15AliasPatch (j : Fin 1) (start : Nat) :
-    Patch ((Single.signedWindow (.right15 j)).program start) 17624460 := by
+    Patch ((Single.signedWindow (.right15 j)).program start) 18181884 := by
   have h := (actualAliasPatch hd hm start).reindex (Single.signedRow (.right15 j))
   rw [reindex_comp] at h
   have he : Single.signedRow (.right15 j) ∘ aliasRow = Single.signedRow (.right15 j) := by
@@ -5292,6 +5292,157 @@ private theorem remainder_endpoint_facts (w : ActiveWindow)
   rw [hcarry, hscratch]
   exact endpoint_base_cases _ hb1 hb2
 
+/- B3 ladder cancellation adapted from public submission 525ba7ba-fdab-4fe7-bcef-2769cac961c5. -/
+def b3Source : Circuit :=
+  let r := indexedStepProductionRegisters
+  ([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal]
+
+def b3Core : Circuit :=
+  [.CCX 0 560 562, .CCX 561 562 558, .CCX 0 560 562]
+
+def b3Inner : Circuit :=
+  [.X 0, .X 560, .X 561] ++ b3Core ++ [.X 561, .X 560, .X 0]
+
+def b3K : Circuit :=
+  [.CCX 549 550 562] ++ b3Inner ++ [.CCX 549 550 562]
+
+def b3L : Circuit :=
+  [.CCX 551 562 563, .CCX 552 563 564, .CCX 553 564 565,
+   .CCX 554 565 566, .CCX 555 566 567, .CCX 556 567 568]
+
+def b3Red : Circuit := b3Source.take 9 ++ b3K ++ b3Source.drop 32
+
+theorem b3_decomp : b3Source = b3Source.take 9 ++ (b3L.reverse ++ b3K ++ b3L) ++ b3Source.drop 32 := by
+  decide +kernel
+
+theorem b3Red_sublist : b3Red.Sublist b3Source := by
+  rw [b3_decomp, b3Red]
+  refine List.Sublist.append (List.Sublist.append (List.Sublist.refl _) ?_) (List.Sublist.refl _)
+  exact (List.sublist_append_right b3L.reverse b3K).trans (List.sublist_append_left (b3L.reverse ++ b3K) b3L)
+
+theorem b3Red_t : ShorECDLP.tCount b3Red + 84 = ShorECDLP.tCount b3Source := by
+  decide +kernel
+
+private theorem b3Core_classical (s : BasisState) :
+    Classical.run b3Core s = s[558 ↦ xor (s 558) (s 561 && xor (s 562) (s 0 && s 560))] := by
+  funext w
+  simp only [b3Core, Classical.run, List.foldl_cons, List.foldl_nil, Classical.applyGate]
+  by_cases hw558 : w = 558
+  · subst hw558; simp [upd]
+  · by_cases hw562 : w = 562
+    · subst hw562
+      simp [upd, hw558]
+    · simp [upd, hw558, hw562]
+
+private theorem b3Inner_classical (s : BasisState) :
+    Classical.run b3Inner s = s[558 ↦ xor (s 558) ((!s 561) && xor (s 562) ((!s 0) && (!s 560)))] := by
+  funext w
+  simp only [b3Inner, Classical.run_append, b3Core_classical]
+  simp only [Classical.run, List.foldl_cons, List.foldl_nil, Classical.applyGate]
+  by_cases hw0 : w = 0
+  · subst hw0; simp [upd]
+  · by_cases hw560 : w = 560
+    · subst hw560; simp [upd]
+    · by_cases hw561 : w = 561
+      · subst hw561; simp [upd]
+      · by_cases hw558 : w = 558
+        · subst hw558; simp [upd]
+        · simp [upd, hw0, hw560, hw561, hw558]
+
+private theorem b3K_classical (s : BasisState) :
+    Classical.run b3K s =
+      s[558 ↦ xor (s 558) ((!s 561) && xor (xor (s 562) (s 549 && s 550)) ((!s 0) && (!s 560)))] := by
+  funext w
+  simp only [b3K, Classical.run_append, b3Inner_classical]
+  simp only [Classical.run, List.foldl_cons, List.foldl_nil, Classical.applyGate]
+  by_cases hw562 : w = 562
+  · subst hw562
+    simp [upd]
+  · by_cases hw558 : w = 558
+    · subst hw558; simp [upd]
+    · simp [upd, hw562, hw558]
+
+private theorem b3_step_classical (a b t : Wire)
+    (ha558 : a ≠ 558) (hb558 : b ≠ 558) (ht558 : t ≠ 558)
+    (hat : t ≠ a) (hbt : t ≠ b)
+    (ht561 : t ≠ 561) (ht562 : t ≠ 562) (ht549 : t ≠ 549) (ht550 : t ≠ 550) (ht0 : t ≠ 0) (ht560 : t ≠ 560)
+    (mid : Circuit) (hmid : ∀ s : BasisState, Classical.run mid s = Classical.run b3K s)
+    (s : BasisState) :
+    Classical.run ([.CCX a b t] ++ mid ++ [.CCX a b t]) s = Classical.run b3K s := by
+  funext w
+  simp only [Classical.run_append, hmid, b3K_classical]
+  simp only [Classical.run, List.foldl_cons, List.foldl_nil, Classical.applyGate]
+  by_cases hwt : w = t
+  · subst hwt
+    simp only [upd, ht558, ha558, hb558, hat.symm, hbt.symm, ↓reduceIte]
+    cases s w <;> cases (s a && s b) <;> rfl
+  · by_cases hw558 : w = 558
+    · subst hw558
+      simp only [upd, hwt, ht561.symm, ht562.symm, ht549.symm, ht550.symm, ht0.symm, ht560.symm, ↓reduceIte]
+    · simp only [upd, hwt, hw558, ↓reduceIte]
+
+def b3M1 : Circuit := [.CCX 551 562 563] ++ b3K ++ [.CCX 551 562 563]
+def b3M2 : Circuit := [.CCX 552 563 564] ++ b3M1 ++ [.CCX 552 563 564]
+def b3M3 : Circuit := [.CCX 553 564 565] ++ b3M2 ++ [.CCX 553 564 565]
+def b3M4 : Circuit := [.CCX 554 565 566] ++ b3M3 ++ [.CCX 554 565 566]
+def b3M5 : Circuit := [.CCX 555 566 567] ++ b3M4 ++ [.CCX 555 566 567]
+def b3M6 : Circuit := [.CCX 556 567 568] ++ b3M5 ++ [.CCX 556 567 568]
+
+private theorem b3M1_classical : ∀ s, Classical.run b3M1 s = Classical.run b3K s :=
+  b3_step_classical 551 562 563 (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) b3K (fun _ => rfl)
+private theorem b3M2_classical : ∀ s, Classical.run b3M2 s = Classical.run b3K s :=
+  b3_step_classical 552 563 564 (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) b3M1 b3M1_classical
+private theorem b3M3_classical : ∀ s, Classical.run b3M3 s = Classical.run b3K s :=
+  b3_step_classical 553 564 565 (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) b3M2 b3M2_classical
+private theorem b3M4_classical : ∀ s, Classical.run b3M4 s = Classical.run b3K s :=
+  b3_step_classical 554 565 566 (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) b3M3 b3M3_classical
+private theorem b3M5_classical : ∀ s, Classical.run b3M5 s = Classical.run b3K s :=
+  b3_step_classical 555 566 567 (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) b3M4 b3M4_classical
+private theorem b3M6_classical : ∀ s, Classical.run b3M6 s = Classical.run b3K s :=
+  b3_step_classical 556 567 568 (by decide) (by decide) (by decide) (by decide) (by decide)
+    (by decide) (by decide) (by decide) (by decide) (by decide) (by decide) b3M5 b3M5_classical
+
+private theorem b3M6_eq : b3L.reverse ++ b3K ++ b3L = b3M6 := by decide +kernel
+private theorem b3M6_hp : Classical.HPFree b3M6 := by simp [Classical.HPFree,Classical.IsClassicalGate,b3M6,b3M5,b3M4,b3M3,b3M2,b3M1,b3K,b3Inner,b3Core]
+private theorem b3K_hp : Classical.HPFree b3K := by simp [Classical.HPFree,Classical.IsClassicalGate,b3K,b3Inner,b3Core]
+
+private theorem b3_linear_basis (A B : State →ₗ[ℂ] State)
+    (h : ∀ s, A (ket s) = B (ket s)) : A = B := by
+  apply LinearMap.ext
+  intro psi
+  induction psi using Finsupp.induction_linear with
+  | zero => simp
+  | add x y hx hy => simp only [map_add, hx, hy]
+  | single s c =>
+    have hs : Finsupp.single s c = c • ket s := by ext u; simp [ket]
+    rw [hs, map_smul, map_smul, h]
+
+private theorem b3M6_run :
+    Quantum.run (b3L.reverse ++ b3K ++ b3L) = Quantum.run b3K := by
+  apply b3_linear_basis
+  intro s
+  rw [b3M6_eq, Quantum.run_ket_agrees_classical _ _ b3M6_hp,
+    Quantum.run_ket_agrees_classical _ _ b3K_hp, b3M6_classical]
+
+private theorem b3_sub_run (A C M K : Circuit) (h : Quantum.run M = Quantum.run K) :
+    Quantum.run (A ++ M ++ C) = Quantum.run (A ++ K ++ C) := by
+  simp only [Quantum.run_append_map, h]
+
+theorem b3Red_run : Quantum.run b3Red = Quantum.run b3Source := by
+  unfold b3Red
+  conv_rhs => rw [b3_decomp]
+  exact (b3_sub_run _ _ _ _ b3M6_run).symm
+
+
+
+def b3Patch (n s : Nat) : Patch (literalProgram b3Source : Straight n s s) 84 :=
+  Patch.literal _ b3Red b3Red_sublist b3Red_run.symm b3Red_t
+
 def remainderIntervalPatch (n start : Nat) (w : ActiveWindow)
     (hw : intervalLaneCount w.start w.stop ≤ 259)
     (mode : RippleMode) (signUpdate : Bool) (target : IntervalTarget) :
@@ -5312,13 +5463,14 @@ theorem certified_remainder_count (T : Nat) :
   omega
 
 def remainderPatchAll (n start : Nat) (w : ActiveWindow) (hw : intervalLaneCount w.start w.stop ≤ 259) :
-    Patch (remainderBlockProgram n start indexedStepProductionRegisters 256 w).2 987 := by
+    Patch (remainderBlockProgram n start indexedStepProductionRegisters 256 w).2 1155 := by
   unfold remainderBlockProgram remainderBlockSegments
-  refine (Patch.sequenceCons (d := 98) (f := 889) _ _ (b1Patch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 224) (f := 665) _ _ (remainderIntervalPatch n _ w hw _ _ _) ?_).castSaving (by omega)
-  refine (Patch.literalPair (d := 441) (f := 224) b1Source b2Source _ (b12Patch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 224) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  exact (Patch.sequenceCons (d := 224) (f := 0) _ _ (remainderIntervalPatch n _ w hw _ _ _) (Patch.refl _)).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 98) (f := 1057) _ _ (b1Patch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 224) (f := 833) _ _ (remainderIntervalPatch n _ w hw _ _ _) ?_).castSaving (by omega)
+  refine (Patch.literalPair (d := 441) (f := 392) b1Source b2Source _ (b12Patch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 84) (f := 308) _ _ (b3Patch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 224) (f := 84) _ _ (remainderIntervalPatch n _ w hw _ _ _) ?_).castSaving (by omega)
+  exact (Patch.sequenceCons (d := 84) (f := 0) _ _ (b3Patch n _) (Patch.refl _)).castSaving (by omega)
 
 section CrossBoundary
 attribute [local semireducible] sequenceProgram appendCompiled literalProgram intervalProgram
@@ -5415,9 +5567,6 @@ def CrossFacts (M : Circuit) (c : Wire) : Prop :=
   CircuitWellFormed (crossCore M c) ∧ Classical.HPFree (crossCore M c) ∧
     ShorECDLP.tCount (acrossOptimized (crossCore M c)) + 805 = ShorECDLP.tCount (crossCore M c)
 
-def b3Source : Circuit :=
-  let r := indexedStepProductionRegisters
-  ([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal]
 
 def forwardMiddle : Circuit := (b1Source ++ b2Source) ++ b3Source
 
@@ -5456,7 +5605,7 @@ def remainderCrossPatch (n start : Nat) (w : ActiveWindow)
       ((indexedStepProductionRegisters.remainder w).carry w.start w.stop))
     (hx : CrossFacts forwardMiddle ((indexedStepProductionRegisters.remainder w).carry w.start w.stop))
     (hE : (indexedStepProductionRegisters.remainder w).endpointScratch = List.range' 559 9) :
-    Patch (remainderBlockProgram n start indexedStepProductionRegisters 256 w).2 1211 := by
+    Patch (remainderBlockProgram n start indexedStepProductionRegisters 256 w).2 1295 := by
   let rg := indexedStepProductionRegisters.remainder w
   have hT : rg.lengthT = List.range' 522 9 := rfl
   have hQ : rg.lengthQ = List.range' 531 9 := rfl
@@ -5469,11 +5618,11 @@ def remainderCrossPatch (n start : Nat) (w : ActiveWindow)
   let X : Straight n start (start + core1.1 + core2.1) :=
     (literalProgram (b1Source ++ P)).append (core1.2.append
       ((literalProgram (R ++ forwardMiddle ++ P)).append (core2.2.append (literalProgram (R ++ b3Source)))))
-  have hX : Patch X 1211 :=
+  have hX : Patch X 1295 :=
     (((b1Patch n start).joinLiteral (prepareEndpointPatch n start _ _ _ _ c w.start h)).append
       ((Patch.refl core1.2).append ((crossLiteralPatch n _ forwardMiddle c w.start h hx).append
         ((Patch.refl core2.2).append ((restoreEndpointPatch n _ _ _ _ _ c w.start h).joinLiteral
-          (Patch.refl (literalProgram b3Source))))))).castSaving (by omega)
+          (b3Patch n _)))))).castSaving (by omega)
   have hcount : start + core1.1 + core2.1 = start + (remainderBlockProgram n start indexedStepProductionRegisters 256 w).1 := by
     unfold remainderBlockProgram remainderBlockSegments
     simp only [sequenceProgram, appendCompiled, interval_count, Nat.add_zero, core1, core2, rg]
@@ -5920,10 +6069,10 @@ def epochDPatch (n s : Nat) (w : ActiveWindow) :
   simpa only [List.append_nil] using hp
 
 def candidateStepPatch (n start T : Nat) :
-    Patch (measuredStepProgram n start indexedStepProductionRegisters 256 T).2 (1512+hSaving T) := by
+    Patch (measuredStepProgram n start indexedStepProductionRegisters 256 T).2 (1680+hSaving T) := by
   unfold measuredStepProgram measuredStepSegments
-  refine (Patch.sequenceCons (d := 140) (f := 1372+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 987) (f := 385+hSaving T) _ _ (remainderPatchAll n _ _ (certified_remainder_count T)) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 140) (f := 1540+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 1155) (f := 385+hSaving T) _ _ (remainderPatchAll n _ _ (certified_remainder_count T)) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 210) (f := 175+hSaving T) _ _ (epochDPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 140) (f := 35+hSaving T) _ _ (coefficientPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 35) (f := hSaving T) _ _ (fPatch n _) ?_).castSaving (by omega)
@@ -5932,11 +6081,11 @@ def candidateStepPatch (n start T : Nat) :
 
 /-- The remainder block with its two intervals cancelled across their shared boundary. -/
 def crossStepPatch (n start T : Nat) (hT : T < 1542) :
-    Patch (measuredStepProgram n start indexedStepProductionRegisters 256 T).2 (1736+hSaving T) := by
+    Patch (measuredStepProgram n start indexedStepProductionRegisters 256 T).2 (1820+hSaving T) := by
   have hi := early_cross_inputs T hT
   unfold measuredStepProgram measuredStepSegments
-  refine (Patch.sequenceCons (d := 140) (f := 1596+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 1211) (f := 385+hSaving T) _ _ (remainderCrossPatch n _ _ hi.1 hi.2.1 hi.2.2.2) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 140) (f := 1680+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 1295) (f := 385+hSaving T) _ _ (remainderCrossPatch n _ _ hi.1 hi.2.1 hi.2.2.2) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 210) (f := 175+hSaving T) _ _ (epochDPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 140) (f := 35+hSaving T) _ _ (coefficientPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 35) (f := hSaving T) _ _ (fPatch n _) ?_).castSaving (by omega)
@@ -5945,7 +6094,7 @@ def crossStepPatch (n start T : Nat) (hT : T < 1542) :
 
 /-- Exact per-step saving.  The late steps use a remainder carry wire shared with the fixed
 remainder controls, so their cross-boundary cancellation is not claimed. -/
-def stepSaving (T : Nat) : Nat := (if T < 1542 then 1736 else 1512) + hSaving T
+def stepSaving (T : Nat) : Nat := (if T < 1542 then 1820 else 1680) + hSaving T
 
 /-- Optimize the fixed A, remainder-control, epoch and coefficient-boundary literals. -/
 def stepPatch (n start T : Nat) :
@@ -5968,10 +6117,10 @@ def schedulePatch (n : Nat) : (count first start : Nat) →
     exact (Patch.appendCompiled _ _ (stepPatch n start first)
       (schedulePatch n count (first+1) _)).castSaving (by simp only [scheduleSaving])
 
-private theorem scheduleSaving_full : scheduleSaving 1620 1 = 2834314 := by decide
+private theorem scheduleSaving_full : scheduleSaving 1620 1 = 2977030 := by decide
 
 def eeaForwardPatch (n start : Nat) :
-    Patch (measuredEEAForwardProgram n start indexedStepProductionRegisters).2 2834314 := by
+    Patch (measuredEEAForwardProgram n start indexedStepProductionRegisters).2 2977030 := by
   unfold measuredEEAForwardProgram
   exact (schedulePatch n 1620 1 start).castSaving scheduleSaving_full
 
@@ -6017,10 +6166,10 @@ def unpreprocessPatch (n start : Nat) : Patch (unpreprocessProgram n start).2 91
   exact ((undoPatch n start).append (Patch.refl _)).castSaving (by omega)
 
 def wrapperPatch (n start : Nat) :
-    Patch (measuredForwardWrapperProgram n start).2 3746449 := by
+    Patch (measuredForwardWrapperProgram n start).2 3889165 := by
   unfold measuredForwardWrapperProgram measuredForwardWrapperSegments
-  refine (Patch.sequenceCons (d := 912135) (f := 2834314) _ _ (preprocessPatch n _) ?_).castSaving (by omega)
-  exact (Patch.sequenceCons (d := 2834314) (f := 0) _ _ (eeaForwardPatch n _) (Patch.refl _)).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 912135) (f := 2977030) _ _ (preprocessPatch n _) ?_).castSaving (by omega)
+  exact (Patch.sequenceCons (d := 2977030) (f := 0) _ _ (eeaForwardPatch n _) (Patch.refl _)).castSaving (by omega)
 
 
 def reverseCleanSource : Circuit :=
@@ -6067,11 +6216,11 @@ def reverseCombinedPatch (n s : Nat) (w : ActiveWindow) :
       computeControl [r.phase1,r.terminal] 1 r.control r.blockScratch ++
       computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++ restoreLatestPaperTBoundary r.tBoundary 256 ++
       blockDInverse r w ++ blockCInverse r ++
-      (([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal])) : Straight n s s) 280 := by
+      (([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal])) : Straight n s s) 364 := by
   have hp := ((((reversePrepPatch n s).joinLiteral
     (dInversePatch n s w)).joinLiteral
-    (reverseEpochPatch n s)).joinLiteral (Patch.refl (literalProgram b3Source : Straight n s s))).castSaving
-    (show 70+98+112+0=280 by omega)
+    (reverseEpochPatch n s)).joinLiteral (b3Patch n s)).castSaving
+    (show 70+98+112+84=364 by omega)
   simpa only [reversePrepSource, b3Source, List.append_assoc] using hp
 
 def reverseRemainderPatch (n s : Nat) :
@@ -6080,16 +6229,16 @@ def reverseRemainderPatch (n s : Nat) :
     (by unfold Classical.HPFree; decide +kernel) (by decide +kernel)
 
 def reverseStepPatch (n start T : Nat) :
-    Patch (measuredInverseStepProgram n start indexedStepProductionRegisters T).2 (1512+hSaving T) := by
+    Patch (measuredInverseStepProgram n start indexedStepProductionRegisters T).2 (1596+hSaving T) := by
   unfold measuredInverseStepProgram measuredInverseStepSegments
-  refine (Patch.sequenceCons (d := hSaving T) (f := 1512) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1512) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 105) (f := 1407) _ _ ?_ ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := hSaving T) (f := 1596) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1596) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 105) (f := 1491) _ _ ?_ ?_).castSaving (by omega)
   · exact reverseFrontPatch n _
-  refine (Patch.sequenceCons (d := 0) (f := 1407) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1407) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1407) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 280) (f := 1127) _ _ ?_ ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1491) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1491) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1491) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 364) (f := 1127) _ _ ?_ ?_).castSaving (by omega)
   · exact reverseCombinedPatch n _ (certifiedActiveWindows 256 T).quotientSwap
   refine (Patch.sequenceCons (d := 224) (f := 903) _ _ ?_ ?_).castSaving (by omega)
   · unfold intervalInverseProgram
@@ -6103,16 +6252,16 @@ def reverseStepPatch (n start T : Nat) :
     (((b1Patch n _).joinLiteral (aInversePatch n _)).castSaving (by omega)) (Patch.refl _)).castSaving (by omega)
 
 def reverseCrossStepPatch (n start T : Nat) (hT : T < 1542) :
-    Patch (measuredInverseStepProgram n start indexedStepProductionRegisters T).2 (1736+hSaving T) := by
+    Patch (measuredInverseStepProgram n start indexedStepProductionRegisters T).2 (1820+hSaving T) := by
   have hi := early_cross_inputs T hT
   unfold measuredInverseStepProgram measuredInverseStepSegments
-  refine (Patch.sequenceCons (d := hSaving T) (f := 1736) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1736) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 105) (f := 1631) _ _ ?_ ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := hSaving T) (f := 1820) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1820) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 105) (f := 1715) _ _ ?_ ?_).castSaving (by omega)
   · exact reverseFrontPatch n _
-  refine (Patch.sequenceCons (d := 0) (f := 1631) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1631) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1631) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1715) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1715) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1715) _ _ (Patch.refl _) ?_).castSaving (by omega)
   exact reverseTailCrossPatch n _ _ _ _ hi.1 hi.2.2.1 hi.2.2.2
     (reverseCombinedPatch n _ (certifiedActiveWindows 256 T).quotientSwap)
     (fun s => ((b1Patch n s).joinLiteral (aInversePatch n s)).castSaving (show 98 + 140 = 238 by omega))
@@ -6137,16 +6286,16 @@ def reverseCrossStepOnePatch (n start : Nat) :
     (by simpa only [reverseCombinedSource] using reverseCombinedOnePatch n _)
     (fun s => ((b1Patch n s).joinLiteral (aInversePatch n s)).castSaving (show 98 + 140 = 238 by omega))
 
-def reverseStepSaving (T : Nat) : Nat := stepSaving T + if T = 1 then 420 else 0
+def reverseStepSaving (T : Nat) : Nat := (if T < 1542 then 1820 else 1596) + hSaving T + if T = 1 then 336 else 0
 
 def reverseStepPatchT (n start T : Nat) :
     Patch (measuredInverseStepProgram n start indexedStepProductionRegisters T).2 (reverseStepSaving T) := by
   by_cases h : T = 1
   · subst T
-    exact (reverseCrossStepOnePatch n start).castSaving (by simp [reverseStepSaving,stepSaving,hSaving])
+    exact (reverseCrossStepOnePatch n start).castSaving (by simp [reverseStepSaving,hSaving])
   · by_cases ht : T < 1542
-    · exact (reverseCrossStepPatch n start T ht).castSaving (by simp [reverseStepSaving,stepSaving,h,ht])
-    · exact (reverseStepPatch n start T).castSaving (by simp [reverseStepSaving,stepSaving,h,ht])
+    · exact (reverseCrossStepPatch n start T ht).castSaving (by simp [reverseStepSaving,h,ht])
+    · exact (reverseStepPatch n start T).castSaving (by simp [reverseStepSaving,h,ht])
 
 def reverseScheduleSaving : Nat → Nat → Nat
   | 0, _ => 0
@@ -6161,20 +6310,20 @@ def reverseSchedulePatch (n : Nat) : (count first start : Nat) →
     exact (Patch.appendCompiled _ _ (reverseSchedulePatch n count (first+1) start)
       (reverseStepPatchT n _ first)).castSaving (by simp only [reverseScheduleSaving]; omega)
 
-private theorem reverseScheduleSaving_full : reverseScheduleSaving 1620 1 = 2834734 := by decide
+private theorem reverseScheduleSaving_full : reverseScheduleSaving 1620 1 = 2970730 := by decide
 
 def eeaReversePatch (n start : Nat) :
-    Patch (measuredEEAReverseProgram n start indexedStepProductionRegisters).2 2834734 := by
+    Patch (measuredEEAReverseProgram n start indexedStepProductionRegisters).2 2970730 := by
   unfold measuredEEAReverseProgram
   exact (reverseSchedulePatch n 1620 1 start).castSaving reverseScheduleSaving_full
 
 def reverseWrapperPatch (n start : Nat) :
-    Patch (measuredReverseWrapperProgram n start).2 3746869 := by
+    Patch (measuredReverseWrapperProgram n start).2 3882865 := by
   unfold measuredReverseWrapperProgram measuredReverseWrapperSegments
-  refine (Patch.sequenceCons (d := 0) (f := 3746869) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 3746869) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 3746869) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 2834734) (f := 912135) _ _ (eeaReversePatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 3882865) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 3882865) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 3882865) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 2970730) (f := 912135) _ _ (eeaReversePatch n _) ?_).castSaving (by omega)
   exact (Patch.sequenceCons (d := 912135) (f := 0) _ _ (unpreprocessPatch n _) (Patch.refl _)).castSaving (by omega)
 
 def Patch.relabelCompiled {n start d} (e : Wire ≃ Wire)
@@ -6182,11 +6331,11 @@ def Patch.relabelCompiled {n start d} (e : Wire ≃ Wire)
     Patch (Paper2607_13816.ChallengeMigration.relabelCompiled e p).2 d :=
   hp.relabel e
 
-def forwardDataPatch (n start : Nat) : Patch (measuredForwardDataBankProgram n start).2 3746449 := by
+def forwardDataPatch (n start : Nat) : Patch (measuredForwardDataBankProgram n start).2 3889165 := by
   unfold measuredForwardDataBankProgram
   exact Patch.relabelCompiled eeaWorkspaceExchange _ (wrapperPatch n start)
 
-def reverseDataPatch (n start : Nat) : Patch (measuredReverseDataBankProgram n start).2 3746869 := by
+def reverseDataPatch (n start : Nat) : Patch (measuredReverseDataBankProgram n start).2 3882865 := by
   unfold measuredReverseDataBankProgram
   exact Patch.relabelCompiled eeaWorkspaceExchange _ (reverseWrapperPatch n start)
 
@@ -6201,10 +6350,10 @@ def collectPatch {n d}
     exact (Patch.measure w (collectPatch next hp ws (start+1) _)).castFinish _
 
 def divisionAfterResetPatch (n start : Nat) (prior : List (Fin start)) :
-    Patch (divisionAfterResetProgram n start prior).2 3746869 := by
+    Patch (divisionAfterResetProgram n start prior).2 3882865 := by
   unfold divisionAfterResetProgram appendRetaining
-  exact (Patch.appendCompiled (d := 3746869) (f := 0) _ _
-    ((Patch.appendCompiled (d := 3746869) (f := 0) _ _ (reverseDataPatch n start) (Patch.refl _)).castSaving (by omega))
+  exact (Patch.appendCompiled (d := 3882865) (f := 0) _ _
+    ((Patch.appendCompiled (d := 3882865) (f := 0) _ _ (reverseDataPatch n start) (Patch.refl _)).castSaving (by omega))
     (Patch.refl _)).castSaving (by omega)
 
 
@@ -6286,10 +6435,10 @@ def hInversePatch (n start T : Nat) : Patch (hInverseProgram n start indexedStep
   AcrossDHE.hInversePatch n start T
 
 def candidateStepPatch (n start T : Nat) :
-    Patch (MeasuredQuotient.stepProgram n start indexedStepProductionRegisters 256 T).2 (1512+hSaving T) := by
+    Patch (MeasuredQuotient.stepProgram n start indexedStepProductionRegisters 256 T).2 (1680+hSaving T) := by
   unfold MeasuredQuotient.stepProgram MeasuredQuotient.stepSegments
-  refine (Patch.sequenceCons (d := 140) (f := 1372+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 987) (f := 385+hSaving T) _ _ (remainderPatchAll n _ _ (certified_remainder_count T)) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 140) (f := 1540+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 1155) (f := 385+hSaving T) _ _ (remainderPatchAll n _ _ (certified_remainder_count T)) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 210) (f := 175+hSaving T) _ _ (epochDPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 140) (f := 35+hSaving T) _ _ (coefficientPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 35) (f := hSaving T) _ _ (fPatch n _) ?_).castSaving (by omega)
@@ -6298,11 +6447,11 @@ def candidateStepPatch (n start T : Nat) :
 
 /-- The remainder block with its two intervals cancelled across their shared boundary. -/
 def crossStepPatch (n start T : Nat) (hT : T < 1542) :
-    Patch (MeasuredQuotient.stepProgram n start indexedStepProductionRegisters 256 T).2 (1736+hSaving T) := by
+    Patch (MeasuredQuotient.stepProgram n start indexedStepProductionRegisters 256 T).2 (1820+hSaving T) := by
   have hi := early_cross_inputs T hT
   unfold MeasuredQuotient.stepProgram MeasuredQuotient.stepSegments
-  refine (Patch.sequenceCons (d := 140) (f := 1596+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 1211) (f := 385+hSaving T) _ _ (remainderCrossPatch n _ _ hi.1 hi.2.1 hi.2.2.2) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 140) (f := 1680+hSaving T) _ _ (aPatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 1295) (f := 385+hSaving T) _ _ (remainderCrossPatch n _ _ hi.1 hi.2.1 hi.2.2.2) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 210) (f := 175+hSaving T) _ _ (epochDPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 140) (f := 35+hSaving T) _ _ (coefficientPatch n _ _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 35) (f := hSaving T) _ _ (fPatch n _) ?_).castSaving (by omega)
@@ -6311,7 +6460,7 @@ def crossStepPatch (n start T : Nat) (hT : T < 1542) :
 
 /-- Exact per-step saving.  The late steps use a remainder carry wire shared with the fixed
 remainder controls, so their cross-boundary cancellation is not claimed. -/
-def stepSaving (T : Nat) : Nat := (if T < 1542 then 1736 else 1512) + hSaving T
+def stepSaving (T : Nat) : Nat := (if T < 1542 then 1820 else 1680) + hSaving T
 
 /-- Optimize the fixed A, remainder-control, epoch and coefficient-boundary literals. -/
 def stepPatch (n start T : Nat) :
@@ -6334,10 +6483,10 @@ def schedulePatch (n : Nat) : (count first start : Nat) →
     exact (Patch.appendCompiled _ _ (stepPatch n start first)
       (schedulePatch n count (first+1) _)).castSaving (by simp only [scheduleSaving])
 
-private theorem scheduleSaving_full : scheduleSaving 1620 1 = 2834314 := by decide
+private theorem scheduleSaving_full : scheduleSaving 1620 1 = 2977030 := by decide
 
 def eeaForwardPatch (n start : Nat) :
-    Patch (MeasuredQuotient.forwardProgram n start indexedStepProductionRegisters).2 2834314 := by
+    Patch (MeasuredQuotient.forwardProgram n start indexedStepProductionRegisters).2 2977030 := by
   unfold MeasuredQuotient.forwardProgram
   exact (schedulePatch n 1620 1 start).castSaving scheduleSaving_full
 
@@ -6367,10 +6516,10 @@ def unpreprocessPatch (n start : Nat) : Patch (unpreprocessProgram n start).2 91
   exact ((undoPatch n start).append (Patch.refl _)).castSaving (by omega)
 
 def wrapperPatch (n start : Nat) :
-    Patch (MeasuredQuotient.wrapperProgram n start).2 3746449 := by
+    Patch (MeasuredQuotient.wrapperProgram n start).2 3889165 := by
   unfold MeasuredQuotient.wrapperProgram MeasuredQuotient.wrapperSegments
-  refine (Patch.sequenceCons (d := 912135) (f := 2834314) _ _ (preprocessPatch n _) ?_).castSaving (by omega)
-  exact (Patch.sequenceCons (d := 2834314) (f := 0) _ _ (eeaForwardPatch n _) (Patch.refl _)).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 912135) (f := 2977030) _ _ (preprocessPatch n _) ?_).castSaving (by omega)
+  exact (Patch.sequenceCons (d := 2977030) (f := 0) _ _ (eeaForwardPatch n _) (Patch.refl _)).castSaving (by omega)
 
 
 
@@ -6394,22 +6543,22 @@ def entryBeforePatch (n start : Nat) :
   reversePrepPatch n start
 
 def entryAfterPatch (n start : Nat) :
-    Patch (literalProgram (MeasuredQuotient.Reverse.entryAfter indexedStepProductionRegisters) : Straight n start start) 112 := by
+    Patch (literalProgram (MeasuredQuotient.Reverse.entryAfter indexedStepProductionRegisters) : Straight n start start) 196 := by
   exact ((reverseEpochPatch n start).joinLiteral
-    (Patch.refl (literalProgram b3Source : Straight n start start))).castSaving (by omega)
+    (b3Patch n start)).castSaving (by omega)
 def reverseStepPatch (n start T : Nat) :
-    Patch (MeasuredQuotient.Reverse.stepProgram n start indexedStepProductionRegisters T).2 (1512+hSaving T) := by
+    Patch (MeasuredQuotient.Reverse.stepProgram n start indexedStepProductionRegisters T).2 (1596+hSaving T) := by
   unfold MeasuredQuotient.Reverse.stepProgram MeasuredQuotient.Reverse.stepSegments
-  refine (Patch.sequenceCons (d := hSaving T) (f := 1512) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1512) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 105) (f := 1407) _ _ ?_ ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := hSaving T) (f := 1596) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1596) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 105) (f := 1491) _ _ ?_ ?_).castSaving (by omega)
   · exact reverseFrontPatch n _
-  refine (Patch.sequenceCons (d := 0) (f := 1407) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1407) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1407) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 70) (f := 1337) _ _ (entryBeforePatch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 98) (f := 1239) _ _ (dPatch n _ _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 112) (f := 1127) _ _ (entryAfterPatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1491) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1491) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1491) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 70) (f := 1421) _ _ (entryBeforePatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 98) (f := 1323) _ _ (dPatch n _ _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 196) (f := 1127) _ _ (entryAfterPatch n _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 224) (f := 903) _ _ ?_ ?_).castSaving (by omega)
   · unfold intervalInverseProgram
     exact remainderIntervalPatch n _ _ (certified_remainder_count T) _ _ _
@@ -6422,63 +6571,22 @@ def reverseStepPatch (n start T : Nat) :
     (((b1Patch n _).joinLiteral (aInversePatch n _)).castSaving (by omega)) (Patch.refl _)).castSaving (by omega)
 
 def reverseCrossStepPatch (n start T : Nat) (hT : T < 1542) :
-    Patch (MeasuredQuotient.Reverse.stepProgram n start indexedStepProductionRegisters T).2 (1736+hSaving T) := by
+    Patch (MeasuredQuotient.Reverse.stepProgram n start indexedStepProductionRegisters T).2 (1820+hSaving T) := by
   have hi := early_cross_inputs T hT
   unfold MeasuredQuotient.Reverse.stepProgram MeasuredQuotient.Reverse.stepSegments
-  refine (Patch.sequenceCons (d := hSaving T) (f := 1736) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1736) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 105) (f := 1631) _ _ ?_ ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := hSaving T) (f := 1820) _ _ (hInversePatch n _ T) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1820) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 105) (f := 1715) _ _ ?_ ?_).castSaving (by omega)
   · exact reverseFrontPatch n _
-  refine (Patch.sequenceCons (d := 0) (f := 1631) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1631) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 1631) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 70) (f := 1561) _ _ (entryBeforePatch n _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 98) (f := 1463) _ _ (dPatch n _ _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1715) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1715) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 1715) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 70) (f := 1645) _ _ (entryBeforePatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 98) (f := 1547) _ _ (dPatch n _ _) ?_).castSaving (by omega)
   exact reverseTailCrossPatch n _ _ _ _ hi.1 hi.2.2.1 hi.2.2.2
     (entryAfterPatch n _)
     (fun s => ((b1Patch n s).joinLiteral (aInversePatch n s)).castSaving (show 98 + 140 = 238 by omega))
 
-def reverseStepPatchT (n start T : Nat) :
-    Patch (MeasuredQuotient.Reverse.stepProgram n start indexedStepProductionRegisters T).2 (stepSaving T) :=
-  if hT : T < 1542 then (reverseCrossStepPatch n start T hT).castSaving (by simp [stepSaving, hT])
-  else (reverseStepPatch n start T).castSaving (by simp [stepSaving, hT])
-
-def reverseSchedulePatch (n : Nat) : (count first start : Nat) →
-    Patch (MeasuredQuotient.Reverse.scheduleProgram n indexedStepProductionRegisters count first start).2
-      (scheduleSaving count first)
-  | 0, _, _ => Patch.refl _
-  | count+1, first, start => by
-    simp only [MeasuredQuotient.Reverse.scheduleProgram]
-    exact (Patch.appendCompiled _ _ (reverseSchedulePatch n count (first+1) start)
-      (reverseStepPatchT n _ first)).castSaving (by simp only [scheduleSaving]; omega)
-
-def eeaReversePatch (n start : Nat) :
-    Patch (MeasuredQuotient.Reverse.reverseProgram n start indexedStepProductionRegisters).2 2834314 := by
-  unfold MeasuredQuotient.Reverse.reverseProgram
-  exact (reverseSchedulePatch n 1620 1 start).castSaving scheduleSaving_full
-
-def reverseWrapperPatch (n start : Nat) :
-    Patch (MeasuredQuotient.Reverse.wrapperProgram n start).2 3746449 := by
-  unfold MeasuredQuotient.Reverse.wrapperProgram MeasuredQuotient.Reverse.wrapperSegments
-  refine (Patch.sequenceCons (d := 0) (f := 3746449) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 3746449) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 3746449) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 2834314) (f := 912135) _ _ (eeaReversePatch n _) ?_).castSaving (by omega)
-  exact (Patch.sequenceCons (d := 912135) (f := 0) _ _ (unpreprocessPatch n _) (Patch.refl _)).castSaving (by omega)
-
-attribute [local irreducible] reverseWrapperPatch
-
-def bankWrapperPatch (n start : Nat) :
-    Patch (MeasuredQuotient.Reverse.bankWrapperProgram n start).2 3746449 := by
-  unfold MeasuredQuotient.Reverse.bankWrapperProgram
-  exact Patch.relabelCompiled eeaWorkspaceExchange _ (reverseWrapperPatch n start)
-
-def divisionAfterResetPatch (n start : Nat) (prior : List (Fin start)) :
-    Patch (MeasuredQuotient.Reverse.divisionAfterResetProgram n start prior).2 3746449 := by
-  unfold MeasuredQuotient.Reverse.divisionAfterResetProgram appendRetaining
-  exact (Patch.appendCompiled (d := 3746449) (f := 0) _ _
-    ((Patch.appendCompiled (d := 3746449) (f := 0) _ _ (bankWrapperPatch n start) (Patch.refl _)).castSaving (by omega))
-    (Patch.refl _)).castSaving (by omega)
 end ReverseMeasuredArithmetic
 
 /-- A literal-word patch transports to three consecutive literal segments. -/
@@ -6568,10 +6676,10 @@ def reverseStepPatchT (n start T : Nat) :
     Patch (MeasuredQuotient.Reverse.stepProgram n start indexedStepProductionRegisters T).2 (reverseStepSaving T) := by
   by_cases h : T = 1
   · subst T
-    exact (reverseCrossStepOnePatch n start).castSaving (by simp [reverseStepSaving,stepSaving,hSaving])
+    exact (reverseCrossStepOnePatch n start).castSaving (by simp [reverseStepSaving,hSaving])
   · by_cases ht : T < 1542
-    · exact (ReverseMeasuredArithmetic.reverseCrossStepPatch n start T ht).castSaving (by simp [reverseStepSaving,stepSaving,h,ht])
-    · exact (ReverseMeasuredArithmetic.reverseStepPatch n start T).castSaving (by simp [reverseStepSaving,stepSaving,h,ht])
+    · exact (ReverseMeasuredArithmetic.reverseCrossStepPatch n start T ht).castSaving (by simp [reverseStepSaving,h,ht])
+    · exact (ReverseMeasuredArithmetic.reverseStepPatch n start T).castSaving (by simp [reverseStepSaving,h,ht])
 
 def reverseSchedulePatch (n : Nat) : (count first start : Nat) →
     Patch (MeasuredQuotient.Reverse.scheduleProgram n indexedStepProductionRegisters count first start).2
@@ -6583,74 +6691,98 @@ def reverseSchedulePatch (n : Nat) : (count first start : Nat) →
       (reverseStepPatchT n _ first)).castSaving (by simp only [reverseScheduleSaving]; omega)
 
 def eeaReversePatch (n start : Nat) :
-    Patch (MeasuredQuotient.Reverse.reverseProgram n start indexedStepProductionRegisters).2 2834734 := by
+    Patch (MeasuredQuotient.Reverse.reverseProgram n start indexedStepProductionRegisters).2 2970730 := by
   unfold MeasuredQuotient.Reverse.reverseProgram
   exact (reverseSchedulePatch n 1620 1 start).castSaving (by decide)
 
 def reverseWrapperPatch (n start : Nat) :
-    Patch (MeasuredQuotient.Reverse.wrapperProgram n start).2 3746869 := by
+    Patch (MeasuredQuotient.Reverse.wrapperProgram n start).2 3882865 := by
   unfold MeasuredQuotient.Reverse.wrapperProgram MeasuredQuotient.Reverse.wrapperSegments
-  refine (Patch.sequenceCons (d := 0) (f := 3746869) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 3746869) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 3746869) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 2834734) (f := 912135) _ _ (eeaReversePatch n _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 3882865) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 3882865) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 3882865) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 2970730) (f := 912135) _ _ (eeaReversePatch n _) ?_).castSaving (by omega)
   exact (Patch.sequenceCons (d := 912135) (f := 0) _ _ (unpreprocessPatch n _) (Patch.refl _)).castSaving (by omega)
 
 attribute [local irreducible] reverseWrapperPatch
 
 def bankWrapperPatch (n start : Nat) :
-    Patch (MeasuredQuotient.Reverse.bankWrapperProgram n start).2 3746869 := by
+    Patch (MeasuredQuotient.Reverse.bankWrapperProgram n start).2 3882865 := by
   unfold MeasuredQuotient.Reverse.bankWrapperProgram
   exact Patch.relabelCompiled eeaWorkspaceExchange _ (reverseWrapperPatch n start)
 
 def divisionAfterResetPatch (n start : Nat) (prior : List (Fin start)) :
-    Patch (MeasuredQuotient.Reverse.divisionAfterResetProgram n start prior).2 3746869 := by
+    Patch (MeasuredQuotient.Reverse.divisionAfterResetProgram n start prior).2 3882865 := by
   unfold MeasuredQuotient.Reverse.divisionAfterResetProgram appendRetaining
-  exact (Patch.appendCompiled (d := 3746869) (f := 0) _ _
-    ((Patch.appendCompiled (d := 3746869) (f := 0) _ _ (bankWrapperPatch n start) (Patch.refl _)).castSaving (by omega))
+  exact (Patch.appendCompiled (d := 3882865) (f := 0) _ _
+    ((Patch.appendCompiled (d := 3882865) (f := 0) _ _ (bankWrapperPatch n start) (Patch.refl _)).castSaving (by omega))
     (Patch.refl _)).castSaving (by omega)
 end ReverseMeasuredArithmetic700
 
-def divisionPatch (n start : Nat) : Patch (MeasuredQuotient.Reverse.divisionProgram n start).2 7493318 := by
+def divisionPatch (n start : Nat) : Patch (MeasuredQuotient.Reverse.divisionProgram n start).2 7772030 := by
   unfold MeasuredQuotient.Reverse.divisionProgram
-  exact (Patch.appendCompiled (d := 3746449) (f := 3746869) _ _
-    ((Patch.appendCompiled (d := 3746449) (f := 0) _ _ (MeasuredArithmetic.wrapperPatch n start) (Patch.refl _)).castSaving (by omega))
+  exact (Patch.appendCompiled (d := 3889165) (f := 3882865) _ _
+    ((Patch.appendCompiled (d := 3889165) (f := 0) _ _ (MeasuredArithmetic.wrapperPatch n start) (Patch.refl _)).castSaving (by omega))
     (collectPatch _ (ReverseMeasuredArithmetic700.divisionAfterResetPatch n) _ _ _)).castSaving (by omega)
 
 def multiplicationCleanupPatch (n start : Nat) :
-    Patch (multiplicationCleanupProgram n start).2 3746869 := by
+    Patch (multiplicationCleanupProgram n start).2 3882865 := by
   unfold multiplicationCleanupProgram
-  exact (Patch.appendCompiled (d := 0) (f := 3746869) _ _ (Patch.refl _)
+  exact (Patch.appendCompiled (d := 0) (f := 3882865) _ _ (Patch.refl _)
     (Patch.appendLiteral _ _ (Optimization.reverseDataPatch n _))).castSaving (Nat.zero_add _)
 
 def multiplicationCorrectionPatch (n start : Nat) (prior : List (Fin start)) :
-    Patch (multiplicationCorrectionProgram n start prior).2 3746869 := by
+    Patch (multiplicationCorrectionProgram n start prior).2 3882865 := by
   unfold multiplicationCorrectionProgram
-  exact (Patch.appendCompiled (d := 0) (f := 3746869)
+  exact (Patch.appendCompiled (d := 0) (f := 3882865)
     (correctionCompiled n start (List.range' 580 256) prior) (multiplicationCleanupProgram n start)
-    (Patch.refl _) (multiplicationCleanupPatch n start)).castSaving (show 0+3746869=3746869 by omega)
+    (Patch.refl _) (multiplicationCleanupPatch n start)).castSaving (show 0+3882865=3882865 by omega)
 
 namespace MeasuredArithmetic
 attribute [local irreducible] wrapperPatch
 
 def bankWrapperPatch (n start : Nat) :
-    Patch (MeasuredQuotient.bankWrapperProgram n start).2 3746449 := by
+    Patch (MeasuredQuotient.bankWrapperProgram n start).2 3889165 := by
   unfold MeasuredQuotient.bankWrapperProgram
   exact Patch.relabelCompiled eeaWorkspaceExchange _ (wrapperPatch n start)
 
 end MeasuredArithmetic
 
 def multiplicationAfterResetPatch (n start : Nat) (prior : List (Fin start)) :
-    Patch (MeasuredQuotient.multiplicationAfterResetProgram n start prior).2 7493318 := by
+    Patch (MeasuredQuotient.multiplicationAfterResetProgram n start prior).2 7772030 := by
   unfold MeasuredQuotient.multiplicationAfterResetProgram appendRetaining
-  exact (Patch.appendCompiled (d := 3746449) (f := 3746869) _ _
-    ((Patch.appendCompiled (d := 3746449) (f := 0) _ _ (MeasuredArithmetic.bankWrapperPatch n _) (Patch.refl _)).castSaving (by omega))
+  exact (Patch.appendCompiled (d := 3889165) (f := 3882865) _ _
+    ((Patch.appendCompiled (d := 3889165) (f := 0) _ _ (MeasuredArithmetic.bankWrapperPatch n _) (Patch.refl _)).castSaving (by omega))
     (multiplicationCorrectionPatch n _ _)).castSaving (by omega)
 
-def multiplicationPatch (n start : Nat) : Patch (MeasuredQuotient.multiplicationProgram n start).2 7493318 := by
-  unfold MeasuredQuotient.multiplicationProgram
-  exact (Patch.appendCompiled (d := 0) (f := 7493318) _ _ (Patch.refl _)
-    (collectPatch _ (multiplicationAfterResetPatch n) _ _ _)).castSaving (by omega)
+namespace ReverseMeasuredArithmetic700
+attribute [local irreducible] MeasuredQuotient.Reverse.bankWrapperProgram MeasuredQuotient.bankWrapperProgram
+def multiplicationCleanupPatch (n start : Nat) :
+    Patch (MeasuredQuotient.Reverse.multiplicationCleanupProgram n start).2 3882865 := by
+  unfold MeasuredQuotient.Reverse.multiplicationCleanupProgram
+  exact (Patch.appendCompiled (d := 0) (f := 3882865) _ _ (Patch.refl _)
+    (Patch.appendLiteral _ _ (bankWrapperPatch n _))).castSaving (Nat.zero_add _)
+
+def multiplicationCorrectionPatch (n start : Nat) (prior : List (Fin start)) :
+    Patch (MeasuredQuotient.Reverse.multiplicationCorrectionProgram n start prior).2 3882865 := by
+  unfold MeasuredQuotient.Reverse.multiplicationCorrectionProgram
+  exact (Patch.appendCompiled (d := 0) (f := 3882865)
+    (correctionCompiled n start (List.range' 580 256) prior) (MeasuredQuotient.Reverse.multiplicationCleanupProgram n start)
+    (Patch.refl _) (multiplicationCleanupPatch n start)).castSaving (show 0+3882865=3882865 by omega)
+
+def multiplicationAfterResetPatch (n start : Nat) (prior : List (Fin start)) :
+    Patch (MeasuredQuotient.Reverse.multiplicationAfterResetProgram n start prior).2 7772030 := by
+  unfold MeasuredQuotient.Reverse.multiplicationAfterResetProgram appendRetaining
+  exact (Patch.appendCompiled (d := 3889165) (f := 3882865) _ _
+    ((Patch.appendCompiled (d := 3889165) (f := 0) _ _ (MeasuredArithmetic.bankWrapperPatch n _) (Patch.refl _)).castSaving (by omega))
+    (multiplicationCorrectionPatch n _ _)).castSaving (by omega)
+
+end ReverseMeasuredArithmetic700
+
+def multiplicationPatch (n start : Nat) : Patch (MeasuredQuotient.Reverse.multiplicationProgram n start).2 7772030 := by
+  unfold MeasuredQuotient.Reverse.multiplicationProgram
+  exact (Patch.appendCompiled (d := 0) (f := 7772030) _ _ (Patch.refl _)
+    (collectPatch _ (ReverseMeasuredArithmetic700.multiplicationAfterResetPatch n) _ _ _)).castSaving (by omega)
 
 
 
@@ -6674,38 +6806,38 @@ def borrowedFieldPatch {saving : Nat} (n start : Nat) (arithmetic : FixedSegment
   exact (Patch.sequenceCons (d := saving) (f := 0) _ _ (hp _) (Patch.refl _)).castSaving (by omega)
 
 def zeroDivisionPatch (n start : Nat) :
-    Patch (ShorECDLP.Entrant.BorrowFlag.divisionProgram n start).2 7493318 := by
+    Patch (ShorECDLP.Entrant.BorrowFlag.divisionProgram n start).2 7772030 := by
   unfold ShorECDLP.Entrant.BorrowFlag.divisionProgram
   exact borrowedFieldPatch n start (MeasuredQuotient.Reverse.divisionProgram n) (divisionPatch n)
 
 def zeroMultiplicationPatch (n start : Nat) :
-    Patch (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 7493318 := by
+    Patch (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 7772030 := by
   unfold ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
-  exact borrowedFieldPatch n start (MeasuredQuotient.multiplicationProgram n) (multiplicationPatch n)
+  exact borrowedFieldPatch n start (MeasuredQuotient.Reverse.multiplicationProgram n) (multiplicationPatch n)
 
-def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 14986636 := by
+def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 15544060 := by
   unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
-  refine (Patch.sequenceCons (d := 0) (f := 14986636) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 14986636) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 7493318) (f := 7493318) _ _ (zeroDivisionPatch 32768 _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 7493318) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  refine (Patch.sequenceCons (d := 0) (f := 7493318) _ _ (Patch.refl _) ?_).castSaving (by omega)
-  exact (Patch.sequenceCons (d := 7493318) (f := 0) _ _ (zeroMultiplicationPatch 32768 _) (Patch.refl _)).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 15544060) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 15544060) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 7772030) (f := 7772030) _ _ (zeroDivisionPatch 32768 _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 7772030) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  refine (Patch.sequenceCons (d := 0) (f := 7772030) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  exact (Patch.sequenceCons (d := 7772030) (f := 0) _ _ (zeroMultiplicationPatch 32768 _) (Patch.refl _)).castSaving (by omega)
 
-def corePatch (start : Nat) : Patch (Single.Physical.core start).2 14986636 := by
+def corePatch (start : Nat) : Patch (Single.Physical.core start).2 15544060 := by
   unfold Single.Physical.core Single.Physical.segments
-  exact (Patch.sequenceCons (d := 14986636) (f := 0) _ _ (coordinatePatch start) (Patch.refl _)).castSaving (by omega)
+  exact (Patch.sequenceCons (d := 15544060) (f := 0) _ _ (coordinatePatch start) (Patch.refl _)).castSaving (by omega)
 
-def preparedPatch (start : Nat) : Patch (Single.Physical.prepared start).2 14986636 := by
+def preparedPatch (start : Nat) : Patch (Single.Physical.prepared start).2 15544060 := by
   unfold Single.Physical.prepared
   exact Patch.surroundCompiled _ _ _ (corePatch start)
 
-def actualPatch (start : Nat) : Patch (Single.Physical.actual.program start) 14986636 := by
+def actualPatch (start : Nat) : Patch (Single.Physical.actual.program start) 15544060 := by
   unfold Single.Physical.actual closedWindow
   exact (((preparedPatch 0).relabel (windowAddressPerm 855 (by decide))).castFinish _).shift start
 
 def signedPatch (w : Single.SignedWindow) (start : Nat) :
-    Patch ((Single.signedWindow w).program start) 14986636 := by
+    Patch ((Single.signedWindow w).program start) 15544060 := by
   unfold Single.signedWindow
   exact (actualPatch start).reindex (Single.signedRow w)
 
@@ -6721,8 +6853,8 @@ structure PatchedWindow (n : Nat) where
   patch : ∀ start, Patch (source.program start) saving
 
 def signedSaving : Single.SignedWindow → Nat
-  | .left15 _ | .right15 _ => 17624460
-  | _ => 14986636
+  | .left15 _ | .right15 _ => 18181884
+  | _ => 15544060
 
 def signedAliasPatch (w : Single.SignedWindow) (start : Nat) :
     Patch ((Single.signedWindow w).program start) (signedSaving w) := by
@@ -6741,9 +6873,9 @@ private theorem leftPatches_source : leftPatches.map PatchedWindow.source = Sing
   simp [leftPatches, Single.leftWindows]
 private theorem rightPatches_source : rightPatches.map PatchedWindow.source = Single.rightWindows := by
   simp [rightPatches, Single.rightWindows]
-private theorem leftPatches_saving : (leftPatches.map PatchedWindow.saving).sum = 266164416 := by
+private theorem leftPatches_saving : (leftPatches.map PatchedWindow.saving).sum = 275083200 := by
   simp [leftPatches, Single.leftSigned, signedSaving]
-private theorem rightPatches_saving : (rightPatches.map PatchedWindow.saving).sum = 197464092 := by
+private theorem rightPatches_saving : (rightPatches.map PatchedWindow.saving).sum = 204710604 := by
   simp [rightPatches, Single.rightSigned, signedSaving]
 
 def axisPatch {n} : (ps : List (PatchedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -6767,14 +6899,14 @@ def Patch.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n m k)
   unfold Single.framed
   exact Patch.gate _ ((Patch.append hp ((Patch.append hq (Patch.gate _ (Patch.refl _))).castSaving (Nat.add_zero dr))).castFinish h)
 
-def trialPatch (start : Nat) : Patch (Single.trial start) 463628508 := by
+def trialPatch (start : Nat) : Patch (Single.trial start) 479793804 := by
   have hl := (axisPatchFor leftPatches Single.leftWindows leftPatches_source start List.nil).castSaving leftPatches_saving
   have hr := (axisPatchFor rightPatches Single.rightWindows rightPatches_source
     (start+Single.axisCount Single.leftWindows) List.nil).castSaving rightPatches_saving
   unfold Single.trial
   exact (Patch.framed _ _ _ _ hl hr).castSaving (by decide)
 
-def programPatch : Patch Single.program 463628508 := by
+def programPatch : Patch Single.program 479793804 := by
   unfold Single.program
   exact (trialPatch 0).castFinish _
 
@@ -6783,7 +6915,7 @@ def Patch.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 e) (hp
   unfold Single.fixedEntry
   exact hp.reindex _
 
-def entryPatch : Patch Rounded.entry.program 463628508 := by
+def entryPatch : Patch Rounded.entry.program 479793804 := by
   unfold Rounded.entry Rounded.program
   exact Patch.fixedEntry Single.mixedCoefficientAt _
     ((Patch.append programPatch (Patch.refl Rounded.readout)).castSaving (by omega))
@@ -6794,7 +6926,7 @@ namespace ShorECDLP.Entrant.Parent
 open Challenge
 noncomputable def entry : StraightEntry := Optimization.replaceEntry Rounded.entry Optimization.entryPatch.program
 def layout : DecodeLayout := Rounded.layout
-def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 463628508, Rounded.bounds.measurements⟩
+def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 479793804, Rounded.bounds.measurements⟩
 theorem certificate : Certificate officialLimits layout entry bounds :=
   Optimization.replacement_certificate Rounded.certificate Optimization.entryPatch.drops Optimization.entryPatch.rewrites
 end ShorECDLP.Entrant.Parent
@@ -7467,39 +7599,39 @@ theorem borrowedDivisionCount (n start : Nat) :
   exact borrowedFieldCount n start 34668561 _ (FullCredit.ReverseMeasuredCredit.divisionCount n)
 
 theorem borrowedMultiplicationCount (n start : Nat) :
-    AtLeast (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 34910095 := by
+    AtLeast (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 34668561 := by
   unfold ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
-  exact borrowedFieldCount n start 34910095 _ (FullCredit.MeasuredCredit.multiplicationCount n)
+  exact borrowedFieldCount n start 34668561 _ (FullCredit.ReverseMeasuredCredit.multiplicationCount n)
 
-theorem borrowedCoordinateAllCount (start : Nat) : AtLeast (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 71407264 := by
+theorem borrowedCoordinateAllCount (start : Nat) : AtLeast (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 71165730 := by
   unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
-  refine (AtLeast.sequenceCons (d := 65534) (f := 71341730) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 65534) (f := 71276196) _ _ (signedFieldCount _ _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 34668561) (f := 36607635) _ _ (borrowedDivisionCount _ _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 1500938) (f := 35106697) _ _ (FullCredit.paddedSquareCount _ _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 65534) (f := 35041163) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 34910095) (f := 131068) _ _ (borrowedMultiplicationCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 71100196) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 71034662) _ _ (signedFieldCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 34668561) (f := 36366101) _ _ (borrowedDivisionCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 1500938) (f := 34865163) _ _ (FullCredit.paddedSquareCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 34799629) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 34668561) (f := 131068) _ _ (borrowedMultiplicationCount _ _) ?_).castCount (by omega)
   refine (AtLeast.sequenceCons (d := 0) (f := 131068) _ _ (AtLeast.zero _) ?_).castCount (by omega)
   refine (AtLeast.sequenceCons (d := 65534) (f := 65534) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
   refine (AtLeast.sequenceCons (d := 65534) (f := 0) _ _ (signedFieldCount _ _) ?_).castCount (by omega)
   exact AtLeast.zero _
 
-theorem coreCount (start : Nat) : AtLeast (Single.Physical.core start).2 71833235 := by
+theorem coreCount (start : Nat) : AtLeast (Single.Physical.core start).2 71591701 := by
   unfold Single.Physical.core Single.Physical.segments
-  refine (AtLeast.sequenceCons (d := 71407264) (f := 425971) _ _ (borrowedCoordinateAllCount start) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 71165730) (f := 425971) _ _ (borrowedCoordinateAllCount start) ?_).castCount (by omega)
   refine (AtLeast.sequenceCons (d := 0) (f := 425971) _ _ (AtLeast.zero _) ?_).castCount (by omega)
   exact (AtLeast.sequenceCons (d := 425971) (f := 0) _ _ (correctionQueryCount _) (AtLeast.zero _)).castCount (by omega)
 
-theorem preparedCount (start : Nat) : AtLeast (Single.Physical.prepared start).2 71833235 := by
+theorem preparedCount (start : Nat) : AtLeast (Single.Physical.prepared start).2 71591701 := by
   unfold Single.Physical.prepared
   exact AtLeast.surroundCompiled _ _ _ (coreCount start)
 
-theorem actualCount (start : Nat) : AtLeast (Single.Physical.actual.program start) 71833235 := by
+theorem actualCount (start : Nat) : AtLeast (Single.Physical.actual.program start) 71591701 := by
   unfold Single.Physical.actual closedWindow
   exact (((preparedCount 0).relabel (windowAddressPerm 855 (by decide))).castFinish _).shift start
 
 theorem signedCount (w : Single.SignedWindow) (start : Nat) :
-    AtLeast ((Single.signedWindow w).program start) 71875898 :=
+    AtLeast ((Single.signedWindow w).program start) 71634364 :=
   FullCredit.signedFullCount w start
 
 theorem prepareCount {n s e d} (ws : List Wire) {p : Straight n s e} (hp : AtLeast p d) :
@@ -7515,16 +7647,16 @@ structure CountedWindow (n : Nat) where
 
 def leftCountes : List (CountedWindow 901120) :=
   ⟨Single.firstWindow,131071,FullCredit.firstFullCount⟩ ::
-    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,71875898,signedCount w⟩)
+    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,71634364,signedCount w⟩)
 def rightCountes : List (CountedWindow 901120) :=
-  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,71875898,signedCount w⟩)
+  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,71634364,signedCount w⟩)
 private theorem leftCountes_source : leftCountes.map CountedWindow.source = Single.leftWindows := by
   simp [leftCountes, Single.leftWindows]
 private theorem rightCountes_source : rightCountes.map CountedWindow.source = Single.rightWindows := by
   simp [rightCountes, Single.rightWindows]
-private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1150145439 := by
+private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1146280895 := by
   simp [leftCountes, Single.leftSigned]
-private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 934386674 := by
+private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 931246732 := by
   simp [rightCountes, Single.rightSigned]
 
 theorem axisCountProof {n} : (ps : List (CountedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -7548,14 +7680,14 @@ theorem AtLeast.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n 
   unfold Single.framed
   exact AtLeast.gate _ ((AtLeast.append hp ((AtLeast.append hq (AtLeast.gate _ (AtLeast.zero _))).castCount (Nat.add_zero dr))).castFinish h)
 
-theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2084532113 := by
+theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2077527627 := by
   have hl := (axisCountFor leftCountes Single.leftWindows leftCountes_source start List.nil).castCount leftCountes_saving
   have hr := (axisCountFor rightCountes Single.rightWindows rightCountes_source
     (start+Single.axisCount Single.leftWindows) List.nil).castCount rightCountes_saving
   unfold Single.trial
   exact (AtLeast.framed _ _ _ _ hl hr).castCount (by decide)
 
-theorem programCount : AtLeast Single.program 2084532113 := by
+theorem programCount : AtLeast Single.program 2077527627 := by
   unfold Single.program
   exact (trialCount 0).castFinish _
 
@@ -7564,7 +7696,7 @@ theorem AtLeast.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 
   unfold Single.fixedEntry
   exact hp.reindex _
 
-theorem entryCount : AtLeast Rounded.entry.program 2084532113 := by
+theorem entryCount : AtLeast Rounded.entry.program 2077527627 := by
   unfold Rounded.entry Rounded.program
   apply AtLeast.fixedEntry
   exact ((AtLeast.append programCount (AtLeast.zero Rounded.readout)).castCount (by omega))
@@ -7595,12 +7727,12 @@ attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.en
 
 
 
-theorem parent_added_lower : 2018299469 ≤ added Parent.entry.program := by
+theorem parent_added_lower : 2008985655 ≤ added Parent.entry.program := by
   have h := dropped_added Optimization.entryPatch.drops
   have hc := entryCount
-  change 2084532113 ≤ added Rounded.entry.program at hc
+  change 2077527627 ≤ added Rounded.entry.program at hc
   unfold Parent.entry Optimization.replaceEntry
-  change 2018299469 ≤ added Optimization.entryPatch.program
+  change 2008985655 ≤ added Optimization.entryPatch.program
   omega
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) (ws : List Wire)
     (hp : Within ws p) : Within ws (reindexStraight f p) := by
@@ -7639,12 +7771,12 @@ theorem parent_within : Within resetWires Parent.entry.program := by
 
 set_option maxRecDepth 2000
 
-theorem parent_added_upper : added Parent.entry.program ≤ 7354420586 := by
+theorem parent_added_upper : added Parent.entry.program ≤ 7347416100 := by
   have h := lower_t 1024 Parent.entry.program 0 Fin.elim0
     (readConstant Parent.entry.coefficients.get 0) Fin.elim0 Fin.elim0
     (by funext i; exact Fin.elim0 i)
   have ht := (Parent.certificate.resources 0).2.1
-  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14128152057 at ht
+  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14062955359 at ht
   omega
 
 
@@ -7666,11 +7798,11 @@ set_option maxRecDepth 10000
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 noncomputable def entry : StraightEntry := lowerEntry 1024 Parent.entry
 noncomputable def layout : DecodeLayout := lowerLayout 1024 Parent.entry Parent.layout
-def bounds : Bounds := ⟨855, 10091553119, 8266128294⟩
+def bounds : Bounds := ⟨855, 10044984049, 8266128294⟩
 
 private theorem resourceArithmetic (a slots cursor oldT newT maxSlots maxRecords newRecords : Nat)
-    (ha : a ≤ 7354420586) (hl : 2018299469 ≤ a) (hs : slots ≤ 90000176648)
-    (hc : cursor ≤ 911690566) (ho : oldT ≤ 14128152057) (hn : 10091553119 ≤ newT)
+    (ha : a ≤ 7347416100) (hl : 2008985655 ≤ a) (hs : slots ≤ 90000176648)
+    (hc : cursor ≤ 918695052) (ho : oldT ≤ 14062955359) (hn : 10044984049 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hlm : 47471340504 ≤ maxRecords)
     (hnm : 8266128294 ≤ newRecords) :
     slots + 18*a ≤ maxSlots ∧ cursor+a ≤ maxRecords ∧ oldT ≤ newT + 2*a ∧
@@ -7728,15 +7860,15 @@ private theorem lowerEntry_slots (q : Wire) (e : StraightEntry) :
 private theorem five_within : Within (1024 :: resetWires) Five.entry.program :=
   lowerEntry_within 1024 Parent.entry resetWires parent_within
 
-private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2018299469 ≤ a) :
-    2018299469 ≤ s := by omega
+private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2008985655 ≤ a) :
+    2008985655 ≤ s := by omega
 
-private theorem five_saved : 2018299469 ≤ Catalyst.saved Five.entry.program :=
+private theorem five_saved : 2008985655 ≤ Catalyst.saved Five.entry.program :=
   saved_bound (added Parent.entry.program) (Catalyst.saved Parent.entry.program)
     (Catalyst.saved Five.entry.program) (lowerEntry_saved 1024 Parent.entry) parent_added_lower
 
 private theorem slots_bound (old new a : Nat) (he : new = old + 18*a)
-    (hs : old ≤ 90000176648) (ha : a ≤ 7354420586) : new ≤ 230352365419 := by omega
+    (hs : old ≤ 90000176648) (ha : a ≤ 7347416100) : new ≤ 230352365419 := by omega
 
 private theorem five_slots : Five.entry.program.gateSlots ≤ 230352365419 :=
   slots_bound Parent.entry.program.gateSlots Five.entry.program.gateSlots
@@ -7744,11 +7876,11 @@ private theorem five_slots : Five.entry.program.gateSlots ≤ 230352365419 :=
 
 noncomputable def entry : StraightEntry := Catalyst.compileEntry 1025 Five.entry
 noncomputable def layout : DecodeLayout := Five.layout
-def bounds : Bounds := ⟨856, 8073253651, 8266128294⟩
+def bounds : Bounds := ⟨856, 8035998395, 8266128294⟩
 
 private theorem resourceArithmetic (s a c oldT newT maxSlots m : Nat)
-    (hs : s ≤ 230352365419) (ha : a ≤ s) (hl : 2018299469 ≤ a)
-    (hc : c ≤ 8266128294) (ho : oldT ≤ 10091553119) (hn : 8073253651 ≤ newT)
+    (hs : s ≤ 230352365419) (ha : a ≤ s) (hl : 2008985655 ≤ a)
+    (hc : c ≤ 8266128294) (ho : oldT ≤ 10044984049) (hn : 8035998395 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hm : 8266128294 ≤ m) :
     s + 3*a + 2 ≤ maxSlots ∧ oldT + 1 ≤ newT + a ∧ c ≤ m := by omega
 

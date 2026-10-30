@@ -3463,10 +3463,48 @@ theorem divisionProgram_wellFormed (n start : Nat) : (divisionProgram n start).2
 end
 end ShorECDLP.Entrant.MeasuredQuotient.Reverse
 
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem swapOutput_wellFormed : CircuitWellFormed fig15SwapOutput := by
+  intro g hg
+  simp only [fig15SwapOutput,List.mem_flatMap,List.mem_range,List.mem_cons,List.not_mem_nil,or_false] at hg
+  obtain ⟨i,hi,hg⟩ := hg
+  rcases hg with rfl | rfl | rfl <;> simp [Gate.WellFormed]
+attribute [local irreducible] bankWrapperProgram MeasuredQuotient.bankWrapperProgram multiplyWorkProgram multiplyDataProgram unmultiplyDataProgram
+theorem multiplicationCleanupProgram_wellFormed (n start : Nat) : (multiplicationCleanupProgram n start).2.WellFormed := by
+  unfold multiplicationCleanupProgram
+  exact appendCompiled_wellFormed _ _ (unmultiplyDataProgram_wellFormed _ _)
+    (appendLiteral_wellFormed _ _ (bankWrapperProgram_wellFormed _ _) swapOutput_wellFormed)
+
+theorem multiplicationCorrectionProgram_wellFormed (n start : Nat) (prior : List (Fin start)) :
+    (multiplicationCorrectionProgram n start prior).2.WellFormed :=
+  appendCompiled_wellFormed _ _ (correctionCompiled_wellFormed _ _ _ _) (multiplicationCleanupProgram_wellFormed _ _)
+
+theorem multiplicationAfterResetProgram_wellFormed (n start : Nat) (prior : List (Fin start)) :
+    (multiplicationAfterResetProgram n start prior).2.WellFormed := by
+  unfold multiplicationAfterResetProgram
+  apply appendRetaining_wellFormed
+  · exact appendCompiled_wellFormed _ _ (MeasuredQuotient.bankWrapperProgram_wellFormed _ _) (multiplyDataProgram_wellFormed _ _)
+  · exact multiplicationCorrectionProgram_wellFormed n
+
+attribute [local irreducible] multiplicationAfterResetProgram collectProgram
+
+theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgram n start).2.WellFormed := by
+  unfold multiplicationProgram
+  exact appendCompiled_wellFormed _ _ (multiplyWorkProgram_wellFormed _ _)
+    (collectProgram_wellFormed _ _ (multiplicationAfterResetProgram_wellFormed n) _ _ _)
+
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge
 attribute [local irreducible] divisionProgram multiplicationProgram equalityProgram
-attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram
+attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram
 private theorem zero_cx_wellFormed : CircuitWellFormed cx := by
   intro g hg
   have he := List.mem_singleton.mp hg
@@ -3490,7 +3528,7 @@ theorem zMultiplicationProgram_wellFormed (n start : Nat) : (zMultiplicationProg
   · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
   · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
     apply appendCompiled_wellFormed
-    · exact ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_wellFormed _ _
+    · exact ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram_wellFormed _ _
     · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
       exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
 

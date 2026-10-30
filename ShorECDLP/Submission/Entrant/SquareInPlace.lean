@@ -10612,3 +10612,271 @@ end
 end ShorECDLP.Entrant.MeasuredQuotient.Reverse
 
 end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+def multiplicationAfterReset (outcomes : List Bool) : AdaptiveCircuit :=
+  ((((MeasuredQuotient.bankWrapper.seq fig15MultiplyToData).seq
+    (.unitary (registerZCorrection (List.range' 580 256) outcomes) .done)).seq
+      fig15MultiplyToDataInverse).seq bankWrapper).seq (.unitary fig15SwapOutput .done)
+private theorem reverseMultiplication_multiplication_continuation_wellFormed (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).WellFormed := by
+  exact ((((ShorECDLP.Entrant.MeasuredQuotient.bankWrapper_wellFormed.seq measuredMultiplication_figure15_multipliers_wellFormed.2.1).seq
+    (measuredMultiplication_figure15_unitary_wellFormed _ (registerZCorrection_wellFormed (List.range' 580 256) outcomes))).seq measuredMultiplication_figure15_multipliers_wellFormed.2.2).seq
+      bankWrapper_wellFormed).seq (measuredMultiplication_figure15_unitary_wellFormed _ measuredMultiplication_figure15_swap_wellFormed)
+
+private theorem reverseMultiplication_multiplication_continuation_coherent (outcomes : List Bool) :
+    CoherentlyImplementsOn (multiplicationAfterReset outcomes)
+      ((Quantum.run fig15SwapOutput).comp (measuredMultiplication_multiplicationRestoreMap outcomes)) measuredMultiplication_multiplicationResetValid := by
+  have hf : CoherentlyImplementsOn ShorECDLP.Entrant.MeasuredQuotient.bankWrapper measuredMultiplication_multiplicationInvertMap measuredMultiplication_multiplicationResetValid := by
+    apply measuredMultiplication_coherent_strengthen ShorECDLP.Entrant.MeasuredQuotient.bankWrapper_coherent
+    rintro t ⟨s,hs,rfl⟩
+    exact measuredMultiplication_multiplication_reset_input s hs
+  have hm := hf.seq fig15MultiplyToData_coherent (by
+    rintro t ⟨s,hs,rfl⟩
+    rw [measuredMultiplication_multiplication_invert_ket]
+    exact supportedOn_ket _ _ (measuredMultiplication_multiplication_inverted_horner s hs))
+  have hz := hm.seq (CoherentlyImplementsOn.unitary
+    (registerZCorrection (List.range' 580 256) outcomes) (fun _ => True)) (by
+      intro t ht u hu; trivial)
+  have hi := hz.seq fig15MultiplyToDataInverse_coherent (by
+    rintro t ⟨s,hs,rfl⟩
+    change SupportedOn _ (measuredMultiplication_multiplicationCorrectMap outcomes _)
+    rw [measuredMultiplication_multiplication_correct_ket s hs]
+    exact measuredMultiplication_supported_phase _ _ ⟨fig15MultiplicationInvertedState s,measuredMultiplication_multiplication_inverted_horner s hs,rfl⟩)
+  have hr := hi.seq bankWrapper_coherent_localImage (by
+    rintro t ⟨s,hs,rfl⟩
+    change SupportedOn _ (measuredMultiplication_multiplicationUncomputeMap outcomes _)
+    rw [measuredMultiplication_multiplication_uncompute_ket s hs]
+    exact measuredMultiplication_supported_phase _ _ (measuredMultiplication_multiplication_inverse_ready s hs))
+  exact hr.seq (CoherentlyImplementsOn.unitary fig15SwapOutput (fun _ => True))
+    (by intro t ht u hu; trivial)
+
+private theorem reverseMultiplication_multiplication_reset_coherent :
+    CoherentlyImplementsOn (measureResetThen (List.range' 580 256) multiplicationAfterReset)
+      (Finsupp.lmapDomain ℂ ℂ measuredMultiplication_multiplicationPreparedOutput) measuredMultiplication_multiplicationPreparedValid :=
+  measureResetThen_coherent (List.range' 580 256) multiplicationAfterReset
+    (fun outcomes => (Quantum.run fig15SwapOutput).comp (measuredMultiplication_multiplicationRestoreMap outcomes))
+    (fun _ => measuredMultiplication_multiplicationResetValid) measuredMultiplication_multiplicationPreparedValid measuredMultiplication_multiplicationPreparedOutput List.nodup_range'
+    (fun outcomes _ => reverseMultiplication_multiplication_continuation_wellFormed outcomes)
+    reverseMultiplication_multiplication_continuation_coherent (fun outcomes _ t ht => measuredMultiplication_multiplication_reset_correct outcomes t ht)
+    (fig15WorkProductState measuredMultiplication_divisionWitness) ⟨measuredMultiplication_divisionWitness,measuredMultiplication_divisionWitness_valid,rfl⟩
+
+attribute [local irreducible] multiplicationAfterReset fig15MultiplyToWork
+
+def multiplication : AdaptiveCircuit :=
+  fig15MultiplyToWork.seq (measureResetThen (List.range' 580 256) multiplicationAfterReset)
+theorem multiplication_coherent :
+    CoherentlyImplementsOn multiplication
+      (Finsupp.lmapDomain ℂ ℂ fig15MultiplicationOutputState) Secp256k1InPlaceInputValid := by
+  have h := fig15MultiplicationPrefix_coherent.seq reverseMultiplication_multiplication_reset_coherent (by
+    intro s hs
+    rw [measuredMultiplication_basis_lift_ket]
+    exact supportedOn_ket _ _ ⟨s,hs,rfl⟩)
+  apply h.congrIdeal
+  intro s hs
+  simp only [LinearMap.comp_apply,measuredMultiplication_basis_lift_ket]
+  rfl
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] bankWrapperProgram MeasuredQuotient.bankWrapperProgram
+def multiplicationCleanupSource : AdaptiveCircuit := fig15MultiplyToDataInverse.seq (bankWrapper.seq (.unitary fig15SwapOutput .done))
+def multiplicationCleanupProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  let first := unmultiplyDataProgram n start
+  appendCompiled first (appendLiteral (bankWrapperProgram n (start+first.1)) fig15SwapOutput)
+
+theorem multiplicationCleanupProgram_run (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (multiplicationCleanupProgram n start) read history = multiplicationCleanupSource.run := by
+  unfold multiplicationCleanupProgram multiplicationCleanupSource
+  apply appendCompiled_run_eq
+  · exact unmultiplyDataProgram_run n start read history
+  · intro h
+    apply appendLiteral_run
+    exact bankWrapperProgram_run n _ read h
+
+theorem multiplicationCleanupProgram_tCount (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (multiplicationCleanupProgram n start) read history = multiplicationCleanupSource.tCount := by
+  unfold multiplicationCleanupProgram multiplicationCleanupSource
+  apply appendCompiled_tCount_eq
+  · exact unmultiplyDataProgram_tCount n start read history
+  · intro h
+    apply appendLiteral_tCount
+    exact bankWrapperProgram_tCount n _ read h
+
+attribute [local irreducible] multiplicationCleanupProgram
+
+def multiplicationCorrectionProgram (n start : Nat) (prior : List (Fin start)) :
+    (count : Nat) × Straight n start (start+count) :=
+  appendCompiled (correctionCompiled n start (List.range' 580 256) prior) (multiplicationCleanupProgram n start)
+
+theorem multiplicationCorrectionProgram_run (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (multiplicationCorrectionProgram n start prior) read history =
+      ((AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) (prior.map history)) .done).seq multiplicationCleanupSource).run := by
+  unfold multiplicationCorrectionProgram
+  apply appendCompiled_run_eq
+  · exact correctionCompiled_run n start _ prior read history
+  · intro h; exact multiplicationCleanupProgram_run n start read h
+
+theorem multiplicationCorrectionProgram_tCount (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (multiplicationCorrectionProgram n start prior) read history =
+      ((AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) (prior.map history)) .done).seq multiplicationCleanupSource).tCount := by
+  unfold multiplicationCorrectionProgram
+  apply appendCompiled_tCount_eq
+  · exact correctionCompiled_tCount n start _ prior read history
+  · intro h; exact multiplicationCleanupProgram_tCount n start read h
+
+def multiplicationAfterResetProgram (n start : Nat) (prior : List (Fin start)) :
+    (count : Nat) × Straight n start (start+count) :=
+  let eea := MeasuredQuotient.bankWrapperProgram n start
+  appendRetaining (appendCompiled eea (multiplyDataProgram n (start+eea.1)))
+    (multiplicationCorrectionProgram n) prior
+
+theorem multiplicationAfterResetProgram_run (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (multiplicationAfterResetProgram n start prior) read history = (multiplicationAfterReset (prior.map history)).run := by
+  unfold multiplicationAfterResetProgram
+  have h := appendRetaining_run
+    (appendCompiled (MeasuredQuotient.bankWrapperProgram n start) (multiplyDataProgram n _))
+    (multiplicationCorrectionProgram n) prior (MeasuredQuotient.bankWrapper.seq fig15MultiplyToData)
+    (fun outcomes => (AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) outcomes) .done).seq multiplicationCleanupSource)
+    read history (by
+      apply appendCompiled_run_eq
+      · exact MeasuredQuotient.bankWrapperProgram_run n start read history
+      · intro h; exact multiplyDataProgram_run n _ read h)
+    (fun cursor indices h => multiplicationCorrectionProgram_run n cursor indices read h)
+  simpa only [multiplicationAfterReset, multiplicationCleanupSource, adaptive_seq_assoc] using h
+
+theorem multiplicationAfterResetProgram_tCount (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (multiplicationAfterResetProgram n start prior) read history = (multiplicationAfterReset (prior.map history)).tCount := by
+  unfold multiplicationAfterResetProgram
+  have h := appendRetaining_tCount
+    (appendCompiled (MeasuredQuotient.bankWrapperProgram n start) (multiplyDataProgram n _))
+    (multiplicationCorrectionProgram n) prior (MeasuredQuotient.bankWrapper.seq fig15MultiplyToData)
+    (fun outcomes => (AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) outcomes) .done).seq multiplicationCleanupSource)
+    read history (by
+      apply appendCompiled_tCount_eq
+      · exact MeasuredQuotient.bankWrapperProgram_tCount n start read history
+      · intro h; exact multiplyDataProgram_tCount n _ read h)
+    (fun cursor indices h => multiplicationCorrectionProgram_tCount n cursor indices read h)
+  simpa only [multiplicationAfterReset, multiplicationCleanupSource, adaptive_seq_assoc] using h
+
+attribute [local irreducible] multiplicationAfterResetProgram
+
+def multiplicationProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  let first := multiplyWorkProgram n start
+  appendCompiled first (collectProgram n (multiplicationAfterResetProgram n) (List.range' 580 256) (start+first.1) ([] : List (Fin _)))
+
+theorem multiplicationProgram_run (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (multiplicationProgram n start) read history = multiplication.run := by
+  unfold multiplicationProgram multiplication
+  apply appendCompiled_run_eq
+  · exact multiplyWorkProgram_run n start read history
+  · intro h
+    exact collectProgram_run n (multiplicationAfterResetProgram n) multiplicationAfterReset read
+      (fun cursor prior h => multiplicationAfterResetProgram_run n cursor prior read h) _ _ ([] : List (Fin _)) h
+
+theorem multiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (multiplicationProgram n start) read history = multiplication.tCount := by
+  unfold multiplicationProgram multiplication
+  apply appendCompiled_tCount_eq
+  · exact multiplyWorkProgram_tCount n start read history
+  · intro h
+    exact collectProgram_tCount n (multiplicationAfterResetProgram n) multiplicationAfterReset read
+      (fun cursor prior h => multiplicationAfterResetProgram_tCount n cursor prior read h) _ _ ([] : List (Fin _)) h
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] bankWrapper secp256k1MeasuredEEAReverseInDataBank
+  AdaptiveCircuit.tCount AdaptiveCircuit.measurementCount
+theorem multiplicationAfterReset_saving (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).tCount + 1690738 = (MeasuredQuotient.multiplicationAfterReset outcomes).tCount := by
+  have h := bankWrapper_saving
+  simp only [multiplicationAfterReset,MeasuredQuotient.multiplicationAfterReset,adaptive_tCount_seq]
+  omega
+
+theorem multiplicationAfterReset_measurements (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).measurementCount = (MeasuredQuotient.multiplicationAfterReset outcomes).measurementCount + 241534 := by
+  have h := bankWrapper_measurements
+  simp only [multiplicationAfterReset,MeasuredQuotient.multiplicationAfterReset,reverseFoundation_measurements_seq]
+  omega
+
+attribute [local irreducible] multiplicationAfterReset MeasuredQuotient.multiplicationAfterReset measureResetThen
+
+theorem multiplication_saving : multiplication.tCount + 1690738 = MeasuredQuotient.multiplication.tCount := by
+  have h := reverseFoundation_reset_t_saving (List.range' 580 256) _ _ _ multiplicationAfterReset_saving
+  simp only [multiplication,MeasuredQuotient.multiplication,adaptive_tCount_seq]
+  omega
+
+theorem multiplication_measurements : multiplication.measurementCount = MeasuredQuotient.multiplication.measurementCount + 241534 := by
+  have h := reverseFoundation_reset_measurements (List.range' 580 256) _ _ _ multiplicationAfterReset_measurements
+  simp only [multiplication,MeasuredQuotient.multiplication,reverseFoundation_measurements_seq]
+  omega
+
+theorem multiplication_T : multiplication.tCount = 242679927 := by
+  have h := multiplication_saving
+  rw [MeasuredQuotient.multiplication_T] at h
+  omega
+
+theorem multiplication_measurementCount : multiplication.measurementCount = 15190375 :=
+  multiplication_measurements.trans (congrArg (fun x => x+241534) MeasuredQuotient.multiplication_measurementCount)
+
+theorem multiplicationProgram_count (n start : Nat) : (multiplicationProgram n start).1 = 15190375 :=
+  (compiled_count_of_run (multiplicationProgram n start) (fun _ => false) (fun _ => false)
+    multiplication (multiplicationProgram_run n start (fun _ => false) (fun _ => false))).trans multiplication_measurementCount
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] bankWrapper secp256k1MeasuredEEAReverseInDataBank
+theorem multiplicationAfterReset_wires_subset (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).wires ⊆ (MeasuredQuotient.multiplicationAfterReset outcomes).wires := by
+  unfold multiplicationAfterReset MeasuredQuotient.multiplicationAfterReset
+  exact reverseFoundation_seq_support_mono (reverseFoundation_seq_support_mono (reverseFoundation_seq_support_mono (reverseFoundation_seq_support_mono
+    (reverseFoundation_seq_support_mono (List.Subset.refl _) (List.Subset.refl _)) (List.Subset.refl _))
+      (List.Subset.refl _)) bankWrapper_wires_subset) (List.Subset.refl _)
+
+attribute [local irreducible] multiplicationAfterReset MeasuredQuotient.multiplicationAfterReset measureResetThen
+
+theorem multiplication_wires_subset : multiplication.wires ⊆ MeasuredQuotient.multiplication.wires := by
+  unfold multiplication MeasuredQuotient.multiplication
+  exact reverseFoundation_seq_support_mono (List.Subset.refl _) (reverseFoundation_reset_support_mono _ _ _ multiplicationAfterReset_wires_subset)
+
+theorem multiplication_wires_bound : multiplication.wires ⊆ List.range 836 :=
+  multiplication_wires_subset.trans MeasuredQuotient.multiplication_wires_bound
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end

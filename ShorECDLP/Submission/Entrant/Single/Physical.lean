@@ -454,7 +454,7 @@ open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.Chall
 set_option maxRecDepth 4096
 set_option maxHeartbeats 1000000
 attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram
-  ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram equalityProgram
+  ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram equalityProgram
 
 private theorem field_count_generic (n start : Nat) (guard arithmetic : FixedSegment n)
      (exchange : Wire ≃ Wire) (flip cx : Circuit) :
@@ -483,7 +483,7 @@ theorem divisionProgram_count_eq (n start : Nat) :
 
 theorem multiplicationProgram_count_eq (n start : Nat) :
     (multiplicationProgram n start).1 = (ZeroAdaptive.zMultiplicationProgram n start).1 :=
-  fieldProgram_count_eq n start (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n)
+  fieldProgram_count_eq n start (ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram n)
 
 private theorem sequence_count_eq {n : Nat} (ps qs : List (FixedSegment n))
     (h : List.Forall₂ (fun p q => ∀ start, (p start).1 = (q start).1) ps qs) (start : Nat) :
@@ -506,8 +506,8 @@ theorem coordinateProgram_count_eq (start : Nat) :
     (List.Forall₂.cons (fun _ => rfl) .nil))))))))
 
 theorem coordinate_numeric_counts (x y : Nat → Nat) :
-    (coordinateSource x y).tCount = 500063613 ∧
-    (coordinateSource x y).measurementCount = 30998320 := by
+    (coordinateSource x y).tCount = 498372875 ∧
+    (coordinateSource x y).measurementCount = 31239854 := by
   rw [coordinate_tCount, coordinate_measurements]
   exact Paper2607_13816.ChallengeMigration.coordinate_numeric_counts x y
 
@@ -554,7 +554,7 @@ theorem divisionProgram_wellFormed (n start : Nat) : (divisionProgram n start).2
   fieldProgram_wellFormed n start _ (ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_wellFormed n)
 
 theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgram n start).2.WellFormed :=
-  fieldProgram_wellFormed n start _ (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_wellFormed n)
+  fieldProgram_wellFormed n start _ (ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram_wellFormed n)
 
 theorem prepareProgram_slots (n start : Nat) : (prepareProgram n start).2.gateSlots ≤ 1538 := by
   have h := equalityProgram_slots n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch
@@ -589,7 +589,7 @@ theorem divisionProgram_slots (n start : Nat) : (divisionProgram n start).2.gate
   fieldProgram_slots n start _ (ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_slots n)
 
 theorem multiplicationProgram_slots (n start : Nat) : (multiplicationProgram n start).2.gateSlots ≤ 676000000 :=
-  fieldProgram_slots n start _ (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_slots n)
+  fieldProgram_slots n start _ (ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram_slots n)
 
 attribute [local irreducible] divisionProgram multiplicationProgram
   fieldLookupAddProgram yNegateProgram pointSquareProgram signedFieldProgram xNegateProgram
@@ -705,7 +705,7 @@ theorem divisionProgram_support (n start : Nat) :
 
 theorem multiplicationProgram_support (n start : Nat) :
     straightWires (multiplicationProgram n start).2 ⊆ windowBaseSupport :=
-  fieldProgram_support n start _ (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_support_static n)
+  fieldProgram_support n start _ (ShorECDLP.Entrant.MeasuredQuotient.Reverse.multiplicationProgram_support_static n)
 
 theorem adaptiveCoordinateProgram_support (start : Nat) :
     straightWires (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 ⊆ windowBaseSupport := by
@@ -1292,7 +1292,7 @@ theorem prepared_run (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Poin
   unfold prepared preparedSource
   exact surroundCompiled_run _ _ _ _ _ _ (core_run coeffs start Q history)
 
-theorem coordinate_count (start : Nat) : (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).1 = 30998320 := by
+theorem coordinate_count (start : Nat) : (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).1 = 31239854 := by
   have h := sharedAdaptiveCoordinateProgram_count (.right ⟨0, by decide⟩) start
   apply (ShorECDLP.Entrant.BorrowFlag.coordinateProgram_count_eq start).trans
   simpa only [sharedAdaptiveCoordinateProgram, reindexCompiled] using h
@@ -1314,15 +1314,15 @@ private theorem sequence_count (n : Nat) (ps : List (FixedSegment n)) (counts : 
     simp only [sequenceProgram, appendCompiled, List.sum_cons]
     rw [hp, ih]
 
-theorem core_count (start : Nat) : (core start).1 = 31432455 := by
-  have h := sequence_count 32768 segments ([30998320, 1022, 432091, 1022] : List Nat) (by
+theorem core_count (start : Nat) : (core start).1 = 31673989 := by
+  have h := sequence_count 32768 segments ([31239854, 1022, 432091, 1022] : List Nat) (by
     unfold segments
     exact List.Forall₂.cons coordinate_count (List.Forall₂.cons negate_count
       (List.Forall₂.cons placed_count (List.Forall₂.cons negate_count .nil)))) start
   unfold core
   exact h
 
-theorem prepared_count (start : Nat) : (prepared start).1 = 31432455 := by
+theorem prepared_count (start : Nat) : (prepared start).1 = 31673989 := by
   unfold prepared
   rw [surroundCompiled_count, core_count]
 
@@ -2116,10 +2116,10 @@ theorem exponents_match_widths : suffixExponents widths = exponents := by
   simp [widths, exponents, suffixExponents]
 
 @[irreducible] def leftMetadata : List (Nat × Nat) :=
-  (131071, 17) :: List.replicate 6 (31432455, 16) ++ List.replicate 10 (31432455, 15)
+  (131071, 17) :: List.replicate 6 (31673989, 16) ++ List.replicate 10 (31673989, 15)
 
 @[irreducible] def rightMetadata : List (Nat × Nat) :=
-  (31432455, 15) :: List.replicate 12 (31432455, 16)
+  (31673989, 15) :: List.replicate 12 (31673989, 16)
 
 theorem left_widths : leftMetadata.map Prod.snd = widths := by
   simp [leftMetadata, widths]
@@ -2127,10 +2127,10 @@ theorem left_widths : leftMetadata.map Prod.snd = widths := by
 theorem right_widths : rightMetadata.map Prod.snd = rightWidths := by
   simp [rightMetadata, rightWidths]
 
-theorem left_record_count : recordCount leftMetadata = 503050614 := by
+theorem left_record_count : recordCount leftMetadata = 506915158 := by
   norm_num [leftMetadata, recordCount, List.replicate]
 
-theorem right_record_count : recordCount rightMetadata = 408622122 := by
+theorem right_record_count : recordCount rightMetadata = 411762064 := by
   norm_num [rightMetadata, recordCount, List.replicate]
 
 theorem left_positions_length (start : Nat) : (positions leftMetadata start).length = 263 := by
@@ -2141,7 +2141,7 @@ theorem right_positions_length (start : Nat) : (positions rightMetadata start).l
 
 theorem projected_rows : 131072 + 18 * 32768 + 11 * 16384 = 901120 := by norm_num
 
-theorem projected_records : 503050614 + 408622122 + 854 = 911673590 := by norm_num
+theorem projected_records : 506915158 + 411762064 + 854 = 918678076 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
@@ -2724,7 +2724,7 @@ attribute [local irreducible] ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinatePro
   ShorECDLP.Entrant.BorrowFlag.coordinateSource placedBatchSource windowYNegate ipxProgramOf
   sequenceProgram surroundCompiled relabelCompiled
 
-theorem actual_count : actual.count = 31432455 := by
+theorem actual_count : actual.count = 31673989 := by
   unfold actual closedWindow
   rfl
 
@@ -2740,7 +2740,7 @@ theorem batch_t (coeffs : Fin 32768 → PointCoeff) (Q : Point) :
   rw [placedBatchSource, ipxSourceOps_tCount _ _ _ _ ipxTree_layout, ipxSchedule_cost, batchWindowTree_nodes]
 
 theorem sources_t (coeffs : Fin 32768 → PointCoeff) (Q : Point) :
-    (sequenceCircuit (sources coeffs Q)).tCount = 503131286 := by
+    (sequenceCircuit (sources coeffs Q)).tCount = 501440548 := by
   unfold sources
   rw [sequenceCircuit_four_tCount, (ShorECDLP.Entrant.BorrowFlag.coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1, batch_t]
@@ -2760,7 +2760,7 @@ theorem core_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
 
 theorem actual_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    ((actual.program start).instantiate (readConstant coeffs Q) history).tCount = 503131286 := by
+    ((actual.program start).instantiate (readConstant coeffs Q) history).tCount = 501440548 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (core 0)
     (sequenceCircuit (sources coeffs Q)) (readConstant coeffs Q) Fin.elim0
@@ -2784,13 +2784,13 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
-theorem signedWindow_count (w : SignedWindow) : (signedWindow w).count = 31432455 := by
+theorem signedWindow_count (w : SignedWindow) : (signedWindow w).count = 31673989 := by
   unfold signedWindow
   exact Physical.actual_count
 
 theorem signedWindow_t (Q : Point) (w : SignedWindow) (start : Nat)
     (history : Fin start → Bool) :
-    (((signedWindow w).program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 503131286 := by
+    (((signedWindow w).program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 501440548 := by
   unfold signedWindow
   rw [reindexStraight_instantiate, readConstant_reindex (signedRow w)
     (windowCoefficients w) mixedCoefficientAt Q (fun _ => rfl)]
@@ -2813,22 +2813,22 @@ def params : DecoderParams := ⟨263, 207, by omega, by omega, by omega, by omeg
 def trialPositions : TrialPositions params where
   left := ⟨(positions leftMetadata 0).toArray, by
     simpa only [List.size_toArray, params] using left_positions_length 0⟩
-  right := ⟨(positions rightMetadata 503050614).toArray, by
-    simpa only [List.size_toArray, params] using right_positions_length 503050614⟩
+  right := ⟨(positions rightMetadata 506915158).toArray, by
+    simpa only [List.size_toArray, params] using right_positions_length 506915158⟩
 
 def layout : DecodeLayout := ⟨.nearestPair, params, [trialPositions], by simp⟩
 
 theorem left_position_bound (i : Nat) (hi : i ∈ trialPositions.left.toList) :
-    i < 503050614 := by
+    i < 506915158 := by
   have h := positions_bounds leftMetadata 0 i
     (show i ∈ positions leftMetadata 0 from by simpa [trialPositions] using hi)
   rw [left_record_count] at h
   omega
 
 theorem right_position_bound (i : Nat) (hi : i ∈ trialPositions.right.toList) :
-    503050614 ≤ i ∧ i < 911672736 := by
-  have h := positions_bounds rightMetadata 503050614 i
-    (show i ∈ positions rightMetadata 503050614 from by simpa [trialPositions] using hi)
+    506915158 ≤ i ∧ i < 918677222 := by
+  have h := positions_bounds rightMetadata 506915158 i
+    (show i ∈ positions rightMetadata 506915158 from by simpa [trialPositions] using hi)
   rw [right_record_count] at h
   omega
 
@@ -2843,7 +2843,7 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Paper2607_13816
 open ShorECDLP.Paper2607_13816.ChallengeMigration
 
-def bodyT (count : Nat) : Nat := if count = 131071 then 917497 else 503131286
+def bodyT (count : Nat) : Nat := if count = 131071 then 917497 else 501440548
 
 def metadataT : List (Nat × Nat) → Nat → Nat
   | [], _ => 0
@@ -3070,10 +3070,10 @@ theorem right_metadata : rightWindows.map (fun w => (w.count, w.wires.length)) =
   simp [rightWindows, rightSigned, signedWindow_count, signedWindow_wires,
     SignedWindow.width, bank, rightMetadata]
 
-theorem left_count : axisCount leftWindows = 503050614 := by
+theorem left_count : axisCount leftWindows = 506915158 := by
   rw [← recordCount_eq_axisCount, left_metadata, left_record_count]
 
-theorem right_count : axisCount rightWindows = 408622122 := by
+theorem right_count : axisCount rightWindows = 411762064 := by
   rw [← recordCount_eq_axisCount, right_metadata, right_record_count]
 
 theorem left_positions (start : Nat) : axisPositions leftWindows start = positions leftMetadata start := by
@@ -3113,7 +3113,7 @@ theorem resetBody_support (start : Nat) (read : ConstantBit 901120 → Bool) (hi
 
 def trialCount : Nat := axisCount leftWindows + axisCount rightWindows + 854
 
-theorem trialCount_eq : trialCount = 911673590 := by
+theorem trialCount_eq : trialCount = 918678076 := by
   rw [trialCount, left_count, right_count]
 
 /-- One trial, with independent same-axis feedback histories and a final reset. -/
@@ -3123,7 +3123,7 @@ theorem trialCount_eq : trialCount = 911673590 := by
     (resetBody (start + axisCount leftWindows + axisCount rightWindows))
     (by unfold trialCount; omega)
 
-@[irreducible] def program : Straight 901120 0 911673590 :=
+@[irreducible] def program : Straight 901120 0 918678076 :=
   castFinish (by rw [trialCount_eq]) (trial 0)
 
 theorem left_output_records (start : Nat) (prior : List (Fin start))
@@ -3161,7 +3161,7 @@ theorem layout_read_right (history : List Bool) :
   rw [layout_right_positions]
 
 theorem program_history_length (read : ConstantBit 901120 → Bool) (b : InstrumentBranch)
-    (hb : b ∈ (program.instantiate read Fin.elim0).run) : b.history.length = 911673590 := by
+    (hb : b ∈ (program.instantiate read Fin.elim0).run) : b.history.length = 918678076 := by
   exact straight_history_length program read Fin.elim0 b hb
 
 end ShorECDLP.Entrant.Single
@@ -3605,10 +3605,10 @@ theorem windows_t (Q : Point) (w : Window 901120)
   · rw [signedWindow_t Q s start history, signedWindow_count]
     simp [bodyT]
 
-theorem left_t_budget : metadataT leftMetadata 0 = 8051052526 := by
+theorem left_t_budget : metadataT leftMetadata 0 = 8024000718 := by
   norm_num [leftMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
-theorem right_t_budget : metadataT rightMetadata 0 = 6540728039 := by
+theorem right_t_budget : metadataT rightMetadata 0 = 6518748445 := by
   norm_num [rightMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
 theorem slots_budget : metadataSlots 3000000000 leftMetadata 0 +
@@ -3669,21 +3669,21 @@ open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 theorem left_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8051052526 := by
+    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8024000718 := by
   have h := axis_t leftWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_left _ hw)) start List.nil history
   rwa [left_metadata, List.length_nil, left_t_budget] at h
 
 theorem right_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis rightWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 6540728039 := by
+    ((axis rightWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 6518748445 := by
   have h := axis_t rightWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_right _ hw)) start List.nil history
   rwa [right_metadata, List.length_nil, right_t_budget] at h
 
 theorem trial_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 14591780565 := by
+    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 14542749163 := by
   unfold trial
-  exact framed_t_le _ _ _ _ _ history 8051052526 6540728039
+  exact framed_t_le _ _ _ _ _ history 8024000718 6518748445
     (left_axis_t Q start history) (fun h => right_axis_t Q _ h) (fun h => resetBody_t _ _ h)
 
 theorem program_wellFormed : program.WellFormed := by
@@ -3697,13 +3697,13 @@ theorem program_slots : program.gateSlots ≤ 90000056246 := by
   exact trial_slots 0
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14591780565 := by
+    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14542749163 := by
   unfold program
   rw [castFinish_instantiate]
   exact trial_t Q 0 Fin.elim0
 
 theorem program_measurements (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).measurementCount = 911673590 := by
+    (program.instantiate read Fin.elim0).measurementCount = 918678076 := by
   exact program.measurementCount read Fin.elim0
 
 theorem stream_support : streamAddress ⊆ resetWires := by
@@ -3767,8 +3767,8 @@ theorem program_qubits (read : ConstantBit 901120 → Bool) :
 
 theorem program_resource_facts (Q : Point) :
     (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).qubits ≤ 854 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 14591780565 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 911673590 :=
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 14542749163 ∧
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 918678076 :=
   ⟨program_qubits _, program_t Q, program_measurements _⟩
 
 theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
@@ -3778,7 +3778,7 @@ theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
 theorem one_candidate_check : layout.trials.length * decoderCandidateLimit layout.kind layout.params = 1 := by
   simp [layout, decoderCandidateLimit]
 
-theorem resource_product : 854 * 14591780565 = 12461380602510 := by norm_num
+theorem resource_product : 854 * 14542749163 = 12419507785202 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
@@ -7009,6 +7009,44 @@ theorem divisionCount (n start : Nat) : AtLeast (MeasuredQuotient.Reverse.divisi
   omega
 end ReverseMeasuredCredit
 
+namespace ReverseMeasuredCredit
+attribute [local irreducible] MeasuredQuotient.Reverse.bankWrapperProgram MeasuredQuotient.bankWrapperProgram
+theorem residue_multiplicationCleanup (n start : Nat) :
+    residue (MeasuredQuotient.Reverse.multiplicationCleanupProgram n start).2 = 0 := by
+  unfold MeasuredQuotient.Reverse.multiplicationCleanupProgram
+  exact residue_app _ _ (residue_unmultiplyData _ _)
+    (residue_appendLiteral _ _ (residue_bankWrapperProgram _ _) sum_fig15SwapOutput)
+
+theorem residue_multiplicationCorrection (n start : Nat) (prior : List (Fin start)) :
+    residue (MeasuredQuotient.Reverse.multiplicationCorrectionProgram n start prior).2 = 0 := by
+  unfold MeasuredQuotient.Reverse.multiplicationCorrectionProgram
+  exact residue_app _ _ (residue_correctionCompiled _ _ _ _) (residue_multiplicationCleanup _ _)
+
+theorem residue_multiplicationAfterResetProgram (n start : Nat) (prior : List (Fin start)) :
+    residue (MeasuredQuotient.Reverse.multiplicationAfterResetProgram n start prior).2 = 0 := by
+  unfold MeasuredQuotient.Reverse.multiplicationAfterResetProgram appendRetaining
+  exact residue_app _ _
+    (residue_app _ _ (MeasuredCredit.residue_bankWrapperProgram _ _) (residue_multiplyData _ _))
+    (residue_multiplicationCorrection _ _ _)
+
+attribute [local irreducible] MeasuredQuotient.Reverse.multiplicationAfterResetProgram
+
+theorem residue_multiplicationProgram (n start : Nat) :
+    residue (MeasuredQuotient.Reverse.multiplicationProgram n start).2 = 0 := by
+  unfold MeasuredQuotient.Reverse.multiplicationProgram
+  exact residue_app _ _ (residue_multiplyWork _ _)
+    (residue_collect _ (residue_multiplicationAfterResetProgram n) _ _ _)
+
+theorem multiplicationCount (n start : Nat) :
+    AtLeast (MeasuredQuotient.Reverse.multiplicationProgram n start).2 34668561 := by
+  have ht := MeasuredQuotient.Reverse.multiplicationProgram_tCount n start (fun _ => false) (fun _ => false)
+  rw [MeasuredQuotient.Reverse.multiplication_T] at ht
+  have hr := residue_t (MeasuredQuotient.Reverse.multiplicationProgram n start).2 (fun _ => false) (fun _ => false)
+  have hz := residue_multiplicationProgram n start
+  unfold AtLeast compiledTCount at *
+  omega
+end ReverseMeasuredCredit
+
 theorem residue_borrowCoordinate (start : Nat) :
     residue (BorrowFlag.adaptiveCoordinateProgram start).2 = 0 := by
   unfold BorrowFlag.adaptiveCoordinateProgram
@@ -7023,7 +7061,7 @@ theorem residue_borrowCoordinate (start : Nat) :
   · exact residue_paddedSquare _ s
   · exact residue_fieldLookupAdd _ _ s
   · unfold BorrowFlag.multiplicationProgram
-    exact residue_borrowField _ _ _ (MeasuredCredit.residue_multiplicationProgram _)
+    exact residue_borrowField _ _ _ (ReverseMeasuredCredit.residue_multiplicationProgram _)
   · exact residue_xNegate _ s
   · exact residue_fieldLookupAdd _ _ s
   · exact residue_signedField _ s
@@ -7129,7 +7167,7 @@ theorem residue_firstWindow (start : Nat) : residue (Single.firstWindow.program 
 
 /-- Every T gate of a signed window comes from an unconditional literal Toffoli. -/
 theorem signedFullCount (w : Single.SignedWindow) (start : Nat) :
-    AtLeast ((Single.signedWindow w).program start) 71875898 := by
+    AtLeast ((Single.signedWindow w).program start) 71634364 := by
   have ht := Single.signedWindow_t 0 w start (fun _ => false)
   have hr := residue_t ((Single.signedWindow w).program start)
     (readConstant Single.mixedCoefficientAt 0) (fun _ => false)
