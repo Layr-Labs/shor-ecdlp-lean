@@ -1243,15 +1243,15 @@ theorem success_budget (r : ℝ) (hr : 1000000 ≤ r) :
     one_div_le_one_div_of_le (by norm_num) hr
   nlinarith
 
-def params : DecoderParams := ⟨266,207,by decide,by decide,by decide,by decide⟩
+def params : DecoderParams := ⟨265,207,by decide,by decide,by decide,by decide⟩
 
 theorem decoder_budget :
     27*decoderCandidateLimit .wrappedShift params ≤ budget55 := by
   norm_num [decoderCandidateLimit,trialCandidateLimit,params,budget55,order]
 
-theorem table_budget : 65536+(10+13)*32768+6*16384 ≤ 983040 := by norm_num
+theorem table_budget : 1024+(15+12)*32768+2*16384 ≤ 983040 := by norm_num
 
-theorem left_width : 16+10*16+6*15=266 := by norm_num
+theorem left_width : 10+15*16+15=265 := by norm_num
 theorem right_width : 12*16+15=207 := by norm_num
 
 end
@@ -2080,8 +2080,8 @@ def pairRecovered (d a b : Nat) : Bool :=
   decide (∃i : Fin 27,(d : ZMod order)∈fixedCandidates params a (neighborWord b ((i.val : ℤ)-13)))
 
 theorem pairRecovered_of_character (d : Nat) (k : Fin order) (hk : k.val≠0)
-    (a : Fin (2^266)) (b : Fin (2^207))
-    (ha : ShorECDLP.Quantum.OrderFinding.nearestNumerator order 266 a.val=k.val)
+    (a : Fin (2^265)) (b : Fin (2^207))
+    (ha : ShorECDLP.Quantum.OrderFinding.nearestNumerator order 265 a.val=k.val)
     (hb : rightGood order ⟨d*k.val%order,Nat.mod_lt _ order_prime.pos⟩ b) :
     pairRecovered d a.val b.val=true := by
   classical
@@ -2103,13 +2103,481 @@ theorem pairRecovered_of_character (d : Nat) (k : Fin order) (hk : k.val≠0)
     rw [hj]
     exact reducedPeak_mem_candidates order 207 _
   · change ((d*k.val%order : Nat) : ZMod order)*
-      (ShorECDLP.Quantum.OrderFinding.nearestNumerator order 266 a.val : ZMod order)⁻¹=d
+      (ShorECDLP.Quantum.OrderFinding.nearestNumerator order 265 a.val : ZMod order)⁻¹=d
     rw [ha]
     simp only [ZMod.natCast_mod,Nat.cast_mul]
     field_simp
 
 end
 end ShorECDLP.Entrant.NeighborReadout
+
+
+namespace ShorECDLP.Entrant.Precision265
+open Quantum WindowMassSharpProof
+open scoped BigOperators
+noncomputable section
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+
+/-- Character orthogonality without a bound on the frequency, provided it is nonzero modulo r. -/
+theorem orth_nondivides (r N : Nat) (hr : 0<r) (hnd : ¬r∣N) :
+    ∑k∈Finset.range r, Complex.exp (2*Real.pi*Complex.I*(N:ℂ)/r)^k = 0 := by
+  set z := Complex.exp (2*Real.pi*Complex.I*(N:ℂ)/r) with hzdef
+  have hrc : (r:ℂ) ≠ 0 := by exact_mod_cast hr.ne'
+  have hz : z^r=1 := by
+    rw [hzdef,←Complex.exp_nat_mul]
+    have he : (r:ℂ)*(2*Real.pi*Complex.I*(N:ℂ)/r) =
+        ((N:ℤ):ℂ)*(2*Real.pi*Complex.I) := by push_cast; field_simp
+    rw [he,Complex.exp_int_mul_two_pi_mul_I]
+  have hz1 : z≠1 := by
+    intro h1
+    rw [hzdef,Complex.exp_eq_one_iff] at h1
+    obtain ⟨m,hm⟩ := h1
+    have hpi : (2*Real.pi*Complex.I)≠0 := by simp [Real.pi_ne_zero,Complex.I_ne_zero]
+    have hc : (N:ℂ)=m*r := by
+      have hh := congrArg (fun w : ℂ => w*r/(2*Real.pi*Complex.I)) hm
+      field_simp at hh
+      linear_combination hh
+    have hi : (N:ℤ)=m*r := by exact_mod_cast hc
+    have hd : (r:ℤ)∣(N:ℤ) := ⟨m,by rw [hi]; ring⟩
+    have hn : r∣N := by exact_mod_cast hd
+    exact hnd hn
+  change ∑k∈Finset.range r,z^k=0
+  rw [geom_sum_eq hz1,hz,sub_self,zero_div]
+
+/-- In particular this remains valid when the physical Fourier precision exceeds the order. -/
+theorem sine_square_sum (r N : Nat) (hr : 0<r) (hnd : ¬r∣N) :
+    (∑k∈Finset.range r, Real.sin (Real.pi*(N:ℝ)*k/r)^2) = (r:ℝ)/2 := by
+  have ho := orth_nondivides r N hr hnd
+  have he (k : Nat) :
+      (Complex.exp (2*Real.pi*Complex.I*(N:ℂ)/r)^k).re =
+        Real.cos (2*(Real.pi*(N:ℝ)*k/r)) := by
+    rw [←Complex.exp_nat_mul]
+    have harg : (k:ℂ)*(2*Real.pi*Complex.I*(N:ℂ)/r) =
+        ((2*(Real.pi*(N:ℝ)*k/r):ℝ):ℂ)*Complex.I := by push_cast; ring
+    rw [harg,Complex.exp_ofReal_mul_I_re]
+  have hc : (∑k∈Finset.range r, Real.cos (2*(Real.pi*(N:ℝ)*k/r)))=0 := by
+    have hh := congrArg Complex.re ho
+    simpa only [Complex.re_sum,Complex.zero_re,he] using hh
+  have hs (k : Nat) : Real.sin (Real.pi*(N:ℝ)*k/r)^2 =
+      (1-Real.cos (2*(Real.pi*(N:ℝ)*k/r)))/2 := by
+    rw [Real.cos_two_mul]
+    nlinarith [Real.sin_sq_add_cos_sq (Real.pi*(N:ℝ)*k/r)]
+  simp_rw [hs]
+  rw [←Finset.sum_div,Finset.sum_sub_distrib,hc]
+  simp
+
+end
+end ShorECDLP.Entrant.Precision265
+
+namespace ShorECDLP.Entrant.Precision265
+open Quantum ShorECDLP.Challenge WindowMassSharpProof Precision207 NeighborReadout
+open scoped BigOperators
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+theorem directed_tail_scaled_256 (N : Nat) (β C : ℝ) (hC : 0≤C)
+    (S : Finset Nat) (d : Nat→ℝ)
+    (hd : ∀a∈S,256≤d a)
+    (hsep : ∀a∈S,∀b∈S,|d a-d b|<1→a=b)
+    (hpt : ∀a∈S,ampSq N β a≤C/(9*(d a)^2)) :
+    ∑a∈S,ampSq N β a≤C/2295 := by
+  have hi := sum_inv_sq_le S d 256 (by norm_num) hd hsep
+  calc
+    _ ≤ ∑a∈S,(C/9)*(1/(d a)^2) := by
+      apply Finset.sum_le_sum
+      intro a ha
+      convert hpt a ha using 1
+      field_simp
+    _ = (C/9)*(∑a∈S,1/(d a)^2) := by rw [Finset.mul_sum]
+    _ ≤ (C/9)*(1/(256-1)) := mul_le_mul_of_nonneg_left hi (by positivity)
+    _ = _ := by ring
+
+end
+end ShorECDLP.Entrant.Precision265
+
+/- Append after Core+Geometry. Requires accepted precision circular_mass. -/
+namespace ShorECDLP.Entrant.Precision265
+open Quantum ShorECDLP.Challenge WindowMassSharpProof NeighborReadout Precision207
+open scoped BigOperators
+noncomputable section
+set_option maxHeartbeats 1500000
+
+/-- Uniform radius13 concentration; the sharpening is local, the far bound inherited. -/
+theorem circular_mass_256_scaled (N : Nat) (hNbig : 65536≤N) (β : ℝ)
+    (hβ0 : 0≤β) (hβ1 : β<1) :
+    1-2*Real.sin (Real.pi*(N:ℝ)*β)^2/2295-1/10000 ≤ ∑a∈Finset.range N,
+      if phiR N ((N : ℝ)*β) a<256 ∨ phiL N ((N : ℝ)*β) a<256
+      then ampSq N β a else 0 := by
+  classical
+  let C : ℝ := Real.sin (Real.pi*(N:ℝ)*β)^2
+  have hN : 0<N := by omega
+  have hNR : (0 : ℝ)<N := by exact_mod_cast hN
+  have hNreal : (65536 : ℝ)≤N := by exact_mod_cast hNbig
+  let R := (Finset.range N).filter (fun a=>256≤phiR N ((N : ℝ)*β) a ∧ phiR N ((N : ℝ)*β) a<4096)
+  let L := (Finset.range N).filter (fun a=>256≤phiL N ((N : ℝ)*β) a ∧ phiL N ((N : ℝ)*β) a<4096)
+  have rBound : ∑a∈R,ampSq N β a≤C/2295 := by
+    apply directed_tail_scaled_256 N β C (sq_nonneg _) R (phiR N ((N : ℝ)*β))
+    · intro a ha
+      exact (Finset.mem_filter.mp ha).2.1
+    · intro a ha b hb hab
+      exact phiR_sep N ((N : ℝ)*β) a b
+        (Finset.mem_range.mp (Finset.mem_filter.mp ha).1)
+        (Finset.mem_range.mp (Finset.mem_filter.mp hb).1) hab
+    · intro a ha
+      have hd := (Finset.mem_filter.mp ha).2
+      apply ampSq_phiR_numerator N hN β a (by linarith [hd.1])
+      apply (div_le_iff₀ hNR).mpr
+      nlinarith [hd.2]
+  have lBound : ∑a∈L,ampSq N β a≤C/2295 := by
+    apply directed_tail_scaled_256 N β C (sq_nonneg _) L (phiL N ((N : ℝ)*β))
+    · intro a ha
+      exact (Finset.mem_filter.mp ha).2.1
+    · intro a ha b hb hab
+      exact phiL_sep N ((N : ℝ)*β) a b
+        (Finset.mem_range.mp (Finset.mem_filter.mp ha).1)
+        (Finset.mem_range.mp (Finset.mem_filter.mp hb).1) hab
+    · intro a ha
+      have hd := (Finset.mem_filter.mp ha).2
+      apply ampSq_phiL_numerator N hN β a (by linarith [hd.1])
+      apply (div_le_iff₀ hNR).mpr
+      nlinarith [hd.2]
+  have fBound : (∑a∈Finset.range N,
+      if ¬(phiR N ((N : ℝ)*β) a<4096 ∨ phiL N ((N : ℝ)*β) a<4096)
+      then ampSq N β a else 0)≤(1 : ℝ)/10000 := by
+    have hc := circular_mass N hN β 4096 hβ0 hβ1 (by norm_num)
+    have hs : (∑a∈Finset.range N,
+        if phiR N ((N : ℝ)*β) a<4096 ∨ phiL N ((N : ℝ)*β) a<4096
+        then ampSq N β a else 0) +
+      (∑a∈Finset.range N,
+        if ¬(phiR N ((N : ℝ)*β) a<4096 ∨ phiL N ((N : ℝ)*β) a<4096)
+        then ampSq N β a else 0)=1 := by
+      rw [←Finset.sum_add_distrib]
+      convert parseval N hN β using 1
+      apply Finset.sum_congr rfl
+      intro a ha
+      split_ifs <;> ring
+    linarith [far_tail_budget]
+  have cover (a : Nat) :
+      (if ¬(phiR N ((N : ℝ)*β) a<256 ∨ phiL N ((N : ℝ)*β) a<256)
+        then ampSq N β a else 0) ≤
+      (if 256≤phiR N ((N : ℝ)*β) a ∧ phiR N ((N : ℝ)*β) a<4096
+        then ampSq N β a else 0) +
+      (if 256≤phiL N ((N : ℝ)*β) a ∧ phiL N ((N : ℝ)*β) a<4096
+        then ampSq N β a else 0) +
+      (if ¬(phiR N ((N : ℝ)*β) a<4096 ∨ phiL N ((N : ℝ)*β) a<4096)
+        then ampSq N β a else 0) := by
+    have ha0 : 0≤ampSq N β a := Complex.normSq_nonneg _
+    by_cases hb : ¬(phiR N ((N : ℝ)*β) a<256 ∨ phiL N ((N : ℝ)*β) a<256)
+    · rw [if_pos hb]
+      have hr : 256≤phiR N ((N : ℝ)*β) a := le_of_not_gt (fun h=>hb (Or.inl h))
+      have hl : 256≤phiL N ((N : ℝ)*β) a := le_of_not_gt (fun h=>hb (Or.inr h))
+      by_cases hR : 256≤phiR N ((N : ℝ)*β) a ∧ phiR N ((N : ℝ)*β) a<4096
+      · rw [if_pos hR]
+        split_ifs <;> linarith
+      · rw [if_neg hR]
+        by_cases hL : 256≤phiL N ((N : ℝ)*β) a ∧ phiL N ((N : ℝ)*β) a<4096
+        · rw [if_pos hL]
+          split_ifs <;> linarith
+        · rw [if_neg hL]
+          have hf : ¬(phiR N ((N : ℝ)*β) a<4096 ∨ phiL N ((N : ℝ)*β) a<4096) := by
+            rintro (h|h)
+            · exact hR ⟨hr,h⟩
+            · exact hL ⟨hl,h⟩
+          rw [if_pos hf]
+          linarith
+    · rw [if_neg hb]
+      split_ifs <;> linarith
+  have badBound : (∑a∈Finset.range N,
+      if ¬(phiR N ((N : ℝ)*β) a<256 ∨ phiL N ((N : ℝ)*β) a<256)
+      then ampSq N β a else 0)≤2*C/2295+1/10000 := by
+    have h := Finset.sum_le_sum (fun a (_ : a∈Finset.range N)=>cover a)
+    rw [Finset.sum_add_distrib,Finset.sum_add_distrib] at h
+    have hR : (∑a∈Finset.range N,
+        if 256≤phiR N ((N : ℝ)*β) a ∧ phiR N ((N : ℝ)*β) a<4096
+        then ampSq N β a else 0)≤C/2295 := by
+      simpa only [R,Finset.sum_filter] using rBound
+    have hL : (∑a∈Finset.range N,
+        if 256≤phiL N ((N : ℝ)*β) a ∧ phiL N ((N : ℝ)*β) a<4096
+        then ampSq N β a else 0)≤C/2295 := by
+      simpa only [L,Finset.sum_filter] using lBound
+    linarith
+  have htotal : (∑a∈Finset.range N,
+      if phiR N ((N : ℝ)*β) a<256 ∨ phiL N ((N : ℝ)*β) a<256
+      then ampSq N β a else 0) +
+    (∑a∈Finset.range N,
+      if ¬(phiR N ((N : ℝ)*β) a<256 ∨ phiL N ((N : ℝ)*β) a<256)
+      then ampSq N β a else 0)=1 := by
+    rw [←Finset.sum_add_distrib]
+    convert parseval N hN β using 1
+    apply Finset.sum_congr rfl
+    intro a ha
+    split_ifs <;> ring
+  linarith
+
+end
+end ShorECDLP.Entrant.Precision265
+
+namespace ShorECDLP.Entrant.Precision265
+open Quantum ShorECDLP.Challenge WindowMassSharpProof Precision207 NeighborReadout
+open scoped BigOperators
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+theorem circular_mass_256_average (r N : Nat) (hr : 0<r) (hNbig : 65536≤N)
+    (hnd : ¬r∣N) :
+    (r:ℝ)*(1-1/2295-1/10000) ≤ ∑k∈Finset.range r,∑a∈Finset.range N,
+      if phiR N ((N:ℝ)*((k:ℝ)/r)) a<256 ∨ phiL N ((N:ℝ)*((k:ℝ)/r)) a<256
+      then ampSq N ((k:ℝ)/r) a else 0 := by
+  have hrr : (0:ℝ)<r := by exact_mod_cast hr
+  have hs := sine_square_sum r N hr hnd
+  have hb := Finset.sum_le_sum (s:=Finset.range r) (fun k hk =>
+    circular_mass_256_scaled N hNbig ((k:ℝ)/r) (by positivity)
+      ((div_lt_one hrr).mpr (by exact_mod_cast Finset.mem_range.mp hk)))
+  have he : (∑k∈Finset.range r,(1-2*Real.sin (Real.pi*(N:ℝ)*((k:ℝ)/r))^2/2295-1/10000)) =
+      (r:ℝ)*(1-1/2295-1/10000) := by
+    simp_rw [←mul_div_assoc]
+    have ht (k : Nat) : 1-2*Real.sin (Real.pi*(N:ℝ)*k/r)^2/2295-1/10000 =
+        (1-1/10000)-(2/2295)*Real.sin (Real.pi*(N:ℝ)*k/r)^2 := by ring
+    simp_rw [ht]
+    rw [Finset.sum_sub_distrib,←Finset.mul_sum,hs]
+    simp only [Finset.sum_const,Finset.card_range,nsmul_eq_mul]
+    ring
+  rw [he] at hb
+  exact hb
+
+theorem success_budget_union (r : ℝ) (hr : 1000000≤r) :
+    (99:ℝ)/100 ≤ 1-1/2295-1/108-2/10000-1/r := by
+  have hr0 : 0<r := by linarith
+  have hinv : 1/r ≤ (1:ℝ)/1000000 := one_div_le_one_div_of_le (by norm_num) hr
+  linarith
+
+end
+end ShorECDLP.Entrant.Precision265
+
+
+namespace ShorECDLP.Entrant.Precision265
+open Quantum ShorECDLP.Challenge WindowMassSharpProof
+open scoped BigOperators
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+
+theorem left_cell_of_circular (r N n a : Nat) (hn0 : 0<n) (hnr : n<r)
+    (hrN : 512*r≤N) (haN : a<N)
+    (hnear : phiR N ((N:ℝ)*((n:ℝ)/r)) a<256 ∨ phiL N ((N:ℝ)*((n:ℝ)/r)) a<256) :
+    (2*r*a+N)/(2*N)=n := by
+  have hr : 0<r := by omega
+  have hN : 0<N := by omega
+  have hrR : (0:ℝ)<r := by exact_mod_cast hr
+  have hNR : (0:ℝ)<N := by exact_mod_cast hN
+  set c : ℝ := (N:ℝ)*((n:ℝ)/r) with hc
+  set L : ℝ := (N:ℝ)/(2*r) with hL
+  have hcr : c*r=N*n := by rw [hc];field_simp
+  have hLr : L*(2*r)=N := by rw [hL];field_simp
+  have hn1 : (1:ℝ)≤n := by exact_mod_cast hn0
+  have hnr' : (n:ℝ)+1≤r := by exact_mod_cast hnr
+  have hrN' : 512*(r:ℝ)≤N := by exact_mod_cast hrN
+  have hL256 : 256≤L := by nlinarith
+  have hc2L : 2*L≤c := by nlinarith
+  have hcN : c≤N-2*L := by nlinarith
+  have ha0 : (0:ℝ)≤a := Nat.cast_nonneg _
+  have haN' : (a:ℝ)<N := by exact_mod_cast haN
+  by_contra he
+  have hreg : c+L≤(a:ℝ) ∨ (a:ℝ)+L≤c := by
+    rcases window_cases r N n a hN he with h | h
+    · left
+      have hh : (2*N*n+N:ℝ)≤2*r*a := by exact_mod_cast h
+      nlinarith
+    · right
+      have hh : (2*r*a+N:ℝ)<2*N*n := by exact_mod_cast h
+      nlinarith
+  have hdist : 256≤phiR N c a ∧ 256≤phiL N c a := by
+    unfold phiR phiL
+    split_ifs <;> rcases hreg with h | h <;> constructor <;> nlinarith
+  change phiR N c a<256 ∨ phiL N c a<256 at hnear
+  rcases hnear with h | h <;> linarith [hdist.1,hdist.2]
+
+theorem left_mass_ge_circular (r N n : Nat) (hn0 : 0<n) (hnr : n<r)
+    (hrN : 512*r≤N) :
+    (∑a∈Finset.range N,if phiR N ((N:ℝ)*((n:ℝ)/r)) a<256 ∨ phiL N ((N:ℝ)*((n:ℝ)/r)) a<256
+      then ampSq N ((n:ℝ)/r) a else 0) ≤
+    ∑a∈Finset.range N,if (2*r*a+N)/(2*N)=n then ampSq N ((n:ℝ)/r) a else 0 := by
+  apply Finset.sum_le_sum
+  intro a ha
+  by_cases hnear : phiR N ((N:ℝ)*((n:ℝ)/r)) a<256 ∨ phiL N ((N:ℝ)*((n:ℝ)/r)) a<256
+  · rw [if_pos hnear,if_pos (left_cell_of_circular r N n a hn0 hnr hrN (Finset.mem_range.mp ha) hnear)]
+  · rw [if_neg hnear]
+    split_ifs
+    · exact Complex.normSq_nonneg _
+    · exact le_rfl
+
+end
+end ShorECDLP.Entrant.Precision265
+
+namespace ShorECDLP.Entrant.Precision265
+open Quantum ShorECDLP.Challenge RoundedReadout ShorECDLP.Secp256k1 NeighborReadout WindowMassSharpProof
+open ShorECDLP.Paper2607_13816 ShorECDLP.Quantum.OrderFinding ShorECDLP.Quantum.PhaseEstimation
+open scoped BigOperators
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+set_option exponentiation.threshold 300
+private theorem sum_fin2 (r N : Nat) (f : Nat→Nat→ℝ) :
+    (∑k : Fin r,∑a : Fin N,f k.val a.val)=∑k∈Finset.range r,∑a∈Finset.range N,f k a := by
+  rw [Fin.sum_univ_eq_sum_range (fun k => ∑a : Fin N,f k a.val)]
+  have ha (k : Nat) : (∑a : Fin N,f k a.val)=∑a∈Finset.range N,f k a :=
+    Fin.sum_univ_eq_sum_range (fun a => f k a) N
+  simp_rw [ha]
+
+theorem neighbor_pair_coverage (r n d : Nat) (hr : r.Prime)
+    (hprecision : 512*r ≤ 2^n) (hsize : 2^207<r)
+    (hNbig : 65536≤2^n) (hnd : ¬r∣2^n)
+    (accept : Fin (2^n) → Fin (2^207) → Prop) [∀ a b, Decidable (accept a b)]
+    (haccept : ∀ (k : Fin r), k.val ≠ 0 → ∀ a b,
+      ShorECDLP.Quantum.OrderFinding.nearestNumerator r n a.val = k.val →
+      rightGood r ⟨d*k.val%r, Nat.mod_lt _ hr.pos⟩ b →
+      accept a b) :
+    1-1/2295-1/108-2/10000-1/r ≤ ∑ a : Fin (2^n), ∑ b : Fin (2^207),
+      if accept a b then asymmetricPairMass r n 207 d (a,b) else 0 := by
+  classical
+  let A : Fin r → Fin (2^n) → ℝ := fun k a =>
+    Complex.normSq (paperPhaseAmplitude n ((k.val : ℝ)/r) a.val)
+  let B : Fin r → Fin (2^207) → ℝ := fun k b =>
+    Complex.normSq (paperPhaseAmplitude 207 (((d*k.val%r : Nat) : ℝ)/r) b.val)
+  let good : Fin r → Fin (2^n) → Fin (2^207) → Prop := fun k a b =>
+    k.val ≠ 0 ∧ ShorECDLP.Quantum.OrderFinding.nearestNumerator r n a.val = k.val ∧
+      rightGood r ⟨d*k.val%r, Nat.mod_lt _ hr.pos⟩ b
+  let F : Fin r → Fin (2^n) → Fin (2^207) → ℝ := fun k a b =>
+    if good k a b then A k a * B k b else 0
+  have hA : ∀ k a, 0 ≤ A k a := fun _ _ => Complex.normSq_nonneg _
+  have hB : ∀ k b, 0 ≤ B k b := fun _ _ => Complex.normSq_nonneg _
+  have hF : ∀ k a b, 0 ≤ F k a b := by
+    intro k a b
+    dsimp only [F]
+    split_ifs
+    · exact mul_nonneg (hA k a) (hB k b)
+    · exact le_rfl
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr.pos
+  have hrinv : (0 : ℝ) ≤ (r : ℝ)⁻¹ := by positivity
+  have hjp : ∀ a : Fin (2^n), ∀ b : Fin (2^207),
+      asymmetricPairMass r n 207 d (a,b) = (r : ℝ)⁻¹ * ∑ k : Fin r, A k a * B k b := by
+    intro a b
+    simp only [asymmetricPairMass, one_div, A, B]
+  have step1 :
+      ∑ a : Fin (2^n), ∑ b : Fin (2^207), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b ≤
+        ∑ a : Fin (2^n), ∑ b : Fin (2^207),
+          if accept a b then asymmetricPairMass r n 207 d (a,b) else 0 := by
+    apply Finset.sum_le_sum
+    intro a _
+    apply Finset.sum_le_sum
+    intro b _
+    by_cases hp : accept a b
+    · rw [if_pos hp, hjp]
+      apply mul_le_mul_of_nonneg_left _ hrinv
+      apply Finset.sum_le_sum
+      intro k _
+      dsimp only [F]
+      split_ifs
+      · exact le_rfl
+      · exact mul_nonneg (hA k a) (hB k b)
+    · rw [if_neg hp]
+      have hz : ∀ k, F k a b = 0 := by
+        intro k
+        dsimp only [F]
+        rw [if_neg]
+        rintro ⟨hk, ha, hb⟩
+        exact hp (haccept k hk a b ha hb)
+      simp [hz]
+  have step2 :
+      (r : ℝ)⁻¹ * ∑ k : Fin r, ∑ a : Fin (2^n), ∑ b : Fin (2^207), F k a b =
+        ∑ a : Fin (2^n), ∑ b : Fin (2^207), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b := by
+    simp_rw [Finset.mul_sum]
+    rw [Finset.sum_comm]
+    apply Finset.sum_congr rfl
+    intro a _
+    rw [Finset.sum_comm]
+  let C : Fin r → ℝ := fun k => ∑a : Fin (2^n),
+    if phiR (2^n) ((2^n:Nat)*((k.val:ℝ)/r)) a.val<256 ∨
+      phiL (2^n) ((2^n:Nat)*((k.val:ℝ)/r)) a.val<256 then A k a else 0
+  have hC_one (k : Fin r) : C k≤1 := by
+    calc
+      _ ≤ ∑a : Fin (2^n),A k a := by
+        apply Finset.sum_le_sum
+        intro a _
+        dsimp only [C]
+        split_ifs
+        · exact le_rfl
+        · exact hA k a
+      _ = 1 := by
+        dsimp only [A]
+        rw [Fin.sum_univ_eq_sum_range (fun a => Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) a))]
+        simpa only [ampSq,paperPhaseAmplitude,eigenvalue] using parseval (2^n) (by positivity) ((k.val:ℝ)/r)
+  have hC_average : (r:ℝ)*(1-1/2295-1/10000)≤∑k : Fin r,C k := by
+    have h := circular_mass_256_average r (2^n) hr.pos hNbig hnd
+    dsimp only [C,A]
+    rw [sum_fin2 r (2^n) (fun k a =>
+      if phiR (2^n) ((2^n:Nat)*((k:ℝ)/r)) a<256 ∨
+        phiL (2^n) ((2^n:Nat)*((k:ℝ)/r)) a<256
+      then Complex.normSq (paperPhaseAmplitude n ((k:ℝ)/r) a) else 0)]
+    simpa only [ampSq,paperPhaseAmplitude,eigenvalue] using h
+  have hleft (k : Fin r) (hk : k.val≠0) : C k≤∑a : Fin (2^n),
+      if ShorECDLP.Quantum.OrderFinding.nearestNumerator r n a.val=k.val then A k a else 0 := by
+    dsimp only [C,A]
+    rw [Fin.sum_univ_eq_sum_range (fun a =>
+      if phiR (2^n) ((2^n:Nat)*((k.val:ℝ)/r)) a<256 ∨
+        phiL (2^n) ((2^n:Nat)*((k.val:ℝ)/r)) a<256
+      then Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) a) else 0),
+      Fin.sum_univ_eq_sum_range (fun a =>
+      if ShorECDLP.Quantum.OrderFinding.nearestNumerator r n a=k.val
+      then Complex.normSq (paperPhaseAmplitude n ((k.val:ℝ)/r) a) else 0)]
+    simpa only [ShorECDLP.Quantum.OrderFinding.nearestNumerator,ampSq,paperPhaseAmplitude,eigenvalue]
+      using left_mass_ge_circular r (2^n) k.val (Nat.pos_of_ne_zero hk) k.isLt hprecision
+  have step3 : ∀ k : Fin r,
+      C k+(if k.val=0 then 0 else rightMass r ⟨d*k.val%r,Nat.mod_lt _ hr.pos⟩)-1 ≤
+        ∑a : Fin (2^n),∑b : Fin (2^207),F k a b := by
+    intro k
+    by_cases hk : k.val=0
+    · rw [if_pos hk]
+      have hz := Finset.sum_nonneg (fun a (_:a∈Finset.univ) =>
+        Finset.sum_nonneg (fun b (_:b∈Finset.univ) => hF k a b))
+      linarith [hC_one k]
+    · rw [if_neg hk]
+      have he : (∑a : Fin (2^n),∑b : Fin (2^207),F k a b)=
+          (∑a : Fin (2^n),if ShorECDLP.Quantum.OrderFinding.nearestNumerator r n a.val=k.val then A k a else 0)*
+            rightMass r ⟨d*k.val%r,Nat.mod_lt _ hr.pos⟩ := by
+        rw [rightMass,Finset.sum_mul_sum]
+        apply Finset.sum_congr rfl
+        intro a _
+        apply Finset.sum_congr rfl
+        intro b _
+        dsimp only [F,good,B]
+        rw [ite_zero_mul_ite_zero]
+        simp only [hk,ne_eq,not_false_eq_true,true_and]
+      rw [he]
+      have hmul := mul_le_mul_of_nonneg_right (hleft k hk)
+        (rightMass_nonneg r ⟨d*k.val%r,Nat.mod_lt _ hr.pos⟩)
+      have hpos := mul_nonneg (sub_nonneg.mpr (hC_one k))
+        (sub_nonneg.mpr (rightMass_le_one r ⟨d*k.val%r,Nat.mod_lt _ hr.pos⟩))
+      nlinarith
+  have hsum := Finset.sum_le_sum (fun k (_:k∈Finset.univ) => step3 k)
+  simp only [Finset.sum_sub_distrib,Finset.sum_add_distrib,Finset.sum_const,
+    Finset.card_univ,Fintype.card_fin,nsmul_eq_mul] at hsum
+  have havg := rightMass_average r d hr hsize
+  have hprod : (r:ℝ)*(1-1/2295-1/108-2/10000)-1 ≤
+      ∑k : Fin r,∑a : Fin (2^n),∑b : Fin (2^207),F k a b := by
+    nlinarith [hC_average,havg]
+  have hlower := mul_le_mul_of_nonneg_left hprod hrinv
+  have heval : (r:ℝ)⁻¹*((r:ℝ)*(1-1/2295-1/108-2/10000)-1)=
+      1-1/2295-1/108-2/10000-1/r := by field_simp
+  rw [heval,step2] at hlower
+  exact hlower.trans step1
+
+end
+end ShorECDLP.Entrant.Precision265
 
 /- Append after Coverage. -/
 namespace ShorECDLP.Entrant.NeighborReadout
@@ -2232,12 +2700,13 @@ theorem neighbor_pair_coverage (r n d : Nat) (hr : r.Prime)
 
 
 theorem pair_success (Q : Point) (d : Nat) (_hn : Q≠0) (_hd : Q=d•G) :
-    (99 : ℝ)/100 ≤ ∑a : Fin (2^266),∑b : Fin (2^207),
-      if pairRecovered d a.val b.val then asymmetricPairMass order 266 207 d (a,b) else 0 := by
-  have h:=neighbor_pair_coverage order 266 d order_prime (by norm_num [order]) (by norm_num [order])
+    (99 : ℝ)/100 ≤ ∑a : Fin (2^265),∑b : Fin (2^207),
+      if pairRecovered d a.val b.val then asymmetricPairMass order 265 207 d (a,b) else 0 := by
+  have h:=Precision265.neighbor_pair_coverage order 265 d order_prime
+    (by norm_num [order]) (by norm_num [order]) (by norm_num) (by norm_num [order])
     (fun a b=>pairRecovered d a.val b.val=true)
     (fun k hk a b ha hb=>pairRecovered_of_character d k hk a b ha hb)
-  exact (Precision207.success_budget_average order (by norm_num [order])).trans h
+  exact (Precision265.success_budget_union order (by norm_num [order])).trans h
 
 end
 end ShorECDLP.Entrant.NeighborReadout
@@ -4298,7 +4767,7 @@ theorem increment_offset (Q : Point) (hQ : order • Q = 0) (w : SignedWindow) (
   let P := w.base Q
   have hr : order • P = 0 := by
     cases w with
-    | left16 _ => exact generator_nsmul_eq_zero
+    | left16 _ | left15 _ => exact generator_nsmul_eq_zero
     | right15 _ | right16 _ => exact hQ
   have hh : halfOrder ≤ 2^(w.width-1) + order := by
     have hl : halfOrder ≤ order := by norm_num [halfOrder, order]
@@ -4348,9 +4817,8 @@ theorem right_offsets :
     SignedWindow.width, SignedWindow.exponent]
 
 theorem left_base (Q : Point) (w : SignedWindow) (hw : w ∈ leftSigned) : w.base Q = G := by
-  simp only [leftSigned,List.mem_ofFn] at hw
-  obtain ⟨i,rfl⟩ := hw
-  rfl
+  simp only [leftSigned,List.mem_append,List.mem_ofFn,List.mem_singleton] at hw
+  rcases hw with ⟨i,rfl⟩ | rfl <;> rfl
 
 theorem right_base (Q : Point) (w : SignedWindow) (hw : w ∈ rightSigned) : w.base Q = Q := by
   simp only [rightSigned,List.mem_append,List.mem_ofFn,List.mem_singleton] at hw
@@ -4375,7 +4843,7 @@ theorem unsigned_reconstruction (Q : Point) (hQ : order • Q = 0)
     (first : Nat) (values : SignedWindow → Nat) :
     initialPoint Q first + (leftSigned.map (fun w => increment Q w (values w))).sum +
       (rightSigned.map (fun w => increment Q w (values w))).sum =
-    (first * 2^256 + (leftSigned.map (fun w => values w * 2^w.exponent)).sum) • G +
+    (first * 2^255 + (leftSigned.map (fun w => values w * 2^w.exponent)).sum) • G +
       (rightSigned.map (fun w => values w * 2^w.exponent)).sum • Q := by
   rw [increments_sum Q hQ leftSigned G (left_base Q) values,
     increments_sum Q hQ rightSigned Q (right_base Q) values, left_offsets, right_offsets]
@@ -4458,7 +4926,7 @@ theorem Setup.modelWeights {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup 
       exact increment_offset Q hQ w v
     · exact ih hw.2.2
 
-theorem left_signed_width : (leftSigned.map SignedWindow.width).sum = 256 := by
+theorem left_signed_width : (leftSigned.map SignedWindow.width).sum = 255 := by
   norm_num [leftSigned, List.ofFn_succ, SignedWindow.width]
 
 theorem right_signed_width : (rightSigned.map SignedWindow.width).sum = 207 := by
@@ -4472,7 +4940,7 @@ theorem Setup.left_weights {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup 
   · intro v
     change initialPoint Q v + -(leftOffset • G + rightOffset • Q) = _
     have hwidths : ((leftSigned.map (s.signedModel Q hQ hn)).map
-        (fun w => w.physical.wires.length)).sum = 256 := by
+        (fun w => w.physical.wires.length)).sum = 255 := by
       simp only [List.map_map, Function.comp_def, s.signed_length, left_signed_width]
     rw [hwidths]
     unfold initialPoint
@@ -4547,7 +5015,7 @@ theorem Setup.kernel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs
   · simpa only [Setup.leftModels, Setup.rightModels] using s.bias_cancels Q hQ hn
 
 theorem Setup.left_precision {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
-    (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : precision (s.leftModels Q hQ hn) = 266 := by
+    (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : precision (s.leftModels Q hQ hn) = 265 := by
   rw [precision, Setup.leftModels, List.map_cons, List.sum_cons]
   have hlen : (bank 10).length = 10 := by decide +kernel
   simp only [Setup.firstModel, ShorECDLP.Entrant.Single.Distribution.firstModel, s.firstWires, List.length_reverse, hlen,
@@ -4578,7 +5046,7 @@ theorem Setup.right_metadata {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setu
 
 theorem Setup.left_count {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 491326937 := by
+    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 490950104 := by
   rw [← recordCount_eq_axisCount, s.left_metadata, left_record_count]
 
 theorem Setup.left_positions {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
@@ -4716,7 +5184,7 @@ theorem framed_reset_run {n start a b finish out : Nat}
     rfl
   rw [framed_run, unitary_run_map, append_run_fixed_right _ _ _ _ _ _ ht]
 
-theorem program_run_data (read : ConstantBit 934912 → Bool) :
+theorem program_run_data (read : ConstantBit 918528 → Bool) :
     (ShorECDLP.Entrant.Single.program.instantiate read Fin.elim0).run =
       ((physicalAxesData leftWindows rightWindows read 0 Fin.elim0).seq terminalInstrument).map
         (fun b => ({history := List.nil, kraus := Quantum.run [.X 836]} : InstrumentBranch).seq b) := by
@@ -4771,7 +5239,7 @@ theorem Setup.event_mass {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup co
     Instrument.bornMass
       (((physicalAxes (s.leftModels Q hQ hn) (s.rightModels Q hQ hn) 0 Fin.elim0).seq J).filter
         (fun b => fineEvent accept b.history)) (ket initialRoot) =
-      idealEventMass Q initialRoot 266 207 accept := by
+      idealEventMass Q initialRoot 265 207 accept := by
   have hm := physicalTwoAxes_event_mass Q initialRoot (s.leftModels Q hQ hn)
     (s.rightModels Q hQ hn) 0 Fin.elim0 (ket initialRoot) (s.ready Q hQ hn)
     (s.kernel Q hQ hn) J hJ accept
@@ -4784,7 +5252,7 @@ theorem program_event_mass (Q : Point) (hn : Q ≠ 0) (hQ : order • Q = 0)
     Instrument.bornMass
       (((ShorECDLP.Entrant.Single.program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).run).filter
         (fun b => fineEvent accept b.history)) (ket zeroBasisState) =
-      idealEventMass Q initialRoot 266 207 accept := by
+      idealEventMass Q initialRoot 265 207 accept := by
   rw [assembled_program_run Q hQ hn,
     prefix_filter_mass _ ([Gate.X 836]) (fineEvent accept) (ket zeroBasisState)]
   have hs : Quantum.run [.X 836] (ket zeroBasisState) = ket initialRoot := by

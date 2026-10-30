@@ -433,6 +433,9 @@ inductive Drops {n : Nat} : {s e : Nat} → Straight n s e → Straight n s e �
       Drops (.gate (.literal (.CCX a b t)) (.gate (.literal (.CX a b))
         (.gate (.literal (.CCX a b t)) p)))
         (.gate (.literal (.CX a b)) (.gate (.literal (.CX a t)) q)) (14+d)
+  | swap {s e} (g k : Gate) {p q : Straight n s e} {d : Nat} : Drops p q d →
+      Drops (.gate (.literal g) (.gate (.literal k) p))
+        (.gate (.literal k) (.gate (.literal g) q)) d
   | trans {s e} {p q r : Straight n s e} {d f : Nat} :
       Drops p q d → Drops q r f → Drops p r (d+f)
 
@@ -445,6 +448,7 @@ theorem Drops.wellFormed {n s e d} {p q : Straight n s e}
   | record i v g h ih => exact ⟨hp.1, ih hp.2⟩
   | measure w h ih => exact ih hp
 
+  | swap g k h ih => exact ⟨hp.2.1,hp.1,ih hp.2.2⟩
   | transport a b t u hh h ih=>
     simp only [Straight.WellFormed,TemplateGate.WellFormed,Gate.WellFormed] at hp ⊢
     exact ⟨hp.2.1,⟨⟨hp.1.1,hh.2.2.1,hh.2.2.2.1⟩,ih hp.2.2.2⟩⟩
@@ -481,6 +485,10 @@ theorem Drops.tCount {n s e d} {p q : Straight n s e}
     have ht := ih (Fin.lastCases true history)
     omega
 
+  | swap g k h ih =>
+    have hi := ih history
+    simp only [Straight.instantiate,TemplateGate.instantiate,AdaptiveCircuit.tCount]
+    omega
   | transport a b t u hh h ih=>
     have hi:=ih history
     simp only [Straight.instantiate,TemplateGate.instantiate,AdaptiveCircuit.tCount,
@@ -516,6 +524,11 @@ theorem Drops.wires {n s e d} {p q : Straight n s e}
     · exact Or.inr (Or.inl (ih (Fin.lastCases false history) w hf))
     · exact Or.inr (Or.inr (ih (Fin.lastCases true history) w ht))
 
+  | swap g k h ih =>
+    intro w hw
+    have hi := ih history w
+    simp only [Straight.instantiate,TemplateGate.instantiate,AdaptiveCircuit.wires,List.mem_append] at hw ⊢
+    tauto
   | transport a b t u hh h ih=>
     intro w hw
     have hi:=ih history w
@@ -549,6 +562,7 @@ theorem Drops.append {n a b c d f} {p p' : Straight n a b} {q q' : Straight n b 
   | record i v g h ih => exact Drops.record i v g (ih hq)
   | measure w h ih => exact Drops.measure w (ih hq)
 
+  | swap g k h ih => exact Drops.swap g k (ih hq)
   | transport a b t u hh h ih=>
     simpa only [Straight.append,Nat.add_assoc] using Drops.transport a b t u hh (ih hq)
   | control a b t hh h ih=>
@@ -697,6 +711,7 @@ theorem Drops.reindex {n m s e d} {p q : Straight n s e} (h : Drops p q d)
   | record i v g h ih => exact Drops.record _ _ _ ih
   | measure w h ih => exact Drops.measure _ ih
 
+  | swap g k h ih => exact Drops.swap g k ih
   | transport a b t u hh h ih=>exact Drops.transport a b t u hh ih
   | control a b t hh h ih=>exact Drops.control a b t hh ih
 
@@ -743,6 +758,7 @@ theorem Drops.relabel {n s e d} {p q : Straight n s e} (h : Drops p q d)
   | record i v g h ih => exact Drops.record _ _ _ ih
   | measure w h ih => exact Drops.measure _ ih
 
+  | swap g k h ih => exact Drops.swap (g.relabel f) (k.relabel f) ih
   | transport a b t u hh h ih=>
     have hf : f a≠f t ∧ f b≠f t ∧ f a≠f u ∧ f b≠f u ∧ f t≠f u :=
       ⟨fun h=>hh.1 (f.injective h),fun h=>hh.2.1 (f.injective h),
@@ -784,6 +800,7 @@ theorem Drops.shift {n s e d} {p q : Straight n s e} (h : Drops p q d)
   | record i v g h ih => exact Drops.record _ _ _ ih
   | measure w h ih => exact Drops.measure _ ih
 
+  | swap g k h ih => exact Drops.swap g k ih
   | transport a b t u hh h ih=>exact Drops.transport a b t u hh ih
   | control a b t hh h ih=>exact Drops.control a b t hh ih
 
@@ -1619,3 +1636,234 @@ theorem initializer_tight_ccx : eeaToffoliCount (tight rows) + 130050 =
   omega
 end ShorECDLP.Entrant.Initializer
 
+
+namespace ShorECDLP.Entrant.AcrossLeft
+open Quantum
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+def source (a b t u : Wire) (h : Gate) : Circuit := [.CCX a b t,h,.CX t u,.CCX a b t]
+def reduced (a b t u : Wire) (h : Gate) : Circuit := [h,.CX t u,.CCX a b u]
+
+theorem run_identity (a b t u : Wire) (h : Gate)
+    (hat : a≠t) (hbt : b≠t) (hau : a≠u) (hbu : b≠u) (htu : t≠u)
+    (hc : FoundationCancellation.commutes (.CCX a b t) h = true) :
+    Quantum.run (source a b t u h)=Quantum.run (reduced a b t u h) := by
+  have he := Transport.run_identity a b t u hat hbt hau hbu htu
+  have hc' (ϕ : State) : applyGate (.CCX a b t) (applyGate h ϕ) = applyGate h (applyGate (.CCX a b t) ϕ) := by
+    simpa only [Quantum.run_cons,Quantum.run_nil] using
+      Initializer.gate_circuit_commute (.CCX a b t) (h :: List.nil) (by
+        intro k hk
+        have heq : k=h := by simpa only [List.mem_singleton] using hk
+        rw [heq]
+        exact hc) ϕ
+  apply LinearMap.ext
+  intro ψ
+  simp only [source,reduced,Quantum.run_cons,Quantum.run_nil]
+  have hh := congrArg (fun m : State →ₗ[ℂ]State => m (applyGate h ψ)) he
+  simp only [Transport.source,Transport.reduced,Quantum.run_cons,Quantum.run_nil] at hh
+  rw [hc'] at hh
+  exact hh
+
+def optimize : Circuit → Circuit
+  | .CCX a b t :: h :: .CX v u :: .CCX c d z :: rest =>
+    if a=c ∧ b=d ∧ t=v ∧ t=z ∧ a≠u ∧ b≠u ∧ t≠u ∧ a≠t ∧ b≠t ∧
+        FoundationCancellation.commutes (.CCX a b t) h = true then
+      h :: .CX t u :: .CCX a b u :: optimize rest
+    else .CCX a b t :: optimize (h :: .CX v u :: .CCX c d z :: rest)
+  | g::rest => g::optimize rest
+  | [] => []
+
+inductive Reduction : Circuit → Circuit → Prop where
+  | nil : Reduction List.nil List.nil
+  | keep (g : Gate) {xs ys : Circuit} : Reduction xs ys → Reduction (g::xs) (g::ys)
+  | fuse (a b t u : Wire) (h : Gate)
+      (hat : a≠t) (hbt : b≠t) (hau : a≠u) (hbu : b≠u) (htu : t≠u)
+      (hc : FoundationCancellation.commutes (.CCX a b t) h = true)
+      {xs ys : Circuit} : Reduction xs ys →
+      Reduction (.CCX a b t :: h :: .CX t u :: .CCX a b t :: xs) (h :: .CX t u :: .CCX a b u :: ys)
+
+theorem optimize_rel (xs : Circuit) : Reduction xs (optimize xs) := by
+  induction xs using optimize.induct with
+  | case1 a b t h v u c d z rest hc ih =>
+    rw [optimize,if_pos hc]
+    rcases hc with ⟨rfl,rfl,rfl,rfl,hau,hbu,htu,hat,hbt,hcomm⟩
+    exact Reduction.fuse _ _ _ _ _ hat hbt hau hbu htu hcomm ih
+  | case2 a b t h v u c d z rest hc ih =>
+    rw [optimize,if_neg hc]
+    exact Reduction.keep _ ih
+  | case3 g rest hc ih =>
+    rw [optimize.eq_2 g rest hc]
+    exact Reduction.keep _ ih
+  | case4 => exact Reduction.nil
+
+theorem Reduction.run {xs ys : Circuit} (h : Reduction xs ys) : Quantum.run xs=Quantum.run ys := by
+  induction h with
+  | nil => rfl
+  | keep g h ih =>
+    apply LinearMap.ext
+    intro ψ
+    simp only [Quantum.run_cons,ih]
+  | fuse a b t u g hat hbt hau hbu htu hc h ih =>
+    have he := run_identity a b t u g hat hbt hau hbu htu hc
+    apply LinearMap.ext
+    intro ψ
+    have hh := congrArg (fun m : State→ₗ[ℂ]State => m ψ) he
+    simp only [source,reduced,Quantum.run_cons,Quantum.run_nil] at hh
+    simpa only [Quantum.run_cons,ih] using congrArg (Quantum.run _) hh
+
+end ShorECDLP.Entrant.AcrossLeft
+
+namespace ShorECDLP.Entrant.AcrossRight
+open Quantum
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+def source (a b t u : Wire) (h : Gate) : Circuit := [.CCX a b t,.CX t u,h,.CCX a b t]
+def reduced (a b t u : Wire) (h : Gate) : Circuit := [.CX t u,.CCX a b u,h]
+
+theorem run_identity (a b t u : Wire) (h : Gate)
+    (hat : a≠t) (hbt : b≠t) (hau : a≠u) (hbu : b≠u) (htu : t≠u)
+    (hc : FoundationCancellation.commutes (.CCX a b t) h = true) :
+    Quantum.run (source a b t u h)=Quantum.run (reduced a b t u h) := by
+  have he := Transport.run_identity a b t u hat hbt hau hbu htu
+  have hc' (ϕ : State) : applyGate (.CCX a b t) (applyGate h ϕ) = applyGate h (applyGate (.CCX a b t) ϕ) := by
+    simpa only [Quantum.run_cons,Quantum.run_nil] using
+      Initializer.gate_circuit_commute (.CCX a b t) (h :: List.nil) (by
+        intro k hk
+        have heq : k=h := by simpa only [List.mem_singleton] using hk
+        rw [heq]
+        exact hc) ϕ
+  apply LinearMap.ext
+  intro ψ
+  simp only [source,reduced,Quantum.run_cons,Quantum.run_nil]
+  have hh := congrArg (fun v : State => applyGate h v)
+      (congrArg (fun m : State →ₗ[ℂ]State => m ψ) he)
+  simp only [Transport.source,Transport.reduced,Quantum.run_cons,Quantum.run_nil] at hh
+  rw [←hc'] at hh
+  exact hh
+
+def optimize : Circuit → Circuit
+  | .CCX a b t :: .CX v u :: h :: .CCX c d z :: rest =>
+    if a=c ∧ b=d ∧ t=v ∧ t=z ∧ a≠u ∧ b≠u ∧ t≠u ∧ a≠t ∧ b≠t ∧
+        FoundationCancellation.commutes (.CCX a b t) h = true then
+      .CX t u :: .CCX a b u :: h :: optimize rest
+    else .CCX a b t :: optimize (.CX v u :: h :: .CCX c d z :: rest)
+  | g::rest => g::optimize rest
+  | [] => []
+
+inductive Reduction : Circuit → Circuit → Prop where
+  | nil : Reduction List.nil List.nil
+  | keep (g : Gate) {xs ys : Circuit} : Reduction xs ys → Reduction (g::xs) (g::ys)
+  | fuse (a b t u : Wire) (h : Gate)
+      (hat : a≠t) (hbt : b≠t) (hau : a≠u) (hbu : b≠u) (htu : t≠u)
+      (hc : FoundationCancellation.commutes (.CCX a b t) h = true)
+      {xs ys : Circuit} : Reduction xs ys →
+      Reduction (.CCX a b t :: .CX t u :: h :: .CCX a b t :: xs) (.CX t u :: .CCX a b u :: h :: ys)
+
+theorem optimize_rel (xs : Circuit) : Reduction xs (optimize xs) := by
+  induction xs using optimize.induct with
+  | case1 a b t v u h c d z rest hc ih =>
+    rw [optimize,if_pos hc]
+    rcases hc with ⟨rfl,rfl,rfl,rfl,hau,hbu,htu,hat,hbt,hcomm⟩
+    exact Reduction.fuse _ _ _ _ _ hat hbt hau hbu htu hcomm ih
+  | case2 a b t v u h c d z rest hc ih =>
+    rw [optimize,if_neg hc]
+    exact Reduction.keep _ ih
+  | case3 g rest hc ih =>
+    rw [optimize.eq_2 g rest hc]
+    exact Reduction.keep _ ih
+  | case4 => exact Reduction.nil
+
+theorem Reduction.run {xs ys : Circuit} (h : Reduction xs ys) : Quantum.run xs=Quantum.run ys := by
+  induction h with
+  | nil => rfl
+  | keep g h ih =>
+    apply LinearMap.ext
+    intro ψ
+    simp only [Quantum.run_cons,ih]
+  | fuse a b t u g hat hbt hau hbu htu hc h ih =>
+    have he := run_identity a b t u g hat hbt hau hbu htu hc
+    apply LinearMap.ext
+    intro ψ
+    have hh := congrArg (fun m : State→ₗ[ℂ]State => m ψ) he
+    simp only [source,reduced,Quantum.run_cons,Quantum.run_nil] at hh
+    simpa only [Quantum.run_cons,ih] using congrArg (Quantum.run _) hh
+
+end ShorECDLP.Entrant.AcrossRight
+
+set_option linter.unnecessarySeqFocus false
+namespace ShorECDLP.Entrant.AcrossLeft
+open Quantum
+
+theorem Reduction.tle {xs ys : Circuit} (h : Reduction xs ys) :
+    ShorECDLP.tCount ys ≤ ShorECDLP.tCount xs := by
+  induction h <;> simp_all [ShorECDLP.tCount_cons,tCost] <;> omega
+end ShorECDLP.Entrant.AcrossLeft
+namespace ShorECDLP.Entrant.AcrossRight
+open Quantum
+
+theorem Reduction.tle {xs ys : Circuit} (h : Reduction xs ys) :
+    ShorECDLP.tCount ys ≤ ShorECDLP.tCount xs := by
+  induction h <;> simp_all [ShorECDLP.tCount_cons,tCost] <;> omega
+end ShorECDLP.Entrant.AcrossRight
+
+namespace ShorECDLP.Entrant.TransportOptimization
+open Quantum Challenge Paper2607_13816.ChallengeMigration
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+
+theorem acrossLeft_drops {xs ys : Circuit} (h : AcrossLeft.Reduction xs ys) (n start : Nat) :
+    Drops (literalProgram xs : Straight n start start) (literalProgram ys)
+      (ShorECDLP.tCount xs-ShorECDLP.tCount ys) := by
+  induction h with
+  | nil => exact Drops.refl _
+  | @keep g xs ys h ih =>
+    have hd : ShorECDLP.tCount (g::xs)-ShorECDLP.tCount (g::ys)=
+        ShorECDLP.tCount xs-ShorECDLP.tCount ys := by simp only [ShorECDLP.tCount_cons]; omega
+    rw [hd]
+    simpa only [literalProgram,gateProgram,List.map_cons] using Drops.gate (.literal g) ih
+  | @fuse a b t u g hat hbt hau hbu htu hc xs ys h ih =>
+    have hs := Drops.swap (.CCX a b t) g
+      (Drops.refl (.gate (.literal (.CX t u)) (.gate (.literal (.CCX a b t))
+        (literalProgram xs : Straight n start start))))
+    have ht := Drops.gate (.literal g) (Drops.transport a b t u ⟨hat,hbt,hau,hbu,htu⟩ ih)
+    have hj := Drops.trans hs ht
+    have hle := h.tle
+    have hd : ShorECDLP.tCount (.CCX a b t :: g :: .CX t u :: .CCX a b t :: xs)-
+        ShorECDLP.tCount (g :: .CX t u :: .CCX a b u :: ys)=
+        7+(ShorECDLP.tCount xs-ShorECDLP.tCount ys) := by
+      simp only [ShorECDLP.tCount_cons,tCost]
+      omega
+    rw [hd]
+    simpa only [literalProgram,gateProgram,List.map_cons,Nat.zero_add] using hj
+
+theorem acrossRight_drops {xs ys : Circuit} (h : AcrossRight.Reduction xs ys) (n start : Nat) :
+    Drops (literalProgram xs : Straight n start start) (literalProgram ys)
+      (ShorECDLP.tCount xs-ShorECDLP.tCount ys) := by
+  induction h with
+  | nil => exact Drops.refl _
+  | @keep g xs ys h ih =>
+    have hd : ShorECDLP.tCount (g::xs)-ShorECDLP.tCount (g::ys)=
+        ShorECDLP.tCount xs-ShorECDLP.tCount ys := by simp only [ShorECDLP.tCount_cons]; omega
+    rw [hd]
+    simpa only [literalProgram,gateProgram,List.map_cons] using Drops.gate (.literal g) ih
+  | @fuse a b t u g hat hbt hau hbu htu hc xs ys h ih =>
+    have hs := Drops.gate (.literal (.CCX a b t)) (Drops.gate (.literal (.CX t u))
+      (Drops.swap g (.CCX a b t) (Drops.refl (literalProgram xs : Straight n start start))))
+    have ht := Drops.transport a b t u ⟨hat,hbt,hau,hbu,htu⟩ (Drops.gate (.literal g) ih)
+    have hj := Drops.trans hs ht
+    have hle := h.tle
+    have hd : ShorECDLP.tCount (.CCX a b t :: .CX t u :: g :: .CCX a b t :: xs)-
+        ShorECDLP.tCount (.CX t u :: .CCX a b u :: g :: ys)=
+        7+(ShorECDLP.tCount xs-ShorECDLP.tCount ys) := by
+      simp only [ShorECDLP.tCount_cons,tCost]
+      omega
+    rw [hd]
+    simpa only [literalProgram,gateProgram,List.map_cons,Nat.zero_add] using hj
+end ShorECDLP.Entrant.TransportOptimization
