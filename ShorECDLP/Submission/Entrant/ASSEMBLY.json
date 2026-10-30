@@ -1,0 +1,29 @@
+{
+  "layout": "five",
+  "skeleton_commit": "1838d4d4a79bb59eda3049aa3f8cf594252b2944",
+  "body_commit": "d169ad9e4ac7240b1fee29f036ae3b33e4d973e0",
+  "lean_modules": 5,
+  "shared_block_bytes": 20154,
+  "shared_block_sha256": "ad99741567e3d67b0f727975b67b26ea4e2b4e87b0064a420cdfec6d1203cef5",
+  "removed_legacy_bytes": 935257,
+  "removed_legacy_sha256": "2d2988910800f0623599026310cdce260daacc05210b4216c870f8668b71e67e",
+  "support_name_qualifications": 48,
+  "vendor_comment_edits": 8,
+  "source_sha256": {
+    "ECDSAAdd/MODULES.txt": "f899a28654476d7a3f8fbd0240d291d6780c37f6c09a324f667361b75838e8a7",
+    "ECDSAAdd/Part1.lean": "6be8970912989b80c581211ec7589bc81b215d223e95284ec5f28414ba45b188",
+    "ECDSAAdd/Part2.lean": "6c751272f8773844b82c1c36817a4ff7101d232078ff6cbb76a49c66256fb677",
+    "ECDSAAdd/Part3.lean": "dc9ba5d3e34f814c2737a9a9d6002cb9218d1ff9adbb3b7029926bd8eeb45bb5",
+    "ECDSAAdd/Part4.lean": "56c4f643b12112d0cf374bdbe0a16403805cc92897fcd7dfaf9d4be4fe05b518",
+    "Main.lean": "0ef5e9287b3ae0af8ce652fabd5060ccc25c0fed9be0b3902ac5c756171ba147",
+    "WEX-INTERFACE.md": "7a6d100bf7ded65e447111be4443b3f8a2542db6252ce266b7bfd31ecf39768c"
+  },
+  "compiler_credit": "ShorECDLP.Entrant.WEXCredit",
+  "credit_commit": "8f2c9a1fccfdaa6aabe716bef2bd79c2c07b56b5",
+  "assembly_glue": "ShorECDLP.Entrant.WEXFinal",
+  "body_export": "ShorECDLP.Entrant.WEX.compactBody",
+  "compiler_wires": [
+    1930,
+    1931
+  ]
+}
