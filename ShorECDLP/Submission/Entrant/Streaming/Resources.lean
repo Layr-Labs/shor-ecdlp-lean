@@ -31,7 +31,6 @@ import ShorECDLP.Submission.«2607_13816».Challenge.Coordinate
 
 import ShorECDLP.Framework.Quantum.RelabelCongr
 import ShorECDLP.Submission.«2607_13816».Arithmetic.ZeroAllowedIdentity
-import ShorECDLP.Submission.Entrant.SquareInPlace
 
 section
 
@@ -165,7 +164,7 @@ noncomputable section
 def coordinateSource (x y : Nat → Nat) : AdaptiveCircuit :=
   ((((((((fig14LookupX (fun a => (ShorECDLP.p-x a)%ShorECDLP.p)).seq
     (signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p))).seq
-    division).seq ShorECDLP.Entrant.SquareInPlace.paddedSquare).seq
+    division).seq fig14SquareSubtract).seq
     (fig14LookupX (fun a => (3*x a)%ShorECDLP.p))).seq
     multiplication).seq fig14Negate).seq
     (fig14LookupX (fun a => x a%ShorECDLP.p))).seq
@@ -224,9 +223,9 @@ theorem coordinateSource_coherent (x y : Nat → Nat) :
   let f3 := zeroAllowedDivisionOutputState
   have h3 : CoherentlyImplementsOn p3 (Finsupp.lmapDomain ℂ ℂ f3) PointLookupValid := lookup_restrict division_coherent
   have r3 : ∀ s, PointLookupValid s → PointLookupValid (f3 s) := lookup_division_ready
-  let p4 := ShorECDLP.Entrant.SquareInPlace.paddedSquare
+  let p4 := fig14SquareSubtract
   let f4 := fig14SquareSubtractState
-  have h4 : CoherentlyImplementsOn p4 (Finsupp.lmapDomain ℂ ℂ f4) PointLookupValid := ShorECDLP.Entrant.SquareInPlace.paddedSquare_coherent
+  have h4 : CoherentlyImplementsOn p4 (Finsupp.lmapDomain ℂ ℂ f4) PointLookupValid := lookup_restrict fig14SquareSubtract_coherent
   have r4 : ∀ s, PointLookupValid s → PointLookupValid (f4 s) := lookup_square_ready
   let p5 := fig14LookupX (fun a => (3*x a)%ShorECDLP.p)
   let f5 := fig14LookupXState (fun a => (3*x a)%ShorECDLP.p)
@@ -345,7 +344,7 @@ theorem zMultiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → 
 def adaptiveCoordinateSources (Q : Point) (w : OddWindow) : List AdaptiveCircuit :=
   [fig14LookupX (fun l => baseFieldValue (windowPoint Q w l) .negX),
    signedPointLookupY (fun l => baseFieldValue (windowPoint Q w l) .negY),
-   division, ShorECDLP.Entrant.SquareInPlace.paddedSquare,
+   division, fig14SquareSubtract,
    fig14LookupX (fun l => baseFieldValue (windowPoint Q w l) .tripleX),
    multiplication, fig14Negate,
    fig14LookupX (fun l => baseFieldValue (windowPoint Q w l) .x),
@@ -364,7 +363,7 @@ theorem adaptiveCoordinateSources_eq (Q : Point) (w : OddWindow) :
 
 def adaptiveCoordinateSegments : List (FixedSegment 32768) :=
   [fieldLookupAddProgram .negX (List.range' 263 256), signedFieldProgram .negY,
-   zDivisionProgram 32768, ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram 32768,
+   zDivisionProgram 32768, pointSquareProgram 32768,
    fieldLookupAddProgram .tripleX (List.range' 263 256), zMultiplicationProgram 32768,
    xNegateProgram 32768, fieldLookupAddProgram .x (List.range' 263 256), signedFieldProgram .negY]
 
@@ -388,7 +387,7 @@ theorem adaptiveCoordinateProgram_run (w : OddWindow) (start : Nat) (Q : Point) 
   · intro cursor h
     exact zDivisionProgram_run 32768 cursor _ h
   · intro cursor h
-    exact ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram_run 32768 cursor _ h
+    exact pointSquareProgram_run 32768 cursor _ h
   · intro cursor h
     exact fig14LookupX_compiled w .tripleX cursor Q hQ h
   · intro cursor h
@@ -417,7 +416,7 @@ theorem adaptiveCoordinateProgram_tCount (w : OddWindow) (start : Nat) (Q : Poin
   · intro cursor h
     exact zDivisionProgram_tCount 32768 cursor _ h
   · intro cursor h
-    exact ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram_tCount 32768 cursor _ h
+    exact pointSquareProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact fieldLookupAddProgram_tCount_source w .tripleX _ cursor Q hQ (by simp) h
   · intro cursor h
@@ -864,7 +863,7 @@ noncomputable section
 def coordinateSource (x y : Nat → Nat) : AdaptiveCircuit :=
   ((((((((fig14LookupX (fun a => (ShorECDLP.p-x a)%ShorECDLP.p)).seq
     (signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p))).seq
-    division).seq ShorECDLP.Entrant.SquareInPlace.paddedSquare).seq
+    division).seq fig14SquareSubtract).seq
     (fig14LookupX (fun a => (3*x a)%ShorECDLP.p))).seq
     multiplication).seq fig14Negate).seq
     (fig14LookupX (fun a => x a%ShorECDLP.p))).seq
@@ -923,9 +922,9 @@ theorem coordinateSource_coherent (x y : Nat → Nat) :
   let f3 := zeroAllowedDivisionOutputState
   have h3 : CoherentlyImplementsOn p3 (Finsupp.lmapDomain ℂ ℂ f3) PointLookupValid := division_coherent
   have r3 : ∀ s, PointLookupValid s → PointLookupValid (f3 s) := lookup_division_ready
-  let p4 := ShorECDLP.Entrant.SquareInPlace.paddedSquare
+  let p4 := fig14SquareSubtract
   let f4 := fig14SquareSubtractState
-  have h4 : CoherentlyImplementsOn p4 (Finsupp.lmapDomain ℂ ℂ f4) PointLookupValid := ShorECDLP.Entrant.SquareInPlace.paddedSquare_coherent
+  have h4 : CoherentlyImplementsOn p4 (Finsupp.lmapDomain ℂ ℂ f4) PointLookupValid := lookup_restrict fig14SquareSubtract_coherent
   have r4 : ∀ s, PointLookupValid s → PointLookupValid (f4 s) := lookup_square_ready
   let p5 := fig14LookupX (fun a => (3*x a)%ShorECDLP.p)
   let f5 := fig14LookupXState (fun a => (3*x a)%ShorECDLP.p)
@@ -970,7 +969,7 @@ open ShorECDLP.Challenge ShorECDLP.Secp256k1
 
 def adaptiveCoordinateSegments : List (FixedSegment 32768) :=
   [fieldLookupAddProgram .negX (List.range' 263 256), signedFieldProgram .negY,
-   divisionProgram 32768, ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram 32768,
+   divisionProgram 32768, pointSquareProgram 32768,
    fieldLookupAddProgram .tripleX (List.range' 263 256), multiplicationProgram 32768,
    xNegateProgram 32768, fieldLookupAddProgram .x (List.range' 263 256), signedFieldProgram .negY]
 
@@ -4795,38 +4794,6 @@ theorem xNegateProgram_slots (n start : Nat) :
     (constantBits 256 ShorECDLP.p) 836 559 560 561 558 (by simp) (by simp) (by simp)
   simpa only [List.length_range'] using h
 
-theorem doublesProgram_slots256 (n k start : Nat) (acc dirty : List Wire) (bits : List Bool)
-    (p : Nat) (c r t f : Wire) (ha : acc.length=256) (hd : dirty.length=256) (hk : bits.length=256) :
-    (ShorECDLP.Entrant.SquareInPlace.doublesProgram n k start acc dirty bits p c r t f).2.gateSlots ≤ 13825*k := by
-  induction k generalizing start with
-  | zero => exact Nat.zero_le _
-  | succ k ih =>
-    have h1 := modularDoubleProgram_slots256 n start acc dirty bits p c r t f ha hd hk
-    simp only [ShorECDLP.Entrant.SquareInPlace.doublesProgram, appendCompiled_slots]
-    have h2 := ih (start + (modularDoubleProgram n start acc dirty bits p c r t f).1)
-    rw [Nat.mul_succ]
-    omega
-
-theorem padsProgram_slots (n k start : Nat) (w : Wire) :
-    (ShorECDLP.Entrant.SquareInPlace.padsProgram n k start w).2.gateSlots = 0 := by
-  induction k generalizing start with
-  | zero => rfl
-  | succ k ih =>
-    simp only [ShorECDLP.Entrant.SquareInPlace.padsProgram, appendCompiled_slots, ih]
-    rfl
-
-theorem paddedSquareProgram_slots (n start : Nat) :
-    (ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram n start).2.gateSlots≤15750663 := by
-  unfold ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram ShorECDLP.Entrant.SquareInPlace.inPlaceSquareProgram
-  simp only [appendCompiled_slots, padsProgram_slots]
-  have h1 := squareInverseProgram_slots256 n start (List.range' 580 256) (List.range' 580 256) (List.range' 263 256)
-    (constantBits 256 ShorECDLP.p) ShorECDLP.p 558 559 561 562 560 (by simp) (by simp) (by simp [constantBits_length])
-  have h2 := doublesProgram_slots256 n 255 (start + (squareInverseProgram n start (List.range' 580 256) (List.range' 580 256) (List.range' 263 256)
-    (constantBits 256 ShorECDLP.p) ShorECDLP.p 558 559 561 562 560).1) (List.range' 263 256) (List.range' 580 256)
-    secp256k1ReductionConstantBits ShorECDLP.p 560 561 562 559 (by simp) (by simp) (by simp [secp256k1ReductionConstantBits])
-  simp only [List.length_range'] at h1
-  omega
-
 theorem pointSquareProgram_slots (n start : Nat) :
     (pointSquareProgram n start).2.gateSlots≤15750663 := by
   exact squareSubtractProgram_slots256 n start _ _ _ _ _ _ _ _ _ _ _ _
@@ -4841,7 +4808,7 @@ theorem adaptiveCoordinateProgram_slots (start : Nat) :
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact signedFieldProgram_slots _ s
       · intro s; exact zDivisionProgram_slots _ s
-      · intro s; exact paddedSquareProgram_slots _ s
+      · intro s; exact pointSquareProgram_slots _ s
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact zMultiplicationProgram_slots _ s
       · intro s; exact xNegateProgram_slots _ s
@@ -5028,11 +4995,9 @@ theorem old_coordinate_numeric_counts (x y : Nat → Nat) :
 
 /-- The two measured guards in each field operation preserve the coordinate map. -/
 theorem coordinate_numeric_counts (x y : Nat → Nat) :
-    (coordinateSource x y).tCount = 505135827 ∧
+    (coordinateSource x y).tCount = 510196414 ∧
     (coordinateSource x y).measurementCount = 30273718 := by
   have h := old_coordinate_numeric_counts x y
-  have hsq := fig14SquareSubtract_counts
-  have hin := ShorECDLP.Entrant.SquareInPlace.paddedSquare_counts
   have hd := division_counts
   have hm := multiplication_counts
   have od := secp256k1ZeroAllowedDivision_resources
@@ -5100,7 +5065,7 @@ theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
   omega
 
 theorem ipxWindowSources_tCount (Q : Point) (w : OddWindow) :
-    (sequenceCircuit (ipxWindowSources Q w)).tCount = 508203500 := by
+    (sequenceCircuit (ipxWindowSources Q w)).tCount = 513264087 := by
   unfold ipxWindowSources
   rw [sequenceCircuit_four_tCount,(coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1,ipxSource_tCount]
@@ -5115,7 +5080,7 @@ theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0
 theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
     (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      508203500 := by
+      513264087 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
     (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
@@ -7107,47 +7072,6 @@ theorem squareSubtractProgram_support (n start : Nat) (x y acc : List Wire) (cor
   simp only [squareSubtractProgram,appendCompiled_support,List.append_subset]
   exact ⟨hs _,hsub _,hu _⟩
 
-theorem doublesProgram_support (n k start : Nat) (acc dirty : List Wire) (bits : List Bool)
-    (p : Nat) (c r t f : Wire) (support : List Wire)
-    (hd : acc.length = dirty.length) (hk : bits.length = acc.length)
-    (hc : c ∈ support) (hr : r ∈ support) (ht : t ∈ support) (hf : f ∈ support)
-    (ha : acc ⊆ support) (hy : dirty ⊆ support) :
-    straightWires (ShorECDLP.Entrant.SquareInPlace.doublesProgram n k start acc dirty bits p c r t f).2 ⊆ support := by
-  induction k generalizing start with
-  | zero => exact List.nil_subset _
-  | succ k ih =>
-    simp only [ShorECDLP.Entrant.SquareInPlace.doublesProgram, appendCompiled_support, List.append_subset]
-    exact ⟨modularDoubleProgram_support n start acc dirty bits p c r t f support hd hk hc hr ht hf ha hy, ih _⟩
-
-theorem padsProgram_support (n k start : Nat) (w : Wire) (support : List Wire) (hw : w ∈ support) :
-    straightWires (ShorECDLP.Entrant.SquareInPlace.padsProgram n k start w).2 ⊆ support := by
-  induction k generalizing start with
-  | zero => exact List.nil_subset _
-  | succ k ih =>
-    simp only [ShorECDLP.Entrant.SquareInPlace.padsProgram, appendCompiled_support, List.append_subset]
-    refine ⟨?_, ih _⟩
-    intro v hv
-    simp only [straightWires, List.mem_cons, List.not_mem_nil, or_false] at hv
-    subst hv; exact hw
-
-theorem paddedSquareProgram_support_static (n start : Nat) :
-    straightWires (ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram n start).2 ⊆ windowBaseSupport := by
-  unfold ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram ShorECDLP.Entrant.SquareInPlace.inPlaceSquareProgram
-  simp only [appendCompiled_support, List.append_subset]
-  refine ⟨⟨?_, ?_⟩, ?_⟩
-  · apply squareInverseProgram_support
-    all_goals try simp [windowBaseSupport, constantBits_length]
-    all_goals intro w hw
-    all_goals simp only [List.mem_range'_1,List.mem_cons,List.mem_append,List.mem_range] at hw ⊢
-    all_goals omega
-  · apply doublesProgram_support
-    all_goals try simp [secp256k1ReductionConstantBits,windowBaseSupport]
-    all_goals intro w hw
-    all_goals simp only [List.mem_range'_1,List.mem_cons,List.mem_append,List.mem_range] at hw ⊢
-    all_goals omega
-  · apply padsProgram_support
-    simp [windowBaseSupport]
-
 theorem pointSquareProgram_support_static (n start : Nat) :
     straightWires (pointSquareProgram n start).2 ⊆ windowBaseSupport := by
   apply squareSubtractProgram_support
@@ -8649,7 +8573,7 @@ theorem zMultiplicationProgram_support_static (n start : Nat) :
     zero_cx_support,zero_eq_support _ _⟩
 
 attribute [local irreducible] fieldLookupAddProgram signedFieldProgram zDivisionProgram
-  pointSquareProgram ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram zMultiplicationProgram xNegateProgram
+  pointSquareProgram zMultiplicationProgram xNegateProgram
 
 theorem adaptiveCoordinateProgram_support_static (start : Nat) :
     straightWires (adaptiveCoordinateProgram start).2 ⊆ coordinateBaseSupport := by
@@ -8668,7 +8592,7 @@ theorem adaptiveCoordinateProgram_support_static (start : Nat) :
   · exact hf _ _
   · exact hs _ _
   · exact zDivisionProgram_support_static _ _
-  · exact (paddedSquareProgram_support_static _ _).trans old_in_complete
+  · exact (pointSquareProgram_support_static _ _).trans old_in_complete
   · exact hf _ _
   · exact zMultiplicationProgram_support_static _ _
   · exact (xNegateProgram_support_static _ _).trans old_in_complete
