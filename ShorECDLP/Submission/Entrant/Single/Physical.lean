@@ -3056,6 +3056,262 @@ theorem program_support (start : Nat) : straightWires (program start) ⊆ suppor
   exact hl op hop hw
 
 end ShorECDLP.Entrant.First10
+
+set_option maxHeartbeats 1800000
+set_option maxRecDepth 10000
+namespace ShorECDLP.Entrant.First17
+open Classical Quantum Challenge Secp256k1 Paper2607_13816 Paper2607_13816.ChallengeMigration
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+
+def bits : List Wire := List.range' 855 16 ++ [536]
+def paths : List Wire := List.range' 519 17
+
+def ops : List (LookupOp 131072) :=
+  unaryLookupOps (fun l q => pointLeaf ⟨l%131072,Nat.mod_lt _ (by decide)⟩ q)
+    (tableAddressTree bits 0 1) 836 paths
+
+theorem ops_measurements : lookupMeasurements ops = 131071 := by
+  rw [ops,unaryLookupOps_measurements _ _ _ _
+    (tableAddressTree_layout _ _ _ _ _ (by decide) (by decide))]
+  have h := tableAddressTree_nodes bits 0 1
+  change (tableAddressTree bits 0 1).internalNodes+1 = 131072 at h
+  omega
+
+def program (start : Nat) : Straight 131072 start (start+131071) :=
+  castFinish (by rw [ops_measurements]) (lookupProgram 131072 ops start)
+
+noncomputable def tablePoint (coeffs : Fin 131072 → PointCoeff) (Q : Point) (a : Nat) : Point :=
+  constantPoint Q (coeffs ⟨a%131072,Nat.mod_lt _ (by decide)⟩)
+
+noncomputable def source (table : Nat → Point) : AdaptiveCircuit :=
+  directPointLookup table bits paths 836
+
+theorem ops_circuit (coeffs : Fin 131072 → PointCoeff) (Q : Point) :
+    lookupCircuit (readConstant coeffs Q) ops = source (tablePoint coeffs Q) := by
+  rw [ops,unaryLookupOps_circuit]
+  unfold source directPointLookup tableLookupProgram tableLookup
+  apply unaryAction_leaf_congr
+  intro l hl q
+  rw [pointLeaf_instantiate]
+  rfl
+
+theorem program_run (coeffs : Fin 131072 → PointCoeff) (Q : Point) (start : Nat)
+    (history : Fin start → Bool) :
+    ((program start).instantiate (readConstant coeffs Q) history).run =
+      (source (tablePoint coeffs Q)).run := by
+  rw [program,castFinish_instantiate,lookupProgram_run,ops_circuit]
+
+theorem source_coherent (table : Nat → Point) :
+    CoherentlyImplementsOn (source table)
+      (Finsupp.lmapDomain ℂ ℂ (fun s => pointWrite (table (tableAddressValue bits s)) s))
+      (DirectPointLookupValid paths 836) := by
+  apply directPointLookup_coherent table bits paths 836 (by decide) (by decide)
+  apply List.disjoint_left.mpr
+  intro w hw hp
+  simp only [bits,paths,List.mem_cons,List.mem_append,List.mem_singleton,List.not_mem_nil,or_false,List.mem_range'_1] at hw
+  simp only [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,List.mem_append,
+    List.mem_cons,List.not_mem_nil,or_false,List.mem_range'_1] at hp
+  dsimp only [Wire] at *
+  omega
+
+theorem program_coherent (coeffs : Fin 131072 → PointCoeff) (Q : Point) (start : Nat)
+    (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((program start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (fun s => pointWrite (tablePoint coeffs Q (tableAddressValue bits s)) s))
+      (DirectPointLookupValid paths 836) := by
+  unfold CoherentlyImplementsOn
+  rw [program_run]
+  exact source_coherent _
+
+theorem source_tCount (table : Nat → Point) : (source table).tCount = 917497 := by
+  unfold source
+  rw [directPointLookup_tCount _ _ _ _ (by decide) (by decide)]
+  rfl
+
+theorem program_tCount (coeffs : Fin 131072 → PointCoeff) (Q : Point) (start : Nat)
+    (history : Fin start → Bool) :
+    ((program start).instantiate (readConstant coeffs Q) history).tCount = 917497 := by
+  rw [program,castFinish_instantiate,lookupProgram_tCount,ops_circuit,source_tCount]
+
+theorem ops_physical : ∀ op ∈ ops, op.Physical := by
+  apply unaryLookupOps_physical
+  · exact tableAddressTree_layout _ _ _ _ _ (by decide) (by decide)
+  · intro label control hc g hg
+    simp only [pointLeaf,lookupLeafGates,List.mem_map] at hg
+    obtain ⟨⟨ref,target⟩,hm,rfl⟩ := hg
+    have ht := (List.of_mem_zip hm).2
+    change control ≠ target
+    have hn : ∀ c ∈ 836::paths, c ∉ pointLogicalWires := by
+      intro c hc ht
+      simp only [paths,List.mem_cons,List.mem_range'_1] at hc
+      simp only [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,List.mem_append,
+        List.mem_range'_1,List.mem_singleton] at ht
+      dsimp only [Wire] at *
+      omega
+    exact fun he => hn control hc (he ▸ ht)
+
+theorem program_wellFormed (start : Nat) : (program start).WellFormed := by
+  unfold program
+  rw [castFinish_wellFormed]
+  exact lookupProgram_wellFormed _ ops_physical _
+
+theorem program_slots (start : Nat) : (program start).gateSlots ≤ 68550646 := by
+  have h := unaryLookupOps_slots_le
+    (fun l q => pointLeaf ⟨l%131072,Nat.mod_lt _ (by decide)⟩ q)
+    513 (fun _ q => pointLeaf_slots _ q) (tableAddressTree bits 0 1) 836 paths
+  have hn := tableAddressTree_nodes bits 0 1
+  change (tableAddressTree bits 0 1).internalNodes+1 = 131072 at hn
+  simpa only [program,castFinish_gateSlots,lookupProgram_slots,ops] using
+    (show lookupSlots (unaryLookupOps (fun l q => pointLeaf ⟨l%131072,Nat.mod_lt _ (by decide)⟩ q)
+      (tableAddressTree bits 0 1) 836 paths) ≤ 68550646 by omega)
+
+
+def support : List Wire := 836 :: bits ++ paths ++ pointLogicalWires
+
+theorem program_support (start : Nat) : straightWires (program start) ⊆ support := by
+  have hl : ∀ op ∈ ops, lookupOpWires op ⊆ support := by
+    apply unaryLookupOps_support
+    · simp [support]
+    · intro w hw
+      simp [support,hw]
+    · intro w hw
+      have hb := (tableAddressTree_mem_index bits 0 1 w).mp hw
+      simp [support,hb]
+    · intro label q hq
+      apply lookupLeafGates_support _ _ _ hq
+      intro port hp
+      have ht := (List.of_mem_zip hp).2
+      simp [support,ht]
+  simp only [program,straightWires_castFinish,lookupProgram_support]
+  intro w hw
+  obtain ⟨op,hop,hw⟩ := List.mem_flatMap.mp hw
+  exact hl op hop hw
+
+end ShorECDLP.Entrant.First17
+
+set_option maxHeartbeats 1800000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+namespace ShorECDLP.Entrant.First17
+open Classical Quantum Challenge Secp256k1 Paper2607_13816 Paper2607_13816.ChallengeMigration
+
+def Input (s : BasisState) : Prop := s 836=true ∧ ∀ v,v≠836 → v∉bits → s v=false
+
+theorem input_of_strong (s : BasisState) (hs : FirstWindowInput s) : Input s := by
+  refine ⟨hs.1,?_⟩
+  intro v hv ha
+  apply hs.2 v hv
+  intro hh
+  apply ha
+  simp only [streamAddress] at hh
+  exact List.mem_append_left _ hh
+
+theorem input_lookup (s : BasisState) (hs : Input s) : DirectPointLookupValid paths 836 s := by
+  refine ⟨?_,?_,hs.1⟩
+  · intro v hv
+    have mem : 519≤v ∧ v<536 := by simpa [paths,List.mem_range'_1] using hv
+    apply hs.2 v (by dsimp only [Wire] at *; omega)
+    simp only [bits,List.mem_append,List.mem_singleton,List.mem_range'_1]
+    dsimp only [Wire] at *
+    omega
+  · intro v hv
+    have mem : 263≤v ∧ v<519 ∨ 580≤v ∧ v<836 ∨ v=838 := by
+      simpa [pointLogicalWires,pointCorrectionX,pointCorrectionYInf,List.mem_range'_1,or_assoc] using hv
+    apply hs.2 v (by dsimp only [Wire] at *; omega)
+    simp only [bits,List.mem_append,List.mem_singleton,List.mem_range'_1]
+    dsimp only [Wire] at *
+    omega
+
+theorem input_update (s : BasisState) (hs : Input s) (w : Wire) (hw : w∈bits) (b : Bool) :
+    Input (s[w↦b]) := by
+  have ne : (836:Wire)≠w := by
+    simp only [bits,List.mem_append,List.mem_range'_1,List.mem_singleton] at hw
+    dsimp only [Wire] at *
+    omega
+  refine ⟨by simpa only [upd,if_neg ne] using hs.1,?_⟩
+  intro v hv ha
+  have nvw : v≠w := by intro e; exact ha (e ▸ hw)
+  simpa only [upd,if_neg nvw] using hs.2 v hv ha
+
+theorem input_clear536 (s : BasisState) (hs : Input s) (clear : s 536=false) : FirstWindowInput s := by
+  refine ⟨hs.1,?_⟩
+  intro v hv ha
+  by_cases e : v=536
+  · simpa [e] using clear
+  · apply hs.2 v hv
+    simpa only [bits,List.mem_append,List.mem_singleton,not_or,e,or_false] using
+      (show v∉List.range' 855 16 from ha)
+
+private theorem support_add {V : BasisState → Prop} {ψ φ : State}
+    (hψ : SupportedOn V ψ) (hφ : SupportedOn V φ) : SupportedOn V (ψ+φ) := by
+  intro s hs
+  by_cases h : ψ s=0
+  · exact hφ s (by simpa [h] using hs)
+  · exact hψ s h
+private theorem support_smul {V : BasisState → Prop} {ψ : State} (c : ℂ)
+    (hψ : SupportedOn V ψ) : SupportedOn V (c • ψ) := by
+  intro s hs
+  apply hψ s
+  intro h
+  exact hs (by simp [h])
+private theorem support_linear (V : BasisState → Prop) (L : State →ₗ[ℂ] State)
+    (hL : ∀ s, V s → SupportedOn V (L (ket s))) (ψ : State)
+    (hψ : SupportedOn V ψ) : SupportedOn V (L ψ) := by
+  classical
+  induction ψ using Finsupp.induction with
+  | zero => simp
+  | single_add s c ψ hs hc ih =>
+    have hz : ψ s=0 := by simpa using hs
+    have hvs : V s := hψ s (by simp [hz,hc])
+    have hvψ : SupportedOn V ψ := by
+      intro u hu
+      apply hψ u
+      by_cases he : u=s
+      · subst u; exact (hu hz).elim
+      · simpa [he] using hu
+    have he : Finsupp.single s c=c • ket s := by ext u; simp [ket]
+    rw [map_add,he,map_smul]
+    exact support_add (support_smul c (hL s hvs)) (ih hvψ)
+
+private theorem support_linear_FirstValidity (V W : BasisState → Prop) (L : State →ₗ[ℂ] State)
+    (hL : ∀ s, V s → SupportedOn W (L (ket s))) (ψ : State)
+    (hψ : SupportedOn V ψ) : SupportedOn W (L ψ) := by
+  classical
+  induction ψ using Finsupp.induction with
+  | zero => simp
+  | single_add s c ψ hs hc ih =>
+    have hz : ψ s=0 := by simpa using hs
+    have hvs : V s := hψ s (by simp [hz,hc])
+    have hvψ : SupportedOn V ψ := by
+      intro u hu
+      apply hψ u
+      by_cases he : u=s
+      · subst u; exact (hu hz).elim
+      · simpa [he] using hu
+    have he : Finsupp.single s c=c • ket s := by ext u; simp [ket]
+    rw [map_add,he,map_smul]
+    exact support_add (support_smul c (hL s hvs)) (ih hvψ)
+
+theorem input_H (w : Wire) (hw : w∈bits) (ψ : State) (hψ : SupportedOn Input ψ) :
+    SupportedOn Input (applyGate (.H w) ψ) := by
+  apply support_linear_FirstValidity Input Input (applyGate (.H w)) ?_ ψ hψ
+  intro s hs
+  rw [applyGate_ket]
+  exact support_add
+    (support_smul _ (supportedOn_ket _ _ (input_update s hs w hw false)))
+    (support_smul _ (supportedOn_ket _ _ (input_update s hs w hw true)))
+
+theorem input_prepare (ws : List Wire) (hws : ∀ w∈ws,w∈bits) (ψ : State) (hψ : SupportedOn Input ψ) :
+    SupportedOn Input (Quantum.run (ws.map Gate.H) ψ) := by
+  induction ws generalizing ψ with
+  | nil => exact hψ
+  | cons w ws ih =>
+    exact ih (fun v hv=>hws v (List.mem_cons_of_mem w hv)) _
+      (input_H w (hws w (by simp)) ψ hψ)
+end ShorECDLP.Entrant.First17
+
 -- ==== part: Single/Schedule ====
 
 section
@@ -3068,10 +3324,10 @@ namespace ShorECDLP.Entrant.Single
 open ShorECDLP.Paper2607_13816
 
 @[irreducible] def widths : List Nat :=
-  [16, 16, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15, 15, 15, 15]
+  [17, 16, 16, 16, 16, 16, 16, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15]
 
 @[irreducible] def exponents : List Nat :=
-  [247, 231, 215, 199, 183, 167, 151, 135, 120, 105, 90, 75, 60, 45, 30, 15, 0]
+  [246, 230, 214, 198, 182, 166, 150, 135, 120, 105, 90, 75, 60, 45, 30, 15, 0]
 
 @[irreducible] def rightWidths : List Nat := List.replicate 12 16 ++ [15]
 
@@ -3274,7 +3530,7 @@ theorem exponents_match_widths : suffixExponents widths = exponents := by
   simp [widths, exponents, suffixExponents]
 
 @[irreducible] def leftMetadata : List (Nat × Nat) :=
-  (65535, 16) :: List.replicate 7 (30707853, 16) ++ List.replicate 9 (30331021,15)
+  (131071, 17) :: List.replicate 6 (30707853, 16) ++ List.replicate 10 (30331021,15)
 
 @[irreducible] def rightMetadata : List (Nat × Nat) :=
   List.replicate 12 (30707853, 16) ++ [(30331021,15)]
@@ -3285,7 +3541,7 @@ theorem left_widths : leftMetadata.map Prod.snd = widths := by
 theorem right_widths : rightMetadata.map Prod.snd = rightWidths := by
   simp [rightMetadata, rightWidths]
 
-theorem left_record_count : recordCount leftMetadata = 487999958 := by
+theorem left_record_count : recordCount leftMetadata = 487688662 := by
   norm_num [leftMetadata, recordCount, List.replicate]
 
 theorem right_record_count : recordCount rightMetadata = 398825464 := by
@@ -3297,9 +3553,9 @@ theorem left_positions_length (start : Nat) : (positions leftMetadata start).len
 theorem right_positions_length (start : Nat) : (positions rightMetadata start).length = 207 := by
   rw [positions_length, right_widths, rightWidths_sum]
 
-theorem projected_rows : 65536 + 19 * 32768 + 10 * 16384 = 851968 := by norm_num
+theorem projected_rows : 131072 + 18 * 32768 + 11 * 16384 = 901120 := by norm_num
 
-theorem projected_records : 487999958 + 398825464 + 854 = 886826276 := by norm_num
+theorem projected_records : 487688662 + 398825464 + 854 = 886514980 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
@@ -3314,23 +3570,23 @@ open ShorECDLP.Challenge ShorECDLP.Paper2607_13816.ChallengeMigration
 
 /-- Chronological signed windows after the direct first load. -/
 inductive SignedWindow where
-  | left16 (index : Fin 7)
-  | left15 (index : Fin 9)
+  | left16 (index : Fin 6)
+  | left15 (index : Fin 10)
   | right15 (index : Fin 1)
   | right16 (index : Fin 12)
 
-def firstRow (a : Fin 65536) : Fin 851968 := ⟨a.val, by omega⟩
+def firstRow (a : Fin 131072) : Fin 901120 := ⟨a.val, by omega⟩
 
 /-- Each width-15 window aliases the two physical address halves. -/
-def signedRow : SignedWindow → Fin 32768 → Fin 851968
-  | .left16 j, a => ⟨65536 + j.val * 32768 + a.val, by omega⟩
-  | .left15 j, a => ⟨294912 + j.val * 16384 + a.val % 16384, by
+def signedRow : SignedWindow → Fin 32768 → Fin 901120
+  | .left16 j, a => ⟨131072 + j.val * 32768 + a.val, by omega⟩
+  | .left15 j, a => ⟨327680 + j.val * 16384 + a.val % 16384, by
       have h := Nat.mod_lt a.val (by omega : 0 < 16384)
       omega⟩
-  | .right15 j, a => ⟨442368 + j.val * 16384 + a.val % 16384, by
+  | .right15 j, a => ⟨491520 + j.val * 16384 + a.val % 16384, by
       have h := Nat.mod_lt a.val (by omega : 0 < 16384)
       omega⟩
-  | .right16 j, a => ⟨458752 + j.val * 32768 + a.val, by omega⟩
+  | .right16 j, a => ⟨507904 + j.val * 32768 + a.val, by omega⟩
 
 theorem right15_alias (j : Fin 1) (a : Fin 32768) :
     signedRow (.right15 j) a = signedRow (.right15 j) ⟨a.val % 16384, by
@@ -3341,7 +3597,7 @@ theorem right15_alias (j : Fin 1) (a : Fin 32768) :
 
 /-- The reindexing preserves the behavior under the corresponding table read. -/
 theorem signed_reindex_instantiate {s e : Nat} (w : SignedWindow)
-    (p : Straight 32768 s e) (read : ConstantBit 851968 → Bool) (history : Fin s → Bool) :
+    (p : Straight 32768 s e) (read : ConstantBit 901120 → Bool) (history : Fin s → Bool) :
     (reindexStraight (signedRow w) p).instantiate read history =
       p.instantiate (read ∘ reindexBit (signedRow w)) history :=
   reindexStraight_instantiate (signedRow w) p read history
@@ -3364,7 +3620,7 @@ open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 @[irreducible] def leftSigned : List SignedWindow :=
-  List.ofFn (fun j : Fin 7 => SignedWindow.left16 j) ++ List.ofFn (fun j : Fin 9 => SignedWindow.left15 j)
+  List.ofFn (fun j : Fin 6 => SignedWindow.left16 j) ++ List.ofFn (fun j : Fin 10 => SignedWindow.left15 j)
 
 @[irreducible] def rightSigned : List SignedWindow :=
   List.ofFn (fun j : Fin 12 => SignedWindow.right16 j) ++ [SignedWindow.right15 ⟨0,by decide⟩]
@@ -3374,9 +3630,9 @@ def SignedWindow.width : SignedWindow → Nat
   | .left15 _ | .right15 _ => 15
 
 def SignedWindow.exponent : SignedWindow → Nat
-  | .left16 j => 231 - 16 * j.val
+  | .left16 j => 230 - 16 * j.val
   | .right16 j => 191 - 16 * j.val
-  | .left15 j => 120 - 15*j.val
+  | .left15 j => 135 - 15*j.val
   | .right15 _ => 0
 
 def SignedWindow.base (Q : Point) : SignedWindow → Point
@@ -3400,14 +3656,14 @@ def offsetScalar (width exponent : Nat) : Nat :=
   (fun p acc => offsetScalar p.1 p.2 + acc) 0
 
 @[irreducible] noncomputable def initialPoint (Q : Point) (v : Nat) : Point :=
-  (v * 2^247 + leftOffset) • G + rightOffset • Q
+  (v * 2^246 + leftOffset) • G + rightOffset • Q
 
 noncomputable def increment (Q : Point) (w : SignedWindow) (v : Nat) : Point :=
   ((2 * (v : Int) - (2 : Int)^w.width + 1) : Int) •
     ((halfOrder * 2^w.exponent) • w.base Q)
 
 noncomputable def firstUpdate (Q : Point) (s : BasisState) : BasisState :=
-  pointWrite (initialPoint Q (digit 16 s)) s
+  pointWrite (initialPoint Q (tableAddressValue First17.bits s)) s
 
 /-- A graph form avoids choosing a point from arbitrary invalid coordinates. -/
 def WindowLaw {n : Nat} (coeffs : Fin n → PointCoeff)
@@ -3448,7 +3704,7 @@ open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 /-- The first lookup directly loads the accumulator, including infinity. -/
 @[irreducible] def initialCoefficients (v : Nat) : PointCoeff :=
-  coefficients (v * 2^247 + leftOffset) rightOffset
+  coefficients (v * 2^246 + leftOffset) rightOffset
 
 @[irreducible] def oddScalar (exponent address : Nat) : Nat :=
   (2 * address + 1) * 2^exponent * halfOrder
@@ -3458,23 +3714,23 @@ open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
   | .left16 _ | .left15 _ => coefficients (oddScalar w.exponent address) 0
   | .right15 _ | .right16 _ => coefficients 0 (oddScalar w.exponent address)
 
-@[irreducible] def mixedCoefficientAt (i : Fin 851968) : PointCoeff :=
-  if i.val < 65536 then initialCoefficients i.val
-  else if i.val < 294912 then
-    coefficients (oddScalar (231 - 16 * ((i.val - 65536) / 32768)) ((i.val - 65536) % 32768)) 0
-  else if i.val < 442368 then
-    coefficients (oddScalar (120 - 15*((i.val-294912)/16384)) ((i.val - 294912) % 16384)) 0
-  else if i.val < 458752 then
-    coefficients 0 (oddScalar 0 ((i.val - 442368) % 16384))
-  else coefficients 0 (oddScalar (191 - 16 * ((i.val - 458752) / 32768)) ((i.val - 458752) % 32768))
+@[irreducible] def mixedCoefficientAt (i : Fin 901120) : PointCoeff :=
+  if i.val < 131072 then initialCoefficients i.val
+  else if i.val < 327680 then
+    coefficients (oddScalar (230 - 16 * ((i.val - 131072) / 32768)) ((i.val - 131072) % 32768)) 0
+  else if i.val < 491520 then
+    coefficients (oddScalar (135 - 15*((i.val-327680)/16384)) ((i.val - 327680) % 16384)) 0
+  else if i.val < 507904 then
+    coefficients 0 (oddScalar 0 ((i.val - 491520) % 16384))
+  else coefficients 0 (oddScalar (191 - 16 * ((i.val - 507904) / 32768)) ((i.val - 507904) % 32768))
 
 @[irreducible] def mixedCoefficientTable : List PointCoeff := List.ofFn mixedCoefficientAt
 
-theorem mixedCoefficientTable_length : mixedCoefficientTable.length = 851968 := by
+theorem mixedCoefficientTable_length : mixedCoefficientTable.length = 901120 := by
   unfold mixedCoefficientTable
   exact List.length_ofFn
 
-theorem mixedCoefficientAt_first (a : Fin 65536) :
+theorem mixedCoefficientAt_first (a : Fin 131072) :
     mixedCoefficientAt (firstRow a) = initialCoefficients a.val := by
   simp [mixedCoefficientAt, firstRow, a.isLt]
 
@@ -3483,37 +3739,37 @@ theorem mixedCoefficientAt_signed (w : SignedWindow) (a : Fin 32768) :
       signedCoefficients w (a.val % 2^(w.width-1)) := by
   cases w with
   | left16 j =>
-    have h1 : ¬ (signedRow (.left16 j) a).val < 65536 := by simp [signedRow]; omega
-    have h2 : (signedRow (.left16 j) a).val < 294912 := by simp [signedRow]; omega
-    have hj : ((signedRow (.left16 j) a).val-65536)/32768=j.val := by simp [signedRow]; omega
-    have ha : ((signedRow (.left16 j) a).val-65536)%32768=a.val := by simp [signedRow]; omega
+    have h1 : ¬ (signedRow (.left16 j) a).val < 131072 := by simp [signedRow]; omega
+    have h2 : (signedRow (.left16 j) a).val < 327680 := by simp [signedRow]; omega
+    have hj : ((signedRow (.left16 j) a).val-131072)/32768=j.val := by simp [signedRow]; omega
+    have ha : ((signedRow (.left16 j) a).val-131072)%32768=a.val := by simp [signedRow]; omega
     simp [mixedCoefficientAt,h1,h2,hj,ha,signedCoefficients,SignedWindow.width,
       SignedWindow.exponent,Nat.mod_eq_of_lt a.isLt]
   | left15 j =>
-    have h1 : ¬ (signedRow (.left15 j) a).val < 65536 := by simp [signedRow]; omega
-    have h2 : ¬ (signedRow (.left15 j) a).val < 294912 := by simp [signedRow]; omega
-    have h3 : (signedRow (.left15 j) a).val < 442368 := by simp [signedRow]; omega
-    have hj : ((signedRow (.left15 j) a).val-294912)/16384=j.val := by simp [signedRow]; omega
-    have ha : ((signedRow (.left15 j) a).val-294912)%16384=a.val%16384 := by
-      change (294912+j.val*16384+a.val%16384-294912)%16384=a.val%16384
-      have he : 294912+j.val*16384+a.val%16384-294912=j.val*16384+a.val%16384 := by omega
+    have h1 : ¬ (signedRow (.left15 j) a).val < 131072 := by simp [signedRow]; omega
+    have h2 : ¬ (signedRow (.left15 j) a).val < 327680 := by simp [signedRow]; omega
+    have h3 : (signedRow (.left15 j) a).val < 491520 := by simp [signedRow]; omega
+    have hj : ((signedRow (.left15 j) a).val-327680)/16384=j.val := by simp [signedRow]; omega
+    have ha : ((signedRow (.left15 j) a).val-327680)%16384=a.val%16384 := by
+      change (327680+j.val*16384+a.val%16384-327680)%16384=a.val%16384
+      have he : 327680+j.val*16384+a.val%16384-327680=j.val*16384+a.val%16384 := by omega
       rw [he,Nat.add_mod]
       simp
     simp [mixedCoefficientAt,h1,h2,h3,hj,ha,signedCoefficients,SignedWindow.width,SignedWindow.exponent]
   | right15 j =>
-    have h1 : ¬ (signedRow (.right15 j) a).val < 65536 := by simp [signedRow]; omega
-    have h2 : ¬ (signedRow (.right15 j) a).val < 294912 := by simp [signedRow]; omega
-    have h3 : ¬ (signedRow (.right15 j) a).val < 442368 := by simp [signedRow]
-    have h4 : (signedRow (.right15 j) a).val < 458752 := by simp [signedRow]; omega
-    have ha : ((signedRow (.right15 j) a).val-442368)%16384=a.val%16384 := by simp [signedRow]
+    have h1 : ¬ (signedRow (.right15 j) a).val < 131072 := by simp [signedRow]; omega
+    have h2 : ¬ (signedRow (.right15 j) a).val < 327680 := by simp [signedRow]; omega
+    have h3 : ¬ (signedRow (.right15 j) a).val < 491520 := by simp [signedRow]
+    have h4 : (signedRow (.right15 j) a).val < 507904 := by simp [signedRow]; omega
+    have ha : ((signedRow (.right15 j) a).val-491520)%16384=a.val%16384 := by simp [signedRow]
     simp [mixedCoefficientAt,h1,h2,h3,h4,ha,signedCoefficients,SignedWindow.width,SignedWindow.exponent]
   | right16 j =>
-    have h1 : ¬ (signedRow (.right16 j) a).val < 65536 := by simp [signedRow]; omega
-    have h2 : ¬ (signedRow (.right16 j) a).val < 294912 := by simp [signedRow]; omega
-    have h3 : ¬ (signedRow (.right16 j) a).val < 442368 := by simp [signedRow]; omega
-    have h4 : ¬ (signedRow (.right16 j) a).val < 458752 := by simp [signedRow]; omega
-    have hj : ((signedRow (.right16 j) a).val-458752)/32768=j.val := by simp [signedRow]; omega
-    have ha : ((signedRow (.right16 j) a).val-458752)%32768=a.val := by simp [signedRow]; omega
+    have h1 : ¬ (signedRow (.right16 j) a).val < 131072 := by simp [signedRow]; omega
+    have h2 : ¬ (signedRow (.right16 j) a).val < 327680 := by simp [signedRow]; omega
+    have h3 : ¬ (signedRow (.right16 j) a).val < 491520 := by simp [signedRow]; omega
+    have h4 : ¬ (signedRow (.right16 j) a).val < 507904 := by simp [signedRow]; omega
+    have hj : ((signedRow (.right16 j) a).val-507904)/32768=j.val := by simp [signedRow]; omega
+    have ha : ((signedRow (.right16 j) a).val-507904)%32768=a.val := by simp [signedRow]; omega
     simp [mixedCoefficientAt,h1,h2,h3,h4,hj,ha,signedCoefficients,SignedWindow.width,
       SignedWindow.exponent,Nat.mod_eq_of_lt a.isLt]
 
@@ -3550,7 +3806,7 @@ theorem positivePoint_ne_zero (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
   have hw : 2^(w.width-1) ≤ 32768 := by cases w <;> norm_num [SignedWindow.width]
   have hm : 0 < 2^(w.width-1) := pow_pos (by decide) _
   have hb := Nat.mod_lt address hm
-  have hl : 65535 < order := by norm_num [order]
+  have hl : 131071 < order := by norm_num [order]
   have hs : 0 < 2*(address % 2^(w.width-1))+1 ∧
       2*(address % 2^(w.width-1))+1 < order := by omega
   have hh : 0 < halfOrder ∧ halfOrder < order := by dsimp [halfOrder]; omega
@@ -3675,48 +3931,48 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
-@[irreducible] def firstWindow : Window 851968 :=
-  ⟨(bank 16).reverse, 65535, fun start => reindexStraight firstRow (firstLookupProgram start)⟩
+@[irreducible] def firstWindow : Window 901120 :=
+  ⟨First17.bits.reverse, 131071, fun start => reindexStraight firstRow (First17.program start)⟩
 
 theorem initialLookup_circuit (Q : Point) (hQ : order • Q = 0) :
-    lookupCircuit (readConstant (fun i : Fin 65536 => initialCoefficients i.val) Q) firstLookupOps =
-      physicalPointLookup (initialPoint Q) := by
-  rw [firstLookupOps, unaryLookupOps_circuit]
-  unfold physicalPointLookup directPointLookup tableLookupProgram tableLookup
+    lookupCircuit (readConstant (fun i : Fin 131072 => initialCoefficients i.val) Q) First17.ops =
+      First17.source (initialPoint Q) := by
+  rw [First17.ops, unaryLookupOps_circuit]
+  unfold First17.source directPointLookup tableLookupProgram tableLookup
   apply unaryAction_leaf_congr
   intro l hl q
   obtain ⟨i, hi, he⟩ := tableAddressTree_label _ 0 1 l hl
-  have hlt : l < 65536 := by simpa [he] using hi
+  have hlt : l < 131072 := by simpa [he] using hi
   rw [pointLeaf_instantiate]
   simp only [Nat.mod_eq_of_lt hlt, initialCoefficients_point Q hQ, pointTableMask]
 
 theorem firstWindow_run (Q : Point) (hQ : order • Q = 0) (start : Nat)
     (history : Fin start → Bool) :
     ((firstWindow.program start).instantiate (readConstant mixedCoefficientAt Q) history).run =
-      (physicalPointLookup (initialPoint Q)).run := by
+      (First17.source (initialPoint Q)).run := by
   unfold firstWindow
   rw [reindexStraight_instantiate,
     readConstant_reindex firstRow _ _ Q mixedCoefficientAt_first]
-  rw [firstLookupProgram, castFinish_instantiate, lookupProgram_run, initialLookup_circuit Q hQ]
+  rw [First17.program, castFinish_instantiate, lookupProgram_run, initialLookup_circuit Q hQ]
 
 theorem firstWindow_coherent (Q : Point) (hQ : order • Q = 0) (start : Nat)
     (history : Fin start → Bool) :
     CoherentlyImplementsOn ((firstWindow.program start).instantiate
       (readConstant mixedCoefficientAt Q) history)
       (Finsupp.lmapDomain ℂ ℂ (firstUpdate Q))
-      (DirectPointLookupValid (List.range' 519 16) 836) := by
+      (DirectPointLookupValid First17.paths 836) := by
   unfold CoherentlyImplementsOn
   rw [firstWindow_run Q hQ start history]
-  exact physicalPointLookup_coherent (initialPoint Q)
+  exact First17.source_coherent (initialPoint Q)
 
 theorem firstWindow_t (Q : Point) (hQ : order • Q = 0) (start : Nat)
     (history : Fin start → Bool) :
-    ((firstWindow.program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 458745 := by
+    ((firstWindow.program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 917497 := by
   unfold firstWindow
   rw [reindexStraight_instantiate,
     readConstant_reindex firstRow _ _ Q mixedCoefficientAt_first]
-  rw [firstLookupProgram, castFinish_instantiate, lookupProgram_tCount, initialLookup_circuit Q hQ]
-  exact (physicalPointLookup_resources _).1
+  rw [First17.program, castFinish_instantiate, lookupProgram_tCount, initialLookup_circuit Q hQ]
+  exact First17.source_tCount _
 
 theorem firstUpdate_valid (Q : Point) (s : BasisState) (hs : FirstWindowInput s) :
     BatchedWindowValid (firstUpdate Q s) := firstWindowInput_pointWrite s hs _
@@ -3742,17 +3998,17 @@ private theorem unary_t_congr (tree : UnaryActionTree) (f g : Nat → Wire → C
   | node b z o ihz iho => cases anc <;>
       simp only [unaryAction,AdaptiveCircuit.tCount,adaptive_tCount_seq,ihz,iho]
 private theorem first_load_uniform (start : Nat)
-    (read : ConstantBit 65536 → Bool) (history : Fin start → Bool) :
-    ((firstLookupProgram start).instantiate read history).tCount = 458745 := by
-  have he : ((firstLookupProgram start).instantiate read history).tCount =
-      ((firstLookupProgram start).instantiate (readConstant (fun i : Fin 65536 => firstWindowCoefficients i.val) 0) history).tCount := by
-    simp only [firstLookupProgram,castFinish_instantiate,lookupProgram_tCount,firstLookupOps,unaryLookupOps_circuit]
+    (read : ConstantBit 131072 → Bool) (history : Fin start → Bool) :
+    ((First17.program start).instantiate read history).tCount = 917497 := by
+  have he : ((First17.program start).instantiate read history).tCount =
+      ((First17.program start).instantiate (readConstant (fun i : Fin 131072 => initialCoefficients i.val) 0) history).tCount := by
+    simp only [First17.program,castFinish_instantiate,lookupProgram_tCount,First17.ops,unaryLookupOps_circuit]
     apply unary_t_congr
     intro l w
     simp only [pointLeaf,leaf_t_zero]
-  exact he.trans (firstLookupProgram_tCount start 0 (by simp) history)
+  exact he.trans (First17.program_tCount (fun i : Fin 131072 => initialCoefficients i.val) 0 start history)
 theorem firstWindow_t_uniform (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((firstWindow.program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 458745 := by
+    ((firstWindow.program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 917497 := by
   unfold firstWindow
   rw [reindexStraight_instantiate]
   exact first_load_uniform start _ history
@@ -3768,7 +4024,7 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
-@[irreducible] def signedWindow (w : SignedWindow) : Window 851968 :=
+@[irreducible] def signedWindow (w : SignedWindow) : Window 901120 :=
   ⟨(bank w.width).reverse, (if w.width=15 then NarrowQrom.actual else Physical.actual).count,
     fun start => reindexStraight (signedRow w) ((if w.width=15 then NarrowQrom.actual else Physical.actual).program start)⟩
 
@@ -3986,22 +4242,22 @@ def params : DecoderParams := ⟨263, 207, by omega, by omega, by omega, by omeg
 def trialPositions : TrialPositions params where
   left := ⟨(positions leftMetadata 0).toArray, by
     simpa only [List.size_toArray, params] using left_positions_length 0⟩
-  right := ⟨(positions rightMetadata 487999958).toArray, by
-    simpa only [List.size_toArray, params] using right_positions_length 487999958⟩
+  right := ⟨(positions rightMetadata 487688662).toArray, by
+    simpa only [List.size_toArray, params] using right_positions_length 487688662⟩
 
 def layout : DecodeLayout := ⟨.nearestPair, params, [trialPositions], by simp⟩
 
 theorem left_position_bound (i : Nat) (hi : i ∈ trialPositions.left.toList) :
-    i < 487999958 := by
+    i < 487688662 := by
   have h := positions_bounds leftMetadata 0 i
     (show i ∈ positions leftMetadata 0 from by simpa [trialPositions] using hi)
   rw [left_record_count] at h
   omega
 
 theorem right_position_bound (i : Nat) (hi : i ∈ trialPositions.right.toList) :
-    487999958 ≤ i ∧ i < 886825423 := by
-  have h := positions_bounds rightMetadata 487999958 i
-    (show i ∈ positions rightMetadata 487999958 from by simpa [trialPositions] using hi)
+    487688662 ≤ i ∧ i < 886514127 := by
+  have h := positions_bounds rightMetadata 487688662 i
+    (show i ∈ positions rightMetadata 487688662 from by simpa [trialPositions] using hi)
   rw [right_record_count] at h
   omega
 
@@ -4016,7 +4272,7 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Paper2607_13816
 open ShorECDLP.Paper2607_13816.ChallengeMigration
 
-def bodyT (count : Nat) : Nat := if count = 65535 then 458745 else if count=30331021 then 505565676 else 508203500
+def bodyT (count : Nat) : Nat := if count = 131071 then 917497 else if count=30331021 then 505565676 else 508203500
 
 def metadataT : List (Nat × Nat) → Nat → Nat
   | [], _ => 0
@@ -4230,20 +4486,20 @@ open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 attribute [local irreducible] resetProgram
 
-@[irreducible] def leftWindows : List (Window 851968) :=
+@[irreducible] def leftWindows : List (Window 901120) :=
   firstWindow :: leftSigned.map signedWindow
 
-@[irreducible] def rightWindows : List (Window 851968) := rightSigned.map signedWindow
+@[irreducible] def rightWindows : List (Window 901120) := rightSigned.map signedWindow
 
 theorem left_metadata : leftWindows.map (fun w => (w.count, w.wires.length)) = leftMetadata := by
   simp [leftWindows, leftSigned, signedWindow_count, signedWindow_wires,
-    SignedWindow.width, bank, firstWindow, leftMetadata]
+    SignedWindow.width, bank, First17.bits, firstWindow, leftMetadata]
 
 theorem right_metadata : rightWindows.map (fun w => (w.count, w.wires.length)) = rightMetadata := by
   simp [rightWindows, rightSigned, signedWindow_count, signedWindow_wires,
     SignedWindow.width, bank, rightMetadata]
 
-theorem left_count : axisCount leftWindows = 487999958 := by
+theorem left_count : axisCount leftWindows = 487688662 := by
   rw [← recordCount_eq_axisCount, left_metadata, left_record_count]
 
 theorem right_count : axisCount rightWindows = 398825464 := by
@@ -4255,16 +4511,16 @@ theorem left_positions (start : Nat) : axisPositions leftWindows start = positio
 theorem right_positions (start : Nat) : axisPositions rightWindows start = positions rightMetadata start := by
   rw [axisPositions, right_metadata]
 
-@[irreducible] def resetBody (start : Nat) : Straight 851968 start (start + 854) :=
-  castFinish (by rw [resetWires_length]) (resetProgram 851968 start resetWires)
+@[irreducible] def resetBody (start : Nat) : Straight 901120 start (start + 854) :=
+  castFinish (by rw [resetWires_length]) (resetProgram 901120 start resetWires)
 
-theorem resetBody_run (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem resetBody_run (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((resetBody start).instantiate read history).run =
       (measureResetWithCorrection resetWires (fun _ => [])).run := by
   unfold resetBody
   rw [castFinish_instantiate, resetProgram_run]
 
-theorem resetBody_t (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem resetBody_t (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((resetBody start).instantiate read history).tCount = 0 := by
   unfold resetBody
   rw [castFinish_instantiate, resetProgram_t]
@@ -4278,7 +4534,7 @@ theorem resetBody_wellFormed (start : Nat) : (resetBody start).WellFormed := by
   rw [castFinish_wellFormed]
   exact resetProgram_wellFormed _ _ _
 
-theorem resetBody_support (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem resetBody_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((resetBody start).instantiate read history).wires ⊆ resetWires := by
   unfold resetBody
   rw [castFinish_instantiate]
@@ -4286,28 +4542,28 @@ theorem resetBody_support (start : Nat) (read : ConstantBit 851968 → Bool) (hi
 
 def trialCount : Nat := axisCount leftWindows + axisCount rightWindows + 854
 
-theorem trialCount_eq : trialCount = 886826276 := by
+theorem trialCount_eq : trialCount = 886514980 := by
   rw [trialCount, left_count, right_count]
 
 /-- One trial, with independent same-axis feedback histories and a final reset. -/
-@[irreducible] def trial (start : Nat) : Straight 851968 start (start + trialCount) :=
+@[irreducible] def trial (start : Nat) : Straight 901120 start (start + trialCount) :=
   framed (axis leftWindows start List.nil)
     (axis rightWindows (start + axisCount leftWindows) List.nil)
     (resetBody (start + axisCount leftWindows + axisCount rightWindows))
     (by unfold trialCount; omega)
 
-@[irreducible] def program : Straight 851968 0 886826276 :=
+@[irreducible] def program : Straight 901120 0 886514980 :=
   castFinish (by rw [trialCount_eq]) (trial 0)
 
 theorem left_output_records (start : Nat) (prior : List (Fin start))
-    (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) (b : InstrumentBranch)
+    (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) (b : InstrumentBranch)
     (hb : b ∈ ((axis leftWindows start prior).instantiate read history).run) :
     ∀ i ∈ positions leftMetadata start, FourierRecord read (List.ofFn history ++ b.history) i := by
   rw [← left_positions]
   exact axis_records leftWindows start prior read history b hb
 
 theorem right_output_records (start : Nat) (prior : List (Fin start))
-    (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) (b : InstrumentBranch)
+    (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) (b : InstrumentBranch)
     (hb : b ∈ ((axis rightWindows start prior).instantiate read history).run) :
     ∀ i ∈ positions rightMetadata start, FourierRecord read (List.ofFn history ++ b.history) i := by
   rw [← right_positions]
@@ -4333,8 +4589,8 @@ theorem layout_read_right (history : List Bool) :
       readWord history (axisPositions rightWindows (axisCount leftWindows)) := by
   rw [layout_right_positions]
 
-theorem program_history_length (read : ConstantBit 851968 → Bool) (b : InstrumentBranch)
-    (hb : b ∈ (program.instantiate read Fin.elim0).run) : b.history.length = 886826276 := by
+theorem program_history_length (read : ConstantBit 901120 → Bool) (b : InstrumentBranch)
+    (hb : b ∈ (program.instantiate read Fin.elim0).run) : b.history.length = 886514980 := by
   exact straight_history_length program read Fin.elim0 b hb
 
 end ShorECDLP.Entrant.Single
@@ -4482,28 +4738,25 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
-attribute [local irreducible] firstLookupProgram
+attribute [local irreducible] First17.program
 
 private theorem reset_in_complete : resetWires ⊆ resetWires := List.Subset.refl _
 
 theorem firstWindow_wellFormed (start : Nat) : (firstWindow.program start).WellFormed := by
   unfold firstWindow
-  exact (reindexStraight_wellFormed firstRow (firstLookupProgram start)).mpr (firstLookupProgram_wellFormed start)
+  exact (reindexStraight_wellFormed firstRow (First17.program start)).mpr (First17.program_wellFormed start)
 
 theorem firstWindow_slots (start : Nat) : (firstWindow.program start).gateSlots ≤ 3000000000 := by
-  have h := actualFirstWindow_slots start
-  simp only [actualFirstWindow, reindexStraight_gateSlots] at h
   unfold firstWindow
   rw [reindexStraight_gateSlots]
-  exact h.trans (by norm_num)
+  exact (First17.program_slots start).trans (by norm_num)
 
 theorem firstWindow_support (start : Nat) :
     straightWires (firstWindow.program start) ⊆ resetWires := by
-  have h := (actualFirstWindow_support_static start).trans reset_in_complete
-  simp only [actualFirstWindow, straightWires_reindex] at h
   unfold firstWindow
   rw [straightWires_reindex]
-  exact h
+  apply (First17.program_support start).trans
+  decide +kernel
 
 theorem signedWindow_wellFormed (w : SignedWindow) (start : Nat) :
     ((signedWindow w).program start).WellFormed := by
@@ -4749,7 +5002,7 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
-theorem windows_cases (w : Window 851968) (hw : w ∈ leftWindows ++ rightWindows) :
+theorem windows_cases (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows) :
     w = firstWindow ∨ ∃ s, w = signedWindow s := by
   simp only [leftWindows, rightWindows, List.mem_append, List.mem_cons, List.mem_map] at hw
   rcases hw with (h | ⟨s, _, h⟩) | ⟨s, _, h⟩
@@ -4757,19 +5010,19 @@ theorem windows_cases (w : Window 851968) (hw : w ∈ leftWindows ++ rightWindow
   · exact Or.inr ⟨s, h.symm⟩
   · exact Or.inr ⟨s, h.symm⟩
 
-theorem windows_wellFormed (w : Window 851968) (hw : w ∈ leftWindows ++ rightWindows) (start : Nat) :
+theorem windows_wellFormed (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows) (start : Nat) :
     (w.program start).WellFormed := by
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
   · exact firstWindow_wellFormed start
   · exact signedWindow_wellFormed s start
 
-theorem windows_slots (w : Window 851968) (hw : w ∈ leftWindows ++ rightWindows) (start : Nat) :
+theorem windows_slots (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows) (start : Nat) :
     (w.program start).gateSlots ≤ 3000000000 := by
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
   · exact firstWindow_slots start
   · exact signedWindow_slots s start
 
-theorem windows_t (Q : Point) (w : Window 851968)
+theorem windows_t (Q : Point) (w : Window 901120)
     (hw : w ∈ leftWindows ++ rightWindows) (start : Nat) (history : Fin start → Bool) :
     ((w.program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ bodyT w.count := by
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
@@ -4778,7 +5031,7 @@ theorem windows_t (Q : Point) (w : Window 851968)
   · rw [signedWindow_t Q s start history, signedWindow_count]
     split_ifs <;> simp_all [bodyT]
 
-theorem left_t_budget : metadataT leftMetadata 0 = 8108008782 := by
+theorem left_t_budget : metadataT leftMetadata 0 = 8105829710 := by
   norm_num [leftMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
 theorem right_t_budget : metadataT rightMetadata 0 = 6604028997 := by
@@ -4842,7 +5095,7 @@ open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 theorem left_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8108008782 := by
+    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8105829710 := by
   have h := axis_t leftWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_left _ hw)) start List.nil history
   rwa [left_metadata, List.length_nil, left_t_budget] at h
@@ -4854,9 +5107,9 @@ theorem right_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
   rwa [right_metadata, List.length_nil, right_t_budget] at h
 
 theorem trial_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 14712037779 := by
+    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 14709858707 := by
   unfold trial
-  exact framed_t_le _ _ _ _ _ history 8108008782 6604028997
+  exact framed_t_le _ _ _ _ _ history 8105829710 6604028997
     (left_axis_t Q start history) (fun h => right_axis_t Q _ h) (fun h => resetBody_t _ _ h)
 
 theorem program_wellFormed : program.WellFormed := by
@@ -4870,32 +5123,30 @@ theorem program_slots : program.gateSlots ≤ 90000056246 := by
   exact trial_slots 0
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14712037779 := by
+    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14709858707 := by
   unfold program
   rw [castFinish_instantiate]
   exact trial_t Q 0 Fin.elim0
 
-theorem program_measurements (read : ConstantBit 851968 → Bool) :
-    (program.instantiate read Fin.elim0).measurementCount = 886826276 := by
+theorem program_measurements (read : ConstantBit 901120 → Bool) :
+    (program.instantiate read Fin.elim0).measurementCount = 886514980 := by
   exact program.measurementCount read Fin.elim0
 
 theorem stream_support : streamAddress ⊆ resetWires := by
   intro v hv
   exact List.mem_append_right _ hv
 
-theorem windows_bank_support (w : Window 851968) (hw : w ∈ leftWindows ++ rightWindows) :
+theorem windows_bank_support (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows) :
     w.wires ⊆ resetWires := by
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
   · unfold firstWindow
-    intro v hv
-    apply stream_support
-    exact (show bank 16 ⊆ streamAddress by decide +kernel) (List.mem_reverse.mp hv)
+    exact (show First17.bits.reverse ⊆ resetWires by decide +kernel)
   · rw [signedWindow_wires]
     intro v hv
     exact stream_support (windowBank_subset s (List.mem_reverse.mp hv))
 
-theorem windows_support (w : Window 851968) (hw : w ∈ leftWindows ++ rightWindows)
-    (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem windows_support (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows)
+    (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((w.program start).instantiate read history).wires ⊆ resetWires := by
   apply (straight_instantiate_support _ read history).trans
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
@@ -4905,32 +5156,32 @@ theorem windows_support (w : Window 851968) (hw : w ∈ leftWindows ++ rightWind
 private theorem flag_support : (836 : Wire) ∈ resetWires := by
   simp [resetWires]
 
-theorem left_axis_support (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem left_axis_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((axis leftWindows start List.nil).instantiate read history).wires ⊆ resetWires :=
   axis_support leftWindows resetWires
     (fun w hw => windows_bank_support w (List.mem_append_left _ hw))
     (fun w hw => windows_support w (List.mem_append_left _ hw)) start List.nil read history
 
-theorem right_axis_support (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem right_axis_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((axis rightWindows start List.nil).instantiate read history).wires ⊆ resetWires :=
   axis_support rightWindows resetWires
     (fun w hw => windows_bank_support w (List.mem_append_right _ hw))
     (fun w hw => windows_support w (List.mem_append_right _ hw)) start List.nil read history
 
-theorem trial_support (start : Nat) (read : ConstantBit 851968 → Bool) (history : Fin start → Bool) :
+theorem trial_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
     ((trial start).instantiate read history).wires ⊆ resetWires := by
   unfold trial
   exact framed_support _ _ _ _ read history resetWires flag_support
     (left_axis_support start read history) (fun h => right_axis_support _ read h)
     (fun h => resetBody_support _ read h)
 
-theorem program_support (read : ConstantBit 851968 → Bool) :
+theorem program_support (read : ConstantBit 901120 → Bool) :
     (program.instantiate read Fin.elim0).wires ⊆ resetWires := by
   unfold program
   rw [castFinish_instantiate]
   exact trial_support 0 read Fin.elim0
 
-theorem program_qubits (read : ConstantBit 851968 → Bool) :
+theorem program_qubits (read : ConstantBit 901120 → Bool) :
     (program.instantiate read Fin.elim0).qubitCount ≤ 854 := by
   have hs : (program.instantiate read Fin.elim0).wires.dedup.toFinset ⊆
       resetWires.toFinset := by
@@ -4942,8 +5193,8 @@ theorem program_qubits (read : ConstantBit 851968 → Bool) :
 
 theorem program_resource_facts (Q : Point) :
     (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).qubits ≤ 854 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 14712037779 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 886826276 :=
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 14709858707 ∧
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 886514980 :=
   ⟨program_qubits _, program_t Q, program_measurements _⟩
 
 theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
@@ -4953,7 +5204,7 @@ theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
 theorem one_candidate_check : layout.trials.length * decoderCandidateLimit layout.kind layout.params = 1 := by
   simp [layout, decoderCandidateLimit]
 
-theorem resource_product : 854 * 14712037779 = 12564080263266 := by norm_num
+theorem resource_product : 854 * 14709858707 = 12562219335778 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
