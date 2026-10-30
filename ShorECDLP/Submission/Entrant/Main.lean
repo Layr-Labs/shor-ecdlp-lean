@@ -6532,6 +6532,500 @@ end
 end ShorECDLP.Entrant.AliasLookup
 
 namespace ShorECDLP.Entrant.AliasLookup
+open Quantum Paper2607_13816
+noncomputable section
+set_option maxHeartbeats 100000
+set_option Elab.async false
+
+def maskParity : List Wire → Wire → Bool
+  | [], _ => false
+  | t::ts, w => xor (decide (w=t)) (maskParity ts w)
+
+theorem maskParity_outside (mask : List Wire) (w : Wire) (h : w ∉ mask) :
+    maskParity mask w = false := by
+  induction mask with
+  | nil => rfl
+  | cons t ts ih =>
+      simp only [List.mem_cons,not_or] at h
+      simp only [maskParity,decide_eq_false h.1,ih h.2,Bool.false_xor]
+
+def parityState (mask : List Wire) (active : Bool) (s : BasisState) : BasisState :=
+  fun w => xor (s w) (active && maskParity mask w)
+
+theorem run_tableXorGates_parity (q : Wire) (mask : List Wire) (s : BasisState)
+    (hq : q ∉ mask) :
+    Classical.run (tableXorGates q mask) s = parityState mask (s q) s := by
+  induction mask generalizing s with
+  | nil => funext w; simp [tableXorGates,Classical.run,parityState,maskParity]
+  | cons t ts ih =>
+      simp only [List.mem_cons,not_or] at hq
+      simp only [tableXorGates,List.map_cons,Classical.run_cons,Classical.applyGate]
+      change Classical.run (tableXorGates q ts) _ = _
+      rw [ih _ hq.2]
+      funext w
+      by_cases hw : w=t
+      · subst w
+        cases htv : s t <;> cases hqv : s q <;> cases hpv : maskParity ts t <;>
+          simp [parityState,maskParity,upd,hq.1,htv,hqv,hpv]
+      · cases hqv : s q <;> cases hwv : s w <;> cases hpv : maskParity ts w <;>
+          simp [parityState,maskParity,upd,hq.1,hw,hqv,hwv,hpv]
+
+theorem parity_leafCommutator_classical (q p : Wire) (mask : List Wire)
+    (hq : q ∉ mask) (hp : p ∉ mask) (hqp : q ≠ p) (s : BasisState) :
+    Classical.run (leafCommutator q p mask) s = Classical.run (tableXorGates q mask) s := by
+  simp only [leafCommutator,Classical.run_append,Classical.run_cons,Classical.run_nil,
+    Classical.applyGate]
+  rw [run_tableXorGates_parity p mask s hp,run_tableXorGates_parity p mask _ hp,
+    run_tableXorGates_parity q mask s hq]
+  funext w
+  by_cases hw : w=p
+  · subst w
+    cases hqv : s q <;> cases hpv : s p <;>
+      simp [parityState,upd,maskParity_outside mask q hq,maskParity_outside mask p hp,hqp,hqv,hpv]
+  · cases hqv : s q <;> cases hpv : s p <;> cases hpar : maskParity mask w <;>
+      simp [parityState,upd,maskParity_outside mask q hq,maskParity_outside mask p hp,hw,hqv,hpv,hpar]
+
+theorem parity_nodePrefix_classical (q b p : Wire) (mask : List Wire)
+    (hq : q ∉ mask) (hb : b ∉ mask) (hp : p ∉ mask)
+    (hqb : q ≠ b) (hqp : q ≠ p) (hbp : b ≠ p) (s : BasisState) :
+    Classical.run (nodePrefix q b p mask) s = Classical.run (reorderedPrefix q b p mask) s := by
+  simp only [nodePrefix,reorderedPrefix,Classical.run_append]
+  rw [parity_leafCommutator_classical q p mask hq hp hqp]
+  simp only [computeZeroAnd,Classical.run_cons,Classical.run_nil,Classical.applyGate]
+  rw [run_tableXorGates_parity q mask _ hq,run_tableXorGates_parity q mask _ hq]
+  funext w
+  by_cases hwp : w=p <;> by_cases hwb : w=b <;>
+    cases hqv : s q <;> cases hbv : s b <;> cases hpv : s p <;>
+    simp_all [parityState,upd,maskParity_outside]
+
+theorem parity_nodePrefix_run (q b p : Wire) (mask : List Wire)
+    (hq : q ∉ mask) (hb : b ∉ mask) (hp : p ∉ mask)
+    (hqb : q ≠ b) (hqp : q ≠ p) (hbp : b ≠ p) :
+    Quantum.run (nodePrefix q b p mask) = Quantum.run (reorderedPrefix q b p mask) := by
+  apply linear_basis
+  intro s
+  rw [run_ket_agrees_classical _ _ (by simp [nodePrefix,leafCommutator,computeZeroAnd,tableXorGates_HPFree])]
+  rw [run_ket_agrees_classical _ _ (by simp [reorderedPrefix,tableXorGates_HPFree])]
+  rw [parity_nodePrefix_classical q b p mask hq hb hp hqb hqp hbp]
+
+theorem parity_xor_conjugate (q b : Wire) (mask : List Wire)
+    (hq : q ∉ mask) (hb : b ∉ mask) (hqb : q ≠ b) :
+    Quantum.run ([.X b] ++ tableXorGates q mask ++ [.X b]) = Quantum.run (tableXorGates q mask) := by
+  apply linear_basis
+  intro s
+  rw [run_ket_agrees_classical _ _ (by simp [tableXorGates_HPFree]),
+    run_ket_agrees_classical _ _ (tableXorGates_HPFree q mask)]
+  congr 1
+  simp only [Classical.run_append,Classical.run_cons,Classical.run_nil,Classical.applyGate]
+  rw [run_tableXorGates_parity q mask _ hq,run_tableXorGates_parity q mask _ hq]
+  funext w
+  by_cases hwb : w=b <;> cases hbv : s b <;>
+    simp_all [parityState,upd,maskParity_outside]
+
+theorem parity_node_branch (q b p : Wire) (mask : List Wire)
+    (hq : q ∉ mask) (hb : b ∉ mask) (hp : p ∉ mask)
+    (hqb : q ≠ b) (hqp : q ≠ p) (hbp : b ≠ p) (out : Bool) (psi : State) :
+    applyGate (.X b) (Quantum.run (if out then controlledZ q b else [])
+      (xResetKraus p out (Quantum.run (nodePrefix q b p mask) psi))) =
+      xResetKraus p out (Quantum.run (leafCommutator q p mask) psi) := by
+  rw [parity_nodePrefix_run q b p mask hq hb hp hqb hqp hbp]
+  simp only [reorderedPrefix,Quantum.run_append,Quantum.run_singleton]
+  rw [erase_compute q b p hqb hqp hbp]
+  rw [applyGate_reset_commute (.X b) p out (by simpa [gateWires,ne_comm] using hbp)]
+  have hx := congrArg (fun f : State →ₗ[ℂ] State => f psi) (parity_xor_conjugate q b mask hq hb hqb)
+  simp only [Quantum.run_append,Quantum.run_singleton] at hx
+  rw [hx]
+  congr 1
+  have hc : Quantum.run (leafCommutator q p mask) = Quantum.run (tableXorGates q mask) := by
+    apply linear_basis
+    intro s
+    rw [run_ket_agrees_classical _ _ (by simp [leafCommutator,tableXorGates_HPFree]),
+      run_ket_agrees_classical _ _ (tableXorGates_HPFree q mask),
+      parity_leafCommutator_classical q p mask hq hp hqp]
+  rw [hc]
+
+end
+end ShorECDLP.Entrant.AliasLookup
+
+namespace ShorECDLP.Entrant.AliasLookup
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration Optimization
+noncomputable section
+set_option maxHeartbeats 100000
+set_option Elab.async false
+
+/-- A finite XOR leaf with a table-uniform interpretation; target repetitions are allowed. -/
+structure XorLeaf (n : Nat) where
+  code : Wire → List (TemplateGate n)
+  mask : (ConstantBit n → Bool) → List Wire
+  wires : List Wire
+  source : ∀ q read, (code q).flatMap (TemplateGate.instantiate read) = tableXorGates q (mask read)
+  support : ∀ read, mask read ⊆ wires
+
+def endpointLeaf {n : Nat} (ports : List (Wire × EndpointBit n)) : XorLeaf n where
+  code q := endpointSelectGates q ports
+  mask read := endpointRawMask read ports
+  wires := ports.map Prod.fst
+  source := fun q read => endpointSelectGates_source read q ports
+  support := fun _ => (List.Sublist.map Prod.fst List.filter_sublist).subset
+
+def xorCommutator {n} (leaf : XorLeaf n) (q p : Wire) : List (TemplateGate n) :=
+  leaf.code p ++ [.literal (.CX q p)] ++ leaf.code p ++ [.literal (.CX q p)]
+
+def xorSourceNode {n} (leaf : XorLeaf n) (start : Nat) (q b p : Wire) : Straight n start (start+1) :=
+  (gateProgram ((computeZeroAnd q b p).map TemplateGate.literal ++
+    xorCommutator leaf q p ++ [.literal (.X b)])).append
+      (.measure p (recordGates (Fin.last start) (controlledZ q b) (literalProgram [.X b])))
+
+def xorRetainedNode {n} (leaf : XorLeaf n) (start : Nat) (q p : Wire) : Straight n start (start+1) :=
+  (gateProgram (xorCommutator leaf q p)).append (.measure p .done)
+
+theorem xorCommutator_instantiate {n} (leaf : XorLeaf n) (q p : Wire) (read : ConstantBit n → Bool) :
+    (xorCommutator leaf q p).flatMap (TemplateGate.instantiate read) = leafCommutator q p (leaf.mask read) := by
+  simp only [xorCommutator,List.flatMap_append,leaf.source,List.flatMap_cons,List.flatMap_nil,
+    TemplateGate.instantiate,List.append_nil,leafCommutator]
+
+theorem xorPrefix_instantiate {n} (leaf : XorLeaf n) (q b p : Wire) (read : ConstantBit n → Bool) :
+    ((computeZeroAnd q b p).map TemplateGate.literal ++ xorCommutator leaf q p ++
+      [TemplateGate.literal (tableSize := n) (.X b)]).flatMap (TemplateGate.instantiate read) = nodePrefix q b p (leaf.mask read) := by
+  simp only [List.flatMap_append,literal_gates,xorCommutator_instantiate,List.flatMap_cons,
+    List.flatMap_nil,TemplateGate.instantiate,List.append_nil,nodePrefix]
+
+theorem xorSourceNode_run {n} (leaf : XorLeaf n) (start : Nat) (q b p : Wire)
+    (hq : q ∉ leaf.wires) (hb : b ∉ leaf.wires) (hp : p ∉ leaf.wires)
+    (hqb : q ≠ b) (hqp : q ≠ p) (hbp : b ≠ p)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    ((xorSourceNode leaf start q b p).instantiate read history).run =
+      ((xorRetainedNode leaf start q p).instantiate read history).run := by
+  have hqm : q ∉ leaf.mask read := fun h => hq (leaf.support read h)
+  have hbm : b ∉ leaf.mask read := fun h => hb (leaf.support read h)
+  have hpm : p ∉ leaf.mask read := fun h => hp (leaf.support read h)
+  unfold xorSourceNode xorRetainedNode
+  apply oneMeasure_congr
+  · intro psi
+    rw [xorPrefix_instantiate,xorCommutator_instantiate,Quantum.run_singleton]
+    simpa only [if_false,Quantum.run_nil,LinearMap.id_coe,id_eq] using
+      parity_node_branch q b p (leaf.mask read) hqm hbm hpm hqb hqp hbp false psi
+  · intro psi
+    rw [xorPrefix_instantiate,xorCommutator_instantiate,Quantum.run_singleton]
+    simpa only [if_true] using
+      parity_node_branch q b p (leaf.mask read) hqm hbm hpm hqb hqp hbp true psi
+
+theorem xorSourceNode_drops {n} (leaf : XorLeaf n) (start : Nat) (q b p : Wire) :
+    Drops (xorSourceNode leaf start q b p) (xorRetainedNode leaf start q p) 7 := by
+  unfold xorSourceNode xorRetainedNode
+  rw [List.append_assoc,gatePrefix_append,gatePrefix_append]
+  simp only [computeZeroAnd,List.map_cons,List.map_nil,gateProgram,Straight.append]
+  refine (show 0+7=7 by decide) ▸ Drops.skip (.X b) ?_
+  refine (show 7+0=7 by decide) ▸ Drops.skip (.CCX q b p) ?_
+  refine Drops.skip (.X b) (d := 0) ?_
+  apply Drops.gatePrefix
+  refine Drops.skip (.X b) (d := 0) ?_
+  exact Drops.measure p (correction_drops (Fin.last start) q b)
+
+def xorNodePatch {n} (leaf : XorLeaf n) (start : Nat) (q b p : Wire)
+    (hq : q ∉ leaf.wires) (hb : b ∉ leaf.wires) (hp : p ∉ leaf.wires)
+    (hqb : q ≠ b) (hqp : q ≠ p) (hbp : b ≠ p) :
+    Patch (xorSourceNode leaf start q b p) 7 :=
+  ⟨xorRetainedNode leaf start q p,xorSourceNode_drops leaf start q b p,
+    Rewrites.semantic _ _ (xorSourceNode_run leaf start q b p hq hb hp hqb hqp hbp)⟩
+
+end
+end ShorECDLP.Entrant.AliasLookup
+
+namespace ShorECDLP.Entrant.AliasLookup
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration Optimization
+noncomputable section
+set_option maxHeartbeats 100000
+set_option Elab.async false
+
+theorem xorBottomNode_eq {n} (leaves : Nat → XorLeaf n)
+    (q b p l r start : Nat) (rest : List Wire) (he : leaves l = leaves r) :
+    lookupProgram n (unaryLookupOps (fun l q => (leaves l).code q)
+      (.node b (.leaf l) (.leaf r)) q (p::rest)) start =
+      xorSourceNode (leaves l) start q b p := by
+  simp only [unaryLookupOps, List.cons_append, List.nil_append,
+    lookupProgram, ordinaryOp, lookupMeasurements, Nat.add_zero, ← he]
+  simp only [xorSourceNode, xorCommutator, gatePrefix_append]
+  rfl
+
+/-- A finite plan chooses only aliased sibling pairs, preserving every traversal record. -/
+inductive XorAliasPlan {n : Nat} (leaves : Nat → XorLeaf n) :
+    UnaryActionTree → Wire → List Wire → Nat → Type where
+  | keep (tree q anc) : XorAliasPlan leaves tree q anc 0
+  | bottom (q b p l r : Nat) (rest : List Wire)
+      (he : leaves l = leaves r)
+      (hq : q ∉ (leaves l).wires) (hb : b ∉ (leaves l).wires)
+      (hp : p ∉ (leaves l).wires)
+      (hqb : q ≠ b) (hqp : q ≠ p) (hbp : b ≠ p) :
+      XorAliasPlan leaves (.node b (.leaf l) (.leaf r)) q (p::rest) 7
+  | node {q b p : Wire} {z o : UnaryActionTree} {rest : List Wire} {dz do_ : Nat}
+      (zero : XorAliasPlan leaves z p rest dz) (one : XorAliasPlan leaves o p rest do_) :
+      XorAliasPlan leaves (.node b z o) q (p::rest) (dz+do_)
+
+def XorAliasPlan.patch {n} {leaves : Nat → XorLeaf n}
+    {tree q anc d} (plan : XorAliasPlan leaves tree q anc d) (start : Nat) :
+    Patch (lookupProgram n (unaryLookupOps (fun l q => (leaves l).code q) tree q anc) start) d := by
+  induction plan generalizing start with
+  | keep tree q anc => exact Patch.refl _
+  | bottom q b p l r rest he hq hb hp hqb hqp hbp =>
+      rw [xorBottomNode_eq leaves q b p l r start rest he]
+      exact xorNodePatch (leaves l) start q b p hq hb hp hqb hqp hbp
+  | @node q b p z o rest dz do_ zero one ihz iho =>
+      rw [unaryLookupOps]
+      refine (lookupAppendPatch (d := dz+do_) (e := 0) _ _ start ?_ (Patch.refl _)).castSaving (Nat.add_zero _)
+      refine lookupAppendPatch (d := dz) (e := do_) _ _ _ ?_ (iho _)
+      refine (lookupAppendPatch (d := dz) (e := 0) _ _ _ ?_ (Patch.refl _)).castSaving (Nat.add_zero _)
+      exact (lookupAppendPatch (d := 0) (e := dz) _ _ _ (Patch.refl _) (ihz _)).castSaving (Nat.zero_add _)
+
+
+/-- Periodic tables admit a cancellation at every last-level sibling pair. -/
+def periodicXorPlan {n : Nat} (leaves : Nat → XorLeaf n)
+    (bits : List Wire) (base stride q : Nat) (anc : List Wire)
+    (hne : bits ≠ []) (hlen : bits.length ≤ anc.length)
+    (hn : (q :: bits ++ anc).Nodup)
+    (hd : ∀ l w, w ∈ q :: bits ++ anc → w ∉ (leaves l).wires)
+    (hp : ∀ l, leaves l = leaves (l + stride * 2^(bits.length-1))) :
+    XorAliasPlan leaves (tableAddressTree bits base stride) q anc (7 * 2^(bits.length-1)) := by
+  induction bits generalizing base stride q anc with
+  | nil => exact False.elim (hne rfl)
+  | cons bit bits ih =>
+      cases anc with
+      | nil => simp at hlen
+      | cons path rest =>
+        have hdrop : (bits ++ path::rest).Nodup :=
+          (List.nodup_cons.mp (List.nodup_cons.mp hn).2).2
+        have hchild : (path::bits++rest).Nodup := List.perm_middle.nodup_iff.mp hdrop
+        have hdchild : ∀ l w, w ∈ path::bits++rest → w ∉ (leaves l).wires := by
+          intro l w hw
+          apply hd l w
+          simp only [List.mem_cons, List.mem_append] at hw ⊢
+          tauto
+        cases bits with
+        | nil =>
+            simp only [List.length_cons, List.length_nil, Nat.sub_self, pow_zero, Nat.mul_one,
+              tableAddressTree] at hp ⊢
+            apply XorAliasPlan.bottom q bit path base (base+stride) rest (hp base)
+            · exact hd base q (by simp)
+            · exact hd base bit (by simp)
+            · exact hd base path (by simp)
+            · have h := (List.nodup_cons.mp hn).1; simpa using fun he => h (by simp [he])
+            · have h := (List.nodup_cons.mp hn).1; simpa using fun he => h (by simp [he])
+            · have h := (List.nodup_cons.mp (List.nodup_cons.mp hn).2).1
+              simpa using fun he => h (by simp [he])
+        | cons next tail =>
+            have hperiod : ∀ l, leaves l = leaves (l + (2*stride) * 2^((next::tail).length-1)) := by
+              intro l
+              convert hp l using 2
+              simp only [List.length_cons, Nat.add_sub_cancel, pow_succ]
+              ring
+            have hzero := ih base (2*stride) path rest (by simp) (by simpa using hlen)
+              hchild hdchild hperiod
+            have hone := ih (base+stride) (2*stride) path rest (by simp) (by simpa using hlen)
+              hchild hdchild hperiod
+            have he : 7 * 2^((bit::next::tail).length-1) =
+                7 * 2^((next::tail).length-1) + 7 * 2^((next::tail).length-1) := by
+              simp only [List.length_cons, Nat.add_sub_cancel, pow_succ]
+              omega
+            rw [he]
+            exact XorAliasPlan.node hzero hone
+
+end
+end ShorECDLP.Entrant.AliasLookup
+
+namespace ShorECDLP.Entrant.AliasLookup
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration Optimization
+noncomputable section
+set_option maxHeartbeats 100000
+set_option Elab.async false
+
+def reindexEndpoint {n m} (f : Fin n → Fin m) : EndpointBit n → EndpointBit m
+  | .inl b => .inl b
+  | .inr b => .inr (reindexBit f b)
+
+def reindexEndpointPorts {n m} (f : Fin n → Fin m) (ports : List (Wire × EndpointBit n)) :=
+  ports.map (fun x => (x.1, reindexEndpoint f x.2))
+
+theorem reindex_endpointSelectGate {n m} (f : Fin n → Fin m) (q w : Wire) (b : EndpointBit n) :
+    (endpointSelectGate q (w,b)).map (reindexGate f) = endpointSelectGate q (w,reindexEndpoint f b) := by
+  cases b with
+  | inl b => cases b <;> rfl
+  | inr b => rfl
+
+theorem reindex_endpointSelectGates {n m} (f : Fin n → Fin m) (q : Wire)
+    (ports : List (Wire × EndpointBit n)) :
+    (endpointSelectGates q ports).map (reindexGate f) =
+      endpointSelectGates q (reindexEndpointPorts f ports) := by
+  induction ports with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [endpointSelectGates,reindexEndpointPorts,List.flatMap_cons,List.map_cons,
+      List.map_append] at ih ⊢
+    rw [reindex_endpointSelectGate,ih]
+
+theorem reindex_endpointFieldWord {n m} (f : Fin n → Fin m) (row : Fin n)
+    (tag : EndpointBit n) (fx fy : Option PointField) (i : Fin 513) :
+    reindexEndpoint f (endpointFieldWord row tag fx fy i) =
+      endpointFieldWord (f row) (reindexEndpoint f tag) fx fy i := by
+  unfold endpointFieldWord
+  split_ifs <;> cases fx <;> cases fy <;> rfl
+
+theorem reindex_exceptionalEndpointWords {n m} (f : Fin n → Fin m) (row : Fin n)
+    (j : Fin 8) (i : Fin 513) :
+    reindexEndpoint f (exceptionalEndpointWords row j i) = exceptionalEndpointWords (f row) j i := by
+  fin_cases j <;> simp [exceptionalEndpointWords]
+  all_goals rw [reindex_endpointFieldWord]; rfl
+
+theorem reindex_unaryOps_generic {n m} (f : Fin n → Fin m)
+    (leaf : Nat → Wire → List (TemplateGate n)) (tree : UnaryActionTree) (q : Wire) (anc : List Wire) :
+    (unaryLookupOps leaf tree q anc).map (reindexOp f) =
+      unaryLookupOps (fun l q => (leaf l q).map (reindexGate f)) tree q anc := by
+  induction tree generalizing q anc with
+  | leaf l => rfl
+  | node b z o ihz iho =>
+    cases anc with
+    | nil => rfl
+    | cons p rest =>
+      simp only [unaryLookupOps,List.map_append,List.map_cons,List.map_nil,ihz,iho,
+        reindexOp,ordinaryOp,List.map_map]
+      rfl
+
+theorem aliasRow_periodic (label : Nat) :
+    aliasRow ⟨label % 32768, Nat.mod_lt _ (by decide)⟩ =
+      aliasRow ⟨(label+16384) % 32768, Nat.mod_lt _ (by decide)⟩ := by
+  apply Fin.ext
+  simp only [aliasRow,Nat.mod_mod_of_dvd _ (by decide : 16384 ∣ 32768)]
+  omega
+
+end
+end ShorECDLP.Entrant.AliasLookup
+
+namespace ShorECDLP.Entrant.AliasLookup
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration Optimization
+noncomputable section
+set_option maxHeartbeats 100000
+set_option maxRecDepth 10000
+set_option Elab.async false
+
+theorem reindex_ipxPorts {n m} (f : Fin n → Fin m) (row : Fin n) (u : Fin 8) :
+    reindexEndpointPorts f (ipxPorts row u) = ipxPorts (f row) u := by
+  simp only [reindexEndpointPorts,ipxPorts,List.map_ofFn]
+  congr 1
+  funext i
+  exact congrArg (fun b => (accumulatorPort i,b)) (reindex_exceptionalEndpointWords f row u i)
+
+theorem reindex_ipxPortsOpt {n m} (f : Fin n → Fin m) (row : Fin n) (v : Option (Fin 8)) :
+    reindexEndpointPorts f (ipxPortsOpt row v) = ipxPortsOpt (f row) v := by
+  cases v with
+  | none => rfl
+  | some v => exact reindex_ipxPorts f row v
+
+theorem reindex_ipxLeaf {n m} (f : Fin n → Fin m) (row : Fin n) (q : Wire)
+    (u : Fin 8) (v : Option (Fin 8)) :
+    (ipxLeaf row q u v).map (reindexGate f) = ipxLeaf (f row) q u v := by
+  simp only [ipxLeaf,List.map_append,reindex_endpointSelectGates,reindex_ipxPorts,reindex_ipxPortsOpt]
+
+def ipxXorLeaf {n} (row : Fin n) (u : Fin 8) (v : Option (Fin 8)) : XorLeaf n :=
+  endpointLeaf (ipxPorts row u ++ ipxPortsOpt row v)
+
+theorem ipxXorLeaf_code {n} (row : Fin n) (u : Fin 8) (v : Option (Fin 8)) (q : Wire) :
+    (ipxXorLeaf row u v).code q = ipxLeaf row q u v := by
+  simp only [ipxXorLeaf,endpointLeaf,endpointSelectGates,List.flatMap_append,ipxLeaf]
+
+theorem ipxPorts_wires {n} (row : Fin n) (u : Fin 8) :
+    (ipxPorts row u).map Prod.fst = List.ofFn accumulatorPort := by
+  simp only [ipxPorts,List.map_ofFn]
+  rfl
+
+theorem ipxXorLeaf_wires {n} (row : Fin n) (u : Fin 8) (v : Option (Fin 8)) :
+    (ipxXorLeaf row u v).wires ⊆ List.ofFn accumulatorPort := by
+  change (ipxPorts row u ++ ipxPortsOpt row v).map Prod.fst ⊆ _
+  cases v with
+  | none =>
+    simp only [ipxPortsOpt,List.append_nil,ipxPorts_wires]
+    exact List.Subset.refl _
+  | some v =>
+    simp only [ipxPortsOpt,List.map_append,ipxPorts_wires]
+    intro w hw
+    exact (List.mem_append.mp hw).elim id id
+
+theorem ipxControl_nodup (c : Option (Fin 4)) :
+    (ipxControl c :: pointLookupAddress ++ pointLookupPath).Nodup := by
+  cases c with
+  | none => decide
+  | some k => fin_cases k <;> decide
+
+theorem ipxTarget_disjoint (c : Option (Fin 4)) (w : Wire)
+    (hw : w ∈ ipxControl c :: pointLookupAddress ++ pointLookupPath) :
+    w ∉ List.ofFn accumulatorPort := by
+  intro ht
+  obtain ⟨i,hi⟩ := List.mem_ofFn.mp ht
+  have hr : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836) ∨ w = 838 := by
+    rw [← hi]
+    unfold accumulatorPort
+    split_ifs <;> (try dsimp only [Wire] at *) <;> omega
+  have hc : ipxControl c < 4 ∨ ipxControl c = 836 := by
+    cases c with
+    | none => exact Or.inr rfl
+    | some k => exact Or.inl k.isLt
+  simp only [pointLookupAddress,pointLookupPath,List.mem_cons,List.mem_append,List.mem_range'] at hw
+  dsimp only [Wire] at *
+  omega
+
+attribute [local irreducible] lookupProgram unaryLookupOps batchWindowTree ipxLeaf ipxOps
+  ipxMeasuredTestOps ipxProgramOf reindexStraight
+
+def ipxQueryAliasPatch (c : Option (Fin 4)) (u : Fin 8) (v : Option (Fin 8)) (start : Nat) :
+    Patch (lookupProgram 32768 ((unaryLookupOps
+      (fun l q => ipxLeaf (Single.Physical.tableRows l) q u v)
+      batchWindowTree (ipxControl c) pointLookupPath).map (reindexOp aliasRow)) start) 114688 := by
+  rw [reindex_unaryOps_generic]
+  have hmap : (fun l q => (ipxLeaf (Single.Physical.tableRows l) q u v).map (reindexGate aliasRow)) =
+      (fun l q => ipxLeaf (aliasRow (Single.Physical.tableRows l)) q u v) := by
+    funext l q
+    exact reindex_ipxLeaf aliasRow _ q u v
+  rw [hmap]
+  let leaves := fun l => ipxXorLeaf (aliasRow (Single.Physical.tableRows l)) u v
+  have he : (fun l q => ipxLeaf (aliasRow (Single.Physical.tableRows l)) q u v) =
+      (fun l q => (leaves l).code q) := by
+    funext l q
+    exact (ipxXorLeaf_code _ u v q).symm
+  rw [he]
+  have plan := periodicXorPlan leaves pointLookupAddress 0 1 (ipxControl c) pointLookupPath
+    (by decide) (by decide) (ipxControl_nodup c)
+    (by intro l w hw ht; exact ipxTarget_disjoint c w hw (ipxXorLeaf_wires _ u v ht))
+    (by
+      intro l
+      have hr : aliasRow (Single.Physical.tableRows l) =
+          aliasRow (Single.Physical.tableRows (l+16384)) := aliasRow_periodic l
+      exact congrArg (fun row => ipxXorLeaf row u v) hr)
+  unfold batchWindowTree
+  exact plan.patch start
+
+def ipxOpsAliasPatch (ops : List IpxOp) (start : Nat) :
+    Patch (lookupProgram 32768 ((ipxOps Single.Physical.tableRows batchWindowTree
+      pointLookupPath ops).map (reindexOp aliasRow)) start) (114688 * ipxQueries ops) := by
+  induction ops generalizing start with
+  | nil => exact Patch.refl _
+  | cons op ops ih =>
+    cases op with
+    | query c u v =>
+      rw [ipxOps,List.map_append]
+      exact (lookupAppendPatch _ _ start (ipxQueryAliasPatch c u v start) (ih _)).castSaving
+        (by rw [ipxQueries]; omega)
+    | test k =>
+      rw [ipxOps,List.map_append]
+      exact (lookupAppendPatch _ _ start (Patch.refl _) (ih _)).castSaving (Nat.zero_add _)
+
+def placedAliasPatch (start : Nat) :
+    Patch (reindexStraight aliasRow (Single.Physical.placedProgram start).2) 1490944 := by
+  unfold Single.Physical.placedProgram ipxProgramOf
+  apply lookupReindexPatch
+  exact (ipxOpsAliasPatch ipxSchedule start).castSaving (by rw [ipxSchedule_queries])
+
+end
+end ShorECDLP.Entrant.AliasLookup
+
+namespace ShorECDLP.Entrant.AliasLookup
 open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration Optimization
 noncomputable section
 set_option maxHeartbeats 200000
@@ -6558,24 +7052,28 @@ def coordinateAliasPatch (start : Nat) :
   exact Patch.refl _
 
 def coreAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (Single.Physical.core start).2) 13875792 := by
+    Patch (reindexStraight aliasRow (Single.Physical.core start).2) 15366736 := by
   unfold Single.Physical.core Single.Physical.segments
-  exact (reindexedSequenceCons (d := 13875792) (e := 0) aliasRow _ _
-    (coordinateAliasPatch hd hm start) (Patch.refl _)).castSaving (Nat.add_zero _)
+  refine (reindexedSequenceCons (d := 13875792) (e := 1490944) aliasRow _ _
+    (coordinateAliasPatch hd hm start) ?_).castSaving (by decide)
+  refine (reindexedSequenceCons (d := 0) (e := 1490944) aliasRow _ _
+    (Patch.refl _) ?_).castSaving (Nat.zero_add _)
+  exact (reindexedSequenceCons (d := 1490944) (e := 0) aliasRow _ _
+    (placedAliasPatch _) (Patch.refl _)).castSaving (Nat.add_zero _)
 
 def preparedAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (Single.Physical.prepared start).2) 13875792 := by
+    Patch (reindexStraight aliasRow (Single.Physical.prepared start).2) 15366736 := by
   unfold Single.Physical.prepared
   exact reindexedSurround aliasRow _ _ _ (coreAliasPatch hd hm start)
 
 def actualAliasPatch (start : Nat) :
-    Patch (reindexStraight aliasRow (Single.Physical.actual.program start)) 13875792 := by
+    Patch (reindexStraight aliasRow (Single.Physical.actual.program start)) 15366736 := by
   unfold Single.Physical.actual closedWindow
   rw [reindex_shift,reindex_cast,reindex_relabel]
   exact (((preparedAliasPatch hd hm 0).relabel (windowAddressPerm 855 (by decide))).castFinish _).shift start
 
 def left15AliasPatch (j : Fin 6) (start : Nat) :
-    Patch ((Single.signedWindow (.left15 j)).program start) 13875792 := by
+    Patch ((Single.signedWindow (.left15 j)).program start) 15366736 := by
   have h := (actualAliasPatch hd hm start).reindex (Single.signedRow (.left15 j))
   rw [reindex_comp] at h
   have he : Single.signedRow (.left15 j) ∘ aliasRow = Single.signedRow (.left15 j) := by
@@ -6587,6 +7085,7 @@ def left15AliasPatch (j : Fin 6) (start : Nat) :
 
 end
 end ShorECDLP.Entrant.AliasLookup
+
 
 
 
@@ -7951,7 +8450,7 @@ structure PatchedWindow (n : Nat) where
   patch : ∀ start, Patch (source.program start) saving
 
 def signedSaving : Single.SignedWindow → Nat
-  | .left15 _ => 13875792
+  | .left15 _ => 15366736
   | _ => 12728912
 
 def signedAliasPatch (w : Single.SignedWindow) (start : Nat) :
@@ -7970,7 +8469,7 @@ private theorem leftPatches_source : leftPatches.map PatchedWindow.source = Sing
   simp [leftPatches, Single.leftWindows]
 private theorem rightPatches_source : rightPatches.map PatchedWindow.source = Single.rightWindows := by
   simp [rightPatches, Single.rightWindows]
-private theorem leftPatches_saving : (leftPatches.map PatchedWindow.saving).sum = 210543872 := by
+private theorem leftPatches_saving : (leftPatches.map PatchedWindow.saving).sum = 219489536 := by
   simp [leftPatches, Single.leftSigned, signedSaving]
 private theorem rightPatches_saving : (rightPatches.map PatchedWindow.saving).sum = 165475856 := by
   simp [rightPatches, Single.rightSigned, signedSaving]
@@ -7996,14 +8495,14 @@ def Patch.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n m k)
   unfold Single.framed
   exact Patch.gate _ ((Patch.append hp ((Patch.append hq (Patch.gate _ (Patch.refl _))).castSaving (Nat.add_zero dr))).castFinish h)
 
-def trialPatch (start : Nat) : Patch (Single.trial start) 376019728 := by
+def trialPatch (start : Nat) : Patch (Single.trial start) 384965392 := by
   have hl := (axisPatchFor leftPatches Single.leftWindows leftPatches_source start List.nil).castSaving leftPatches_saving
   have hr := (axisPatchFor rightPatches Single.rightWindows rightPatches_source
     (start+Single.axisCount Single.leftWindows) List.nil).castSaving rightPatches_saving
   unfold Single.trial
   exact (Patch.framed _ _ _ _ hl hr).castSaving (by decide)
 
-def programPatch : Patch Single.program 376019728 := by
+def programPatch : Patch Single.program 384965392 := by
   unfold Single.program
   exact (trialPatch 0).castFinish _
 
@@ -8012,7 +8511,7 @@ def Patch.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 e) (hp
   unfold Single.fixedEntry
   exact hp.reindex _
 
-def entryPatch : Patch Rounded.entry.program 376019728 := by
+def entryPatch : Patch Rounded.entry.program 384965392 := by
   unfold Rounded.entry Rounded.program
   exact Patch.fixedEntry Single.mixedCoefficientAt _
     ((Patch.append programPatch (Patch.refl Rounded.readout)).castSaving (by omega))
@@ -8023,7 +8522,7 @@ namespace ShorECDLP.Entrant.Parent
 open Challenge
 noncomputable def entry : StraightEntry := Optimization.replaceEntry Rounded.entry Optimization.entryPatch.program
 def layout : DecodeLayout := Rounded.layout
-def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 376019728, Rounded.bounds.measurements⟩
+def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 384965392, Rounded.bounds.measurements⟩
 theorem certificate : Certificate officialLimits layout entry bounds :=
   Optimization.replacement_certificate Rounded.certificate Optimization.entryPatch.drops Optimization.entryPatch.rewrites
 end ShorECDLP.Entrant.Parent
@@ -8815,12 +9314,12 @@ attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.en
 
 
 
-theorem parent_added_lower : 2051762931 ≤ added Parent.entry.program := by
+theorem parent_added_lower : 2050484979 ≤ added Parent.entry.program := by
   have h := dropped_added Optimization.entryPatch.drops
   have hc := entryCount
   change 2105480035 ≤ added Rounded.entry.program at hc
   unfold Parent.entry Optimization.replaceEntry
-  change 2051762931 ≤ added Optimization.entryPatch.program
+  change 2050484979 ≤ added Optimization.entryPatch.program
   omega
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) (ws : List Wire)
     (hp : Within ws p) : Within ws (reindexStraight f p) := by
@@ -8868,7 +9367,7 @@ theorem parent_added_upper : added Parent.entry.program ≤ 7375499580 := by
     (readConstant Parent.entry.coefficients.get 0) Fin.elim0 Fin.elim0
     (by funext i; exact Fin.elim0 i)
   have ht := (Parent.certificate.resources 0).2.1
-  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14362397290 at ht
+  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14353451626 at ht
   omega
 
 
@@ -8890,11 +9389,11 @@ set_option maxRecDepth 10000
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 noncomputable def entry : StraightEntry := lowerEntry 1024 Parent.entry
 noncomputable def layout : DecodeLayout := lowerLayout 1024 Parent.entry Parent.layout
-def bounds : Bounds := ⟨855, 10258871428, 8266128294⟩
+def bounds : Bounds := ⟨855, 10252481668, 8266128294⟩
 
 private theorem resourceArithmetic (a slots cursor oldT newT maxSlots maxRecords newRecords : Nat)
-    (ha : a ≤ 7375499580) (hl : 2051762931 ≤ a) (hs : slots ≤ 90000176648)
-    (hc : cursor ≤ 890628714) (ho : oldT ≤ 14362397290) (hn : 10258871428 ≤ newT)
+    (ha : a ≤ 7375499580) (hl : 2050484979 ≤ a) (hs : slots ≤ 90000176648)
+    (hc : cursor ≤ 890628714) (ho : oldT ≤ 14353451626) (hn : 10252481668 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hlm : 47471340504 ≤ maxRecords)
     (hnm : 8266128294 ≤ newRecords) :
     slots + 18*a ≤ maxSlots ∧ cursor+a ≤ maxRecords ∧ oldT ≤ newT + 2*a ∧
@@ -8952,10 +9451,10 @@ private theorem lowerEntry_slots (q : Wire) (e : StraightEntry) :
 private theorem five_within : Within (1024 :: resetWires) Five.entry.program :=
   lowerEntry_within 1024 Parent.entry resetWires parent_within
 
-private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2051762931 ≤ a) :
-    2051762931 ≤ s := by omega
+private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2050484979 ≤ a) :
+    2050484979 ≤ s := by omega
 
-private theorem five_saved : 2051762931 ≤ Catalyst.saved Five.entry.program :=
+private theorem five_saved : 2050484979 ≤ Catalyst.saved Five.entry.program :=
   saved_bound (added Parent.entry.program) (Catalyst.saved Parent.entry.program)
     (Catalyst.saved Five.entry.program) (lowerEntry_saved 1024 Parent.entry) parent_added_lower
 
@@ -8968,11 +9467,11 @@ private theorem five_slots : Five.entry.program.gateSlots ≤ 230352365419 :=
 
 noncomputable def entry : StraightEntry := Catalyst.compileEntry 1025 Five.entry
 noncomputable def layout : DecodeLayout := Five.layout
-def bounds : Bounds := ⟨856, 8207108498, 8266128294⟩
+def bounds : Bounds := ⟨856, 8201996690, 8266128294⟩
 
 private theorem resourceArithmetic (s a c oldT newT maxSlots m : Nat)
-    (hs : s ≤ 230352365419) (ha : a ≤ s) (hl : 2051762931 ≤ a)
-    (hc : c ≤ 8266128294) (ho : oldT ≤ 10258871428) (hn : 8207108498 ≤ newT)
+    (hs : s ≤ 230352365419) (ha : a ≤ s) (hl : 2050484979 ≤ a)
+    (hc : c ≤ 8266128294) (ho : oldT ≤ 10252481668) (hn : 8201996690 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hm : 8266128294 ≤ m) :
     s + 3*a + 2 ≤ maxSlots ∧ oldT + 1 ≤ newT + a ∧ c ≤ m := by omega
 
