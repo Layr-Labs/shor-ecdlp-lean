@@ -1,5 +1,4 @@
-import ShorECDLP.Submission.Entrant.Compiler
-import ShorECDLP.Submission.Entrant.CreditWindow
+import ShorECDLP.Submission.Entrant.Catalyst
 import ShorECDLP.Submission.«2607_13816».Challenge.Support
 import ShorECDLP.Submission.Entrant.Single.Physical
 import ShorECDLP.Submission.Entrant.Single.Fourier
@@ -66,59 +65,1068 @@ theorem fixedEntry_rows {n e : Nat} (f : Fin n → PointCoeff)
 end ShorECDLP.Entrant.Single
 end
 
+
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 4096
+
+/-- Literal specialization of the already verified two-record full-adder at true,true.
+The first output is a true carry record; the second is false. Both scratch wires reset. -/
+def constantStep (n start : Nat) : Straight n start (start+2) :=
+  .gate (.literal (.X 0))
+    (.gate (.literal (.CX 0 1))
+      (.gate (.literal (.H 1))
+        (.measure 1
+          (.gate (.literal (.X 0))
+            (.gate (.literal (.X 1))
+              (.gate (.literal (.X 1))
+                (.gate (.literal (.H 1)) (.measure 1 .done))))))))
+
+theorem constantStep_instantiate (n start : Nat) (read : ConstantBit n→Bool)
+    (history : Fin start→Bool) :
+    (constantStep n start).instantiate read history=stepSource true true := by
+  simp only [constantStep,Straight.instantiate,TemplateGate.instantiate,stepSource,stepTail,
+    ite_true]
+
+theorem constantStep_wellFormed (n start : Nat) : (constantStep n start).WellFormed := by
+  simp [constantStep,Straight.WellFormed,TemplateGate.WellFormed,Gate.WellFormed]
+
+theorem constantStep_slots (n start : Nat) : (constantStep n start).gateSlots=7 := rfl
+
+theorem constantStep_t (n start : Nat) (read : ConstantBit n→Bool) (history : Fin start→Bool) :
+    ((constantStep n start).instantiate read history).tCount=0 := by
+  simp [constantStep,Straight.instantiate,TemplateGate.instantiate,AdaptiveCircuit.tCount,
+    ShorECDLP.tCount,tCost]
+
+theorem constantStep_support (n start : Nat) (read : ConstantBit n→Bool) (history : Fin start→Bool) :
+    ((constantStep n start).instantiate read history).wires⊆[0,1] := by
+  simp [constantStep,Straight.instantiate,TemplateGate.instantiate,AdaptiveCircuit.wires,
+    circuitWires,gateWires,List.subset_def]
+
+theorem constantStep_branch (n start : Nat) (read : ConstantBit n→Bool) (history : Fin start→Bool)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((constantStep n start).instantiate read history).run) (hn : b.kraus ψ≠0) :
+    b.kraus ψ=ψ ∧ b.history=[true,false] := by
+  rw [constantStep_instantiate,stepSource_run] at hb
+  simp only [List.mem_cons,List.not_mem_nil,or_false] at hb
+  rcases hb with rfl|rfl|rfl|rfl
+  all_goals simp_all [LinearMap.comp_apply,stepMap_state _ _ _ _ ψ hψ]
+
+/-- Positions of the sum records of a full-adder word. -/
+def sumPositions (start width : Nat) : Vector Nat width :=
+  Vector.ofFn fun i=>start+2*i.val+1
+
+private theorem word_eq (bits : List Bool) : fourierWordLSB bits=boolWordToNat bits := by
+  induction bits with
+  | nil=>rfl
+  | cons b bits ih=>simp only [fourierWordLSB,boolWordToNat_cons,ih]
+
+theorem sumPositions_read (before : List Bool) (carry : Bool) (bits : List Bool) :
+    readWord (before++carryBits carry bits) (sumPositions before.length bits.length).toList =
+      some ((carry.toNat+boolWordToNat bits)%2^bits.length) := by
+  have hactual : (sumPositions before.length bits.length).toList.map
+      (fun i=>(before++carryBits carry bits)[i]?)=(sumBits carry bits).map some := by
+    apply List.ext_getElem
+    · simp only [List.length_map,sumPositions,Vector.toList_ofFn,List.length_ofFn,sumBits_length]
+    · intro i hi hj
+      simp only [List.length_map,sumPositions,Vector.toList_ofFn,List.length_ofFn] at hi
+      simp only [List.getElem_map,sumPositions,Vector.toList_ofFn,List.getElem_ofFn]
+      rw [List.getElem?_append_right (by omega)]
+      rw [show before.length+2*i+1-before.length=2*i+1 by omega]
+      rw [carryBits_odd,List.getElem?_eq_getElem (by simpa [sumBits_length] using hi)]
+  rw [readWord_of_actual_bits _ _ _ hactual,word_eq,sumBits_value]
+
+theorem addWord_reads_increment {n start : Nat} (carry : Fin start) (bits : List (Fin start))
+    (read : ConstantBit n→Bool) (history : Fin start→Bool) (hc : history carry=true)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((addWord start carry bits).instantiate read history).run) (hn : b.kraus ψ≠0) :
+    b.kraus ψ=ψ ∧
+      readWord (List.ofFn history++b.history) (sumPositions start bits.length).toList=
+        some ((1+boolWordToNat (bits.map history))%2^bits.length) := by
+  obtain ⟨he,hh⟩:=addWord_branch start carry bits read history ψ hψ b hb hn
+  refine ⟨he,?_⟩
+  rw [hh,hc]
+  simpa only [sumPositions,Vector.toList_ofFn,List.length_ofFn,List.length_map,Bool.toNat_true] using
+    sumPositions_read (List.ofFn history) true (bits.map history)
+
+/-- Complement arithmetic, proved without any division estimates. -/
+theorem word_complement_sum (bits : List Bool) :
+    boolWordToNat bits+boolWordToNat (bits.map Bool.not)=2^bits.length-1 := by
+  induction bits with
+  | nil=>rfl
+  | cons bit bits ih=>
+    have hp : 0<2^bits.length := by positivity
+    cases bit <;> simp only [List.map_cons,List.length_cons,boolWordToNat_cons,
+      Bool.not_false,Bool.not_true,Bool.toNat_false,Bool.toNat_true,pow_succ] <;> omega
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+/- Append after ReadoutBase. -/
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1000000
+
+/-- Reusing addStep at a fixed true carry complements each bit. -/
+def complementWord {n : Nat} : (start : Nat) → Fin start → (bits : List (Fin start)) →
+    Straight n start (start+2*bits.length)
+  | _,_,[]=>.done
+  | start,carry,bit::bits=>castFinish (by simp;omega)
+      ((addStep carry bit).append
+        (complementWord (start+2) (liftTwo carry) (bits.map liftTwo)))
+termination_by _ _ bits=>bits.length
+
+def complementRecords : List Bool→List Bool
+  | []=>[]
+  | bit::bits=>bit::(!bit)::complementRecords bits
+
+theorem complementRecords_length (bits : List Bool) :
+    (complementRecords bits).length=2*bits.length := by
+  induction bits with
+  | nil=>rfl
+  | cons bit bits ih=>simp only [complementRecords,List.length_cons,ih];omega
+
+theorem complementRecords_odd (bits : List Bool) (i : Nat) :
+    (complementRecords bits)[2*i+1]?=(bits.map Bool.not)[i]? := by
+  induction bits generalizing i with
+  | nil=>simp [complementRecords]
+  | cons bit bits ih=>
+    cases i with
+    | zero=>simp [complementRecords]
+    | succ i=>
+      simp only [complementRecords,List.map_cons]
+      rw [show 2*(i+1)+1=(2*i+1)+2 by omega]
+      simpa only [List.getElem?_cons_succ,Nat.add_assoc] using ih i
+
+theorem complementWord_wellFormed {n : Nat} : ∀(start : Nat)(carry : Fin start)(bits : List (Fin start)),
+    (complementWord (n:=n) start carry bits).WellFormed
+  | _,_,[]=>by simp [complementWord,Straight.WellFormed]
+  | start,carry,bit::bits=>by
+    rw [complementWord,castFinish_wellFormed]
+    exact straight_append_wellFormed _ _ (addStep_wellFormed _ _)
+      (complementWord_wellFormed (start+2) _ _)
+termination_by _ _ bits=>bits.length
+
+theorem complementWord_slots {n : Nat} : ∀(start : Nat)(carry : Fin start)(bits : List (Fin start)),
+    (complementWord (n:=n) start carry bits).gateSlots=7*bits.length
+  | _,_,[]=>by simp [complementWord,Straight.gateSlots]
+  | start,carry,bit::bits=>by
+    rw [complementWord,castFinish_gateSlots,Straight.gateSlots_append,addStep_slots,
+      complementWord_slots (start+2)]
+    simp
+    omega
+termination_by _ _ bits=>bits.length
+
+theorem complementWord_t {n : Nat} : ∀(start : Nat)(carry : Fin start)(bits : List (Fin start))
+    (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    ((complementWord start carry bits).instantiate read history).tCount=0
+  | _,_,[],_,_=>by simp [complementWord,Straight.instantiate,AdaptiveCircuit.tCount]
+  | start,carry,bit::bits,read,history=>by
+    rw [complementWord,castFinish_instantiate]
+    apply Nat.eq_zero_of_le_zero
+    have h:=outer_append_t_le (addStep carry bit)
+      (complementWord (start+2) (liftTwo carry) (bits.map liftTwo)) read history 0
+      (fun h=>le_of_eq (complementWord_t _ _ _ read h))
+    simpa only [addStep_t,Nat.add_zero] using h
+termination_by _ _ bits=>bits.length
+
+theorem complementWord_support {n : Nat} : ∀(start : Nat)(carry : Fin start)(bits : List (Fin start))
+    (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    ((complementWord start carry bits).instantiate read history).wires⊆[0,1]
+  | _,_,[],_,_=>by simp [complementWord,Straight.instantiate,AdaptiveCircuit.wires]
+  | start,carry,bit::bits,read,history=>by
+    rw [complementWord,castFinish_instantiate]
+    exact outer_append_support _ _ read history ([0,1] : List Wire) (addStep_support _ _ _ _)
+      (fun h=>complementWord_support (start+2) _ _ read h)
+termination_by _ _ bits=>bits.length
+
+theorem complementWord_branch {n : Nat} : ∀(start : Nat)(carry : Fin start)
+    (bits : List (Fin start))(read : ConstantBit n→Bool)(history : Fin start→Bool),
+    history carry=true→∀(ψ : State)(_hψ : SupportedOn CleanReadout ψ)(b : InstrumentBranch),
+    b∈((complementWord start carry bits).instantiate read history).run→b.kraus ψ≠0→
+    b.kraus ψ=ψ ∧ b.history=complementRecords (bits.map history)
+  | _,_,[],_,_,_,_,_,b,hb,_=>by
+    simp only [complementWord,Straight.instantiate,run_done_data,List.mem_singleton] at hb
+    subst b
+    simp [complementRecords]
+  | start,carry,bit::bits,read,history,hcarry,ψ,hψ,b,hb,hn=>by
+    rw [complementWord,castFinish_instantiate] at hb
+    obtain ⟨mid,a,c,ha,hc,he,rfl⟩:=straight_append_branch _ _ read history b hb
+    have han : a.kraus ψ≠0 := by
+      intro h
+      apply hn
+      simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+    obtain ⟨hastate,hahist⟩:=addStep_branch carry bit read history ψ hψ a ha han
+    have hcn : c.kraus ψ≠0 := by
+      simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hastate] using hn
+    have hold (i : Fin start) : mid (liftTwo i)=history i := by
+      have h:=congrArg (fun xs : List Bool=>xs[i.val]?) he
+      dsimp only at h
+      have hlt : i.val<start+2 := by omega
+      rw [List.getElem?_append_left (by simp)] at h
+      simpa only [List.getElem?_ofFn,i.isLt,hlt,↓reduceDIte,Fin.eta,Option.some.injEq,liftTwo] using h
+    have hi:=complementWord_branch (start+2) (liftTwo carry) (bits.map liftTwo)
+      read mid (by rw [hold,hcarry]) ψ hψ c hc hcn
+    have hbits : (bits.map liftTwo).map mid=bits.map history := by
+      rw [List.map_map]
+      apply List.map_congr_left
+      intro i _
+      exact hold i
+    constructor
+    · simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hastate] using hi.1
+    · simp only [InstrumentBranch.seq,hahist,hi.2,hbits,hcarry,List.map_cons,
+        complementRecords,List.cons_append,List.nil_append,Bool.true_and,Bool.xor_true]
+termination_by _ _ bits=>bits.length
+
+theorem complementPositions_read (before : List Bool) (bits : List Bool) :
+    readWord (before++complementRecords bits) (sumPositions before.length bits.length).toList=
+      some (boolWordToNat (bits.map Bool.not)) := by
+  have hactual : (sumPositions before.length bits.length).toList.map
+      (fun i=>(before++complementRecords bits)[i]?)=(bits.map Bool.not).map some := by
+    apply List.ext_getElem
+    · simp only [List.length_map,sumPositions,Vector.toList_ofFn,List.length_ofFn]
+    · intro i hi hj
+      simp only [List.length_map,sumPositions,Vector.toList_ofFn,List.length_ofFn] at hi
+      simp only [List.getElem_map,sumPositions,Vector.toList_ofFn,List.getElem_ofFn]
+      rw [List.getElem?_append_right (by omega)]
+      rw [show before.length+2*i+1-before.length=2*i+1 by omega]
+      rw [complementRecords_odd,List.getElem?_eq_getElem (by simpa using hi)]
+      simp only [List.getElem_map]
+  rw [readWord_of_actual_bits _ _ _ hactual]
+  have hw (bs : List Bool) : fourierWordLSB bs=boolWordToNat bs := by
+    induction bs with
+    | nil=>rfl
+    | cons bit bs ih=>simp only [fourierWordLSB,boolWordToNat_cons,ih]
+  rw [hw]
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+/- Append after ReadoutBase+Complement. Static recorded-word programs only. -/
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1000000
+
+/-- All data here are measurement indices, never a callback on their values. -/
+structure WordCursor (start width : Nat) where
+  carry : Fin start
+  bits : Vector (Fin start) width
+
+def WordCursor.lift {start width : Nat} (c : WordCursor start width) (extra : Nat) :
+    WordCursor (start+extra) width where
+  carry:=⟨c.carry.val,by have h:=c.carry.isLt;omega⟩
+  bits:=c.bits.map fun i=>⟨i.val,by have h:=i.isLt;omega⟩
+
+def incrementStep (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    Straight n start (start+2*width) :=
+  castFinish (by simp) (addWord start c.carry c.bits.toList)
+
+def complementStep (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    Straight n start (start+2*width) :=
+  castFinish (by simp) (complementWord start c.carry c.bits.toList)
+
+def WordCursor.next {start width : Nat} (c : WordCursor start width) :
+    WordCursor (start+2*width) width where
+  carry:=⟨c.carry.val,by have h:=c.carry.isLt;omega⟩
+  bits:=Vector.ofFn fun i=>⟨start+2*i.val+1,by have h:=i.isLt;omega⟩
+
+/-- Record the next increasing word at every step. -/
+def positiveWords (n : Nat) : (steps start width : Nat) → WordCursor start width →
+    Straight n start (start+steps*(2*width))
+  | 0,start,width,_=>castFinish (show start=start+0*(2*width) by simp) (.done)
+  | steps+1,start,width,c=>castFinish (by ring)
+      ((incrementStep n c).append (positiveWords n steps (start+2*width) width c.next))
+
+/-- Increment a complemented word, then explicitly record its complement.
+The state remains unchanged and the next complemented word stays available. -/
+def negativeStep (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    Straight n start (start+4*width) :=
+  castFinish (by omega) ((incrementStep n c).append (complementStep n c.next))
+
+def WordCursor.nextNegative {start width : Nat} (c : WordCursor start width) :
+    WordCursor (start+4*width) width where
+  carry:=⟨c.carry.val,by have h:=c.carry.isLt;omega⟩
+  bits:=Vector.ofFn fun i=>⟨start+2*i.val+1,by have h:=i.isLt;omega⟩
+
+/-- The initial input word is complemented. Outputs are the decreasing original words. -/
+def negativeWords (n : Nat) : (steps start width : Nat) → WordCursor start width →
+    Straight n start (start+steps*(4*width))
+  | 0,start,width,_=>castFinish (show start=start+0*(4*width) by simp) (.done)
+  | steps+1,start,width,c=>castFinish (by ring)
+      ((negativeStep n c).append (negativeWords n steps (start+4*width) width c.nextNegative))
+
+theorem incrementStep_wellFormed (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    (incrementStep n c).WellFormed := by
+  rw [incrementStep,castFinish_wellFormed]
+  exact addWord_wellFormed _ _ _
+
+theorem complementStep_wellFormed (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    (complementStep n c).WellFormed := by
+  rw [complementStep,castFinish_wellFormed]
+  exact complementWord_wellFormed _ _ _
+
+theorem incrementStep_slots (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    (incrementStep n c).gateSlots=7*width := by
+  simp only [incrementStep,castFinish_gateSlots,addWord_slots,Vector.length_toList]
+
+theorem complementStep_slots (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    (complementStep n c).gateSlots=7*width := by
+  simp only [complementStep,castFinish_gateSlots,complementWord_slots,Vector.length_toList]
+
+theorem positiveWords_wellFormed (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width),
+    (positiveWords n steps start width c).WellFormed
+  | 0,_,_,_=>by simp [positiveWords,castFinish_wellFormed,Straight.WellFormed]
+  | steps+1,start,width,c=>by
+    rw [positiveWords,castFinish_wellFormed]
+    exact straight_append_wellFormed _ _ (incrementStep_wellFormed n c)
+      (positiveWords_wellFormed n steps _ _ _)
+
+theorem positiveWords_slots (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width),
+    (positiveWords n steps start width c).gateSlots=steps*(7*width)
+  | 0,_,_,_=>by simp [positiveWords,castFinish_gateSlots,Straight.gateSlots]
+  | steps+1,start,width,c=>by
+    rw [positiveWords,castFinish_gateSlots,Straight.gateSlots_append,incrementStep_slots,
+      positiveWords_slots n steps]
+    ring
+
+theorem negativeStep_wellFormed (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    (negativeStep n c).WellFormed := by
+  rw [negativeStep,castFinish_wellFormed]
+  exact straight_append_wellFormed _ _ (incrementStep_wellFormed n c)
+    (complementStep_wellFormed n c.next)
+
+theorem negativeStep_slots (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    (negativeStep n c).gateSlots=14*width := by
+  rw [negativeStep,castFinish_gateSlots,Straight.gateSlots_append,incrementStep_slots,
+    complementStep_slots]
+  ring
+
+theorem negativeWords_wellFormed (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width),
+    (negativeWords n steps start width c).WellFormed
+  | 0,_,_,_=>by simp [negativeWords,castFinish_wellFormed,Straight.WellFormed]
+  | steps+1,start,width,c=>by
+    rw [negativeWords,castFinish_wellFormed]
+    exact straight_append_wellFormed _ _ (negativeStep_wellFormed n c)
+      (negativeWords_wellFormed n steps _ _ _)
+
+theorem negativeWords_slots (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width),
+    (negativeWords n steps start width c).gateSlots=steps*(14*width)
+  | 0,_,_,_=>by simp [negativeWords,castFinish_gateSlots,Straight.gateSlots]
+  | steps+1,start,width,c=>by
+    rw [negativeWords,castFinish_gateSlots,Straight.gateSlots_append,negativeStep_slots,
+      negativeWords_slots n steps]
+    ring
+
+
+theorem incrementStep_t (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((incrementStep n c).instantiate read history).tCount=0 := by
+  rw [incrementStep,castFinish_instantiate]
+  exact addWord_t _ _ _ _ _
+
+theorem complementStep_t (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((complementStep n c).instantiate read history).tCount=0 := by
+  rw [complementStep,castFinish_instantiate]
+  exact complementWord_t _ _ _ _ _
+
+theorem incrementStep_support (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((incrementStep n c).instantiate read history).wires⊆[0,1] := by
+  rw [incrementStep,castFinish_instantiate]
+  exact addWord_support _ _ _ _ _
+
+theorem complementStep_support (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((complementStep n c).instantiate read history).wires⊆[0,1] := by
+  rw [complementStep,castFinish_instantiate]
+  exact complementWord_support _ _ _ _ _
+
+theorem positiveWords_t (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    ((positiveWords n steps start width c).instantiate read history).tCount=0
+  | 0,_,_,_,_,_=>by simp [positiveWords,castFinish_instantiate,Straight.instantiate,AdaptiveCircuit.tCount]
+  | steps+1,start,width,c,read,history=>by
+    rw [positiveWords,castFinish_instantiate]
+    apply Nat.eq_zero_of_le_zero
+    have h:=outer_append_t_le (incrementStep n c)
+      (positiveWords n steps (start+2*width) width c.next) read history 0
+      (fun h=>le_of_eq (positiveWords_t n steps _ _ _ read h))
+    simpa only [incrementStep_t,Nat.add_zero] using h
+
+theorem positiveWords_support (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    ((positiveWords n steps start width c).instantiate read history).wires⊆[0,1]
+  | 0,_,_,_,_,_=>by simp [positiveWords,castFinish_instantiate,Straight.instantiate,AdaptiveCircuit.wires]
+  | steps+1,start,width,c,read,history=>by
+    rw [positiveWords,castFinish_instantiate]
+    exact outer_append_support _ _ read history ([0,1] : List Wire) (incrementStep_support _ _ _ _)
+      (fun h=>positiveWords_support n steps _ _ _ read h)
+
+theorem negativeStep_t (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((negativeStep n c).instantiate read history).tCount=0 := by
+  rw [negativeStep,castFinish_instantiate]
+  apply Nat.eq_zero_of_le_zero
+  have h:=outer_append_t_le (incrementStep n c) (complementStep n c.next) read history 0
+    (fun h=>le_of_eq (complementStep_t n c.next read h))
+  simpa only [incrementStep_t,Nat.add_zero] using h
+
+theorem negativeStep_support (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((negativeStep n c).instantiate read history).wires⊆[0,1] := by
+  rw [negativeStep,castFinish_instantiate]
+  exact outer_append_support _ _ read history ([0,1] : List Wire) (incrementStep_support _ _ _ _)
+    (fun h=>complementStep_support n c.next read h)
+
+theorem negativeWords_t (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    ((negativeWords n steps start width c).instantiate read history).tCount=0
+  | 0,_,_,_,_,_=>by simp [negativeWords,castFinish_instantiate,Straight.instantiate,AdaptiveCircuit.tCount]
+  | steps+1,start,width,c,read,history=>by
+    rw [negativeWords,castFinish_instantiate]
+    apply Nat.eq_zero_of_le_zero
+    have h:=outer_append_t_le (negativeStep n c)
+      (negativeWords n steps (start+4*width) width c.nextNegative) read history 0
+      (fun h=>le_of_eq (negativeWords_t n steps _ _ _ read h))
+    simpa only [negativeStep_t,Nat.add_zero] using h
+
+theorem negativeWords_support (n : Nat) : ∀(steps start width : Nat)(c : WordCursor start width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    ((negativeWords n steps start width c).instantiate read history).wires⊆[0,1]
+  | 0,_,_,_,_,_=>by simp [negativeWords,castFinish_instantiate,Straight.instantiate,AdaptiveCircuit.wires]
+  | steps+1,start,width,c,read,history=>by
+    rw [negativeWords,castFinish_instantiate]
+    exact outer_append_support _ _ read history ([0,1] : List Wire) (negativeStep_support _ _ _ _)
+      (fun h=>negativeWords_support n steps _ _ _ read h)
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+/- Append after WordPrograms. -/
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1000000
+
+def initialCursor {start width : Nat} (bits : Vector (Fin start) width) :
+    WordCursor (start+2) width where
+  carry:=⟨start,by omega⟩
+  bits:=bits.map fun i=>⟨i.val,by have h:=i.isLt;omega⟩
+
+/--55 candidate words from one sample: center,27 positive shifts,27 negative shifts.
+The arithmetic is carried out by explicit permitted record-controlled Clifford gates. -/
+def neighborSuffix (n start width : Nat) (bits : Vector (Fin start) width) :
+    Straight n start (start+2+164*width) :=
+  let c:=initialCursor bits
+  let q:=c.lift (27*(2*width))
+  castFinish (by omega)
+    ((constantStep n start).append
+      ((positiveWords n 27 (start+2) width c).append
+        ((complementStep n q).append
+          (negativeWords n 27 (start+2+27*(2*width)+2*width) width q.next))))
+
+def rightWords {start width : Nat} (bits : Vector (Fin start) width) : List (Vector Nat width) :=
+  bits.map Fin.val ::
+    List.ofFn (fun i : Fin 27=>sumPositions (start+2+i.val*(2*width)) width) ++
+    List.ofFn (fun i : Fin 27=>sumPositions
+      (start+2+27*(2*width)+2*width+i.val*(4*width)+2*width) width)
+
+theorem rightWords_length {start width : Nat} (bits : Vector (Fin start) width) :
+    (rightWords bits).length=55 := by simp [rightWords]
+
+attribute [local irreducible] positiveWords negativeWords incrementStep complementStep
+
+theorem neighborSuffix_wellFormed (n start width : Nat) (bits : Vector (Fin start) width) :
+    (neighborSuffix n start width bits).WellFormed := by
+  unfold neighborSuffix
+  rw [castFinish_wellFormed]
+  apply straight_append_wellFormed _ _ (constantStep_wellFormed _ _)
+  apply straight_append_wellFormed _ _ (positiveWords_wellFormed _ _ _ _ _)
+  exact straight_append_wellFormed _ _ (complementStep_wellFormed _ _)
+    (negativeWords_wellFormed _ _ _ _ _)
+
+theorem neighborSuffix_slots (n start width : Nat) (bits : Vector (Fin start) width) :
+    (neighborSuffix n start width bits).gateSlots=7+574*width := by
+  simp only [neighborSuffix,castFinish_gateSlots,Straight.gateSlots_append,
+    constantStep_slots,positiveWords_slots,complementStep_slots,negativeWords_slots]
+  ring
+
+private theorem append_zero {n a b c : Nat} (p : Straight n a b) (q : Straight n b c)
+    (read : ConstantBit n→Bool)
+    (hp : ∀h, (p.instantiate read h).tCount=0)
+    (hq : ∀h, (q.instantiate read h).tCount=0) (history : Fin a→Bool) :
+    ((p.append q).instantiate read history).tCount=0 := by
+  apply Nat.eq_zero_of_le_zero
+  have h:=outer_append_t_le p q read history 0 (fun h=>le_of_eq (hq h))
+  simpa only [hp,Nat.add_zero] using h
+
+theorem neighborSuffix_t (n start width : Nat) (bits : Vector (Fin start) width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((neighborSuffix n start width bits).instantiate read history).tCount=0 := by
+  unfold neighborSuffix
+  rw [castFinish_instantiate]
+  apply append_zero _ _ read (constantStep_t _ _ _)
+  intro h
+  apply append_zero _ _ read (positiveWords_t _ _ _ _ _ _)
+  intro h
+  exact append_zero _ _ read (complementStep_t _ _ _)
+    (negativeWords_t _ _ _ _ _ _) h
+
+theorem neighborSuffix_support (n start width : Nat) (bits : Vector (Fin start) width)
+    (read : ConstantBit n→Bool)(history : Fin start→Bool) :
+    ((neighborSuffix n start width bits).instantiate read history).wires⊆[0,1] := by
+  unfold neighborSuffix
+  rw [castFinish_instantiate]
+  apply outer_append_support _ _ read history ([0,1] : List Wire) (constantStep_support _ _ _ _)
+  intro h
+  apply outer_append_support _ _ read h ([0,1] : List Wire) (positiveWords_support _ _ _ _ _ _ _)
+  intro h
+  exact outer_append_support _ _ read h ([0,1] : List Wire) (complementStep_support _ _ _ _)
+    (fun hh=>negativeWords_support _ _ _ _ _ _ hh)
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+/- Append after WordPrograms. -/
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 4096
+
+def cursorValue {start width : Nat} (c : WordCursor start width) (history : Fin start→Bool) : Nat :=
+  boolWordToNat (c.bits.toList.map history)
+
+def cursorPositions {start width : Nat} (c : WordCursor start width) : List Nat :=
+  c.bits.toList.map Fin.val
+
+theorem cursorValue_lt {start width : Nat} (c : WordCursor start width) (history : Fin start→Bool) :
+    cursorValue c history<2^width := by
+  have h:=word_complement_sum (c.bits.toList.map history)
+  simp only [List.length_map,Vector.length_toList] at h
+  have hp : 0<2^width := by positivity
+  unfold cursorValue
+  omega
+
+theorem cursor_read {start width : Nat} (c : WordCursor start width) (history : Fin start→Bool) :
+    readWord (List.ofFn history) (cursorPositions c)=some (cursorValue c history) := by
+  have h:=readWord_of_actual_bits (List.ofFn history) (c.bits.toList.map Fin.val)
+    (c.bits.toList.map history) (by simp only [List.map_map,List.getElem?_ofFn,
+      Fin.isLt,↓reduceDIte,Fin.eta,Function.comp_def])
+  have hw (bs : List Bool) : fourierWordLSB bs=boolWordToNat bs := by
+    induction bs with
+    | nil=>rfl
+    | cons bit bs ih=>simp only [fourierWordLSB,boolWordToNat_cons,ih]
+  simpa only [hw] using h
+
+theorem next_positions {start width : Nat} (c : WordCursor start width) :
+    cursorPositions c.next=(sumPositions start width).toList := by
+  simp only [cursorPositions,WordCursor.next,sumPositions,Vector.toList_ofFn,List.map_ofFn,Function.comp_def]
+
+theorem nextNegative_positions {start width : Nat} (c : WordCursor start width) :
+    cursorPositions c.nextNegative=(sumPositions start width).toList := by
+  simp only [cursorPositions,WordCursor.nextNegative,sumPositions,Vector.toList_ofFn,List.map_ofFn,Function.comp_def]
+
+theorem lift_positions {start width : Nat} (c : WordCursor start width) (extra : Nat) :
+    cursorPositions (c.lift extra)=cursorPositions c := by
+  simp only [cursorPositions,WordCursor.lift,Vector.toList_map,List.map_map,Function.comp_def]
+
+/-- Old records retain exactly their values after any straight-program append. -/
+theorem prefix_value {s e : Nat} (history : Fin s→Bool) (mid : Fin e→Bool) (ys : List Bool)
+    (he : List.ofFn mid=List.ofFn history++ys) (i : Fin s) (hi : i.val<e) :
+    mid ⟨i.val,hi⟩=history i := by
+  have h:=congrArg (fun xs : List Bool=>xs[i.val]?) he
+  dsimp only at h
+  rw [List.getElem?_append_left (by simp)] at h
+  simpa only [List.getElem?_ofFn,i.isLt,hi,↓reduceDIte,Fin.eta,Option.some.injEq] using h
+
+theorem lift_value {start width : Nat} (c : WordCursor start width) (extra : Nat)
+    (history : Fin start→Bool) (mid : Fin (start+extra)→Bool) (ys : List Bool)
+    (he : List.ofFn mid=List.ofFn history++ys) :
+    cursorValue (c.lift extra) mid=cursorValue c history := by
+  unfold cursorValue
+  simp only [WordCursor.lift,Vector.toList_map,List.map_map]
+  congr 1
+  apply List.map_congr_left
+  intro i _
+  exact prefix_value history mid ys he i _
+
+theorem lift_carry {start width : Nat} (c : WordCursor start width) (extra : Nat)
+    (history : Fin start→Bool) (mid : Fin (start+extra)→Bool) (ys : List Bool)
+    (he : List.ofFn mid=List.ofFn history++ys) :
+    mid (c.lift extra).carry=history c.carry :=
+  prefix_value history mid ys he c.carry _
+
+theorem next_carry {start width : Nat} (c : WordCursor start width)
+    (history : Fin start→Bool) (mid : Fin (start+2*width)→Bool) (ys : List Bool)
+    (he : List.ofFn mid=List.ofFn history++ys) :
+    mid c.next.carry=history c.carry :=
+  prefix_value history mid ys he c.carry _
+
+theorem readWord_append_left (before after : List Bool) (ps : List Nat)
+    (hp : ∀i∈ps,i<before.length) : readWord (before++after) ps=readWord before ps := by
+  induction ps with
+  | nil=>rfl
+  | cons i ps ih=>
+    simp only [readWord,List.getElem?_append_left (hp i (by simp))]
+    rw [ih (fun j hj=>hp j (List.mem_cons_of_mem i hj))]
+
+theorem sumPositions_bound (start width i : Nat) (hi : i∈(sumPositions start width).toList) :
+    i<start+2*width := by
+  simp only [sumPositions,Vector.toList_ofFn,List.mem_ofFn] at hi
+  obtain ⟨j,rfl⟩:=hi
+  have hj:=j.isLt
+  omega
+
+theorem incrementStep_post (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool) (history : Fin start→Bool) (hcarry : history c.carry=true)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((incrementStep n c).instantiate read history).run) (hn : b.kraus ψ≠0)
+    (mid : Fin (start+2*width)→Bool) (he : List.ofFn mid=List.ofFn history++b.history) :
+    b.kraus ψ=ψ ∧ mid c.next.carry=true ∧
+      cursorValue c.next mid=(1+cursorValue c history)%2^width := by
+  rw [incrementStep,castFinish_instantiate] at hb
+  obtain ⟨hs,hread⟩:=addWord_reads_increment c.carry c.bits.toList read history hcarry ψ hψ b hb hn
+  refine ⟨hs,(next_carry c history mid b.history he).trans hcarry,?_⟩
+  have hv:=cursor_read c.next mid
+  rw [next_positions,he] at hv
+  have hh : readWord (List.ofFn history++b.history) (sumPositions start width).toList=
+      some ((1+cursorValue c history)%2^width) := by
+    simpa only [sumPositions,Vector.toList_ofFn,Vector.length_toList,cursorValue] using hread
+  exact Option.some.inj (hv.symm.trans hh)
+
+theorem complementStep_post (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool) (history : Fin start→Bool) (hcarry : history c.carry=true)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((complementStep n c).instantiate read history).run) (hn : b.kraus ψ≠0)
+    (mid : Fin (start+2*width)→Bool) (he : List.ofFn mid=List.ofFn history++b.history) :
+    b.kraus ψ=ψ ∧ mid c.next.carry=true ∧
+      cursorValue c.next mid=2^width-1-cursorValue c history := by
+  rw [complementStep,castFinish_instantiate] at hb
+  obtain ⟨hs,hh⟩:=complementWord_branch start c.carry c.bits.toList read history hcarry ψ hψ b hb hn
+  refine ⟨hs,(next_carry c history mid b.history he).trans hcarry,?_⟩
+  have hv:=cursor_read c.next mid
+  rw [next_positions,he,hh] at hv
+  have hc:=complementPositions_read (List.ofFn history) (c.bits.toList.map history)
+  have hc' : readWord (List.ofFn history++complementRecords (c.bits.toList.map history))
+      (sumPositions start width).toList=some (boolWordToNat ((c.bits.toList.map history).map Bool.not)) := by
+    simpa only [sumPositions,Vector.toList_ofFn,List.length_ofFn,List.length_map,Vector.length_toList] using hc
+  have hvalue:=Option.some.inj (hv.symm.trans hc')
+  have hsum:=word_complement_sum (c.bits.toList.map history)
+  simp only [List.length_map,Vector.length_toList] at hsum
+  unfold cursorValue at hvalue ⊢
+  omega
+
+
+theorem complementStep_reads (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool) (history : Fin start→Bool) (hcarry : history c.carry=true)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((complementStep n c).instantiate read history).run) (hn : b.kraus ψ≠0) :
+    b.kraus ψ=ψ ∧ readWord (List.ofFn history++b.history) (sumPositions start width).toList=
+      some (2^width-1-cursorValue c history) := by
+  rw [complementStep,castFinish_instantiate] at hb
+  obtain ⟨hs,hh⟩:=complementWord_branch start c.carry c.bits.toList read history hcarry ψ hψ b hb hn
+  refine ⟨hs,?_⟩
+  rw [hh]
+  have hc:=complementPositions_read (List.ofFn history) (c.bits.toList.map history)
+  have hsum:=word_complement_sum (c.bits.toList.map history)
+  simp only [List.length_map,Vector.length_toList] at hsum
+  have hv : boolWordToNat ((c.bits.toList.map history).map Bool.not)=
+      2^width-1-cursorValue c history := by unfold cursorValue;omega
+  rw [hv] at hc
+  simpa only [sumPositions,Vector.toList_ofFn,List.length_ofFn,List.length_map,Vector.length_toList] using hc
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+/- Append after CursorSemantics. -/
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 1500000
+set_option maxRecDepth 4096
+
+theorem positiveWords_branch (n : Nat) :
+    ∀(steps start width : Nat)(c : WordCursor start width)
+      (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    history c.carry=true→∀(ψ : State)(_hψ : SupportedOn CleanReadout ψ)(b : InstrumentBranch),
+    b∈((positiveWords n steps start width c).instantiate read history).run→b.kraus ψ≠0→
+    b.kraus ψ=ψ ∧ ∀i : Fin steps,
+      readWord (List.ofFn history++b.history)
+        (sumPositions (start+i.val*(2*width)) width).toList=
+        some ((i.val+1+cursorValue c history)%2^width)
+  | 0,_,_,_,_,_,_,_,_,b,hb,_=>by
+    simp only [positiveWords,castFinish_instantiate,Straight.instantiate,run_done_data,List.mem_singleton] at hb
+    subst b
+    exact ⟨rfl,fun i=>Fin.elim0 i⟩
+  | steps+1,start,width,c,read,history,hcarry,ψ,hψ,b,hb,hn=>by
+    rw [positiveWords,castFinish_instantiate] at hb
+    obtain ⟨mid,a,t,ha,ht,he,rfl⟩:=straight_append_branch _ _ read history b hb
+    have han : a.kraus ψ≠0 := by
+      intro h
+      apply hn
+      simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+    have hp:=incrementStep_post n c read history hcarry ψ hψ a ha han mid he
+    have htn : t.kraus ψ≠0 := by
+      simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hp.1] using hn
+    have ih:=positiveWords_branch n steps (start+2*width) width c.next read mid hp.2.1 ψ hψ t ht htn
+    refine ⟨by simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hp.1] using ih.1,?_⟩
+    intro i
+    have hfull : List.ofFn history++(a.seq t).history=List.ofFn mid++t.history := by
+      rw [he]
+      simp only [InstrumentBranch.seq,List.append_assoc]
+    by_cases hiz : i.val=0
+    · simp only [hiz,Nat.zero_mul,Nat.add_zero,Nat.zero_add]
+      rw [hfull,readWord_append_left (List.ofFn mid) t.history _ (by
+        intro j hj
+        simpa only [List.length_ofFn] using sumPositions_bound start width j hj)]
+      have hf:=cursor_read c.next mid
+      rw [next_positions,hp.2.2] at hf
+      exact hf
+    · let j : Fin steps:=⟨i.val-1,by have hi:=i.isLt;omega⟩
+      have hij : i.val=j.val+1 := by dsimp [j];omega
+      have hindex : start+i.val*(2*width)=start+2*width+j.val*(2*width) := by rw [hij];ring
+      rw [hfull,hindex]
+      have ht':=ih.2 j
+      rw [hp.2.2] at ht'
+      have hm : (j.val+1+(1+cursorValue c history)%2^width)%2^width=
+          (i.val+1+cursorValue c history)%2^width := by
+        rw [Nat.add_comm (j.val+1) ((1+cursorValue c history)%2^width),Nat.mod_add_mod]
+        congr 1
+        omega
+      exact ht'.trans (congrArg some hm)
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+/- Append after CursorSemantics+PositiveSemantics. -/
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 1500000
+set_option maxRecDepth 4096
+
+theorem negativeStep_post (n : Nat) {start width : Nat} (c : WordCursor start width)
+    (read : ConstantBit n→Bool) (history : Fin start→Bool) (hcarry : history c.carry=true)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((negativeStep n c).instantiate read history).run) (hn : b.kraus ψ≠0)
+    (mid : Fin (start+4*width)→Bool) (he : List.ofFn mid=List.ofFn history++b.history) :
+    b.kraus ψ=ψ ∧ mid c.nextNegative.carry=true ∧
+      cursorValue c.nextNegative mid=(1+cursorValue c history)%2^width ∧
+      readWord (List.ofFn history++b.history) (sumPositions (start+2*width) width).toList=
+        some (2^width-1-((1+cursorValue c history)%2^width)) := by
+  rw [negativeStep,castFinish_instantiate] at hb
+  obtain ⟨h₁,a,t,ha,ht,he₁,rfl⟩:=straight_append_branch _ _ read history b hb
+  have han : a.kraus ψ≠0 := by
+    intro h
+    apply hn
+    simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+  have hp:=incrementStep_post n c read history hcarry ψ hψ a ha han h₁ he₁
+  have htn : t.kraus ψ≠0 := by
+    simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hp.1] using hn
+  have hq:=complementStep_reads n c.next read h₁ hp.2.1 ψ hψ t ht htn
+  have hfull : List.ofFn history++(a.seq t).history=List.ofFn h₁++t.history := by
+    rw [he₁]
+    simp only [InstrumentBranch.seq,List.append_assoc]
+  refine ⟨by simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hp.1] using hq.1,?_,?_,?_⟩
+  · exact (prefix_value history mid (a.seq t).history he c.carry _).trans hcarry
+  · have hv:=cursor_read c.nextNegative mid
+    rw [nextNegative_positions,he,hfull,readWord_append_left (List.ofFn h₁) t.history _ (by
+      intro j hj
+      simpa only [List.length_ofFn] using sumPositions_bound start width j hj)] at hv
+    have hi:=cursor_read c.next h₁
+    rw [next_positions,hp.2.2] at hi
+    exact Option.some.inj (hv.symm.trans hi)
+  · rw [hfull]
+    simpa only [hp.2.2] using hq.2
+
+theorem negativeWords_branch (n : Nat) :
+    ∀(steps start width : Nat)(c : WordCursor start width)
+      (read : ConstantBit n→Bool)(history : Fin start→Bool),
+    history c.carry=true→∀(ψ : State)(_hψ : SupportedOn CleanReadout ψ)(b : InstrumentBranch),
+    b∈((negativeWords n steps start width c).instantiate read history).run→b.kraus ψ≠0→
+    b.kraus ψ=ψ ∧ ∀i : Fin steps,
+      readWord (List.ofFn history++b.history)
+        (sumPositions (start+i.val*(4*width)+2*width) width).toList=
+        some (2^width-1-((i.val+1+cursorValue c history)%2^width))
+  | 0,_,_,_,_,_,_,_,_,b,hb,_=>by
+    simp only [negativeWords,castFinish_instantiate,Straight.instantiate,run_done_data,List.mem_singleton] at hb
+    subst b
+    exact ⟨rfl,fun i=>Fin.elim0 i⟩
+  | steps+1,start,width,c,read,history,hcarry,ψ,hψ,b,hb,hn=>by
+    rw [negativeWords,castFinish_instantiate] at hb
+    obtain ⟨mid,a,t,ha,ht,he,rfl⟩:=straight_append_branch _ _ read history b hb
+    have han : a.kraus ψ≠0 := by
+      intro h
+      apply hn
+      simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+    have hp:=negativeStep_post n c read history hcarry ψ hψ a ha han mid he
+    have htn : t.kraus ψ≠0 := by
+      simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hp.1] using hn
+    have ih:=negativeWords_branch n steps (start+4*width) width c.nextNegative read mid hp.2.1 ψ hψ t ht htn
+    refine ⟨by simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hp.1] using ih.1,?_⟩
+    intro i
+    have hfull : List.ofFn history++(a.seq t).history=List.ofFn mid++t.history := by
+      rw [he]
+      simp only [InstrumentBranch.seq,List.append_assoc]
+    by_cases hiz : i.val=0
+    · simp only [hiz,Nat.zero_mul,Nat.add_zero,Nat.zero_add]
+      rw [hfull,readWord_append_left (List.ofFn mid) t.history _ (by
+        intro j hj
+        have hj':=sumPositions_bound (start+2*width) width j hj
+        simp only [List.length_ofFn]
+        omega)]
+      rw [he]
+      exact hp.2.2.2
+    · let j : Fin steps:=⟨i.val-1,by have hi:=i.isLt;omega⟩
+      have hij : i.val=j.val+1 := by dsimp [j];omega
+      have hindex : start+i.val*(4*width)+2*width=start+4*width+j.val*(4*width)+2*width := by
+        rw [hij]
+        ring
+      rw [hfull,hindex]
+      have ht':=ih.2 j
+      rw [hp.2.2.1] at ht'
+      have hm : (j.val+1+(1+cursorValue c history)%2^width)%2^width=
+          (i.val+1+cursorValue c history)%2^width := by
+        rw [Nat.add_comm (j.val+1) ((1+cursorValue c history)%2^width),Nat.mod_add_mod]
+        congr 1
+        omega
+      exact ht'.trans (congrArg (fun v=>some (2^width-1-v)) hm)
+
+
+set_option exponentiation.threshold 300
+
+theorem positive_word_mod (b i : Nat) :
+    (i+b)%2^208=(((b : ℤ)+(i : ℤ))%(2^208 : Nat)).toNat := by
+  simp only [←Int.natCast_add,←Int.natCast_mod,Int.toNat_natCast,Nat.add_comm]
+
+theorem negative_word_mod (b i : Nat) (hb : b<2^208) :
+    2^208-1-((i+(2^208-1-b))%2^208)=(((b : ℤ)-(i : ℤ))%(2^208 : Nat)).toNat := by
+  norm_num at hb ⊢
+  omega
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 4096
+
+def inputValue {start width : Nat} (bits : Vector (Fin start) width) (h : Fin start→Bool) : Nat :=
+  boolWordToNat (bits.toList.map h)
+
+theorem initial_value {start width : Nat} (bits : Vector (Fin start) width)
+    (h : Fin start→Bool) (mid : Fin (start+2)→Bool) (ys : List Bool)
+    (he : List.ofFn mid=List.ofFn h++ys) :
+    cursorValue (initialCursor bits) mid=inputValue bits h := by
+  unfold cursorValue initialCursor inputValue
+  simp only [Vector.toList_map,List.map_map]
+  congr 1
+  apply List.map_congr_left
+  intro i _
+  exact prefix_value h mid ys he i _
+
+theorem initial_carry {start width : Nat} (bits : Vector (Fin start) width)
+    (h : Fin start→Bool) (mid : Fin (start+2)→Bool)
+    (he : List.ofFn mid=List.ofFn h++[true,false]) :
+    mid (initialCursor bits).carry=true := by
+  have hh:=congrArg (fun xs : List Bool=>xs[start]?) he
+  dsimp only at hh
+  rw [List.getElem?_append_right (by simp),List.length_ofFn,Nat.sub_self] at hh
+  simpa only [initialCursor,List.getElem?_ofFn,show start<start+2 by omega,↓reduceDIte,List.getElem?_cons_zero,Option.some.injEq] using hh
+
+/-- Every nonzero readout branch writes all 55 neighboring residues explicitly. -/
+theorem neighborSuffix_branch (n start : Nat) (bits : Vector (Fin start) 208)
+    (read : ConstantBit n→Bool) (history : Fin start→Bool)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((neighborSuffix n start 208 bits).instantiate read history).run)
+    (hn : b.kraus ψ≠0) :
+    b.kraus ψ=ψ ∧
+      (∀i : Fin 27, readWord (List.ofFn history++b.history)
+        (sumPositions (start+2+i.val*416) 208).toList=
+        some ((i.val+1+inputValue bits history)%2^208)) ∧
+      (∀i : Fin 27, readWord (List.ofFn history++b.history)
+        (sumPositions (start+2+11232+416+i.val*832+416) 208).toList=
+        some (2^208-1-((i.val+1+(2^208-1-inputValue bits history))%2^208))) := by
+  unfold neighborSuffix at hb
+  rw [castFinish_instantiate] at hb
+  obtain ⟨h₁,a,u,ha,hu,he₁,rfl⟩:=straight_append_branch _ _ read history b hb
+  have han : a.kraus ψ≠0 := by
+    intro h;apply hn;simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+  have hc:=constantStep_branch n start read history ψ hψ a ha han
+  have hun : u.kraus ψ≠0 := by
+    simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hc.1] using hn
+  have hcarr:=initial_carry bits history h₁ (he₁.trans (by rw [hc.2]))
+  have hval:=initial_value bits history h₁ a.history he₁
+  obtain ⟨h₂,p,v,hp,hv,he₂,rfl⟩:=straight_append_branch _ _ read h₁ u hu
+  have hpn : p.kraus ψ≠0 := by
+    intro h;apply hun;simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+  have hpos:=positiveWords_branch n 27 (start+2) 208 (initialCursor bits)
+    read h₁ hcarr ψ hψ p hp hpn
+  have hvn : v.kraus ψ≠0 := by
+    simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hpos.1] using hun
+  let q:=(initialCursor bits).lift (27*(2*208))
+  have hqc : h₂ q.carry=true := (lift_carry (initialCursor bits) _ h₁ h₂ p.history he₂).trans hcarr
+  have hqv : cursorValue q h₂=inputValue bits history :=
+    (lift_value (initialCursor bits) _ h₁ h₂ p.history he₂).trans hval
+  obtain ⟨h₃,c,t,hc',ht,he₃,rfl⟩:=straight_append_branch _ _ read h₂ v hv
+  have hcn : c.kraus ψ≠0 := by
+    intro h;apply hvn;simp only [InstrumentBranch.seq,LinearMap.comp_apply,h,map_zero]
+  have hcomp:=complementStep_post n q read h₂ hqc ψ hψ c hc' hcn h₃ he₃
+  have htn : t.kraus ψ≠0 := by
+    simpa only [InstrumentBranch.seq,LinearMap.comp_apply,hcomp.1] using hvn
+  have hneg:=negativeWords_branch n 27 (start+2+27*(2*208)+2*208) 208 q.next
+    read h₃ hcomp.2.1 ψ hψ t ht htn
+  have hfull₁ : List.ofFn history++(a.seq (p.seq (c.seq t))).history=
+      List.ofFn h₁++(p.seq (c.seq t)).history := by
+    rw [he₁];simp only [InstrumentBranch.seq,List.append_assoc]
+  have hfull₂ : List.ofFn history++(a.seq (p.seq (c.seq t))).history=
+      List.ofFn h₂++(c.seq t).history := by
+    rw [hfull₁,he₂];simp only [InstrumentBranch.seq,List.append_assoc]
+  have hfull₃ : List.ofFn history++(a.seq (p.seq (c.seq t))).history=
+      List.ofFn h₃++t.history := by
+    rw [hfull₂,he₃];simp only [InstrumentBranch.seq,List.append_assoc]
+  refine ⟨by simp only [InstrumentBranch.seq,LinearMap.comp_apply,hc.1,hpos.1,hcomp.1,hneg.1],?_,?_⟩
+  · intro i
+    rw [hfull₂,readWord_append_left (List.ofFn h₂) (c.seq t).history _ (by
+      intro j hj
+      have hj':=sumPositions_bound (start+2+i.val*416) 208 j hj
+      have hi:=i.isLt
+      simp only [List.length_ofFn]
+      omega),he₂]
+    simpa only [hval] using hpos.2 i
+  · intro i
+    rw [hfull₃]
+    simpa only [hcomp.2.2,hqv] using hneg.2 i
+
+end
+end ShorECDLP.Entrant.NeighborReadout
+namespace ShorECDLP.Entrant.NeighborReadout
+open Quantum ShorECDLP.Challenge RoundedReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 1500000
+set_option maxRecDepth 4096
+
+theorem input_read {start width : Nat} (bits : Vector (Fin start) width) (h : Fin start→Bool) :
+    readWord (List.ofFn h) (bits.map Fin.val).toList=some (inputValue bits h) := by
+  have hh:=readWord_of_actual_bits (List.ofFn h) (bits.toList.map Fin.val)
+    (bits.toList.map h) (by simp only [List.map_map,List.getElem?_ofFn,
+      Fin.isLt,↓reduceDIte,Fin.eta,Function.comp_def])
+  have hw (bs : List Bool) : fourierWordLSB bs=boolWordToNat bs := by
+    induction bs with
+    | nil=>rfl
+    | cons bit bs ih=>simp only [fourierWordLSB,boolWordToNat_cons,ih]
+  simpa only [hw,inputValue,Vector.toList_map] using hh
+
+theorem input_lt {start width : Nat} (bits : Vector (Fin start) width) (h : Fin start→Bool) :
+    inputValue bits h<2^width := by
+  have hh:=word_complement_sum (bits.toList.map h)
+  simp only [List.length_map,Vector.length_toList] at hh
+  have hp : 0<2^width := by positivity
+  unfold inputValue
+  omega
+
+/-- The physical word list contains a correct explicit record for every offset -27..27. -/
+theorem neighborSuffix_reads (n start : Nat) (bits : Vector (Fin start) 208)
+    (read : ConstantBit n→Bool) (history : Fin start→Bool)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b∈((neighborSuffix n start 208 bits).instantiate read history).run)
+    (hn : b.kraus ψ≠0) (j : ℤ) (hj : -27≤j ∧ j≤27) :
+    ∃ps∈rightWords bits, readWord (List.ofFn history++b.history) ps.toList=
+      some ((((inputValue bits history : Nat) : ℤ)+j)%(2^208 : Nat)).toNat := by
+  have hs:=neighborSuffix_branch n start bits read history ψ hψ b hb hn
+  by_cases hz : j=0
+  · subst j
+    refine ⟨bits.map Fin.val,by simp [rightWords],?_⟩
+    rw [readWord_append_left (List.ofFn history) b.history _ (by
+      intro i hi
+      simp only [Vector.toList_map,List.mem_map] at hi
+      obtain ⟨k,_,rfl⟩:=hi
+      simpa only [List.length_ofFn] using k.isLt),input_read]
+    congr 1
+    simpa only [Nat.zero_add,Int.natCast_zero,Nat.mod_eq_of_lt (input_lt bits history)] using
+      (positive_word_mod (inputValue bits history) 0)
+  · by_cases hp : 0<j
+    · let i : Fin 27:=⟨j.toNat-1,by omega⟩
+      have hi : (i.val+1 : ℤ)=j := by dsimp [i];omega
+      refine ⟨sumPositions (start+2+i.val*416) 208,?_,?_⟩
+      · unfold rightWords
+        apply List.mem_cons_of_mem
+        apply List.mem_append_left
+        exact List.mem_ofFn.mpr ⟨i,rfl⟩
+      · rw [hs.2.1 i,positive_word_mod]
+        congr 2
+        exact congrArg (fun z : ℤ=>(((inputValue bits history : Nat) : ℤ)+z)%(2^208 : Nat)) hi
+    · let i : Fin 27:=⟨(-j).toNat-1,by omega⟩
+      have hi : -((i.val+1 : Nat) : ℤ)=j := by dsimp [i];omega
+      refine ⟨sumPositions (start+2+11232+416+i.val*832+416) 208,?_,?_⟩
+      · unfold rightWords
+        apply List.mem_cons_of_mem
+        apply List.mem_append_right
+        exact List.mem_ofFn.mpr ⟨i,rfl⟩
+      · rw [hs.2.2 i,negative_word_mod _ _ (input_lt bits history)]
+        congr 2
+        rw [sub_eq_add_neg,hi]
+
+end
+end ShorECDLP.Entrant.NeighborReadout
 namespace ShorECDLP.Entrant.Rounded
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 open RoundedReadout
 noncomputable section
 set_option maxRecDepth 4096
+set_option maxHeartbeats 2000000
 
-def finePositions : List (Fin 921088386) :=
-  Single.trialPositions.right.toList.attach.map fun i =>
-    ⟨i.val, (Single.right_position_bound i.val i.property).2.trans (by decide)⟩
+def finePositions : List (Fin 890594600) :=
+  Single.trialPositions.right.toList.attach.map fun i=>
+    ⟨i.val,(Single.right_position_bound i.val i.property).2.trans (by decide)⟩
+theorem finePositions_length : finePositions.length=208 := by
+  simp [finePositions,Single.params]
+def fineBits : Vector (Fin 890594600) 208 := Vector.ofFn fun i=>
+  finePositions[i.val]'(by rw [finePositions_length];exact i.isLt)
 
-theorem finePositions_length : finePositions.length = 224 := by
-  simp [finePositions, Single.params]
+def readout : Straight 917504 890594600 890628714 :=
+  NeighborReadout.neighborSuffix 917504 890594600 208 fineBits
 
-theorem finePositions_vals : finePositions.map Fin.val = Single.trialPositions.right.toList := by
-  simp [finePositions, List.map_map]
+def program : Straight 917504 0 890628714 := Single.program.append readout
 
-def carryPosition : Fin 921088386 := finePositions[20]'(by rw [finePositions_length]; decide)
-def inputPositions : List (Fin 921088386) := finePositions.drop 21
+def positions (ps : Vector Nat 208) : TrialPositions NeighborReadout.params where
+  left:=Single.trialPositions.left
+  right:=ps
 
-theorem inputPositions_length : inputPositions.length = 203 := by
-  simp [inputPositions, finePositions_length]
+def layout : DecodeLayout := ⟨.wrappedShift,NeighborReadout.params,
+  (NeighborReadout.rightWords fineBits).map positions,by
+    simp only [List.length_map,NeighborReadout.rightWords_length];decide⟩
 
-def readout : Straight 901120 921088386 921088792 :=
-  castFinish (by rw [inputPositions_length]) (addWord 921088386 carryPosition inputPositions)
+theorem readout_wellFormed : readout.WellFormed :=
+  NeighborReadout.neighborSuffix_wellFormed _ _ _ _
+theorem readout_t (read : ConstantBit 917504→Bool) (h : Fin 890594600→Bool) :
+    (readout.instantiate read h).tCount=0 := NeighborReadout.neighborSuffix_t _ _ _ _ _ _
+theorem readout_support (read : ConstantBit 917504→Bool) (h : Fin 890594600→Bool) :
+    (readout.instantiate read h).wires⊆resetWires := by
+  apply (NeighborReadout.neighborSuffix_support _ _ _ _ _ _).trans
+  simp [List.subset_def,resetWires]
 
-def program : Straight 901120 0 921088792 := Single.program.append readout
+theorem fineBits_vals : fineBits.map Fin.val=Single.trialPositions.right := by
+  apply Vector.ext
+  intro i hi
+  simp [fineBits,finePositions]
+  rfl
 
-def positions : TrialPositions decoderParams where
-  left := Single.trialPositions.left
-  right := Vector.ofFn fun i : Fin 203 => 921088386 + 2*i.val+1
-
-def layout : DecodeLayout := ⟨.wrappedShift, decoderParams, [positions], by simp⟩
-
-theorem readout_wellFormed : readout.WellFormed := by
-  unfold readout
-  rw [castFinish_wellFormed]
-  exact addWord_wellFormed _ _ _
-
-theorem readout_t (read : ConstantBit 901120 → Bool) (history : Fin 921088386 → Bool) :
-    (readout.instantiate read history).tCount = 0 := by
-  unfold readout
-  rw [castFinish_instantiate]
-  exact addWord_t _ _ _ _ _
-
-theorem readout_support (read : ConstantBit 901120 → Bool) (history : Fin 921088386 → Bool) :
-    (readout.instantiate read history).wires ⊆ completeBatchedSupport := by
-  unfold readout
-  rw [castFinish_instantiate]
-  apply (addWord_support _ _ _ _ _).trans
-  simp [List.subset_def, completeBatchedSupport, resetWires]
-
-theorem program_clean (read : ConstantBit 901120 → Bool) (b : InstrumentBranch)
+theorem program_clean (read : ConstantBit 917504 → Bool) (b : InstrumentBranch)
     (hb : b ∈ (Single.program.instantiate read Fin.elim0).run) (ψ : State) :
     SupportedOn CleanReadout (b.kraus ψ) := by
   rw [Single.Distribution.program_run_data] at hb
@@ -132,79 +1140,6 @@ theorem program_clean (read : ConstantBit 901120 → Bool) (b : InstrumentBranch
   intro s hs
   exact ⟨h s hs 0 (by simp [resetWires]), h s hs 1 (by simp [resetWires])⟩
 
-theorem word_eq (bits : List Bool) : fourierWordLSB bits = boolWordToNat bits := by
-  induction bits with
-  | nil => rfl
-  | cons b bits ih =>
-    simp only [fourierWordLSB, boolWordToNat_cons, ih]
-
-theorem fine_read (history : Fin 921088386 → Bool) :
-    readWord (List.ofFn history) Single.trialPositions.right.toList =
-      some (boolWordToNat (finePositions.map history)) := by
-  rw [← finePositions_vals]
-  have h := readWord_of_actual_bits (List.ofFn history) (finePositions.map Fin.val)
-    (finePositions.map history) (by simp only [List.map_map, List.getElem?_ofFn, Fin.isLt, ↓reduceDIte, Fin.eta, Function.comp_def])
-  simpa only [word_eq] using h
-
-theorem rounded_read (history : Fin 921088386 → Bool) :
-    readWord (List.ofFn history ++ carryBits (history carryPosition) (inputPositions.map history))
-      positions.right.toList = some (coarseRound (boolWordToNat (finePositions.map history))) := by
-  let bits := finePositions.map history
-  have hl : bits.length = 224 := by simp [bits, finePositions_length]
-  have hc : history carryPosition = bits[20]'(by omega) := by
-    simp [bits, carryPosition]
-  have hi : inputPositions.map history = bits.drop 21 := by
-    simp [bits, inputPositions, List.map_drop]
-  rw [hc, hi]
-  have hactual : positions.right.toList.map
-      (fun i => (List.ofFn history ++ carryBits bits[20] (bits.drop 21))[i]?) =
-      (sumBits bits[20] (bits.drop 21)).map some := by
-    apply List.ext_getElem
-    · simp only [List.length_map, positions, Vector.toList_ofFn, List.length_ofFn, sumBits_length, List.length_drop, hl]
-      rfl
-    · intro i hi hj
-      simp only [List.length_map, positions, Vector.toList_ofFn, List.length_ofFn] at hi
-      simp only [List.getElem_map, positions, Vector.toList_ofFn, List.getElem_ofFn]
-      rw [List.getElem?_append_right (by simp only [List.length_ofFn]; omega)]
-      simp only [List.length_ofFn]
-      rw [show 921088386 + 2*i+1-921088386=2*i+1 by omega]
-      rw [carryBits_odd, List.getElem?_eq_getElem (by simpa [sumBits_length, hl] using hi)]
-  rw [readWord_of_actual_bits _ _ _ hactual, word_eq, rounded_word_value bits 20 (by omega)]
-  simp only [hl, coarseRound]
-  rfl
-
-
-theorem readWord_append_left (before after : List Bool) (ps : List Nat)
-    (h : ∀ i ∈ ps, i < before.length) : readWord (before ++ after) ps = readWord before ps := by
-  induction ps with
-  | nil => rfl
-  | cons i ps ih =>
-    simp only [readWord, List.getElem?_append_left (h i (by simp)),
-      ih (fun j hj => h j (by simp [hj]))]
-
-theorem readout_branch (read : ConstantBit 901120 → Bool) (history : Fin 921088386 → Bool)
-    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
-    (hb : b ∈ (readout.instantiate read history).run) (hn : b.kraus ψ ≠ 0) :
-    b.history = carryBits (history carryPosition) (inputPositions.map history) := by
-  unfold readout at hb
-  rw [castFinish_instantiate] at hb
-  exact (addWord_branch _ _ _ _ _ _ hψ b hb hn).2
-
-theorem verified_of_reads (ps : TrialPositions decoderParams) (Q : Point) (d : Nat)
-    (hd : Q = d • G) (hist : List Bool) (a b : Nat)
-    (hl : readWord hist ps.left.toList = some a)
-    (hr : readWord hist ps.right.toList = some b)
-    (hm : (d : ZMod order) ∈ fixedCandidates decoderParams a b) :
-    (verifiedCandidate ⟨.wrappedShift, decoderParams, [ps], by simp⟩ Q hist).isSome := by
-  classical
-  apply List.find?_isSome.mpr
-  refine ⟨(d : ZMod order), ?_, ?_⟩
-  · simpa only [candidates, List.flatMap_cons, List.flatMap_nil, List.append_nil,
-      decodeTrial, trialCandidates, hl, hr, fixedCandidates_take, Finset.mem_toList] using hm
-  · simp only [decide_eq_true_eq, ZMod.val_natCast]
-    rw [hd]
-    exact nsmul_eq_nsmul_iff_modEq.mpr (by rw [generator_order]; exact Nat.mod_mod _ _)
-
 theorem pairAccept_value (left right : List Nat) (accept : Nat → Nat → Bool)
     (before : List Bool) (v : Nat) (hr : readWord before right = some v)
     (hf : Single.Distribution.pairAccept left right accept before = true) :
@@ -216,44 +1151,43 @@ theorem pairAccept_value (left right : List Nat) (accept : Nat → Nat → Bool)
   | some a =>
     exact ⟨a, rfl, by simpa only [ha, Option.bind_some, Option.map_some, Option.getD_some] using hf⟩
 
-theorem pairRecovered_mem (d a b : Nat) (h : pairRecovered d a b = true) :
-    (d : ZMod order) ∈ fixedCandidates decoderParams a (coarseRound b) :=
-  of_decide_eq_true h
 
-theorem history_verified (ps : TrialPositions decoderParams) (left right : List Nat) (Q : Point) (d : Nat) (hd : Q = d • G)
-    (before after : List Bool) (v : Nat)
-    (hl : readWord (before ++ after) ps.left.toList = readWord before left)
-    (hr : readWord (before ++ after) ps.right.toList = some (coarseRound v))
-    (hfine : readWord before right = some v)
-    (hf : Single.Distribution.pairAccept left right (pairRecovered d) before = true) :
-    (verifiedCandidate ⟨.wrappedShift, decoderParams, [ps], by simp⟩ Q (before ++ after)).isSome := by
-  obtain ⟨a, ha, hp⟩ := pairAccept_value left right (pairRecovered d) before v hfine hf
-  exact verified_of_reads ps Q d hd _ a _ (hl.trans ha) hr (pairRecovered_mem d a v hp)
-
-theorem verified_append_congr (Q : Point) (before a b : List Bool) (h : a = b)
-    (ha : (verifiedCandidate layout Q (before ++ a)).isSome) :
-    (verifiedCandidate layout Q (before ++ b)).isSome := by
-  subst b
-  exact ha
-
-theorem suffix_accept (Q : Point) (d : Nat) (hd : Q = d • G)
-    (read : ConstantBit 901120 → Bool) (history : Fin 921088386 → Bool)
-    (ψ : State) (hψ : SupportedOn CleanReadout ψ)
-    (hf : Single.Distribution.fineEvent (pairRecovered d) (List.ofFn history) = true)
-    (b : InstrumentBranch) (hb : b ∈ (readout.instantiate read history).run)
-    (hn : b.kraus ψ ≠ 0) :
-    (verifiedCandidate layout Q (List.ofFn history ++ b.history)).isSome := by
+theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈NeighborReadout.rightWords fineBits)
+    (Q : Point) (d : Nat) (hd : Q=d•G) (hist : List Bool) (a b : Nat)
+    (hl : readWord hist Single.trialPositions.left.toList=some a)
+    (hr : readWord hist ps.toList=some b)
+    (hm : (d : ZMod order)∈fixedCandidates NeighborReadout.params a b) :
+    (verifiedCandidate layout Q hist).isSome := by
   classical
-  have hhist := readout_branch read history ψ hψ b hb hn
-  apply verified_append_congr Q (List.ofFn history) _ b.history hhist.symm
-  have hr := rounded_read history
-  have hl : readWord (List.ofFn history ++ carryBits (history carryPosition) (inputPositions.map history))
-      positions.left.toList = readWord (List.ofFn history) Single.trialPositions.left.toList := by
-    apply readWord_append_left
-    intro i hi
-    have h := Single.left_position_bound i hi
-    simpa only [List.length_ofFn] using h.trans (by decide : 491277270 < 921088386)
-  exact history_verified positions Single.trialPositions.left.toList Single.trialPositions.right.toList Q d hd _ _ _ hl hr (fine_read history) hf
+  apply List.find?_isSome.mpr
+  refine ⟨(d : ZMod order),?_,?_⟩
+  · unfold candidates
+    apply List.mem_flatMap.mpr
+    refine ⟨positions ps,List.mem_map.mpr ⟨ps,hps,rfl⟩,?_⟩
+    simpa only [decodeTrial,trialCandidates,positions,layout,hl,hr,fixedCandidates_take,Finset.mem_toList] using hm
+  · simp only [decide_eq_true_eq,ZMod.val_natCast]
+    rw [hd]
+    exact nsmul_eq_nsmul_iff_modEq.mpr (by rw [generator_order];exact Nat.mod_mod _ _)
+
+theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
+    (read : ConstantBit 917504→Bool) (history : Fin 890594600→Bool)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ)
+    (hf : Single.Distribution.fineEvent (NeighborReadout.pairRecovered d) (List.ofFn history)=true)
+    (b : InstrumentBranch) (hb : b∈(readout.instantiate read history).run)
+    (hn : b.kraus ψ≠0) :
+    (verifiedCandidate layout Q (List.ofFn history++b.history)).isSome := by
+  have hr:=NeighborReadout.input_read fineBits history
+  rw [fineBits_vals] at hr
+  obtain ⟨a,ha,hp⟩:=pairAccept_value _ _ _ _ _ hr hf
+  obtain ⟨i,hi⟩:=of_decide_eq_true hp
+  obtain ⟨ps,hps,hread⟩:=NeighborReadout.neighborSuffix_reads 917504 890594600 fineBits
+    read history ψ hψ b hb hn ((i.val : ℤ)-27) (by have h:=i.isLt;omega)
+  apply verified_of_reads ps hps Q d hd _ a _ _ hread hi
+  rw [NeighborReadout.readWord_append_left]
+  · exact ha
+  · intro j hj
+    have h:=Single.left_position_bound j hj
+    simpa only [List.length_ofFn] using h.trans (by decide : 491391449<890594600)
 
 theorem normSq_ge_zero (ψ : State) : 0 ≤ normSq ψ := by
   have h := normSq_interference (0 : State) ψ
@@ -314,7 +1248,7 @@ theorem appended_mass_lower (I : Instrument) (J : InstrumentBranch → Instrumen
 theorem program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99/100 : ℝ) ≤ Instrument.bornMass ((program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).run.filter
       (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
-  apply (Single.Distribution.program_rounded_success Q d hn hd).trans
+  apply (Single.Distribution.program_neighbor_success Q d hn hd).trans
   unfold program
   rw [Single.append_run_history]
   apply appended_mass_lower
@@ -322,51 +1256,55 @@ theorem program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) 
     exact AdaptiveCircuit.run_preservesBornMass _
       (readout.instantiate_wellFormed _ _ readout_wellFormed) _
   · intro a ha hf b hb hne
-    have hlen : a.history.length = 921088386 := by
+    have hlen : a.history.length = 890594600 := by
       have h := straight_history_length Single.program (readConstant Single.mixedCoefficientAt Q) Fin.elim0 a ha
       omega
-    have hh : List.ofFn (Single.historyAfter 921088386 Fin.elim0 a.history) = a.history := by
+    have hh : List.ofFn (Single.historyAfter 890594600 Fin.elim0 a.history) = a.history := by
       simpa only [List.ofFn_zero, List.nil_append] using Single.historyAfter_list Fin.elim0 a.history (by simpa only [Nat.zero_add] using hlen)
     have h := suffix_accept Q d hd (readConstant Single.mixedCoefficientAt Q)
-      (Single.historyAfter 921088386 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
+      (Single.historyAfter 890594600 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
       (program_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
     simpa only [hh, InstrumentBranch.seq] using h
 
 def entry : StraightEntry := Single.fixedEntry Single.mixedCoefficientAt program
 
-def bounds : Bounds := ⟨855, 15399939344, 921088792⟩
+def bounds : Bounds := ⟨854, 14885174041, 890628714⟩
 
 theorem program_wellFormed : program.WellFormed :=
   straight_append_wellFormed _ _ Single.program_wellFormed readout_wellFormed
 
-theorem program_support (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).wires ⊆ completeBatchedSupport :=
-  outer_append_support _ _ read Fin.elim0 completeBatchedSupport (Single.program_support read)
+theorem program_support (read : ConstantBit 917504 → Bool) :
+    (program.instantiate read Fin.elim0).wires ⊆ resetWires :=
+  outer_append_support _ _ read Fin.elim0 resetWires (Single.program_support read)
     (readout_support read)
 
-theorem program_qubits (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).qubitCount ≤ 855 := by
+theorem program_qubits (read : ConstantBit 917504 → Bool) :
+    (program.instantiate read Fin.elim0).qubitCount ≤ 854 := by
   have hs : (program.instantiate read Fin.elim0).wires.dedup.toFinset ⊆
-      completeBatchedSupport.toFinset := by
+      resetWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (program_support read (by simpa using hw))
   have hc := (Finset.card_le_card hs).trans (List.toFinset_card_le _)
   rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
-  simpa only [AdaptiveCircuit.qubitCount, completeBatchedSupport_length] using hc
+  simpa only [AdaptiveCircuit.qubitCount, resetWires_length] using hc
 
 attribute [local irreducible] readout
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 15399939344 := by
+    (program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14885174041 := by
   have h := outer_append_t_le Single.program readout (readConstant Single.mixedCoefficientAt Q)
     Fin.elim0 0 (fun history => le_of_eq (readout_t _ history))
   rw [Nat.add_zero] at h
-  change ((Single.program.append readout).instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 15399939344
+  change ((Single.program.append readout).instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14885174041
   exact h.trans (Single.program_t Q)
 
-theorem program_slots : program.gateSlots ≤ 93000061339 := by
-  unfold program readout
-  rw [Straight.gateSlots_append, castFinish_gateSlots, addWord_slots, inputPositions_length]
+theorem program_slots : program.gateSlots ≤ 90000176648 := by
+  unfold program
+  rw [Straight.gateSlots_append]
+  have hr : readout.gateSlots=119399 := by
+    unfold readout
+    exact NeighborReadout.neighborSuffix_slots 917504 890594600 208 fineBits
+  rw [hr]
   have h := Single.program_slots
   omega
 
@@ -375,14 +1313,14 @@ theorem certificate : Certificate officialLimits layout entry bounds where
     rw [entry, Single.fixedEntry_slots]
     exact program_slots.trans (by decide)
   recordBudget := by
-    change 921088792 ≤ officialLimits.measurements
+    change 890628714 ≤ officialLimits.measurements
     decide
   tableBudget := by
     rw [entry, Single.fixedEntry_rows]
     decide
   candidateBudget := by
-    change 1 * (2*(order/2^203+2)) ≤ 56*(2^49+2)
-    simpa using one_trial_budget
+    change 55 * (2*(order/2^208+2)) ≤ 56*(2^49+2)
+    exact NeighborReadout.decoder_budget
   wellFormed := by
     rw [entry, Single.fixedEntry_wellFormed]
     exact program_wellFormed
@@ -1475,19 +2413,30 @@ open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
 noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
-attribute [local irreducible] sequenceProgram appendCompiled literalProgram coordinateProgram zeroDivisionProgram zeroMultiplicationProgram
+attribute [local irreducible] sequenceProgram appendCompiled literalProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.divisionProgram ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
   Single.axis Rounded.entry
 
-def zeroDivisionPatch (n start : Nat) : Patch (zeroDivisionProgram n start).2 2313360 := by
-  unfold zeroDivisionProgram
-  exact Patch.surroundCompiled _ _ _ (divisionPatch n start)
+def borrowedFieldPatch {saving : Nat} (n start : Nat) (arithmetic : FixedSegment n)
+    (hp : ∀ cursor, Patch (arithmetic cursor).2 saving) :
+    Patch (ShorECDLP.Entrant.BorrowFlag.fieldProgram n start arithmetic).2 saving := by
+  unfold ShorECDLP.Entrant.BorrowFlag.fieldProgram
+  apply Patch.surroundCompiled
+  unfold ShorECDLP.Entrant.BorrowFlag.coreSegments
+  refine (Patch.sequenceCons (d := 0) (f := saving) _ _ (Patch.refl _) ?_).castSaving (by omega)
+  exact (Patch.sequenceCons (d := saving) (f := 0) _ _ (hp _) (Patch.refl _)).castSaving (by omega)
 
-def zeroMultiplicationPatch (n start : Nat) : Patch (zeroMultiplicationProgram n start).2 2313360 := by
-  unfold zeroMultiplicationProgram
-  exact Patch.surroundCompiled _ _ _ (multiplicationPatch n start)
+def zeroDivisionPatch (n start : Nat) :
+    Patch (ShorECDLP.Entrant.BorrowFlag.divisionProgram n start).2 2313360 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.divisionProgram
+  exact borrowedFieldPatch n start (divisionProgram n) (divisionPatch n)
 
-def coordinatePatch (start : Nat) : Patch (coordinateProgram start).2 4626720 := by
-  unfold coordinateProgram coordinateSegments
+def zeroMultiplicationPatch (n start : Nat) :
+    Patch (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 2313360 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
+  exact borrowedFieldPatch n start (multiplicationProgram n) (multiplicationPatch n)
+
+def coordinatePatch (start : Nat) : Patch (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 4626720 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 0) (f := 4626720) _ _ (Patch.refl _) ?_).castSaving (by omega)
   refine (Patch.sequenceCons (d := 2313360) (f := 2313360) _ _ (zeroDivisionPatch 32768 _) ?_).castSaving (by omega)
@@ -1523,10 +2472,10 @@ structure PatchedWindow (n : Nat) where
   saving : Nat
   patch : ∀ start, Patch (source.program start) saving
 
-def leftPatches : List (PatchedWindow 901120) :=
+def leftPatches : List (PatchedWindow 917504) :=
   ⟨Single.firstWindow,0,fun _ => Patch.refl _⟩ ::
     Single.leftSigned.map (fun w => ⟨Single.signedWindow w,4626720,signedPatch w⟩)
-def rightPatches : List (PatchedWindow 901120) :=
+def rightPatches : List (PatchedWindow 917504) :=
   Single.rightSigned.map (fun w => ⟨Single.signedWindow w,4626720,signedPatch w⟩)
 private theorem leftPatches_source : leftPatches.map PatchedWindow.source = Single.leftWindows := by
   simp [leftPatches, Single.leftWindows]
@@ -1534,7 +2483,7 @@ private theorem rightPatches_source : rightPatches.map PatchedWindow.source = Si
   simp [rightPatches, Single.rightWindows]
 private theorem leftPatches_saving : (leftPatches.map PatchedWindow.saving).sum = 74027520 := by
   simp [leftPatches, Single.leftSigned]
-private theorem rightPatches_saving : (rightPatches.map PatchedWindow.saving).sum = 64774080 := by
+private theorem rightPatches_saving : (rightPatches.map PatchedWindow.saving).sum = 60147360 := by
   simp [rightPatches, Single.rightSigned]
 
 def axisPatch {n} : (ps : List (PatchedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -1558,14 +2507,14 @@ def Patch.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n m k)
   unfold Single.framed
   exact Patch.gate _ ((Patch.append hp ((Patch.append hq (Patch.gate _ (Patch.refl _))).castSaving (Nat.add_zero dr))).castFinish h)
 
-def trialPatch (start : Nat) : Patch (Single.trial start) 138801600 := by
+def trialPatch (start : Nat) : Patch (Single.trial start) 134174880 := by
   have hl := (axisPatchFor leftPatches Single.leftWindows leftPatches_source start List.nil).castSaving leftPatches_saving
   have hr := (axisPatchFor rightPatches Single.rightWindows rightPatches_source
     (start+Single.axisCount Single.leftWindows) List.nil).castSaving rightPatches_saving
   unfold Single.trial
   exact (Patch.framed _ _ _ _ hl hr).castSaving (by decide)
 
-def programPatch : Patch Single.program 138801600 := by
+def programPatch : Patch Single.program 134174880 := by
   unfold Single.program
   exact (trialPatch 0).castFinish _
 
@@ -1574,7 +2523,7 @@ def Patch.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 e) (hp
   unfold Single.fixedEntry
   exact hp.reindex _
 
-def entryPatch : Patch Rounded.entry.program 138801600 := by
+def entryPatch : Patch Rounded.entry.program 134174880 := by
   unfold Rounded.entry Rounded.program
   exact Patch.fixedEntry Single.mixedCoefficientAt _
     ((Patch.append programPatch (Patch.refl Rounded.readout)).castSaving (by omega))
@@ -1585,7 +2534,7 @@ namespace ShorECDLP.Entrant.Parent
 open Challenge
 noncomputable def entry : StraightEntry := Optimization.replaceEntry Rounded.entry Optimization.entryPatch.program
 def layout : DecodeLayout := Rounded.layout
-def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 138801600, Rounded.bounds.measurements⟩
+def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 134174880, Rounded.bounds.measurements⟩
 theorem certificate : Certificate officialLimits layout entry bounds :=
   Optimization.replacement_certificate Rounded.certificate Optimization.entryPatch.drops Optimization.entryPatch.rewrites
 end ShorECDLP.Entrant.Parent
@@ -1599,8 +2548,9 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 1000000
 set_option linter.unnecessarySeqFocus false
 set_option Elab.async false
-attribute [local irreducible] sequenceProgram appendCompiled literalProgram coordinateProgram zeroDivisionProgram
- Single.axis Rounded.entry
+attribute [local irreducible] sequenceProgram appendCompiled literalProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram
+  ShorECDLP.Entrant.BorrowFlag.fieldProgram ShorECDLP.Entrant.BorrowFlag.divisionProgram
+  ShorECDLP.Entrant.BorrowFlag.multiplicationProgram Single.axis Rounded.entry
 
 theorem AtLeast.gate {n s e d} (g : TemplateGate n) {p : Straight n s e} (hp : AtLeast p d) :
     AtLeast (.gate g p) d := by
@@ -1608,20 +2558,525 @@ theorem AtLeast.gate {n s e d} (g : TemplateGate n) {p : Straight n s e} (hp : A
   | literal g => cases g <;> simp_all [AtLeast, added] <;> omega
   | whenBit => exact hp
 
-theorem coreCount (start : Nat) : AtLeast (Single.Physical.core start).2 63089956 := by
-  unfold Single.Physical.core Single.Physical.segments
-  exact (AtLeast.sequenceCons (d := 63089956) (f := 0) _ _ (coordinateAllCount start) (AtLeast.zero _)).castCount (by omega)
+def templateCCX {n} : List (TemplateGate n) → Nat
+  | [] => 0
+  | .literal (.CCX _ _ _) :: gs => 1 + templateCCX gs
+  | _ :: gs => templateCCX gs
 
-theorem preparedCount (start : Nat) : AtLeast (Single.Physical.prepared start).2 63089956 := by
+def lookupCCX {n} : List (LookupOp n) → Nat
+  | [] => 0
+  | .gates gs :: ops => templateCCX gs + lookupCCX ops
+  | .erase _ _ _ :: ops => lookupCCX ops
+
+theorem added_gateProgram {n s} (gs : List (TemplateGate n)) :
+    added (gateProgram gs : Straight n s s) = templateCCX gs := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih => cases g with
+    | literal g => cases g <;> simp_all [gateProgram,added,templateCCX]
+    | whenBit => simp_all [gateProgram,added,templateCCX]
+
+theorem added_andErase (n s a b t : Nat) : added (andEraseProgram n s a b t) = 0 := by
+  simp [andEraseProgram,recordGates,controlledZ,added]
+
+theorem added_lookupProgram {n} (ops : List (LookupOp n)) (start : Nat) :
+    added (lookupProgram n ops start) = lookupCCX ops := by
+  induction ops generalizing start with
+  | nil => rfl
+  | cons op ops ih => cases op <;>
+      simp [lookupProgram,lookupCCX,added_append,added_cast,added_gateProgram,added_andErase,ih]
+
+theorem lookupCCX_append {n} (a b : List (LookupOp n)) :
+    lookupCCX (a++b) = lookupCCX a + lookupCCX b := by
+  induction a with
+  | nil => simp [lookupCCX]
+  | cons op ops ih => cases op <;> simp [lookupCCX,ih,Nat.add_assoc]
+
+theorem templateCCX_literal {n} (gs : Circuit) :
+    @templateCCX n (gs.map TemplateGate.literal) = ccxCount gs := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih => cases g <;> simp [templateCCX,ccxCount,ih,Nat.add_comm]
+
+theorem lookupCCX_unary_ge {n} (leaf : Nat → Wire → List (TemplateGate n))
+    (tree : UnaryActionTree) (q : Wire) (anc : List Wire) (hl : tree.Layout q anc) :
+    tree.internalNodes ≤ lookupCCX (unaryLookupOps leaf tree q anc) := by
+  induction hl with
+  | leaf l q anc hn => simp [unaryLookupOps,UnaryActionTree.internalNodes,lookupCCX]
+  | node bit q path zero one rest hn hz ho ihz iho =>
+    simp only [unaryLookupOps,lookupCCX_append,lookupCCX,ordinaryOp,templateCCX_literal,
+      computeZeroAnd,ccxCount,UnaryActionTree.internalNodes] at *
+    omega
+
+theorem lookup_count {n} (leaf : Nat → Wire → List (TemplateGate n))
+    (tree : UnaryActionTree) (q : Wire) (anc : List Wire) (hl : tree.Layout q anc) (start : Nat) :
+    AtLeast (lookupProgram n (unaryLookupOps leaf tree q anc) start) tree.internalNodes := by
+  unfold AtLeast
+  rw [added_lookupProgram]
+  exact lookupCCX_unary_ge leaf tree q anc hl
+
+
+section
+-- Append inside AndGadget after Core.lean.
+attribute [local irreducible] added fieldLookupAddProgram signedFieldProgram fieldLoadProgram modularAddProgram yNegateProgram
+
+theorem fieldLoadCount (field : PointField) (start : Nat) :
+    AtLeast (fieldLoadProgram field start) 32767 := by
+  unfold fieldLoadProgram AtLeast
+  rw [added_cast]
+  unfold fieldLoadOps
+  rw [added_lookupProgram]
+  have h := lookupCCX_unary_ge
+    (fun l q => fieldLeaf ⟨l%32768,Nat.mod_lt _ (by decide)⟩ field q)
+    (tableAddressTree pointLookupAddress 0 1) 836 pointLookupPath
+    (tableAddressTree_layout _ _ _ _ _ (by decide) (by decide))
+  have hn := batchWindowTree_nodes
+  unfold batchWindowTree at hn
+  omega
+
+theorem fieldAddCount (field : PointField) (acc : List Wire) (start : Nat) :
+    AtLeast (fieldLookupAddProgram field acc start).2 65534 := by
+  unfold fieldLookupAddProgram
+  dsimp only
+  refine (AtLeast.appendCompiled (d := 32767) (f := 32767) _ _ (fieldLoadCount field _) ?_).castCount (by omega)
+  exact (AtLeast.appendCompiled (d := 0) (f := 32767) _ _ (AtLeast.zero _) (fieldLoadCount field _)).castCount (by omega)
+
+theorem signedFieldCount (field : PointField) (start : Nat) :
+    AtLeast (signedFieldProgram field start).2 65534 := by
+  unfold signedFieldProgram
+  dsimp only
+  refine (AtLeast.appendCompiled (d := 0) (f := 65534) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  exact (AtLeast.appendCompiled (d := 65534) (f := 0) _ _ (fieldAddCount field _ _) (AtLeast.zero _)).castCount (by omega)
+
+theorem ipxLookupCount_ge {n} (rows : Nat → Fin n) (tree : UnaryActionTree)
+    (paths : List Wire) (hl : ∀ c, tree.Layout (ipxControl c) paths) (ops : List IpxOp) :
+    ipxQueries ops * tree.internalNodes ≤ lookupCCX (ipxOps rows tree paths ops) := by
+  induction ops with
+  | nil => simp [ipxQueries,ipxOps,lookupCCX]
+  | cons op ops ih => cases op with
+    | query c u v =>
+      have h := lookupCCX_unary_ge (fun l q => ipxLeaf (rows l) q u v) tree (ipxControl c) paths (hl c)
+      simp only [ipxOps,lookupCCX_append,ipxQueries,Nat.add_mul,Nat.one_mul]
+      omega
+    | test k =>
+      simp only [ipxOps,lookupCCX_append,ipxQueries]
+      omega
+
+theorem correctionQueryCount (start : Nat) :
+    AtLeast (Single.Physical.placedProgram start).2 425971 := by
+  unfold Single.Physical.placedProgram ipxProgramOf AtLeast
+  rw [added_lookupProgram]
+  have h := ipxLookupCount_ge Single.Physical.tableRows batchWindowTree pointLookupPath ipxTree_layout ipxSchedule
+  rw [ipxSchedule_queries,batchWindowTree_nodes] at h
+  exact h
+
+end
+attribute [local irreducible] fieldLookupAddProgram signedFieldProgram fieldLoadProgram modularAddProgram yNegateProgram
+section
+set_option linter.unusedSimpArgs false
+attribute [local irreducible] residue
+
+@[simp] theorem phase_constant (q : Wire) (g : Gate) :
+    primitivePhaseCost (constantControlGate q g) = primitivePhaseCost g := by
+  cases g with
+  | CX c t => by_cases h : c=q <;> simp [constantControlGate,primitivePhaseCost,h]
+  | _ => rfl
+@[simp] theorem t_constant (q : Wire) (g : Gate) :
+    tCost (constantControlGate q g) = tCost g := by
+  cases g with
+  | CX c t => by_cases h : c=q <;> simp [constantControlGate,tCost,h]
+  | _ => rfl
+@[simp] theorem residue_constant {n s e} (q : Wire) (p : Straight n s e) :
+    residue (constantStraight q p) = residue p := by
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g <;> simp [constantStraight,constantTemplateGate,residue,ih]
+  | recordGate => simp_all [constantStraight,residue]
+  | measure => simp_all [constantStraight,residue]
+
+@[simp] theorem residue_registerCorrection {n s e} (ws : List Wire) (indices : List (Fin s)) (p : Straight n s e) :
+    residue (registerCorrectionProgram ws indices p) = residue p := by
+  induction ws generalizing indices with
+  | nil => rfl
+  | cons w ws ih => cases indices <;> simp [registerCorrectionProgram,residue_recordGates,pauliZ,tCount,tCost,ih]
+
+theorem residue_deferred (n : Nat) (ws : List Wire) (cleanup : Circuit)
+    (hc : (cleanup.map primitivePhaseCost).sum = 0)
+    (cells : List (Circuit × Wire))
+    (hcell : ∀ cell ∈ cells, (cell.1.map primitivePhaseCost).sum = 0)
+    (start : Nat) (prior : List (Fin start)) :
+    residue (deferredCorrectionProgram n ws cleanup cells start prior) = 0 := by
+  induction cells generalizing start with
+  | nil => simp [deferredCorrectionProgram,residue_append,residue_literal,hc]
+  | cons cell cells ih =>
+    simp only [deferredCorrectionProgram,residue_cast,residue_append,residue_literal]
+    have h := hcell cell (by simp)
+    have ht := ih (by intro c hm; exact hcell c (by simp [hm]))
+      (start+1) (prior.map Fin.castSucc ++ [Fin.last start])
+    simpa [residue,h] using ht
+
+@[simp] theorem phase_controlledCarry (input dirty : List Wire) (bits : List Bool) (q c : Wire) :
+    ((controlledConstCarryXor input dirty bits q c).map primitivePhaseCost).sum = 0 := by
+  exact controlledConstCarryXor_cost_zero primitivePhaseCost (by intros; rfl) (by intros; rfl) _ _ _ _ _
+
+@[simp] theorem phase_flipWord (input : List Wire) :
+    ((gidneyFlipWord input).map primitivePhaseCost).sum = 0 := by
+  induction input with
+  | nil => rfl
+  | cons a input ih => simpa [gidneyFlipWord,primitivePhaseCost] using ih
+
+@[simp] theorem phase_addCleanup (input dirty : List Wire) (bits : List Bool) (q c : Wire) :
+    ((gidneyAddCleanup input dirty bits q c).map primitivePhaseCost).sum = 0 := by
+  simp [gidneyAddCleanup,List.map_append,List.sum_append]
+
+@[simp] theorem phase_addCell (q c r t a d : Wire) (k : Bool) :
+    ((gidneyAddCarryCell q c r t a d k).map primitivePhaseCost).sum = 0 := by
+  cases k <;> simp [gidneyAddCarryCell,primitivePhaseCost]
+
+@[simp] theorem phase_compareCell (q c r t a d f : Wire) (k last : Bool) :
+    ((gidneyCompareCarryCell q c r t a d f k last).map primitivePhaseCost).sum = 0 := by
+  cases k <;> cases last <;> simp [gidneyCompareCarryCell,primitivePhaseCost]
+
+-- Inside AndGadget after Core.
+theorem phase_addCells (q current spare ancilla : Wire) (input dirty : List Wire) (bits : List Bool) :
+    ∀ cell ∈ gidneyCarryCells q current spare ancilla input dirty bits,
+      (cell.1.map primitivePhaseCost).sum = 0 := by
+  induction input generalizing current spare dirty bits with
+  | nil => simp [gidneyCarryCells]
+  | cons a as ih =>
+    cases as with
+    | nil =>
+      cases dirty <;> cases bits with
+      | nil => simp [gidneyCarryCells]
+      | cons k ks => cases ks <;> cases k <;> simp [gidneyCarryCells,primitivePhaseCost]
+    | cons b bs =>
+      cases dirty <;> cases bits <;> simp_all [gidneyCarryCells]
+      exact ih spare current _ _
+
+@[simp] theorem residue_gidneyNontrivial (n start : Nat) (a d q carry spare ancilla : Wire)
+    (as ds : List Wire) (k : Bool) (ks : List Bool) :
+    residue (gidneyNontrivialProgram n start a d q carry spare ancilla as ds k ks) = 0 := by
+  unfold gidneyNontrivialProgram
+  rw [residue_append,residue_literal,phase_addCell,Nat.zero_add]
+  exact residue_deferred n _ _ (phase_addCleanup _ _ _ _ _) _ (phase_addCells _ _ _ _ _ _ _) start List.nil
+
+@[simp] theorem residue_gidney (n start : Nat) (input dirty : List Wire) (bits : List Bool)
+    (q carry spare ancilla : Wire) :
+    residue (gidneyProgram n start input dirty bits q carry spare ancilla).2 = 0 := by
+  by_cases h : bits.all (fun k => !k) = true
+  · simp [gidneyProgram,h,residue]
+  · unfold gidneyProgram
+    rw [if_neg h]
+    cases input with
+    | nil => cases dirty <;> cases bits <;> simp [residue]
+    | cons a as =>
+      cases dirty with
+      | nil => cases as <;> cases bits with
+        | nil => simp [residue]
+        | cons k ks => cases ks <;> cases k <;> simp [residue_literal,primitivePhaseCost,residue]
+      | cons d ds => cases as <;> cases bits <;> simp [residue]
+-- Inside AndGadget after AddParts.
+theorem phase_compareCells (q current spare ancilla flag : Wire) (input dirty : List Wire) (bits : List Bool) :
+    ∀ cell ∈ compareCarryCells q current spare ancilla flag input dirty bits,
+      (cell.1.map primitivePhaseCost).sum = 0 := by
+  induction input generalizing current spare dirty bits with
+  | nil => cases dirty <;> cases bits <;> simp [compareCarryCells]
+  | cons a as ih =>
+    cases dirty <;> cases bits <;> simp_all [compareCarryCells]
+    exact ih spare current _ _
+
+@[simp] theorem residue_compareCarry (n start : Nat) (a d q carry spare ancilla flag : Wire)
+    (input dirty : List Wire) (k : Bool) (bits : List Bool) :
+    residue (compareCarryProgram n start a d q carry spare ancilla flag input dirty k bits) = 0 := by
+  unfold compareCarryProgram
+  rw [residue_append,residue_literal,phase_compareCell,Nat.zero_add]
+  exact residue_deferred n _ _ (phase_controlledCarry _ _ _ _ _) _
+    (phase_compareCells _ _ _ _ _ _ _ _) start List.nil
+
+@[simp] theorem residue_compareCore (n start : Nat) (input dirty : List Wire) (bits : List Bool)
+    (q carry spare ancilla flag : Wire) :
+    residue (compareCoreProgram n start input dirty bits q carry spare ancilla flag).2 = 0 := by
+  cases input <;> cases dirty <;> cases bits <;> simp [compareCoreProgram,residue]
+
+@[simp] theorem residue_compareGE (n start : Nat) (input dirty : List Wire) (threshold : Nat)
+    (q carry spare ancilla flag : Wire) :
+    residue (compareGEProgram n start input dirty threshold q carry spare ancilla flag).2 = 0 := by
+  unfold compareGEProgram
+  by_cases h : threshold=0
+  · simp [h,residue_literal,primitivePhaseCost]
+  · rw [if_neg h]
+    by_cases h2 : 2^input.length ≤ threshold
+    · simp [h2,residue]
+    · rw [if_neg h2]; exact residue_compareCore _ _ _ _ _ _ _ _ _ _
+
+@[simp] theorem residue_uncontrolledCompare (n start : Nat) (input dirty : List Wire) (threshold : Nat)
+    (carry spare ancilla flag : Wire) :
+    residue (uncontrolledCompareProgram n start input dirty threshold carry spare ancilla flag).2 = 0 := by
+  unfold uncontrolledCompareProgram
+  rw [residue_constant]
+  exact residue_compareGE _ _ _ _ _ _ _ _ _ _
+
+@[simp] theorem phase_addCarry (input acc : List Wire) (q c f : Wire) :
+    ((controlledAddCarry input acc q c f).map primitivePhaseCost).sum = 0 := by
+  exact primitivePhaseCost_of_HPFree _ (controlledAddCarry_HPFree _ _ _ _ _)
+@[simp] theorem phase_subCarry (input acc : List Wire) (q c f : Wire) :
+    ((controlledSubCarry input acc q c f).map primitivePhaseCost).sum = 0 := by
+  exact primitivePhaseCost_of_HPFree _ (controlledSubCarry_HPFree _ _ _ _ _)
+@[simp] theorem phase_compareLT (input acc : List Wire) (q c f : Wire) :
+    ((controlledCompareLT input acc q c f).map primitivePhaseCost).sum = 0 := by
+  exact primitivePhaseCost_of_HPFree _ (controlledCompareLT_HPFree _ _ _ _ _)
+
+attribute [local irreducible] gidneyProgram uncontrolledCompareProgram
+@[simp] theorem residue_modularAdd (n start : Nat) (input acc : List Wire) (correction : List Bool)
+    (modulus : Nat) (q c r t f : Wire) :
+    residue (modularAddProgram n start input acc correction modulus q c r t f).2 = 0 := by
+  simp [modularAddProgram,residue_compiled,residue_append,residue_literal]
+
+@[simp] theorem residue_modularSub (n start : Nat) (input acc : List Wire) (modulus : List Bool)
+    (p : Nat) (q c r t f : Wire) :
+    residue (modularSubProgram n start input acc modulus p q c r t f).2 = 0 := by
+  simp [modularSubProgram,residue_compiled,residue_prepend,residue_literal]
+-- Inside AndGadget after CompareParts.
+@[simp] theorem phase_adjoint (gs : Circuit) :
+    (gs.adjoint.map primitivePhaseCost).sum = (gs.map primitivePhaseCost).sum := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    rw [circuit_adjoint_cons,List.map_append,List.sum_append,ih]
+    cases g <;> simp [Gate.adjoint,primitivePhaseCost,Nat.add_comm]
+
+@[simp] theorem phase_doubleShift (acc : List Wire) (f : Wire) :
+    ((doublingShift acc f).map primitivePhaseCost).sum = 0 :=
+  primitivePhaseCost_of_HPFree _ (doublingShift_HPFree _ _)
+
+@[simp] theorem residue_modularDouble (n start : Nat) (acc dirty : List Wire) (bits : List Bool)
+    (p : Nat) (c r t f : Wire) :
+    residue (modularDoubleProgram n start acc dirty bits p c r t f).2 = 0 := by
+  cases acc <;> simp [modularDoubleProgram,residue_prepend,residue_compiled,residue_literal,primitivePhaseCost,residue]
+
+@[simp] theorem residue_modularHalve (n start : Nat) (acc dirty : List Wire) (bits : List Bool)
+    (p : Nat) (c r t f : Wire) :
+    residue (modularHalveProgram n start acc dirty bits p c r t f).2 = 0 := by
+  cases acc <;> simp [modularHalveProgram,residue_prepend,residue_compiled,residue_literal,primitivePhaseCost,residue]
+
+attribute [local irreducible] modularSubProgram modularDoubleProgram modularHalveProgram
+@[simp] theorem residue_squareAdd (n start : Nat) (input acc : List Wire) (bits : List Bool)
+    (p : Nat) (q copied c r t f : Wire) :
+    residue (squareAddProgram n start input acc bits p q copied c r t f).2 = 0 := by
+  simp [squareAddProgram,residue_prepend,residue_compiled,residue_literal,primitivePhaseCost]
+@[simp] theorem residue_squareSub (n start : Nat) (input acc : List Wire) (bits : List Bool)
+    (p : Nat) (q copied c r t f : Wire) :
+    residue (squareSubProgram n start input acc bits p q copied c r t f).2 = 0 := by
+  simp [squareSubProgram,residue_prepend,residue_compiled,residue_literal,primitivePhaseCost]
+
+attribute [local irreducible] squareAddProgram squareSubProgram
+@[simp] theorem residue_square (n start : Nat) (controls input acc : List Wire) (bits : List Bool)
+    (p : Nat) (copied c r t f : Wire) :
+    residue (squareProgram n start controls input acc bits p copied c r t f).2 = 0 := by
+  change compiledResidue (squareProgram n start controls input acc bits p copied c r t f) = 0
+  induction controls generalizing start with
+  | nil => simp [squareProgram,compiledResidue,residue]
+  | cons q qs ih =>
+    rw [squareProgram]
+    simp only [compiledResidue] at ih ⊢
+    simp only [residue_compiled,ih,Nat.zero_add,residue_ite]
+    split <;> simp [residue_compiled]
+
+@[simp] theorem residue_squareInverse (n start : Nat) (controls input acc : List Wire) (bits : List Bool)
+    (p : Nat) (copied c r t f : Wire) :
+    residue (squareInverseProgram n start controls input acc bits p copied c r t f).2 = 0 := by
+  change compiledResidue (squareInverseProgram n start controls input acc bits p copied c r t f) = 0
+  induction controls generalizing start with
+  | nil => simp [squareInverseProgram,compiledResidue,residue]
+  | cons q qs ih =>
+    rw [squareInverseProgram]
+    simp only [compiledResidue] at ih ⊢
+    simp only [residue_compiled,residue_squareSub,Nat.zero_add,residue_ite]
+    split <;> simp [residue_compiled,residue,ih]
+
+attribute [local irreducible] squareProgram squareInverseProgram
+@[simp] theorem residue_squareSubtract (n start : Nat) (x y acc : List Wire) (correction modulus : List Bool)
+    (p : Nat) (q copied c r t f : Wire) :
+    residue (squareSubtractProgram n start x y acc correction modulus p q copied c r t f).2 = 0 := by
+  simp [squareSubtractProgram,residue_compiled]
+
+@[simp] theorem residue_pointSquare (n start : Nat) : residue (pointSquareProgram n start).2 = 0 := by
+  unfold pointSquareProgram
+  exact residue_squareSubtract _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+attribute [local irreducible] added pointSquareProgram
+-- Exact arithmetic T count is already protected by the imported source theorem.
+theorem pointSquareCount (n start : Nat) : AtLeast (pointSquareProgram n start).2 2223879 := by
+  have hr := residue_t (pointSquareProgram n start).2 (fun _ => false) (fun _ => false)
+  have ht := pointSquareProgram_tCount n start (fun _ => false) (fun _ => false)
+  rw [fig14SquareSubtract_counts.1] at ht
+  have hz := residue_pointSquare n start
+  unfold AtLeast compiledTCount at *
+  omega
+
+end
+section
+set_option linter.unusedSimpArgs false
+attribute [local irreducible] added residue modularSubProgram modularDoubleProgram modularHalveProgram
+-- Inside AndGadget, after SquareParts; generic source only.
+@[simp] theorem residue_horner (n start : Nat) (controls input acc : List Wire) (bits : List Bool)
+    (p : Nat) (c r t f : Wire) :
+    residue (hornerProgram n start controls input acc bits p c r t f).2 = 0 := by
+  change compiledResidue (hornerProgram n start controls input acc bits p c r t f) = 0
+  induction controls generalizing start with
+  | nil => simp [hornerProgram,compiledResidue,residue]
+  | cons q qs ih =>
+    rw [hornerProgram]
+    simp only [compiledResidue] at ih ⊢
+    simp only [residue_compiled,ih,Nat.zero_add,residue_ite]
+    split <;> simp [residue_compiled]
+
+@[simp] theorem residue_hornerInverse (n start : Nat) (controls input acc : List Wire) (bits : List Bool)
+    (p : Nat) (c r t f : Wire) :
+    residue (hornerInverseProgram n start controls input acc bits p c r t f).2 = 0 := by
+  change compiledResidue (hornerInverseProgram n start controls input acc bits p c r t f) = 0
+  induction controls generalizing start with
+  | nil => simp [hornerInverseProgram,compiledResidue,residue]
+  | cons q qs ih =>
+    rw [hornerInverseProgram]
+    simp only [compiledResidue] at ih ⊢
+    simp only [residue_compiled,residue_modularSub,Nat.zero_add,residue_ite]
+    split <;> simp [residue_compiled,residue,ih]
+
+@[simp] theorem residue_multiplyWork (n start : Nat) : residue (multiplyWorkProgram n start).2 = 0 := by
+  unfold multiplyWorkProgram
+  exact residue_horner _ _ _ _ _ _ _ _ _ _ _
+@[simp] theorem residue_multiplyData (n start : Nat) : residue (multiplyDataProgram n start).2 = 0 := by
+  unfold multiplyDataProgram
+  exact residue_horner _ _ _ _ _ _ _ _ _ _ _
+@[simp] theorem residue_unmultiplyData (n start : Nat) : residue (unmultiplyDataProgram n start).2 = 0 := by
+  unfold unmultiplyDataProgram
+  exact residue_hornerInverse _ _ _ _ _ _ _ _ _ _ _
+
+attribute [local irreducible] multiplyWorkProgram multiplyDataProgram unmultiplyDataProgram
+
+theorem multiplyWorkCount (n start : Nat) : AtLeast (multiplyWorkProgram n start).2 1110533 := by
+  have hr := residue_t (multiplyWorkProgram n start).2 (fun _ => false) (fun _ => false)
+  have ht := multiplyWorkProgram_tCount n start (fun _ => false) (fun _ => false)
+  rw [fig15MultiplyToWork_resources.1] at ht
+  have hz := residue_multiplyWork n start
+  unfold AtLeast compiledTCount at *
+  omega
+
+theorem multiplyDataCount (n start : Nat) : AtLeast (multiplyDataProgram n start).2 1110533 := by
+  have hr := residue_t (multiplyDataProgram n start).2 (fun _ => false) (fun _ => false)
+  have ht := multiplyDataProgram_tCount n start (fun _ => false) (fun _ => false)
+  rw [fig15MultiplyToData_resources.1] at ht
+  have hz := residue_multiplyData n start
+  unfold AtLeast compiledTCount at *
+  omega
+
+theorem unmultiplyDataCount (n start : Nat) : AtLeast (unmultiplyDataProgram n start).2 1110533 := by
+  have hr := residue_t (unmultiplyDataProgram n start).2 (fun _ => false) (fun _ => false)
+  have ht := unmultiplyDataProgram_tCount n start (fun _ => false) (fun _ => false)
+  rw [fig15MultiplyToDataInverse_resources.1] at ht
+  have hz := residue_unmultiplyData n start
+  unfold AtLeast compiledTCount at *
+  omega
+-- Inside AndGadget after HornerParts.
+attribute [local irreducible] divisionCleanupProgram divisionCorrectionProgram
+ divisionAfterResetProgram divisionProgram multiplicationAfterResetProgram
+ multiplicationCleanupProgram multiplicationCorrectionProgram multiplicationProgram
+ measuredForwardDataBankProgram measuredReverseDataBankProgram
+
+theorem divisionCleanupStrongCount (n start : Nat) :
+    AtLeast (divisionCleanupProgram n start).2 1110533 := by
+  unfold divisionCleanupProgram appendLiteral
+  exact (AtLeast.appendCompiled _ _ (unmultiplyDataCount n start) (AtLeast.zero _)).castCount (by omega)
+
+theorem divisionCorrectionStrongCount (n start : Nat) (prior : List (Fin start)) :
+    AtLeast (divisionCorrectionProgram n start prior).2 1110533 := by
+  unfold divisionCorrectionProgram
+  exact (AtLeast.appendCompiled _ _ (AtLeast.zero _) (divisionCleanupStrongCount n _)).castCount (by omega)
+
+theorem divisionAfterStrongCount (n start : Nat) (prior : List (Fin start)) :
+    AtLeast (divisionAfterResetProgram n start prior).2 17993555 := by
+  unfold divisionAfterResetProgram appendRetaining
+  refine (AtLeast.appendCompiled (d := 16883022) (f := 1110533) _ _ ?_ (divisionCorrectionStrongCount n _ _)).castCount (by omega)
+  exact (AtLeast.appendCompiled _ _ (reverseBankCount n start) (multiplyDataCount n _)).castCount (by omega)
+
+theorem divisionStrongCount (n start : Nat) : AtLeast (divisionProgram n start).2 34876577 := by
+  unfold divisionProgram
+  refine (AtLeast.appendCompiled (d := 16883022) (f := 17993555) _ _ ?_ ?_).castCount (by omega)
+  · exact (AtLeast.appendCompiled _ _ (forwardWrapperFullCount n start) (multiplyWorkCount n _)).castCount (by omega)
+  · exact AtLeast.collect (divisionAfterResetProgram n) (divisionAfterStrongCount n) _ _ _
+
+theorem multiplicationCleanupStrongCount (n start : Nat) :
+    AtLeast (multiplicationCleanupProgram n start).2 16883022 := by
+  unfold multiplicationCleanupProgram appendLiteral
+  refine (AtLeast.appendCompiled (d := 1110533) (f := 15772489) _ _ (unmultiplyDataCount n _) ?_).castCount (by omega)
+  exact (AtLeast.appendCompiled _ _ (reverseBankCount n _) (AtLeast.zero _)).castCount (by omega)
+
+theorem multiplicationCorrectionStrongCount (n start : Nat) (prior : List (Fin start)) :
+    AtLeast (multiplicationCorrectionProgram n start prior).2 16883022 := by
+  unfold multiplicationCorrectionProgram
+  exact (AtLeast.appendCompiled _ _ (AtLeast.zero _) (multiplicationCleanupStrongCount n _)).castCount (by omega)
+
+theorem multiplicationAfterStrongCount (n start : Nat) (prior : List (Fin start)) :
+    AtLeast (multiplicationAfterResetProgram n start prior).2 33766044 := by
+  unfold multiplicationAfterResetProgram appendRetaining
+  refine (AtLeast.appendCompiled (d := 16883022) (f := 16883022) _ _ ?_ (multiplicationCorrectionStrongCount n _ _)).castCount (by omega)
+  exact (AtLeast.appendCompiled _ _ (forwardBankCount n start) (multiplyDataCount n _)).castCount (by omega)
+
+theorem multiplicationStrongCount (n start : Nat) : AtLeast (multiplicationProgram n start).2 34876577 := by
+  unfold multiplicationProgram
+  refine (AtLeast.appendCompiled (d := 1110533) (f := 33766044) _ _ (multiplyWorkCount n start) ?_).castCount (by omega)
+  exact AtLeast.collect (multiplicationAfterResetProgram n) (multiplicationAfterStrongCount n) _ _ _
+
+end
+theorem borrowedFieldCount (n start d : Nat) (arithmetic : FixedSegment n)
+    (hc : ∀ cursor, AtLeast (arithmetic cursor).2 d) :
+    AtLeast (ShorECDLP.Entrant.BorrowFlag.fieldProgram n start arithmetic).2 d := by
+  unfold ShorECDLP.Entrant.BorrowFlag.fieldProgram
+  apply AtLeast.surroundCompiled
+  unfold ShorECDLP.Entrant.BorrowFlag.coreSegments
+  refine (AtLeast.sequenceCons (d := 0) (f := d) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  exact (AtLeast.sequenceCons (d := d) (f := 0) _ _ (hc _) (AtLeast.zero _)).castCount (by omega)
+
+theorem borrowedDivisionCount (n start : Nat) :
+    AtLeast (ShorECDLP.Entrant.BorrowFlag.divisionProgram n start).2 34876577 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.divisionProgram
+  exact borrowedFieldCount n start 34876577 _ (divisionStrongCount n)
+
+theorem borrowedMultiplicationCount (n start : Nat) :
+    AtLeast (ShorECDLP.Entrant.BorrowFlag.multiplicationProgram n start).2 34876577 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
+  exact borrowedFieldCount n start 34876577 _ (multiplicationStrongCount n)
+
+theorem borrowedCoordinateAllCount (start : Nat) : AtLeast (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 72304703 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
+  refine (AtLeast.sequenceCons (d := 65534) (f := 72239169) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 72173635) _ _ (signedFieldCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 34876577) (f := 37297058) _ _ (borrowedDivisionCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 2223879) (f := 35073179) _ _ (pointSquareCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 35007645) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 34876577) (f := 131068) _ _ (borrowedMultiplicationCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 0) (f := 131068) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 65534) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 0) _ _ (signedFieldCount _ _) ?_).castCount (by omega)
+  exact AtLeast.zero _
+
+theorem coreCount (start : Nat) : AtLeast (Single.Physical.core start).2 72730674 := by
+  unfold Single.Physical.core Single.Physical.segments
+  refine (AtLeast.sequenceCons (d := 72304703) (f := 425971) _ _ (borrowedCoordinateAllCount start) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 0) (f := 425971) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  exact (AtLeast.sequenceCons (d := 425971) (f := 0) _ _ (correctionQueryCount _) (AtLeast.zero _)).castCount (by omega)
+
+theorem preparedCount (start : Nat) : AtLeast (Single.Physical.prepared start).2 72730674 := by
   unfold Single.Physical.prepared
   exact AtLeast.surroundCompiled _ _ _ (coreCount start)
 
-theorem actualCount (start : Nat) : AtLeast (Single.Physical.actual.program start) 63089956 := by
+theorem actualCount (start : Nat) : AtLeast (Single.Physical.actual.program start) 72730674 := by
   unfold Single.Physical.actual closedWindow
   exact (((preparedCount 0).relabel (windowAddressPerm 855 (by decide))).castFinish _).shift start
 
 theorem signedCount (w : Single.SignedWindow) (start : Nat) :
-    AtLeast ((Single.signedWindow w).program start) 63089956 := by
+    AtLeast ((Single.signedWindow w).program start) 72730674 := by
   unfold Single.signedWindow
   exact (actualCount start).reindex (Single.signedRow w)
 
@@ -1636,18 +3091,18 @@ structure CountedWindow (n : Nat) where
   saving : Nat
   countProof : ∀ start, AtLeast (source.program start) saving
 
-def leftCountes : List (CountedWindow 901120) :=
-  ⟨Single.firstWindow,65535,firstFullCount⟩ ::
-    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,73330577,signedFullCount w⟩)
-def rightCountes : List (CountedWindow 901120) :=
-  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,73330577,signedFullCount w⟩)
+def leftCountes : List (CountedWindow 917504) :=
+  ⟨Single.firstWindow,0,fun _ => AtLeast.zero _⟩ ::
+    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,72730674,signedCount w⟩)
+def rightCountes : List (CountedWindow 917504) :=
+  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,72730674,signedCount w⟩)
 private theorem leftCountes_source : leftCountes.map CountedWindow.source = Single.leftWindows := by
   simp [leftCountes, Single.leftWindows]
 private theorem rightCountes_source : rightCountes.map CountedWindow.source = Single.rightWindows := by
   simp [rightCountes, Single.rightWindows]
-private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1173354767 := by
+private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1163690784 := by
   simp [leftCountes, Single.leftSigned]
-private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 1026628078 := by
+private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 945498762 := by
   simp [rightCountes, Single.rightSigned]
 
 theorem axisCountProof {n} : (ps : List (CountedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -1671,14 +3126,14 @@ theorem AtLeast.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n 
   unfold Single.framed
   exact AtLeast.gate _ ((AtLeast.append hp ((AtLeast.append hq (AtLeast.gate _ (AtLeast.zero _))).castCount (Nat.add_zero dr))).castFinish h)
 
-theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2199982845 := by
+theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2109189546 := by
   have hl := (axisCountFor leftCountes Single.leftWindows leftCountes_source start List.nil).castCount leftCountes_saving
   have hr := (axisCountFor rightCountes Single.rightWindows rightCountes_source
     (start+Single.axisCount Single.leftWindows) List.nil).castCount rightCountes_saving
   unfold Single.trial
   exact (AtLeast.framed _ _ _ _ hl hr).castCount (by decide)
 
-theorem programCount : AtLeast Single.program 2199982845 := by
+theorem programCount : AtLeast Single.program 2109189546 := by
   unfold Single.program
   exact (trialCount 0).castFinish _
 
@@ -1687,10 +3142,10 @@ theorem AtLeast.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 
   unfold Single.fixedEntry
   exact hp.reindex _
 
-theorem entryCount : AtLeast Rounded.entry.program 2199982845 := by
+theorem entryCount : AtLeast Rounded.entry.program 2109189546 := by
   unfold Rounded.entry Rounded.program
-  apply AtLeast.fixedEntry Single.mixedCoefficientAt
-  exact (AtLeast.append programCount (AtLeast.zero Rounded.readout)).castCount (by omega)
+  apply AtLeast.fixedEntry
+  exact ((AtLeast.append programCount (AtLeast.zero Rounded.readout)).castCount (by omega))
 
 theorem dropped_added {n s e d} {p q : Straight n s e} (h : Optimization.Drops p q d) :
     7 * added p ≤ 7 * added q + d := by
@@ -1707,15 +3162,14 @@ theorem dropped_added {n s e d} {p q : Straight n s e} (h : Optimization.Drops p
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 
 
-theorem parent_added_lower : 2180154045 ≤ added Parent.entry.program := by
+
+theorem parent_added_lower : 2090021706 ≤ added Parent.entry.program := by
   have h := dropped_added Optimization.entryPatch.drops
   have hc := entryCount
-  change 2199982845 ≤ added Rounded.entry.program at hc
+  change 2109189546 ≤ added Rounded.entry.program at hc
   unfold Parent.entry Optimization.replaceEntry
-  change 2180154045 ≤ added Optimization.entryPatch.program
+  change 2090021706 ≤ added Optimization.entryPatch.program
   omega
-
-
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) (ws : List Wire)
     (hp : Within ws p) : Within ws (reindexStraight f p) := by
   induction p with
@@ -1742,7 +3196,7 @@ theorem fixedEntry_within {n e} (f : Fin n → PointCoeff) (p : Straight n 0 e)
 
 attribute [local irreducible] Within
 
-theorem parent_within : Within completeBatchedSupport Parent.entry.program := by
+theorem parent_within : Within resetWires Parent.entry.program := by
   unfold Parent.entry Optimization.replaceEntry
   apply within_drops Optimization.entryPatch.drops
   unfold Rounded.entry
@@ -1756,18 +3210,18 @@ theorem parent_within : Within completeBatchedSupport Parent.entry.program := by
 
 set_option maxRecDepth 2000
 
-theorem parent_added_upper : added Parent.entry.program ≤ 7630568872 := by
+theorem parent_added_upper : added Parent.entry.program ≤ 7375499580 := by
   have h := lower_t 1024 Parent.entry.program 0 Fin.elim0
     (readConstant Parent.entry.coefficients.get 0) Fin.elim0 Fin.elim0
     (by funext i; exact Fin.elim0 i)
   have ht := (Parent.certificate.resources 0).2.1
-  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 15261137744 at ht
+  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14750999161 at ht
   omega
 
 
-theorem parent_slots : Parent.entry.program.gateSlots ≤ 93000061339 := by
+theorem parent_slots : Parent.entry.program.gateSlots ≤ 90000176648 := by
   have hs := Optimization.entryPatch.drops.slots
-  have ho : Rounded.entry.program.gateSlots ≤ 93000061339 := by
+  have ho : Rounded.entry.program.gateSlots ≤ 90000176648 := by
     rw [Rounded.entry, Single.fixedEntry_slots]
     exact Rounded.program_slots
   unfold Parent.entry Optimization.replaceEntry
@@ -1783,13 +3237,13 @@ set_option maxRecDepth 10000
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 noncomputable def entry : StraightEntry := lowerEntry 1024 Parent.entry
 noncomputable def layout : DecodeLayout := lowerLayout 1024 Parent.entry Parent.layout
-def bounds : Bounds := ⟨856, 10900829654, 8551657664⟩
+def bounds : Bounds := ⟨855, 10570955749, 8266128294⟩
 
 private theorem resourceArithmetic (a slots cursor oldT newT maxSlots maxRecords newRecords : Nat)
-    (ha : a ≤ 7630568872) (hl : 2180154045 ≤ a) (hs : slots ≤ 93000061339)
-    (hc : cursor ≤ 921088792) (ho : oldT ≤ 15261137744) (hn : 10900829654 ≤ newT)
+    (ha : a ≤ 7375499580) (hl : 2090021706 ≤ a) (hs : slots ≤ 90000176648)
+    (hc : cursor ≤ 890628714) (ho : oldT ≤ 14750999161) (hn : 10570955749 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hlm : 47471340504 ≤ maxRecords)
-    (hnm : 8551657664 ≤ newRecords) :
+    (hnm : 8266128294 ≤ newRecords) :
     slots + 18*a ≤ maxSlots ∧ cursor+a ≤ maxRecords ∧ oldT ≤ newT + 2*a ∧
     cursor+a ≤ newRecords := by omega
 
@@ -1800,12 +3254,12 @@ theorem certificate : Certificate officialLimits layout entry bounds := by
     parent_added_upper parent_added_lower parent_slots (by decide) (by decide) (by decide)
     (by decide) (by decide) (by decide)
   apply lower_certificate officialLimits Parent.layout Parent.entry Parent.bounds bounds
-    1024 completeBatchedSupport Parent.certificate parent_within
-  · simp [completeBatchedSupport, resetWires]
+    1024 resetWires Parent.certificate parent_within
+  · simp [resetWires]
   · exact h.1
   · exact h.2.1
-  · change completeBatchedSupport.length + 1 ≤ 856
-    rw [completeBatchedSupport_length]
+  · change resetWires.length + 1 ≤ 855
+    rw [resetWires_length]
   · exact h.2.2.1
   · exact h.2.2.2
 end ShorECDLP.Entrant.Five
@@ -1842,18 +3296,18 @@ private theorem lowerEntry_slots (q : Wire) (e : StraightEntry) :
   unfold lowerEntry
   exact lower_slots q e.program 0 Fin.elim0
 
-private theorem five_within : Within (1024 :: completeBatchedSupport) Five.entry.program :=
-  lowerEntry_within 1024 Parent.entry completeBatchedSupport parent_within
+private theorem five_within : Within (1024 :: resetWires) Five.entry.program :=
+  lowerEntry_within 1024 Parent.entry resetWires parent_within
 
-private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2180154045 ≤ a) :
-    2180154045 ≤ s := by omega
+private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2090021706 ≤ a) :
+    2090021706 ≤ s := by omega
 
-private theorem five_saved : 2180154045 ≤ Catalyst.saved Five.entry.program :=
+private theorem five_saved : 2090021706 ≤ Catalyst.saved Five.entry.program :=
   saved_bound (added Parent.entry.program) (Catalyst.saved Parent.entry.program)
     (Catalyst.saved Five.entry.program) (lowerEntry_saved 1024 Parent.entry) parent_added_lower
 
 private theorem slots_bound (old new a : Nat) (he : new = old + 18*a)
-    (hs : old ≤ 93000061339) (ha : a ≤ 7630568872) : new ≤ 230350301035 := by omega
+    (hs : old ≤ 90000176648) (ha : a ≤ 7375499580) : new ≤ 230350301035 := by omega
 
 private theorem five_slots : Five.entry.program.gateSlots ≤ 230350301035 :=
   slots_bound Parent.entry.program.gateSlots Five.entry.program.gateSlots
@@ -1861,12 +3315,12 @@ private theorem five_slots : Five.entry.program.gateSlots ≤ 230350301035 :=
 
 noncomputable def entry : StraightEntry := Catalyst.compileEntry 1025 Five.entry
 noncomputable def layout : DecodeLayout := Five.layout
-def bounds : Bounds := ⟨857, 8720675610, 8551657664⟩
+def bounds : Bounds := ⟨856, 8480934044, 8266128294⟩
 
 private theorem resourceArithmetic (s a c oldT newT maxSlots m : Nat)
-    (hs : s ≤ 230350301035) (ha : a ≤ s) (hl : 2180154045 ≤ a)
-    (hc : c ≤ 8551657664) (ho : oldT ≤ 10900829654) (hn : 8720675610 ≤ newT)
-    (hls : 4000000000000000 ≤ maxSlots) (hm : 8551657664 ≤ m) :
+    (hs : s ≤ 230350301035) (ha : a ≤ s) (hl : 2090021706 ≤ a)
+    (hc : c ≤ 8266128294) (ho : oldT ≤ 10570955749) (hn : 8480934044 ≤ newT)
+    (hls : 4000000000000000 ≤ maxSlots) (hm : 8266128294 ≤ m) :
     s + 3*a + 2 ≤ maxSlots ∧ oldT + 1 ≤ newT + a ∧ c ≤ m := by omega
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
@@ -1876,11 +3330,11 @@ theorem certificate : Certificate officialLimits layout entry bounds := by
     (cursor_bound officialLimits Five.layout Five.entry Five.bounds Five.certificate)
     (by decide) (by decide) (by decide) (by decide)
   apply Catalyst.compile_certificate officialLimits Five.layout Five.entry Five.bounds bounds
-    1025 (1024 :: completeBatchedSupport) Five.certificate five_within
-  · simp [completeBatchedSupport, resetWires]
+    1025 (1024 :: resetWires) Five.certificate five_within
+  · simp [resetWires]
   · exact h.1
-  · change (1024 :: completeBatchedSupport).length + 1 ≤ 857
-    simp [completeBatchedSupport_length]
+  · change (1024 :: resetWires).length + 1 ≤ 856
+    simp [resetWires_length]
   · exact h.2.1
   · exact h.2.2
 end
