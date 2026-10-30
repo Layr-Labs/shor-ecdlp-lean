@@ -1249,9 +1249,9 @@ theorem decoder_budget :
     28*decoderCandidateLimit .wrappedShift params ≤ budget55 := by
   norm_num [decoderCandidateLimit,trialCandidateLimit,params,budget55,order]
 
-theorem table_budget : 131072+(6+12)*32768+11*16384 ≤ 983040 := by norm_num
+theorem table_budget : 65536+(7+12)*32768+10*16384 ≤ 983040 := by norm_num
 
-theorem left_width : 17+6*16+10*15=263 := by norm_num
+theorem left_width : 16+7*16+9*15=263 := by norm_num
 theorem right_width : 12*16+15=207 := by norm_num
 
 end
@@ -5074,24 +5074,19 @@ noncomputable section
 attribute [local irreducible] fourierOutcomes
 
 theorem bank_nodup (width : Nat) : (bank width).Nodup := by
-  by_cases h10 : width=10
-  · rw [bank,if_pos h10];decide +kernel
-  · by_cases h15 : width=15
-    · rw [bank,if_neg h10,if_pos h15];decide +kernel
-    · rw [bank,if_neg h10,if_neg h15];exact List.nodup_range'
+  by_cases hw : width = 15
+  · rw [bank, if_pos hw]; decide +kernel
+  · rw [bank, if_neg hw]; exact List.nodup_range'
 
 theorem bank_width (w : SignedWindow) : (bank w.width).length = w.width := by
   cases w <;> simp [bank, SignedWindow.width]
 
-theorem bank_subset (width : Nat) : ∀v∈bank width,v∈streamAddress := by
+theorem bank_subset (width : Nat) : ∀ v ∈ bank width, v ∈ streamAddress := by
   intro v hv
-  by_cases h10 : width=10
-  · rw [bank,if_pos h10] at hv
-    exact (show ∀v∈List.range' 855 9++[870],v∈streamAddress by decide +kernel) v hv
-  · by_cases h15 : width=15
-    · rw [bank,if_neg h10,if_pos h15] at hv
-      exact (show ∀v∈List.range' 855 14++[870],v∈streamAddress by decide +kernel) v hv
-    · simpa only [bank,if_neg h10,if_neg h15,streamAddress] using hv
+  by_cases hw : width = 15
+  · rw [bank, if_pos hw] at hv
+    exact (show ∀ v ∈ List.range' 855 14 ++ [870], v ∈ streamAddress by decide +kernel) v hv
+  · simpa only [bank, if_neg hw, streamAddress] using hv
 
 theorem bank_not_point (width : Nat) : ∀ v ∈ bank width, v ∉ pointLogicalWires := by
   intro v hv
@@ -5099,7 +5094,7 @@ theorem bank_not_point (width : Nat) : ∀ v ∈ bank width, v ∉ pointLogicalW
     (bank_subset width v hv)
 
 theorem bank_not_padding (width : Nat) (hw : width = 15) : 869 ∉ bank width := by
-  rw [hw]; decide +kernel
+  rw [bank, if_pos hw]; decide +kernel
 
 theorem bank_clean (width : Nat) (s : BasisState) (hz : Clean streamAddress s) :
     Clean (bank width) s := fun v hv => hz v (bank_subset width v hv)
@@ -5198,60 +5193,35 @@ theorem signed_window_point_sum {n : Nat} {coeffs : Fin n → PointCoeff}
   intro input hi
   rw [signed_assigned_clear law Q hQ hn w P s hs hz input ((fourierOutcomes_mem _ _).mp hi)]
 
-theorem first17_nodup : First17.bits.Nodup := by decide +kernel
-
-theorem first17_not_point : ∀ v ∈ First17.bits, v ∉ pointLogicalWires := by decide +kernel
-
-theorem first17_clean (s : BasisState) (hs : FirstWindowInput s)
-    (hz : Clean streamAddress s) : Clean First17.bits s := by
-  intro v hv
-  simp only [First17.bits,List.mem_append,List.mem_singleton] at hv
-  rcases hv with hv | rfl
-  · exact hz v hv
-  · exact hs.2 536 (by decide) (by decide +kernel)
-
-theorem first17_assigned_digit (s : BasisState) (input : List Bool)
-    (hi : input.length = First17.bits.length) :
-    tableAddressValue First17.bits (phaseWordState First17.bits input s) = boolWordToNat input := by
-  have he (ws : List Wire) (t : BasisState) :
-      tableAddressValue ws t = boolWordToNat (wireValues ws t) := by
-    induction ws with
-    | nil => rfl
-    | cons w ws ih =>
-      change (t w).toNat + 2 * tableAddressValue ws t =
-        (t w).toNat + 2 * boolWordToNat (wireValues ws t)
-      rw [ih]
-  rw [he,phaseWordState_word _ first17_nodup input hi s]
-
 /-- The initial direct load uses the same variable-width Fourier rule. -/
 theorem first_window_point_sum (Q : Point) (prior output : List Bool)
-    (s : BasisState) (hs : FirstWindowInput s) (hz : Clean streamAddress s) :
-    fourierBranch .inverse (First17.bits).reverse prior output
+    (s : BasisState) (hz : Clean streamAddress s) :
+    fourierBranch .inverse (bank 16).reverse prior output
       (Finsupp.lmapDomain ℂ ℂ (firstUpdate Q)
-        (Quantum.run ((First17.bits).map Gate.H) (ket s))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-        ((fourierOutcomes 17).map (fun input =>
+        (Quantum.run ((bank 16).map Gate.H) (ket s))) =
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 16) •
+        ((fourierOutcomes 16).map (fun input =>
           fourierBitAmplitude .inverse input.reverse prior output •
             ket (pointWrite (initialPoint Q (boolWordToNat input)) s))).sum := by
-  have hlen : (First17.bits).length = 17 := by decide +kernel
-  rw [window_branch_uniform .inverse (First17.bits) first17_nodup
-    (firstUpdate Q) prior output s (first17_clean s hs hz) (by
+  have hlen : (bank 16).length = 16 := by decide +kernel
+  rw [window_branch_uniform .inverse (bank 16) (bank_nodup 16)
+    (firstUpdate Q) prior output s (bank_clean 16 s hz) (by
       intro input hi
-      have he : (First17.bits).map (firstUpdate Q (phaseWordState (First17.bits) input s)) =
-          (First17.bits).map (phaseWordState (First17.bits) input s) := by
+      have he : (bank 16).map (firstUpdate Q (phaseWordState (bank 16) input s)) =
+          (bank 16).map (phaseWordState (bank 16) input s) := by
         apply List.map_congr_left
         intro v hv
-        exact pointWrite_frame _ _ v (first17_not_point v hv)
+        exact pointWrite_frame _ _ v (bank_not_point 16 v hv)
       rw [he]
-      exact phaseWordState_word _ first17_nodup input
+      exact phaseWordState_word _ (bank_nodup 16) input
         ((fourierOutcomes_mem _ _).mp hi) s), hlen]
-  apply congrArg (fun ψ : State => (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) • ψ)
+  apply congrArg (fun ψ : State => (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 16) • ψ)
   apply congrArg List.sum
   apply List.map_congr_left
   intro input hi
   unfold firstUpdate
-  rw [first17_assigned_digit s input (by simpa only [hlen] using (fourierOutcomes_mem _ _).mp hi),
-    clear_assigned_point _ input s (first17_clean s hs hz) first17_not_point]
+  rw [assigned_digit 16 s input (by simpa only [hlen] using (fourierOutcomes_mem _ _).mp hi),
+    clear_assigned_point _ input s (bank_clean 16 s hz) (bank_not_point 16)]
 
 end
 end ShorECDLP.Entrant.Single
@@ -5403,45 +5373,45 @@ theorem ready_signed {n : Nat} {coeffs : Fin n → PointCoeff}
       exact ih _ (signedModel_preserves law hwires Q hQ hn w root hs hz prior bits ψ hψ)
 
 def firstModel {n : Nat} {coeffs : Fin n → PointCoeff} (physical : Window n)
-    (law : WindowLaw coeffs physical firstUpdate First17.Input)
-    (hwires : physical.wires = (First17.bits).reverse)
+    (law : WindowLaw coeffs physical firstUpdate FirstWindowInput)
+    (hwires : physical.wires = (bank 16).reverse)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : WindowModel (readConstant coeffs Q) where
   physical := physical
   point := initialPoint Q
   bias := -(leftOffset • G + rightOffset • Q)
   ideal := Finsupp.lmapDomain ℂ ℂ (firstUpdate Q)
-  valid := First17.Input
-  nodup := by rw [hwires]; exact List.nodup_reverse.mpr first17_nodup
+  valid := FirstWindowInput
+  nodup := by rw [hwires]; exact List.nodup_reverse.mpr (bank_nodup 16)
   coherent := law Q hQ hn
 
 theorem firstModel_step {n : Nat} {coeffs : Fin n → PointCoeff} (physical : Window n)
-    (law : WindowLaw coeffs physical firstUpdate First17.Input)
-    (hwires : physical.wires = (First17.bits).reverse)
+    (law : WindowLaw coeffs physical firstUpdate FirstWindowInput)
+    (hwires : physical.wires = (bank 16).reverse)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (prior bits : List Bool) (root : BasisState) (hs : FirstWindowInput root) (hz : Clean streamAddress root) :
+    (prior bits : List Bool) (root : BasisState) (hz : Clean streamAddress root) :
     (firstModel physical law hwires Q hQ hn).step prior bits (ket root) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-        ((fourierOutcomes 17).map (fun input =>
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 16) •
+        ((fourierOutcomes 16).map (fun input =>
           fourierBitAmplitude .inverse input.reverse prior bits •
             ket (pointWrite (initialPoint Q (boolWordToNat input)) root))).sum := by
   simp only [WindowModel.step, firstModel, hwires, List.reverse_reverse, LinearMap.comp_apply]
-  exact first_window_point_sum Q prior bits root hs hz
+  exact first_window_point_sum Q prior bits root hz
 
 theorem ready_first_signed {n : Nat} {coeffs : Fin n → PointCoeff}
     {physical : SignedWindow → Window n} (law : SignedWindowLaw coeffs physical)
     (hwires : ∀ w, (physical w).wires = (bank w.width).reverse)
-    (first : Window n) (hfirst : WindowLaw coeffs first firstUpdate First17.Input)
-    (hfirstWires : first.wires = (First17.bits).reverse)
+    (first : Window n) (hfirst : WindowLaw coeffs first firstUpdate FirstWindowInput)
+    (hfirstWires : first.wires = (bank 16).reverse)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (ws : List SignedWindow)
     (root : BasisState) (hs : FirstWindowInput root) (hz : Clean streamAddress root) :
     Ready (firstModel first hfirst hfirstWires Q hQ hn ::
       ws.map (signedModel law hwires Q hQ hn)) (ket root) := by
   constructor
   · simp only [firstModel, hfirstWires, List.reverse_reverse]
-    exact First17.input_prepare _ (fun _ h => h) _ (supportedOn_ket _ _ (First17.input_of_strong root hs))
+    exact firstWindowInput_prepare _ (bank_subset 16) _ (supportedOn_ket _ _ hs)
   · intro prior bits
     apply ready_signed law hwires Q hQ hn ws root hs hz
-    rw [firstModel_step first hfirst hfirstWires Q hQ hn prior bits root hs hz]
+    rw [firstModel_step first hfirst hfirstWires Q hQ hn prior bits root hz]
     apply Support.smul
     apply Support.list_sum
     intro input hi
@@ -5458,15 +5428,15 @@ theorem signedModel_pointRule {n : Nat} {coeffs : Fin n → PointCoeff}
     signedModel_step law hwires Q hQ hn w prior bits P root hs hz
 
 theorem firstModel_firstRule {n : Nat} {coeffs : Fin n → PointCoeff} (physical : Window n)
-    (law : WindowLaw coeffs physical firstUpdate First17.Input)
-    (hwires : physical.wires = (First17.bits).reverse)
+    (law : WindowLaw coeffs physical firstUpdate FirstWindowInput)
+    (hwires : physical.wires = (bank 16).reverse)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (root : BasisState) (hs : FirstWindowInput root) (hz : Clean streamAddress root) :
+    (root : BasisState) (hz : Clean streamAddress root) :
     FirstRule root (ket root) (firstModel physical law hwires Q hQ hn) := by
   intro prior bits
-  have hlen : (First17.bits).length = 17 := by decide +kernel
+  have hlen : (bank 16).length = 16 := by decide +kernel
   simpa only [firstModel, hwires, List.length_reverse, hlen] using
-    firstModel_step physical law hwires Q hQ hn prior bits root hs hz
+    firstModel_step physical law hwires Q hQ hn prior bits root hz
 
 end
 end ShorECDLP.Entrant.Single.Distribution
@@ -5549,12 +5519,12 @@ theorem right_offsets :
     SignedWindow.width, SignedWindow.exponent]
 
 theorem left_base (Q : Point) (w : SignedWindow) (hw : w ∈ leftSigned) : w.base Q = G := by
-  simp only [leftSigned,List.mem_append,List.mem_ofFn] at hw
-  rcases hw with ⟨i,rfl⟩ | ⟨i,rfl⟩ <;> rfl
+  simp only [leftSigned, List.mem_append, List.mem_ofFn] at hw
+  rcases hw with ⟨i, rfl⟩ | ⟨i, rfl⟩ <;> rfl
 
 theorem right_base (Q : Point) (w : SignedWindow) (hw : w ∈ rightSigned) : w.base Q = Q := by
-  simp only [rightSigned,List.mem_append,List.mem_ofFn,List.mem_singleton] at hw
-  rcases hw with ⟨i,rfl⟩ | rfl <;> rfl
+  simp only [rightSigned, List.mem_append, List.mem_singleton, List.mem_ofFn] at hw
+  rcases hw with rfl | ⟨i, rfl⟩ <;> rfl
 
 theorem increments_sum (Q : Point) (hQ : order • Q = 0) (ws : List SignedWindow)
     (P : Point) (hbase : ∀ w ∈ ws, w.base Q = P) (values : SignedWindow → Nat) :
@@ -5575,7 +5545,7 @@ theorem unsigned_reconstruction (Q : Point) (hQ : order • Q = 0)
     (first : Nat) (values : SignedWindow → Nat) :
     initialPoint Q first + (leftSigned.map (fun w => increment Q w (values w))).sum +
       (rightSigned.map (fun w => increment Q w (values w))).sum =
-    (first * 2^246 + (leftSigned.map (fun w => values w * 2^w.exponent)).sum) • G +
+    (first * 2^247 + (leftSigned.map (fun w => values w * 2^w.exponent)).sum) • G +
       (rightSigned.map (fun w => values w * 2^w.exponent)).sum • Q := by
   rw [increments_sum Q hQ leftSigned G (left_base Q) values,
     increments_sum Q hQ rightSigned Q (right_base Q) values, left_offsets, right_offsets]
@@ -5601,12 +5571,12 @@ set_option pp.maxSteps 60
 structure Setup {n : Nat} (coeffs : Fin n → PointCoeff) where
   first : Window n
   signed : SignedWindow → Window n
-  firstLaw : WindowLaw coeffs first firstUpdate First17.Input
+  firstLaw : WindowLaw coeffs first firstUpdate FirstWindowInput
   signedLaw : SignedWindowLaw coeffs signed
-  firstWires : first.wires = (First17.bits).reverse
+  firstWires : first.wires = (bank 16).reverse
   signedWires : ∀ w, (signed w).wires = (bank w.width).reverse
-  firstCount : first.count = 131071
-  signedCount : ∀ w, (signed w).count = if w.width=15 then 30331021 else 30707853
+  firstCount : first.count = 65535
+  signedCount : ∀ w, (signed w).count = 30949387
 
 def Setup.firstModel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : WindowModel (readConstant coeffs Q) :=
@@ -5658,7 +5628,7 @@ theorem Setup.modelWeights {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup 
       exact increment_offset Q hQ w v
     · exact ih hw.2.2
 
-theorem left_signed_width : (leftSigned.map SignedWindow.width).sum = 246 := by
+theorem left_signed_width : (leftSigned.map SignedWindow.width).sum = 247 := by
   norm_num [leftSigned, List.ofFn_succ, SignedWindow.width]
 
 theorem right_signed_width : (rightSigned.map SignedWindow.width).sum = 207 := by
@@ -5672,7 +5642,7 @@ theorem Setup.left_weights {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup 
   · intro v
     change initialPoint Q v + -(leftOffset • G + rightOffset • Q) = _
     have hwidths : ((leftSigned.map (s.signedModel Q hQ hn)).map
-        (fun w => w.physical.wires.length)).sum = 246 := by
+        (fun w => w.physical.wires.length)).sum = 247 := by
       simp only [List.map_map, Function.comp_def, s.signed_length, left_signed_width]
     rw [hwidths]
     unfold initialPoint
@@ -5736,7 +5706,7 @@ theorem Setup.kernel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs
   rw [Setup.leftModels, Setup.rightModels]
   apply kernelLaw_of_windows Q initialRoot (ket initialRoot) (s.firstModel Q hQ hn)
     (leftSigned.map (s.signedModel Q hQ hn)) (rightSigned.map (s.signedModel Q hQ hn))
-  · exact firstModel_firstRule s.first s.firstLaw s.firstWires Q hQ hn initialRoot initialRoot_input initialRoot_clean
+  · exact firstModel_firstRule s.first s.firstLaw s.firstWires Q hQ hn initialRoot initialRoot_clean
   · intro w hw
     rw [← List.map_append] at hw
     obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hw
@@ -5749,7 +5719,7 @@ theorem Setup.kernel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs
 theorem Setup.left_precision {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : precision (s.leftModels Q hQ hn) = 263 := by
   rw [precision, Setup.leftModels, List.map_cons, List.sum_cons]
-  have hlen : (First17.bits).length = 17 := by decide +kernel
+  have hlen : (bank 16).length = 16 := by decide +kernel
   simp only [Setup.firstModel, ShorECDLP.Entrant.Single.Distribution.firstModel, s.firstWires, List.length_reverse, hlen,
     List.map_map, Function.comp_def, s.signed_length, left_signed_width]
 
@@ -5762,7 +5732,7 @@ theorem Setup.left_metadata {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     ((s.leftModels Q hQ hn).map WindowModel.physical).map
       (fun w => (w.count, w.wires.length)) = leftMetadata := by
-  have hlen : (First17.bits).length = 17 := by decide +kernel
+  have hlen : (bank 16).length = 16 := by decide +kernel
   simp only [Setup.leftModels, List.map_cons, List.map_map, Function.comp_def,
     Setup.firstModel, ShorECDLP.Entrant.Single.Distribution.firstModel, Setup.signedModel, ShorECDLP.Entrant.Single.Distribution.signedModel, s.firstCount, s.signedCount,
     s.firstWires, s.signedWires, List.length_reverse, hlen, bank_width]
@@ -5778,7 +5748,7 @@ theorem Setup.right_metadata {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setu
 
 theorem Setup.left_count {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 487688662 := by
+    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 495255990 := by
   rw [← recordCount_eq_axisCount, s.left_metadata, left_record_count]
 
 theorem Setup.left_positions {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
@@ -5809,10 +5779,10 @@ noncomputable section
 set_option maxRecDepth 4096
 set_option pp.maxSteps 60
 
-theorem firstInputLaw : WindowLaw mixedCoefficientAt firstWindow firstUpdate First17.Input := by
+theorem firstInputLaw : WindowLaw mixedCoefficientAt firstWindow firstUpdate FirstWindowInput := by
   intro Q hQ _hn start history
   obtain ⟨cs, hc, hm⟩ := firstWindow_coherent Q hQ start history
-  exact ⟨cs, hc.imp (fun _ _ hb s hs => hb s (First17.input_lookup s hs)), hm⟩
+  exact ⟨cs, hc.imp (fun _ _ hb s hs => hb s (firstWindowInput_lookup s hs)), hm⟩
 
 /-- All premises of the abstract distribution theorem are supplied by real bodies. -/
 def concreteSetup : Setup mixedCoefficientAt where
@@ -5916,7 +5886,7 @@ theorem framed_reset_run {n start a b finish out : Nat}
     rfl
   rw [framed_run, unitary_run_map, append_run_fixed_right _ _ _ _ _ _ ht]
 
-theorem program_run_data (read : ConstantBit 901120 → Bool) :
+theorem program_run_data (read : ConstantBit 851968 → Bool) :
     (ShorECDLP.Entrant.Single.program.instantiate read Fin.elim0).run =
       ((physicalAxesData leftWindows rightWindows read 0 Fin.elim0).seq terminalInstrument).map
         (fun b => ({history := List.nil, kraus := Quantum.run [.X 836]} : InstrumentBranch).seq b) := by

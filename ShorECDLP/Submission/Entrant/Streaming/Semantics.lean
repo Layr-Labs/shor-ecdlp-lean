@@ -3147,7 +3147,198 @@ theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgra
   unfold multiplicationProgram
   exact appendCompiled_wellFormed _ _ (multiplyWorkProgram_wellFormed _ _)
     (collectProgram_wellFormed _ _ (multiplicationAfterResetProgram_wellFormed n) _ _ _)
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+private theorem measuredPhysical_unary_literal_view (order : UnaryOrder) (leaf : Nat → Wire → Circuit)
+    (tree : UnaryActionTree) (control : Wire) (path : List Wire) :
+    unaryAdaptiveAction order (fun l c => .unitary (leaf l c) .done) tree control path =
+      unaryAction order leaf tree control path := by
+  induction tree generalizing control path with
+  | leaf l => rfl
+  | node bit zero one ihz iho =>
+    cases path with
+    | nil => rfl
+    | cons p ps => cases order <;> simp [unaryAdaptiveAction,unaryAction,ihz,iho]
+
+theorem program_wellFormed (n start : Nat) (r : QuotientSwapRegisters) (k K : Nat)
+    (h : (quotientSwap r k K).WellFormed) : (program n start r k K).2.WellFormed := by
+  have hp := adaptive_seq_wellFormed_parts _ _ h
+  have ht := adaptive_seq_wellFormed_parts _ _ hp.2
+  unfold program
+  apply surroundCompiled_wellFormed _ _ _ hp.1.1 ht.2.1
+  apply unaryProgram_wellFormed n .inc _ (fun l c => .unitary (quotientSwapLeaf r k l c) .done)
+  · intro label control cursor hh
+    exact literalProgram_wellFormed _ hh.1
+  · rw [measuredPhysical_unary_literal_view]
+    exact ht.1
+
+theorem d2Program_wellFormed (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow)
+    (h : (blockD2 r w).WellFormed) : (d2Program n start r w).2.WellFormed := by
+  have hp := adaptive_seq_wellFormed_parts _ _ h
+  have ht := adaptive_seq_wellFormed_parts _ _ hp.2
+  exact surroundCompiled_wellFormed _ _ _ hp.1.1 ht.2.1
+    (program_wellFormed n start (r.quotient w) w.start w.stop ht.1)
+
+theorem dProgram_wellFormed (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow)
+    (h : (blockD r w).WellFormed) : (dProgram n start r w).2.WellFormed := by
+  have hp := adaptive_seq_wellFormed_parts _ _ h
+  have ht := adaptive_seq_wellFormed_parts _ _ hp.1
+  exact surroundCompiled_wellFormed _ _ _ ht.1.1 hp.2.1
+    (d2Program_wellFormed n start r w ht.2)
+
+theorem cdProgram_wellFormed (n start : Nat) (r : IndexedStepRegisters) (width T : Nat)
+    (h : (blockCD r width T).WellFormed) : (cdProgram n start r width T).2.WellFormed := by
+  have hp := adaptive_seq_wellFormed_parts _ _ h
+  exact prependCompiled_wellFormed _ _ hp.1.1
+    (dProgram_wellFormed n start r _ hp.2)
+
+theorem stepProgram_wellFormed (n start : Nat) (r : IndexedStepRegisters) (width T : Nat)
+    (h : (step r width T).WellFormed) : (stepProgram n start r width T).2.WellFormed := by
+  unfold stepProgram
+  rw [← stepSources_eq r width T] at h
+  apply sequenceProgram_wellFormed_of_source _ _ _ _ h
+  unfold stepSegments stepSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil))))))
+  · intro cursor hh; exact literalProgram_wellFormed _ hh.1
+  · intro cursor hh; exact remainderBlockProgram_wellFormed n cursor r width _ hh
+  · intro cursor hh; exact cdProgram_wellFormed n cursor r width T hh
+  · intro cursor hh; exact coefficientBlockProgram_wellFormed n cursor r width _ hh
+  · intro cursor hh; exact literalProgram_wellFormed _ hh.1
+  · intro cursor hh; exact phaseProgram_wellFormed n cursor r.phaseUpdate r.shiftEpoch hh
+  · intro cursor hh; exact hProgram_wellFormed n cursor r width T hh
+
+attribute [local irreducible] stepProgram step
+
+theorem scheduleProgram_wellFormed (n : Nat) (r : IndexedStepRegisters) (width count first start : Nat)
+    (h : (schedule r width first count).WellFormed) :
+    (scheduleProgram n r width count first start).2.WellFormed := by
+  induction count generalizing first start with
+  | zero => trivial
+  | succ count ih =>
+    have hs := adaptive_seq_wellFormed_parts _ _ h
+    exact appendCompiled_wellFormed _ _ (stepProgram_wellFormed _ _ _ _ _ hs.1)
+      (ih _ _ hs.2)
+
+attribute [local irreducible] scheduleProgram schedule
+
+private theorem measuredPhysical_forward_source_view (r : IndexedStepRegisters) :
+    forward r = schedule r 256 1 secp256k1ScheduleLength := rfl
+private theorem measuredPhysical_forward_program_view (n start : Nat) (r : IndexedStepRegisters) :
+    forwardProgram n start r = scheduleProgram n r 256 secp256k1ScheduleLength 1 start := rfl
+
+theorem forwardProgram_wellFormed (n start : Nat) (r : IndexedStepRegisters)
+    (h : (forward r).WellFormed) : (forwardProgram n start r).2.WellFormed :=
+  (congrArg (fun p : (count : Nat) × Straight n start (start+count) => p.2.WellFormed)
+    (measuredPhysical_forward_program_view n start r)).mpr
+    (scheduleProgram_wellFormed n r 256 secp256k1ScheduleLength 1 start
+      ((congrArg AdaptiveCircuit.WellFormed (measuredPhysical_forward_source_view r)).mp h))
+
+attribute [local irreducible] preprocessProgram productionParityProgram eeaPreprocess secp256k1EEAParityCorrection
+attribute [local irreducible] forwardProgram forward canonicalWork2Rotation terminalEpochCompression terminalWork1Clear
+
+theorem wrapperProgram_wellFormed (n start : Nat) (h : wrapper.WellFormed) :
+    (wrapperProgram n start).2.WellFormed := by
+  unfold wrapperProgram
+  rw [← wrapperSources_eq] at h
+  apply sequenceProgram_wellFormed_of_source _ _ _ _ h
+  unfold wrapperSegments wrapperSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil))))
+  · intro cursor hh; exact preprocessProgram_wellFormed n cursor
+  · intro cursor hh; exact forwardProgram_wellFormed n cursor indexedStepProductionRegisters hh
+  · intro cursor hh; exact literalProgram_wellFormed _ hh.1
+  · intro cursor hh; exact productionParityProgram_wellFormed n cursor
+  · intro cursor hh; exact literalProgram_wellFormed _ hh.1
+private theorem measuredPhysical_sequence_wf (sources : List AdaptiveCircuit)
+    (h : ∀ c ∈ sources, c.WellFormed) : (sequenceCircuit sources).WellFormed := by
+  induction sources with
+  | nil => trivial
+  | cons c cs ih =>
+    exact (h c (by simp)).seq (ih (fun x hx => h x (by simp [hx])))
+
+theorem blockCD_wellFormed (r : IndexedStepRegisters) (width T : Nat)
+    (hl : IndexedStepLayout r width T)
+    (hc : CircuitWellFormed (blockCForward r ++ blockDForward r (certifiedActiveWindows width T).quotientSwap)) :
+    (blockCD r width T).WellFormed := by
+  have hp := (circuitWellFormed_append _ _).mp hc
+  have hd := hp.2
+  simp only [blockDForward,circuitWellFormed_append] at hd
+  have hd2 := hd.1.2
+  change CircuitWellFormed ((before r ++ quotientSwapUnitary (r.quotient (certifiedActiveWindows width T).quotientSwap)
+    (certifiedActiveWindows width T).quotientSwap.start (certifiedActiveWindows width T).quotientSwap.stop) ++ after r) at hd2
+  simp only [circuitWellFormed_append] at hd2
+  have hnew : (blockD2 r (certifiedActiveWindows width T).quotientSwap).WellFormed :=
+    (AdaptiveCircuit.WellFormed.seq ⟨hd2.1.1,trivial⟩
+      ((quotientSwap_wellFormed _ hl.quotient).seq ⟨hd2.2,trivial⟩))
+  unfold blockCD blockD
+  exact (show (AdaptiveCircuit.unitary (blockCForward r) .done).WellFormed from ⟨hp.1,trivial⟩).seq
+    (((show (AdaptiveCircuit.unitary (blockD1Forward r) .done).WellFormed from ⟨hd.1.1,trivial⟩).seq hnew).seq
+      (show (AdaptiveCircuit.unitary (blockD3Forward r) .done).WellFormed from ⟨hd.2,trivial⟩))
+
+theorem step_wellFormed (r : IndexedStepRegisters) (width T : Nat)
+    (hl : IndexedStepLayout r width T) : (step r width T).WellFormed := by
+  have ho := measuredIndexedStep_wellFormed r width T hl
+  rw [← measuredStepSources_eq] at ho
+  have hs := sequenceCircuit_wellFormed_members _ ho
+  have hc := (hs (.unitary (blockCForward r ++ blockDForward r (certifiedActiveWindows width T).quotientSwap) .done)
+    (by simp [measuredStepSources])).1
+  rw [← stepSources_eq]
+  apply measuredPhysical_sequence_wf
+  intro c h
+  simp only [stepSources,List.mem_cons,List.not_mem_nil,or_false] at h
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+  · exact blockCD_wellFormed r width T hl hc
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+
+theorem schedule_wellFormed (r : IndexedStepRegisters) (width first count : Nat)
+    (hl : IndexedScheduleLayout r width first count) :
+    (schedule r width first count).WellFormed := by
+  induction hl with
+  | done first => simp [schedule,AdaptiveCircuit.WellFormed,CircuitWellFormed]
+  | step head tail ih => simpa only [schedule] using (step_wellFormed _ _ _ head).seq ih
+
+theorem forward_wellFormed : (forward indexedStepProductionRegisters).WellFormed :=
+  (congrArg AdaptiveCircuit.WellFormed (measuredPhysical_forward_source_view indexedStepProductionRegisters)).mpr
+    (schedule_wellFormed _ _ _ _ secp256k1ScheduleLayout_production)
+
+theorem wrapper_wellFormed : wrapper.WellFormed := by
+  have ho := secp256k1MeasuredEEAForwardWrapper_wellFormed
+  have hclear := adaptive_seq_wellFormed_parts _ _ ho
+  have hparity := adaptive_seq_wellFormed_parts _ _ hclear.1
+  have hcanonical := adaptive_seq_wellFormed_parts _ _ hparity.1
+  have hpre := adaptive_seq_wellFormed_parts _ _ hcanonical.1
+  exact (((hpre.1.seq forward_wellFormed).seq hcanonical.2).seq hparity.2).seq hclear.2
+
+attribute [local irreducible] wrapperProgram multiplyWorkProgram divisionAfterResetProgram collectProgram
+
+theorem divisionProgram_wellFormed (n start : Nat) :
+    (divisionProgram n start).2.WellFormed := by
+  unfold divisionProgram
+  apply appendCompiled_wellFormed
+  · exact appendCompiled_wellFormed _ _ (wrapperProgram_wellFormed _ _ wrapper_wellFormed)
+      (multiplyWorkProgram_wellFormed _ _)
+  · exact collectProgram_wellFormed _ _ (divisionAfterResetProgram_wellFormed n) _ _ _
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+
+end
+
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open Quantum ShorECDLP.Challenge
 attribute [local irreducible] divisionProgram multiplicationProgram equalityProgram
+attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.divisionProgram
 private theorem zero_cx_wellFormed : CircuitWellFormed cx := by
   intro g hg
   have he := List.mem_singleton.mp hg
@@ -3161,7 +3352,7 @@ theorem zDivisionProgram_wellFormed (n start : Nat) : (zDivisionProgram n start)
   · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
   · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
     apply appendCompiled_wellFormed
-    · exact divisionProgram_wellFormed _ _
+    · exact ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_wellFormed _ _
     · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
       exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
 
