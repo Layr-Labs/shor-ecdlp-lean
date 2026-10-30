@@ -1619,6 +1619,120 @@ theorem AtLeast.gate {n s e d} (g : TemplateGate n) {p : Straight n s e} (hp : A
   | literal g => cases g <;> simp_all [AtLeast, added] <;> omega
   | whenBit => exact hp
 
+def templateCCX {n} : List (TemplateGate n) → Nat
+  | [] => 0
+  | .literal (.CCX _ _ _) :: gs => 1 + templateCCX gs
+  | _ :: gs => templateCCX gs
+
+def lookupCCX {n} : List (LookupOp n) → Nat
+  | [] => 0
+  | .gates gs :: ops => templateCCX gs + lookupCCX ops
+  | .erase _ _ _ :: ops => lookupCCX ops
+
+theorem added_gateProgram {n s} (gs : List (TemplateGate n)) :
+    added (gateProgram gs : Straight n s s) = templateCCX gs := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih => cases g with
+    | literal g => cases g <;> simp_all [gateProgram,added,templateCCX]
+    | whenBit => simp_all [gateProgram,added,templateCCX]
+
+theorem added_andErase (n s a b t : Nat) : added (andEraseProgram n s a b t) = 0 := by
+  simp [andEraseProgram,recordGates,controlledZ,added]
+
+theorem added_lookupProgram {n} (ops : List (LookupOp n)) (start : Nat) :
+    added (lookupProgram n ops start) = lookupCCX ops := by
+  induction ops generalizing start with
+  | nil => rfl
+  | cons op ops ih => cases op <;>
+      simp [lookupProgram,lookupCCX,added_append,added_cast,added_gateProgram,added_andErase,ih]
+
+theorem lookupCCX_append {n} (a b : List (LookupOp n)) :
+    lookupCCX (a++b) = lookupCCX a + lookupCCX b := by
+  induction a with
+  | nil => simp [lookupCCX]
+  | cons op ops ih => cases op <;> simp [lookupCCX,ih,Nat.add_assoc]
+
+theorem templateCCX_literal {n} (gs : Circuit) :
+    @templateCCX n (gs.map TemplateGate.literal) = ccxCount gs := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih => cases g <;> simp [templateCCX,ccxCount,ih,Nat.add_comm]
+
+theorem lookupCCX_unary_ge {n} (leaf : Nat → Wire → List (TemplateGate n))
+    (tree : UnaryActionTree) (q : Wire) (anc : List Wire) (hl : tree.Layout q anc) :
+    tree.internalNodes ≤ lookupCCX (unaryLookupOps leaf tree q anc) := by
+  induction hl with
+  | leaf l q anc hn => simp [unaryLookupOps,UnaryActionTree.internalNodes,lookupCCX]
+  | node bit q path zero one rest hn hz ho ihz iho =>
+    simp only [unaryLookupOps,lookupCCX_append,lookupCCX,ordinaryOp,templateCCX_literal,
+      computeZeroAnd,ccxCount,UnaryActionTree.internalNodes] at *
+    omega
+
+theorem lookup_count {n} (leaf : Nat → Wire → List (TemplateGate n))
+    (tree : UnaryActionTree) (q : Wire) (anc : List Wire) (hl : tree.Layout q anc) (start : Nat) :
+    AtLeast (lookupProgram n (unaryLookupOps leaf tree q anc) start) tree.internalNodes := by
+  unfold AtLeast
+  rw [added_lookupProgram]
+  exact lookupCCX_unary_ge leaf tree q anc hl
+
+
+section
+-- Append inside AndGadget after Core.lean.
+attribute [local irreducible] added fieldLookupAddProgram signedFieldProgram fieldLoadProgram modularAddProgram yNegateProgram
+
+theorem fieldLoadCount (field : PointField) (start : Nat) :
+    AtLeast (fieldLoadProgram field start) 32767 := by
+  unfold fieldLoadProgram AtLeast
+  rw [added_cast]
+  unfold fieldLoadOps
+  rw [added_lookupProgram]
+  have h := lookupCCX_unary_ge
+    (fun l q => fieldLeaf ⟨l%32768,Nat.mod_lt _ (by decide)⟩ field q)
+    (tableAddressTree pointLookupAddress 0 1) 836 pointLookupPath
+    (tableAddressTree_layout _ _ _ _ _ (by decide) (by decide))
+  have hn := batchWindowTree_nodes
+  unfold batchWindowTree at hn
+  omega
+
+theorem fieldAddCount (field : PointField) (acc : List Wire) (start : Nat) :
+    AtLeast (fieldLookupAddProgram field acc start).2 65534 := by
+  unfold fieldLookupAddProgram
+  dsimp only
+  refine (AtLeast.appendCompiled (d := 32767) (f := 32767) _ _ (fieldLoadCount field _) ?_).castCount (by omega)
+  exact (AtLeast.appendCompiled (d := 0) (f := 32767) _ _ (AtLeast.zero _) (fieldLoadCount field _)).castCount (by omega)
+
+theorem signedFieldCount (field : PointField) (start : Nat) :
+    AtLeast (signedFieldProgram field start).2 65534 := by
+  unfold signedFieldProgram
+  dsimp only
+  refine (AtLeast.appendCompiled (d := 0) (f := 65534) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  exact (AtLeast.appendCompiled (d := 65534) (f := 0) _ _ (fieldAddCount field _ _) (AtLeast.zero _)).castCount (by omega)
+
+theorem ipxLookupCount_ge {n} (rows : Nat → Fin n) (tree : UnaryActionTree)
+    (paths : List Wire) (hl : ∀ c, tree.Layout (ipxControl c) paths) (ops : List IpxOp) :
+    ipxQueries ops * tree.internalNodes ≤ lookupCCX (ipxOps rows tree paths ops) := by
+  induction ops with
+  | nil => simp [ipxQueries,ipxOps,lookupCCX]
+  | cons op ops ih => cases op with
+    | query c u v =>
+      have h := lookupCCX_unary_ge (fun l q => ipxLeaf (rows l) q u v) tree (ipxControl c) paths (hl c)
+      simp only [ipxOps,lookupCCX_append,ipxQueries,Nat.add_mul,Nat.one_mul]
+      omega
+    | test k =>
+      simp only [ipxOps,lookupCCX_append,ipxQueries]
+      omega
+
+theorem correctionQueryCount (start : Nat) :
+    AtLeast (Single.Physical.placedProgram start).2 425971 := by
+  unfold Single.Physical.placedProgram ipxProgramOf AtLeast
+  rw [added_lookupProgram]
+  have h := ipxLookupCount_ge Single.Physical.tableRows batchWindowTree pointLookupPath ipxTree_layout ipxSchedule
+  rw [ipxSchedule_queries,batchWindowTree_nodes] at h
+  exact h
+
+end
+attribute [local irreducible] fieldLookupAddProgram signedFieldProgram fieldLoadProgram modularAddProgram yNegateProgram
 theorem borrowedFieldCount (n start d : Nat) (arithmetic : FixedSegment n)
     (hc : ∀ cursor, AtLeast (arithmetic cursor).2 d) :
     AtLeast (ShorECDLP.Entrant.BorrowFlag.fieldProgram n start arithmetic).2 d := by
@@ -1638,29 +1752,35 @@ theorem borrowedMultiplicationCount (n start : Nat) :
   unfold ShorECDLP.Entrant.BorrowFlag.multiplicationProgram
   exact borrowedFieldCount n start 31544978 _ (multiplicationBothCount n)
 
-theorem tailAllCount (start : Nat) : AtLeast (tailCoordinateProgram start).2 63089956 := by
+theorem tailAllCount (start : Nat) : AtLeast (tailCoordinateProgram start).2 63417626 := by
   unfold tailCoordinateProgram tailCoordinateSegments
-  refine (AtLeast.sequenceCons (d := 0) (f := 63089956) _ _ (AtLeast.zero _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 0) (f := 63089956) _ _ (AtLeast.zero _) ?_).castCount (by omega)
-  refine AtLeast.sequenceCons (d := 31544978) (f := 31544978) _ _ (borrowedDivisionCount _ _) ?_
-  refine (AtLeast.sequenceCons (d := 0) (f := 31544978) _ _ (AtLeast.zero _) ?_).castCount (by omega)
-  refine (AtLeast.sequenceCons (d := 0) (f := 31544978) _ _ (AtLeast.zero _) ?_).castCount (by omega)
-  exact (AtLeast.sequenceCons (d := 31544978) (f := 0) _ _
-    (borrowedMultiplicationCount _ _) (AtLeast.zero _)).castCount (by omega)
-theorem coreCount (start : Nat) : AtLeast (Single.Physical.core start).2 63089956 := by
-  unfold Single.Physical.core Single.Physical.segments
-  exact (AtLeast.sequenceCons (d := 63089956) (f := 0) _ _ (tailAllCount start) (AtLeast.zero _)).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 63352092) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 63286558) _ _ (signedFieldCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 31544978) (f := 31741580) _ _ (borrowedDivisionCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 0) (f := 31741580) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 31676046) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 31544978) (f := 131068) _ _ (borrowedMultiplicationCount _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 0) (f := 131068) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 65534) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 0) (f := 65534) _ _ (AtLeast.zero _) ?_).castCount (by omega)
+  refine (AtLeast.sequenceCons (d := 65534) (f := 0) _ _ (fieldAddCount _ _ _) ?_).castCount (by omega)
+  exact AtLeast.zero _
 
-theorem preparedCount (start : Nat) : AtLeast (Single.Physical.prepared start).2 63089956 := by
+theorem coreCount (start : Nat) : AtLeast (Single.Physical.core start).2 63843597 := by
+  unfold Single.Physical.core Single.Physical.segments
+  refine (AtLeast.sequenceCons (d := 63417626) (f := 425971) _ _ (tailAllCount start) ?_).castCount (by omega)
+  exact (AtLeast.sequenceCons (d := 425971) (f := 0) _ _ (correctionQueryCount _) (AtLeast.zero _)).castCount (by omega)
+
+theorem preparedCount (start : Nat) : AtLeast (Single.Physical.prepared start).2 63843597 := by
   unfold Single.Physical.prepared
   exact AtLeast.surroundCompiled _ _ _ (coreCount start)
 
-theorem actualCount (start : Nat) : AtLeast (Single.Physical.actual.program start) 63089956 := by
+theorem actualCount (start : Nat) : AtLeast (Single.Physical.actual.program start) 63843597 := by
   unfold Single.Physical.actual closedWindow
   exact (((preparedCount 0).relabel (windowAddressPerm 855 (by decide))).castFinish _).shift start
 
 theorem signedCount (w : Single.SignedWindow) (start : Nat) :
-    AtLeast ((Single.signedWindow w).program start) 63089956 := by
+    AtLeast ((Single.signedWindow w).program start) 63843597 := by
   unfold Single.signedWindow
   exact (actualCount start).reindex (Single.signedRow w)
 
@@ -1677,16 +1797,16 @@ structure CountedWindow (n : Nat) where
 
 def leftCountes : List (CountedWindow 901120) :=
   ⟨Single.firstWindow,0,fun _ => AtLeast.zero _⟩ ::
-    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,63089956,signedCount w⟩)
+    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,63843597,signedCount w⟩)
 def rightCountes : List (CountedWindow 901120) :=
-  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,63089956,signedCount w⟩)
+  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,63843597,signedCount w⟩)
 private theorem leftCountes_source : leftCountes.map CountedWindow.source = Single.leftWindows := by
   simp [leftCountes, Single.leftWindows]
 private theorem rightCountes_source : rightCountes.map CountedWindow.source = Single.rightWindows := by
   simp [rightCountes, Single.rightWindows]
-private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1009439296 := by
+private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1021497552 := by
   simp [leftCountes, Single.leftSigned]
-private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 883259384 := by
+private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 893810358 := by
   simp [rightCountes, Single.rightSigned]
 
 theorem axisCountProof {n} : (ps : List (CountedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -1710,14 +1830,14 @@ theorem AtLeast.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n 
   unfold Single.framed
   exact AtLeast.gate _ ((AtLeast.append hp ((AtLeast.append hq (AtLeast.gate _ (AtLeast.zero _))).castCount (Nat.add_zero dr))).castFinish h)
 
-theorem trialCount (start : Nat) : AtLeast (Single.trial start) 1892698680 := by
+theorem trialCount (start : Nat) : AtLeast (Single.trial start) 1915307910 := by
   have hl := (axisCountFor leftCountes Single.leftWindows leftCountes_source start List.nil).castCount leftCountes_saving
   have hr := (axisCountFor rightCountes Single.rightWindows rightCountes_source
     (start+Single.axisCount Single.leftWindows) List.nil).castCount rightCountes_saving
   unfold Single.trial
   exact (AtLeast.framed _ _ _ _ hl hr).castCount (by decide)
 
-theorem programCount : AtLeast Single.program 1892698680 := by
+theorem programCount : AtLeast Single.program 1915307910 := by
   unfold Single.program
   exact (trialCount 0).castFinish _
 
@@ -1726,7 +1846,7 @@ theorem AtLeast.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 
   unfold Single.fixedEntry
   exact hp.reindex _
 
-theorem entryCount : AtLeast Rounded.entry.program 1892698680 := by
+theorem entryCount : AtLeast Rounded.entry.program 1915307910 := by
   unfold Rounded.entry Rounded.program
   apply AtLeast.fixedEntry
   exact ((AtLeast.append programCount (AtLeast.zero Rounded.readout)).castCount (by omega))
@@ -1747,12 +1867,12 @@ attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.en
 
 
 
-theorem parent_added_lower : 1872869880 ≤ added Parent.entry.program := by
+theorem parent_added_lower : 1895479110 ≤ added Parent.entry.program := by
   have h := dropped_added Optimization.entryPatch.drops
   have hc := entryCount
-  change 1892698680 ≤ added Rounded.entry.program at hc
+  change 1915307910 ≤ added Rounded.entry.program at hc
   unfold Parent.entry Optimization.replaceEntry
-  change 1872869880 ≤ added Optimization.entryPatch.program
+  change 1895479110 ≤ added Optimization.entryPatch.program
   omega
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) (ws : List Wire)
     (hp : Within ws p) : Within ws (reindexStraight f p) := by
@@ -1821,11 +1941,11 @@ set_option maxRecDepth 10000
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 noncomputable def entry : StraightEntry := lowerEntry 1024 Parent.entry
 noncomputable def layout : DecodeLayout := lowerLayout 1024 Parent.entry Parent.layout
-def bounds : Bounds := ⟨855, 11512613384, 8550418124⟩
+def bounds : Bounds := ⟨855, 11467394924, 8550418124⟩
 
 private theorem resourceArithmetic (a slots cursor oldT newT maxSlots maxRecords newRecords : Nat)
-    (ha : a ≤ 7629176572) (hl : 1872869880 ≤ a) (hs : slots ≤ 93000061339)
-    (hc : cursor ≤ 921241552) (ho : oldT ≤ 15258353144) (hn : 11512613384 ≤ newT)
+    (ha : a ≤ 7629176572) (hl : 1895479110 ≤ a) (hs : slots ≤ 93000061339)
+    (hc : cursor ≤ 921241552) (ho : oldT ≤ 15258353144) (hn : 11467394924 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hlm : 47471340504 ≤ maxRecords)
     (hnm : 8550418124 ≤ newRecords) :
     slots + 18*a ≤ maxSlots ∧ cursor+a ≤ maxRecords ∧ oldT ≤ newT + 2*a ∧
