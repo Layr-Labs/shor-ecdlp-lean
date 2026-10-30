@@ -1090,18 +1090,18 @@ noncomputable section
 set_option maxRecDepth 4096
 set_option maxHeartbeats 2000000
 
-def finePositions : List (Fin 890561832) :=
+def finePositions : List (Fin 890530088) :=
   Single.trialPositions.right.toList.attach.map fun i=>
     ⟨i.val,(Single.right_position_bound i.val i.property).2.trans (by decide)⟩
 theorem finePositions_length : finePositions.length=208 := by
   simp [finePositions,Single.params]
-def fineBits : Vector (Fin 890561832) 208 := Vector.ofFn fun i=>
+def fineBits : Vector (Fin 890530088) 208 := Vector.ofFn fun i=>
   finePositions[i.val]'(by rw [finePositions_length];exact i.isLt)
 
-def readout : Straight 901120 890561832 890595946 :=
-  NeighborReadout.neighborSuffix 901120 890561832 208 fineBits
+def readout : Straight 951296 890530088 890564202 :=
+  NeighborReadout.neighborSuffix 951296 890530088 208 fineBits
 
-def program : Straight 901120 0 890595946 := Single.program.append readout
+def program : Straight 951296 0 890564202 := Single.program.append readout
 
 def positions (ps : Vector Nat 208) : TrialPositions NeighborReadout.params where
   left:=Single.trialPositions.left
@@ -1113,9 +1113,9 @@ def layout : DecodeLayout := ⟨.wrappedShift,NeighborReadout.params,
 
 theorem readout_wellFormed : readout.WellFormed :=
   NeighborReadout.neighborSuffix_wellFormed _ _ _ _
-theorem readout_t (read : ConstantBit 901120→Bool) (h : Fin 890561832→Bool) :
+theorem readout_t (read : ConstantBit 951296→Bool) (h : Fin 890530088→Bool) :
     (readout.instantiate read h).tCount=0 := NeighborReadout.neighborSuffix_t _ _ _ _ _ _
-theorem readout_support (read : ConstantBit 901120→Bool) (h : Fin 890561832→Bool) :
+theorem readout_support (read : ConstantBit 951296→Bool) (h : Fin 890530088→Bool) :
     (readout.instantiate read h).wires⊆resetWires := by
   apply (NeighborReadout.neighborSuffix_support _ _ _ _ _ _).trans
   simp [List.subset_def,resetWires]
@@ -1126,7 +1126,7 @@ theorem fineBits_vals : fineBits.map Fin.val=Single.trialPositions.right := by
   simp [fineBits,finePositions]
   rfl
 
-theorem program_clean (read : ConstantBit 901120 → Bool) (b : InstrumentBranch)
+theorem program_clean (read : ConstantBit 951296 → Bool) (b : InstrumentBranch)
     (hb : b ∈ (Single.program.instantiate read Fin.elim0).run) (ψ : State) :
     SupportedOn CleanReadout (b.kraus ψ) := by
   rw [Single.Distribution.program_run_data] at hb
@@ -1170,7 +1170,7 @@ theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈NeighborReadout.righ
     exact nsmul_eq_nsmul_iff_modEq.mpr (by rw [generator_order];exact Nat.mod_mod _ _)
 
 theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
-    (read : ConstantBit 901120→Bool) (history : Fin 890561832→Bool)
+    (read : ConstantBit 951296→Bool) (history : Fin 890530088→Bool)
     (ψ : State) (hψ : SupportedOn CleanReadout ψ)
     (hf : Single.Distribution.fineEvent (NeighborReadout.pairRecovered d) (List.ofFn history)=true)
     (b : InstrumentBranch) (hb : b∈(readout.instantiate read history).run)
@@ -1180,14 +1180,14 @@ theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
   rw [fineBits_vals] at hr
   obtain ⟨a,ha,hp⟩:=pairAccept_value _ _ _ _ _ hr hf
   obtain ⟨i,hi⟩:=of_decide_eq_true hp
-  obtain ⟨ps,hps,hread⟩:=NeighborReadout.neighborSuffix_reads 901120 890561832 fineBits
+  obtain ⟨ps,hps,hread⟩:=NeighborReadout.neighborSuffix_reads 951296 890530088 fineBits
     read history ψ hψ b hb hn ((i.val : ℤ)-27) (by have h:=i.isLt;omega)
   apply verified_of_reads ps hps Q d hd _ a _ _ hread hi
   rw [NeighborReadout.readWord_append_left]
   · exact ha
   · intro j hj
     have h:=Single.left_position_bound j hj
-    simpa only [List.length_ofFn] using h.trans (by decide : 491358681<890561832)
+    simpa only [List.length_ofFn] using h.trans (by decide : 491326937<890530088)
 
 theorem normSq_ge_zero (ψ : State) : 0 ≤ normSq ψ := by
   have h := normSq_interference (0 : State) ψ
@@ -1256,29 +1256,29 @@ theorem program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) 
     exact AdaptiveCircuit.run_preservesBornMass _
       (readout.instantiate_wellFormed _ _ readout_wellFormed) _
   · intro a ha hf b hb hne
-    have hlen : a.history.length = 890561832 := by
+    have hlen : a.history.length = 890530088 := by
       have h := straight_history_length Single.program (readConstant Single.mixedCoefficientAt Q) Fin.elim0 a ha
       omega
-    have hh : List.ofFn (Single.historyAfter 890561832 Fin.elim0 a.history) = a.history := by
+    have hh : List.ofFn (Single.historyAfter 890530088 Fin.elim0 a.history) = a.history := by
       simpa only [List.ofFn_zero, List.nil_append] using Single.historyAfter_list Fin.elim0 a.history (by simpa only [Nat.zero_add] using hlen)
     have h := suffix_accept Q d hd (readConstant Single.mixedCoefficientAt Q)
-      (Single.historyAfter 890561832 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
+      (Single.historyAfter 890530088 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
       (program_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
     simpa only [hh, InstrumentBranch.seq] using h
 
 def entry : StraightEntry := Single.fixedEntry Single.mixedCoefficientAt program
 
-def bounds : Bounds := ⟨854, 14884944665, 890595946⟩
+def bounds : Bounds := ⟨854, 14884722457, 890564202⟩
 
 theorem program_wellFormed : program.WellFormed :=
   straight_append_wellFormed _ _ Single.program_wellFormed readout_wellFormed
 
-theorem program_support (read : ConstantBit 901120 → Bool) :
+theorem program_support (read : ConstantBit 951296 → Bool) :
     (program.instantiate read Fin.elim0).wires ⊆ resetWires :=
   outer_append_support _ _ read Fin.elim0 resetWires (Single.program_support read)
     (readout_support read)
 
-theorem program_qubits (read : ConstantBit 901120 → Bool) :
+theorem program_qubits (read : ConstantBit 951296 → Bool) :
     (program.instantiate read Fin.elim0).qubitCount ≤ 854 := by
   have hs : (program.instantiate read Fin.elim0).wires.dedup.toFinset ⊆
       resetWires.toFinset := by
@@ -1291,11 +1291,11 @@ theorem program_qubits (read : ConstantBit 901120 → Bool) :
 attribute [local irreducible] readout
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14884944665 := by
+    (program.instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14884722457 := by
   have h := outer_append_t_le Single.program readout (readConstant Single.mixedCoefficientAt Q)
     Fin.elim0 0 (fun history => le_of_eq (readout_t _ history))
   rw [Nat.add_zero] at h
-  change ((Single.program.append readout).instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14884944665
+  change ((Single.program.append readout).instantiate (readConstant Single.mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14884722457
   exact h.trans (Single.program_t Q)
 
 theorem program_slots : program.gateSlots ≤ 90000176648 := by
@@ -1303,7 +1303,7 @@ theorem program_slots : program.gateSlots ≤ 90000176648 := by
   rw [Straight.gateSlots_append]
   have hr : readout.gateSlots=119399 := by
     unfold readout
-    exact NeighborReadout.neighborSuffix_slots 901120 890561832 208 fineBits
+    exact NeighborReadout.neighborSuffix_slots 951296 890530088 208 fineBits
   rw [hr]
   have h := Single.program_slots
   omega
@@ -1313,7 +1313,7 @@ theorem certificate : Certificate officialLimits layout entry bounds where
     rw [entry, Single.fixedEntry_slots]
     exact program_slots.trans (by decide)
   recordBudget := by
-    change 890595946 ≤ officialLimits.measurements
+    change 890564202 ≤ officialLimits.measurements
     decide
   tableBudget := by
     rw [entry, Single.fixedEntry_rows]
@@ -2682,10 +2682,10 @@ structure PatchedWindow (n : Nat) where
   saving : Nat
   patch : ∀ start, Patch (source.program start) saving
 
-def leftPatches : List (PatchedWindow 901120) :=
+def leftPatches : List (PatchedWindow 951296) :=
   ⟨Single.firstWindow,0,fun _ => Patch.refl _⟩ ::
     Single.leftSigned.map (fun w => ⟨Single.signedWindow w,7166880,signedPatch w⟩)
-def rightPatches : List (PatchedWindow 901120) :=
+def rightPatches : List (PatchedWindow 951296) :=
   Single.rightSigned.map (fun w => ⟨Single.signedWindow w,7166880,signedPatch w⟩)
 private theorem leftPatches_source : leftPatches.map PatchedWindow.source = Single.leftWindows := by
   simp [leftPatches, Single.leftWindows]
@@ -2748,6 +2748,244 @@ def bounds : Bounds := ⟨Rounded.bounds.qubits, Rounded.bounds.tModel - 2078395
 theorem certificate : Certificate officialLimits layout entry bounds :=
   Optimization.replacement_certificate Rounded.certificate Optimization.entryPatch.drops Optimization.entryPatch.rewrites
 end ShorECDLP.Entrant.Parent
+end
+
+section
+namespace ShorECDLP.Entrant.FullCredit
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.AndGadget
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+
+@[simp] theorem residue_borrowPrepare (n start : Nat) :
+    residue (BorrowFlag.prepareProgram n start).2 = 0 := by
+  simp [BorrowFlag.prepareProgram,residue_compiled,residue_equality,residue_literal,
+    ZeroAdaptive.cx,primitivePhaseCost]
+@[simp] theorem residue_borrowRestore (n start : Nat) :
+    residue (BorrowFlag.restoreProgram n start).2 = 0 := by
+  simp [BorrowFlag.restoreProgram,residue_prepend,residue_equality,
+    ZeroAdaptive.cx,primitivePhaseCost]
+
+theorem residue_borrowField (n start : Nat) (arithmetic : FixedSegment n)
+    (ha : ∀ s, residue (arithmetic s).2 = 0) :
+    residue (BorrowFlag.fieldProgram n start arithmetic).2 = 0 := by
+  have hs : residue (sequenceProgram n (BorrowFlag.coreSegments n arithmetic) start).2 = 0 := by
+    apply residue_sequence
+    intro seg hseg cursor
+    simp only [BorrowFlag.coreSegments,List.mem_cons,List.not_mem_nil,or_false] at hseg
+    rcases hseg with rfl | rfl | rfl
+    · simpa only [relabelCompiled,residue_relabel] using residue_borrowPrepare n cursor
+    · exact ha cursor
+    · simpa only [relabelCompiled,residue_relabel] using residue_borrowRestore n cursor
+  unfold BorrowFlag.fieldProgram
+  rw [residue_surround,hs]
+  simp [BorrowFlag.flip,primitivePhaseCost]
+
+theorem residue_borrowDivision (n start : Nat) : residue (BorrowFlag.divisionProgram n start).2 = 0 := by
+  unfold BorrowFlag.divisionProgram
+  exact residue_borrowField n start _ (residue_division n)
+theorem residue_borrowMultiplication (n start : Nat) : residue (BorrowFlag.multiplicationProgram n start).2 = 0 := by
+  unfold BorrowFlag.multiplicationProgram
+  exact residue_borrowField n start _ (residue_multiplication n)
+
+theorem residue_borrowCoordinate (start : Nat) : residue (BorrowFlag.adaptiveCoordinateProgram start).2 = 0 := by
+  unfold BorrowFlag.adaptiveCoordinateProgram
+  apply residue_sequence
+  intro seg hseg s
+  simp only [BorrowFlag.adaptiveCoordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hseg
+  rcases hseg with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact residue_fieldLookupAdd _ _ s
+  · exact residue_signedField _ s
+  · exact residue_borrowDivision _ s
+  · exact residue_pointSquare _ s
+  · exact residue_fieldLookupAdd _ _ s
+  · exact residue_borrowMultiplication _ s
+  · exact residue_xNegate _ s
+  · exact residue_fieldLookupAdd _ _ s
+  · exact residue_signedField _ s
+end
+end ShorECDLP.Entrant.FullCredit
+end
+
+section
+namespace ShorECDLP.Entrant.FullCredit
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.AndGadget
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+
+theorem opsResidue_measuredTail {n : Nat} (a : Wire) (cs : List Wire) (t : Wire) (ws : List Wire) :
+    ((@measuredTailOps n a cs t ws).map lookupOpResidue).sum = 0 := by
+  induction cs generalizing a ws with
+  | nil => simp [measuredTailOps]
+  | cons c cs ih =>
+    cases cs with
+    | nil => simp [measuredTailOps,primitivePhaseCost]
+    | cons d ds => cases ws <;> simp [measuredTailOps,List.map_append,List.sum_append,lookupOpResidue,ordinaryOp,templateResidue,ih,primitivePhaseCost]
+
+theorem opsResidue_measuredChain {n : Nat} (cs : List Wire) (t : Wire) (ws : List Wire) :
+    ((@measuredChainOps n cs t ws).map lookupOpResidue).sum = 0 := by
+  cases cs with
+  | nil => simp [measuredChainOps,primitivePhaseCost]
+  | cons c cs => cases cs <;> simp [measuredChainOps,primitivePhaseCost,opsResidue_measuredTail]
+
+theorem opsResidue_measuredEquality {n : Nat} (cs : List Wire) (v : Nat) (t : Wire) (ws : List Wire) :
+    ((@measuredEqualityOps n cs v t ws).map lookupOpResidue).sum = 0 := by
+  simp [measuredEqualityOps,List.map_append,List.sum_append,opsResidue_measuredChain]
+
+theorem opsResidue_measuredTest {n : Nat} (k : Fin 4) :
+    ((@ipxMeasuredTestOps n k).map lookupOpResidue).sum = 0 := by
+  simp [ipxMeasuredTestOps,List.map_append,List.sum_append,opsResidue_measuredEquality]
+end ShorECDLP.Entrant.FullCredit
+end
+
+/-! EDITABLE. Zero residue for complete signed windows.
+
+The window bodies add lookups, the zero-allowed field guards and the endpoint correction block
+around the arithmetic of `Credit`.  With every block free of phase instructions and of
+constant- or record-controlled non-Clifford gates, each window's exact T-count is carried by
+its literal Toffoli gates alone, which credits all of them to the lowering. -/
+
+section
+namespace ShorECDLP.Entrant.FullCredit
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration ShorECDLP.Secp256k1 ShorECDLP.Entrant.AndGadget
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+/-! ## Endpoint correction lookups -/
+
+theorem tres_endpointSelectGate {n : Nat} (q : Wire) (port : Wire × EndpointBit n) :
+    ((endpointSelectGate q port).map templateResidue).sum = 0 := by
+  obtain ⟨w, b⟩ := port
+  rcases b with b | r
+  · cases b <;> rfl
+  · rfl
+
+theorem tres_endpointSelectGates {n : Nat} (q : Wire) (ports : List (Wire × EndpointBit n)) :
+    ((endpointSelectGates q ports).map templateResidue).sum = 0 := by
+  unfold endpointSelectGates
+  induction ports with
+  | nil => rfl
+  | cons p ps ih =>
+    rw [List.flatMap_cons, List.map_append, List.sum_append, tres_endpointSelectGate, ih]
+
+@[simp] theorem sum_ipxTest (k : Fin 4) : ((ipxTest k).map primitivePhaseCost).sum = 0 := by
+  apply primitivePhaseCost_of_HPFree
+  rw [ipxTest, Classical.hpFree_append, Classical.hpFree_append]
+  exact ⟨⟨computeEqConst_HPFree _ _ _ _, computeEqConst_HPFree _ _ _ _⟩,
+    computeEqConst_HPFree _ _ _ _⟩
+
+theorem opsResidue_ipx {n : Nat} (rows : Nat → Fin n) (tree : UnaryActionTree) (paths : List Wire) :
+    ∀ ops : List IpxOp, ((ipxOps rows tree paths ops).map lookupOpResidue).sum = 0
+  | [] => rfl
+  | .query c u v :: ops => by
+    rw [ipxOps, List.map_append, List.sum_append, opsResidue_ipx rows tree paths ops,
+      opsResidue_unary _ (fun l q => by
+        rw [ipxLeaf, List.map_append, List.sum_append, tres_endpointSelectGates,
+          tres_endpointSelectGates])]
+  | .test k :: ops => by
+    rw [ipxOps, List.map_append, List.sum_append, opsResidue_ipx rows tree paths ops,
+      opsResidue_measuredTest]
+
+/-! ## Window bodies -/
+
+theorem residue_zeroDivision (n start : Nat) : residue (zeroDivisionProgram n start).2 = 0 := by
+  unfold zeroDivisionProgram
+  rw [residue_surround, residue_division, sum_fig15ZeroPrepare, sum_fig15ZeroRestore]
+
+theorem residue_zeroMultiplication (n start : Nat) :
+    residue (zeroMultiplicationProgram n start).2 = 0 := by
+  unfold zeroMultiplicationProgram
+  rw [residue_surround, residue_multiplication, sum_fig15ZeroPrepare, sum_fig15ZeroRestore]
+
+theorem residue_coordinate (start : Nat) : residue (coordinateProgram start).2 = 0 := by
+  unfold coordinateProgram
+  apply residue_sequence
+  intro p hp s
+  simp only [coordinateSegments, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h | h | h | h | h | h | h | h <;> subst p
+  · exact residue_fieldLookupAdd _ _ s
+  · exact residue_signedField _ s
+  · exact residue_zeroDivision _ s
+  · exact residue_pointSquare _ s
+  · exact residue_fieldLookupAdd _ _ s
+  · exact residue_zeroMultiplication _ s
+  · exact residue_xNegate _ s
+  · exact residue_fieldLookupAdd _ _ s
+  · exact residue_signedField _ s
+
+theorem residue_placed (start : Nat) : residue (Single.Physical.placedProgram start).2 = 0 := by
+  unfold Single.Physical.placedProgram ipxProgramOf
+  exact (residue_lookup _ _ _).trans (opsResidue_ipx _ _ _ _)
+
+theorem residue_core (start : Nat) : residue (Single.Physical.core start).2 = 0 := by
+  unfold Single.Physical.core
+  apply residue_sequence
+  intro p hp s
+  simp only [Single.Physical.segments, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h | h | h <;> subst p
+  · exact residue_borrowCoordinate s
+  · exact residue_yNegate s
+  · exact residue_placed s
+  · exact residue_yNegate s
+
+theorem residue_prepared (start : Nat) : residue (Single.Physical.prepared start).2 = 0 := by
+  unfold Single.Physical.prepared
+  rw [residue_surround, residue_core, sum_signedAddressCircuit]
+
+theorem residue_actual (start : Nat) : residue (Single.Physical.actual.program start) = 0 := by
+  unfold Single.Physical.actual closedWindow
+  exact ((residue_shift _ _).trans (residue_cast _ _)).trans
+    ((residue_relabel _ _).trans (residue_prepared 0))
+
+theorem residue_signedWindow (w : Single.SignedWindow) (start : Nat) :
+    residue ((Single.signedWindow w).program start) = 0 := by
+  unfold Single.signedWindow
+  exact (residue_reindex _ _).trans (residue_actual start)
+
+/-! ## Window credits -/
+
+/-- Every T gate of a signed window comes from an unconditional literal Toffoli. -/
+theorem signedFullCount (w : Single.SignedWindow) (start : Nat) :
+    AtLeast ((Single.signedWindow w).program start) 73323441 := by
+  have ht := Single.signedWindow_t 0 w start (fun _ => false)
+  have hr := residue_t ((Single.signedWindow w).program start)
+    (readConstant Single.mixedCoefficientAt 0) (fun _ => false)
+  rw [ht, residue_signedWindow] at hr
+  unfold AtLeast
+  omega
+
+
+end
+end ShorECDLP.Entrant.FullCredit
+end
+
+section
+namespace ShorECDLP.Entrant.FullCredit
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.AndGadget
+set_option maxRecDepth 10000
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+
+theorem residue_firstWindow (start : Nat) : residue (Single.firstWindow.program start) = 0 := by
+  unfold Single.firstWindow
+  rw [residue_reindex]
+  unfold First10.program
+  rw [residue_cast, residue_lookup, First10.ops]
+  exact opsResidue_unary _ (fun l q => tres_lookupLeaf _ _) _ _ _
+
+theorem firstFullCount (start : Nat) : AtLeast (Single.firstWindow.program start) 1023 := by
+  have ht := Single.firstWindow_t_uniform 0 start (fun _ => false)
+  have hr := residue_t (Single.firstWindow.program start)
+    (readConstant Single.mixedCoefficientAt 0) (fun _ => false)
+  rw [ht, residue_firstWindow] at hr
+  unfold AtLeast
+  omega
+end ShorECDLP.Entrant.FullCredit
 end
 
 section
@@ -3464,18 +3702,18 @@ structure CountedWindow (n : Nat) where
   saving : Nat
   countProof : ∀ start, AtLeast (source.program start) saving
 
-def leftCountes : List (CountedWindow 901120) :=
-  ⟨Single.firstWindow,0,fun _ => AtLeast.zero _⟩ ::
-    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,73280778,signedCount w⟩)
-def rightCountes : List (CountedWindow 901120) :=
-  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,73280778,signedCount w⟩)
+def leftCountes : List (CountedWindow 951296) :=
+  ⟨Single.firstWindow,1023,FullCredit.firstFullCount⟩ ::
+    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,73323441,FullCredit.signedFullCount w⟩)
+def rightCountes : List (CountedWindow 951296) :=
+  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,73323441,FullCredit.signedFullCount w⟩)
 private theorem leftCountes_source : leftCountes.map CountedWindow.source = Single.leftWindows := by
   simp [leftCountes, Single.leftWindows]
 private theorem rightCountes_source : rightCountes.map CountedWindow.source = Single.rightWindows := by
   simp [rightCountes, Single.rightWindows]
-private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1172492448 := by
+private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1173176079 := by
   simp [leftCountes, Single.leftSigned]
-private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 952650114 := by
+private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 953204733 := by
   simp [rightCountes, Single.rightSigned]
 
 theorem axisCountProof {n} : (ps : List (CountedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -3499,14 +3737,14 @@ theorem AtLeast.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n 
   unfold Single.framed
   exact AtLeast.gate _ ((AtLeast.append hp ((AtLeast.append hq (AtLeast.gate _ (AtLeast.zero _))).castCount (Nat.add_zero dr))).castFinish h)
 
-theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2125142562 := by
+theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2126380812 := by
   have hl := (axisCountFor leftCountes Single.leftWindows leftCountes_source start List.nil).castCount leftCountes_saving
   have hr := (axisCountFor rightCountes Single.rightWindows rightCountes_source
     (start+Single.axisCount Single.leftWindows) List.nil).castCount rightCountes_saving
   unfold Single.trial
   exact (AtLeast.framed _ _ _ _ hl hr).castCount (by decide)
 
-theorem programCount : AtLeast Single.program 2125142562 := by
+theorem programCount : AtLeast Single.program 2126380812 := by
   unfold Single.program
   exact (trialCount 0).castFinish _
 
@@ -3515,7 +3753,7 @@ theorem AtLeast.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 
   unfold Single.fixedEntry
   exact hp.reindex _
 
-theorem entryCount : AtLeast Rounded.entry.program 2125142562 := by
+theorem entryCount : AtLeast Rounded.entry.program 2126380812 := by
   unfold Rounded.entry Rounded.program
   apply AtLeast.fixedEntry
   exact ((AtLeast.append programCount (AtLeast.zero Rounded.readout)).castCount (by omega))
@@ -3536,12 +3774,12 @@ attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.en
 
 
 
-theorem parent_added_lower : 2095451202 ≤ added Parent.entry.program := by
+theorem parent_added_lower : 2096689452 ≤ added Parent.entry.program := by
   have h := dropped_added Optimization.entryPatch.drops
   have hc := entryCount
-  change 2125142562 ≤ added Rounded.entry.program at hc
+  change 2126380812 ≤ added Rounded.entry.program at hc
   unfold Parent.entry Optimization.replaceEntry
-  change 2095451202 ≤ added Optimization.entryPatch.program
+  change 2096689452 ≤ added Optimization.entryPatch.program
   omega
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) (ws : List Wire)
     (hp : Within ws p) : Within ws (reindexStraight f p) := by
@@ -3588,7 +3826,7 @@ theorem parent_added_upper : added Parent.entry.program ≤ 7375384892 := by
     (readConstant Parent.entry.coefficients.get 0) Fin.elim0 Fin.elim0
     (by funext i; exact Fin.elim0 i)
   have ht := (Parent.certificate.resources 0).2.1
-  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14677105145 at ht
+  change (Parent.entry.program.instantiate (readConstant Parent.entry.coefficients.get 0) Fin.elim0).tCount ≤ 14676882937 at ht
   omega
 
 
@@ -3610,11 +3848,11 @@ set_option maxRecDepth 10000
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 noncomputable def entry : StraightEntry := lowerEntry 1024 Parent.entry
 noncomputable def layout : DecodeLayout := lowerLayout 1024 Parent.entry Parent.layout
-def bounds : Bounds := ⟨855, 10486202741, 8265980838⟩
+def bounds : Bounds := ⟨855, 10483504033, 8265980838⟩
 
 private theorem resourceArithmetic (a slots cursor oldT newT maxSlots maxRecords newRecords : Nat)
-    (ha : a ≤ 7375384892) (hl : 2095451202 ≤ a) (hs : slots ≤ 90000176648)
-    (hc : cursor ≤ 890595946) (ho : oldT ≤ 14677105145) (hn : 10486202741 ≤ newT)
+    (ha : a ≤ 7375384892) (hl : 2096689452 ≤ a) (hs : slots ≤ 90000176648)
+    (hc : cursor ≤ 890564202) (ho : oldT ≤ 14676882937) (hn : 10483504033 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hlm : 47471340504 ≤ maxRecords)
     (hnm : 8265980838 ≤ newRecords) :
     slots + 18*a ≤ maxSlots ∧ cursor+a ≤ maxRecords ∧ oldT ≤ newT + 2*a ∧
@@ -3672,10 +3910,10 @@ private theorem lowerEntry_slots (q : Wire) (e : StraightEntry) :
 private theorem five_within : Within (1024 :: resetWires) Five.entry.program :=
   lowerEntry_within 1024 Parent.entry resetWires parent_within
 
-private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2095451202 ≤ a) :
-    2095451202 ≤ s := by omega
+private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2096689452 ≤ a) :
+    2096689452 ≤ s := by omega
 
-private theorem five_saved : 2095451202 ≤ Catalyst.saved Five.entry.program :=
+private theorem five_saved : 2096689452 ≤ Catalyst.saved Five.entry.program :=
   saved_bound (added Parent.entry.program) (Catalyst.saved Parent.entry.program)
     (Catalyst.saved Five.entry.program) (lowerEntry_saved 1024 Parent.entry) parent_added_lower
 
@@ -3688,11 +3926,11 @@ private theorem five_slots : Five.entry.program.gateSlots ≤ 230350301035 :=
 
 noncomputable def entry : StraightEntry := Catalyst.compileEntry 1025 Five.entry
 noncomputable def layout : DecodeLayout := Five.layout
-def bounds : Bounds := ⟨856, 8390751540, 8265980838⟩
+def bounds : Bounds := ⟨856, 8386814582, 8265980838⟩
 
 private theorem resourceArithmetic (s a c oldT newT maxSlots m : Nat)
-    (hs : s ≤ 230350301035) (ha : a ≤ s) (hl : 2095451202 ≤ a)
-    (hc : c ≤ 8265980838) (ho : oldT ≤ 10486202741) (hn : 8390751540 ≤ newT)
+    (hs : s ≤ 230350301035) (ha : a ≤ s) (hl : 2096689452 ≤ a)
+    (hc : c ≤ 8265980838) (ho : oldT ≤ 10483504033) (hn : 8386814582 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hm : 8265980838 ≤ m) :
     s + 3*a + 2 ≤ maxSlots ∧ oldT + 1 ≤ newT + a ∧ c ≤ m := by omega
 
