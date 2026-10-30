@@ -1,3 +1,4 @@
+import Mathlib.FieldTheory.Finite.Basic
 import ShorECDLP.Submission.«2607_13816».Challenge.Lookup
 import ShorECDLP.Framework.Quantum.AdaptiveMeasurement
 import ShorECDLP.Submission.«2607_13816».Challenge.BatchState
@@ -51952,6 +51953,1672 @@ end
 end ShorECDLP.Entrant.WEXUnlookup
 
 namespace ShorECDLP.Entrant.WEX
+open ShorECDLP.Challenge ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Entrant ECDSAAdd.ShorPort
+noncomputable section
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+theorem delta_getD_mem_take (xs : List Wire) (d : Wire) (i n : Nat)
+    (hi : i < n) (hn : n ≤ xs.length) : xs.getD i d ∈ xs.take n := by
+  have ht : i < (xs.take n).length := by simp [List.length_take]; omega
+  have hp : i < xs.length := by omega
+  have heq : (xs.take n)[i] = xs.getD i d := by
+    rw [List.getElem_take, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hp]
+    rfl
+  rw [← heq]
+  exact List.getElem_mem ht
+
+theorem deltaPool_eq : streamLayout.dialogPool = streamLayout.core.pool.take 2613 := rfl
+
+theorem deltaPoolWire_eq (i : Nat) : streamLayout.core.poolWire i = streamLayout.core.pool.getD i 0 := rfl
+
+theorem deltaPool_length : streamLayout.core.pool.length = 5699 := by
+  change ((List.range' 4115 5699).map streamWire).length = 5699
+  simp
+
+theorem deltaPool_mem_dialog (i : Nat) (hi : i < 2613) :
+    streamLayout.core.poolWire i ∈ streamLayout.dialogPool := by
+  rw [deltaPool_eq, deltaPoolWire_eq]
+  apply delta_getD_mem_take _ _ i 2613 hi
+  rw [deltaPool_length]
+  omega
+
+theorem deltaZeroWith_support (T : Wire → Program) (used : List Wire)
+    (hT : ∀ c, ECDSAAdd.wires (T c) ⊆ (c::used).toFinset) (c : Wire) (bs : List ZeroBit) :
+    ECDSAAdd.wires (zeroWith T c bs) ⊆ (c::used ++ bs.flatMap ZeroBit.wires).toFinset := by
+  induction bs generalizing c with
+  | nil => simpa [zeroWith] using hT c
+  | cons b bs ih =>
+    intro q hq
+    have child := @ih b.work q
+    simp only [zeroWith,ECDSAAdd.wires_append,Finset.mem_union] at hq
+    simp [chainAnd,chainErase,ECDSAAdd.wires,Instr.wires,correctionWires,ZeroBit.wires,
+      List.mem_cons,List.mem_toFinset] at hq child ⊢
+    aesop
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open ShorECDLP.Challenge ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Entrant ECDSAAdd.ShorPort ECDSAAdd.RecordedQuantum
+noncomputable section
+set_option maxHeartbeats 4000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+/-- Conditional X gates: the instantiated form of an uncontrolled lookup. -/
+def xBits : List Wire → List Bool → Program
+  | w :: ws, b :: bs => (if b then [.X w] else []) ++ xBits ws bs
+  | _, _ => []
+
+/-- Copies a loaded scratch word onto its targets. -/
+def cxList : List Wire → List Wire → Program
+  | a :: as, t :: ts => .CX a t :: cxList as ts
+  | _, _ => []
+
+def xMask : List Wire → List Bool → Wire → Bool
+  | w :: ws, b :: bs, q => (decide (q = w) && b) ^^ xMask ws bs q
+  | _, _, _ => false
+
+theorem xBits_records (S : List Wire) (k : List Bool) : measurementCount (xBits S k) = 0 := by
+  induction S generalizing k with
+  | nil => rfl
+  | cons w S ih =>
+    cases k with
+    | nil => rfl
+    | cons b k => cases b <;> simp [xBits, measurementCount, ih]
+
+theorem xBits_toffoli (S : List Wire) (k : List Bool) : ECDSAAdd.toffoliCount (xBits S k) = 0 := by
+  induction S generalizing k with
+  | nil => rfl
+  | cons w S ih =>
+    cases k with
+    | nil => rfl
+    | cons b k => cases b <;> simp [xBits, ECDSAAdd.toffoliCount, ih]
+
+theorem cxList_records (S T : List Wire) : measurementCount (cxList S T) = 0 := by
+  induction S generalizing T with
+  | nil => rfl
+  | cons a S ih => cases T <;> simp [cxList, measurementCount, ih]
+
+theorem cxList_toffoli (S T : List Wire) : ECDSAAdd.toffoliCount (cxList S T) = 0 := by
+  induction S generalizing T with
+  | nil => rfl
+  | cons a S ih => cases T <;> simp [cxList, ECDSAAdd.toffoliCount, ih]
+
+theorem xBits_run (S : List Wire) (k m : List Bool) (s : State) :
+    run (xBits S k) m s = ⟨s.phase, fun q => s.basis q ^^ xMask S k q⟩ := by
+  induction S generalizing k s with
+  | nil => simp [xBits, xMask, run]
+  | cons w S ih =>
+    cases k with
+    | nil => simp [xBits, xMask, run]
+    | cons b k =>
+      cases b
+      · simpa [xBits, xMask] using ih k s
+      · change run (.X w :: xBits S k) m s = _
+        simp only [run]
+        rw [ih]
+        apply congrArg (State.mk s.phase)
+        funext q
+        by_cases hq : q = w
+        · subst hq
+          simp [writeBit, xMask]
+        · simp [writeBit, xMask, hq]
+
+theorem xMask_outside (T : List Wire) (k : List Bool) (a : Wire) (h : a ∉ T) : xMask T k a = false := by
+  induction T generalizing k with
+  | nil => rfl
+  | cons w T ih =>
+    cases k with
+    | nil => rfl
+    | cons b k =>
+      have ha : a ≠ w := fun e => h (e ▸ List.mem_cons_self)
+      have ht : a ∉ T := fun e => h (List.mem_cons_of_mem _ e)
+      simp [xMask, ha, ih k ht]
+
+theorem cxList_run (S T : List Wire) (m : List Bool) (u : State) (hd : ∀ a ∈ S, a ∉ T) :
+    run (cxList S T) m u = ⟨u.phase, fun q => u.basis q ^^ xMask T (S.map u.basis) q⟩ := by
+  induction S generalizing T u with
+  | nil => simp [cxList, xMask, run]
+  | cons a S ih =>
+    cases T with
+    | nil => simp [cxList, xMask, run]
+    | cons t T =>
+      have hat : a ≠ t := fun e => hd a List.mem_cons_self (e ▸ List.mem_cons_self)
+      have hS : ∀ x ∈ S, x ≠ t := fun x hx e =>
+        hd x (List.mem_cons_of_mem _ hx) (e ▸ List.mem_cons_self)
+      have hT : ∀ x ∈ S, x ∉ T := fun x hx e =>
+        hd x (List.mem_cons_of_mem _ hx) (List.mem_cons_of_mem _ e)
+      simp only [cxList, run]
+      rw [ih T _ hT]
+      have hmap : S.map (writeBit u.basis t (u.basis t ^^ u.basis a)) = S.map u.basis := by
+        apply List.map_congr_left
+        intro x hx
+        simp [writeBit, Function.update_of_ne (hS x hx)]
+      simp only [hmap]
+      apply congrArg (State.mk u.phase)
+      funext q
+      by_cases hq : q = t
+      · subst hq
+        simp [writeBit, xMask]
+      · simp [writeBit, xMask, hq]
+
+theorem xBits_wires (S : List Wire) (k : List Bool) (q : Wire) (h : q ∈ wires (xBits S k)) : q ∈ S := by
+  induction S generalizing k with
+  | nil => simp [xBits, wires] at h
+  | cons w S ih =>
+    cases k with
+    | nil => simp [xBits, wires] at h
+    | cons b k =>
+      cases b
+      · exact List.mem_cons_of_mem _ (ih k (by simpa [xBits] using h))
+      · have h' : q ∈ wires (.X w :: xBits S k) := by simpa [xBits] using h
+        simp only [wires, Instr.wires, Finset.mem_union, Finset.mem_singleton] at h'
+        rcases h' with rfl | h'
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (ih k h')
+
+theorem cxList_wires (S T : List Wire) (q : Wire) (h : q ∈ wires (cxList S T)) : q ∈ S ∨ q ∈ T := by
+  induction S generalizing T with
+  | nil => simp [cxList, wires] at h
+  | cons a S ih =>
+    cases T with
+    | nil => simp [cxList, wires] at h
+    | cons t T =>
+      simp only [cxList, wires, Instr.wires, Finset.mem_union, Finset.mem_insert,
+        Finset.mem_singleton] at h
+      rcases h with (rfl | rfl) | h
+      · exact Or.inl List.mem_cons_self
+      · exact Or.inr List.mem_cons_self
+      · rcases ih T h with h | h
+        · exact Or.inl (List.mem_cons_of_mem _ h)
+        · exact Or.inr (List.mem_cons_of_mem _ h)
+
+theorem cxList_physical (S T : List Wire) (hd : ∀ a ∈ S, a ∉ T) : GatePhysical (cxList S T) := by
+  induction S generalizing T with
+  | nil => simp [cxList, GatePhysical]
+  | cons a S ih =>
+    cases T with
+    | nil => simp [cxList, GatePhysical]
+    | cons t T =>
+      have hat : a ≠ t := fun e => hd a List.mem_cons_self (e ▸ List.mem_cons_self)
+      have hT : ∀ x ∈ S, x ∉ T := fun x hx e =>
+        hd x (List.mem_cons_of_mem _ hx) (List.mem_cons_of_mem _ e)
+      have hp := ih T hT
+      intro i hi
+      simp only [cxList, List.mem_cons] at hi
+      rcases hi with rfl | hi
+      · simpa [PhysicalInstr, ProperGate] using hat
+      · exact hp i hi
+
+theorem cxList_slots (S T : List Wire) : ECDSAAdd.Challenge.gateSlots (cxList S T) = min S.length T.length := by
+  induction S generalizing T with
+  | nil => simp [cxList, ECDSAAdd.Challenge.gateSlots]
+  | cons a S ih =>
+    cases T with
+    | nil => simp [cxList, ECDSAAdd.Challenge.gateSlots]
+    | cons t T =>
+      have h := ih T
+      simp only [ECDSAAdd.Challenge.gateSlots] at h
+      simp [cxList, ECDSAAdd.Challenge.gateSlots, ECDSAAdd.Challenge.instructionSlots, h]
+      omega
+
+/-- The state with the scratch word loaded. -/
+def scrLoad (S : List Wire) (k : List Bool) (x : State) : State :=
+  ⟨x.phase, fun q => x.basis q ^^ xMask S k q⟩
+
+/-- `P`, run with the scratch word loaded, simulates `P'` run with it clean. -/
+structure ScrSim (S : List Wire) (k : List Bool) (P P' : Program) : Prop where
+  records : measurementCount P = measurementCount P'
+  step : ∀ (m : List Bool) (x : State), (∀ a ∈ S, x.basis a = false) →
+    run P m (scrLoad S k x) = scrLoad S k (run P' m x) ∧ ∀ a ∈ S, (run P' m x).basis a = false
+
+theorem ScrSim.append {S : List Wire} {k : List Bool} {P P' R R' : Program}
+    (h : ScrSim S k P P') (g : ScrSim S k R R') : ScrSim S k (P ++ R) (P' ++ R') where
+  records := by simp only [measurementCount_append, h.records, g.records]
+  step m x hx := by
+    rw [run_append, run_append, ← h.records]
+    have h1 := h.step (m.take (measurementCount P)) x hx
+    rw [h1.1]
+    exact g.step (m.drop (measurementCount P)) _ h1.2
+
+theorem ScrSim.disjoint (S : List Wire) (k : List Bool) (p : Program) (hd : ∀ a ∈ S, a ∉ wires p) :
+    ScrSim S k p p where
+  records := rfl
+  step m x hx := by
+    constructor
+    · have hw : Disjoint (wires p) (wires (xBits S k)) :=
+        Finset.disjoint_left.mpr fun q hq hs => hd q (xBits_wires S k q hs) hq
+      have hc := run_disjoint_commute p (xBits S k) hw m ([] : List Bool) x
+      simpa only [xBits_run, scrLoad] using hc
+    · exact fun a ha => (run_preserves_outside p m x a (hd a ha)).trans (hx a ha)
+
+private theorem scr_xor_swap (a b c : Bool) : ((a ^^ b) ^^ c) = ((a ^^ c) ^^ b) := by
+  cases a <;> cases b <;> cases c <;> rfl
+
+theorem ScrSim.cx (S S' T : List Wire) (k k' : List Bool) (hmap : S'.map (xMask S k) = k')
+    (hS : ∀ a ∈ S', a ∈ S) (hd : ∀ a ∈ S, a ∉ T) : ScrSim S k (cxList S' T) (xBits T k') where
+  records := by rw [cxList_records, xBits_records]
+  step m x hx := by
+    constructor
+    · rw [cxList_run S' T m _ (fun a ha => hd a (hS a ha)), xBits_run]
+      have hm : S'.map (scrLoad S k x).basis = k' := by
+        rw [← hmap]
+        apply List.map_congr_left
+        intro a ha
+        simp [scrLoad, hx a (hS a ha)]
+      rw [hm]
+      simp only [scrLoad]
+      apply congrArg (State.mk x.phase)
+      funext q
+      exact scr_xor_swap _ _ _
+    · intro a ha
+      rw [xBits_run]
+      simp [hx a ha, xMask_outside T k' a (hd a ha)]
+
+theorem scr_sandwich (S : List Wire) (k : List Bool) (P P' : Program) (h : ScrSim S k P P')
+    (m : List Bool) (s : State) (hs : ∀ a ∈ S, s.basis a = false) :
+    run (xBits S k ++ P ++ xBits S k) m s = run P' m s := by
+  rw [List.append_assoc, run_append, xBits_records, List.take_zero, List.drop_zero, xBits_run,
+    run_append]
+  change run (xBits S k) _ (run P _ (scrLoad S k s)) = _
+  rw [(h.step _ s hs).1, xBits_run, h.records, run_take]
+  apply State.extensionality
+  · rfl
+  · funext q
+    simp [scrLoad]
+
+theorem xMask_append (A B : List Wire) (kA kB : List Bool) (hl : A.length = kA.length) (q : Wire) :
+    xMask (A ++ B) (kA ++ kB) q = (xMask A kA q ^^ xMask B kB q) := by
+  induction A generalizing kA with
+  | nil =>
+    cases kA with
+    | nil => simp [xMask]
+    | cons _ _ => simp at hl
+  | cons w A ih =>
+    cases kA with
+    | nil => simp at hl
+    | cons b kA =>
+      have h := ih kA (by simpa using hl)
+      simp only [List.cons_append, xMask, h, Bool.xor_assoc]
+
+theorem xMask_map (S : List Wire) (k : List Bool) (hn : S.Nodup) (hl : S.length = k.length) :
+    S.map (xMask S k) = k := by
+  induction S generalizing k with
+  | nil =>
+    cases k with
+    | nil => rfl
+    | cons _ _ => simp at hl
+  | cons w S ih =>
+    cases k with
+    | nil => simp at hl
+    | cons b k =>
+      have hw := (List.nodup_cons.mp hn).1
+      have ht := ih k (List.nodup_cons.mp hn).2 (by simpa using hl)
+      simp only [List.map_cons, xMask, decide_true, Bool.true_and, xMask_outside S k w hw, Bool.xor_false]
+      congr 1
+      rw [← ht]
+      apply List.map_congr_left
+      intro a ha
+      have hne : a ≠ w := fun e => hw (e ▸ ha)
+      simp [hne, ht]
+
+theorem xMask_map_left (A B : List Wire) (kA kB : List Bool) (hn : (A ++ B).Nodup)
+    (hA : A.length = kA.length) : A.map (xMask (A ++ B) (kA ++ kB)) = kA := by
+  have hd : ∀ a ∈ A, a ∉ B := fun a ha hb => (List.nodup_append'.mp hn).2.2 ha hb
+  rw [← xMask_map A kA (List.nodup_append'.mp hn).1 hA]
+  rw [xMask_map A kA (List.nodup_append'.mp hn).1 hA]
+  have h : A.map (xMask (A ++ B) (kA ++ kB)) = A.map (xMask A kA) := by
+    apply List.map_congr_left
+    intro a ha
+    rw [xMask_append A B kA kB hA, xMask_outside B kB a (hd a ha), Bool.xor_false]
+  rw [h, xMask_map A kA (List.nodup_append'.mp hn).1 hA]
+
+theorem xMask_map_right (A B : List Wire) (kA kB : List Bool) (hn : (A ++ B).Nodup)
+    (hA : A.length = kA.length) (hB : B.length = kB.length) : B.map (xMask (A ++ B) (kA ++ kB)) = kB := by
+  have hd : ∀ b ∈ B, b ∉ A := fun b hb ha => (List.nodup_append'.mp hn).2.2 ha hb
+  have h : B.map (xMask (A ++ B) (kA ++ kB)) = B.map (xMask B kB) := by
+    apply List.map_congr_left
+    intro b hb
+    rw [xMask_append A B kA kB hA, xMask_outside A kA b (hd b hb), Bool.false_xor]
+  rw [h, xMask_map B kB (List.nodup_append'.mp hn).2.1 hB]
+
+theorem xBits_snoc (T : List Wire) (y : Wire) (k : List Bool) (b : Bool) (hl : T.length = k.length) :
+    xBits (T ++ [y]) (k ++ [b]) = xBits T k ++ (if b then [.X y] else []) := by
+  induction T generalizing k with
+  | nil =>
+    cases k with
+    | nil => cases b <;> simp [xBits]
+    | cons _ _ => simp at hl
+  | cons w T ih =>
+    cases k with
+    | nil => simp at hl
+    | cons c k =>
+      simp [xBits, ih k (by simpa using hl), List.append_assoc]
+
+/-- The bits of an uncontrolled lookup at one address. -/
+def portBits {n : Nat} (read : ConstantBit n → Bool) (ports : List (LookupPort n)) (a : Nat) : List Bool :=
+  ports.map fun p => decide (read (p.ref a) = p.value)
+
+theorem portTemplate_none_inst {n : Nat} (read : ConstantBit n → Bool) (ports : List (LookupPort n)) (a : Nat) :
+    (portTemplate none ports a).instantiate read = xBits (portTargets ports) (portBits read ports a) := by
+  induction ports with
+  | nil => rfl
+  | cons p ports ih =>
+    have h : portTargets (p :: ports) = p.target :: portTargets ports := rfl
+    have h' : portBits read (p :: ports) a = decide (read (p.ref a) = p.value) :: portBits read ports a := rfl
+    rw [h, h', portTemplate_cons, Tmpl.instantiate_cons, ih]
+    by_cases hb : read (p.ref a) = p.value <;> simp [xBits, TInstr.instantiate, hb]
+
+/-- The same constant bits, redirected to scratch wires. -/
+def retarget {n : Nat} (ports : List (LookupPort n)) (S : List Wire) : List (LookupPort n) :=
+  List.zipWith (fun p w => ⟨p.ref, p.value, w⟩) ports S
+
+theorem retarget_targets {n : Nat} (ports : List (LookupPort n)) (S : List Wire)
+    (h : ports.length = S.length) : portTargets (retarget ports S) = S := by
+  induction ports generalizing S with
+  | nil =>
+    cases S with
+    | nil => rfl
+    | cons _ _ => simp at h
+  | cons p ports ih =>
+    cases S with
+    | nil => simp at h
+    | cons w S =>
+      have := ih S (by simpa using h)
+      simp only [retarget, List.zipWith_cons_cons, portTargets, List.map_cons] at this ⊢
+      rw [this]
+
+theorem retarget_bits {n : Nat} (read : ConstantBit n → Bool) (ports : List (LookupPort n)) (S : List Wire)
+    (h : ports.length = S.length) (a : Nat) : portBits read (retarget ports S) a = portBits read ports a := by
+  induction ports generalizing S with
+  | nil =>
+    cases S with
+    | nil => rfl
+    | cons _ _ => simp at h
+  | cons p ports ih =>
+    cases S with
+    | nil => simp at h
+    | cons w S =>
+      have := ih S (by simpa using h)
+      simp only [retarget, List.zipWith_cons_cons, portBits, List.map_cons] at this ⊢
+      rw [this]
+
+theorem retarget_length {n : Nat} (ports : List (LookupPort n)) (S : List Wire)
+    (h : ports.length = S.length) : (retarget ports S).length = S.length := by
+  simp [retarget, h]
+
+end
+end ShorECDLP.Entrant.WEX
+namespace ShorECDLP.Entrant.WEX
+open ShorECDLP.Challenge ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Entrant ECDSAAdd.ShorPort
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+/-- Clean scratch wires for the output comparison words. -/
+def scrPairWires : List Wire :=
+  streamLayout.core.poolWire 258 :: (List.range' 259 256).map streamLayout.core.poolWire ++
+    [streamLayout.core.poolWire 768]
+
+def scrShortWires : List Wire :=
+  streamLayout.core.poolWire 769 :: (List.range' 770 256).map streamLayout.core.poolWire ++
+    [streamLayout.core.poolWire 1026]
+
+def scrWires : List Wire := scrPairWires ++ scrShortWires
+
+def scrPairTargets : List Wire := streamLayout.point.finite :: streamLayout.point.x ++ [yLow streamLayout]
+
+def scrShortTargets : List Wire :=
+  streamLayout.point.finite :: streamLayout.point.x ++ streamLayout.point.y.take 1
+
+def scrPairBits (rows : Nat → Fin 32768) (r : Nat → ConstantBit 32768) : List (LookupPort 32768) :=
+  pairParityPorts streamLayout (wBit rows .infinity) (wFields rows .x) r
+
+def scrShortBits (rows : Nat → Fin 32768) : List (LookupPort 32768) :=
+  ⟨wBit rows .doubleInfinity, false, streamLayout.point.finite⟩ ::
+    indexedPorts streamLayout.point.x (wFields rows .doubleX) true ++
+    indexedPorts (streamLayout.point.y.take 1) (fun a _ => wBit rows .doubleY 0 a) true
+
+def scrPorts (rows : Nat → Fin 32768) : List (LookupPort 32768) :=
+  retarget (scrPairBits rows (wBit rows .y)) scrPairWires ++ retarget (scrShortBits rows) scrShortWires
+
+def scrP1 : Program :=
+  zeroWith (fun w => [.CCX w (yLow streamLayout) streamLayout.infinitySelect, .X (yLow streamLayout),
+    .CCX w (yLow streamLayout) streamLayout.core.equalNegY]) streamLayout.control (pairPorts streamLayout)
+
+def scrP2 : Program :=
+  zeroControlled streamLayout.core.double streamLayout.doubleSelect
+    (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258))
+
+/-- One load, Clifford copies for both exception comparisons, one clear. -/
+def scrOutCompare (rows : Nat → Fin 32768) : WCode 32768 :=
+  [.lookup none (scrPorts rows)] ++
+  wLiteral (cxList scrPairWires scrPairTargets) ++
+  wZeroWith (wPairTailBare (yLow streamLayout) streamLayout.infinitySelect streamLayout.core.equalNegY)
+    streamLayout.control (pairPorts streamLayout) ++
+  wLiteral (cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ++
+  wLiteral (cxList scrShortWires scrShortTargets) ++
+  wLiteral scrP2 ++
+  wLiteral (cxList scrShortWires scrShortTargets) ++
+  [.lookup none (scrPorts rows)]
+
+def scrOldCompare (rows : Nat → Fin 32768) : WCode 32768 :=
+  wPairEqualTight streamLayout streamLayout.infinitySelect streamLayout.core.equalNegY
+    (wBit rows .infinity) (wFields rows .x) (wBit rows .y) (wBit rows .negY) ++
+  wShortEqual streamLayout streamLayout.core.double streamLayout.doubleSelect (wBit rows .doubleInfinity)
+    (wFields rows .doubleX) (wBit rows .doubleY)
+
+theorem scrPairWires_length : scrPairWires.length = 258 := by simp [scrPairWires]
+theorem scrShortWires_length : scrShortWires.length = 258 := by simp [scrShortWires]
+
+theorem scr_all_not (S L : List Wire) (h : (S.all fun a => !L.contains a) = true) : ∀ a ∈ S, a ∉ L := by
+  intro a ha hl
+  have := List.all_eq_true.mp h a ha
+  simp [hl] at this
+
+theorem scrWires_nodup : scrWires.Nodup := by decide +kernel
+theorem scrWires_pair_targets : ∀ a ∈ scrWires, a ∉ scrPairTargets :=
+  scr_all_not _ _ (by decide +kernel)
+theorem scrWires_short_targets : ∀ a ∈ scrWires, a ∉ scrShortTargets :=
+  scr_all_not _ _ (by decide +kernel)
+theorem scrWires_y : ∀ a ∈ scrWires, a ∉ [yLow streamLayout] :=
+  scr_all_not _ _ (by decide +kernel)
+theorem scrWires_p1 : ∀ a ∈ scrWires, a ∉ (streamLayout.control :: [yLow streamLayout,
+    streamLayout.infinitySelect, streamLayout.core.equalNegY] ++ (pairPorts streamLayout).flatMap ZeroBit.wires) :=
+  scr_all_not _ _ (by decide +kernel)
+theorem scrWires_p2 : ∀ a ∈ scrWires, a ∉ (streamLayout.core.double :: streamLayout.doubleSelect ::
+    (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258)).flatMap ZeroBit.wires) :=
+  scr_all_not _ _ (by decide +kernel)
+
+attribute [local irreducible] streamLayout
+
+theorem scrWires_pool (a : Wire) (ha : a ∈ scrWires) : a ∈ streamLayout.dialogPool := by
+  simp only [scrWires, scrPairWires, scrShortWires, List.mem_append, List.mem_cons, List.mem_map,
+    List.mem_range'_1, List.not_mem_nil, or_false] at ha
+  rcases ha with ((rfl | ⟨i, hi, rfl⟩) | rfl) | ((rfl | ⟨i, hi, rfl⟩) | rfl) <;>
+    exact deltaPool_mem_dialog _ (by omega)
+
+theorem scrP1_wires (a : Wire) (ha : a ∈ scrWires) : a ∉ wires scrP1 := by
+  have htail (c : Wire) : wires
+      ([.CCX c (yLow streamLayout) streamLayout.infinitySelect, .X (yLow streamLayout),
+        .CCX c (yLow streamLayout) streamLayout.core.equalNegY] : Program) ⊆
+      (c :: [yLow streamLayout, streamLayout.infinitySelect, streamLayout.core.equalNegY]).toFinset := by
+    intro q hq
+    simp [wires, Instr.wires] at hq ⊢
+    tauto
+  have hz := deltaZeroWith_support
+    (fun c : Wire => ([.CCX c (yLow streamLayout) streamLayout.infinitySelect, .X (yLow streamLayout),
+      .CCX c (yLow streamLayout) streamLayout.core.equalNegY] : Program))
+    ([yLow streamLayout, streamLayout.infinitySelect, streamLayout.core.equalNegY] : List Wire) htail
+    streamLayout.control (pairPorts streamLayout)
+  intro hq
+  exact scrWires_p1 a ha (List.mem_toFinset.mp (hz hq))
+
+theorem scrP2_wires (a : Wire) (ha : a ∈ scrWires) : a ∉ wires scrP2 := by
+  intro hq
+  rw [scrP2, zeroControlled_wires] at hq
+  exact scrWires_p2 a ha (List.mem_toFinset.mp hq)
+
+theorem scrPairBits_length (rows : Nat → Fin 32768) (r : Nat → ConstantBit 32768) :
+    (scrPairBits rows r).length = 258 := by
+  have hx : streamLayout.point.x.length = 256 := streamLayout_widths.inputX
+  simp [scrPairBits, pairParityPorts, hx]
+
+theorem scrShortBits_length (rows : Nat → Fin 32768) : (scrShortBits rows).length = 258 := by
+  have hx : streamLayout.point.x.length = 256 := streamLayout_widths.inputX
+  have hy : streamLayout.point.y.length = 256 := streamLayout_widths.inputY
+  simp [scrShortBits, hx, hy]
+
+theorem scrPairBits_targets (rows : Nat → Fin 32768) (r : Nat → ConstantBit 32768) :
+    portTargets (scrPairBits rows r) = scrPairTargets := by
+  have h := indexedPorts_targets streamLayout.point.x (wFields rows .x) true
+  simp only [portTargets] at h
+  simp only [scrPairBits, pairParityPorts, scrPairTargets, portTargets, List.map_append, List.map_cons,
+    List.map_nil, h, List.cons_append]
+
+theorem scrShortBits_targets (rows : Nat → Fin 32768) :
+    portTargets (scrShortBits rows) = scrShortTargets := by
+  have h := indexedPorts_targets streamLayout.point.x (wFields rows .doubleX) true
+  have h' := indexedPorts_targets (streamLayout.point.y.take 1) (fun a _ => wBit rows .doubleY 0 a) true
+  simp only [portTargets] at h h'
+  simp only [scrShortBits, scrShortTargets, portTargets, List.map_append, List.map_cons, h, h',
+    List.cons_append]
+
+theorem scrPorts_targets (rows : Nat → Fin 32768) : portTargets (scrPorts rows) = scrWires := by
+  have h1 := retarget_targets (scrPairBits rows (wBit rows .y)) scrPairWires
+    ((scrPairBits_length _ _).trans scrPairWires_length.symm)
+  have h2 := retarget_targets (scrShortBits rows) scrShortWires
+    ((scrShortBits_length _).trans scrShortWires_length.symm)
+  simp only [portTargets] at h1 h2
+  simp only [scrPorts, scrWires, portTargets, List.map_append, h1, h2]
+
+theorem scrPorts_bits (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat) :
+    portBits read (scrPorts rows) a =
+      portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a := by
+  have h1 := retarget_bits read (scrPairBits rows (wBit rows .y)) scrPairWires
+    ((scrPairBits_length _ _).trans scrPairWires_length.symm) a
+  have h2 := retarget_bits read (scrShortBits rows) scrShortWires
+    ((scrShortBits_length _).trans scrShortWires_length.symm) a
+  simp only [portBits] at h1 h2
+  simp only [scrPorts, portBits, List.map_append, h1, h2]
+
+theorem scr_lookup_inst (read : ConstantBit 32768 → Bool) (ports : List (LookupPort 32768)) (a : Nat) :
+    (specialize ([.lookup none ports] : WCode 32768) a).instantiate read =
+      xBits (portTargets ports) (portBits read ports a) := by
+  rw [← portTemplate_none_inst]
+  simp [specialize, WInstr.specialize]
+
+theorem scr_chain_inst (read : ConstantBit 32768 → Bool) (a : Nat) :
+    (specialize (wZeroWith (wPairTailBare (n := 32768) (yLow streamLayout) streamLayout.infinitySelect
+      streamLayout.core.equalNegY) streamLayout.control (pairPorts streamLayout)) a).instantiate read = scrP1 := by
+  rw [specialize_zeroWith _ (fun w => Tmpl.lit [.CCX w (yLow streamLayout) streamLayout.infinitySelect,
+    .X (yLow streamLayout), .CCX w (yLow streamLayout) streamLayout.core.equalNegY]) a
+    (fun w => by simp [wPairTailBare])]
+  apply zeroWithT_inst
+  intro w
+  simp
+
+theorem scrOut_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat) :
+    (specialize (scrOutCompare rows) a).instantiate read =
+      xBits scrWires (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a) ++
+      (cxList scrPairWires scrPairTargets ++ (scrP1 ++ ((cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ++
+        (cxList scrShortWires scrShortTargets ++ (scrP2 ++ cxList scrShortWires scrShortTargets))))) ++
+      xBits scrWires (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a) := by
+  simp only [scrOutCompare, specialize_append, Tmpl.instantiate_append, scr_lookup_inst, specialize_literal,
+    Tmpl.instantiate_lit, scr_chain_inst, scrPorts_targets, scrPorts_bits, List.append_assoc]
+
+theorem scrOld_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat) :
+    (specialize (scrOldCompare rows) a).instantiate read =
+      xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) a) ++
+      (scrP1 ++ (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .negY)) a) ++
+      (xBits scrShortTargets (portBits read (scrShortBits rows) a) ++
+      (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) a))))) := by
+  have h1 (r : Nat → ConstantBit 32768) : wPairXorParity streamLayout (wBit rows .infinity) (wFields rows .x) r =
+      [.lookup none (scrPairBits rows r)] := rfl
+  have h2 : wShortXor streamLayout (wBit rows .doubleInfinity) (wFields rows .doubleX) (wBit rows .doubleY) =
+      [.lookup none (scrShortBits rows)] := rfl
+  have h3 : ∀ a, specialize (wLiteral (n := 32768) scrP2) a = Tmpl.lit scrP2 := fun a => specialize_literal _ _
+  have h4 : wLiteral (n := 32768) (zeroControlled streamLayout.core.double streamLayout.doubleSelect
+      (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258))) = wLiteral scrP2 := rfl
+  simp only [scrOldCompare, wPairEqualTight, wShortEqual, h1, h2, h4, specialize_append, Tmpl.instantiate_append,
+    scr_lookup_inst, h3, Tmpl.instantiate_lit, scr_chain_inst, scrPairBits_targets, scrShortBits_targets,
+    List.append_assoc]
+
+theorem scr_parity_fix (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat)
+    (hop : read (wBit rows .negY 0 a) = !(read (wBit rows .y 0 a))) (m : List Bool) (s : State) :
+    run (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) a) ++ [.X (yLow streamLayout)]) m s =
+      run (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .negY)) a)) m s := by
+  let P0 : List (LookupPort 32768) := ⟨wBit rows .infinity, false, streamLayout.point.finite⟩ ::
+    indexedPorts streamLayout.point.x (wFields rows .x) true
+  have hx : streamLayout.point.x.length = 256 := streamLayout_widths.inputX
+  have hl : (streamLayout.point.finite :: streamLayout.point.x).length = (portBits read P0 a).length := by
+    simp [portBits, P0, hx]
+  have hb (r : Nat → ConstantBit 32768) : portBits read (scrPairBits rows r) a =
+      portBits read P0 a ++ [decide (read (r a) = false)] := by
+    simp [portBits, scrPairBits, pairParityPorts, P0]
+  have hT : scrPairTargets = (streamLayout.point.finite :: streamLayout.point.x) ++ [yLow streamLayout] := rfl
+  rw [hb, hb, hT, xBits_snoc _ _ _ _ hl, xBits_snoc _ _ _ _ hl]
+  rw [hop]
+  cases hr : read (wBit rows .y 0 a)
+  · simp only [Bool.not_false, decide_true, reduceIte, Bool.true_eq_false, decide_false, Bool.false_eq_true]
+    rw [List.append_assoc, run_append, List.append_nil]
+    have hxx : ∀ (n : List Bool) (u : State),
+        run ([.X (yLow streamLayout)] ++ [.X (yLow streamLayout)]) n u = u := by
+      intro n u
+      apply State.extensionality
+      · rfl
+      · funext q
+        by_cases hq : q = yLow streamLayout
+        · subst hq
+          simp [run, writeBit]
+        · simp [run, writeBit, Function.update_of_ne hq]
+    rw [hxx, run_take]
+  · simp only [Bool.not_true, decide_true, reduceIte, Bool.true_eq_false, decide_false, Bool.false_eq_true,
+      List.append_nil]
+
+theorem scrCompare_sim (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat) :
+    ScrSim scrWires (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a)
+      (cxList scrPairWires scrPairTargets ++ (scrP1 ++ ((cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ++
+        (cxList scrShortWires scrShortTargets ++ (scrP2 ++ cxList scrShortWires scrShortTargets)))))
+      (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) a) ++
+        (scrP1 ++ ((xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) a) ++ [.X (yLow streamLayout)]) ++
+        (xBits scrShortTargets (portBits read (scrShortBits rows) a) ++
+        (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) a)))))) := by
+  have hlA : scrPairWires.length = (portBits read (scrPairBits rows (wBit rows .y)) a).length := by
+    simp [portBits, scrPairBits_length, scrPairWires_length]
+  have hlB : scrShortWires.length = (portBits read (scrShortBits rows) a).length := by
+    simp [portBits, scrShortBits_length, scrShortWires_length]
+  have h1 := ScrSim.cx scrWires scrPairWires scrPairTargets
+    (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a) _
+    (xMask_map_left _ _ _ _ scrWires_nodup hlA)
+    (fun w hw => List.mem_append_left _ hw) scrWires_pair_targets
+  have h2 := ScrSim.cx scrWires scrShortWires scrShortTargets
+    (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a) _
+    (xMask_map_right _ _ _ _ scrWires_nodup hlA hlB)
+    (fun w hw => List.mem_append_right _ hw) scrWires_short_targets
+  have hp1 := ScrSim.disjoint scrWires
+    (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a) scrP1 scrP1_wires
+  have hp2 := ScrSim.disjoint scrWires
+    (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a) scrP2 scrP2_wires
+  have hx := ScrSim.disjoint scrWires
+    (portBits read (scrPairBits rows (wBit rows .y)) a ++ portBits read (scrShortBits rows) a)
+    ([.X (yLow streamLayout)] : Program) (by
+      intro w hw hq
+      apply scrWires_y w hw
+      simpa [wires, Instr.wires] using hq)
+  exact h1.append (hp1.append ((h1.append hx).append (h2.append (hp2.append h2))))
+
+theorem scrCompare_records (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat) :
+    measurementCount ((specialize (scrOutCompare rows) a).instantiate read) =
+      measurementCount ((specialize (scrOldCompare rows) a).instantiate read) := by
+  rw [scrOut_inst, scrOld_inst]
+  simp only [measurementCount_append, xBits_records, cxList_records, measurementCount]
+  omega
+
+theorem scrCompare_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat)
+    (hop : read (wBit rows .negY 0 a) = !(read (wBit rows .y 0 a))) (m : List Bool) (s : State)
+    (hs : ∀ w ∈ scrWires, s.basis w = false) :
+    run ((specialize (scrOutCompare rows) a).instantiate read) m s =
+      run ((specialize (scrOldCompare rows) a).instantiate read) m s := by
+  rw [scrOut_inst, scr_sandwich _ _ _ _ (scrCompare_sim read rows a) m s hs, scrOld_inst]
+  have h := run_replace_inside
+    (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) a) ++ scrP1)
+    (xBits scrShortTargets (portBits read (scrShortBits rows) a) ++
+      (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) a)))
+    (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) a) ++ [.X (yLow streamLayout)])
+    (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .negY)) a))
+    (by simp [xBits_records, measurementCount])
+    (fun m st => scr_parity_fix read rows a hop m st) m s
+  simpa only [List.append_assoc] using h
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open ShorECDLP.Challenge ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Entrant ECDSAAdd.Secp256k1 ECDSAAdd.ShorPort
+open ECDSAAdd.Arithmetic.ControlledPointLayout
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+/-- The corner writes share one traversal per point value. -/
+def thirdCorners (L : ControlledPointLayout) (C : Point) : Program :=
+  (negateYLayout L).program L.core.equalNegY ECDSAAdd.p SquareReduction.c ++
+  ([.CX L.doubleSelect L.core.equalNegY] ++ maskedPointConstant L.core.equalNegY L.point (C+C) ++
+    [.CX L.doubleSelect L.core.equalNegY]) ++
+  ([.CX L.infinitySelect L.doubleSelect] ++ maskedPointConstant L.doubleSelect L.point C ++
+    [.CX L.infinitySelect L.doubleSelect]) ++
+  ([.CX L.genericSelect L.core.equalNegY] ++ maskedPointConstant L.core.equalNegY L.point (-C) ++
+    [.CX L.genericSelect L.core.equalNegY])
+
+theorem thirdCorners_records (L : ControlledPointLayout) (C : Point) :
+    measurementCount (thirdCorners L C) = measurementCount (secondCorners L C) := by
+  simp [thirdCorners, secondCorners, measurementCount_append, maskedPointConstant_counts, measurementCount]
+
+theorem thirdCorners_run (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
+    (C : Point) (m : List Bool) (st : State) :
+    run (thirdCorners L C) m st = run (secondCorners L C) m st := by
+  have hpoint : (PointAddLayout.pointWires L.point).Nodup :=
+    (L.dialogUsed_nodup hn).of_append_left.of_append_left.of_append_left
+  have away (q : Wire) (hq : q ∈ L.inPlaceFlags) : q ∉ PointAddLayout.pointWires L.point := by
+    intro bad
+    have h := List.nodup_iff_count.mp (L.dialogUsed_nodup hn) q
+    have hb := List.count_pos_iff.mpr bad
+    have hf := List.count_pos_iff.mpr hq
+    simp only [dialogUsedWires, List.count_append] at h
+    omega
+  have hO := away L.infinitySelect (by simp [inPlaceFlags])
+  have hD := away L.doubleSelect (by simp [inPlaceFlags])
+  have hH := away L.core.equalNegY (by simp [inPlaceFlags])
+  have hxl : L.point.x.length = 256 := hw.inputX
+  have hyl : L.point.y.length = 256 := hw.inputY
+  have hDH : L.doubleSelect ≠ L.core.equalNegY := by
+    have sep := dialogFlag_separation (L := L) hn
+    simp only [inPlaceFlags, List.nodup_cons, List.mem_cons, not_or] at sep
+    tauto
+  have hOD : L.infinitySelect ≠ L.doubleSelect := by
+    have sep := dialogFlag_separation (L := L) hn
+    simp only [inPlaceFlags, List.nodup_cons, List.mem_cons, not_or] at sep
+    tauto
+  let mH2 := maskedPointConstant L.core.equalNegY L.point (C+C)
+  let mD2 := maskedPointConstant L.doubleSelect L.point (C+C)
+  let mO := maskedPointConstant L.infinitySelect L.point C
+  let mD := maskedPointConstant L.doubleSelect L.point C
+  let X : Program := [.CX L.infinitySelect L.doubleSelect] ++ mD ++ [.CX L.infinitySelect L.doubleSelect]
+  let Z : Program := [.CX L.doubleSelect L.core.equalNegY] ++ mH2 ++ [.CX L.doubleSelect L.core.equalNegY]
+  have hrec (p : Program) (h : measurementCount p = 0) (n : List Bool) (u : State) : run p n u = run p ([]) u :=
+    run_no_records p h n u
+  have hX0 : measurementCount X = 0 := by
+    simp [X, mD, measurementCount_append, maskedPointConstant_counts, measurementCount]
+  have hZ0 : measurementCount Z = 0 := by
+    simp [Z, mH2, measurementCount_append, maskedPointConstant_counts, measurementCount]
+  have hH20 : measurementCount mH2 = 0 := (maskedPointConstant_counts _ _ _).2
+  have hD20 : measurementCount mD2 = 0 := (maskedPointConstant_counts _ _ _).2
+  have hmXD (u : State) : run (X ++ mD2) ([]) u = run (mD2 ++ X) ([]) u := by
+    have hmerge (v : State) : run X ([]) v = run (mO ++ mD) ([]) v :=
+      (merged_point_masks L.point L.infinitySelect L.doubleSelect C hpoint hO hD hOD v ([])).symm
+    have hc := maskChain_commute L.point ([(L.infinitySelect, C), (L.doubleSelect, C)] : List (Wire × Point)) L.doubleSelect (C+C) hpoint hD
+      (by
+        intro e he
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+        rcases he with rfl | rfl
+        · exact hO
+        · exact hD)
+      hxl hyl u
+    have hchain : maskChain L.point ([(L.infinitySelect, C), (L.doubleSelect, C)] : List (Wire × Point)) = mO ++ mD := by
+      simp [maskChain, mO, mD]
+    rw [hchain] at hc
+    rw [run_append_nil, hmerge, ← run_append_nil, hc, run_append_nil, run_append_nil mD2, hmerge]
+  have hZrun (u : State) : run (mH2 ++ mD2) ([]) u = run Z ([]) u := by
+    have hc := masked_points_commute L.point L.core.equalNegY L.doubleSelect (C+C) (C+C) hpoint hH hD hxl hyl u
+    exact hc.trans (merged_point_masks L.point L.doubleSelect L.core.equalNegY (C+C) hpoint hD hH hDH u ([]))
+  have hmid (n : List Bool) (u : State) : run (mH2 ++ X ++ mD2) n u = run (Z ++ X) n u := by
+    have h1 : measurementCount (mH2 ++ X ++ mD2) = 0 := by
+      simp only [measurementCount_append, hH20, hX0, hD20]
+    have h2 : measurementCount (Z ++ X) = 0 := by simp only [measurementCount_append, hZ0, hX0]
+    rw [hrec _ h1, hrec _ h2, List.append_assoc, run_append_nil, hmXD, ← run_append_nil, ← List.append_assoc,
+      run_append_nil, hZrun, ← run_append_nil]
+  have h := run_replace_inside
+    ((negateYLayout L).program L.core.equalNegY ECDSAAdd.p SquareReduction.c)
+    ([.CX L.genericSelect L.core.equalNegY] ++ maskedPointConstant L.core.equalNegY L.point (-C) ++
+      [.CX L.genericSelect L.core.equalNegY])
+    (Z ++ X) (mH2 ++ X ++ mD2)
+    (by simp only [measurementCount_append, hH20, hX0, hD20, hZ0])
+    (fun n u => (hmid n u).symm) m st
+  simpa only [thirdCorners, secondCorners, Z, X, mH2, mD2, mD, List.append_assoc] using h
+
+/-- The corner code matching `thirdCorners`. -/
+def scrCorners (rows : Nat → Fin 32768) : WCode 32768 :=
+  wLiteral ((negateYLayout streamLayout).program streamLayout.core.equalNegY ECDSAAdd.p SquareReduction.c) ++
+  wLiteral ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) ++
+  wPoint streamLayout.core.equalNegY streamLayout.point (wBit rows .doubleInfinity) (wFields rows .doubleX)
+    (wFields rows .doubleY) ++
+  wLiteral ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) ++
+  wLiteral ([.CX streamLayout.infinitySelect streamLayout.doubleSelect]) ++
+  wPoint streamLayout.doubleSelect streamLayout.point (wBit rows .infinity) (wFields rows .x) (wFields rows .y) ++
+  wLiteral ([.CX streamLayout.infinitySelect streamLayout.doubleSelect]) ++
+  wLiteral ([.CX streamLayout.genericSelect streamLayout.core.equalNegY]) ++
+  wPoint streamLayout.core.equalNegY streamLayout.point (wBit rows .infinity) (wFields rows .x) (wFields rows .negY) ++
+  wLiteral ([.CX streamLayout.genericSelect streamLayout.core.equalNegY])
+
+theorem scrCorners_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (address : Nat) (C : Point)
+    (h : RowReads read (rows address) C) :
+    (specialize (scrCorners rows) address).instantiate read = thirdCorners streamLayout C := by
+  have hxl : streamLayout.point.x.length = 256 := streamLayout_widths.inputX
+  have hyl : streamLayout.point.y.length = 256 := streamLayout_widths.inputY
+  have fC : read (bitRef (rows address) .infinity 0) = !pointFinite C := by
+    rw [h.bit _ 0 (by decide), infinity_bit]
+  have fN : read (bitRef (rows address) .infinity 0) = !pointFinite (-C) := by
+    rw [fC, ECDSAAdd.ShorPort.pointFinite_neg]
+  have fD : read (bitRef (rows address) .doubleInfinity 0) = !pointFinite (C+C) := by
+    rw [h.bit _ 0 (by decide), doubleInfinity_bit]
+  have xC := fieldBits_reads h .x _ (field_x C)
+  have yC := fieldBits_reads h .y _ (field_y C)
+  have xN : ∀ i < 256, read (fieldBits (rows address) .x i) = (pointX (-C)).testBit i := by
+    rw [ECDSAAdd.ShorPort.pointX_neg]
+    exact xC
+  have yN := fieldBits_reads h .negY _ (field_negY C)
+  have xD := fieldBits_reads h .doubleX _ (field_doubleX C)
+  have yD := fieldBits_reads h .doubleY _ (field_doubleY C)
+  rw [← hxl] at xC xN xD
+  rw [← hyl] at yC yN yD
+  simp only [scrCorners, specialize_append, specialize_point, specialize_literal,
+    wBit, wFields, Tmpl.instantiate_append, Tmpl.instantiate_lit,
+    maskedPointT_inst read _ streamLayout.point _ _ _ C fC xC yC,
+    maskedPointT_inst read _ streamLayout.point _ _ _ (C+C) fD xD yD,
+    maskedPointT_inst read _ streamLayout.point _ _ _ (-C) fN xN yN,
+    thirdCorners]
+  simp only [List.append_assoc]
+
+
+theorem scrCheck_pair : (scrPairWires ++ scrPairTargets).all
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+theorem scrCheck_short : (scrShortWires ++ scrShortTargets).all
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+
+theorem scrCx_facts (S T : List Wire)
+    (hc : (S ++ T).all (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true)
+    (hd : ∀ a ∈ S, a ∉ T) :
+    ECDSAAdd.wires (cxList S T) ⊆ streamLayout.dialogUsedWires.toFinset ∧ GatePhysical (cxList S T) ∧
+      ECDSAAdd.wires (cxList S T) ⊆ sourceSupport.toFinset := by
+  have key (q : Wire) (hq : q ∈ ECDSAAdd.wires (cxList S T)) :
+      (fixedPort q ∨ oldWork q) ∧ q ∈ streamLayout.dialogUsedWires := by
+    have hm : q ∈ S ++ T := List.mem_append.mpr (cxList_wires S T q hq)
+    have := List.all_eq_true.mp hc q hm
+    simpa using this
+  refine ⟨?_, cxList_physical S T hd, ?_⟩
+  · intro q hq
+    exact List.mem_toFinset.mpr (key q hq).2
+  · intro q hq
+    exact List.mem_toFinset.mpr ((sourceSupport_mem q).mpr (key q hq).1)
+
+theorem scrCorner_shape {n : Nat} (neg sw s1 s2 : Program) (ca cb cc cd : Option Wire)
+    (pa pb pc pd : List (LookupPort n)) (ht : ECDSAAdd.toffoliCount sw = 0) (hm : ECDSAAdd.measurementCount sw = 0)
+    (hs : ECDSAAdd.Challenge.gateSlots sw = 1) :
+    let new : WCode n := wLiteral neg ++ wLiteral sw ++ [.lookup ca pa] ++ wLiteral sw ++ wLiteral s1 ++
+      [.lookup cb pb] ++ wLiteral s1 ++ wLiteral s2 ++ [.lookup cc pc] ++ wLiteral s2
+    let old : WCode n := wLiteral neg ++ [.lookup ca pa] ++ wLiteral s1 ++ [.lookup cb pb] ++ wLiteral s1 ++
+      [.lookup cd pd] ++ wLiteral s2 ++ [.lookup cc pc] ++ wLiteral s2
+    literalToffolis new = literalToffolis old ∧ literalRecords new = literalRecords old ∧
+      traversals new + 1 = traversals old ∧ literalSlotSum new = literalSlotSum old + 2 ∧
+      portTotal new ≤ portTotal old := by
+  dsimp only
+  simp only [wLiteral, literalToffolis_append, literalRecords_append, traversals_append, literalSlotSum_append',
+    portTotal_append', literalToffolis, literalRecords, traversals, literalSlotSum, portTotal, ht, hm, hs]
+  exact ⟨by omega, by omega, trivial, by omega, by omega⟩
+
+theorem scrCorners_counts (rows : Nat → Fin 32768) :
+    literalToffolis (scrCorners rows) = literalToffolis (wCornersOne streamLayout rows) ∧
+    literalRecords (scrCorners rows) = literalRecords (wCornersOne streamLayout rows) ∧
+    traversals (scrCorners rows) + 1 = traversals (wCornersOne streamLayout rows) ∧
+    literalSlotSum (scrCorners rows) = literalSlotSum (wCornersOne streamLayout rows) + 2 ∧
+    portTotal (scrCorners rows) ≤ portTotal (wCornersOne streamLayout rows) :=
+  scrCorner_shape _ ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY] : Program)
+    ([.CX streamLayout.infinitySelect streamLayout.doubleSelect] : Program)
+    ([.CX streamLayout.genericSelect streamLayout.core.equalNegY] : Program) _ _ _ _ _ _ _ _ rfl rfl rfl
+
+theorem scrCorners_cases (rows : Nat → Fin 32768) (i : WInstr 32768) (h : i ∈ scrCorners rows) :
+    i = WInstr.literal ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) ∨ i ∈ wCornersOne streamLayout rows := by
+  simp only [scrCorners, wCornersOne, wPoint, wLiteral, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at h ⊢
+  tauto
+
+theorem scrFlagSwap_facts :
+    ECDSAAdd.wires ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY] : Program) ⊆ streamLayout.dialogUsedWires.toFinset ∧
+      GatePhysical ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY] : Program) ∧
+      ECDSAAdd.wires ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY] : Program) ⊆ sourceSupport.toFinset := by
+  have hc : ([streamLayout.doubleSelect, streamLayout.core.equalNegY] : List Wire).all
+      (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+  have hne : streamLayout.doubleSelect ≠ streamLayout.core.equalNegY := by decide +kernel
+  have hk := scrCx_facts ([streamLayout.doubleSelect] : List Wire) ([streamLayout.core.equalNegY] : List Wire) hc
+    (by intro a ha; simp only [List.mem_singleton] at ha ⊢; rw [ha]; exact hne)
+  exact hk
+
+theorem scrCompare_counts (rows : Nat → Fin 32768) :
+    literalToffolis (scrOutCompare rows) = literalToffolis (scrOldCompare rows) ∧
+    literalRecords (scrOutCompare rows) = literalRecords (scrOldCompare rows) ∧
+    traversals (scrOutCompare rows) + 2 = traversals (scrOldCompare rows) := by
+  have ht := tight_traversals streamLayout streamLayout.infinitySelect streamLayout.core.equalNegY
+    (wBit rows .infinity) (wFields rows .x) (wBit rows .y) (wBit rows .negY)
+  have hz : traversals (wZeroWith (wPairTailBare (n := 32768) (yLow streamLayout) streamLayout.infinitySelect
+      streamLayout.core.equalNegY) streamLayout.control (pairPorts streamLayout)) = 0 :=
+    traversals_zeroWith _ 0 (fun _ => rfl) _ _
+  have hs : traversals (wShortEqual streamLayout streamLayout.core.double streamLayout.doubleSelect
+      (wBit rows .doubleInfinity) (wFields rows .doubleX) (wBit rows .doubleY)) = 2 := by
+    simp [wShortEqual, wShortXor, wLiteral, traversals_append, traversals]
+  refine ⟨?_, ?_, ?_⟩
+  · simp [scrOutCompare, scrOldCompare, wPairEqualTight, wPairXorParity, wShortEqual, wShortXor, wLiteral,
+      literalToffolis_append, literalToffolis, cxList_toffoli, ECDSAAdd.toffoliCount, scrP2]
+  · simp [scrOutCompare, scrOldCompare, wPairEqualTight, wPairXorParity, wShortEqual, wShortXor, wLiteral,
+      literalRecords_append, literalRecords, cxList_records, ECDSAAdd.measurementCount, scrP2]
+  · simp only [scrOutCompare, scrOldCompare, traversals_append, ht, hs, hz]
+    rfl
+
+theorem scrCompare_slots_ports (rows : Nat → Fin 32768) :
+    literalSlotSum (scrOutCompare rows) = literalSlotSum (scrOldCompare rows) + 1033 ∧
+    portTotal (scrOutCompare rows) = portTotal (scrOldCompare rows) := by
+  have hx : streamLayout.point.x.length = 256 := streamLayout_widths.inputX
+  have hy : streamLayout.point.y.length = 256 := streamLayout_widths.inputY
+  have hpt : scrPairTargets.length = 258 := by simp [scrPairTargets, hx]
+  have hst : scrShortTargets.length = 258 := by simp [scrShortTargets, hx, hy]
+  have hzp : portTotal (wZeroWith (wPairTailBare (n := 32768) (yLow streamLayout) streamLayout.infinitySelect
+      streamLayout.core.equalNegY) streamLayout.control (pairPorts streamLayout)) = 0 :=
+    portTotal_zeroWith _ 0 (fun _ => rfl) _ _
+  have hpl : (scrPorts (rows)).length = 516 := by
+    simp only [scrPorts, List.length_append, retarget_length _ _ ((scrPairBits_length _ _).trans scrPairWires_length.symm),
+      retarget_length _ _ ((scrShortBits_length _).trans scrShortWires_length.symm), scrPairWires_length, scrShortWires_length]
+  constructor
+  · simp [scrOutCompare, scrOldCompare, wPairEqualTight, wPairXorParity, wShortEqual, wShortXor, wLiteral,
+      literalSlotSum_append', literalSlotSum, ECDSAAdd.Challenge.gateSlots_append, cxList_slots, scrPairWires_length,
+      scrShortWires_length, hpt, hst, scrP2]
+    simp [ECDSAAdd.Challenge.gateSlots, ECDSAAdd.Challenge.instructionSlots]
+    omega
+  · have ho := tight_pair_ports_exact streamLayout streamLayout.infinitySelect streamLayout.core.equalNegY
+      (wBit rows .infinity) (wFields rows .x) (wBit rows .y) (wBit rows .negY)
+    simp only [scrOutCompare, scrOldCompare, portTotal_append', ho, hzp]
+    simp [wShortEqual, wShortXor, wLiteral, portTotal_append', portTotal, hpl, hx, hy]
+
+theorem scrY_facts :
+    ECDSAAdd.wires ([.X (yLow streamLayout)] : Program) ⊆ streamLayout.dialogUsedWires.toFinset ∧
+      GatePhysical ([.X (yLow streamLayout)] : Program) ∧
+      ECDSAAdd.wires ([.X (yLow streamLayout)] : Program) ⊆ sourceSupport.toFinset := by
+  have hc : ([yLow streamLayout] : List Wire).all
+      (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+  have key : (fixedPort (yLow streamLayout) ∨ oldWork (yLow streamLayout)) ∧ yLow streamLayout ∈ streamLayout.dialogUsedWires := by
+    simpa using hc
+  have hw (q : Wire) (hq : q ∈ ECDSAAdd.wires ([.X (yLow streamLayout)] : Program)) : q = yLow streamLayout := by
+    simpa [ECDSAAdd.wires, Instr.wires] using hq
+  refine ⟨?_, ?_, ?_⟩
+  · intro q hq
+    rw [hw q hq]
+    exact List.mem_toFinset.mpr key.2
+  · intro i hi
+    simp only [List.mem_singleton] at hi
+    subst i
+    simp [ECDSAAdd.RecordedQuantum.PhysicalInstr, ProperGate]
+  · intro q hq
+    rw [hw q hq]
+    exact List.mem_toFinset.mpr ((sourceSupport_mem _).mpr key.1)
+
+theorem scr_lit_inj {n : Nat} {p q : Program} (h : WInstr.literal p ∈ (wLiteral q : WCode n)) : p = q := by
+  simpa [wLiteral] using h
+
+theorem scr_lookup_ne {n : Nat} {p : Program} {c : Option Wire} {P : List (LookupPort n)}
+    (h : WInstr.literal p ∈ ([.lookup c P] : WCode n)) : False := by
+  simp at h
+
+theorem scrCompare_literal_cases (rows : Nat → Fin 32768) (p : Program)
+    (hp : WInstr.literal p ∈ scrOutCompare rows) :
+    p = cxList scrPairWires scrPairTargets ∨ p = cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)] ∨
+      p = cxList scrShortWires scrShortTargets ∨ WInstr.literal p ∈ scrOldCompare rows := by
+  have hold (hm : WInstr.literal p ∈ wZeroWith (wPairTailBare (n := 32768) (yLow streamLayout) streamLayout.infinitySelect
+      streamLayout.core.equalNegY) streamLayout.control (pairPorts streamLayout)) :
+      WInstr.literal p ∈ scrOldCompare rows := by
+    simp only [scrOldCompare, wPairEqualTight, List.mem_append]
+    exact Or.inl (Or.inl (Or.inr hm))
+  have hold2 (he : p = scrP2) : WInstr.literal p ∈ scrOldCompare rows := by
+    subst he
+    unfold scrOldCompare wShortEqual
+    exact List.mem_append_right _ (List.mem_append_left _ (List.mem_append_right _ (List.mem_singleton.mpr rfl)))
+  simp only [scrOutCompare, List.mem_append] at hp
+  rcases hp with ((((((h | h) | h) | h) | h) | h) | h) | h
+  · exact (scr_lookup_ne h).elim
+  · exact Or.inl (scr_lit_inj h)
+  · exact Or.inr (Or.inr (Or.inr (hold h)))
+  · exact Or.inr (Or.inl (scr_lit_inj h))
+  · exact Or.inr (Or.inr (Or.inl (scr_lit_inj h)))
+  · exact Or.inr (Or.inr (Or.inr (hold2 (scr_lit_inj h))))
+  · exact Or.inr (Or.inr (Or.inl (scr_lit_inj h)))
+  · exact (scr_lookup_ne h).elim
+
+theorem scrCompare_lookup_cases (rows : Nat → Fin 32768) (c : Option Wire) (ports : List (LookupPort 32768))
+    (hp : WInstr.lookup c ports ∈ scrOutCompare rows) :
+    (c = none ∧ ports = scrPorts rows) ∨ WInstr.lookup c ports ∈ scrOldCompare rows := by
+  simp only [scrOutCompare, wLiteral, List.mem_append, List.mem_cons, List.not_mem_nil, or_false,
+    reduceCtorEq, false_or, WInstr.lookup.injEq] at hp
+  have hold (hm : WInstr.lookup c ports ∈ wZeroWith (wPairTailBare (n := 32768) (yLow streamLayout) streamLayout.infinitySelect
+      streamLayout.core.equalNegY) streamLayout.control (pairPorts streamLayout)) :
+      WInstr.lookup c ports ∈ scrOldCompare rows := by
+    simp only [scrOldCompare, wPairEqualTight, List.mem_append]
+    exact Or.inl (Or.inl (Or.inr hm))
+  tauto
+
+theorem scrPorts_geometry (rows : Nat → Fin 32768) :
+    lookupPlacedOK windowBits windowPaths windowRoot (.lookup none (scrPorts rows)) = true := by
+  change geometryOK windowBits windowPaths windowRoot none (portTargets (scrPorts rows)) = true
+  rw [scrPorts_targets]
+  decide +kernel
+
+theorem scrPorts_sourceOK (rows : Nat → Fin 32768) :
+    sourceLookupOK (.lookup none (scrPorts rows)) = true := by
+  simp only [sourceLookupOK, Option.toList_none, List.all_nil, Bool.true_and, scrPorts_targets]
+  decide +kernel
+
+theorem scrPorts_bounded (rows : Nat → Fin 32768) :
+    lookupBounded (.lookup none (scrPorts rows)) = true := by
+  simp only [lookupBounded, Option.toList_none, List.all_nil, Bool.true_and, scrPorts_targets]
+  decide +kernel
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open ShorECDLP.Challenge ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Entrant ECDSAAdd.Secp256k1 ECDSAAdd.ShorPort
+open ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Arithmetic.CompressedPointDialog
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+/-- The output half of the addition body: corner writes and both output comparisons share their
+loaded words. -/
+def portSuffixCode (rows : Nat → Fin 32768) : WCode 32768 :=
+  scrCorners rows ++ wLiteral (pointDialogGenericFlag streamLayout) ++
+  scrOutCompare rows ++
+  wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
+  wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
+  wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
+
+theorem portSuffix_shape (rows : Nat → Fin 32768) :
+    let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
+      wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
+      wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
+    portSuffixCode rows = (scrCorners rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOutCompare rows ++ Z ∧
+    WEXUnlookup.suffixCode streamLayout rows =
+      (wCornersOne streamLayout rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOldCompare rows ++ Z := by
+  dsimp only
+  constructor
+  · simp only [portSuffixCode, List.append_assoc]
+  · simp only [WEXUnlookup.suffixCode, scrOldCompare, List.append_assoc]
+
+theorem portSuffix_inst_pre (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (address : Nat) (C : Point)
+    (row : RowReads read (rows address) C) :
+    (specialize (wCornersOne streamLayout rows ++ wLiteral (pointDialogGenericFlag streamLayout)) address).instantiate read =
+      secondCorners streamLayout C ++ pointDialogGenericFlag streamLayout ∧
+    (specialize (scrCorners rows ++ wLiteral (pointDialogGenericFlag streamLayout)) address).instantiate read =
+      thirdCorners streamLayout C ++ pointDialogGenericFlag streamLayout := by
+  constructor
+  · simp only [specialize_append, Tmpl.instantiate_append, specialize_literal, Tmpl.instantiate_lit,
+      wCornersOne_inst read streamLayout streamLayout_widths rows address C row]
+  · simp only [specialize_append, Tmpl.instantiate_append, specialize_literal, Tmpl.instantiate_lit,
+      scrCorners_inst read rows address C row]
+
+theorem portSuffix_records (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (address : Nat) (C : Point)
+    (row : RowReads read (rows address) C) :
+    measurementCount ((specialize (portSuffixCode rows) address).instantiate read) =
+      measurementCount ((specialize (WEXUnlookup.suffixCode streamLayout rows) address).instantiate read) := by
+  have hs := portSuffix_shape rows
+  dsimp only at hs
+  rw [hs.1, hs.2]
+  have hp := portSuffix_inst_pre read rows address C row
+  simp only [specialize_append, Tmpl.instantiate_append, measurementCount_append] at hp ⊢
+  have h1 := congrArg measurementCount hp.1
+  have h2 := congrArg measurementCount hp.2
+  simp only [measurementCount_append, Tmpl.instantiate_append, thirdCorners_records] at h1 h2
+  have h3 := scrCompare_records read rows address
+  simp only [h1, h2, h3]
+
+theorem portSuffix_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (address : Nat) (C : Point)
+    (row : RowReads read (rows address) C)
+    (hop : read (wBit rows .negY 0 address) = !(read (wBit rows .y 0 address)))
+    (m : List Bool) (s : State)
+    (hclean : ∀ n, ∀ w ∈ scrWires,
+      (run (secondCorners streamLayout C ++ pointDialogGenericFlag streamLayout) n s).basis w = false) :
+    run ((specialize (portSuffixCode rows) address).instantiate read) m s =
+      run ((specialize (WEXUnlookup.suffixCode streamLayout rows) address).instantiate read) m s := by
+  have hs := portSuffix_shape rows
+  dsimp only at hs
+  rw [hs.1, hs.2]
+  have hp := portSuffix_inst_pre read rows address C row
+  have hrecp : measurementCount (thirdCorners streamLayout C ++ pointDialogGenericFlag streamLayout) =
+      measurementCount (secondCorners streamLayout C ++ pointDialogGenericFlag streamLayout) := by
+    simp only [measurementCount_append, thirdCorners_records]
+  have hrunp (n : List Bool) (u : State) : run (thirdCorners streamLayout C ++ pointDialogGenericFlag streamLayout) n u =
+      run (secondCorners streamLayout C ++ pointDialogGenericFlag streamLayout) n u := by
+    simp only [run_append, thirdCorners_records, thirdCorners_run streamLayout streamLayout_widths streamLayout_nodup]
+  have hsp (A B D : WCode 32768) : (specialize (A ++ B ++ D) address).instantiate read =
+      (specialize A address).instantiate read ++ (specialize B address).instantiate read ++
+        (specialize D address).instantiate read := by
+    simp only [specialize_append, Tmpl.instantiate_append]
+  rw [hsp _ (scrOutCompare rows), hsp _ (scrOldCompare rows), hp.1, hp.2]
+  generalize thirdCorners streamLayout C ++ pointDialogGenericFlag streamLayout = pre' at hrecp hrunp ⊢
+  generalize secondCorners streamLayout C ++ pointDialogGenericFlag streamLayout = pre at hrecp hrunp hclean ⊢
+  simp only [run_append, measurementCount_append, hrecp, hrunp, scrCompare_records read rows address]
+  rw [scrCompare_run read rows address hop _ _ (hclean _)]
+
+theorem portSuffix_middle (A B B' D : Program) (hmc : measurementCount B = measurementCount B') (s : State)
+    (h : ∀ k n, run B n (run A k s) = run B' n (run A k s)) (m : List Bool) :
+    run (A ++ B ++ D) m s = run (A ++ B' ++ D) m s := by
+  rw [run_append (A ++ B), run_append (A ++ B'), run_append A B, run_append A B']
+  simp only [measurementCount_append, hmc, h]
+
+theorem portRun_split (X P G : Program) (st u : State) (hX : ∀ n, run X n st = u) (k : List Bool) :
+    ∃ k1 k2, run (X ++ P ++ G) k st = run G k1 (run P k2 u) := by
+  rw [run_append (X ++ P), run_append X P, hX]
+  exact ⟨_, _, rfl⟩
+
+def portFinite (rows : Nat → Fin 32768) : WCode 32768 :=
+  WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows ++ portSuffixCode rows
+
+def portRowCode (rows : Nat → Fin 32768) : WCode 32768 :=
+  wLiteral ([.X 838]) ++ portFinite rows ++ wLiteral ([.X 838])
+
+theorem wFinite23_split (rows : Nat → Fin 32768) :
+    wFinite23 streamLayout rows = WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows ++
+      WEXUnlookup.suffixCode streamLayout rows := by
+  simp only [WEXUnlookup.fusedPrefixCode, WEXUnlookup.suffixCode, wFinite23, List.append_assoc]
+
+attribute [local irreducible] streamLayout ECDSAAdd.regValue ECDSAAdd.run in
+theorem portRow_run_eq (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (address : Nat)
+    (R : Point) {cx cy : ECDSAAdd.Fp} (hc : curve.toAffine.Nonsingular cx cy)
+    (hr : RowReads read (rows address) (.some hc))
+    (h₁ : cy ≠ -cy) (h₂ : exceptionBit (.some hc) = true)
+    (hD : (.some hc : Point)+.some hc ≠ 0)
+    (hDo : ShorECDLP.order • ((.some hc : Point)+.some hc) = 0)
+    (s : BasisState) (hs : PointDialogBoundary streamLayout R true (fun _=>false) (flipInfinity s)) (m : List Bool) :
+    run ((specialize (portRowCode rows) address).instantiate read) m ⟨false,s⟩ =
+      run ((specialize (rowAddCode rows) address).instantiate read) m ⟨false,s⟩ := by
+  classical
+  have hw := streamLayout_widths
+  have hn := streamLayout_nodup
+  have hop := WEXUnlookup.row_opposite read rows address hc hr h₁
+  have hpe := WEXUnlookup.prefixCode_equiv read streamLayout hw hn rows address hop
+  have hpi := WEXUnlookup.referencePrefix_inst read streamLayout hw rows address hc hr h₁ h₂ hD hDo
+  have hG : (specialize (wGeneric streamLayout rows) address).instantiate read = Arith.genericS streamLayout cx cy := by
+    rw [specialize_generic]
+    exact Arith.genericT_inst streamLayout hc hr
+  let P0 := (specialize (WEXUnlookup.prefixCode streamLayout rows) address).instantiate read
+  let G0 := (specialize (wGeneric streamLayout rows) address).instantiate read
+  let B := (specialize (portSuffixCode rows) address).instantiate read
+  let B' := (specialize (WEXUnlookup.suffixCode streamLayout rows) address).instantiate read
+  have e1 : (specialize (portRowCode rows) address).instantiate read = (([.X 838] : Program) ++ P0 ++ G0) ++ B ++ ([.X 838] : Program) := by
+    simp only [portRowCode, portFinite, specialize_append, specialize_literal, Tmpl.instantiate_append, Tmpl.instantiate_lit,
+      WEXUnlookup.specialize_fusedPrefix, P0, G0, B, List.append_assoc]
+  have e2 : (specialize (rowAddCode rows) address).instantiate read = (([.X 838] : Program) ++ P0 ++ G0) ++ B' ++ ([.X 838] : Program) := by
+    simp only [rowAddCode, wFinite23_split, specialize_append, specialize_literal, Tmpl.instantiate_append, Tmpl.instantiate_lit,
+      WEXUnlookup.specialize_fusedPrefix, P0, G0, B', List.append_assoc]
+  rw [e1, e2]
+  apply portSuffix_middle _ _ _ _ (portSuffix_records read rows address _ hr)
+  intro k n
+  apply portSuffix_run read rows address _ hr hop
+  intro n' w hw'
+  let C : Point := .some hc
+  let O := dialogInfinity true R
+  let D := dialogDouble true R C
+  let I := dialogInversePoint true R C
+  let H := dialogException true R C
+  let Gf := dialogOrdinary true R C
+  let E := true && decide (dialogExceptionEnabled C)
+  let K := true && decide (cy≠-cy)
+  have reads := dialogFlagState_read streamLayout hn O D I Gf E H K
+  have h7 := Arith.boundary_genericS streamLayout hw hn R true (dialogFlagState streamLayout O D I Gf E H K) hc
+    (fun hg => ((dialogOrdinary_true true R C (WeierstrassCurve.Affine.Point.some_ne_zero hc)).mp (reads.2.2.2.1.symm.trans hg)).2)
+  rw [reads.2.2.2.1] at h7
+  have h8 := secondCorners_boundary streamLayout hw hn R C (WeierstrassCurve.Affine.Point.some_ne_zero hc) true
+    (dialogFlagState streamLayout O D I Gf E H K) reads.1 reads.2.1 reads.2.2.1 reads.2.2.2.2.2.1
+  have h9 := dialogFlag_generic streamLayout hw hn (if true then R+C else R) true O D I Gf E H K
+  have hP (k' : List Bool) : PointDialogBoundary streamLayout R true (dialogFlagState streamLayout O D I Gf E H K)
+      (run P0 k' ⟨false, flipInfinity s⟩).basis := by
+    have hb := (WEXUnlookup.prefixS_checked streamLayout hw hn R hc true ⟨false, flipInfinity s⟩ k' hs).2
+    have he := hpe.2 k' ⟨false, flipInfinity s⟩
+    rw [hpi] at he
+    change PointDialogBoundary streamLayout R true (dialogFlagState streamLayout O D I Gf E H K)
+      (run ((specialize (WEXUnlookup.prefixCode streamLayout rows) address).instantiate read) k' ⟨false, flipInfinity s⟩).basis
+    rw [← he]
+    exact hb
+  have hA := portRun_split ([.X 838] : Program) P0 G0 ⟨false,s⟩ ⟨false, flipInfinity s⟩ (fun n => flip_run _ n) k
+  obtain ⟨k1, k2, hA⟩ := hA
+  rw [hA]
+  have hG' : G0 = Arith.genericS streamLayout cx cy := hG
+  have hu := (h7 (run P0 k2 ⟨false, flipInfinity s⟩) k1 (hP _)).2
+  rw [← hG'] at hu
+  have hv := ((h8.seq h9) _ n' hu).2
+  exact (regValue_zero _ _).mp hv.clean w (scrWires_pool w hw')
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+theorem portRow_shape (rows : Nat → Fin 32768) :
+    let F : WCode 32768 := wLiteral (ECDSAAdd.Arithmetic.pointDialogGenericFlag streamLayout)
+    let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
+      wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
+      wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
+    let X : WCode 32768 := wLiteral ([.X 838])
+    let H : WCode 32768 := WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows
+    portFinite rows = H ++ scrCorners rows ++ F ++ scrOutCompare rows ++ Z ∧
+    wFinite23 streamLayout rows = H ++ wCornersOne streamLayout rows ++ F ++ scrOldCompare rows ++ Z ∧
+    portRowCode rows = X ++ portFinite rows ++ X ∧
+    rowAddCode rows = X ++ wFinite23 streamLayout rows ++ X := by
+  dsimp only
+  refine ⟨?_, ?_, rfl, rfl⟩
+  · simp only [portFinite, portSuffixCode, List.append_assoc]
+  · rw [wFinite23_split]
+    simp only [WEXUnlookup.suffixCode, scrOldCompare, List.append_assoc]
+
+theorem port_member_shape {n : Nat} (X H c c' F o o' Z : WCode n) (i : WInstr n) (E : Prop)
+    (hc : i ∈ c → E ∨ i ∈ c') (ho : i ∈ o → E ∨ i ∈ o')
+    (hi : i ∈ X ++ (H ++ c ++ F ++ o ++ Z) ++ X) : E ∨ i ∈ X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X := by
+  simp only [List.mem_append] at hi ⊢
+  tauto
+
+theorem portRow_member (rows : Nat → Fin 32768) (i : WInstr 32768) (hi : i ∈ portRowCode rows) :
+    i = WInstr.literal (cxList scrPairWires scrPairTargets) ∨
+    i = WInstr.literal (cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ∨
+    i = WInstr.literal (cxList scrShortWires scrShortTargets) ∨
+    i = WInstr.literal ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) ∨
+    i = WInstr.lookup none (scrPorts rows) ∨ i ∈ rowAddCode rows := by
+  have hcmp : i ∈ scrOutCompare rows → i = WInstr.literal (cxList scrPairWires scrPairTargets) ∨
+      i = WInstr.literal (cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ∨
+      i = WInstr.literal (cxList scrShortWires scrShortTargets) ∨
+      i = WInstr.lookup none (scrPorts rows) ∨ i ∈ scrOldCompare rows := by
+    intro h
+    cases i with
+    | literal p =>
+      rcases scrCompare_literal_cases rows p h with rfl | rfl | rfl | h
+      · exact Or.inl rfl
+      · exact Or.inr (Or.inl rfl)
+      · exact Or.inr (Or.inr (Or.inl rfl))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr h)))
+    | lookup c ports =>
+      rcases scrCompare_lookup_cases rows c ports h with ⟨rfl, rfl⟩ | h
+      · exact Or.inr (Or.inr (Or.inr (Or.inl rfl)))
+      · exact Or.inr (Or.inr (Or.inr (Or.inr h)))
+  have hs := portRow_shape rows
+  dsimp only at hs
+  obtain ⟨h1, h2, h3, h4⟩ := hs
+  rw [h3, h1] at hi
+  rw [h4, h2]
+  have hc' : i ∈ scrCorners rows → (i = WInstr.literal (cxList scrPairWires scrPairTargets) ∨
+      i = WInstr.literal (cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ∨
+      i = WInstr.literal (cxList scrShortWires scrShortTargets) ∨
+      i = WInstr.literal ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) ∨
+      i = WInstr.lookup none (scrPorts rows)) ∨ i ∈ wCornersOne streamLayout rows := by
+    intro h
+    rcases scrCorners_cases rows i h with he | h
+    · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inl he))))
+    · exact Or.inr h
+  have ho' : i ∈ scrOutCompare rows → (i = WInstr.literal (cxList scrPairWires scrPairTargets) ∨
+      i = WInstr.literal (cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)]) ∨
+      i = WInstr.literal (cxList scrShortWires scrShortTargets) ∨
+      i = WInstr.literal ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) ∨
+      i = WInstr.lookup none (scrPorts rows)) ∨ i ∈ scrOldCompare rows := by
+    intro h
+    rcases hcmp h with he | he | he | he | h
+    · exact Or.inl (Or.inl he)
+    · exact Or.inl (Or.inr (Or.inl he))
+    · exact Or.inl (Or.inr (Or.inr (Or.inl he)))
+    · exact Or.inl (Or.inr (Or.inr (Or.inr (Or.inr he))))
+    · exact Or.inr h
+  rcases port_member_shape _ _ _ _ _ _ _ _ i _ hc' ho' hi with (h | h | h | h | h) | h
+  · exact Or.inl h
+  · exact Or.inr (Or.inl h)
+  · exact Or.inr (Or.inr (Or.inl h))
+  · exact Or.inr (Or.inr (Or.inr (Or.inl h)))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr h))))
+
+theorem portCheck_facts :
+    (∀ p, (p = cxList scrPairWires scrPairTargets ∨ p = cxList scrPairWires scrPairTargets ++ [.X (yLow streamLayout)] ∨
+        p = cxList scrShortWires scrShortTargets ∨ p = [.CX streamLayout.doubleSelect streamLayout.core.equalNegY]) →
+      ECDSAAdd.wires p ⊆ streamLayout.dialogUsedWires.toFinset ∧ GatePhysical p ∧
+      ECDSAAdd.wires p ⊆ sourceSupport.toFinset) := by
+  have hP := scrCx_facts scrPairWires scrPairTargets scrCheck_pair
+    (fun a ha => scrWires_pair_targets a (List.mem_append_left _ ha))
+  have hS := scrCx_facts scrShortWires scrShortTargets scrCheck_short
+    (fun a ha => scrWires_short_targets a (List.mem_append_right _ ha))
+  have hF := scrFlagSwap_facts
+  have hY := scrY_facts
+  intro p hp
+  rcases hp with rfl | rfl | rfl | rfl
+  · exact hP
+  · refine ⟨?_, ?_, ?_⟩
+    · rw [ECDSAAdd.wires_append]
+      exact Finset.union_subset hP.1 hY.1
+    · intro i hi
+      rcases List.mem_append.mp hi with hi | hi
+      · exact hP.2.1 i hi
+      · exact hY.2.1 i hi
+    · rw [ECDSAAdd.wires_append]
+      exact Finset.union_subset hP.2.2 hY.2.2
+  · exact hS
+  · exact hF
+
+theorem portRow_placed (rows : Nat → Fin 32768) :
+    ∀ i ∈ portRowCode rows, PlacedPair windowBits windowPaths windowRoot i := by
+  intro i hi
+  have hlit (p : ECDSAAdd.Program) (h : ECDSAAdd.wires p ⊆ streamLayout.dialogUsedWires.toFinset) :
+      PlacedPair windowBits windowPaths windowRoot (WInstr.literal (n := 32768) p) := by
+    intro w hw hq
+    exact window_reserved_outside_used w hw (List.mem_toFinset.mp (h hq))
+  rcases portRow_member rows i hi with rfl | rfl | rfl | rfl | rfl | h
+  · exact hlit _ (portCheck_facts _ (Or.inl rfl)).1
+  · exact hlit _ (portCheck_facts _ (Or.inr (Or.inl rfl))).1
+  · exact hlit _ (portCheck_facts _ (Or.inr (Or.inr (Or.inl rfl)))).1
+  · exact hlit _ (portCheck_facts _ (Or.inr (Or.inr (Or.inr rfl)))).1
+  · exact placed_implies_pair _ _ _ _ ((lookupPlacedOK_iff _ _ _ _).mp (scrPorts_geometry rows))
+  · exact rowAddCode_placed rows i h
+
+theorem portRow_physical (rows : Nat → Fin 32768) :
+    ∀ p, WInstr.literal p ∈ portRowCode rows → GatePhysical p := by
+  intro p hp
+  rcases portRow_member rows _ hp with he | he | he | he | he | h
+  · cases he; exact (portCheck_facts _ (Or.inl rfl)).2.1
+  · cases he; exact (portCheck_facts _ (Or.inr (Or.inl rfl))).2.1
+  · cases he; exact (portCheck_facts _ (Or.inr (Or.inr (Or.inl rfl)))).2.1
+  · cases he; exact (portCheck_facts _ (Or.inr (Or.inr (Or.inr rfl)))).2.1
+  · cases he
+  · exact rowAddCode_physical rows p h
+
+theorem portRow_literal_source (p : ECDSAAdd.Program) (hp : WInstr.literal p ∈ portRowCode probeRows) :
+    ECDSAAdd.wires p ⊆ sourceSupport.toFinset := by
+  rcases portRow_member probeRows _ hp with he | he | he | he | he | hi
+  · cases he; exact (portCheck_facts _ (Or.inl rfl)).2.2
+  · cases he; exact (portCheck_facts _ (Or.inr (Or.inl rfl))).2.2
+  · cases he; exact (portCheck_facts _ (Or.inr (Or.inr (Or.inl rfl)))).2.2
+  · cases he; exact (portCheck_facts _ (Or.inr (Or.inr (Or.inr rfl)))).2.2
+  · cases he
+  · simp only [rowAddCode,List.mem_append] at hi
+    rcases hi with (hi | hi) | hi
+    · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
+      subst p
+      intro w hw
+      have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
+      subst w
+      exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
+    · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p hi))
+    · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
+      subst p
+      intro w hw
+      have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
+      subst w
+      exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
+
+theorem port_measures_shape {n : Nat} (X H c c' F o o' Z : WCode n)
+    (c1 : literalToffolis c = literalToffolis c') (c2 : literalRecords c = literalRecords c')
+    (c3 : traversals c + 1 = traversals c') (c4 : literalSlotSum c = literalSlotSum c' + 2)
+    (c5 : portTotal c ≤ portTotal c')
+    (d1 : literalToffolis o = literalToffolis o') (d2 : literalRecords o = literalRecords o')
+    (d3 : traversals o + 2 = traversals o') (d4 : literalSlotSum o = literalSlotSum o' + 1033)
+    (d5 : portTotal o = portTotal o') :
+    literalToffolis (X ++ (H ++ c ++ F ++ o ++ Z) ++ X) = literalToffolis (X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X) ∧
+    literalRecords (X ++ (H ++ c ++ F ++ o ++ Z) ++ X) = literalRecords (X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X) ∧
+    literalRecords (H ++ c ++ F ++ o ++ Z) = literalRecords (H ++ c' ++ F ++ o' ++ Z) ∧
+    traversals (X ++ (H ++ c ++ F ++ o ++ Z) ++ X) + 3 = traversals (X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X) ∧
+    traversals (H ++ c ++ F ++ o ++ Z) + 3 = traversals (H ++ c' ++ F ++ o' ++ Z) ∧
+    literalSlotSum (X ++ (H ++ c ++ F ++ o ++ Z) ++ X) = literalSlotSum (X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X) + 1035 ∧
+    portTotal (X ++ (H ++ c ++ F ++ o ++ Z) ++ X) ≤ portTotal (X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X) := by
+  simp only [literalToffolis_append, literalRecords_append, traversals_append, literalSlotSum_append',
+    portTotal_append']
+  refine ⟨by omega, by omega, by omega, by omega, by omega, by omega, by omega⟩
+
+theorem portRow_measures (rows : Nat → Fin 32768) :
+    literalToffolis (portRowCode rows) = literalToffolis (rowAddCode rows) ∧
+    literalRecords (portRowCode rows) = literalRecords (rowAddCode rows) ∧
+    literalRecords (portFinite rows) = literalRecords (wFinite23 streamLayout rows) ∧
+    traversals (portRowCode rows) + 3 = traversals (rowAddCode rows) ∧
+    traversals (portFinite rows) + 3 = traversals (wFinite23 streamLayout rows) ∧
+    literalSlotSum (portRowCode rows) = literalSlotSum (rowAddCode rows) + 1035 ∧
+    portTotal (portRowCode rows) ≤ portTotal (rowAddCode rows) := by
+  have hs := portRow_shape rows
+  dsimp only at hs
+  obtain ⟨h1, h2, h3, h4⟩ := hs
+  have c := scrCorners_counts rows
+  have d := scrCompare_counts rows
+  have e := scrCompare_slots_ports rows
+  rw [h3, h4, h1, h2]
+  exact port_measures_shape _ _ _ _ _ _ _ _ c.1 c.2.1 c.2.2.1 c.2.2.2.1 c.2.2.2.2 d.1 d.2.1 d.2.2 e.1 e.2
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Secp256k1
+open ECDSAAdd.ShorPort ECDSAAdd.Entrant ECDSAAdd.Arithmetic.CompressedPointDialog
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
+
+theorem portRow_run_same (a : Nat) (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (s : BasisState) (hs : liveReady s) (m : List Bool) :
+    ECDSAAdd.run ((specialize (normalizeW (portRowCode probeRows)) a).instantiate (readConstant coeffs Q)) m ⟨false,s⟩ =
+      ECDSAAdd.run ((specialize (normalizeW (rowAddCode probeRows)) a).instantiate (readConstant coeffs Q)) m ⟨false,s⟩ := by
+  rw [specialize_normalize_run, specialize_normalize_run]
+  let C := Single.Physical.tablePoint coeffs Q a
+  have hC : C ≠ 0 := hn _
+  have hord : ShorECDLP.order • C = 0 := Single.Physical.tablePoint_order coeffs Q hQ a
+  obtain ⟨P,hP⟩ := hs.1.2
+  have work : ECDSAAdd.regValue streamLayout.work s = 0 :=
+    (regValue_zero _ _).mpr (fun w hw => hs.2.1 w (List.mem_append_left _ hw))
+  have h838 : (838 : Wire) ∉ streamLayout.work := by
+    intro hm; have h := streamWork_lower _ hm; norm_num at h
+  have pool : ECDSAAdd.regValue streamLayout.work (flipInfinity s) = 0 :=
+    (reg_update_outside _ _ _ _ h838).trans work
+  have clean (w : Wire) (hw : w ∈ streamLayout.inPlaceFlags ++ streamLayout.dialogPool) :
+      flipInfinity s w = false := (regValue_zero _ _).mp pool w (one_boundary_work_subset streamLayout hw)
+  have initial : PointDialogBoundary streamLayout (Bridge.toB P) true (fun _=>false) (flipInfinity s) := by
+    refine ⟨flipInfinity_holds s (Bridge.toB P) (StreamPoint.of_coordinates s P hs.1.1.1.1 hP),?_,?_,?_⟩
+    · simpa [streamLayout_control,flipInfinity,ECDSAAdd.writeBit] using hs.1.1.1.2
+    · intro w hw; exact clean w (by simp [hw])
+    · exact (regValue_zero _ _).mpr (fun w hw => clean w (by simp [hw]))
+  cases he : Bridge.toB C with
+  | zero =>
+    have hzero : C = 0 := congrArg ECDSAAdd.ShorPort.toA he
+    exact (hC hzero).elim
+  | @some cx cy hc =>
+    have ce : C = toA (.some hc) := congrArg toA he
+    have hr : RowReads (readConstant coeffs Q) (probeRows a) (.some hc) :=
+      readConstant_rowReads coeffs Q _ _ ce
+    have ho : ShorECDLP.order • (.some hc : Point) = 0 := by rw [← he]; exact hord
+    have hp2 := torsion_unit_remainder_ne_zero (.some hc) ShorECDLP.order 2
+      (WeierstrassCurve.Affine.Point.some_ne_zero hc) ho (by norm_num [ShorECDLP.order])
+    have hp3 := torsion_unit_remainder_ne_zero (.some hc) ShorECDLP.order 3
+      (WeierstrassCurve.Affine.Point.some_ne_zero hc) ho (by norm_num [ShorECDLP.order])
+    have hd : (.some hc : Point)+.some hc ≠ 0 := by simpa only [two_nsmul] using hp2
+    have ht : (.some hc : Point)+.some hc+.some hc ≠ 0 := by
+      simpa only [show (3 : Nat) = 2+1 from rfl,succ_nsmul,two_nsmul] using hp3
+    have en := enables_true hc hd ht
+    have hdo : ShorECDLP.order • ((.some hc : Point)+.some hc) = 0 := by rw [nsmul_add,ho,zero_add]
+    exact portRow_run_eq (readConstant coeffs Q) probeRows a (Bridge.toB P) hc hr en.1 en.2 hd hdo s initial m
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
+open ShorECDLP.Secp256k1
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+theorem port_nat_sub3 (a b : Nat) (h : a + 3 = b) (hb : b = 21) : a = 18 := by omega
+theorem port_nat_slots (a b : Nat) (h : a = b + 1035) (hb : b ≤ 50000002) : a ≤ 50001037 := by omega
+
+theorem portRow_traversals : traversals (normalizeW (portRowCode probeRows)) = 18 := by
+  have h := rowAdd_traversals
+  rw [traversals_normalize] at h ⊢
+  exact port_nat_sub3 _ _ (portRow_measures probeRows).2.2.2.1 h
+
+theorem portRow_literalRecords (rows : Nat → Fin 32768) : literalRecords (portRowCode rows) = 1556899 := by
+  have hm := (portRow_measures rows).2.1
+  have counts := ((finite23_literal_counts streamLayout rows).2.trans
+    (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup rows).2)
+  rw [hm]
+  simp only [rowAddCode,literalRecords_append,wLiteral,literalRecords,ECDSAAdd.measurementCount,
+    Nat.zero_add,Nat.add_zero,counts]
+
+theorem portRow_traversals' (rows : Nat → Fin 32768) : traversals (portRowCode rows) = 18 := by
+  have hm := (portRow_measures rows).2.2.2.1
+  have h : traversals (rowAddCode rows) = 21 := by
+    simp only [rowAddCode,traversals_append,wLiteral,traversals_finite23,traversals]
+  exact port_nat_sub3 _ _ hm h
+
+theorem port_records_arith (a b k : Nat) (ha : a = 1556899) (hb : b = 18) (l : Nat) (hl : l = k) :
+    a + b * (2 ^ l - 1) = 1556899 + 18 * (2 ^ k - 1) := by
+  subst ha hb hl
+  rfl
+
+theorem port_records15 (a b l : Nat) (ha : a = 1556899) (hb : b = 18) (hl : l = 15) :
+    a + b * (2 ^ l - 1) = 2146705 := by
+  subst ha hb hl
+  rfl
+
+theorem portRow_records : codeRecords windowBits windowPaths windowRoot
+    (normalizeW (portRowCode probeRows)) = 2146705 := by
+  have layouts := pair_layouts_of_placed windowBits windowPaths windowRoot _
+    (by simp [windowBits,windowPaths]) (pair_placed_normalize _ _ _ _ (portRow_placed probeRows))
+  rw [codeRecords_eq _ _ _ _ layouts,literalRecords_normalize,traversals_normalize]
+  exact port_records15 _ _ _ (portRow_literalRecords _) (portRow_traversals' _) (by simp [windowBits])
+
+theorem portRow_sourceLookupOK : (normalizeW (portRowCode probeRows)).all sourceLookupOK = true := by
+  apply List.all_eq_true.mpr
+  intro x hx
+  obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hx
+  cases i with
+  | literal p => rfl
+  | lookup c ports =>
+    rcases portRow_member probeRows _ hi with he | he | he | he | he | h
+    · cases he
+    · cases he
+    · cases he
+    · cases he
+    · cases he
+      exact scrPorts_sourceOK probeRows
+    · exact List.all_eq_true.mp row_sourceLookupOK _ (List.mem_map.mpr ⟨_, h, rfl⟩)
+
+theorem portRow_literal_slots_bound : literalSlotSum (portRowCode probeRows) ≤ 50001037 := by
+  exact port_nat_slots _ _ (portRow_measures probeRows).2.2.2.2.2.1 rowAdd_literal_slots_bound
+
+theorem portRow_portTotal : portTotal (portRowCode probeRows) ≤ 20000 :=
+  (portRow_measures probeRows).2.2.2.2.2.2.trans rowAdd_portTotal
+
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
+open ShorECDLP.Secp256k1
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+theorem portLit_append {n : Nat} (a b : WCode n) :
+    literalToffolis (normalizeW (a ++ b)) = literalToffolis (normalizeW a) + literalToffolis (normalizeW b) := by
+  simp only [normalizeW, List.map_append, literalToffolis_append]
+
+theorem portLit_lookup {n : Nat} (c : Option Wire) (p : List (LookupPort n)) :
+    literalToffolis (normalizeW ([.lookup c p] : WCode n)) = 0 := rfl
+
+theorem portLit_free {n : Nat} (p : ECDSAAdd.Program) (h : ECDSAAdd.toffoliCount p = 0) :
+    literalToffolis (normalizeW (wLiteral p : WCode n)) = 0 := by
+  have h0 := literalToffolis_normalize (wLiteral (n := n) p)
+  have h1 : literalToffolis (wLiteral (n := n) p) = 0 := by simp [wLiteral, literalToffolis, h]
+  omega
+
+theorem portLit_corner_shape {n : Nat} (neg sw s1 s2 : ECDSAAdd.Program) (ca cb cc cd : Option Wire)
+    (pa pb pc pd : List (LookupPort n)) (ht : ECDSAAdd.toffoliCount sw = 0) :
+    let new : WCode n := wLiteral neg ++ wLiteral sw ++ [.lookup ca pa] ++ wLiteral sw ++ wLiteral s1 ++
+      [.lookup cb pb] ++ wLiteral s1 ++ wLiteral s2 ++ [.lookup cc pc] ++ wLiteral s2
+    let old : WCode n := wLiteral neg ++ [.lookup ca pa] ++ wLiteral s1 ++ [.lookup cb pb] ++ wLiteral s1 ++
+      [.lookup cd pd] ++ wLiteral s2 ++ [.lookup cc pc] ++ wLiteral s2
+    literalToffolis (normalizeW new) ≤ literalToffolis (normalizeW old) := by
+  dsimp only
+  simp only [portLit_append, portLit_lookup, portLit_free sw ht]
+  omega
+
+theorem portLit_corners (rows : Nat → Fin 32768) :
+    literalToffolis (normalizeW (scrCorners rows)) ≤ literalToffolis (normalizeW (wCornersOne streamLayout rows)) :=
+  portLit_corner_shape _ ([.CX streamLayout.doubleSelect streamLayout.core.equalNegY] : ECDSAAdd.Program)
+    ([.CX streamLayout.infinitySelect streamLayout.doubleSelect] : ECDSAAdd.Program)
+    ([.CX streamLayout.genericSelect streamLayout.core.equalNegY] : ECDSAAdd.Program) _ _ _ _ _ _ _ _ rfl
+
+theorem portLit_compare_shape {n : Nat} (l1 l2 l3 l4 l5 : List (LookupPort n)) (cx cx' s : ECDSAAdd.Program)
+    (y : ECDSAAdd.Program) (hcx : ECDSAAdd.toffoliCount cx = 0) (hcx' : ECDSAAdd.toffoliCount cx' = 0)
+    (hy : ECDSAAdd.toffoliCount y = 0) (chain : WCode n) :
+    literalToffolis (normalizeW (([.lookup none l1] : WCode n) ++ wLiteral cx ++ chain ++ wLiteral (cx ++ y) ++
+        wLiteral cx' ++ wLiteral s ++ wLiteral cx' ++ [.lookup none l1])) ≤
+      literalToffolis (normalizeW (([.lookup none l2] : WCode n) ++ chain ++ [.lookup none l3] ++
+        ([.lookup none l4] ++ wLiteral s ++ [.lookup none l5]))) := by
+  have hc : ECDSAAdd.toffoliCount (cx ++ y) = 0 := by
+    rw [ECDSAAdd.toffoliCount_append, hcx, hy]
+  simp only [portLit_append, portLit_lookup, portLit_free cx hcx, portLit_free cx' hcx', portLit_free _ hc]
+  omega
+
+theorem portLit_compare (rows : Nat → Fin 32768) :
+    literalToffolis (normalizeW (scrOutCompare rows)) ≤ literalToffolis (normalizeW (scrOldCompare rows)) :=
+  portLit_compare_shape _ _ _ _ _ (cxList scrPairWires scrPairTargets) (cxList scrShortWires scrShortTargets) scrP2
+    ([.X (yLow streamLayout)] : ECDSAAdd.Program) (cxList_toffoli _ _) (cxList_toffoli _ _) rfl _
+
+theorem portLit_row_shape {n : Nat} (X H c c' F o o' Z : WCode n)
+    (hc : literalToffolis (normalizeW c) ≤ literalToffolis (normalizeW c'))
+    (ho : literalToffolis (normalizeW o) ≤ literalToffolis (normalizeW o')) :
+    literalToffolis (normalizeW (X ++ (H ++ c ++ F ++ o ++ Z) ++ X)) ≤
+      literalToffolis (normalizeW (X ++ (H ++ c' ++ F ++ o' ++ Z) ++ X)) := by
+  simp only [portLit_append]
+  omega
+
+theorem portLit_row (rows : Nat → Fin 32768) :
+    literalToffolis (normalizeW (portRowCode rows)) ≤ literalToffolis (normalizeW (rowAddCode rows)) := by
+  have hs := portRow_shape rows
+  dsimp only at hs
+  obtain ⟨h1, h2, h3, h4⟩ := hs
+  rw [h3, h4, h1, h2]
+  exact portLit_row_shape _ _ _ _ _ _ _ _ (portLit_corners rows) (portLit_compare rows)
+
+theorem port_nat_count (a b b' t : Nat) (h : a + b + 21 * t ≤ 2163901 + 21 * t) (hb : b' ≤ b) :
+    a + b' + 18 * t ≤ 2163901 + 18 * t := by omega
+
+theorem portRow_count_upper (k : Nat) :
+    2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram) +
+      literalToffolis (normalizeW (portRowCode probeRows)) + 18 * (2^k-1) ≤
+      2163901 + 18 * (2^k-1) :=
+  port_nat_count _ _ _ _ (generic_count_upper k) (portLit_row probeRows)
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
+open ShorECDLP.Secp256k1
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+theorem portRow_width_placed (k : Nat) (hk : k ≤ 15) (rows : Nat → Fin 32768) :
+    ∀ i ∈ portRowCode rows, PlacedPair (widthBits k) windowPaths windowRoot i := by
+  intro i hi
+  have hp := portRow_placed rows i hi
+  cases i with
+  | literal p =>
+    intro w hw
+    exact hp w ((List.Sublist.cons₂ windowRoot (width_sublist k hk)).subset hw)
+  | lookup c ports =>
+    refine ⟨(List.Sublist.cons₂ _ (width_sublist k hk)).nodup hp.1, hp.2.1, hp.2.2.1, ?_⟩
+    apply List.disjoint_left.mpr
+    intro w hw ht
+    exact List.disjoint_left.mp hp.2.2.2
+      ((List.Sublist.cons₂ _ (List.Sublist.cons₂ _ (width_sublist k hk))).subset hw) ht
+
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
+open ShorECDLP.Secp256k1
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+theorem portRow_width_records (k : Nat) (hk : k ≤ 15) :
+    codeRecords (widthBits k) windowPaths windowRoot (normalizeW (portRowCode probeRows)) =
+      1556899 + 18 * (2 ^ k - 1) := by
+  have layouts := pair_layouts_of_placed (widthBits k) windowPaths windowRoot _
+    (by simpa [widthBits,windowPaths] using hk) (pair_placed_normalize _ _ _ _ (portRow_width_placed k hk probeRows))
+  rw [codeRecords_eq _ _ _ _ layouts,literalRecords_normalize,traversals_normalize]
+  exact port_records_arith _ _ _ (portRow_literalRecords _) (portRow_traversals' _) _ (by simp [widthBits])
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.WEX
 open Quantum Challenge ShorECDLP.Secp256k1 Paper2607_13816 Paper2607_13816.ChallengeMigration
 open ECDSAAdd ECDSAAdd.RecordedQuantum ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
 noncomputable section
@@ -52173,57 +53840,74 @@ theorem tightReferenceRow_width_records (k : Nat) (hk : k ≤ 15) :
   simp [widthBits,traversals]
 
 end
-noncomputable def clearReferenceRow (rows : Nat → Fin 32768) : WCode 32768 := rowAddCode rows
+noncomputable def clearReferenceRow (rows : Nat → Fin 32768) : WCode 32768 := portRowCode rows
+
+theorem clearReferenceRow_eq (rows : Nat → Fin 32768) :
+    clearReferenceRow rows = wLiteral ([.X 838]) ++ portFinite rows ++ wLiteral ([.X 838]) := rfl
+
+theorem portFinite_eq (rows : Nat → Fin 32768) :
+    portFinite rows = WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows ++
+      portSuffixCode rows := rfl
+
 
 theorem clearReferenceRow_placed (rows : Nat → Fin 32768) :
-    ∀ i ∈ clearReferenceRow rows, PlacedPair windowBits windowPaths windowRoot i := rowAddCode_placed rows
+    ∀ i ∈ clearReferenceRow rows, PlacedPair windowBits windowPaths windowRoot i := portRow_placed rows
 
 theorem clearReferenceRow_physical (rows : Nat → Fin 32768) :
-    ∀ p, WInstr.literal p ∈ clearReferenceRow rows → GatePhysical p := rowAddCode_physical rows
+    ∀ p, WInstr.literal p ∈ clearReferenceRow rows → GatePhysical p := portRow_physical rows
+
+theorem clearReferenceRow_literal_source (p : ECDSAAdd.Program)
+    (hp : WInstr.literal p ∈ clearReferenceRow probeRows) :
+    ECDSAAdd.wires p ⊆ sourceSupport.toFinset := portRow_literal_source p hp
+
+theorem clearReferenceRow_literalToffolis (rows : Nat → Fin 32768) :
+    literalToffolis (clearReferenceRow rows) = literalToffolis (rowAddCode rows) := (portRow_measures rows).1
 
 theorem clearReferenceRow_run (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • Q = 0)
     (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (s : BasisState) (hs : liveReady s) (m : List Bool) :
     ECDSAAdd.run ((specialize (normalizeW (clearReferenceRow probeRows))
       (tableAddressValue windowBits s)).instantiate (readConstant coeffs Q)) m ⟨false,s⟩ =
-        ⟨false,rowPointState coeffs Q s⟩ := rowAddCode_run coeffs Q hQ hn s hs m
+        ⟨false,rowPointState coeffs Q s⟩ :=
+  (portRow_run_same _ coeffs Q hQ hn s hs m).trans (rowAddCode_run coeffs Q hQ hn s hs m)
 
 theorem clearReferenceRow_run_any (a : Nat) (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • Q = 0)
     (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (s : BasisState) (hs : liveReady s) (m : List Bool) :
     ECDSAAdd.run ((specialize (normalizeW (clearReferenceRow probeRows))
       a).instantiate (readConstant coeffs Q)) m ⟨false,s⟩ =
         ⟨false,pointWrite (inputPoint s + Single.Physical.tablePoint coeffs Q a) s⟩ :=
-  rowAddCode_run_any a coeffs Q hQ hn s hs m
+  (portRow_run_same a coeffs Q hQ hn s hs m).trans (rowAddCode_run_any a coeffs Q hQ hn s hs m)
 
-theorem clearReferenceRow_traversals : traversals (normalizeW (clearReferenceRow probeRows)) = 21 :=
-  rowAdd_traversals
+theorem clearReferenceRow_traversals : traversals (normalizeW (clearReferenceRow probeRows)) = 18 :=
+  portRow_traversals
 
 theorem clearReferenceRow_records : codeRecords windowBits windowPaths windowRoot
-    (normalizeW (clearReferenceRow probeRows)) = 2245006 := rowAdd_records
+    (normalizeW (clearReferenceRow probeRows)) = 2146705 := portRow_records
 
 theorem clearReferenceRow_sourceLookupOK :
-    (normalizeW (clearReferenceRow probeRows)).all sourceLookupOK = true := row_sourceLookupOK
+    (normalizeW (clearReferenceRow probeRows)).all sourceLookupOK = true := portRow_sourceLookupOK
 
-theorem clearReferenceRow_literal_slots_bound : literalSlotSum (clearReferenceRow probeRows) ≤ 50000002 :=
-  rowAdd_literal_slots_bound
+theorem clearReferenceRow_literal_slots_bound : literalSlotSum (clearReferenceRow probeRows) ≤ 50001037 :=
+  portRow_literal_slots_bound
 
-theorem clearReferenceRow_portTotal : portTotal (clearReferenceRow probeRows) ≤ 20000 := rowAdd_portTotal
+theorem clearReferenceRow_portTotal : portTotal (clearReferenceRow probeRows) ≤ 20000 := portRow_portTotal
 
 theorem clearReferenceRow_count_upper (k : Nat) :
     2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram) +
-      literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21 * (2^k-1) ≤
-      2163901 + 21 * (2^k-1) := by
-  have h := generic_count_upper k
-  have e : clearReferenceRow probeRows = rowAddCode probeRows := rfl
+      literalToffolis (normalizeW (clearReferenceRow probeRows)) + 18 * (2^k-1) ≤
+      2163901 + 18 * (2^k-1) := by
+  have e : clearReferenceRow probeRows = portRowCode probeRows := rfl
   rw [e]
-  exact h
+  exact portRow_count_upper k
 
 theorem clearReferenceRow_width_placed (k : Nat) (hk : k ≤ 15) (rows : Nat → Fin 32768) :
     ∀ i ∈ clearReferenceRow rows, PlacedPair (widthBits k) windowPaths windowRoot i :=
-  width_placed k hk rows
+  portRow_width_placed k hk rows
 
 theorem clearReferenceRow_width_records (k : Nat) (hk : k ≤ 15) :
     codeRecords (widthBits k) windowPaths windowRoot (normalizeW (clearReferenceRow probeRows)) =
-      1556899 + 21 * (2 ^ k - 1) := width_records k hk
+      1556899 + 18 * (2 ^ k - 1) := portRow_width_records k hk
+
+attribute [irreducible] clearReferenceRow portRowCode portFinite portSuffixCode scrOutCompare scrCorners
 
 end ShorECDLP.Entrant.WEX
 
@@ -52955,16 +54639,22 @@ def tightRow : Code 32768 := [.plain (wLiteral [.X 838])] ++ finite streamLayout
   rw [erase_append,erase_append,erase_finite,erase_plain]
   rfl
 
-def row : Code 32768 := [.plain (wLiteral [.X 838])] ++ fusedFinite streamLayout probeRows ++
+def portFused : Code 32768 := [.plain (fusedPrefixCode streamLayout probeRows)] ++ generic streamLayout probeRows ++
+  [.plain (portSuffixCode probeRows)]
+
+@[simp] theorem erase_portFused : erase portFused = portFinite probeRows := by
+  unfold portFused
+  rw [erase_append,erase_append,erase_generic,erase_plain,erase_plain,portFinite_eq]
+
+def row : Code 32768 := [.plain (wLiteral [.X 838])] ++ portFused ++
   [.plain (wLiteral [.X 838])]
 @[simp] theorem erase_row : erase row = clearReferenceRow probeRows := by
   unfold row
-  rw [erase_append,erase_append,erase_fusedFinite,erase_plain]
-  rfl
+  rw [erase_append,erase_append,erase_portFused,erase_plain,clearReferenceRow_eq]
 
 theorem row_masked_tight (site : MaskedSite 32768) (hb : Block.masked site ∈ row) :
     Block.masked site ∈ tightRow := by
-  simpa [row,tightRow,fusedFinite,finite] using hb
+  simpa [row,tightRow,portFused,finite] using hb
 
 theorem safe_plain_swap {n} (read : ConstantBit n → Bool) (address : Nat) (p q : WCode n)
     (hs : specialize p address = specialize q address) (pre rest : Code n) (st : ECDSAAdd.State)
@@ -52993,21 +54683,7 @@ theorem row_hotavoid : ∀ i ∈ clearReferenceRow probeRows, HotAvoid i := by
   cases i with
   | literal p =>
     have hs : ECDSAAdd.wires p ⊆ sourceSupport.toFinset := by
-      simp only [clearReferenceRow,rowAddCode,List.mem_append] at hi
-      rcases hi with (hi | hi) | hi
-      · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
-        subst p
-        intro w hw
-        have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
-        subst w
-        exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
-      · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p hi))
-      · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
-        subst p
-        intro w hw
-        have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
-        subst w
-        exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
+      exact clearReferenceRow_literal_source p hi
     intro j hj
     exact hot_outside_source j (List.mem_toFinset.mp (hs hj))
   | lookup c ps =>
@@ -53036,7 +54712,7 @@ theorem const_shared {n} (r : List Wire) (refs : Nat → Nat → ConstantBit n) 
 @[simp] theorem shared_plain {n} (code : WCode n) : Shared (.plain code) := True.intro
 
 theorem row_shared : ∀ b ∈ row, Shared b := by
-  simp [row,fusedFinite,generic,core,recovery,constAdd,const_shared]
+  simp [row,portFused,generic,core,recovery,constAdd,const_shared]
 
 theorem row_geometry : ∀ b ∈ row, BlockGeometry b := by
   intro b hb
@@ -53077,6 +54753,15 @@ theorem tightRow_safe_of_boundary (read : ConstantBit 32768 → Bool) (address :
   · intro m hm
     exact safe_plain _ _ _ _
 
+theorem safe_tail_swap {n} (read : ConstantBit n → Bool) (address : Nat) (p q x : WCode n) (pre : Code n)
+    (st : ECDSAAdd.State) (h : Safe read address (pre ++ [Block.plain p,Block.plain x]) st) :
+    Safe read address (pre ++ [Block.plain q,Block.plain x]) st := by
+  induction pre generalizing st with
+  | nil => exact ⟨True.intro,fun _ _ => ⟨True.intro,fun _ _ => True.intro⟩⟩
+  | cons b pre ih =>
+    simp only [List.cons_append,Safe] at h ⊢
+    exact ⟨h.1,fun m hm => ih _ (h.2 m hm)⟩
+
 theorem row_safe_of_boundary (read : ConstantBit 32768 → Bool) (address : Nat)
     (R : Point) {cx cy : ECDSAAdd.Fp} (hc : curve.toAffine.Nonsingular cx cy)
     (hr : RowReads read (probeRows address) (.some hc))
@@ -53091,14 +54776,23 @@ theorem row_safe_of_boundary (read : ConstantBit 32768 → Bool) (address : Nat)
         (generic streamLayout probeRows ++ [Block.plain (suffixCode streamLayout probeRows)] ++
           [Block.plain (wLiteral [.X 838])]) := by
     simp [tightRow,finite,List.append_assoc]
-  have e₂ : row = [Block.plain (wLiteral [.X 838])] ++
+  have e₂ : [Block.plain (wLiteral [.X 838])] ++
       Block.plain (fusedPrefixCode streamLayout probeRows) ::
         (generic streamLayout probeRows ++ [Block.plain (suffixCode streamLayout probeRows)] ++
-          [Block.plain (wLiteral [.X 838])]) := by
-    simp [row,fusedFinite,List.append_assoc]
+          [Block.plain (wLiteral [.X 838])]) =
+      ([Block.plain (wLiteral [.X 838])] ++ Block.plain (fusedPrefixCode streamLayout probeRows) ::
+        generic streamLayout probeRows) ++
+        [Block.plain (suffixCode streamLayout probeRows),Block.plain (wLiteral [.X 838])] := by
+    simp [List.append_assoc]
+  have e₃ : row = ([Block.plain (wLiteral [.X 838])] ++ Block.plain (fusedPrefixCode streamLayout probeRows) ::
+        generic streamLayout probeRows) ++
+        [Block.plain (portSuffixCode probeRows),Block.plain (wLiteral [.X 838])] := by
+    simp [row,portFused,List.append_assoc]
   rw [e₁] at h
-  rw [e₂]
-  exact safe_plain_swap read address _ _ (specialize_fusedPrefix streamLayout probeRows address).symm _ _ _ h
+  have h' := safe_plain_swap read address _ _ (specialize_fusedPrefix streamLayout probeRows address).symm _ _ _ h
+  rw [e₂] at h'
+  rw [e₃]
+  exact safe_tail_swap read address _ _ _ _ _ h'
 
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
 
@@ -53326,19 +55020,19 @@ theorem records_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry
 
 theorem records_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 5)
-    (ho : codeRecords windowBits windowPaths windowRoot (normalizeW (erase code)) = 2245006) :
-    records code = 2102961 := by
+    (ho : codeRecords windowBits windowPaths windowRoot (normalizeW (erase code)) = 2146705) :
+    records code = 2004660 := by
   have h := records_relation code hg
   rw [hm,ho] at h
   omega
 
-theorem row_records : records row = 2102961 := by
+theorem row_records : records row = 2004660 := by
   apply records_credit5 row row_geometry row_masks
   exact (congrArg (fun c : WCode 32768 => codeRecords windowBits windowPaths windowRoot (normalizeW c)) erase_row).trans clearReferenceRow_records
 
 theorem row_history_length (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool)
     (branch : InstrumentBranch) (hb : branch ∈ ((program row start).instantiate read history).run) :
-    branch.history.length = 2102961 := by
+    branch.history.length = 2004660 := by
   have h := straight_history_length (program row start) read history branch hb
   exact h.trans ((congrArg (fun m => (start+m)-start) row_records).trans (by omega))
 
@@ -53551,21 +55245,7 @@ def OldWithin {n} (code : WCode n) : Prop :=
 theorem row_oldWithin : OldWithin (clearReferenceRow probeRows) := by
   refine ⟨?_,?_⟩
   · intro p hi
-    simp only [clearReferenceRow,rowAddCode,List.mem_append] at hi
-    rcases hi with (hi | hi) | hi
-    · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
-      subst p
-      intro w hw
-      have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
-      subst w
-      exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
-    · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p hi))
-    · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
-      subst p
-      intro w hw
-      have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
-      subst w
-      exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
+    exact clearReferenceRow_literal_source p hi
   · intro c ps hi
     have hm : WInstr.lookup c ps ∈ normalizeW (clearReferenceRow probeRows) := by
       rw [normalizeW]
@@ -53762,7 +55442,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 
-attribute [local irreducible] ccx blockCCX masks blockMasks row WEX.clearReferenceRow WEX.traversals
+attribute [local irreducible] ccx blockCCX masks blockMasks row WEX.traversals
 
 theorem ccx_credit5 {n} (code : Code n) (k : Nat) (hm : masks code = 5)
     (hk : literalToffolis (normalizeW (erase code)) + traversals (erase code)*32767 = k) :
@@ -53771,7 +55451,7 @@ theorem ccx_credit5 {n} (code : Code n) (k : Nat) (hm : masks code = 5)
   rw [hm] at h
   omega
 
-theorem row_ccx_relation : ccx row + 143325 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21*32767 := by
+theorem row_ccx_relation : ccx row + 143325 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 18*32767 := by
   have ht := WEX.clearReferenceRow_traversals
   rw [traversals_normalize] at ht
   apply ccx_credit5 row _ row_masks
@@ -53817,7 +55497,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   ECDSAAdd.toffoliCount ECDSAAdd.measurementCount lookupMeasurements WEX.portOps tableAddressTree
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps ccx masks
 
-def addFixed (start : Nat) : Straight 32768 start (start+2102961) :=
+def addFixed (start : Nat) : Straight 32768 start (start+2004660) :=
   castFinish (congrArg (fun m => start+m) row_records) (program row start)
 
 theorem addFixed_run (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
@@ -53845,10 +55525,10 @@ open AndGadget in
   rw [addFixed,residue_cast]
   exact program_residue row start
 
-def bodyProgram (start : Nat) : Straight 32768 start (start+2105005) :=
+def bodyProgram (start : Nat) : Straight 32768 start (start+2006704) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nProgram start)).append (addFixed (start+1022))).append
-      (nProgram (start+1022+2102961))).append (suffixProgram (start+1022+2102961+1022)))
+      (nProgram (start+1022+2004660))).append (suffixProgram (start+1022+2004660+1022)))
 
 theorem regroup_runs (p l a r s : AdaptiveCircuit) :
     ((((p.run.seq l.run).seq a.run).seq r.run).seq s.run) =
@@ -53917,11 +55597,11 @@ open AndGadget WEXCredit in
  theorem bodyProgram_credit (start : Nat) : ProgramCredit (bodyProgram start) (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + WEXUnlookup.ccx WEXUnlookup.row) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)
   have hl : ProgramCredit (nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hr : ProgramCredit (nProgram (start+1022+2102961)) a := ⟨n_residue _,n_added _⟩
+  have hr : ProgramCredit (nProgram (start+1022+2004660)) a := ⟨n_residue _,n_added _⟩
   rw [bodyProgram]
   apply credit_cast
   exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+1022)) hr
-    (suffix_credit (start+1022+2102961+1022))
+    (suffix_credit (start+1022+2004660+1022))
 
 open AndGadget WEXCredit in
  theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
@@ -54003,7 +55683,7 @@ attribute [local irreducible] program blockProgram clearProgram bodyProgram addF
 
 theorem upper_from_source (a b c : Nat)
     (hs : 7*a + (7*b+5046118) + 7*a ≤ 20193425)
-    (hr : c+143325=b+21*32767) : 2*a+c ≤ 2708683 := by omega
+    (hr : c+143325=b+18*32767) : 2*a+c ≤ 2708683 := by omega
 
 theorem window_count_upper : (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + WEXUnlookup.ccx WEXUnlookup.row) ≤ 2708683 := by
   have h := WEX.clearReferenceRow_count_upper 15
@@ -54053,7 +55733,7 @@ theorem compactReady_first (s : BasisState) (hs : FirstWindowInput s) (P : Secp2
 
 def compactSupport : List Wire := List.range 1634
 
-def compactProgram (start : Nat) : Straight 32768 start (start+2105005) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+2006704) :=
   relabelStraight compactPerm (bodyProgram start)
 
 theorem compactProgram_support (start : Nat) :
@@ -54098,7 +55778,7 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact he
 
 def compactBody : Single.WindowBody where
-  records := 2105005
+  records := 2006704
   tBound := 18960781
   slotBound := 2000000000
   support := compactSupport
@@ -54128,7 +55808,7 @@ def compactBody : Single.WindowBody where
     intro w hw
     exact compact_base_support hw
 
-theorem compactBody_ledger : compactBody.records = 2105005 ∧ compactBody.tBound = 18960781 ∧
+theorem compactBody_ledger : compactBody.records = 2006704 ∧ compactBody.tBound = 18960781 ∧
     compactBody.support.length = 1634 ∧ compactBody.reset.length = 854 := by
   exact ⟨rfl,rfl,by norm_num [compactBody,compactSupport,MeasuredClear.hotBank],by norm_num [compactBody,resetWires]⟩
 
@@ -55505,16 +57185,16 @@ theorem records_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry
 
 theorem records_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 5)
-    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1728910) :
-    records code = 1694385 := by
+    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1704337) :
+    records code = 1669812 := by
   have h := records_relation code hg
   rw [hm,ho] at h
   omega
 
-theorem row_records : records row = 1694385 := by
+theorem row_records : records row = 1669812 := by
   apply records_credit5 row row_geometry row_masks
   have h := WEX.clearReferenceRow_width_records 13 (by omega)
-  have hn : 1556899 + 21 * (2 ^ 13 - 1) = 1728910 := by norm_num
+  have hn : 1556899 + 18 * (2 ^ 13 - 1) = 1704337 := by norm_num
   exact (congrArg (fun c : WCode 32768 => codeRecords bits windowPaths windowRoot (normalizeW c)) erase_row).trans (by simpa only [bits] using h.trans hn)
 
 end
@@ -55599,16 +57279,16 @@ theorem records_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry
 
 theorem records_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 5)
-    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1900942) :
-    records code = 1830577 := by
+    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1851793) :
+    records code = 1781428 := by
   have h := records_relation code hg
   rw [hm,ho] at h
   omega
 
-theorem row_records : records row = 1830577 := by
+theorem row_records : records row = 1781428 := by
   apply records_credit5 row row_geometry row_masks
   have h := WEX.clearReferenceRow_width_records 14 (by omega)
-  have hn : 1556899 + 21 * (2 ^ 14 - 1) = 1900942 := by norm_num
+  have hn : 1556899 + 18 * (2 ^ 14 - 1) = 1851793 := by norm_num
   exact (congrArg (fun c : WCode 32768 => codeRecords bits windowPaths windowRoot (normalizeW c)) erase_row).trans (by simpa only [bits] using h.trans hn)
 
 end
@@ -55924,7 +57604,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   lookupMeasurements WEX.portOps tableAddressTree MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps MeasuredClear.measuredClear ccx Nat.add Nat.mul
 
-def addFixed (start : Nat) : Straight 32768 start (start+1694385) :=
+def addFixed (start : Nat) : Straight 32768 start (start+1669812) :=
   castFinish (congrArg (fun m => start+m) row_records) (program row start)
 
 attribute [local irreducible] addFixed
@@ -55956,10 +57636,10 @@ theorem addFixed_credit (start : Nat) : ProgramCredit (addFixed start) (ccx row)
   have ht := addFixed_tCount (fun _ => false) start (fun _ => false)
   omega
 
-def bodyProgram (start : Nat) : Straight 32768 start (start+1696429) :=
+def bodyProgram (start : Nat) : Straight 32768 start (start+1671856) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nProgram start)).append (addFixed (start+1022))).append
-      (nProgram (start+1022+1694385))).append (suffixProgram (start+1022+1694385+1022)))
+      (nProgram (start+1022+1669812))).append (suffixProgram (start+1022+1669812+1022)))
 
 attribute [local irreducible] bodyProgram
 
@@ -55995,11 +57675,11 @@ theorem bodyProgram_credit (start : Nat) : ProgramCredit (bodyProgram start)
     (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)
   have hl : ProgramCredit (nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hr : ProgramCredit (nProgram (start+1022+1694385)) a := ⟨n_residue _,n_added _⟩
+  have hr : ProgramCredit (nProgram (start+1022+1669812)) a := ⟨n_residue _,n_added _⟩
   rw [bodyProgram]
   apply credit_cast
   exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+1022)) hr
-    (suffix_credit (start+1022+1694385+1022))
+    (suffix_credit (start+1022+1669812+1022))
 
 theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((bodyProgram start).instantiate read history).tCount =
@@ -56032,7 +57712,7 @@ theorem bodyProgram_support (start : Nat) : ChallengeMigration.straightWires (bo
     addFixed_support _⟩,(nProgram_source _).trans (List.subset_append_left _ _)⟩,(hs _).trans (List.subset_append_left _ _)⟩
 
 theorem row_ccx_relation : ccx row + 5 * 7161 =
-    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21 * 8191 := by
+    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 18 * 8191 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
   have ht := WEX.clearReferenceRow_traversals
@@ -56041,8 +57721,8 @@ theorem row_ccx_relation : ccx row + 5 * 7161 =
   exact hr
 
 private theorem count_bound (a b c : Nat)
-    (hr : c + 5 * 7161 = b + 21 * 8191)
-    (hb : 2 * a + b + 21 * (2^13 - 1) ≤ 2163901 + 21 * (2^13 - 1)) :
+    (hr : c + 5 * 7161 = b + 18 * 8191)
+    (hb : 2 * a + b + 18 * (2^13 - 1) ≤ 2163901 + 18 * (2^13 - 1)) :
     2 * a + c ≤ 2300107 := by omega
 
 theorem count_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) +
@@ -56061,7 +57741,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   lookupMeasurements WEX.portOps tableAddressTree MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps MeasuredClear.measuredClear ccx Nat.add Nat.mul
 
-def addFixed (start : Nat) : Straight 32768 start (start+1830577) :=
+def addFixed (start : Nat) : Straight 32768 start (start+1781428) :=
   castFinish (congrArg (fun m => start+m) row_records) (program row start)
 
 attribute [local irreducible] addFixed
@@ -56093,10 +57773,10 @@ theorem addFixed_credit (start : Nat) : ProgramCredit (addFixed start) (ccx row)
   have ht := addFixed_tCount (fun _ => false) start (fun _ => false)
   omega
 
-def bodyProgram (start : Nat) : Straight 32768 start (start+1832621) :=
+def bodyProgram (start : Nat) : Straight 32768 start (start+1783472) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nProgram start)).append (addFixed (start+1022))).append
-      (nProgram (start+1022+1830577))).append (suffixProgram (start+1022+1830577+1022)))
+      (nProgram (start+1022+1781428))).append (suffixProgram (start+1022+1781428+1022)))
 
 attribute [local irreducible] bodyProgram
 
@@ -56132,11 +57812,11 @@ theorem bodyProgram_credit (start : Nat) : ProgramCredit (bodyProgram start)
     (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)
   have hl : ProgramCredit (nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hr : ProgramCredit (nProgram (start+1022+1830577)) a := ⟨n_residue _,n_added _⟩
+  have hr : ProgramCredit (nProgram (start+1022+1781428)) a := ⟨n_residue _,n_added _⟩
   rw [bodyProgram]
   apply credit_cast
   exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+1022)) hr
-    (suffix_credit (start+1022+1830577+1022))
+    (suffix_credit (start+1022+1781428+1022))
 
 theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((bodyProgram start).instantiate read history).tCount =
@@ -56169,7 +57849,7 @@ theorem bodyProgram_support (start : Nat) : ChallengeMigration.straightWires (bo
     addFixed_support _⟩,(nProgram_source _).trans (List.subset_append_left _ _)⟩,(hs _).trans (List.subset_append_left _ _)⟩
 
 theorem row_ccx_relation : ccx row + 5 * 14329 =
-    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21 * 16383 := by
+    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 18 * 16383 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
   have ht := WEX.clearReferenceRow_traversals
@@ -56178,8 +57858,8 @@ theorem row_ccx_relation : ccx row + 5 * 14329 =
   exact hr
 
 private theorem count_bound (a b c : Nat)
-    (hr : c + 5 * 14329 = b + 21 * 16383)
-    (hb : 2 * a + b + 21 * (2^14 - 1) ≤ 2163901 + 21 * (2^14 - 1)) :
+    (hr : c + 5 * 14329 = b + 18 * 16383)
+    (hb : 2 * a + b + 18 * (2^14 - 1) ≤ 2163901 + 18 * (2^14 - 1)) :
     2 * a + c ≤ 2436299 := by omega
 
 theorem count_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) +
@@ -56353,7 +58033,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW WEXUnlookup.compactBody ccx Nat.add Nat.mul
 
-def compactProgram (start : Nat) : Straight 32768 start (start+1696429) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+1671856) :=
   relabelStraight WEX.compactPerm (bodyProgram start)
 
 theorem compactProgram_support (start : Nat) :
@@ -56395,7 +58075,7 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact he
 
 def narrow : ModNarrow WEXUnlookup.compactBody 13 where
-  records := 1696429
+  records := 1671856
   tBound := 16100749
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row
   program := compactProgram
@@ -56441,7 +58121,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW WEXUnlookup.compactBody ccx Nat.add Nat.mul
 
-def compactProgram (start : Nat) : Straight 32768 start (start+1832621) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+1783472) :=
   relabelStraight WEX.compactPerm (bodyProgram start)
 
 theorem compactProgram_support (start : Nat) :
@@ -56483,7 +58163,7 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact he
 
 def narrow : ModNarrow WEXUnlookup.compactBody 14 where
-  records := 1832621
+  records := 1783472
   tBound := 17054093
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row
   program := compactProgram
@@ -59925,7 +61605,7 @@ private theorem clear22Widen {limits : Limits} {layout : DecodeLayout} {entry : 
 
 theorem matched_clear22_certificate (n14 : ModNarrow body 13) (n15 : UniformNarrow body)
     (hSupport : ledger.support.length ≤ 1634) (hSlot : body.slotBound ≤ 3000000000)
-    (hR14 : n14.records ≤ 1696429) (hR15 : n15.records ≤ 1832621)
+    (hR14 : n14.records ≤ 1671856) (hR15 : n15.records ≤ 1783472)
     (hReset : body.reset.length ≤ 854)
     (hT14 : n14.tBound ≤ 16100749) (hT15 : n15.tBound ≤ 17054093)
     (hC14 : n14.credit ≤ 2300107) (hC15 : n15.credit ≤ 2436299)
@@ -60004,9 +61684,9 @@ def uniform14 : UniformNarrow WEXUnlookup.compactBody where
   zero := WEXUnlookupWidth14.narrow.zero
   count_eq := WEXUnlookupWidth14.narrow.count_eq
 
-theorem n13_records : narrow13.records ≤ 1696429 := by
+theorem n13_records : narrow13.records ≤ 1671856 := by
   exact le_rfl
-theorem n14_records : uniform14.records ≤ 1832621 := by
+theorem n14_records : uniform14.records ≤ 1783472 := by
   exact le_rfl
 theorem n13_cost : narrow13.tBound ≤ 16100749 := by
   exact le_rfl
@@ -60071,2255 +61751,2069 @@ end ShorECDLP.Entrant.Schedule31Eighteen264.Flexible.Clear22Final
 
 end
 
-/-! Conditional extraction for measured erasure of selected table words. -/
-namespace ShorECDLP.Entrant.CornerClear
-open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+namespace ShorECDLP.Entrant
+open ShorECDLP Secp256k1
+local instance : Fact (Nat.Prime p) := ⟨p_prime⟩
+set_option maxRecDepth 30000
+set_option maxHeartbeats 0
+theorem numericNoncube : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 38597363079105398474523661669562635951089994888546854679819194669302944890554 = ((55594575648329892869085402983802832744385952214688224221778511981742606582254 : Nat) : Fp) := by
+  have h0 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1 = ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) := by simp
+  have h1 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2 = ((49 : Nat) : Fp) := by
+    rw [show (2 : Nat) = 1 * 2 + 0 from rfl, pow_add, pow_mul, h0, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h2 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 5 = ((115792089237316195423570985008687907853269984665640564039457584007908834654856 : Nat) : Fp) := by
+    rw [show (5 : Nat) = 2 * 2 + 1 from rfl, pow_add, pow_mul, h1, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h3 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 10 = ((282475249 : Nat) : Fp) := by
+    rw [show (10 : Nat) = 5 * 2 + 0 from rfl, pow_add, pow_mul, h2, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h4 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 21 = ((115792089237316195423570985008687907853269984665640564039457025462044751387656 : Nat) : Fp) := by
+    rw [show (21 : Nat) = 10 * 2 + 1 from rfl, pow_add, pow_mul, h3, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h5 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 42 = ((311973482284542371301330321821976049 : Nat) : Fp) := by
+    rw [show (42 : Nat) = 21 * 2 + 0 from rfl, pow_add, pow_mul, h4, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h6 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 85 = ((115791407945140654217861498477676213610033413355780191279366061751326927118856 : Nat) : Fp) := by
+    rw [show (85 : Nat) = 42 * 2 + 1 from rfl, pow_add, pow_mul, h5, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h7 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 170 = ((87148117373801171930577940919474928790314434041307146863971672161775006287828 : Nat) : Fp) := by
+    rw [show (170 : Nat) = 85 * 2 + 0 from rfl, pow_add, pow_mul, h6, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h8 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 341 = ((11670274311942621407522636024318331851529863944052938155220666316256716437841 : Nat) : Fp) := by
+    rw [show (341 : Nat) = 170 * 2 + 1 from rfl, pow_add, pow_mul, h7, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h9 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 682 = ((6290206582281333064583891106380535924855300648875041265288094855696568584647 : Nat) : Fp) := by
+    rw [show (682 : Nat) = 341 * 2 + 0 from rfl, pow_add, pow_mul, h8, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h10 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1365 = ((18904131434715043613350691152443812524618480232860081148592315459759038168525 : Nat) : Fp) := by
+    rw [show (1365 : Nat) = 682 * 2 + 1 from rfl, pow_add, pow_mul, h9, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h11 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2730 = ((63715549478547472247427046846895688580574588172528502549461527261681585309996 : Nat) : Fp) := by
+    rw [show (2730 : Nat) = 1365 * 2 + 0 from rfl, pow_add, pow_mul, h10, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h12 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 5461 = ((51326719014686317818543512923802109457408900876830541112954433133014590961916 : Nat) : Fp) := by
+    rw [show (5461 : Nat) = 2730 * 2 + 1 from rfl, pow_add, pow_mul, h11, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h13 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 10922 = ((45616462631252662483532343888479175542028943577518925198410187721079638939717 : Nat) : Fp) := by
+    rw [show (10922 : Nat) = 5461 * 2 + 0 from rfl, pow_add, pow_mul, h12, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h14 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 21845 = ((57278431290033993104725012980543019047407540515678671969254800032223558439639 : Nat) : Fp) := by
+    rw [show (21845 : Nat) = 10922 * 2 + 1 from rfl, pow_add, pow_mul, h13, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h15 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 43690 = ((106264381190160609101552613149668150170531843904815863574855309298169310143701 : Nat) : Fp) := by
+    rw [show (43690 : Nat) = 21845 * 2 + 0 from rfl, pow_add, pow_mul, h14, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h16 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 87381 = ((82457823345146664411665713323702993902176052727014699217227570115804087684568 : Nat) : Fp) := by
+    rw [show (87381 : Nat) = 43690 * 2 + 1 from rfl, pow_add, pow_mul, h15, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h17 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 174762 = ((8946746289730628007270778589115420543442579651984516130737039258203660335677 : Nat) : Fp) := by
+    rw [show (174762 : Nat) = 87381 * 2 + 0 from rfl, pow_add, pow_mul, h16, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h18 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 349525 = ((82383840761917436080792454802283618306061492823668166552571324811066410616135 : Nat) : Fp) := by
+    rw [show (349525 : Nat) = 174762 * 2 + 1 from rfl, pow_add, pow_mul, h17, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h19 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 699050 = ((59741106052438371505500988119956228571605064461268211022534154194821258180783 : Nat) : Fp) := by
+    rw [show (699050 : Nat) = 349525 * 2 + 0 from rfl, pow_add, pow_mul, h18, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h20 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1398101 = ((71155237064500919965368971696555275735711752371410021777629976903843327615405 : Nat) : Fp) := by
+    rw [show (1398101 : Nat) = 699050 * 2 + 1 from rfl, pow_add, pow_mul, h19, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h21 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2796202 = ((36339241279265304517380107137055602084857002579201191268958955552571441836092 : Nat) : Fp) := by
+    rw [show (2796202 : Nat) = 1398101 * 2 + 0 from rfl, pow_add, pow_mul, h20, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h22 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 5592405 = ((110456198574347130220357126604647299899884939970391729382698242727479775962953 : Nat) : Fp) := by
+    rw [show (5592405 : Nat) = 2796202 * 2 + 1 from rfl, pow_add, pow_mul, h21, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h23 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 11184810 = ((67045383516225953069918313113051530471537395933067066524800453062504333393649 : Nat) : Fp) := by
+    rw [show (11184810 : Nat) = 5592405 * 2 + 0 from rfl, pow_add, pow_mul, h22, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h24 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 22369621 = ((98774563018936037876553171569425556744845942131111262576794858633718148338267 : Nat) : Fp) := by
+    rw [show (22369621 : Nat) = 11184810 * 2 + 1 from rfl, pow_add, pow_mul, h23, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h25 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 44739242 = ((109265180444758137226230957020464527071382209745848938229758874900426682587809 : Nat) : Fp) := by
+    rw [show (44739242 : Nat) = 22369621 * 2 + 0 from rfl, pow_add, pow_mul, h24, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h26 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 89478485 = ((25768271117101405199315638803562981113920576581227667042758524032840948306202 : Nat) : Fp) := by
+    rw [show (89478485 : Nat) = 44739242 * 2 + 1 from rfl, pow_add, pow_mul, h25, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h27 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 178956970 = ((18630464392908229227090407106585547139665925939739831433567577940309686393554 : Nat) : Fp) := by
+    rw [show (178956970 : Nat) = 89478485 * 2 + 0 from rfl, pow_add, pow_mul, h26, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h28 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 357913941 = ((12909726029998486783177864577907462543142000096255108109063198145086023048751 : Nat) : Fp) := by
+    rw [show (357913941 : Nat) = 178956970 * 2 + 1 from rfl, pow_add, pow_mul, h27, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h29 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 715827882 = ((23353503594186287250092159609746168004389456068718269296258898465101650271134 : Nat) : Fp) := by
+    rw [show (715827882 : Nat) = 357913941 * 2 + 0 from rfl, pow_add, pow_mul, h28, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h30 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1431655765 = ((57266785286434301861090629743276721656686125464959706015086976026172533677877 : Nat) : Fp) := by
+    rw [show (1431655765 : Nat) = 715827882 * 2 + 1 from rfl, pow_add, pow_mul, h29, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h31 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2863311530 = ((3126471454098042949711442365070970076405764838111181588740610616718485012679 : Nat) : Fp) := by
+    rw [show (2863311530 : Nat) = 1431655765 * 2 + 0 from rfl, pow_add, pow_mul, h30, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h32 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 5726623061 = ((13910051886530225312438803246341412892799997474343529944154254169654379372678 : Nat) : Fp) := by
+    rw [show (5726623061 : Nat) = 2863311530 * 2 + 1 from rfl, pow_add, pow_mul, h31, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h33 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 11453246122 = ((87970157137084166613430101996368831136032452938770851709811861910473911536632 : Nat) : Fp) := by
+    rw [show (11453246122 : Nat) = 5726623061 * 2 + 0 from rfl, pow_add, pow_mul, h32, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h34 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 22906492245 = ((86510195296188049310558620096785284241198711225002039011578441978596282269414 : Nat) : Fp) := by
+    rw [show (22906492245 : Nat) = 11453246122 * 2 + 1 from rfl, pow_add, pow_mul, h33, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h35 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 45812984490 = ((38429792057460019363190176914530812591771258756951974985126372919240417495412 : Nat) : Fp) := by
+    rw [show (45812984490 : Nat) = 22906492245 * 2 + 0 from rfl, pow_add, pow_mul, h34, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h36 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 91625968981 = ((78147488758019617939564587742571188475585449691717570410281541718809033718702 : Nat) : Fp) := by
+    rw [show (91625968981 : Nat) = 45812984490 * 2 + 1 from rfl, pow_add, pow_mul, h35, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h37 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 183251937962 = ((56432906178872135595847772930535997378872438271104099918897170718739014948820 : Nat) : Fp) := by
+    rw [show (183251937962 : Nat) = 91625968981 * 2 + 0 from rfl, pow_add, pow_mul, h36, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h38 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 366503875925 = ((3791706797647533210617931268968217119290385357176354134026937474090825958288 : Nat) : Fp) := by
+    rw [show (366503875925 : Nat) = 183251937962 * 2 + 1 from rfl, pow_add, pow_mul, h37, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h39 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 733007751850 = ((20633019071260931739967835216741822645615008671823084849531947405862540028400 : Nat) : Fp) := by
+    rw [show (733007751850 : Nat) = 366503875925 * 2 + 0 from rfl, pow_add, pow_mul, h38, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h40 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1466015503701 = ((89082354230060793220098041288236389299246080487775418557983304543750820169981 : Nat) : Fp) := by
+    rw [show (1466015503701 : Nat) = 733007751850 * 2 + 1 from rfl, pow_add, pow_mul, h39, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h41 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2932031007402 = ((107727322279893299870510498874501721220064377783066138544746895754564906358465 : Nat) : Fp) := by
+    rw [show (2932031007402 : Nat) = 1466015503701 * 2 + 0 from rfl, pow_add, pow_mul, h40, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h42 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 5864062014805 = ((53549824874776083135821177923946462608198817010835592371095852518822058778099 : Nat) : Fp) := by
+    rw [show (5864062014805 : Nat) = 2932031007402 * 2 + 1 from rfl, pow_add, pow_mul, h41, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h43 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 11728124029610 = ((111873817380072923692494794364622016754743982547929724031527842365743614245478 : Nat) : Fp) := by
+    rw [show (11728124029610 : Nat) = 5864062014805 * 2 + 0 from rfl, pow_add, pow_mul, h42, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h44 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 23456248059221 = ((82419480504488661208396463428512099389071495443511985887271096936589419256514 : Nat) : Fp) := by
+    rw [show (23456248059221 : Nat) = 11728124029610 * 2 + 1 from rfl, pow_add, pow_mul, h43, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h45 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 46912496118442 = ((114155628388819053091842418049705075753529166283431698743579778943137530210562 : Nat) : Fp) := by
+    rw [show (46912496118442 : Nat) = 23456248059221 * 2 + 0 from rfl, pow_add, pow_mul, h44, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h46 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 93824992236885 = ((17740148964839144206350523745278749354095560109558237863712083909391602140169 : Nat) : Fp) := by
+    rw [show (93824992236885 : Nat) = 46912496118442 * 2 + 1 from rfl, pow_add, pow_mul, h45, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h47 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 187649984473770 = ((38794470726003736958038452252290654557410798609867798086230836169510970690630 : Nat) : Fp) := by
+    rw [show (187649984473770 : Nat) = 93824992236885 * 2 + 0 from rfl, pow_add, pow_mul, h46, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h48 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 375299968947541 = ((22292240854109929301734573494010825222049920719154201212599025831264491420140 : Nat) : Fp) := by
+    rw [show (375299968947541 : Nat) = 187649984473770 * 2 + 1 from rfl, pow_add, pow_mul, h47, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h49 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 750599937895082 = ((87260780461196222333384727897123749802793553847534915841399952709899541078974 : Nat) : Fp) := by
+    rw [show (750599937895082 : Nat) = 375299968947541 * 2 + 0 from rfl, pow_add, pow_mul, h48, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h50 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1501199875790165 = ((50203116255325675223790043706437721619432277130886004520467134943508267565 : Nat) : Fp) := by
+    rw [show (1501199875790165 : Nat) = 750599937895082 * 2 + 1 from rfl, pow_add, pow_mul, h49, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h51 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3002399751580330 = ((7880995578728594602473907165513419281459664616281629116649978160799231589742 : Nat) : Fp) := by
+    rw [show (3002399751580330 : Nat) = 1501199875790165 * 2 + 0 from rfl, pow_add, pow_mul, h50, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h52 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6004799503160661 = ((56408696362973905955541547608250305390125689212509837280445835608241391987415 : Nat) : Fp) := by
+    rw [show (6004799503160661 : Nat) = 3002399751580330 * 2 + 1 from rfl, pow_add, pow_mul, h51, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h53 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 12009599006321322 = ((104230609484671125887923010162470258586316976466603874896183377026597126651171 : Nat) : Fp) := by
+    rw [show (12009599006321322 : Nat) = 6004799503160661 * 2 + 0 from rfl, pow_add, pow_mul, h52, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h54 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 24019198012642645 = ((38935787116164502007736016129015986684891047093903297758918545818951388286914 : Nat) : Fp) := by
+    rw [show (24019198012642645 : Nat) = 12009599006321322 * 2 + 1 from rfl, pow_add, pow_mul, h53, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h55 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 48038396025285290 = ((31607132951957223821076381449443975973195041457945554169368282216740514695843 : Nat) : Fp) := by
+    rw [show (48038396025285290 : Nat) = 24019198012642645 * 2 + 0 from rfl, pow_add, pow_mul, h54, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h56 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 96076792050570581 = ((37282819869064410966610129008493964141982911470153575782876077757672436277485 : Nat) : Fp) := by
+    rw [show (96076792050570581 : Nat) = 48038396025285290 * 2 + 1 from rfl, pow_add, pow_mul, h55, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h57 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 192153584101141162 = ((87857953242140456237243911609150062306008050857365325667535925806171540217361 : Nat) : Fp) := by
+    rw [show (192153584101141162 : Nat) = 96076792050570581 * 2 + 0 from rfl, pow_add, pow_mul, h56, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h58 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 384307168202282325 = ((16286231835520562515838427807626461170326335065876532017998526711334733538241 : Nat) : Fp) := by
+    rw [show (384307168202282325 : Nat) = 192153584101141162 * 2 + 1 from rfl, pow_add, pow_mul, h57, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h59 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 768614336404564650 = ((2761165657123386019536889101935211447971311113845005878633619212301644173087 : Nat) : Fp) := by
+    rw [show (768614336404564650 : Nat) = 384307168202282325 * 2 + 0 from rfl, pow_add, pow_mul, h58, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h60 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1537228672809129301 = ((18150096097851531519346303671619302714319572760461066720383229792390179876307 : Nat) : Fp) := by
+    rw [show (1537228672809129301 : Nat) = 768614336404564650 * 2 + 1 from rfl, pow_add, pow_mul, h59, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h61 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3074457345618258602 = ((2515794628051404484441580330863594643174472080228955448554786264943333502899 : Nat) : Fp) := by
+    rw [show (3074457345618258602 : Nat) = 1537228672809129301 * 2 + 0 from rfl, pow_add, pow_mul, h60, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h62 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6148914691236517205 = ((104765814908155708163691215240458482440012458792931111981114389833022341704618 : Nat) : Fp) := by
+    rw [show (6148914691236517205 : Nat) = 3074457345618258602 * 2 + 1 from rfl, pow_add, pow_mul, h61, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h63 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 12297829382473034410 = ((99694589728260684704920004031300956481483404073924784426893665847624307706714 : Nat) : Fp) := by
+    rw [show (12297829382473034410 : Nat) = 6148914691236517205 * 2 + 0 from rfl, pow_add, pow_mul, h62, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h64 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 24595658764946068821 = ((68647559313308156331782250140321145552658101926504645706217701725986520826843 : Nat) : Fp) := by
+    rw [show (24595658764946068821 : Nat) = 12297829382473034410 * 2 + 1 from rfl, pow_add, pow_mul, h63, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h65 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 49191317529892137642 = ((111797722323278646824335603533305635191266854938786215473429322116267822026000 : Nat) : Fp) := by
+    rw [show (49191317529892137642 : Nat) = 24595658764946068821 * 2 + 0 from rfl, pow_add, pow_mul, h64, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h66 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 98382635059784275285 = ((11078574019058512021960665018146663998361463547980321659400609527415438180340 : Nat) : Fp) := by
+    rw [show (98382635059784275285 : Nat) = 49191317529892137642 * 2 + 1 from rfl, pow_add, pow_mul, h65, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h67 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 196765270119568550570 = ((66873744855872365428699150311793129121923865169106542091186949786980513105468 : Nat) : Fp) := by
+    rw [show (196765270119568550570 : Nat) = 98382635059784275285 * 2 + 0 from rfl, pow_add, pow_mul, h66, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h68 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 393530540239137101141 = ((14534214126582595339070544830195428687366727451944569427223582682558985748370 : Nat) : Fp) := by
+    rw [show (393530540239137101141 : Nat) = 196765270119568550570 * 2 + 1 from rfl, pow_add, pow_mul, h67, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h69 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 787061080478274202282 = ((7216468390216749462989334423941514590146588808431606703519054689179354888865 : Nat) : Fp) := by
+    rw [show (787061080478274202282 : Nat) = 393530540239137101141 * 2 + 0 from rfl, pow_add, pow_mul, h68, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h70 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1574122160956548404565 = ((21495985081863351393796932733875075305058294957030338569356887842189622233768 : Nat) : Fp) := by
+    rw [show (1574122160956548404565 : Nat) = 787061080478274202282 * 2 + 1 from rfl, pow_add, pow_mul, h69, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h71 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3148244321913096809130 = ((37197434818240401096632559295813222360871770928658765135697485689707177075353 : Nat) : Fp) := by
+    rw [show (3148244321913096809130 : Nat) = 1574122160956548404565 * 2 + 0 from rfl, pow_add, pow_mul, h70, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h72 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6296488643826193618261 = ((27261277614488193089632954337008081803758669069825273125383038031228451494003 : Nat) : Fp) := by
+    rw [show (6296488643826193618261 : Nat) = 3148244321913096809130 * 2 + 1 from rfl, pow_add, pow_mul, h71, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h73 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 12592977287652387236522 = ((52311248902545033863250739187017611852338642793565623192202232359197382274586 : Nat) : Fp) := by
+    rw [show (12592977287652387236522 : Nat) = 6296488643826193618261 * 2 + 0 from rfl, pow_add, pow_mul, h72, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h74 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 25185954575304774473045 = ((110432206694632116615284331647386186384650571550843623281951690641673696014398 : Nat) : Fp) := by
+    rw [show (25185954575304774473045 : Nat) = 12592977287652387236522 * 2 + 1 from rfl, pow_add, pow_mul, h73, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h75 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 50371909150609548946090 = ((79067011711656134237514482838270134380594726362498394711353888236606861406803 : Nat) : Fp) := by
+    rw [show (50371909150609548946090 : Nat) = 25185954575304774473045 * 2 + 0 from rfl, pow_add, pow_mul, h74, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h76 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 100743818301219097892181 = ((111262111720845096287588435892905113464206601515978849737078670978694164944313 : Nat) : Fp) := by
+    rw [show (100743818301219097892181 : Nat) = 50371909150609548946090 * 2 + 1 from rfl, pow_add, pow_mul, h75, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h77 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 201487636602438195784362 = ((72283782183776327376101422325261305561811906974081203715606579499638822974054 : Nat) : Fp) := by
+    rw [show (201487636602438195784362 : Nat) = 100743818301219097892181 * 2 + 0 from rfl, pow_add, pow_mul, h76, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h78 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 402975273204876391568725 = ((55003706824719305639804854639547259814548732368303657745804803730371113316535 : Nat) : Fp) := by
+    rw [show (402975273204876391568725 : Nat) = 201487636602438195784362 * 2 + 1 from rfl, pow_add, pow_mul, h77, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h79 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 805950546409752783137450 = ((31555166125647732967298197218793456950868266925661949432699457470374662631840 : Nat) : Fp) := by
+    rw [show (805950546409752783137450 : Nat) = 402975273204876391568725 * 2 + 0 from rfl, pow_add, pow_mul, h78, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h80 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1611901092819505566274901 = ((53189250157740658043225343454120092453530534877375219829903567625389548336054 : Nat) : Fp) := by
+    rw [show (1611901092819505566274901 : Nat) = 805950546409752783137450 * 2 + 1 from rfl, pow_add, pow_mul, h79, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h81 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3223802185639011132549802 = ((36349159474008570932271003179876595239318733902933559061923443582834183533742 : Nat) : Fp) := by
+    rw [show (3223802185639011132549802 : Nat) = 1611901092819505566274901 * 2 + 0 from rfl, pow_add, pow_mul, h80, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h82 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6447604371278022265099605 = ((99825267548745631165155844933395906523404795892328655295138147922672026784752 : Nat) : Fp) := by
+    rw [show (6447604371278022265099605 : Nat) = 3223802185639011132549802 * 2 + 1 from rfl, pow_add, pow_mul, h81, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h83 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 12895208742556044530199210 = ((105556572277707243496999695154759207193206802556623582361690931584356439086880 : Nat) : Fp) := by
+    rw [show (12895208742556044530199210 : Nat) = 6447604371278022265099605 * 2 + 0 from rfl, pow_add, pow_mul, h82, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h84 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 25790417485112089060398421 = ((24874548690146524909814307316193529862098755240203635096284735127910177604839 : Nat) : Fp) := by
+    rw [show (25790417485112089060398421 : Nat) = 12895208742556044530199210 * 2 + 1 from rfl, pow_add, pow_mul, h83, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h85 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 51580834970224178120796842 = ((30906294687459664771907444567801968235505584981712969564350692192533786636403 : Nat) : Fp) := by
+    rw [show (51580834970224178120796842 : Nat) = 25790417485112089060398421 * 2 + 0 from rfl, pow_add, pow_mul, h84, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h86 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 103161669940448356241593685 = ((90045678553885953850237529031022710856122351661411094484206205210097489959743 : Nat) : Fp) := by
+    rw [show (103161669940448356241593685 : Nat) = 51580834970224178120796842 * 2 + 1 from rfl, pow_add, pow_mul, h85, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h87 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 206323339880896712483187370 = ((43972388463218012299204134280299126233125454068948759772279166055342699526004 : Nat) : Fp) := by
+    rw [show (206323339880896712483187370 : Nat) = 103161669940448356241593685 * 2 + 0 from rfl, pow_add, pow_mul, h86, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h88 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 412646679761793424966374741 = ((71367782303121147405198828815003921013076191110236279245049844102520061381978 : Nat) : Fp) := by
+    rw [show (412646679761793424966374741 : Nat) = 206323339880896712483187370 * 2 + 1 from rfl, pow_add, pow_mul, h87, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h89 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 825293359523586849932749482 = ((550063334528049305474300730952148730298745814741443152544110601876865462929 : Nat) : Fp) := by
+    rw [show (825293359523586849932749482 : Nat) = 412646679761793424966374741 * 2 + 0 from rfl, pow_add, pow_mul, h88, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h90 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1650586719047173699865498965 = ((14281131569099385515079691036575606835608394300100869016436288659099784740260 : Nat) : Fp) := by
+    rw [show (1650586719047173699865498965 : Nat) = 825293359523586849932749482 * 2 + 1 from rfl, pow_add, pow_mul, h89, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h91 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3301173438094347399730997930 = ((14993685592828940183755108071085350984882568881645395913663784404978663550743 : Nat) : Fp) := by
+    rw [show (3301173438094347399730997930 : Nat) = 1650586719047173699865498965 * 2 + 0 from rfl, pow_add, pow_mul, h90, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h92 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6602346876188694799461995861 = ((290688021759326142091774966080283249213729284597325317567672096797586550769 : Nat) : Fp) := by
+    rw [show (6602346876188694799461995861 : Nat) = 3301173438094347399730997930 * 2 + 1 from rfl, pow_add, pow_mul, h91, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h93 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 13204693752377389598923991722 = ((48883022263437020073640603710263996923448302710736285166638683650261088496241 : Nat) : Fp) := by
+    rw [show (13204693752377389598923991722 : Nat) = 6602346876188694799461995861 * 2 + 0 from rfl, pow_add, pow_mul, h92, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h94 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 26409387504754779197847983445 = ((115005640896614450226855344383277526835517626387016905764686321999960976644126 : Nat) : Fp) := by
+    rw [show (26409387504754779197847983445 : Nat) = 13204693752377389598923991722 * 2 + 1 from rfl, pow_add, pow_mul, h93, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h95 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 52818775009509558395695966890 = ((84640006329275225471412150425949081727759455521127057108645724701379152378646 : Nat) : Fp) := by
+    rw [show (52818775009509558395695966890 : Nat) = 26409387504754779197847983445 * 2 + 0 from rfl, pow_add, pow_mul, h94, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h96 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 105637550019019116791391933781 = ((11197371745042030015646707917453437979489421627830957077618240785604674309855 : Nat) : Fp) := by
+    rw [show (105637550019019116791391933781 : Nat) = 52818775009509558395695966890 * 2 + 1 from rfl, pow_add, pow_mul, h95, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h97 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 211275100038038233582783867562 = ((41920215069285921727067143122242626322678798368078710574736793106844683528158 : Nat) : Fp) := by
+    rw [show (211275100038038233582783867562 : Nat) = 105637550019019116791391933781 * 2 + 0 from rfl, pow_add, pow_mul, h96, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h98 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 422550200076076467165567735125 = ((26614492252404642939385105139536281308564471070384388736453068572262986168535 : Nat) : Fp) := by
+    rw [show (422550200076076467165567735125 : Nat) = 211275100038038233582783867562 * 2 + 1 from rfl, pow_add, pow_mul, h97, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h99 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 845100400152152934331135470250 = ((108082061671180633206629724164853790953242644435429040110840266123470518787454 : Nat) : Fp) := by
+    rw [show (845100400152152934331135470250 : Nat) = 422550200076076467165567735125 * 2 + 0 from rfl, pow_add, pow_mul, h98, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h100 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1690200800304305868662270940501 = ((33542493970797314685364117540414414548544711343259378934755815920660572099802 : Nat) : Fp) := by
+    rw [show (1690200800304305868662270940501 : Nat) = 845100400152152934331135470250 * 2 + 1 from rfl, pow_add, pow_mul, h99, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h101 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3380401600608611737324541881002 = ((20940459371718519869340610013645750045802309543680221150848690612683741065878 : Nat) : Fp) := by
+    rw [show (3380401600608611737324541881002 : Nat) = 1690200800304305868662270940501 * 2 + 0 from rfl, pow_add, pow_mul, h100, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h102 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6760803201217223474649083762005 = ((41048205128990890240766392225034434396602013877431445026938575038956056468472 : Nat) : Fp) := by
+    rw [show (6760803201217223474649083762005 : Nat) = 3380401600608611737324541881002 * 2 + 1 from rfl, pow_add, pow_mul, h101, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h103 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 13521606402434446949298167524010 = ((104168503235771234091070672623441175398732407346897755569879156830709345698590 : Nat) : Fp) := by
+    rw [show (13521606402434446949298167524010 : Nat) = 6760803201217223474649083762005 * 2 + 0 from rfl, pow_add, pow_mul, h102, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h104 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 27043212804868893898596335048021 = ((61963843860992186505931699231520121374231068404051591651365646435263108254266 : Nat) : Fp) := by
+    rw [show (27043212804868893898596335048021 : Nat) = 13521606402434446949298167524010 * 2 + 1 from rfl, pow_add, pow_mul, h103, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h105 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 54086425609737787797192670096042 = ((32564908920831625350634667010459209849362748035902349907849005011229457433957 : Nat) : Fp) := by
+    rw [show (54086425609737787797192670096042 : Nat) = 27043212804868893898596335048021 * 2 + 0 from rfl, pow_add, pow_mul, h104, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h106 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 108172851219475575594385340192085 = ((9522328195972047364923667785761616274070070897360377840685532945966660724654 : Nat) : Fp) := by
+    rw [show (108172851219475575594385340192085 : Nat) = 54086425609737787797192670096042 * 2 + 1 from rfl, pow_add, pow_mul, h105, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h107 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 216345702438951151188770680384170 = ((82534086113414329682985725419380956781306943824724345309793160537432881231589 : Nat) : Fp) := by
+    rw [show (216345702438951151188770680384170 : Nat) = 108172851219475575594385340192085 * 2 + 0 from rfl, pow_add, pow_mul, h106, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h108 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 432691404877902302377541360768341 = ((24621490557286332988899774029617551333450204832249209522047647451279394283185 : Nat) : Fp) := by
+    rw [show (432691404877902302377541360768341 : Nat) = 216345702438951151188770680384170 * 2 + 1 from rfl, pow_add, pow_mul, h107, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h109 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 865382809755804604755082721536682 = ((27082922526434902397978725105952427321720099911785591037192037378025490176107 : Nat) : Fp) := by
+    rw [show (865382809755804604755082721536682 : Nat) = 432691404877902302377541360768341 * 2 + 0 from rfl, pow_add, pow_mul, h108, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h110 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1730765619511609209510165443073365 = ((45560776003517383098353916070251515849629942560105719307315184591785661185461 : Nat) : Fp) := by
+    rw [show (1730765619511609209510165443073365 : Nat) = 865382809755804604755082721536682 * 2 + 1 from rfl, pow_add, pow_mul, h109, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h111 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3461531239023218419020330886146730 = ((70599706375645959209257353271105055400441236785686811931245315098257208992830 : Nat) : Fp) := by
+    rw [show (3461531239023218419020330886146730 : Nat) = 1730765619511609209510165443073365 * 2 + 0 from rfl, pow_add, pow_mul, h110, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h112 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 6923062478046436838040661772293461 = ((27418458744094674912521173775768233369626887803745666907333042488779614199491 : Nat) : Fp) := by
+    rw [show (6923062478046436838040661772293461 : Nat) = 3461531239023218419020330886146730 * 2 + 1 from rfl, pow_add, pow_mul, h111, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h113 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 13846124956092873676081323544586922 = ((28809592468768867445241427692392117304752426605640637591254658739605754868386 : Nat) : Fp) := by
+    rw [show (13846124956092873676081323544586922 : Nat) = 6923062478046436838040661772293461 * 2 + 0 from rfl, pow_add, pow_mul, h112, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h114 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 27692249912185747352162647089173845 = ((95889425314020676571545051685917987232087496739543569391041353113175091153791 : Nat) : Fp) := by
+    rw [show (27692249912185747352162647089173845 : Nat) = 13846124956092873676081323544586922 * 2 + 1 from rfl, pow_add, pow_mul, h113, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h115 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 55384499824371494704325294178347690 = ((54748927645115882258045891438182958182688618709661654938735397158653152212220 : Nat) : Fp) := by
+    rw [show (55384499824371494704325294178347690 : Nat) = 27692249912185747352162647089173845 * 2 + 0 from rfl, pow_add, pow_mul, h114, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h116 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 110768999648742989408650588356695381 = ((53040186025180604921584301355349518155986200427452578432288669216682803780446 : Nat) : Fp) := by
+    rw [show (110768999648742989408650588356695381 : Nat) = 55384499824371494704325294178347690 * 2 + 1 from rfl, pow_add, pow_mul, h115, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h117 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 221537999297485978817301176713390762 = ((37305459626504707996167055577362779816020823913683305070292854261098646149751 : Nat) : Fp) := by
+    rw [show (221537999297485978817301176713390762 : Nat) = 110768999648742989408650588356695381 * 2 + 0 from rfl, pow_add, pow_mul, h116, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h118 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 443075998594971957634602353426781525 = ((36485947307302379049996435877114892423684181397392300200382513498523460988370 : Nat) : Fp) := by
+    rw [show (443075998594971957634602353426781525 : Nat) = 221537999297485978817301176713390762 * 2 + 1 from rfl, pow_add, pow_mul, h117, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h119 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 886151997189943915269204706853563050 = ((71013954711409468511419299414945954043602821310966129742837982661895117391803 : Nat) : Fp) := by
+    rw [show (886151997189943915269204706853563050 : Nat) = 443075998594971957634602353426781525 * 2 + 0 from rfl, pow_add, pow_mul, h118, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h120 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1772303994379887830538409413707126101 = ((41351144109339023380905453714367247758872256755949529518965210956099431415057 : Nat) : Fp) := by
+    rw [show (1772303994379887830538409413707126101 : Nat) = 886151997189943915269204706853563050 * 2 + 1 from rfl, pow_add, pow_mul, h119, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h121 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3544607988759775661076818827414252202 = ((2272027923591210979224239241343326390313126782280832902571918757880966015564 : Nat) : Fp) := by
+    rw [show (3544607988759775661076818827414252202 : Nat) = 1772303994379887830538409413707126101 * 2 + 0 from rfl, pow_add, pow_mul, h120, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h122 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 7089215977519551322153637654828504405 = ((53744956196199221870949503337604670999652609094596506848063870755763228404474 : Nat) : Fp) := by
+    rw [show (7089215977519551322153637654828504405 : Nat) = 3544607988759775661076818827414252202 * 2 + 1 from rfl, pow_add, pow_mul, h121, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h123 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 14178431955039102644307275309657008810 = ((35952703341953888321856868750276804216698496589704149780514454482762983255743 : Nat) : Fp) := by
+    rw [show (14178431955039102644307275309657008810 : Nat) = 7089215977519551322153637654828504405 * 2 + 0 from rfl, pow_add, pow_mul, h122, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h124 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 28356863910078205288614550619314017621 = ((62587298922917329011715021451397859602737161547398191872162109269374224854794 : Nat) : Fp) := by
+    rw [show (28356863910078205288614550619314017621 : Nat) = 14178431955039102644307275309657008810 * 2 + 1 from rfl, pow_add, pow_mul, h123, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h125 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 56713727820156410577229101238628035242 = ((107191021377031068639704768314789668771281152002338196860852604765517733332878 : Nat) : Fp) := by
+    rw [show (56713727820156410577229101238628035242 : Nat) = 28356863910078205288614550619314017621 * 2 + 0 from rfl, pow_add, pow_mul, h124, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h126 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 113427455640312821154458202477256070485 = ((6869199659010212688756057649385147329507442878855152801775746338584334652139 : Nat) : Fp) := by
+    rw [show (113427455640312821154458202477256070485 : Nat) = 56713727820156410577229101238628035242 * 2 + 1 from rfl, pow_add, pow_mul, h125, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h127 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 226854911280625642308916404954512140970 = ((54483357038393815160253239932889160087931558429354006815121714057513501894486 : Nat) : Fp) := by
+    rw [show (226854911280625642308916404954512140970 : Nat) = 113427455640312821154458202477256070485 * 2 + 0 from rfl, pow_add, pow_mul, h126, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h128 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 453709822561251284617832809909024281941 = ((76135470293510877172165853965189548319641802926445514480851867867496932640338 : Nat) : Fp) := by
+    rw [show (453709822561251284617832809909024281941 : Nat) = 226854911280625642308916404954512140970 * 2 + 1 from rfl, pow_add, pow_mul, h127, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h129 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 907419645122502569235665619818048563882 = ((76804524280316274113098701929627705678710553739382024913303811920332597960036 : Nat) : Fp) := by
+    rw [show (907419645122502569235665619818048563882 : Nat) = 453709822561251284617832809909024281941 * 2 + 0 from rfl, pow_add, pow_mul, h128, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h130 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1814839290245005138471331239636097127765 = ((48888548795645040451031257011657771272477574788464354579023507125124810377456 : Nat) : Fp) := by
+    rw [show (1814839290245005138471331239636097127765 : Nat) = 907419645122502569235665619818048563882 * 2 + 1 from rfl, pow_add, pow_mul, h129, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h131 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3629678580490010276942662479272194255530 = ((21087251873606971364007228793177358291454416192763879037053352805105664674838 : Nat) : Fp) := by
+    rw [show (3629678580490010276942662479272194255530 : Nat) = 1814839290245005138471331239636097127765 * 2 + 0 from rfl, pow_add, pow_mul, h130, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h132 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 7259357160980020553885324958544388511061 = ((108799946428467352953229865712710472630564372748562283693298174856954643441031 : Nat) : Fp) := by
+    rw [show (7259357160980020553885324958544388511061 : Nat) = 3629678580490010276942662479272194255530 * 2 + 1 from rfl, pow_add, pow_mul, h131, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h133 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 14518714321960041107770649917088777022122 = ((36393860264704856578973794199491090097449141794838427096791414865483009833431 : Nat) : Fp) := by
+    rw [show (14518714321960041107770649917088777022122 : Nat) = 7259357160980020553885324958544388511061 * 2 + 0 from rfl, pow_add, pow_mul, h132, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h134 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 29037428643920082215541299834177554044245 = ((94838087216236713867395319138082336709752820789495290341135827833225169089212 : Nat) : Fp) := by
+    rw [show (29037428643920082215541299834177554044245 : Nat) = 14518714321960041107770649917088777022122 * 2 + 1 from rfl, pow_add, pow_mul, h133, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h135 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 58074857287840164431082599668355108088490 = ((68736847097148343803659342534993881876485028603229304254988234166524422928177 : Nat) : Fp) := by
+    rw [show (58074857287840164431082599668355108088490 : Nat) = 29037428643920082215541299834177554044245 * 2 + 0 from rfl, pow_add, pow_mul, h134, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h136 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 116149714575680328862165199336710216176981 = ((100773856967381927163459303459715767076958839031855812936746900428560407362101 : Nat) : Fp) := by
+    rw [show (116149714575680328862165199336710216176981 : Nat) = 58074857287840164431082599668355108088490 * 2 + 1 from rfl, pow_add, pow_mul, h135, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h137 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 232299429151360657724330398673420432353962 = ((62799089563126392353426359649915826547394516371987351399318011977604567596754 : Nat) : Fp) := by
+    rw [show (232299429151360657724330398673420432353962 : Nat) = 116149714575680328862165199336710216176981 * 2 + 0 from rfl, pow_add, pow_mul, h136, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h138 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 464598858302721315448660797346840864707925 = ((7057215481499360742801455009525622482791398742948541878878298260958613312746 : Nat) : Fp) := by
+    rw [show (464598858302721315448660797346840864707925 : Nat) = 232299429151360657724330398673420432353962 * 2 + 1 from rfl, pow_add, pow_mul, h137, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h139 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 929197716605442630897321594693681729415850 = ((34618392853918106716507644447139930162063293309130816420099381908647796747863 : Nat) : Fp) := by
+    rw [show (929197716605442630897321594693681729415850 : Nat) = 464598858302721315448660797346840864707925 * 2 + 0 from rfl, pow_add, pow_mul, h138, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h140 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1858395433210885261794643189387363458831701 = ((44924186429456017448807038963625547915636554810373259710990280953602289257912 : Nat) : Fp) := by
+    rw [show (1858395433210885261794643189387363458831701 : Nat) = 929197716605442630897321594693681729415850 * 2 + 1 from rfl, pow_add, pow_mul, h139, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h141 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3716790866421770523589286378774726917663402 = ((70426463516621331026916903048894611182390395498774157590478963199492999525333 : Nat) : Fp) := by
+    rw [show (3716790866421770523589286378774726917663402 : Nat) = 1858395433210885261794643189387363458831701 * 2 + 0 from rfl, pow_add, pow_mul, h140, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h142 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 7433581732843541047178572757549453835326805 = ((87632687556460508422906120876731553544825698377794533362218504364792996136592 : Nat) : Fp) := by
+    rw [show (7433581732843541047178572757549453835326805 : Nat) = 3716790866421770523589286378774726917663402 * 2 + 1 from rfl, pow_add, pow_mul, h141, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h143 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 14867163465687082094357145515098907670653610 = ((16404779462004460048636370103417842325539313766650706669931643808380510933107 : Nat) : Fp) := by
+    rw [show (14867163465687082094357145515098907670653610 : Nat) = 7433581732843541047178572757549453835326805 * 2 + 0 from rfl, pow_add, pow_mul, h142, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h144 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 29734326931374164188714291030197815341307221 = ((44449688001421166400665182045279162209317684191124799069696287408082569709109 : Nat) : Fp) := by
+    rw [show (29734326931374164188714291030197815341307221 : Nat) = 14867163465687082094357145515098907670653610 * 2 + 1 from rfl, pow_add, pow_mul, h143, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h145 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 59468653862748328377428582060395630682614442 = ((30563714579994482523175988397361939302314261245030651243352978405731677720882 : Nat) : Fp) := by
+    rw [show (59468653862748328377428582060395630682614442 : Nat) = 29734326931374164188714291030197815341307221 * 2 + 0 from rfl, pow_add, pow_mul, h144, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h146 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 118937307725496656754857164120791261365228885 = ((75360349469256181187301358598159711512667399865016000150115938490910374653833 : Nat) : Fp) := by
+    rw [show (118937307725496656754857164120791261365228885 : Nat) = 59468653862748328377428582060395630682614442 * 2 + 1 from rfl, pow_add, pow_mul, h145, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h147 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 237874615450993313509714328241582522730457770 = ((113542226404550688622607577902572428149383434324370396278626143156017221481585 : Nat) : Fp) := by
+    rw [show (237874615450993313509714328241582522730457770 : Nat) = 118937307725496656754857164120791261365228885 * 2 + 0 from rfl, pow_add, pow_mul, h146, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h148 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 475749230901986627019428656483165045460915541 = ((60899794547400275914951553979302161322968130509602768240112597659564617537714 : Nat) : Fp) := by
+    rw [show (475749230901986627019428656483165045460915541 : Nat) = 237874615450993313509714328241582522730457770 * 2 + 1 from rfl, pow_add, pow_mul, h147, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h149 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 951498461803973254038857312966330090921831082 = ((66320495699608858931358487788748648061703517608123390770123355669319144791630 : Nat) : Fp) := by
+    rw [show (951498461803973254038857312966330090921831082 : Nat) = 475749230901986627019428656483165045460915541 * 2 + 0 from rfl, pow_add, pow_mul, h148, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h150 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1902996923607946508077714625932660181843662165 = ((106231257018553234568654883066350600883554951188792100657813804760554775119489 : Nat) : Fp) := by
+    rw [show (1902996923607946508077714625932660181843662165 : Nat) = 951498461803973254038857312966330090921831082 * 2 + 1 from rfl, pow_add, pow_mul, h149, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h151 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3805993847215893016155429251865320363687324330 = ((4713518186954206388714244490935135103992822974838680677135137950968302479074 : Nat) : Fp) := by
+    rw [show (3805993847215893016155429251865320363687324330 : Nat) = 1902996923607946508077714625932660181843662165 * 2 + 0 from rfl, pow_add, pow_mul, h150, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h152 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 7611987694431786032310858503730640727374648661 = ((84612945976856190118943183147997415976083868220645026458718256564902600997576 : Nat) : Fp) := by
+    rw [show (7611987694431786032310858503730640727374648661 : Nat) = 3805993847215893016155429251865320363687324330 * 2 + 1 from rfl, pow_add, pow_mul, h151, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h153 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 15223975388863572064621717007461281454749297322 = ((115109932429464443046148764948985069703061418747623022900891792616113993515916 : Nat) : Fp) := by
+    rw [show (15223975388863572064621717007461281454749297322 : Nat) = 7611987694431786032310858503730640727374648661 * 2 + 0 from rfl, pow_add, pow_mul, h152, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h154 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 30447950777727144129243434014922562909498594645 = ((44928425866289567449892298596779646866085886992175347479460095209790047244314 : Nat) : Fp) := by
+    rw [show (30447950777727144129243434014922562909498594645 : Nat) = 15223975388863572064621717007461281454749297322 * 2 + 1 from rfl, pow_add, pow_mul, h153, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h155 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 60895901555454288258486868029845125818997189290 = ((18076938912679138970022450901967808010661276639992019336902850101581481720482 : Nat) : Fp) := by
+    rw [show (60895901555454288258486868029845125818997189290 : Nat) = 30447950777727144129243434014922562909498594645 * 2 + 0 from rfl, pow_add, pow_mul, h154, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h156 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 121791803110908576516973736059690251637994378581 = ((32564882423292773219050785580368991358436411822357218972274933226105234033930 : Nat) : Fp) := by
+    rw [show (121791803110908576516973736059690251637994378581 : Nat) = 60895901555454288258486868029845125818997189290 * 2 + 1 from rfl, pow_add, pow_mul, h155, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h157 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 243583606221817153033947472119380503275988757162 = ((32552367010794342621130455638503334697097512701776238637477919219310317942797 : Nat) : Fp) := by
+    rw [show (243583606221817153033947472119380503275988757162 : Nat) = 121791803110908576516973736059690251637994378581 * 2 + 0 from rfl, pow_add, pow_mul, h156, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h158 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 487167212443634306067894944238761006551977514325 = ((102929209122444587827777699026944410683899678022352825493067503714745504057159 : Nat) : Fp) := by
+    rw [show (487167212443634306067894944238761006551977514325 : Nat) = 243583606221817153033947472119380503275988757162 * 2 + 1 from rfl, pow_add, pow_mul, h157, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h159 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 974334424887268612135789888477522013103955028650 = ((86526498128133317626630141702813837074367111932637409868187941854288427591568 : Nat) : Fp) := by
+    rw [show (974334424887268612135789888477522013103955028650 : Nat) = 487167212443634306067894944238761006551977514325 * 2 + 0 from rfl, pow_add, pow_mul, h158, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h160 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1948668849774537224271579776955044026207910057301 = ((88361233885819673367588753378636896569249530588595265310110137596440966353511 : Nat) : Fp) := by
+    rw [show (1948668849774537224271579776955044026207910057301 : Nat) = 974334424887268612135789888477522013103955028650 * 2 + 1 from rfl, pow_add, pow_mul, h159, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h161 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3897337699549074448543159553910088052415820114602 = ((97295057363833635958625727837300621710348386114506051145619388231245061104307 : Nat) : Fp) := by
+    rw [show (3897337699549074448543159553910088052415820114602 : Nat) = 1948668849774537224271579776955044026207910057301 * 2 + 0 from rfl, pow_add, pow_mul, h160, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h162 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 7794675399098148897086319107820176104831640229205 = ((36663078590024217204418750652753931757818634217088178956414007872110377736052 : Nat) : Fp) := by
+    rw [show (7794675399098148897086319107820176104831640229205 : Nat) = 3897337699549074448543159553910088052415820114602 * 2 + 1 from rfl, pow_add, pow_mul, h161, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h163 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 15589350798196297794172638215640352209663280458410 = ((31202990417790643235432813288641803388915616814742264563088358317007829710066 : Nat) : Fp) := by
+    rw [show (15589350798196297794172638215640352209663280458410 : Nat) = 7794675399098148897086319107820176104831640229205 * 2 + 0 from rfl, pow_add, pow_mul, h162, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h164 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 31178701596392595588345276431280704419326560916821 = ((105444524707405465121336077948537574699913001511158514634884314399116410936387 : Nat) : Fp) := by
+    rw [show (31178701596392595588345276431280704419326560916821 : Nat) = 15589350798196297794172638215640352209663280458410 * 2 + 1 from rfl, pow_add, pow_mul, h163, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h165 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 62357403192785191176690552862561408838653121833642 = ((11884417450457523770287002322943211174420363265326718726939123521017453812754 : Nat) : Fp) := by
+    rw [show (62357403192785191176690552862561408838653121833642 : Nat) = 31178701596392595588345276431280704419326560916821 * 2 + 0 from rfl, pow_add, pow_mul, h164, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h166 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 124714806385570382353381105725122817677306243667285 = ((100148799449159930653291217019635587192652592626456786484600231356308420076820 : Nat) : Fp) := by
+    rw [show (124714806385570382353381105725122817677306243667285 : Nat) = 62357403192785191176690552862561408838653121833642 * 2 + 1 from rfl, pow_add, pow_mul, h165, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h167 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 249429612771140764706762211450245635354612487334570 = ((100556213281901405356619926930785698037693303774351613818917765167590532018720 : Nat) : Fp) := by
+    rw [show (249429612771140764706762211450245635354612487334570 : Nat) = 124714806385570382353381105725122817677306243667285 * 2 + 0 from rfl, pow_add, pow_mul, h166, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h168 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 498859225542281529413524422900491270709224974669141 = ((84670543276892736877644224180034259415730239159161747858160120373050077725398 : Nat) : Fp) := by
+    rw [show (498859225542281529413524422900491270709224974669141 : Nat) = 249429612771140764706762211450245635354612487334570 * 2 + 1 from rfl, pow_add, pow_mul, h167, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h169 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 997718451084563058827048845800982541418449949338282 = ((12063297397266672965241161667724755939078649295629608397460352714230688858640 : Nat) : Fp) := by
+    rw [show (997718451084563058827048845800982541418449949338282 : Nat) = 498859225542281529413524422900491270709224974669141 * 2 + 0 from rfl, pow_add, pow_mul, h168, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h170 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1995436902169126117654097691601965082836899898676565 = ((108604885799337313853841518672026076771001180710430763455545159680535687891409 : Nat) : Fp) := by
+    rw [show (1995436902169126117654097691601965082836899898676565 : Nat) = 997718451084563058827048845800982541418449949338282 * 2 + 1 from rfl, pow_add, pow_mul, h169, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h171 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 3990873804338252235308195383203930165673799797353130 = ((42639796339947200859994826751723476010210938070819166578039597467986569278106 : Nat) : Fp) := by
+    rw [show (3990873804338252235308195383203930165673799797353130 : Nat) = 1995436902169126117654097691601965082836899898676565 * 2 + 0 from rfl, pow_add, pow_mul, h170, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h172 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 7981747608676504470616390766407860331347599594706261 = ((49534283133873617341354642197833456846602332034498618911393547561416892583522 : Nat) : Fp) := by
+    rw [show (7981747608676504470616390766407860331347599594706261 : Nat) = 3990873804338252235308195383203930165673799797353130 * 2 + 1 from rfl, pow_add, pow_mul, h171, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h173 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 15963495217353008941232781532815720662695199189412522 = ((110046373041040105685241540769040406061660660669158436787314938832525932764838 : Nat) : Fp) := by
+    rw [show (15963495217353008941232781532815720662695199189412522 : Nat) = 7981747608676504470616390766407860331347599594706261 * 2 + 0 from rfl, pow_add, pow_mul, h172, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h174 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 31926990434706017882465563065631441325390398378825045 = ((98129362582552938839486619212323042547544460398965400087095304384229373757495 : Nat) : Fp) := by
+    rw [show (31926990434706017882465563065631441325390398378825045 : Nat) = 15963495217353008941232781532815720662695199189412522 * 2 + 1 from rfl, pow_add, pow_mul, h173, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h175 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 63853980869412035764931126131262882650780796757650090 = ((66127419070458723933494103035893381332902000753136946168216864463193008412678 : Nat) : Fp) := by
+    rw [show (63853980869412035764931126131262882650780796757650090 : Nat) = 31926990434706017882465563065631441325390398378825045 * 2 + 0 from rfl, pow_add, pow_mul, h174, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h176 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 127707961738824071529862252262525765301561593515300181 = ((65130340515658333760836103208536111564265659375731864415681736231222325362609 : Nat) : Fp) := by
+    rw [show (127707961738824071529862252262525765301561593515300181 : Nat) = 63853980869412035764931126131262882650780796757650090 * 2 + 1 from rfl, pow_add, pow_mul, h175, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h177 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 255415923477648143059724504525051530603123187030600362 = ((87280494561911244935264608446634960929635147117022267521373405193578625129062 : Nat) : Fp) := by
+    rw [show (255415923477648143059724504525051530603123187030600362 : Nat) = 127707961738824071529862252262525765301561593515300181 * 2 + 0 from rfl, pow_add, pow_mul, h176, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h178 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 510831846955296286119449009050103061206246374061200725 = ((55040005587495510643040373153236710054936303898362800615361167187449839471082 : Nat) : Fp) := by
+    rw [show (510831846955296286119449009050103061206246374061200725 : Nat) = 255415923477648143059724504525051530603123187030600362 * 2 + 1 from rfl, pow_add, pow_mul, h177, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h179 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1021663693910592572238898018100206122412492748122401450 = ((84006688438946083716829264011931749034497470460454721854088340049671270108866 : Nat) : Fp) := by
+    rw [show (1021663693910592572238898018100206122412492748122401450 : Nat) = 510831846955296286119449009050103061206246374061200725 * 2 + 0 from rfl, pow_add, pow_mul, h178, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h180 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2043327387821185144477796036200412244824985496244802901 = ((81331280572657032068972283043588092110319645295202103181809423810210406953622 : Nat) : Fp) := by
+    rw [show (2043327387821185144477796036200412244824985496244802901 : Nat) = 1021663693910592572238898018100206122412492748122401450 * 2 + 1 from rfl, pow_add, pow_mul, h179, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h181 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4086654775642370288955592072400824489649970992489605802 = ((60366262703844161198300037241384471858893526474605100850588313584662496862368 : Nat) : Fp) := by
+    rw [show (4086654775642370288955592072400824489649970992489605802 : Nat) = 2043327387821185144477796036200412244824985496244802901 * 2 + 0 from rfl, pow_add, pow_mul, h180, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h182 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 8173309551284740577911184144801648979299941984979211605 = ((85555566816181871814206736529093600005372908877319231312945560608701842681217 : Nat) : Fp) := by
+    rw [show (8173309551284740577911184144801648979299941984979211605 : Nat) = 4086654775642370288955592072400824489649970992489605802 * 2 + 1 from rfl, pow_add, pow_mul, h181, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h183 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 16346619102569481155822368289603297958599883969958423210 = ((97442264923044366100228621716191438771295332692678317247966910575260372432133 : Nat) : Fp) := by
+    rw [show (16346619102569481155822368289603297958599883969958423210 : Nat) = 8173309551284740577911184144801648979299941984979211605 * 2 + 0 from rfl, pow_add, pow_mul, h182, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h184 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 32693238205138962311644736579206595917199767939916846421 = ((7545245492087383711941544220651356235233540515459593688798843069394965352717 : Nat) : Fp) := by
+    rw [show (32693238205138962311644736579206595917199767939916846421 : Nat) = 16346619102569481155822368289603297958599883969958423210 * 2 + 1 from rfl, pow_add, pow_mul, h183, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h185 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 65386476410277924623289473158413191834399535879833692842 = ((50551371773477419817527402587000496480142510001407602590144314071685715625691 : Nat) : Fp) := by
+    rw [show (65386476410277924623289473158413191834399535879833692842 : Nat) = 32693238205138962311644736579206595917199767939916846421 * 2 + 0 from rfl, pow_add, pow_mul, h184, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h186 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 130772952820555849246578946316826383668799071759667385685 = ((81227726352914418543316156698155303325868822050589738238485058660348011846574 : Nat) : Fp) := by
+    rw [show (130772952820555849246578946316826383668799071759667385685 : Nat) = 65386476410277924623289473158413191834399535879833692842 * 2 + 1 from rfl, pow_add, pow_mul, h185, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h187 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 261545905641111698493157892633652767337598143519334771370 = ((24632732923219529134154976588509848579822841936798531804867943126285647754008 : Nat) : Fp) := by
+    rw [show (261545905641111698493157892633652767337598143519334771370 : Nat) = 130772952820555849246578946316826383668799071759667385685 * 2 + 0 from rfl, pow_add, pow_mul, h186, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h188 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 523091811282223396986315785267305534675196287038669542741 = ((81936307483096720214623910993074046519837873897449712522251708310252049337959 : Nat) : Fp) := by
+    rw [show (523091811282223396986315785267305534675196287038669542741 : Nat) = 261545905641111698493157892633652767337598143519334771370 * 2 + 1 from rfl, pow_add, pow_mul, h187, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h189 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1046183622564446793972631570534611069350392574077339085482 = ((96932837235087638730128035762894017843515115406816208020551824175746664223157 : Nat) : Fp) := by
+    rw [show (1046183622564446793972631570534611069350392574077339085482 : Nat) = 523091811282223396986315785267305534675196287038669542741 * 2 + 0 from rfl, pow_add, pow_mul, h188, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h190 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2092367245128893587945263141069222138700785148154678170965 = ((16491529010479469898461586310368126639953175505908525949875657922098520631396 : Nat) : Fp) := by
+    rw [show (2092367245128893587945263141069222138700785148154678170965 : Nat) = 1046183622564446793972631570534611069350392574077339085482 * 2 + 1 from rfl, pow_add, pow_mul, h189, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h191 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4184734490257787175890526282138444277401570296309356341930 = ((81138277857917790009130749792060046992338312805118569845547311026363257725179 : Nat) : Fp) := by
+    rw [show (4184734490257787175890526282138444277401570296309356341930 : Nat) = 2092367245128893587945263141069222138700785148154678170965 * 2 + 0 from rfl, pow_add, pow_mul, h190, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h192 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 8369468980515574351781052564276888554803140592618712683861 = ((44095710361525749177769421922611999237708155871807900305397634878608235975731 : Nat) : Fp) := by
+    rw [show (8369468980515574351781052564276888554803140592618712683861 : Nat) = 4184734490257787175890526282138444277401570296309356341930 * 2 + 1 from rfl, pow_add, pow_mul, h191, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h193 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 16738937961031148703562105128553777109606281185237425367722 = ((66780749579750956991657381445018314603354909259725027036937898207328337789174 : Nat) : Fp) := by
+    rw [show (16738937961031148703562105128553777109606281185237425367722 : Nat) = 8369468980515574351781052564276888554803140592618712683861 * 2 + 0 from rfl, pow_add, pow_mul, h192, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h194 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 33477875922062297407124210257107554219212562370474850735445 = ((50563902709330004076907815045033997930720086294604002539026034808765292383630 : Nat) : Fp) := by
+    rw [show (33477875922062297407124210257107554219212562370474850735445 : Nat) = 16738937961031148703562105128553777109606281185237425367722 * 2 + 1 from rfl, pow_add, pow_mul, h193, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h195 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 66955751844124594814248420514215108438425124740949701470890 = ((14957638267340832524584291279090351014419402205683968363206225868240439900333 : Nat) : Fp) := by
+    rw [show (66955751844124594814248420514215108438425124740949701470890 : Nat) = 33477875922062297407124210257107554219212562370474850735445 * 2 + 0 from rfl, pow_add, pow_mul, h194, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h196 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 133911503688249189628496841028430216876850249481899402941781 = ((77605081090370714447325538934482125977762222292783202406836507662492662052695 : Nat) : Fp) := by
+    rw [show (133911503688249189628496841028430216876850249481899402941781 : Nat) = 66955751844124594814248420514215108438425124740949701470890 * 2 + 1 from rfl, pow_add, pow_mul, h195, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h197 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 267823007376498379256993682056860433753700498963798805883562 = ((71558377608622861846853183637022701189597744193635015922221660589987339541253 : Nat) : Fp) := by
+    rw [show (267823007376498379256993682056860433753700498963798805883562 : Nat) = 133911503688249189628496841028430216876850249481899402941781 * 2 + 0 from rfl, pow_add, pow_mul, h196, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h198 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 535646014752996758513987364113720867507400997927597611767125 = ((26562340324080305406582353486340154202052485146169211785405477139222043470231 : Nat) : Fp) := by
+    rw [show (535646014752996758513987364113720867507400997927597611767125 : Nat) = 267823007376498379256993682056860433753700498963798805883562 * 2 + 1 from rfl, pow_add, pow_mul, h197, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h199 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1071292029505993517027974728227441735014801995855195223534250 = ((32398553090938844410539515942181354799069850286953113461965676316635780300181 : Nat) : Fp) := by
+    rw [show (1071292029505993517027974728227441735014801995855195223534250 : Nat) = 535646014752996758513987364113720867507400997927597611767125 * 2 + 0 from rfl, pow_add, pow_mul, h198, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h200 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2142584059011987034055949456454883470029603991710390447068501 = ((10354059515440905839921568960835405153679408473881474466608563083939355987315 : Nat) : Fp) := by
+    rw [show (2142584059011987034055949456454883470029603991710390447068501 : Nat) = 1071292029505993517027974728227441735014801995855195223534250 * 2 + 1 from rfl, pow_add, pow_mul, h199, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h201 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4285168118023974068111898912909766940059207983420780894137002 = ((27290498843891043091898394866958579276463611983721779323270385999825884953623 : Nat) : Fp) := by
+    rw [show (4285168118023974068111898912909766940059207983420780894137002 : Nat) = 2142584059011987034055949456454883470029603991710390447068501 * 2 + 0 from rfl, pow_add, pow_mul, h200, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h202 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 8570336236047948136223797825819533880118415966841561788274005 = ((76738304037029016215830559201082745698579772019905334074256324742196563626309 : Nat) : Fp) := by
+    rw [show (8570336236047948136223797825819533880118415966841561788274005 : Nat) = 4285168118023974068111898912909766940059207983420780894137002 * 2 + 1 from rfl, pow_add, pow_mul, h201, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h203 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 17140672472095896272447595651639067760236831933683123576548010 = ((62720256307150072992340190508170823678542083920663867449474328766212241782989 : Nat) : Fp) := by
+    rw [show (17140672472095896272447595651639067760236831933683123576548010 : Nat) = 8570336236047948136223797825819533880118415966841561788274005 * 2 + 0 from rfl, pow_add, pow_mul, h202, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h204 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 34281344944191792544895191303278135520473663867366247153096021 = ((34067231008761597245431691133290430602022458767755857416883645197403256712690 : Nat) : Fp) := by
+    rw [show (34281344944191792544895191303278135520473663867366247153096021 : Nat) = 17140672472095896272447595651639067760236831933683123576548010 * 2 + 1 from rfl, pow_add, pow_mul, h203, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h205 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 68562689888383585089790382606556271040947327734732494306192042 = ((55742143337033258325325824284345113329299925525974415391970522722962117690679 : Nat) : Fp) := by
+    rw [show (68562689888383585089790382606556271040947327734732494306192042 : Nat) = 34281344944191792544895191303278135520473663867366247153096021 * 2 + 0 from rfl, pow_add, pow_mul, h204, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h206 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 137125379776767170179580765213112542081894655469464988612384085 = ((2491073597398498883933974497968121351266788702932384893726738736377813043527 : Nat) : Fp) := by
+    rw [show (137125379776767170179580765213112542081894655469464988612384085 : Nat) = 68562689888383585089790382606556271040947327734732494306192042 * 2 + 1 from rfl, pow_add, pow_mul, h205, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h207 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 274250759553534340359161530426225084163789310938929977224768170 = ((106288369319057783908781584461272290922343276320876160071354438992126607988924 : Nat) : Fp) := by
+    rw [show (274250759553534340359161530426225084163789310938929977224768170 : Nat) = 137125379776767170179580765213112542081894655469464988612384085 * 2 + 0 from rfl, pow_add, pow_mul, h206, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h208 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 548501519107068680718323060852450168327578621877859954449536341 = ((103850233365223076479532141708173946544957758827039214516269064452153113753154 : Nat) : Fp) := by
+    rw [show (548501519107068680718323060852450168327578621877859954449536341 : Nat) = 274250759553534340359161530426225084163789310938929977224768170 * 2 + 1 from rfl, pow_add, pow_mul, h207, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h209 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1097003038214137361436646121704900336655157243755719908899072682 = ((97444625851781361183753331129117330505570250373951668064078330551041960702573 : Nat) : Fp) := by
+    rw [show (1097003038214137361436646121704900336655157243755719908899072682 : Nat) = 548501519107068680718323060852450168327578621877859954449536341 * 2 + 0 from rfl, pow_add, pow_mul, h208, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h210 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2194006076428274722873292243409800673310314487511439817798145365 = ((17153020943936058073683628034762256264159671452039990182202940204161733970816 : Nat) : Fp) := by
+    rw [show (2194006076428274722873292243409800673310314487511439817798145365 : Nat) = 1097003038214137361436646121704900336655157243755719908899072682 * 2 + 1 from rfl, pow_add, pow_mul, h209, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h211 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4388012152856549445746584486819601346620628975022879635596290730 = ((113956565367746925387003256365315248327978958763793663824244136512433964947678 : Nat) : Fp) := by
+    rw [show (4388012152856549445746584486819601346620628975022879635596290730 : Nat) = 2194006076428274722873292243409800673310314487511439817798145365 * 2 + 0 from rfl, pow_add, pow_mul, h210, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h212 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 8776024305713098891493168973639202693241257950045759271192581461 = ((36065346467493113423045924795170233349856352756275763379035040758065414244167 : Nat) : Fp) := by
+    rw [show (8776024305713098891493168973639202693241257950045759271192581461 : Nat) = 4388012152856549445746584486819601346620628975022879635596290730 * 2 + 1 from rfl, pow_add, pow_mul, h211, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h213 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 17552048611426197782986337947278405386482515900091518542385162922 = ((72178040321360069057126347549882656397681138120123153523239299979955744446302 : Nat) : Fp) := by
+    rw [show (17552048611426197782986337947278405386482515900091518542385162922 : Nat) = 8776024305713098891493168973639202693241257950045759271192581461 * 2 + 0 from rfl, pow_add, pow_mul, h212, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h214 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 35104097222852395565972675894556810772965031800183037084770325845 = ((41408224617457028616706622671878041268309234300227608941436594441781530824026 : Nat) : Fp) := by
+    rw [show (35104097222852395565972675894556810772965031800183037084770325845 : Nat) = 17552048611426197782986337947278405386482515900091518542385162922 * 2 + 1 from rfl, pow_add, pow_mul, h213, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h215 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 70208194445704791131945351789113621545930063600366074169540651690 = ((107733786724976900454515759094762723494403940245205900852953293741293467002063 : Nat) : Fp) := by
+    rw [show (70208194445704791131945351789113621545930063600366074169540651690 : Nat) = 35104097222852395565972675894556810772965031800183037084770325845 * 2 + 0 from rfl, pow_add, pow_mul, h214, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h216 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 140416388891409582263890703578227243091860127200732148339081303381 = ((45494917462585760168971731364791984456863013872906240519324515094071483704980 : Nat) : Fp) := by
+    rw [show (140416388891409582263890703578227243091860127200732148339081303381 : Nat) = 70208194445704791131945351789113621545930063600366074169540651690 * 2 + 1 from rfl, pow_add, pow_mul, h215, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h217 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 280832777782819164527781407156454486183720254401464296678162606762 = ((25218770006344711906654714933791456087072877227418337872741717452783655028353 : Nat) : Fp) := by
+    rw [show (280832777782819164527781407156454486183720254401464296678162606762 : Nat) = 140416388891409582263890703578227243091860127200732148339081303381 * 2 + 0 from rfl, pow_add, pow_mul, h216, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h218 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 561665555565638329055562814312908972367440508802928593356325213525 = ((4276705941037597481296148467121751650144311780671902386572476181482025824069 : Nat) : Fp) := by
+    rw [show (561665555565638329055562814312908972367440508802928593356325213525 : Nat) = 280832777782819164527781407156454486183720254401464296678162606762 * 2 + 1 from rfl, pow_add, pow_mul, h217, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h219 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1123331111131276658111125628625817944734881017605857186712650427050 = ((65873599361807677953706524750899848350300395192192789547450267063499509425829 : Nat) : Fp) := by
+    rw [show (1123331111131276658111125628625817944734881017605857186712650427050 : Nat) = 561665555565638329055562814312908972367440508802928593356325213525 * 2 + 0 from rfl, pow_add, pow_mul, h218, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h220 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2246662222262553316222251257251635889469762035211714373425300854101 = ((19738156028150097466206502523269903229927739095308312385281060833504397119307 : Nat) : Fp) := by
+    rw [show (2246662222262553316222251257251635889469762035211714373425300854101 : Nat) = 1123331111131276658111125628625817944734881017605857186712650427050 * 2 + 1 from rfl, pow_add, pow_mul, h219, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h221 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4493324444525106632444502514503271778939524070423428746850601708202 = ((51682805713523334951665757530306101513439611805278395303960343807024771010579 : Nat) : Fp) := by
+    rw [show (4493324444525106632444502514503271778939524070423428746850601708202 : Nat) = 2246662222262553316222251257251635889469762035211714373425300854101 * 2 + 0 from rfl, pow_add, pow_mul, h220, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h222 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 8986648889050213264889005029006543557879048140846857493701203416404 = ((5301293233194660667164003282273788026743876831882006050292227044248396651979 : Nat) : Fp) := by
+    rw [show (8986648889050213264889005029006543557879048140846857493701203416404 : Nat) = 4493324444525106632444502514503271778939524070423428746850601708202 * 2 + 0 from rfl, pow_add, pow_mul, h221, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h223 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 17973297778100426529778010058013087115758096281693714987402406832809 = ((56620154816527963112708977431643077712931259201076799323287932296424568585800 : Nat) : Fp) := by
+    rw [show (17973297778100426529778010058013087115758096281693714987402406832809 : Nat) = 8986648889050213264889005029006543557879048140846857493701203416404 * 2 + 1 from rfl, pow_add, pow_mul, h222, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h224 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 35946595556200853059556020116026174231516192563387429974804813665619 = ((111081889463643415724240330942503385925118077069169858770075827346725462612542 : Nat) : Fp) := by
+    rw [show (35946595556200853059556020116026174231516192563387429974804813665619 : Nat) = 17973297778100426529778010058013087115758096281693714987402406832809 * 2 + 1 from rfl, pow_add, pow_mul, h223, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h225 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 71893191112401706119112040232052348463032385126774859949609627331239 = ((93210606584930179328877266166804247976730264873479709798036365055839032247348 : Nat) : Fp) := by
+    rw [show (71893191112401706119112040232052348463032385126774859949609627331239 : Nat) = 35946595556200853059556020116026174231516192563387429974804813665619 * 2 + 1 from rfl, pow_add, pow_mul, h224, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h226 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 143786382224803412238224080464104696926064770253549719899219254662479 = ((82204949332478849860622221723132028099118544183175880466585687737217096905441 : Nat) : Fp) := by
+    rw [show (143786382224803412238224080464104696926064770253549719899219254662479 : Nat) = 71893191112401706119112040232052348463032385126774859949609627331239 * 2 + 1 from rfl, pow_add, pow_mul, h225, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h227 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 287572764449606824476448160928209393852129540507099439798438509324959 = ((25143339960338629168068068292193125033883758918712054259943725014154214625149 : Nat) : Fp) := by
+    rw [show (287572764449606824476448160928209393852129540507099439798438509324959 : Nat) = 143786382224803412238224080464104696926064770253549719899219254662479 * 2 + 1 from rfl, pow_add, pow_mul, h226, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h228 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 575145528899213648952896321856418787704259081014198879596877018649919 = ((79521888744121243883404262221730029241357122683792595861203663151345784036044 : Nat) : Fp) := by
+    rw [show (575145528899213648952896321856418787704259081014198879596877018649919 : Nat) = 287572764449606824476448160928209393852129540507099439798438509324959 * 2 + 1 from rfl, pow_add, pow_mul, h227, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h229 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1150291057798427297905792643712837575408518162028397759193754037299839 = ((111424544175995719012518708408817842958485409881550092234953820352960653974850 : Nat) : Fp) := by
+    rw [show (1150291057798427297905792643712837575408518162028397759193754037299839 : Nat) = 575145528899213648952896321856418787704259081014198879596877018649919 * 2 + 1 from rfl, pow_add, pow_mul, h228, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h230 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2300582115596854595811585287425675150817036324056795518387508074599679 = ((72144455311319705231420089336300084740454427624088597413741977718507831769739 : Nat) : Fp) := by
+    rw [show (2300582115596854595811585287425675150817036324056795518387508074599679 : Nat) = 1150291057798427297905792643712837575408518162028397759193754037299839 * 2 + 1 from rfl, pow_add, pow_mul, h229, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h231 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4601164231193709191623170574851350301634072648113591036775016149199359 = ((10808956845271040667836185201731597551551983299110812397208428059068631629278 : Nat) : Fp) := by
+    rw [show (4601164231193709191623170574851350301634072648113591036775016149199359 : Nat) = 2300582115596854595811585287425675150817036324056795518387508074599679 * 2 + 1 from rfl, pow_add, pow_mul, h230, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h232 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 9202328462387418383246341149702700603268145296227182073550032298398719 = ((26481203721056074394063498689472630328515090116819380919648344385012949523818 : Nat) : Fp) := by
+    rw [show (9202328462387418383246341149702700603268145296227182073550032298398719 : Nat) = 4601164231193709191623170574851350301634072648113591036775016149199359 * 2 + 1 from rfl, pow_add, pow_mul, h231, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h233 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 18404656924774836766492682299405401206536290592454364147100064596797439 = ((81664150152220180393627507703102520126812031821565846450140317769343622584859 : Nat) : Fp) := by
+    rw [show (18404656924774836766492682299405401206536290592454364147100064596797439 : Nat) = 9202328462387418383246341149702700603268145296227182073550032298398719 * 2 + 1 from rfl, pow_add, pow_mul, h232, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h234 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 36809313849549673532985364598810802413072581184908728294200129193594879 = ((111263724153329290141562469373188531558916305239311825383115353091992263313099 : Nat) : Fp) := by
+    rw [show (36809313849549673532985364598810802413072581184908728294200129193594879 : Nat) = 18404656924774836766492682299405401206536290592454364147100064596797439 * 2 + 1 from rfl, pow_add, pow_mul, h233, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h235 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 73618627699099347065970729197621604826145162369817456588400258387189759 = ((35873123886532800611856120051578523000338817844083698895947072954027517860073 : Nat) : Fp) := by
+    rw [show (73618627699099347065970729197621604826145162369817456588400258387189759 : Nat) = 36809313849549673532985364598810802413072581184908728294200129193594879 * 2 + 1 from rfl, pow_add, pow_mul, h234, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h236 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 147237255398198694131941458395243209652290324739634913176800516774379519 = ((17615749632424539050245731220920988209775161980797413840147889463540940480199 : Nat) : Fp) := by
+    rw [show (147237255398198694131941458395243209652290324739634913176800516774379519 : Nat) = 73618627699099347065970729197621604826145162369817456588400258387189759 * 2 + 1 from rfl, pow_add, pow_mul, h235, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h237 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 294474510796397388263882916790486419304580649479269826353601033548759039 = ((2642804854438212590683254389317805677131980739664488289654773621595044696475 : Nat) : Fp) := by
+    rw [show (294474510796397388263882916790486419304580649479269826353601033548759039 : Nat) = 147237255398198694131941458395243209652290324739634913176800516774379519 * 2 + 1 from rfl, pow_add, pow_mul, h236, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h238 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 588949021592794776527765833580972838609161298958539652707202067097518079 = ((108712249935760612717825935177801978183829407230252885080354643215088985814608 : Nat) : Fp) := by
+    rw [show (588949021592794776527765833580972838609161298958539652707202067097518079 : Nat) = 294474510796397388263882916790486419304580649479269826353601033548759039 * 2 + 1 from rfl, pow_add, pow_mul, h237, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h239 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1177898043185589553055531667161945677218322597917079305414404134195036159 = ((61547749146004792929610850923191947556819905493331265236297821891210712137617 : Nat) : Fp) := by
+    rw [show (1177898043185589553055531667161945677218322597917079305414404134195036159 : Nat) = 588949021592794776527765833580972838609161298958539652707202067097518079 * 2 + 1 from rfl, pow_add, pow_mul, h238, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h240 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2355796086371179106111063334323891354436645195834158610828808268390072319 = ((10981936276098837399040684762719329570410877576837705508122617827311680536810 : Nat) : Fp) := by
+    rw [show (2355796086371179106111063334323891354436645195834158610828808268390072319 : Nat) = 1177898043185589553055531667161945677218322597917079305414404134195036159 * 2 + 1 from rfl, pow_add, pow_mul, h239, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h241 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4711592172742358212222126668647782708873290391668317221657616536780144639 = ((81683499704637554097087984612249985357004481383968812783332901713366524561714 : Nat) : Fp) := by
+    rw [show (4711592172742358212222126668647782708873290391668317221657616536780144639 : Nat) = 2355796086371179106111063334323891354436645195834158610828808268390072319 * 2 + 1 from rfl, pow_add, pow_mul, h240, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h242 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 9423184345484716424444253337295565417746580783336634443315233073560289279 = ((26194615348824015200460093506677566321548545767707685287865662493167805925056 : Nat) : Fp) := by
+    rw [show (9423184345484716424444253337295565417746580783336634443315233073560289279 : Nat) = 4711592172742358212222126668647782708873290391668317221657616536780144639 * 2 + 1 from rfl, pow_add, pow_mul, h241, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h243 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 18846368690969432848888506674591130835493161566673268886630466147120578559 = ((10132886880626546059808416701832163699497684339937323924000525318334255834728 : Nat) : Fp) := by
+    rw [show (18846368690969432848888506674591130835493161566673268886630466147120578559 : Nat) = 9423184345484716424444253337295565417746580783336634443315233073560289279 * 2 + 1 from rfl, pow_add, pow_mul, h242, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h244 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 37692737381938865697777013349182261670986323133346537773260932294241157119 = ((96145228036791272347287591001595652681705751830372679236349976095125901623452 : Nat) : Fp) := by
+    rw [show (37692737381938865697777013349182261670986323133346537773260932294241157119 : Nat) = 18846368690969432848888506674591130835493161566673268886630466147120578559 * 2 + 1 from rfl, pow_add, pow_mul, h243, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h245 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 75385474763877731395554026698364523341972646266693075546521864588482314239 = ((41782768751604672819376458854884897694342149918888059375266245379808888448893 : Nat) : Fp) := by
+    rw [show (75385474763877731395554026698364523341972646266693075546521864588482314239 : Nat) = 37692737381938865697777013349182261670986323133346537773260932294241157119 * 2 + 1 from rfl, pow_add, pow_mul, h244, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h246 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 150770949527755462791108053396729046683945292533386151093043729176964628478 = ((48182855768544207673659395879916164314193685121842011314843417349281473232689 : Nat) : Fp) := by
+    rw [show (150770949527755462791108053396729046683945292533386151093043729176964628478 : Nat) = 75385474763877731395554026698364523341972646266693075546521864588482314239 * 2 + 0 from rfl, pow_add, pow_mul, h245, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h247 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 301541899055510925582216106793458093367890585066772302186087458353929256957 = ((113914995989222913384846916963315931267312877007247552587612980423938598643668 : Nat) : Fp) := by
+    rw [show (301541899055510925582216106793458093367890585066772302186087458353929256957 : Nat) = 150770949527755462791108053396729046683945292533386151093043729176964628478 * 2 + 1 from rfl, pow_add, pow_mul, h246, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h248 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 603083798111021851164432213586916186735781170133544604372174916707858513914 = ((16917694604137855099959345955774822495829732572303578119586360570209079987762 : Nat) : Fp) := by
+    rw [show (603083798111021851164432213586916186735781170133544604372174916707858513914 : Nat) = 301541899055510925582216106793458093367890585066772302186087458353929256957 * 2 + 0 from rfl, pow_add, pow_mul, h247, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h249 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 1206167596222043702328864427173832373471562340267089208744349833415717027829 = ((5275473803500525352526026164633111500304804289437806846072862508717690556340 : Nat) : Fp) := by
+    rw [show (1206167596222043702328864427173832373471562340267089208744349833415717027829 : Nat) = 603083798111021851164432213586916186735781170133544604372174916707858513914 * 2 + 1 from rfl, pow_add, pow_mul, h248, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h250 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 2412335192444087404657728854347664746943124680534178417488699666831434055659 = ((47033123427715144957970898848337074550213844492785242091248698844584856999432 : Nat) : Fp) := by
+    rw [show (2412335192444087404657728854347664746943124680534178417488699666831434055659 : Nat) = 1206167596222043702328864427173832373471562340267089208744349833415717027829 * 2 + 1 from rfl, pow_add, pow_mul, h249, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h251 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 4824670384888174809315457708695329493886249361068356834977399333662868111319 = ((87217155786056462017332245134470873361821475905372260434560935159578659505550 : Nat) : Fp) := by
+    rw [show (4824670384888174809315457708695329493886249361068356834977399333662868111319 : Nat) = 2412335192444087404657728854347664746943124680534178417488699666831434055659 * 2 + 1 from rfl, pow_add, pow_mul, h250, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h252 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 9649340769776349618630915417390658987772498722136713669954798667325736222638 = ((92918902052465737461182286990515267478741849099176759764925929837520548598330 : Nat) : Fp) := by
+    rw [show (9649340769776349618630915417390658987772498722136713669954798667325736222638 : Nat) = 4824670384888174809315457708695329493886249361068356834977399333662868111319 * 2 + 0 from rfl, pow_add, pow_mul, h251, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h253 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 19298681539552699237261830834781317975544997444273427339909597334651472445277 = ((60197513588986302554485582024885075108884032450952339817679072026166228089408 : Nat) : Fp) := by
+    rw [show (19298681539552699237261830834781317975544997444273427339909597334651472445277 : Nat) = 9649340769776349618630915417390658987772498722136713669954798667325736222638 * 2 + 1 from rfl, pow_add, pow_mul, h252, pow_two, pow_one, ← Nat.cast_mul, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  have h254 : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) ^ 38597363079105398474523661669562635951089994888546854679819194669302944890554 = ((55594575648329892869085402983802832744385952214688224221778511981742606582254 : Nat) : Fp) := by
+    rw [show (38597363079105398474523661669562635951089994888546854679819194669302944890554 : Nat) = 19298681539552699237261830834781317975544997444273427339909597334651472445277 * 2 + 0 from rfl, pow_add, pow_mul, h253, pow_two, pow_zero, mul_one, ← Nat.cast_mul]
+    apply (ZMod.natCast_eq_natCast_iff _ _ _).2
+    norm_num [Nat.ModEq, p]
+  exact h254
+
+theorem castMinusSeven : ((115792089237316195423570985008687907853269984665640564039457584007908834671656 : Nat) : Fp) = -7 := by
+  have h : (p-7)+7=p := by norm_num [p]
+  have hc := congrArg (fun n : Nat => (n : Fp)) h
+  have hm : ((p-7 : Nat) : Fp) = -7 := by
+    apply eq_neg_of_add_eq_zero_left
+    simpa only [Nat.cast_add, Nat.cast_ofNat, ZMod.natCast_self] using hc
+  norm_num [p] at hm
+  exact hm
+
+theorem residueNeOne : ((55594575648329892869085402983802832744385952214688224221778511981742606582254 : Nat) : Fp) ≠ 1 := by
+  intro h
+  have hc : ((55594575648329892869085402983802832744385952214688224221778511981742606582254 : Nat) : Fp) = ((1 : Nat) : Fp) := by simpa only [Nat.cast_one] using h
+  have hm := (ZMod.natCast_eq_natCast_iff 55594575648329892869085402983802832744385952214688224221778511981742606582254 1 p).1 hc
+  norm_num [Nat.ModEq, p] at hm
+
+theorem sevenNeZero : (7 : Fp) ≠ 0 := by
+  intro h
+  have hc : ((7 : Nat) : Fp) = ((0 : Nat) : Fp) := by simpa only [Nat.cast_ofNat, Nat.cast_zero] using h
+  have hm := (ZMod.natCast_eq_natCast_iff 7 0 p).1 hc
+  norm_num [Nat.ModEq, p] at hm
+
+theorem noCube : ∀ x : Fp, x^3 ≠ -7 := by
+  intro x h
+  have hx : x ≠ 0 := by
+    intro hz
+    subst x
+    have bad : (-7 : Fp) = 0 := by simpa using h.symm
+    exact sevenNeZero (neg_eq_zero.mp bad)
+  have hf : x^(p-1) = 1 := by
+    simpa only [Fp, ZMod.card] using FiniteField.pow_card_sub_one_eq_one x hx
+  have hnum : (3 : Nat) * 38597363079105398474523661669562635951089994888546854679819194669302944890554 = p-1 := by norm_num [p]
+  have heq : (-7 : Fp)^38597363079105398474523661669562635951089994888546854679819194669302944890554 = 1 := by
+    rw [← h, ← pow_mul, hnum]
+    exact hf
+  apply residueNeOne
+  rw [← numericNoncube, castMinusSeven]
+  exact heq
+theorem finiteYNeZero {x y : Fp} (h : curve.toAffine.Nonsingular x y) : y ≠ 0 := by
+  intro hy
+  have heq := h.1
+  rw [curve.toAffine.equation_iff] at heq
+  have heq2 : y^2 = x^3 + 7 := by simpa [curve, curveA, curveB] using heq
+  rw [hy] at heq2
+  have hc : x^3 = -7 := by linear_combination -heq2
+  exact noCube x hc
+
+
+theorem ecdsaPointYNonzero (P : ECDSAAdd.Secp256k1.Point) (hp : P ≠ 0) :
+    ECDSAAdd.Arithmetic.pointY P ≠ 0 := by
+  cases P with
+  | zero => exact (hp rfl).elim
+  | @some x y hc =>
+    have hy : y ≠ 0 := finiteYNeZero hc
+    intro h
+    have hz : y.val = 0 := by simpa [ECDSAAdd.Arithmetic.pointY, ECDSAAdd.Secp256k1.coordinates] using h
+    exact hy ((ZMod.val_eq_zero y).mp hz)
+
+
+end ShorECDLP.Entrant
+
+namespace ShorECDLP.Entrant.WEX
+open ECDSAAdd ECDSAAdd.Arithmetic
 noncomputable section
 set_option maxHeartbeats 4000000
 set_option maxRecDepth 20000
 set_option linter.unusedSimpArgs false
 
-def cell (q a b : Wire) : Circuit := [.CCX q a b, .CX b a]
-def cells (q : Wire) (pairs : List (Wire × Wire)) : Circuit :=
-  pairs.flatMap fun p => cell q p.1 p.2
+def finiteSignFlag (sign inf flag : Wire) : Program :=
+  [.X sign, .X inf, .CCX sign inf flag, .X inf, .X sign]
 
-def pairWires (pairs : List (Wire × Wire)) : List Wire :=
-  pairs.flatMap fun p => [p.1,p.2]
-
-theorem cell_frame (q a b w : Wire) (s : BasisState) (ha : w ≠ a) (hb : w ≠ b) :
-    Classical.run (cell q a b) s w = s w := by
-  simp [cell,Classical.run,Classical.applyGate,upd,ha,hb]
-
-theorem cell_values (q a b : Wire) (s : BasisState)
-    (hab : a ≠ b) (hb : s b = false) :
-    Classical.run (cell q a b) s a = (s a && !(s q)) ∧
-    Classical.run (cell q a b) s b = (s q && s a) := by
-  cases hq : s q <;> cases ha : s a <;>
-    simp [cell,Classical.run,Classical.applyGate,upd,hab,Ne.symm hab,hb,hq,ha]
-
-theorem cells_frame (q : Wire) (pairs : List (Wire × Wire)) (s : BasisState)
-    (w : Wire) (hw : w ∉ pairWires pairs) : Classical.run (cells q pairs) s w = s w := by
-  induction pairs generalizing s with
-  | nil => rfl
-  | cons p pairs ih =>
-    simp only [pairWires,List.flatMap_cons,List.mem_append,List.mem_cons,List.mem_singleton,not_or] at hw
-    change Classical.run (cell q p.1 p.2 ++ cells q pairs) s w = s w
-    rw [Classical.run_append,ih _ hw.2]
-    exact cell_frame q p.1 p.2 w s hw.1.1 hw.1.2.1
-
-theorem cells_values (q : Wire) (pairs : List (Wire × Wire))
-    (hn : (q :: pairWires pairs).Nodup) (s : BasisState)
-    (hc : ∀ p ∈ pairs, s p.2 = false) :
-    ∀ p ∈ pairs, Classical.run (cells q pairs) s p.1 = (s p.1 && !(s q)) ∧
-      Classical.run (cells q pairs) s p.2 = (s q && s p.1) := by
-  induction pairs generalizing s with
-  | nil => simp
-  | cons p pairs ih =>
-    have hg : q ≠ p.1 ∧ q ≠ p.2 ∧ q ∉ pairWires pairs ∧ p.1 ≠ p.2 ∧
-        p.1 ∉ pairWires pairs ∧ p.2 ∉ pairWires pairs ∧ (pairWires pairs).Nodup := by
-      change (q :: p.1 :: p.2 :: pairWires pairs).Nodup at hn
-      simp only [List.nodup_cons,List.mem_cons,not_or] at hn
-      exact ⟨hn.1.1,hn.1.2.1,hn.1.2.2,hn.2.1.1,hn.2.1.2,hn.2.2.1,hn.2.2.2⟩
-    have ht : (q :: pairWires pairs).Nodup := List.nodup_cons.mpr ⟨hg.2.2.1,hg.2.2.2.2.2.2⟩
-    let next := Classical.run (cell q p.1 p.2) s
-    have hq : next q = s q := cell_frame q p.1 p.2 q s hg.1 hg.2.1
-    have htail (r : Wire × Wire) (hr : r ∈ pairs) :
-        next r.1 = s r.1 ∧ next r.2 = s r.2 := by
-      have h₁ : r.1 ∈ pairWires pairs := List.mem_flatMap.mpr ⟨r,hr,by simp⟩
-      have h₂ : r.2 ∈ pairWires pairs := List.mem_flatMap.mpr ⟨r,hr,by simp⟩
-      exact ⟨cell_frame q p.1 p.2 r.1 s (fun he => hg.2.2.2.2.1 (he ▸ h₁))
-        (fun he => hg.2.2.2.2.2.1 (he ▸ h₁)),
-        cell_frame q p.1 p.2 r.2 s (fun he => hg.2.2.2.2.1 (he ▸ h₂))
-        (fun he => hg.2.2.2.2.2.1 (he ▸ h₂))⟩
-    have hi := ih ht next (fun r hr => (htail r hr).2.trans (hc r (by simp [hr])))
-    intro r hr
-    change Classical.run (cell q p.1 p.2 ++ cells q pairs) s r.1 = _ ∧
-      Classical.run (cell q p.1 p.2 ++ cells q pairs) s r.2 = _
-    simp only [Classical.run_append]
-    change Classical.run (cells q pairs) next r.1 = _ ∧ Classical.run (cells q pairs) next r.2 = _
-    rcases List.mem_cons.mp hr with he | hr
-    · subst r
-      rw [cells_frame q pairs next p.1 hg.2.2.2.2.1,
-        cells_frame q pairs next p.2 hg.2.2.2.2.2.1]
-      exact cell_values q p.1 p.2 s hg.2.2.2.1 (hc p (by simp))
-    · simpa only [htail r hr,hq] using hi r hr
-
-theorem cells_classical (q : Wire) (pairs : List (Wire × Wire)) : Classical.HPFree (cells q pairs) := by
-  intro g hg
-  obtain ⟨p,_,hp⟩ := List.mem_flatMap.mp hg
-  simp only [cell,List.mem_cons,List.mem_nil_iff,or_false] at hp
-  rcases hp with rfl | rfl <;> trivial
-
-theorem cells_tCount (q : Wire) (pairs : List (Wire × Wire)) :
-    ShorECDLP.tCount (cells q pairs) = 7 * pairs.length := by
-  induction pairs with
-  | nil => rfl
-  | cons p pairs ih =>
-    change ShorECDLP.tCount (cell q p.1 p.2 ++ cells q pairs) = _
-    rw [ShorECDLP.tCount_append,ih]
-    change 7 + 7 * pairs.length = 7 * (pairs.length + 1)
-    omega
-
-def sourceWires (pairs : List (Wire × Wire)) : List Wire := pairs.map Prod.snd
-def liveWires (pairs : List (Wire × Wire)) : List Wire := pairs.map Prod.fst
-
-theorem source_live_disjoint (pairs : List (Wire × Wire))
-    (hn : (pairWires pairs).Nodup) : (sourceWires pairs).Disjoint (liveWires pairs) := by
-  induction pairs with
-  | nil => simp [sourceWires]
-  | cons p pairs ih =>
-    change (p.1 :: p.2 :: pairWires pairs).Nodup at hn
-    simp only [List.nodup_cons,List.mem_cons,not_or] at hn
-    have hs (w : Wire) (hw : w ∈ sourceWires pairs ∨ w ∈ liveWires pairs) : w ∈ pairWires pairs := by
-      rcases hw with hw | hw
-      · obtain ⟨r,hr,rfl⟩ := List.mem_map.mp hw
-        exact List.mem_flatMap.mpr ⟨r,hr,by simp⟩
-      · obtain ⟨r,hr,rfl⟩ := List.mem_map.mp hw
-        exact List.mem_flatMap.mpr ⟨r,hr,by simp⟩
-    apply List.disjoint_left.mpr
-    intro w hw hl
-    simp only [sourceWires,liveWires,List.map_cons,List.mem_cons] at hw hl
-    rcases hw with rfl | hw
-    · rcases hl with he | hl
-      · exact hn.1.1 he.symm
-      · exact hn.2.1 (hs p.2 (Or.inr hl))
-    · rcases hl with rfl | hl
-      · exact hn.1.2 (hs p.1 (Or.inl hw))
-      · exact List.disjoint_left.mp (ih hn.2.2) hw hl
-
-theorem cells_clear (q : Wire) (pairs : List (Wire × Wire))
-    (hn : (q :: pairWires pairs).Nodup) (s : BasisState)
-    (hc : ∀ p ∈ pairs, s p.2 = false) :
-    clearRegister (sourceWires pairs) (Classical.run (cells q pairs) s) =
-      if s q then clearRegister (liveWires pairs) s else s := by
-  have hd := source_live_disjoint pairs (List.nodup_cons.mp hn).2
-  have hv := cells_values q pairs hn s hc
+theorem finiteSignFlag_run (sign inf flag : Wire) (hsi : sign ≠ inf)
+    (hsf : sign ≠ flag) (hif : inf ≠ flag) (st : State) (m : List Bool) :
+    run (finiteSignFlag sign inf flag) m st =
+      ⟨st.phase, writeBit st.basis flag (st.basis flag ^^ ((!st.basis sign) && (!st.basis inf)))⟩ := by
+  apply State.extensionality
+  · rfl
   funext w
-  by_cases hs : w ∈ sourceWires pairs
-  · have hl : w ∉ liveWires pairs := fun hm => List.disjoint_left.mp hd hs hm
-    obtain ⟨p,hp,he⟩ := List.mem_map.mp hs
-    have hz : s w = false := he ▸ hc p hp
-    rw [clearRegister_clean _ _ w hs]
-    cases hq : s q <;> simp [hq,MeasuredClear.clearRegister_frame _ _ _ hl,hz]
-  · rw [MeasuredClear.clearRegister_frame _ _ _ hs]
-    by_cases hl : w ∈ liveWires pairs
-    · obtain ⟨p,hp,he⟩ := List.mem_map.mp hl
-      have h := (hv p hp).1
-      rw [he] at h
-      rw [h]
-      cases hq : s q <;> simp [hq,clearRegister_clean _ _ w hl]
-    · have hw : w ∉ pairWires pairs := by
-        intro hw
-        obtain ⟨p,hp,hw⟩ := List.mem_flatMap.mp hw
-        simp only [List.mem_cons,List.mem_nil_iff,or_false] at hw
-        rcases hw with rfl | rfl
-        · exact hl (List.mem_map.mpr ⟨p,hp,rfl⟩)
-        · exact hs (List.mem_map.mpr ⟨p,hp,rfl⟩)
-      rw [cells_frame q pairs s w hw]
-      cases hq : s q <;> simp [hq,MeasuredClear.clearRegister_frame _ _ _ hl]
+  by_cases hw1 : w = sign <;> by_cases hw2 : w = inf <;> by_cases hw3 : w = flag <;>
+    simp_all [finiteSignFlag, run, writeBit, Function.update_apply, Ne.symm hsi, Ne.symm hsf, Ne.symm hif]
+def finiteSignReflection (K : NegLayout) (sign inf flag p : Nat) : Program :=
+  finiteSignFlag sign inf flag ++ K.reflection flag (p+1) ++ finiteSignFlag sign inf flag
 
-theorem first_corner_ledger :
-    8191 - (513 + 1030) = 6648 ∧ 16383 - (513 + 2054) = 13816 ∧
-    11*6648+20*13816 = 349448 ∧
-    297213445 - 4*349448 = 295815653 ∧
-    129900022 - 2*349448 = 129201126 ∧
-    55261274 + 517635208 = 572896482 ∧
-    1636*295815653 = 483954408308 := by norm_num
-
-theorem cells_clear_coherent (q : Wire) (pairs : List (Wire × Wire))
-    (hn : (q :: pairWires pairs).Nodup) (P V : BasisState → Prop)
-    (hc : ∀ s, P s → ∀ p ∈ pairs, s p.2 = false)
-    (clear : AdaptiveCircuit)
-    (hclear : CoherentlyImplementsOn clear
-      (Finsupp.lmapDomain ℂ ℂ (clearRegister (sourceWires pairs))) V)
-    (hv : ∀ s, P s → V (Classical.run (cells q pairs) s)) :
-    CoherentlyImplementsOn ((AdaptiveCircuit.unitary (cells q pairs) .done).seq clear)
-      (Finsupp.lmapDomain ℂ ℂ (fun s => if s q then clearRegister (liveWires pairs) s else s)) P := by
-  have hpre := (CoherentlyImplementsOn.unitary (cells q pairs) P).seq hclear (by
-    intro s hs
-    rw [run_ket_agrees_classical _ _ (cells_classical q pairs)]
-    apply supportedOn_ket
-    exact hv s hs)
-  apply hpre.congrIdeal
-  intro s hs
-  simp only [LinearMap.comp_apply]
-  rw [run_ket_agrees_classical _ _ (cells_classical q pairs)]
-  simp only [ket,Finsupp.lmapDomain_apply,Finsupp.mapDomain_single]
-  rw [cells_clear q pairs hn s (hc s hs)]
-
-theorem extraction_loaded {n : Nat} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → Wire) (root : Wire)
-    (low : Fin 3 → Wire) (tree : UnaryActionTree) (read : ConstantBit n → Bool)
-    (hn : (root :: pairWires (data.map fun p => (live p,p.target))).Nodup)
-    (ha : ∀ w ∈ List.ofFn low ++ tree.indexWires.dedup,
-      w ∉ pairWires (data.map fun p => (live p,p.target)))
-    (s : BasisState) (hc : ∀ p ∈ data, s p.target = false)
-    (hw : ∀ p ∈ data, s root = true → s (live p) =
-      decide (read (p.ref (8*tree.routeLabel s + MeasuredClear.hotAddress low s)) = p.value)) :
-    MeasuredClear.LoadedClear data read low tree root
-      (Classical.run (cells root (data.map fun p => (live p,p.target))) s) := by
-  let pairs := data.map fun p => (live p,p.target)
-  let next := Classical.run (cells root pairs) s
-  have hq : next root = s root := cells_frame root pairs s root (List.nodup_cons.mp hn).1
-  have hlow (i : Fin 3) : next (low i) = s (low i) :=
-    cells_frame root pairs s (low i) (ha _ (List.mem_append_left _ (List.mem_ofFn.mpr ⟨i,rfl⟩)))
-  have ht : tree.routeLabel next = tree.routeLabel s := by
-    apply tree.routeLabel_congr next s
-    intro w hw
-    exact cells_frame root pairs s w (ha _ (List.mem_append_right _ (List.mem_dedup.mpr hw)))
-  have hl : MeasuredClear.hotAddress low next = MeasuredClear.hotAddress low s := by
-    simp only [MeasuredClear.hotAddress,hlow]
-  have hv := cells_values root pairs hn s (by
-    intro p hp
-    change p ∈ data.map (fun port => (live port,port.target)) at hp
-    obtain ⟨port,hport,he⟩ := List.mem_map.mp hp
-    subst p
-    exact hc port hport)
-  intro p hp
-  have hvp := (hv (live p,p.target) (List.mem_map.mpr ⟨p,hp,rfl⟩)).2
-  change next p.target = _ at hvp
-  change next p.target = (next root && decide
-    (read (p.ref (8*tree.routeLabel next + MeasuredClear.hotAddress low next)) = p.value))
-  rw [hvp,hq,ht,hl]
-  cases hbit : s root with
-  | false => simp [hbit]
-  | true => simp [hbit,hw p hp hbit]
-
-def program {n : Nat} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → Wire) (root : Wire)
-    (low : Fin 3 → Wire) (hot : Fin 8 → Wire) (tree : UnaryActionTree)
-    (scratch : Wire) (paths : List Wire) (start : Nat) :=
-  (literalProgram (cells root (data.map fun p => (live p,p.target)))).append
-    (MeasuredClear.measuredClear data low hot tree root scratch paths start)
-
-theorem program_tCount {n : Nat} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → Wire) (root : Wire)
-    (low : Fin 3 → Wire) (hot : Fin 8 → Wire) (tree : UnaryActionTree)
-    (scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
-    (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
-    ((program data live root low hot tree scratch paths start).instantiate read history).tCount =
-      7 * (data.length + tree.internalNodes + 7) := by
-  rw [program,literalProgram_append_tCount,cells_tCount,
-    MeasuredClear.measuredClear_tCount data low hot tree root scratch paths hl]
-  simp only [List.length_map]
-  omega
-
-theorem program_coherent {n : Nat} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → Wire) (root : Wire)
-    (low : Fin 3 → Wire) (hot : Fin 8 → Wire) (tree : UnaryActionTree)
-    (scratch : Wire) (paths : List Wire) (start : Nat) (read : ConstantBit n → Bool)
-    (history : Fin start → Bool)
-    (hn : (root :: pairWires (data.map fun p => (live p,p.target))).Nodup)
-    (P V : BasisState → Prop) (hc : ∀ s, P s → ∀ p ∈ data, s p.target = false)
-    (hclear : CoherentlyImplementsOn
-      ((MeasuredClear.measuredClear data low hot tree root scratch paths start).instantiate read history)
-      (Finsupp.lmapDomain ℂ ℂ (clearRegister (data.map MeasuredClear.ClearPort.target))) V)
-    (hv : ∀ s, P s → V (Classical.run (cells root (data.map fun p => (live p,p.target))) s)) :
-    CoherentlyImplementsOn
-      ((program data live root low hot tree scratch paths start).instantiate read history)
-      (Finsupp.lmapDomain ℂ ℂ (fun s => if s root then
-        clearRegister (data.map live) s else s)) P := by
-  let pairs := data.map fun p => (live p,p.target)
-  have hclean : ∀ s, P s → ∀ p ∈ pairs, s p.2 = false := by
-    intro s hs p hp
-    change p ∈ data.map (fun port => (live port,port.target)) at hp
-    obtain ⟨port,hport,he⟩ := List.mem_map.mp hp
-    subst p
-    exact hc s hs port hport
-  have hclear' : CoherentlyImplementsOn
-      ((MeasuredClear.measuredClear data low hot tree root scratch paths start).instantiate read history)
-      (Finsupp.lmapDomain ℂ ℂ (clearRegister (sourceWires pairs))) V := by
-    simpa only [pairs,sourceWires,List.map_map,Function.comp_def] using hclear
-  have h := cells_clear_coherent root pairs hn P V hclean _ hclear' hv
-  have he (hist : Fin start → Bool) :
-      ((MeasuredClear.measuredClear data low hot tree root scratch paths start).instantiate read hist).run =
-      ((MeasuredClear.measuredClear data low hot tree root scratch paths start).instantiate read history).run := by
-    rw [MeasuredClear.measuredClear_run,MeasuredClear.measuredClear_run]
-  obtain ⟨cs,aligned,mass⟩ := h
-  refine ⟨cs,?_,mass⟩
-  rw [program,append_run_fixed _ _ _ _ _ he,AdaptiveCircuit.run_seq,literalProgram_run]
-  simpa only [AdaptiveCircuit.run_seq,pairs,liveWires,List.map_map,Function.comp_def] using aligned
-
-open ECDSAAdd.Arithmetic ECDSAAdd.Secp256k1 in
-theorem negate_exposes_word (K : WEX.NegLayout) (q : ECDSAAdd.Wire)
-    (r : ECDSAAdd.PointReg) (D : Point)
-    (hk : K.word = r.y) (hn : (K.wires q).Nodup)
-    (hw : K.work.length = K.word.length) (npos : 0 < K.word.length)
-    (hpc : ECDSAAdd.p + SquareReduction.c = 2 ^ K.word.length)
-    (hpoint : (PointAddLayout.pointWires r).Nodup) (hq : q ∉ PointAddLayout.pointWires r)
-    (st : ECDSAAdd.State) (hY : ECDSAAdd.regValue r.y st.basis < ECDSAAdd.p)
+theorem finiteSignReflection_run (K : NegLayout) (sign inf flag p : Nat)
+    (hn : (K.wires flag).Nodup) (hw : K.work.length = K.word.length)
+    (npos : 0 < K.word.length) (hp : p + 1 < 2 ^ K.word.length)
+    (hsi : sign ≠ inf) (hsf : sign ≠ flag) (hif : inf ≠ flag)
+    (hsign : sign ∉ K.word) (hinf : inf ∉ K.word)
+    (st : State) (hflag : st.basis flag = false) (hY : ECDSAAdd.regValue K.word st.basis < p)
     (hwork : ECDSAAdd.regValue K.work st.basis = 0) (hcin : st.basis K.cin = false)
-    (hzero : st.basis K.zero = false)
-    (hcorner : st.basis q = true → ECDSAAdd.Holds.holds st.basis r (-D)) (m : List Bool) :
-    let out := ECDSAAdd.run (K.program q ECDSAAdd.p SquareReduction.c) m st
-    out.phase = st.phase ∧ (out.basis q = true → ECDSAAdd.Holds.holds out.basis r D) ∧
-      ∀ w ∉ r.y, out.basis w = st.basis w := by
-  let out := ECDSAAdd.run (K.program q ECDSAAdd.p SquareReduction.c) m st
-  have hN := K.program_correct q hn hw npos ECDSAAdd.p SquareReduction.c
-    (ECDSAAdd.regValue r.y st.basis) hpc (by norm_num [SquareReduction.c]) hY st m
-    (by rw [hk]) hwork hcin hzero
-  change out.phase = st.phase ∧ _ at hN
-  rw [hk] at hN
-  have hxy := (List.nodup_append'.mp (List.nodup_cons.mp hpoint).2).2.2
-  have hfinite : r.finite ∉ r.y := fun hm =>
-    (List.nodup_cons.mp hpoint).1 (List.mem_append_right _ hm)
-  have hqY : q ∉ r.y := fun hm => hq (by simp [PointAddLayout.pointWires,hm])
-  have hqU : out.basis q = st.basis q := hN.2.2 q hqY
-  have hxU : ECDSAAdd.regValue r.x out.basis = ECDSAAdd.regValue r.x st.basis := by
+    (hzero : st.basis K.zero = false) (m : List Bool) :
+    (run (finiteSignReflection K sign inf flag p) m st).phase = st.phase ∧
+      ECDSAAdd.regValue K.word (run (finiteSignReflection K sign inf flag p) m st).basis =
+        (if st.basis sign then ECDSAAdd.regValue K.word st.basis
+         else if st.basis inf then ECDSAAdd.regValue K.word st.basis
+         else p - ECDSAAdd.regValue K.word st.basis) ∧
+      ∀ w ∉ K.word, (run (finiteSignReflection K sign inf flag p) m st).basis w = st.basis w := by
+  have head := (List.nodup_cons.mp hn).1
+  have fw : flag ∉ K.word := fun h => head (by simp [CompactRecoveryNegateLayout.wires, h])
+  have fp : flag ∉ K.work := fun h => head (by simp [CompactRecoveryNegateLayout.wires, h])
+  have fc : K.cin ≠ flag := by intro h; apply head; simp [CompactRecoveryNegateLayout.wires, h]
+  have fz : K.zero ≠ flag := by intro h; apply head; simp [CompactRecoveryNegateLayout.wires, h]
+  let v : State := ⟨st.phase, writeBit st.basis flag (st.basis flag ^^ ((!st.basis sign) && (!st.basis inf)))⟩
+  let u := run (K.reflection flag (p+1)) m v
+  have vword : ECDSAAdd.regValue K.word v.basis = ECDSAAdd.regValue K.word st.basis :=
+    reg_update_outside _ _ _ _ fw
+  have vn := K.reflection_correct flag hn hw npos (p+1) (ECDSAAdd.regValue K.word st.basis)
+    hp (by omega) v m vword ((reg_update_outside _ _ _ _ fp).trans hwork)
+    (by simpa [v, writeBit, fc] using hcin) (by simpa [v, writeBit, fz] using hzero)
+  have vf : v.basis flag = (!st.basis sign && !st.basis inf) := by simp [v, writeBit, hflag]
+  have vs : v.basis sign = st.basis sign := by simp [v, writeBit, hsf]
+  have vi : v.basis inf = st.basis inf := by simp [v, writeBit, hif]
+  have uf : u.basis flag = (!st.basis sign && !st.basis inf) := (vn.2.2 _ fw).trans vf
+  have us : u.basis sign = st.basis sign := (vn.2.2 _ hsign).trans vs
+  have ui : u.basis inf = st.basis inf := (vn.2.2 _ hinf).trans vi
+  have hwhole : run (finiteSignReflection K sign inf flag p) m st =
+      ⟨u.phase, writeBit u.basis flag (u.basis flag ^^ ((!u.basis sign) && (!u.basis inf)))⟩ := by
+    have hc : measurementCount (finiteSignFlag sign inf flag) = 0 := rfl
+    rw [finiteSignReflection, run_append, run_append]
+    simp only [measurementCount_append, hc, Nat.zero_add, List.take_zero, List.drop_zero, run_take]
+    rw [finiteSignFlag_run sign inf flag hsi hsf hif,
+      finiteSignFlag_run sign inf flag hsi hsf hif]
+  rw [hwhole]
+  refine ⟨vn.1, ?_, ?_⟩
+  · rw [reg_update_outside _ _ _ _ fw, vn.2.1, vf]
+    cases hs : st.basis sign <;> cases hi : st.basis inf <;> simp [hs, hi]
+  · intro w hw
+    by_cases hf : w = flag
+    · subst w
+      simp [writeBit, uf, us, ui, hflag]
+    · have hu := vn.2.2 w hw
+      simpa [v, writeBit, hf] using hu
+
+open ECDSAAdd.Entrant
+
+def finiteSignErase (sign inf flag : Wire) : Program :=
+  [.X sign] ++ chainErase sign inf flag ++ [.X sign]
+
+theorem finiteSignErase_run (sign inf flag : Wire) (hsi : sign ≠ inf)
+    (hsf : sign ≠ flag) (hif : inf ≠ flag) (st : State) (m : List Bool)
+    (hf : st.basis flag = ((!st.basis sign) && (!st.basis inf))) :
+    run (finiteSignErase sign inf flag) m st = ⟨st.phase, writeBit st.basis flag false⟩ := by
+  let v : State := ⟨st.phase, writeBit st.basis sign (!st.basis sign)⟩
+  have hv : v.basis flag = (v.basis sign && !v.basis inf) := by
+    simp [v, writeBit, Ne.symm hsf, Ne.symm hsi, hf]
+  have he := chainErase_run sign inf flag hsi hif hsf v (m.take 1) hv
+  have hc : measurementCount (chainErase sign inf flag) = 1 := rfl
+  rw [finiteSignErase, run_append, run_append]
+  simp only [measurementCount_append, measurementCount, hc, Nat.zero_add, List.take_zero, List.drop_zero]
+  change run [.X sign] (m.drop 1) (run (chainErase sign inf flag) (m.take 1) v) = _
+  rw [he]
+  simp only [run]
+  apply State.extensionality
+  · rfl
+  funext w
+  by_cases hs : w = sign <;> by_cases ht : w = flag <;>
+    simp_all [v, writeBit, Function.update_apply, Ne.symm hsf]
+
+
+def finiteSignMeasured (K : NegLayout) (sign inf flag p : Nat) : Program :=
+  finiteSignFlag sign inf flag ++ K.reflection flag (p+1) ++ finiteSignErase sign inf flag
+
+theorem finiteSignMeasured_run (K : NegLayout) (sign inf flag p : Nat)
+    (hn : (K.wires flag).Nodup) (hw : K.work.length = K.word.length)
+    (npos : 0 < K.word.length) (hp : p + 1 < 2 ^ K.word.length)
+    (hsi : sign ≠ inf) (hsf : sign ≠ flag) (hif : inf ≠ flag)
+    (hsign : sign ∉ K.word) (hinf : inf ∉ K.word)
+    (st : State) (hflag : st.basis flag = false) (hY : ECDSAAdd.regValue K.word st.basis < p)
+    (hwork : ECDSAAdd.regValue K.work st.basis = 0) (hcin : st.basis K.cin = false)
+    (hzero : st.basis K.zero = false) (m : List Bool) :
+    (run (finiteSignMeasured K sign inf flag p) m st).phase = st.phase ∧
+      ECDSAAdd.regValue K.word (run (finiteSignMeasured K sign inf flag p) m st).basis =
+        (if st.basis sign then ECDSAAdd.regValue K.word st.basis
+         else if st.basis inf then ECDSAAdd.regValue K.word st.basis
+         else p - ECDSAAdd.regValue K.word st.basis) ∧
+      ∀ w ∉ K.word, (run (finiteSignMeasured K sign inf flag p) m st).basis w = st.basis w := by
+  have head := (List.nodup_cons.mp hn).1
+  have fw : flag ∉ K.word := fun h => head (by simp [CompactRecoveryNegateLayout.wires, h])
+  have fp : flag ∉ K.work := fun h => head (by simp [CompactRecoveryNegateLayout.wires, h])
+  have fc : K.cin ≠ flag := by intro h; apply head; simp [CompactRecoveryNegateLayout.wires, h]
+  have fz : K.zero ≠ flag := by intro h; apply head; simp [CompactRecoveryNegateLayout.wires, h]
+  let v : State := ⟨st.phase, writeBit st.basis flag (st.basis flag ^^ ((!st.basis sign) && (!st.basis inf)))⟩
+  let u := run (K.reflection flag (p+1)) m v
+  have vword : ECDSAAdd.regValue K.word v.basis = ECDSAAdd.regValue K.word st.basis :=
+    reg_update_outside _ _ _ _ fw
+  have vn := K.reflection_correct flag hn hw npos (p+1) (ECDSAAdd.regValue K.word st.basis)
+    hp (by omega) v m vword ((reg_update_outside _ _ _ _ fp).trans hwork)
+    (by simpa [v, writeBit, fc] using hcin) (by simpa [v, writeBit, fz] using hzero)
+  have vf : v.basis flag = (!st.basis sign && !st.basis inf) := by simp [v, writeBit, hflag]
+  have vs : v.basis sign = st.basis sign := by simp [v, writeBit, hsf]
+  have vi : v.basis inf = st.basis inf := by simp [v, writeBit, hif]
+  have uf : u.basis flag = (!st.basis sign && !st.basis inf) := (vn.2.2 _ fw).trans vf
+  have us : u.basis sign = st.basis sign := (vn.2.2 _ hsign).trans vs
+  have ui : u.basis inf = st.basis inf := (vn.2.2 _ hinf).trans vi
+  have hwhole : run (finiteSignMeasured K sign inf flag p) m st =
+      ⟨u.phase, writeBit u.basis flag false⟩ := by
+    have hc : measurementCount (finiteSignFlag sign inf flag) = 0 := rfl
+    rw [finiteSignMeasured, run_append, run_append]
+    simp only [measurementCount_append, hc, Nat.zero_add, List.take_zero, List.drop_zero, run_take]
+    rw [finiteSignFlag_run sign inf flag hsi hsf hif]
+    change run (finiteSignErase sign inf flag) _ u = _
+    apply finiteSignErase_run sign inf flag hsi hsf hif
+    rw [uf, us, ui]
+  rw [hwhole]
+  refine ⟨vn.1, ?_, ?_⟩
+  · rw [reg_update_outside _ _ _ _ fw, vn.2.1, vf]
+    cases hs : st.basis sign <;> cases hi : st.basis inf <;> simp [hs, hi]
+  · intro w hw
+    by_cases hf : w = flag
+    · subst w
+      simp [writeBit, hflag]
+    · have hu := vn.2.2 w hw
+      simpa [v, writeBit, hf] using hu
+
+open ECDSAAdd.Secp256k1
+
+theorem pointFiniteSignValue (P : ECDSAAdd.Secp256k1.Point) (sign : Bool) :
+    (if sign then pointY P else if !pointFinite P then pointY P else ECDSAAdd.p - pointY P) =
+      (if sign then pointY P else (ECDSAAdd.p - pointY P) % ECDSAAdd.p) := by
+  cases hp : P with
+  | zero => simp [pointY, pointFinite, ECDSAAdd.Secp256k1.coordinates]
+  | @some x y hc =>
+    have hn : pointY (.some hc : ECDSAAdd.Secp256k1.Point) ≠ 0 :=
+      ecdsaPointYNonzero (.some hc) (WeierstrassCurve.Affine.Point.some_ne_zero hc)
+    have hy := (point_coordinates_lt (.some hc : ECDSAAdd.Secp256k1.Point)).2
+    have hlt : ECDSAAdd.p - pointY (.some hc : ECDSAAdd.Secp256k1.Point) < ECDSAAdd.p := by omega
+    simp [pointFinite, ECDSAAdd.Secp256k1.coordinates, Nat.mod_eq_of_lt hlt]
+
+def fastWindowSignProgram : Program := finiteSignMeasured (negateYLayout streamLayout) 870 838
+  streamLayout.core.generic ECDSAAdd.p
+
+attribute [local irreducible] ECDSAAdd.run ECDSAAdd.regValue
+
+open ECDSAAdd.Arithmetic.ControlledPointLayout
+
+theorem fastWindowSignProgram_point (st : State) (P : ECDSAAdd.Secp256k1.Point)
+    (hs : StreamPoint st.basis P) (hc : ECDSAAdd.regValue streamLayout.work st.basis = 0)
+    (m : List Bool) :
+    (run fastWindowSignProgram m st).phase = st.phase ∧
+      StreamPoint (run fastWindowSignProgram m st).basis (if st.basis 870 then P else -P) ∧
+      ∀ w ∉ List.range' 580 256, (run fastWindowSignProgram m st).basis w = st.basis w := by
+  let L := streamLayout
+  let K := negateYLayout L
+  have width := negateYLayout_widths L streamLayout_widths
+  have word : K.word = List.range' 580 256 := by
+    change L.point.y = _
+    rw [streamLayout_point]
+  have genWork : L.core.generic ∈ L.work := one_boundary_work_subset L
+    (List.mem_append_left _ (by simp [inPlaceFlags]))
+  have genFalse : st.basis L.core.generic = false := (regValue_zero _ _).mp hc _ genWork
+  have clean (q : Wire) (hq : q ∈ K.work ++ [K.cin,K.zero]) : st.basis q = false := by
+    change q ∈ (negateYLayout L).work ++ [(negateYLayout L).cin,(negateYLayout L).zero] at hq
+    rw [negateYLayout_pool L streamLayout_widths] at hq
+    exact (regValue_zero _ _).mp hc q (one_boundary_work_subset L
+      (List.mem_append_right _ (List.mem_of_mem_take hq)))
+  have signNe : (870 : Wire) ≠ L.core.generic := by
+    have h := streamWork_lower _ genWork
+    dsimp only [Wire] at *
+    omega
+  have hY : ECDSAAdd.regValue K.word st.basis < ECDSAAdd.p := by
+    rw [word, hs.2.2]
+    exact (point_coordinates_lt P).2
+  have infNe : (838 : Wire) ≠ L.core.generic := by
+    have h := streamWork_lower _ genWork
+    dsimp only [Wire] at *
+    omega
+  have h := finiteSignMeasured_run K 870 838 L.core.generic ECDSAAdd.p
+    (negateYLayout_nodup_generic L streamLayout_widths streamLayout_nodup) width.2
+    (by rw [width.1]; decide) (by rw [width.1]; norm_num [ECDSAAdd.p])
+    (by decide) signNe infNe (by rw [word]; decide +kernel) (by rw [word]; decide +kernel)
+    st genFalse hY ((regValue_zero _ _).mpr (fun q hq => clean q (by simp [hq])))
+    (clean _ (by simp)) (clean _ (by simp)) m
+  change (run fastWindowSignProgram m st).phase = _ ∧ _ at h
+  rw [word] at h
+  have hyOut : ECDSAAdd.regValue (List.range' 580 256) (run fastWindowSignProgram m st).basis =
+      (if st.basis 870 then ECDSAAdd.regValue (List.range' 580 256) st.basis else
+        (ECDSAAdd.p-ECDSAAdd.regValue (List.range' 580 256) st.basis)%ECDSAAdd.p) := by
+    simpa only [hs.1, hs.2.2, pointFiniteSignValue] using h.2.1
+  have hf : (run fastWindowSignProgram m st).basis 838 = st.basis 838 := h.2.2 _ (by decide +kernel)
+  have hx : ECDSAAdd.regValue (List.range' 263 256) (run fastWindowSignProgram m st).basis =
+      ECDSAAdd.regValue (List.range' 263 256) st.basis := by
     apply ECDSAAdd.Arithmetic.regValue_congr
     intro w hw
-    exact hN.2.2 w (List.disjoint_left.mp hxy hw)
-  refine ⟨hN.1,?_,hN.2.2⟩
-  intro hout
-  have hbit : st.basis q = true := hqU.symm.trans hout
-  have hp := (point_holds _ _ _).mp (hcorner hbit)
-  apply (point_holds _ _ _).mpr
-  refine ⟨?_,?_,?_⟩
-  · rw [hN.2.2 _ hfinite,hp.1,ECDSAAdd.ShorPort.pointFinite_neg]
-  · rw [hxU,hp.2.1,ECDSAAdd.ShorPort.pointX_neg]
-  · rw [hN.2.1,hbit,hp.2.2]
-    simpa using WEX.pointY_neg_twice_mod D
-
-open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout
-open ECDSAAdd.Secp256k1 ECDSAAdd.ShorPort ECDSAAdd.Arithmetic.CompressedPointDialog
-open WEX WEXUnlookup ECDSAAdd.Entrant
-local instance : DecidableEq ECDSAAdd.Secp256k1.Point := Classical.typeDecidableEq _
-
-def preGenericCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : Code n :=
-  [.plain (fusedPrefixCode L rows)] ++ WEXUnlookup.generic L rows
-
-theorem preGeneric_boundary {n} (read : CBit n → Bool) (L : ControlledPointLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) (rows : Nat → Fin n) (address : Nat)
-    (R : ECDSAAdd.Secp256k1.Point) {cx cy : ECDSAAdd.Fp}
-    (hc : curve.toAffine.Nonsingular cx cy) (hr : RowReads read (rows address) (.some hc))
-    (h₁ : cy ≠ -cy) (h₂ : exceptionBit (.some hc) = true)
-    (hD : (.some hc : ECDSAAdd.Secp256k1.Point)+.some hc ≠ 0)
-    (hDo : ShorECDLP.order • ((.some hc : ECDSAAdd.Secp256k1.Point)+.some hc) = 0) (b : Bool) :
-    Triple (PointDialogBoundary L R b (fun _=>false))
-      (reference read address (preGenericCode L rows))
-      (PointDialogBoundary L (if dialogOrdinary b R (.some hc) then R+.some hc else R)
-        b (flags L R (.some hc) b cy)) := by
-  classical
-  have hop := row_opposite read rows address hc hr h₁
-  have he := prefixCode_equiv read L hw hn rows address hop
-  have hp : Triple (PointDialogBoundary L R b (fun _=>false))
-      ((specialize (prefixCode L rows) address).instantiate read)
-      (PointDialogBoundary L R b (flags L R (.some hc) b cy)) := by
-    intro st m hs
-    rw [← he.2 m st,referencePrefix_inst read L hw rows address hc hr h₁ h₂ hD hDo]
-    exact prefixS_checked L hw hn R hc b st m hs
-  have hread := dialogFlagState_read L hn (dialogInfinity b R) (dialogDouble b R (.some hc))
-    (dialogInversePoint b R (.some hc)) (dialogOrdinary b R (.some hc))
-    (b && decide (dialogExceptionEnabled (.some hc))) (dialogException b R (.some hc))
-    (b && decide (cy≠-cy))
-  have hf : flags L R (.some hc) b cy L.core.generic = dialogOrdinary b R (.some hc) :=
-    hread.2.2.2.1
-  have hg := Arith.boundary_genericS L hw hn R b (flags L R (.some hc) b cy) hc (by
-    intro hg
-    rw [hf] at hg
-    exact ((dialogOrdinary_true b R (.some hc) (WeierstrassCurve.Affine.Point.some_ne_zero hc)).mp hg).2)
-  have hgen : Triple (PointDialogBoundary L R b (flags L R (.some hc) b cy))
-      (reference read address (WEXUnlookup.generic L rows))
-      (PointDialogBoundary L (if dialogOrdinary b R (.some hc) then R+.some hc else R)
-        b (flags L R (.some hc) b cy)) := by
-    rw [reference,erase_generic,specialize_generic,Arith.genericT_inst L hc hr]
-    simpa only [hf] using hg
-  have h := hp.seq hgen
-  unfold preGenericCode
-  rw [reference_append]
-  simpa only [reference,erase_plain,specialize_fusedPrefix] using h
-
-theorem exception_word (L : ControlledPointLayout) (R C : ECDSAAdd.Secp256k1.Point)
-    (hC : C ≠ 0) (b : Bool) (f : BasisState) (st : ECDSAAdd.State)
-    (hf : f L.core.equalNegY = dialogException b R C)
-    (hs : PointDialogBoundary L (if dialogOrdinary b R C then R+C else R) b f st.basis) :
-    st.basis L.core.equalNegY = true → Holds.holds st.basis L.point (-(C+C)) := by
-  intro hbit
-  have hH : dialogException b R C = true :=
-    hf.symm.trans ((hs.flags _ (by simp [inPlaceFlags])).symm.trans hbit)
-  have hR : R = dialogExceptionPoint C := by
-    simp only [dialogException,Bool.and_eq_true,decide_eq_true_eq] at hH
-    exact hH.2
-  have hG : dialogOrdinary b R C = false := by
-    apply Bool.eq_false_iff.mpr
-    intro hg
-    exact ((dialogOrdinary_true b R C hC).mp hg).2.2.2.2 hR
-  have hp := hs.point
-  rw [hG] at hp
-  simpa only [Bool.false_eq_true,if_false,hR,dialogExceptionPoint] using hp
-
-theorem prepare_exception_word (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
-    (R C : ECDSAAdd.Secp256k1.Point) (hC : C ≠ 0) (b : Bool) (f : BasisState)
-    (hf : f L.core.equalNegY = dialogException b R C) :
-    Triple (PointDialogBoundary L (if dialogOrdinary b R C then R+C else R) b f)
-      ((negateYLayout L).program L.core.equalNegY ECDSAAdd.p SquareReduction.c)
-      (fun s => ShorECDLP.Clean L.dialogPool s ∧
-        (s L.core.equalNegY = true → Holds.holds s L.point (C+C))) := by
-  intro st m hs
-  let K := negateYLayout L
-  have widths := negateYLayout_widths L hw
-  have hpool (q : ECDSAAdd.Wire) (hq : q ∈ K.work ++ [K.cin,K.zero]) : st.basis q = false := by
-    change q ∈ (negateYLayout L).work ++ [(negateYLayout L).cin,(negateYLayout L).zero] at hq
-    rw [negateYLayout_pool L hw] at hq
-    exact (regValue_zero _ _).mp hs.clean q (List.mem_of_mem_take hq)
-  have hpoint : (PointAddLayout.pointWires L.point).Nodup :=
-    (L.dialogUsed_nodup hn).of_append_left.of_append_left.of_append_left
-  have haway : L.core.equalNegY ∉ PointAddLayout.pointWires L.point := by
-    intro bad
-    have count := List.nodup_iff_count.mp (L.dialogUsed_nodup hn) L.core.equalNegY
-    have hp := List.count_pos_iff.mpr bad
-    have hf := List.count_pos_iff.mpr (show L.core.equalNegY ∈ L.inPlaceFlags by simp [inPlaceFlags])
-    simp only [dialogUsedWires,List.count_append] at count
+    apply h.2.2 w
+    simp only [List.mem_range'_1] at hw ⊢
+    dsimp only [Wire] at *
     omega
-  have hY : ECDSAAdd.regValue L.point.y st.basis < ECDSAAdd.p := by
-    rw [((point_holds _ _ _).mp hs.point).2.2]
-    exact (point_coordinates_lt _).2
-  have h := negate_exposes_word K L.core.equalNegY L.point (C+C) rfl
-    (negateYLayout_nodup L hw hn) widths.2 (by rw [widths.1]; decide)
-    (by rw [widths.1]; norm_num [ECDSAAdd.p,SquareReduction.c]) hpoint haway st hY
-    ((regValue_zero _ _).mpr (fun q hq => hpool q (by simp [hq])))
-    (hpool _ (by simp)) (hpool _ (by simp)) (exception_word L R C hC b f st hf hs) m
-  refine ⟨h.1,?_,h.2.1⟩
-  intro q hq
-  have hqy : q ∉ L.point.y := by
-    intro bad
-    have count := List.nodup_iff_count.mp (L.dialogUsed_nodup hn) q
-    have hp := List.count_pos_iff.mpr (show q ∈ PointAddLayout.pointWires L.point by
-      simp [PointAddLayout.pointWires,bad])
-    have hc := List.count_pos_iff.mpr hq
-    simp only [dialogUsedWires,List.count_append] at count
-    omega
-  rw [h.2.2 q hqy]
-  exact (regValue_zero _ _).mp hs.clean q hq
-
-theorem pairWires_nodup (pairs : List (Wire × Wire))
-    (hl : (liveWires pairs).Nodup) (hs : (sourceWires pairs).Nodup)
-    (hd : (liveWires pairs).Disjoint (sourceWires pairs)) : (pairWires pairs).Nodup := by
-  induction pairs with
-  | nil => exact List.nodup_nil
-  | cons p pairs ih =>
-    change (p.1 :: liveWires pairs).Nodup at hl
-    change (p.2 :: sourceWires pairs).Nodup at hs
-    have hcross (w : Wire) (h₁ : w ∈ p.1 :: liveWires pairs)
-        (h₂ : w ∈ p.2 :: sourceWires pairs) : False := List.disjoint_left.mp hd h₁ h₂
-    have htail : (liveWires pairs).Disjoint (sourceWires pairs) := List.disjoint_left.mpr
-      (fun w h₁ h₂ => hcross w (by simp [h₁]) (by simp [h₂]))
-    have hflat (w : Wire) (hw : w ∈ pairWires pairs) :
-        w ∈ liveWires pairs ∨ w ∈ sourceWires pairs := by
-      obtain ⟨r,hr,he⟩ := List.mem_flatMap.mp hw
-      simp only [List.mem_cons,List.mem_nil_iff,or_false] at he
-      rcases he with rfl | rfl
-      · exact Or.inl (List.mem_map.mpr ⟨r,hr,rfl⟩)
-      · exact Or.inr (List.mem_map.mpr ⟨r,hr,rfl⟩)
-    change (p.1 :: p.2 :: pairWires pairs).Nodup
-    simp only [List.nodup_cons,List.mem_cons,not_or]
-    refine ⟨⟨?_,?_⟩,?_,ih (List.nodup_cons.mp hl).2 (List.nodup_cons.mp hs).2 htail⟩
-    · intro he; exact hcross p.1 (by simp) (by simp [he])
-    · intro hm
-      rcases hflat p.1 hm with hm | hm
-      · exact (List.nodup_cons.mp hl).1 hm
-      · exact hcross p.1 (by simp) (by simp [hm])
-    · intro hm
-      rcases hflat p.2 hm with hm | hm
-      · exact hcross p.2 (by simp [hm]) (by simp)
-      · exact (List.nodup_cons.mp hs).1 hm
-
-def sourceWire (w : Wire) : Wire :=
-  if w = 838 then 14115 else if w = 14115 then 838
-  else if 263 ≤ w ∧ w < 519 then w+13853
-  else if 14116 ≤ w ∧ w < 14372 then w-13853
-  else if 580 ≤ w ∧ w < 836 then w+13792
-  else if 14372 ≤ w ∧ w < 14628 then w-13792 else w
-
-theorem sourceWire_involutive : Function.Involutive sourceWire := by
-  intro w
-  by_cases h0 : w = 838
-  · subst w; rfl
-  by_cases h1 : w = 14115
-  · subst w; rfl
-  by_cases h2 : 263 ≤ w ∧ w < 519
-  · have hv : sourceWire w = w+13853 := by simp only [sourceWire,if_neg h0,if_neg h1,if_pos h2]
-    rw [hv]
-    unfold sourceWire
-    split_ifs <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-  by_cases h3 : 14116 ≤ w ∧ w < 14372
-  · have hv : sourceWire w = w-13853 := by simp only [sourceWire,if_neg h0,if_neg h1,if_neg h2,if_pos h3]
-    rw [hv]
-    unfold sourceWire
-    split_ifs <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-  by_cases h4 : 580 ≤ w ∧ w < 836
-  · have hv : sourceWire w = w+13792 := by simp only [sourceWire,if_neg h0,if_neg h1,if_neg h2,if_neg h3,if_pos h4]
-    rw [hv]
-    unfold sourceWire
-    split_ifs <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-  by_cases h5 : 14372 ≤ w ∧ w < 14628
-  · have hv : sourceWire w = w-13792 := by simp only [sourceWire,if_neg h0,if_neg h1,if_neg h2,if_neg h3,if_neg h4,if_pos h5]
-    rw [hv]
-    unfold sourceWire
-    split_ifs <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-  have hv : sourceWire w = w := by simp only [sourceWire,if_neg h0,if_neg h1,if_neg h2,if_neg h3,if_neg h4,if_neg h5]
-  rw [hv,hv]
-
-def sourcePerm : Wire ≃ Wire :=
-  ⟨sourceWire,sourceWire,sourceWire_involutive,sourceWire_involutive⟩
-
-def cornerPorts {n} (rows : Nat → Fin n) : List (LookupPort n) :=
-  ⟨wBit rows .doubleInfinity,false,streamLayout.point.finite⟩ ::
-    indexedPorts streamLayout.point.x (wFields rows .doubleX) true ++
-    indexedPorts streamLayout.point.y (wFields rows .doubleY) true
-
-def cornerData {n} (rows : Nat → Fin n) : List (MeasuredClear.ClearPort n) :=
-  (cornerPorts rows).map fun p => ⟨p.ref,p.value,sourcePerm p.target⟩
-
-def cornerLive {n} (p : MeasuredClear.ClearPort n) : Wire := sourcePerm.symm p.target
-
-theorem cornerTargets {n} (rows : Nat → Fin n) : portTargets (cornerPorts rows) =
-    PointAddLayout.pointWires streamLayout.point := by
-  simp only [cornerPorts,portTargets,List.map_cons,List.map_append]
-  change streamLayout.point.finite ::
-    (portTargets (indexedPorts streamLayout.point.x (wFields rows .doubleX) true) ++
-      portTargets (indexedPorts streamLayout.point.y (wFields rows .doubleY) true)) = _
-  rw [indexed_targets,indexed_targets]
-  rfl
-
-theorem corner_length {n} (rows : Nat → Fin n) : (cornerData rows).length = 513 := by
-  have h := congrArg List.length (cornerTargets rows)
-  simp only [portTargets,List.length_map] at h
-  rw [cornerData,List.length_map,h]
-  simp [PointAddLayout.pointWires,streamLayout_point]
+  refine ⟨h.1, ?_, h.2.2⟩
+  by_cases hsign : st.basis 870 = true
+  · simp only [hsign, if_true]
+    refine ⟨hf.trans hs.1, hx.trans hs.2.1, ?_⟩
+    have hyEq : ECDSAAdd.regValue (List.range' 580 256) (run fastWindowSignProgram m st).basis =
+        ECDSAAdd.regValue (List.range' 580 256) st.basis := by simpa [hsign] using hyOut
+    exact hyEq.trans hs.2.2
+  · have hfalse : st.basis 870 = false := Bool.eq_false_iff.mpr hsign
+    simp only [hfalse, Bool.false_eq_true, if_false]
+    refine ⟨?_, ?_, ?_⟩
+    · simpa only [ECDSAAdd.ShorPort.pointFinite_neg] using hf.trans hs.1
+    · simpa only [ECDSAAdd.ShorPort.pointX_neg] using hx.trans hs.2.1
+    · have hyEq : ECDSAAdd.regValue (List.range' 580 256) (run fastWindowSignProgram m st).basis =
+          (ECDSAAdd.p-pointY P)%ECDSAAdd.p := by simpa [hfalse, hs.2.2] using hyOut
+      exact hyEq.trans (pointY_neg_mod P).symm
 
 
+theorem finiteSignReflection_counts (K : NegLayout) (sign inf flag p : Nat)
+    (hw : K.work.length = K.word.length) (hn : K.word.length = 256) :
+    ECDSAAdd.toffoliCount (finiteSignReflection K sign inf flag p) = 257 ∧
+      ECDSAAdd.measurementCount (finiteSignReflection K sign inf flag p) = 255 := by
+  have h := K.reflection_counts flag (p+1) hw (by omega)
+  simp [finiteSignReflection, finiteSignFlag, toffoliCount_append, measurementCount_append,
+    toffoliCount, measurementCount, h.1, h.2, hn]
 
-theorem corner_live_targets {n} (rows : Nat → Fin n) :
-    (cornerData rows).map cornerLive = portTargets (cornerPorts rows) := by
-  simp [cornerData,cornerLive,portTargets,List.map_map,Function.comp_def]
+theorem finiteSignMeasured_counts (K : NegLayout) (sign inf flag p : Nat)
+    (hw : K.work.length = K.word.length) (hn : K.word.length = 256) :
+    ECDSAAdd.toffoliCount (finiteSignMeasured K sign inf flag p) = 256 ∧
+      ECDSAAdd.measurementCount (finiteSignMeasured K sign inf flag p) = 256 := by
+  have h := K.reflection_counts flag (p+1) hw (by omega)
+  simp [finiteSignMeasured, finiteSignFlag, finiteSignErase, chainErase,
+    toffoliCount_append, measurementCount_append, toffoliCount, measurementCount, h.1, h.2, hn]
 
-theorem corner_source_targets {n} (rows : Nat → Fin n) :
-    (cornerData rows).map MeasuredClear.ClearPort.target =
-      (portTargets (cornerPorts rows)).map sourcePerm := by
-  simp [cornerData,portTargets,List.map_map,Function.comp_def]
+theorem fastWindowSign_counts : ECDSAAdd.toffoliCount fastWindowSignProgram = 256 ∧
+    ECDSAAdd.measurementCount fastWindowSignProgram = 256 := by
+  have width := negateYLayout_widths streamLayout streamLayout_widths
+  exact finiteSignMeasured_counts (negateYLayout streamLayout) 870 838 streamLayout.core.generic
+    ECDSAAdd.p width.2 width.1
 
-theorem corner_point_nd {n} (rows : Nat → Fin n) :
-    (portTargets (cornerPorts rows)).Nodup := by
-  rw [cornerTargets]
-  exact (streamLayout.dialogUsed_nodup streamLayout_nodup).of_append_left.of_append_left.of_append_left
-
-theorem corner_source_nd {n} (rows : Nat → Fin n) :
-    ((cornerData rows).map MeasuredClear.ClearPort.target).Nodup := by
-  rw [corner_source_targets]
-  exact (corner_point_nd rows).map sourcePerm.injective
-
-theorem corner_source_bounds {n} (rows : Nat → Fin n) (p : MeasuredClear.ClearPort n)
-    (hp : p ∈ cornerData rows) : 14115 ≤ p.target ∧ p.target < 14628 := by
-  obtain ⟨port,hport,rfl⟩ := List.mem_map.mp hp
-  have ht : port.target ∈ PointAddLayout.pointWires streamLayout.point :=
-    cornerTargets rows ▸ List.mem_map.mpr ⟨port,hport,rfl⟩
-  simp only [PointAddLayout.pointWires,streamLayout_point,List.mem_cons,List.mem_append,List.mem_range'_1] at ht
-  change 14115 ≤ sourceWire port.target ∧ sourceWire port.target < 14628
-  unfold sourceWire
-  split_ifs <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-
-theorem corner_source_in_pool {n} (rows : Nat → Fin n) (p : MeasuredClear.ClearPort n)
-    (hp : p ∈ cornerData rows) : p.target ∈ streamLayout.dialogPool := by
-  have h := corner_source_bounds rows p hp
-  have hi : p.target-14115 < 2613 := by dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *; omega
-  have hi' : p.target-14115 < 5699 := by dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *; omega
-  have he : streamLayout.core.poolWire (p.target-14115) = p.target := by
-    rw [streamPool_at _ hi']
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  rw [← he]
-  exact ECDSAAdd.Frontier.Square5Placement.pool_member streamLayout streamLayout_widths _ hi
-
-theorem corner_pairs_nd {n} (rows : Nat → Fin n) :
-    (streamLayout.core.equalNegY :: pairWires ((cornerData rows).map fun p => (cornerLive p,p.target))).Nodup := by
-  let pairs := (cornerData rows).map fun p => (cornerLive p,p.target)
-  have hl : liveWires pairs = PointAddLayout.pointWires streamLayout.point := by
-    simp only [pairs,liveWires,List.map_map,Function.comp_def]
-    exact (corner_live_targets rows).trans (cornerTargets rows)
-  have hs : sourceWires pairs = (cornerData rows).map MeasuredClear.ClearPort.target := by
-    simp only [pairs,sourceWires,List.map_map,Function.comp_def]
-  have hdis : (liveWires pairs).Disjoint (sourceWires pairs) := by
-    apply List.disjoint_left.mpr
-    intro w hw hsource
-    rw [hl] at hw
-    rw [hs] at hsource
-    obtain ⟨p,hp,he⟩ := List.mem_map.mp hsource
-    have hb := corner_source_bounds rows p hp
-    rw [he] at hb
-    simp only [PointAddLayout.pointWires,streamLayout_point,List.mem_cons,List.mem_append,List.mem_range'_1] at hw
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  apply List.nodup_cons.mpr
-  constructor
-  · intro hm
-    obtain ⟨p,hp,he⟩ := List.mem_flatMap.mp hm
-    simp only [List.mem_cons,List.mem_nil_iff,or_false] at he
-    have hlo : p.1 ∈ liveWires pairs := List.mem_map.mpr ⟨p,hp,rfl⟩
-    have hso : p.2 ∈ sourceWires pairs := List.mem_map.mpr ⟨p,hp,rfl⟩
-    rw [hl] at hlo
-    rw [hs] at hso
-    obtain ⟨port,hport,hte⟩ := List.mem_map.mp hso
-    have hb := corner_source_bounds rows port hport
-    rw [hte] at hb
-    have hroot : streamLayout.core.equalNegY = 14112 := by decide +kernel
-    rw [hroot] at he
-    simp only [PointAddLayout.pointWires,streamLayout_point,List.mem_cons,List.mem_append,List.mem_range'_1] at hlo
-    dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    rcases he with he | he <;> omega
-  · apply pairWires_nodup pairs
-    · rw [hl]
-      exact (streamLayout.dialogUsed_nodup streamLayout_nodup).of_append_left.of_append_left.of_append_left
-    · rw [hs]; exact corner_source_nd rows
-    · exact hdis
-
-theorem indexed_origin {n} (ws : List Wire) (refs : Nat → Nat → ConstantBit n)
-    (value : Bool) (p : LookupPort n) (hp : p ∈ indexedPorts ws refs value) :
-    ∃ i, i < ws.length ∧ p.target = ws.getD i 0 ∧ p.value = value ∧
-      ∀ a, p.ref a = refs a i := by
-  induction ws generalizing refs with
-  | nil => simp [indexedPorts] at hp
-  | cons w ws ih =>
-    rcases List.mem_cons.mp hp with he | ht
-    · subst p
-      exact ⟨0,by simp,rfl,rfl,fun _=>rfl⟩
-    · obtain ⟨i,hi,hw,hv,hr⟩ := ih _ ht
-      exact ⟨i+1,by simp;omega,by simpa only [List.getD_cons_succ] using hw,hv,hr⟩
-
-theorem regValue_testBit (ws : List Wire) (s : BasisState) (k i : Nat)
-    (hi : i < ws.length) (hk : ECDSAAdd.regValue ws s = k) :
-    s (ws.getD i 0) = k.testBit i := by
-  have e := ECDSAAdd.Arithmetic.regValue_bit ws i 0 s hi
-  rw [hk] at e
-  rw [Nat.testBit_eq_decide_div_mod_eq]
-  generalize s (ws.getD i 0) = v at e ⊢
-  have h2 : k / 2^i % 2 < 2 := Nat.mod_lt _ (by norm_num)
-  cases v
-  · simp only [Bool.toNat_false] at e
-    simp only [Bool.false_eq,decide_eq_false_iff_not]
-    omega
-  · simp only [Bool.toNat_true] at e
-    simp only [Bool.true_eq,decide_eq_true_eq]
-    omega
-
-theorem indexed_values {n} (ws : List Wire) (refs : Nat → Nat → ConstantBit n)
-    (read : ConstantBit n → Bool) (a : Nat) (s : BasisState) (k : Nat)
-    (hk : ECDSAAdd.regValue ws s = k)
-    (hr : ∀ i < ws.length, read (refs a i) = k.testBit i) :
-    ∀ p ∈ indexedPorts ws refs true, s p.target = decide (read (p.ref a) = p.value) := by
-  intro p hp
-  obtain ⟨i,hi,ht,hv,href⟩ := indexed_origin ws refs true p hp
-  rw [ht,hv,href a,hr i hi]
-  simpa using regValue_testBit ws s k i hi hk
-
-theorem corner_port_values {n} (rows : Nat → Fin n) (read : CBit n → Bool)
-    (a : Nat) (C : ECDSAAdd.Secp256k1.Point) (hr : RowReads read (rows a) C)
-    (s : BasisState) (hp : Holds.holds s streamLayout.point (C+C)) :
-    ∀ p ∈ cornerPorts rows, s p.target = decide (read (p.ref a) = p.value) := by
-  have pt := (point_holds _ _ _).mp hp
-  have fD : read (bitRef (rows a) .doubleInfinity 0) = !pointFinite (C+C) := by
-    rw [hr.bit _ 0 (by decide),ECDSAAdd.ShorPort.doubleInfinity_bit]
-  have xD := fieldBits_reads hr .doubleX _ (field_doubleX C)
-  have yD := fieldBits_reads hr .doubleY _ (field_doubleY C)
-  intro p hp
-  simp only [cornerPorts,List.mem_cons,List.mem_append] at hp
-  rcases hp with (rfl | hx) | hy
-  · change s streamLayout.point.finite = decide (read (bitRef (rows a) .doubleInfinity 0) = false)
-    rw [pt.1,fD]
-    cases pointFinite (C+C) <;> rfl
-  · apply indexed_values streamLayout.point.x (wFields rows .doubleX) read a s (pointX (C+C)) pt.2.1 _ p hx
-    intro i hi
-    exact xD i (by rwa [show streamLayout.point.x.length = 256 from streamLayout_widths.inputX] at hi)
-  · apply indexed_values streamLayout.point.y (wFields rows .doubleY) read a s (pointY (C+C)) pt.2.2 _ p hy
-    intro i hi
-    exact yD i (by rwa [show streamLayout.point.y.length = 256 from streamLayout_widths.inputY] at hi)
-
-theorem corner_data_values {n} (rows : Nat → Fin n) (read : CBit n → Bool)
-    (a : Nat) (C : ECDSAAdd.Secp256k1.Point) (hr : RowReads read (rows a) C)
-    (s : BasisState) (hp : Holds.holds s streamLayout.point (C+C)) :
-    ∀ p ∈ cornerData rows, s (cornerLive p) = decide (read (p.ref a) = p.value) := by
-  intro p hport
-  change p ∈ (cornerPorts rows).map (fun port => (⟨port.ref,port.value,sourcePerm port.target⟩ : MeasuredClear.ClearPort n)) at hport
-  obtain ⟨port,horig,he⟩ : ∃ port ∈ cornerPorts rows,
-      (⟨port.ref,port.value,sourcePerm port.target⟩ : MeasuredClear.ClearPort n) = p := List.mem_map.mp hport
-  rw [← he]
-  simpa [cornerLive] using corner_port_values rows read a C hr s hp port horig
-
-theorem controlledClear_eq_unload {n} (read : ConstantBit n → Bool) (ps : List (LookupPort n))
-    (a : Nat) (q : ShorECDLP.Wire) (s : BasisState) (hn : (portTargets ps).Nodup)
-    (hw : ∀ p ∈ ps, s q = true → s p.target = decide (read (p.ref a) = p.value)) :
-    (if s q then clearRegister (portTargets ps) s else s) =
-      tableXorState (portMask read ps a) (s q) s := by
-  cases hq : s q with
-  | false => simp [hq,tableXorState_false]
-  | true =>
-    simp only [if_true]
-    have hc : ShorECDLP.Clean (portTargets ps) (tableXorState (portMask read ps a) (s q) s) := by
-      intro w hmem
-      obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hmem
-      simp only [tableXorState,port_selected read ps a hn p hp,hw p hp hq,hq]
-      cases read (p.ref a) <;> cases p.value <;> rfl
-    simpa only [hq] using clear_eq_unload read ps a q s hc
-
-def beforeCode : Code 32768 :=
-  [.plain (wLiteral [.X 838])] ++ preGenericCode streamLayout probeRows ++
-    [.plain (wLiteral ((negateYLayout streamLayout).program streamLayout.core.equalNegY
-      ECDSAAdd.p SquareReduction.c))]
-
-def afterCode : WCode 32768 := (suffixCode streamLayout probeRows).drop 2 ++ wLiteral [.X 838]
-
-def oldCorner : WCode 32768 := [.lookup (some streamLayout.core.equalNegY) (cornerPorts probeRows)]
-
-theorem suffix_split {n} (rows : Nat → Fin n) :
-    suffixCode streamLayout rows =
-      wLiteral ((negateYLayout streamLayout).program streamLayout.core.equalNegY ECDSAAdd.p SquareReduction.c) ++
-      [.lookup (some streamLayout.core.equalNegY) (cornerPorts rows)] ++
-      (suffixCode streamLayout rows).drop 2 := by
-  rfl
-
-theorem split_reference : erase WEXUnlookup.row = erase beforeCode ++ oldCorner ++ afterCode := by
-  simp only [WEXUnlookup.row,fusedFinite,erase_append,erase_plain]
-  rw [suffix_split probeRows]
-  simp only [beforeCode,preGenericCode,erase_append,erase_plain,oldCorner,afterCode,List.append_assoc]
-
-def high (wide : Bool) : List ShorECDLP.Wire :=
-  if wide then WEXUnlookupWidth14.high else WEXUnlookupWidth13.high
-
-def highPaths (wide : Bool) : List ShorECDLP.Wire :=
-  if wide then WEXUnlookupWidth14.highPaths else WEXUnlookupWidth13.highPaths
-
-def bits (wide : Bool) : List ShorECDLP.Wire :=
-  if wide then WEXUnlookupWidth14.bits else WEXUnlookupWidth13.bits
-
-def hot (i : Fin 8) : ShorECDLP.Wire := 14116+i.val
-
-theorem high_index (wide : Bool) :
-    (tableAddressTree (high wide) 0 1).indexWires.dedup = high wide := by
-  apply tableAddressTree_index
-  cases wide <;> exact List.nodup_range'
-
-theorem high_layout (wide : Bool) :
-    (tableAddressTree (high wide) 0 1).Layout streamLayout.core.equalNegY (highPaths wide) := by
-  apply tableAddressTree_layout
-  · cases wide <;> decide +kernel
-  · have hroot : streamLayout.core.equalNegY = 14112 := by decide +kernel
-    rw [hroot]
-    cases wide <;> decide +kernel
-
-theorem decoder_bounds (wide : Bool) (w : ShorECDLP.Wire)
-    (hw : w ∈ streamLayout.core.equalNegY :: List.ofFn WEXUnlookup.low ++
-      (tableAddressTree (high wide) 0 1).indexWires.dedup ++ highPaths wide) :
-    855 ≤ w ∧ w < 14115 := by
-  have hroot : streamLayout.core.equalNegY = 14112 := by decide +kernel
-  have hlow : List.ofFn WEXUnlookup.low = [855,856,857] := by decide +kernel
-  rw [hroot,hlow,high_index] at hw
-  cases wide <;>
-    simp only [high,highPaths,Bool.false_eq_true,if_false,if_true,WEXUnlookupWidth13.high,
-      WEXUnlookupWidth14.high,WEXUnlookupWidth13.highPaths,WEXUnlookupWidth14.highPaths,
-      List.mem_cons,List.mem_append,List.mem_nil_iff,or_false,List.mem_range'_1] at hw <;>
-    dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-
-theorem address_split (wide : Bool) (s : BasisState) :
-    8*(tableAddressTree (high wide) 0 1).routeLabel s + MeasuredClear.hotAddress WEXUnlookup.low s =
-      tableAddressValue (bits wide) s := by
-  cases wide
-  · exact WEXUnlookupWidth13.splitAddress s
-  · exact WEXUnlookupWidth14.splitAddress s
-
-theorem hot_in_source {n} (rows : Nat → Fin n) (i : Fin 8) :
-    hot i ∈ (cornerData rows).map MeasuredClear.ClearPort.target := by
-  rw [corner_source_targets,cornerTargets]
-  apply List.mem_map.mpr
-  refine ⟨263+i.val,?_,?_⟩
-  · simp only [PointAddLayout.pointWires,streamLayout_point,List.mem_cons,List.mem_append,List.mem_range'_1]
-    left; right
-    have h := i.isLt
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  · change sourceWire (263+i.val) = 14116+i.val
-    have h := i.isLt
-    unfold sourceWire
-    split_ifs <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-
-theorem decoder_pair_away {n} (rows : Nat → Fin n) (wide : Bool) (w : ShorECDLP.Wire)
-    (hw : w ∈ streamLayout.core.equalNegY :: List.ofFn WEXUnlookup.low ++
-      (tableAddressTree (high wide) 0 1).indexWires.dedup ++ highPaths wide) :
-    w ∉ pairWires ((cornerData rows).map fun p => (cornerLive p,p.target)) := by
-  have hbounds := decoder_bounds wide w hw
-  intro hm
-  obtain ⟨pair,hpair,hm⟩ := List.mem_flatMap.mp hm
-  obtain ⟨p,hp,he⟩ : ∃ p ∈ cornerData rows, (cornerLive p,p.target) = pair := List.mem_map.mp hpair
-  subst pair
-  simp only [List.mem_cons,List.mem_nil_iff,or_false] at hm
-  rcases hm with hm | hm
-  · have ht : cornerLive p ∈ PointAddLayout.pointWires streamLayout.point := by
-      rw [← cornerTargets rows,← corner_live_targets rows]
-      exact List.mem_map.mpr ⟨p,hp,rfl⟩
-    rw [← hm] at ht
-    simp only [PointAddLayout.pointWires,streamLayout_point,List.mem_cons,List.mem_append,List.mem_range'_1] at ht
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  · have hs := corner_source_bounds rows p hp
-    rw [← hm] at hs
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-
-def Ready {n} (rows : Nat → Fin n) (read : ConstantBit n → Bool) (wide : Bool)
-    (s : BasisState) : Prop :=
-  ShorECDLP.Clean streamLayout.dialogPool s ∧ ShorECDLP.Clean WEX.windowPaths s ∧
-    ∀ p ∈ cornerPorts rows, s streamLayout.core.equalNegY = true → s p.target =
-      decide (read (p.ref (tableAddressValue (bits wide) s)) = p.value)
-
-def cornerProgram {n} (rows : Nat → Fin n) (wide : Bool) (start : Nat) :=
-  program (cornerData rows) cornerLive streamLayout.core.equalNegY WEXUnlookup.low hot
-    (tableAddressTree (high wide) 0 1) 14115 (highPaths wide) start
-
-theorem corner_clear_coherent {n} (rows : Nat → Fin n) (read : ConstantBit n → Bool)
-    (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    CoherentlyImplementsOn ((cornerProgram rows wide start).instantiate read history)
-      (Finsupp.lmapDomain ℂ ℂ (fun s => tableXorState
-        (portMask read (cornerPorts rows) (tableAddressValue (bits wide) s))
-        (s streamLayout.core.equalNegY) s)) (Ready rows read wide) := by
-  let data := cornerData rows
-  let tree := tableAddressTree (high wide) 0 1
-  let root := streamLayout.core.equalNegY
-  have hdec (w : ShorECDLP.Wire) (hw : w ∈ root :: tree.indexWires.dedup ++ highPaths wide) :
-      855 ≤ w ∧ w < 14115 := by
-    apply decoder_bounds wide w
-    simp only [root,tree,List.mem_cons,List.mem_append] at hw ⊢
-    tauto
-  have hmc := MeasuredClear.measuredClear_recycled_coherent data read WEXUnlookup.low hot tree root 14115
-    (highPaths wide) (high_layout wide)
-    (by intro i j he; apply Fin.ext; simp [hot] at he; omega)
-    (by intro i j; have hi := i.isLt; have hj := j.isLt; simp only [WEXUnlookup.low,hot]; dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *;omega)
-    (by
-      apply List.disjoint_left.mpr
-      intro w hw hd
-      obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
-      have hb := hdec (hot i) hd
-      simp only [hot] at hb
-      dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-      omega)
-    (by intro hm; have hb := hdec 14115 hm; exact (lt_irrefl 14115) hb.2)
-    (by
-      intro hm
-      obtain ⟨i,he⟩ := List.mem_ofFn.mp hm
-      simp only [hot] at he
-      dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-      omega)
-    (corner_source_nd rows)
-    (by
-      intro w hw hm
-      have hd := decoder_bounds wide w hw
-      obtain ⟨p,hp,he⟩ := List.mem_map.mp hm
-      have hb := corner_source_bounds rows p hp
-      rw [he] at hb
-      dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-      omega)
-    (hot_in_source rows) start history
-  have hprog := program_coherent data cornerLive root WEXUnlookup.low hot tree 14115
-    (highPaths wide) start read history (corner_pairs_nd rows)
-    (Ready rows read wide) (fun s => ShorECDLP.Clean (highPaths wide) s ∧
-      MeasuredClear.LoadedClear data read WEXUnlookup.low tree root s)
-    (by intro s hs p hp; exact hs.1 p.target (corner_source_in_pool rows p hp)) hmc (by
-      intro s hs
-      constructor
-      · intro w hw
-        have hwide : highPaths wide ⊆ WEX.windowPaths := by cases wide <;> decide +kernel
-        have hframe := cells_frame root (data.map fun p => (cornerLive p,p.target)) s w
-          (decoder_pair_away rows wide w (by simp [root,tree,hw]))
-        rw [hframe]
-        exact hs.2.1 w (hwide hw)
-      · apply extraction_loaded data cornerLive root WEXUnlookup.low tree read (corner_pairs_nd rows)
-          (by intro w hw; exact decoder_pair_away rows wide w (by simp only [List.mem_cons,List.mem_append] at hw ⊢;tauto))
-          s (fun p hp => hs.1 p.target (corner_source_in_pool rows p hp))
-        intro p hp hq
-        obtain ⟨port,horig,he⟩ : ∃ port ∈ cornerPorts rows,
-            (⟨port.ref,port.value,sourcePerm port.target⟩ : MeasuredClear.ClearPort n) = p := List.mem_map.mp hp
-        rw [← he]
-        simpa only [cornerLive,Equiv.symm_apply_apply,tree,address_split] using hs.2.2 port horig hq)
-  apply hprog.congrIdeal
-  intro s hs
-  simp only [data,root,corner_live_targets,ket,Finsupp.lmapDomain_apply,Finsupp.mapDomain_single]
-  rw [controlledClear_eq_unload read (cornerPorts rows) _ streamLayout.core.equalNegY s (corner_point_nd rows) hs.2.2]
-
-theorem reference_literal {n} (read : ConstantBit n → Bool) (a : Nat) (p : ECDSAAdd.Program) :
-    reference read a ([.plain (wLiteral p)] : Code n) = p := by
-  rw [reference,erase_plain,specialize_literal,Tmpl.instantiate_lit]
-
-theorem before_word (read : CBit 32768 → Bool) (address : Nat)
-    (R : ECDSAAdd.Secp256k1.Point) {cx cy : ECDSAAdd.Fp}
-    (hc : curve.toAffine.Nonsingular cx cy) (hr : RowReads read (probeRows address) (.some hc))
-    (h₁ : cy ≠ -cy) (h₂ : exceptionBit (.some hc) = true)
-    (hD : (.some hc : ECDSAAdd.Secp256k1.Point)+.some hc ≠ 0)
-    (hDo : ShorECDLP.order • ((.some hc : ECDSAAdd.Secp256k1.Point)+.some hc) = 0) :
-    Triple (fun s => PointDialogBoundary streamLayout R true (fun _=>false) (flipInfinity s))
-      (reference read address beforeCode)
-      (fun s => ShorECDLP.Clean streamLayout.dialogPool s ∧
-        (s streamLayout.core.equalNegY = true → Holds.holds s streamLayout.point ((.some hc : ECDSAAdd.Secp256k1.Point)+.some hc))) := by
-  classical
-  have hp := preGeneric_boundary read streamLayout streamLayout_widths streamLayout_nodup
-    probeRows address R hc hr h₁ h₂ hD hDo true
-  have hread := dialogFlagState_read streamLayout streamLayout_nodup
-    (dialogInfinity true R) (dialogDouble true R (.some hc)) (dialogInversePoint true R (.some hc))
-    (dialogOrdinary true R (.some hc)) (true && decide (dialogExceptionEnabled (.some hc)))
-    (dialogException true R (.some hc)) (true && decide (cy≠-cy))
-  have hf : flags streamLayout R (.some hc) true cy streamLayout.core.equalNegY =
-      dialogException true R (.some hc) := hread.2.2.2.2.2.1
-  have hn := prepare_exception_word streamLayout streamLayout_widths streamLayout_nodup R (.some hc)
-    (WeierstrassCurve.Affine.Point.some_ne_zero hc) true (flags streamLayout R (.some hc) true cy) hf
-  have hroot : Triple (fun s => PointDialogBoundary streamLayout R true (fun _=>false) (flipInfinity s))
-      ([.X 838]) (PointDialogBoundary streamLayout R true (fun _=>false)) := by
-    intro st m hs
-    rw [flip_run]
-    exact ⟨rfl,hs⟩
-  have h := (hroot.seq hp).seq hn
-  unfold beforeCode
-  rw [reference_append,reference_append,reference_literal,reference_literal]
-  exact h
-
-theorem safe_prefix {n} (read : ConstantBit n → Bool) (a : Nat) (left right : Code n)
-    (st : ECDSAAdd.State) (hs : Safe read a (left++right) st) : Safe read a left st := by
-  induction left generalizing st with
-  | nil => trivial
-  | cons b left ih =>
-    refine ⟨hs.1,?_⟩
-    intro m hm
-    exact ih _ (hs.2 m hm)
-
-theorem before_safe (read : ConstantBit 32768 → Bool) (a : Nat) (st : ECDSAAdd.State)
-    (hs : Safe read a WEXUnlookup.row st) : Safe read a beforeCode st := by
-  have he : WEXUnlookup.row = ([.plain (wLiteral [.X 838])] ++ preGenericCode streamLayout probeRows) ++
-      ([.plain (suffixCode streamLayout probeRows)] ++ [.plain (wLiteral [.X 838])]) := by
-    simp only [WEXUnlookup.row,fusedFinite,preGenericCode,List.append_assoc]
-  rw [he] at hs
-  have hp := safe_prefix read a _ _ st hs
-  apply safe_append _ _ _ _ st hp
-  intro m hm
-  exact safe_plain _ _ _ _
-
-theorem row_prefix_word (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
-    (wide : Bool) (s : BasisState) (hs : liveReady s) :
-    let read := readConstant coeffs Q
-    let a := tableAddressValue (bits wide) s
-    Safe read a beforeCode ⟨false,s⟩ ∧ ∀ m,
-      let next := ECDSAAdd.run (reference read a beforeCode) m ⟨false,s⟩
-      ShorECDLP.Clean streamLayout.dialogPool next.basis ∧
-      ∀ p ∈ cornerPorts probeRows, next.basis streamLayout.core.equalNegY = true →
-        next.basis p.target = decide (read (p.ref a) = p.value) := by
-  let a := tableAddressValue (bits wide) s
-  let C := Single.Physical.tablePoint coeffs Q a
-  have hC : C ≠ 0 := hn _
-  have hord : ShorECDLP.order • C = 0 := Single.Physical.tablePoint_order coeffs Q hQ a
+open Quantum Challenge ShorECDLP.Secp256k1
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+theorem fastWindowSign_coherent : CoherentlyImplementsOn
+    (literalSource (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram))
+    (Finsupp.lmapDomain ℂ ℂ signPointState) liveReady := by
+  apply literal_coherent
+  intro s hs m
+  rw [ECDSAAdd.Baselines.normalize_run]
   obtain ⟨P,hP⟩ := hs.1.2
+  have secp := hs.1.1.1.1
+  have point := StreamPoint.of_coordinates s P secp hP
   have work : ECDSAAdd.regValue streamLayout.work s = 0 :=
-    (regValue_zero _ _).mpr (fun w hw => hs.2.1 w (List.mem_append_left _ hw))
-  have h838 : (838 : Wire) ∉ streamLayout.work := by
-    intro hm; have h := streamWork_lower _ hm; norm_num at h
-  have pool : ECDSAAdd.regValue streamLayout.work (flipInfinity s) = 0 :=
-    (reg_update_outside _ _ _ _ h838).trans work
-  have clean (w : Wire) (hw : w ∈ streamLayout.inPlaceFlags ++ streamLayout.dialogPool) :
-      flipInfinity s w = false := (regValue_zero _ _).mp pool w (one_boundary_work_subset streamLayout hw)
-  have initial : PointDialogBoundary streamLayout (Bridge.toB P) true (fun _=>false) (flipInfinity s) := by
-    refine ⟨flipInfinity_holds s (Bridge.toB P) (StreamPoint.of_coordinates s P hs.1.1.1.1 hP),?_,?_,?_⟩
-    · simpa [streamLayout_control,flipInfinity,ECDSAAdd.writeBit] using hs.1.1.1.2
-    · intro w hw; exact clean w (by simp [hw])
-    · exact (regValue_zero _ _).mpr (fun w hw => clean w (by simp [hw]))
-  cases he : Bridge.toB C with
-  | zero =>
-    have hzero : C = 0 := congrArg ECDSAAdd.ShorPort.toA he
-    exact (hC hzero).elim
-  | @some cx cy hc =>
-    have ce : C = toA (.some hc) := congrArg toA he
-    have hr : RowReads (readConstant coeffs Q) (probeRows a) (.some hc) :=
-      readConstant_rowReads coeffs Q _ _ ce
-    have ho : ShorECDLP.order • (.some hc : Point) = 0 := by rw [← he]; exact hord
-    have hp2 := torsion_unit_remainder_ne_zero (.some hc) ShorECDLP.order 2
-      (WeierstrassCurve.Affine.Point.some_ne_zero hc) ho (by norm_num [ShorECDLP.order])
-    have hp3 := torsion_unit_remainder_ne_zero (.some hc) ShorECDLP.order 3
-      (WeierstrassCurve.Affine.Point.some_ne_zero hc) ho (by norm_num [ShorECDLP.order])
-    have hd : (.some hc : Point)+.some hc ≠ 0 := by simpa only [two_nsmul] using hp2
-    have ht : (.some hc : Point)+.some hc+.some hc ≠ 0 := by
-      simpa only [show (3 : Nat) = 2+1 from rfl,succ_nsmul,two_nsmul] using hp3
-    have en := enables_true hc hd ht
-    have hdo : ShorECDLP.order • ((.some hc : Point)+.some hc) = 0 := by rw [nsmul_add,ho,zero_add]
-    have hsafe := row_safe_of_boundary (readConstant coeffs Q) a (Bridge.toB P) hc hr en.1 en.2 hd hdo s initial
-    refine ⟨before_safe (readConstant coeffs Q) a ⟨false,s⟩ hsafe,?_⟩
-    intro m
-    have hv := (before_word (readConstant coeffs Q) a (Bridge.toB P) hc hr en.1 en.2 hd hdo ⟨false,s⟩ m initial).2
-    refine ⟨hv.1,?_⟩
-    intro p hp hq
-    exact corner_port_values probeRows (readConstant coeffs Q) a (.some hc) hr _ (hv.2 hq) p hp
-
-
-theorem before_member (b : Block 32768) (hb : b ∈ beforeCode) (i : WInstr 32768) (hi : i ∈ b.code) :
-    i ∈ clearReferenceRow probeRows := by
-  have h := block_mem_erase beforeCode b hb i hi
-  have hm : i ∈ erase beforeCode ++ oldCorner ++ afterCode :=
-    List.mem_append_left _ (List.mem_append_left _ h)
-  rw [← split_reference,erase_row] at hm
-  exact hm
-
-theorem after_member (i : WInstr 32768) (hi : i ∈ afterCode) : i ∈ clearReferenceRow probeRows := by
-  have hm : i ∈ erase beforeCode ++ oldCorner ++ afterCode := List.mem_append_right _ hi
-  rw [← split_reference,erase_row] at hm
-  exact hm
-
-theorem before_shared : ∀ b ∈ beforeCode, Shared b := by
-  simp [beforeCode,preGenericCode,WEXUnlookup.generic,WEXUnlookup.core,WEXUnlookup.recovery,constAdd,const_shared]
-
-theorem before_masked_row (site : MaskedSite 32768) (hb : Block.masked site ∈ beforeCode) :
-    Block.masked site ∈ WEXUnlookup.row := by
-  simpa [beforeCode,preGenericCode,WEXUnlookup.row,fusedFinite] using hb
-
-theorem before_geometry : ∀ b ∈ beforeCode, WEXUnlookup.BlockGeometry b := by
-  intro b hb
-  have hp : ∀ i ∈ b.code, PlacedPair windowBits windowPaths windowRoot i := by
-    intro i hi
-    exact clearReferenceRow_placed probeRows i (before_member b hb i hi)
-  have hh : ∀ i ∈ b.code, HotAvoid i := by
-    intro i hi
-    exact row_hotavoid i (before_member b hb i hi)
-  cases b with
-  | plain code => exact ⟨hp,hh⟩
-  | masked site => exact WEXUnlookup.row_geometry (.masked site) (before_masked_row site hb)
-
-end
-end ShorECDLP.Entrant.CornerClear
-
-
-namespace ShorECDLP.Entrant.CornerClear
-open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
-open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout
-open ECDSAAdd.Secp256k1 ECDSAAdd.ShorPort ECDSAAdd.Arithmetic.CompressedPointDialog
-open WEX WEXUnlookup ECDSAAdd.Entrant
-noncomputable section
-set_option maxHeartbeats 400000
-set_option maxRecDepth 20000
-set_option linter.unusedSimpArgs false
-local instance : DecidableEq ECDSAAdd.Secp256k1.Point := Classical.typeDecidableEq _
-attribute [local irreducible] WEXUnlookupWidth13.sourceCode WEXUnlookupWidth14.sourceCode WEX.source WEX.literalRecords ECDSAAdd.measurementCount
-
-theorem reference_placed (wide : Bool) (i : WInstr 32768) (hi : i ∈ clearReferenceRow probeRows) :
-    PlacedPair (bits wide) windowPaths windowRoot i := by
-  cases wide
-  · exact WEX.clearReferenceRow_width_placed 13 (by omega) probeRows i hi
-  · exact WEX.clearReferenceRow_width_placed 14 (by omega) probeRows i hi
-
-theorem before_placed (wide : Bool) : ∀ b ∈ beforeCode, ∀ i ∈ b.code,
-    PlacedPair (bits wide) windowPaths windowRoot i := by
-  intro b hb i hi
-  exact reference_placed wide i (before_member b hb i hi)
-
-
-theorem before_geometry13 : ∀ b ∈ beforeCode, WEXUnlookupWidth13.BlockGeometry b := by
-  intro b hb
-  have hp := before_placed false b hb
-  have hold := before_geometry b hb
-  cases b with
-  | plain code => exact ⟨hp,hold.2⟩
-  | masked site => exact WEXUnlookupWidth13.row_geometry (.masked site) (before_masked_row site hb)
-
-theorem before_geometry14 : ∀ b ∈ beforeCode, WEXUnlookupWidth14.BlockGeometry b := by
-  intro b hb
-  have hp := before_placed true b hb
-  have hold := before_geometry b hb
-  cases b with
-  | plain code => exact ⟨hp,hold.2⟩
-  | masked site => exact WEXUnlookupWidth14.row_geometry (.masked site) (before_masked_row site hb)
-
-def beforeSource (read : ConstantBit 32768 → Bool) (wide : Bool) : AdaptiveCircuit :=
-  if wide then WEXUnlookupWidth14.sourceCode read beforeCode else WEXUnlookupWidth13.sourceCode read beforeCode
-
-def afterSource (read : ConstantBit 32768 → Bool) (wide : Bool) : AdaptiveCircuit :=
-  WEX.source read (bits wide) windowPaths windowRoot (normalizeW afterCode)
-
-def BeforeSimulation (read : ConstantBit 32768 → Bool) (wide : Bool)
-    (branch : InstrumentBranch) (c : ℂ) : Prop :=
-  ∃ m : List Bool, m.length = literalRecords (erase beforeCode) ∧
-    ∀ a st, SimulationValid (bits wide) windowPaths windowRoot a st →
-      MeasuredClear.HotClean WEXUnlookup.hot st.basis → Safe read a beforeCode st →
-      branch.kraus (Bridge.signedKet st) = c • Bridge.signedKet (ECDSAAdd.run (reference read a beforeCode) m st)
-
-
-theorem before_simulation (read : ConstantBit 32768 → Bool) (wide : Bool) :
-    ∃ cs : List ℂ, List.Forall₂ (BeforeSimulation read wide) (beforeSource read wide).run cs ∧
-      (cs.map Complex.normSq).sum = 1 := by
-  cases wide
-  · exact WEXUnlookupWidth13.source_simulation read beforeCode before_geometry13
-  · exact WEXUnlookupWidth14.source_simulation read beforeCode before_geometry14
-
-theorem after_placed (wide : Bool) : ∀ i ∈ afterCode, PlacedPair (bits wide) windowPaths windowRoot i :=
-  fun i hi => reference_placed wide i (after_member i hi)
-
-
-theorem after_simulation (read : ConstantBit 32768 → Bool) (wide : Bool) :
-    ∃ cs : List ℂ, List.Forall₂ (SimulationBranch read afterCode (bits wide) windowPaths windowRoot)
-      (afterSource read wide).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-  cases wide
-  · exact WEXUnlookupWidth13.normalized_simulation read afterCode (after_placed false)
-  · exact WEXUnlookupWidth14.normalized_simulation read afterCode (after_placed true)
-
-theorem preserves (read : ConstantBit 32768 → Bool) (wide : Bool) (code : WCode 32768) (a : Nat)
-    (hp : ∀ i ∈ code, PlacedPair (bits wide) windowPaths windowRoot i)
-    (hh : ∀ i ∈ code, HotAvoid i) (st : ECDSAAdd.State)
-    (hs : SimulationValid (bits wide) windowPaths windowRoot a st)
-    (hc : MeasuredClear.HotClean WEXUnlookup.hot st.basis) (m : List Bool) :
-    SimulationValid (bits wide) windowPaths windowRoot a
-      (ECDSAAdd.run ((specialize code a).instantiate read) m st) ∧
-    MeasuredClear.HotClean WEXUnlookup.hot (ECDSAAdd.run ((specialize code a).instantiate read) m st).basis := by
-  cases wide
-  · exact WEXUnlookupWidth13.reference_preserves read code a hp hh st hs hc m
-  · exact WEXUnlookupWidth14.reference_preserves read code a hp hh st hs hc m
-
-theorem oldCorner_member (i : WInstr 32768) (hi : i ∈ oldCorner) : i ∈ clearReferenceRow probeRows := by
-  have hm : i ∈ erase beforeCode ++ oldCorner ++ afterCode :=
-    List.mem_append_left _ (List.mem_append_right _ hi)
-  rw [← split_reference,erase_row] at hm
-  exact hm
-
-theorem before_reference_placed (wide : Bool) : ∀ i ∈ erase beforeCode, PlacedPair (bits wide) windowPaths windowRoot i := by
-  intro i hi
-  have hm : i ∈ erase beforeCode ++ oldCorner ++ afterCode :=
-    List.mem_append_left _ (List.mem_append_left _ hi)
-  rw [← split_reference,erase_row] at hm
-  exact reference_placed wide i hm
-
-theorem before_hotavoid : ∀ i ∈ erase beforeCode, HotAvoid i := by
-  intro i hi
-  have hm : i ∈ erase beforeCode ++ oldCorner ++ afterCode :=
-    List.mem_append_left _ (List.mem_append_left _ hi)
-  rw [← split_reference,erase_row] at hm
-  exact row_hotavoid i hm
-
-theorem oldCorner_placed (wide : Bool) : ∀ i ∈ oldCorner, PlacedPair (bits wide) windowPaths windowRoot i :=
-  fun i hi => reference_placed wide i (oldCorner_member i hi)
-
-theorem oldCorner_hotavoid : ∀ i ∈ oldCorner, HotAvoid i :=
-  fun i hi => row_hotavoid i (oldCorner_member i hi)
-
-
-
-attribute [local irreducible] ECDSAAdd.run WEX.normalizeW WEX.specialize ECDSAAdd.ShorPort.Tmpl.instantiate beforeCode afterCode oldCorner
-
-def prefixReference (read : ConstantBit 32768 → Bool) (a : Nat) : ECDSAAdd.Program :=
-  (specialize (erase beforeCode ++ oldCorner) a).instantiate read
-
-theorem oldCorner_run (read : ConstantBit 32768 → Bool) (_wide : Bool) (a : Nat)
-    (st : ECDSAAdd.State) (m : List Bool) (hs : st.basis windowRoot = true) :
-    ECDSAAdd.run ((specialize oldCorner a).instantiate read) m st =
-      ⟨st.phase,tableXorState (portMask read (cornerPorts probeRows) a)
-        (st.basis streamLayout.core.equalNegY) st.basis⟩ := by
-  have hroot : streamLayout.core.equalNegY ∉ portTargets (cornerPorts probeRows) := by
-    rw [cornerTargets]
-    have hr : streamLayout.core.equalNegY = 14112 := by decide +kernel
-    rw [hr,streamLayout_point]
-    simp only [PointAddLayout.pointWires,List.mem_cons,List.mem_append,List.mem_range'_1]
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  simp only [oldCorner,specialize,List.flatMap_cons,List.flatMap_nil,List.append_nil,WInstr.specialize]
-  exact portTemplate_run read (some streamLayout.core.equalNegY) (cornerPorts probeRows) a windowRoot m st
-    (corner_point_nd probeRows) hroot hs
-
-def cornerSource (read : ConstantBit 32768 → Bool) (wide : Bool) : AdaptiveCircuit :=
-  (cornerProgram probeRows wide 0).instantiate read Fin.elim0
-
-def prefixSource (read : ConstantBit 32768 → Bool) (wide : Bool) : AdaptiveCircuit :=
-  (beforeSource read wide).seq (cornerSource read wide)
-
-def PrefixSimulation (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (wide : Bool) (branch : InstrumentBranch) (c : ℂ) : Prop :=
-  ∃ m : List Bool, m.length = literalRecords (erase beforeCode) ∧
-    ∀ s, liveReady s ∧ MeasuredClear.HotClean WEXUnlookup.hot s →
-      branch.kraus (ket s) = c • Bridge.signedKet (ECDSAAdd.run
-        (prefixReference (readConstant coeffs Q) (tableAddressValue (bits wide) s)) m ⟨false,s⟩)
-
-
-def ProgramSimulation (p : BasisState → ECDSAAdd.Program) (records : Nat)
-    (Valid : BasisState → Prop) (branch : InstrumentBranch) (c : ℂ) : Prop :=
-  ∃ m : List Bool, m.length = records ∧ ∀ s, Valid s →
-    branch.kraus (ket s) = c • Bridge.signedKet (ECDSAAdd.run (p s) m ⟨false,s⟩)
-
-theorem programSimulation_measured_seq (p q : BasisState → ECDSAAdd.Program) (records : Nat)
-    (Valid Ready : BasisState → Prop) (f : BasisState → BasisState) (a clear : AdaptiveCircuit)
-    (ha : ∃ cs : List ℂ, List.Forall₂ (ProgramSimulation p records Valid) a.run cs ∧
-      (cs.map Complex.normSq).sum = 1)
-    (hc : CoherentlyImplementsOn clear (Finsupp.lmapDomain ℂ ℂ f) Ready)
-    (hr : ∀ s, Valid s → ∀ m, Ready (ECDSAAdd.run (p s) m ⟨false,s⟩).basis)
-    (hq : ∀ s, Valid s → ∀ m records,
-      let next := ECDSAAdd.run (p s) m ⟨false,s⟩
-      ECDSAAdd.run (q s) records next = ⟨next.phase,f next.basis⟩) :
-    ∃ cs : List ℂ, List.Forall₂ (ProgramSimulation (fun s => p s ++ q s) records Valid)
-      (a.seq clear).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-  obtain ⟨cs₁,h₁,mass₁⟩ := ha
-  obtain ⟨cs₂,h₂,mass₂⟩ := hc
-  refine ⟨coherentSeqCoefficients cs₁ cs₂,?_,?_⟩
-  · rw [AdaptiveCircuit.run_seq]
-    apply simulationAligned_seq h₁ h₂
-    intro b₁ c₁ b₂ c₂ hb₁ hb₂
-    obtain ⟨m,hm,hb₁⟩ := hb₁
-    refine ⟨m,hm,?_⟩
-    intro s hs
-    let next := ECDSAAdd.run (p s) m ⟨false,s⟩
-    have he : b₂.kraus (ket next.basis) = c₂ • ket (f next.basis) := by
-      simpa only [ket,Finsupp.lmapDomain_apply,Finsupp.mapDomain_single] using hb₂ next.basis (hr s hs m)
-    have hsigned : b₂.kraus (Bridge.signedKet next) = c₂ • Bridge.signedKet
-        (ECDSAAdd.run (q s) (m.drop (ECDSAAdd.measurementCount (p s))) next) := by
-      rw [hq s hs]
-      cases hphase : next.phase <;> simp [Bridge.signedKet,hphase,he,map_neg] <;> rfl
-    change b₂.kraus (b₁.kraus (ket s)) = _
-    rw [hb₁ s hs,map_smul,hsigned]
-    simp only [ECDSAAdd.run_append,ECDSAAdd.run_take,smul_smul,next]
-  · rw [simulationCoefficients_mass,mass₁,mass₂]
-    norm_num
-
-theorem prefixReference_split (read : ConstantBit 32768 → Bool) (a : Nat) :
-    prefixReference read a = reference read a beforeCode ++ (specialize oldCorner a).instantiate read := by
-  rw [prefixReference,specialize_append,Tmpl.instantiate_append]
-  rfl
-
-theorem before_reached (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (wide : Bool)
-    (s : BasisState) (hs : liveReady s ∧ MeasuredClear.HotClean WEXUnlookup.hot s) (m : List Bool) :
-    let read := readConstant coeffs Q
-    let a := tableAddressValue (bits wide) s
-    let next := ECDSAAdd.run (reference read a beforeCode) m ⟨false,s⟩
-    SimulationValid (bits wide) windowPaths windowRoot a next ∧ Ready probeRows read wide next.basis := by
-  let read := readConstant coeffs Q
-  let a := tableAddressValue (bits wide) s
-  let next := ECDSAAdd.run (reference read a beforeCode) m ⟨false,s⟩
-  have hinit : SimulationValid (bits wide) windowPaths windowRoot a ⟨false,s⟩ :=
-    ⟨fun w hw => hs.1.2.1 w (List.mem_append_right _ hw),rfl,hs.1.2.2⟩
-  have hword := row_prefix_word coeffs Q hQ hn wide s hs.1
-  have hnext := preserves read wide (erase beforeCode) a (before_reference_placed wide) before_hotavoid ⟨false,s⟩ hinit hs.2 m
-  change SimulationValid (bits wide) windowPaths windowRoot a next ∧ MeasuredClear.HotClean WEXUnlookup.hot next.basis at hnext
-  refine ⟨hnext.1,(hword.2 m).1,hnext.1.1,?_⟩
-  rw [hnext.1.2.1]
-  exact (hword.2 m).2
-
-theorem prefix_simulation (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (wide : Bool) :
-    ∃ cs : List ℂ, List.Forall₂ (PrefixSimulation coeffs Q wide)
-      (prefixSource (readConstant coeffs Q) wide).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-  let read := readConstant coeffs Q
-  let Valid := fun s => liveReady s ∧ MeasuredClear.HotClean WEXUnlookup.hot s
-  let a := fun s => tableAddressValue (bits wide) s
-  let p := fun s => reference read (a s) beforeCode
-  let q := fun s => (specialize oldCorner (a s)).instantiate read
-  let f := fun s => tableXorState (portMask read (cornerPorts probeRows) (tableAddressValue (bits wide) s))
-    (s streamLayout.core.equalNegY) s
-  have ha : ∃ cs : List ℂ, List.Forall₂ (ProgramSimulation p (literalRecords (erase beforeCode)) Valid)
-      (beforeSource read wide).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-    obtain ⟨cs,aligned,mass⟩ := before_simulation read wide
-    refine ⟨cs,aligned.imp ?_,mass⟩
-    intro b c hb
-    obtain ⟨m,hm,hb⟩ := hb
-    refine ⟨m,hm,?_⟩
-    intro s hs
-    have hinit : SimulationValid (bits wide) windowPaths windowRoot (a s) ⟨false,s⟩ :=
-      ⟨fun w hw => hs.1.2.1 w (List.mem_append_right _ hw),rfl,hs.1.2.2⟩
-    simpa only [Bridge.signedKet_false] using hb (a s) ⟨false,s⟩ hinit hs.2 (row_prefix_word coeffs Q hQ hn wide s hs.1).1
-  have h := programSimulation_measured_seq p q (literalRecords (erase beforeCode)) Valid
-    (Ready probeRows read wide) f (beforeSource read wide) (cornerSource read wide) ha
-    (corner_clear_coherent probeRows read wide 0 Fin.elim0)
-    (fun s hs m => (before_reached coeffs Q hQ hn wide s hs m).2) (by
-      intro s hs m records
-      have hn := (before_reached coeffs Q hQ hn wide s hs m).1
-      have hmask := oldCorner_run read wide (a s) (ECDSAAdd.run (p s) m ⟨false,s⟩) records hn.2.2
-      dsimp only [p,q,f]
-      rw [hn.2.1]
-      exact hmask)
-  obtain ⟨cs,aligned,mass⟩ := h
-  refine ⟨cs,aligned.imp ?_,mass⟩
-  intro b c hb
-  obtain ⟨m,hm,hb⟩ := hb
-  refine ⟨m,hm,?_⟩
-  intro s hs
-  rw [prefixReference_split]
-  exact hb s hs
-
-theorem prefix_placed (wide : Bool) : ∀ i ∈ erase beforeCode ++ oldCorner,
-    PlacedPair (bits wide) windowPaths windowRoot i := by
-  intro i hi
-  rcases List.mem_append.mp hi with hi | hi
-  · exact before_reference_placed wide i hi
-  · exact oldCorner_placed wide i hi
-
-theorem prefix_hotavoid : ∀ i ∈ erase beforeCode ++ oldCorner, HotAvoid i := by
-  intro i hi
-  rcases List.mem_append.mp hi with hi | hi
-  · exact before_hotavoid i hi
-  · exact oldCorner_hotavoid i hi
-
-
-
-
-theorem append_measurements {n} (read : ConstantBit n → Bool) (a : Nat) (p q : WCode n)
-    (hq : literalRecords q = 0) :
-    ECDSAAdd.measurementCount ((specialize (p++q) a).instantiate read) = literalRecords p := by
-  have h := (specialize_counts read (p++q) a).2
-  have hc : literalRecords (p++q) = literalRecords p := by rw [literalRecords_append,hq,Nat.add_zero]
-  exact h.trans hc
-
-theorem prefix_measurements (read : ConstantBit 32768 → Bool) (a : Nat) :
-    ECDSAAdd.measurementCount (prefixReference read a) = literalRecords (erase beforeCode) :=
-  append_measurements read a (erase beforeCode) oldCorner (by simp only [oldCorner,literalRecords])
-
-def rowState (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (wide : Bool) (s : BasisState) : BasisState :=
-  pointWrite (inputPoint s + Single.Physical.tablePoint coeffs Q (tableAddressValue (bits wide) s)) s
-
-def rowSource (read : ConstantBit 32768 → Bool) (wide : Bool) : AdaptiveCircuit :=
-  (prefixSource read wide).seq (afterSource read wide)
-
-
-
-
-theorem rowSource_coherent (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (wide : Bool) :
-    CoherentlyImplementsOn (rowSource (readConstant coeffs Q) wide)
-      (Finsupp.lmapDomain ℂ ℂ (rowState coeffs Q wide))
-      (fun s => liveReady s ∧ MeasuredClear.HotClean WEXUnlookup.hot s) := by
-  let read := readConstant coeffs Q
-  obtain ⟨cs₁,h₁,mass₁⟩ := prefix_simulation coeffs Q hQ hn wide
-  obtain ⟨cs₂,h₂,mass₂⟩ := after_simulation read wide
-  refine ⟨coherentSeqCoefficients cs₁ cs₂,?_,?_⟩
-  · rw [rowSource,AdaptiveCircuit.run_seq]
-    apply simulationAligned_seq h₁ h₂
-    intro b₁ c₁ b₂ c₂ hb₁ hb₂
-    obtain ⟨m₁,len₁,run₁⟩ := hb₁
-    obtain ⟨m₂,_,run₂⟩ := hb₂
-    intro s hs
-    let a := tableAddressValue (bits wide) s
-    let mid := ECDSAAdd.run (prefixReference read a) m₁ ⟨false,s⟩
-    have hinit : SimulationValid (bits wide) windowPaths windowRoot a ⟨false,s⟩ :=
-      ⟨fun w hw => hs.1.2.1 w (List.mem_append_right _ hw),rfl,hs.1.2.2⟩
-    have hmid := preserves read wide (erase beforeCode ++ oldCorner) a
-      (prefix_placed wide) prefix_hotavoid ⟨false,s⟩ hinit hs.2 m₁
-    change SimulationValid (bits wide) windowPaths windowRoot a mid ∧ MeasuredClear.HotClean WEXUnlookup.hot mid.basis at hmid
-    have htail := run₂ a mid hmid.1
-    have hm : m₁.length = ECDSAAdd.measurementCount (prefixReference read a) :=
-      len₁.trans (prefix_measurements read a).symm
-    have full := clearReferenceRow_run_any a coeffs Q hQ hn s hs.1 (m₁++m₂)
-    rw [specialize_normalize_run] at full
-    rw [← erase_row,split_reference,specialize_append,Tmpl.instantiate_append] at full
-    change ECDSAAdd.run (prefixReference read a ++ (specialize afterCode a).instantiate read)
-      (m₁++m₂) ⟨false,s⟩ = ⟨false,rowState coeffs Q wide s⟩ at full
-    rw [run_append_records _ _ m₁ m₂ _ hm] at full
-    rw [full] at htail
-    simp only [InstrumentBranch.seq,LinearMap.comp_apply,ket,Finsupp.lmapDomain_apply,Finsupp.mapDomain_single]
-    change b₂.kraus (b₁.kraus (ket s)) = (c₁*c₂) • ket (rowState coeffs Q wide s)
-    rw [run₁ s hs,map_smul,htail,Bridge.signedKet_false]
-    simp [smul_smul]
-  · rw [simulationCoefficients_mass,mass₁,mass₂]
-    norm_num
-
-end
-end ShorECDLP.Entrant.CornerClear
-
-
-namespace ShorECDLP.Entrant.CornerClear
-open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
-open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout
-open ECDSAAdd.Secp256k1 ECDSAAdd.ShorPort ECDSAAdd.Arithmetic.CompressedPointDialog
-open WEX WEXUnlookup ECDSAAdd.Entrant
-noncomputable section
-set_option maxHeartbeats 4000000
-set_option maxRecDepth 20000
-set_option linter.unusedSimpArgs false
-local instance : DecidableEq ECDSAAdd.Secp256k1.Point := Classical.typeDecidableEq _
-attribute [local irreducible] ECDSAAdd.run WEX.normalizeW WEX.specialize ECDSAAdd.ShorPort.Tmpl.instantiate
-  WEXUnlookupWidth13.records WEXUnlookupWidth14.records WEXUnlookupWidth13.ccx WEXUnlookupWidth14.ccx
-  WEX.compile Bridge.translate MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps tableAddressTree
-
-def recordsFor (wide : Bool) (code : Code 32768) : Nat :=
-  if wide then WEXUnlookupWidth14.records code else WEXUnlookupWidth13.records code
-
-def creditFor (wide : Bool) (code : Code 32768) : Nat :=
-  if wide then WEXUnlookupWidth14.ccx code else WEXUnlookupWidth13.ccx code
-
-def sourceFor (read : ConstantBit 32768 → Bool) (wide : Bool) (code : Code 32768) : AdaptiveCircuit :=
-  if wide then WEXUnlookupWidth14.sourceCode read code else WEXUnlookupWidth13.sourceCode read code
-
-def programFor (wide : Bool) (code : Code 32768) (start : Nat) : Straight 32768 start (start+recordsFor wide code) :=
-  match wide with
-  | false => WEXUnlookupWidth13.program code start
-  | true => WEXUnlookupWidth14.program code start
-
-def GeometryFor (wide : Bool) (code : Code 32768) : Prop :=
-  if wide then (∀ b ∈ code, WEXUnlookupWidth14.BlockGeometry b) else
-    (∀ b ∈ code, WEXUnlookupWidth13.BlockGeometry b)
-
-theorem programFor_run (read : ConstantBit 32768 → Bool) (wide : Bool) (code : Code 32768)
-    (start : Nat) (history : Fin start → Bool) :
-    ((programFor wide code start).instantiate read history).run = (sourceFor read wide code).run := by
-  cases wide
-  · exact WEXUnlookupWidth13.program_run read code start history
-  · exact WEXUnlookupWidth14.program_run read code start history
-
-theorem programFor_tCount (read : ConstantBit 32768 → Bool) (wide : Bool) (code : Code 32768)
-    (hg : GeometryFor wide code) (start : Nat) (history : Fin start → Bool) :
-    ((programFor wide code start).instantiate read history).tCount = 7*creditFor wide code := by
-  cases wide
-  · exact WEXUnlookupWidth13.program_tCount read code hg start history
-  · exact WEXUnlookupWidth14.program_tCount read code hg start history
-
-theorem high_nodes (wide : Bool) : (tableAddressTree (high wide) 0 1).internalNodes =
-    if wide then 2047 else 1023 := by
-  have h := tableAddressTree_nodes (high wide) 0 1
-  cases wide <;>
-    simp only [high,if_false,if_true,Bool.false_eq_true,WEXUnlookupWidth13.high,WEXUnlookupWidth14.high,List.length_range'] at h ⊢ <;>
-    norm_num at h ⊢ <;> omega
-
-def cornerRecords (wide : Bool) : Nat := if wide then 2567 else 1543
-
-theorem corner_record_count (wide : Bool) :
-    (cornerData probeRows).length + (MeasuredClear.recordMeasurements (MeasuredClear.recordUnaryOps
-      (tableAddressTree (high wide) 0 1) streamLayout.core.equalNegY (highPaths wide)) + 7) = cornerRecords wide := by
-  rw [corner_length,(MeasuredClear.recordUnary_counts _ _ _ (high_layout wide) 0).1,high_nodes]
-  cases wide <;> rfl
-
-def castSumCount {n} (start a b c : Nat) (p : Straight n start (start+a+b)) (h : a+b=c) :
-    Straight n start (start+c) := castFinish (by omega) p
-
-def cornerFixed (wide : Bool) (start : Nat) : Straight 32768 start (start+cornerRecords wide) :=
-  castSumCount start _ _ _ (cornerProgram probeRows wide start) (corner_record_count wide)
-
-def afterRecords (wide : Bool) (code : WCode 32768) : Nat := codeRecords (bits wide) windowPaths windowRoot (normalizeW code)
-
-def rowRecords (wide : Bool) (before : Code 32768) (after : WCode 32768) : Nat :=
-  recordsFor wide before + cornerRecords wide + afterRecords wide after
-
-def rowProgram (wide : Bool) (before : Code 32768) (after : WCode 32768)
-    (start : Nat) : Straight 32768 start (start+rowRecords wide before after) :=
-  castFinish (by unfold rowRecords afterRecords; omega)
-    (((programFor wide before start).append (cornerFixed wide (start+recordsFor wide before))).append
-      (WEX.compile (bits wide) windowPaths windowRoot (normalizeW after)
-        (start+recordsFor wide before+cornerRecords wide)))
-
-theorem codeRecords_append {n} (bs ps : List ShorECDLP.Wire) (root : ShorECDLP.Wire) (a b : WCode n) :
-    codeRecords bs ps root (a++b) = codeRecords bs ps root a + codeRecords bs ps root b := by
-  induction a with
-  | nil => simp [codeRecords]
-  | cons i a ih => cases i <;> simp only [List.cons_append,codeRecords,ih,Nat.add_assoc]
-
-theorem oldCorner_normalize : normalizeW oldCorner = oldCorner := by
-  simp only [oldCorner,normalizeW,normalizeWInstr,List.map_cons,List.map_nil]
-
-theorem oldCorner_records (wide : Bool) : codeRecords (bits wide) windowPaths windowRoot oldCorner =
-    if wide then 16383 else 8191 := by
-  have hp := oldCorner_placed wide (.lookup (some streamLayout.core.equalNegY) (cornerPorts probeRows)) (by simp [oldCorner])
-  have h := WEXUnlookup.single_lookup_records (bits wide) windowPaths windowRoot
-    (some streamLayout.core.equalNegY) (cornerPorts probeRows) (by cases wide <;> decide +kernel) hp.1
-  exact h.trans (by cases wide <;> norm_num [bits,WEXUnlookupWidth13.bits,WEXUnlookupWidth14.bits,WEX.widthBits])
-
-theorem before_masks13 : WEXUnlookupWidth13.masks beforeCode = 5 := rfl
-theorem before_masks14 : WEXUnlookupWidth14.masks beforeCode = 5 := rfl
-
-def masksFor (wide : Bool) (code : Code 32768) : Nat :=
-  if wide then WEXUnlookupWidth14.masks code else WEXUnlookupWidth13.masks code
-
-def recordSaving (wide : Bool) : Nat := if wide then 14073 else 6905
-
-theorem recordsFor_relation (wide : Bool) (code : Code 32768) (hg : GeometryFor wide code) :
-    recordsFor wide code + masksFor wide code * recordSaving wide =
-      codeRecords (bits wide) windowPaths windowRoot (normalizeW (erase code)) := by
-  cases wide
-  · exact WEXUnlookupWidth13.records_relation code hg
-  · exact WEXUnlookupWidth14.records_relation code hg
-
-theorem before_masks (wide : Bool) : masksFor wide beforeCode = 5 := by
-  cases wide
-  · exact before_masks13
-  · exact before_masks14
-
-theorem full_reference_records (wide : Bool) :
-    codeRecords (bits wide) windowPaths windowRoot (normalizeW (erase WEXUnlookup.row)) =
-      (if wide then 1830577 else 1694385) + 5 * recordSaving wide := by
-  cases wide
-  · have h := WEXUnlookupWidth13.records_relation WEXUnlookup.row WEXUnlookupWidth13.row_geometry
-    rw [WEXUnlookupWidth13.row_masks,WEXUnlookupWidth13.row_records] at h
-    exact h.symm
-  · have h := WEXUnlookupWidth14.records_relation WEXUnlookup.row WEXUnlookupWidth14.row_geometry
-    rw [WEXUnlookupWidth14.row_masks,WEXUnlookupWidth14.row_records] at h
-    exact h.symm
-
-theorem rowRecords_of (wide : Bool) (before : Code 32768) (after ref : WCode 32768)
-    (old : Nat)
-    (hb : recordsFor wide before + 5 * recordSaving wide =
-      codeRecords (bits wide) windowPaths windowRoot (normalizeW (erase before)))
-    (hf : codeRecords (bits wide) windowPaths windowRoot (normalizeW ref) = old + 5 * recordSaving wide)
-    (he : ref = erase before ++ oldCorner ++ after) :
-    rowRecords wide before after = old - ((if wide then 16383 else 8191)-cornerRecords wide) := by
-  have hc := congrArg (fun c : WCode 32768 => codeRecords (bits wide) windowPaths windowRoot (normalizeW c)) he
-  dsimp only [] at hc
-  rw [normalize_append,normalize_append,codeRecords_append,codeRecords_append,oldCorner_normalize,oldCorner_records] at hc
-  unfold rowRecords afterRecords
-  cases wide <;> simp only [if_false,if_true,Bool.false_eq_true,cornerRecords,recordSaving] at * <;> omega
-
-theorem row_records (wide : Bool) : rowRecords wide beforeCode afterCode = if wide then 1816761 else 1687737 := by
-  have hg : GeometryFor wide beforeCode := by
-    cases wide
-    · exact before_geometry13
-    · exact before_geometry14
-  have hb := recordsFor_relation wide beforeCode hg
-  rw [before_masks] at hb
-  have h := rowRecords_of wide beforeCode afterCode (erase WEXUnlookup.row)
-    (if wide then 1830577 else 1694385) hb (full_reference_records wide) split_reference
-  exact h.trans (by cases wide <;> rfl)
-
-
-def canonicalSource {n} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → ShorECDLP.Wire) (root : ShorECDLP.Wire)
-    (low : Fin 3 → ShorECDLP.Wire) (hot : Fin 8 → ShorECDLP.Wire) (tree : UnaryActionTree)
-    (scratch : ShorECDLP.Wire) (paths : List ShorECDLP.Wire) (read : ConstantBit n → Bool) : AdaptiveCircuit :=
-  (AdaptiveCircuit.unitary (cells root (data.map fun p => (live p,p.target))) .done).seq
-    ((MeasuredClear.measuredClear data low hot tree root scratch paths 0).instantiate read Fin.elim0)
-
-theorem program_run_source {n} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → ShorECDLP.Wire) (root : ShorECDLP.Wire)
-    (low : Fin 3 → ShorECDLP.Wire) (hot : Fin 8 → ShorECDLP.Wire) (tree : UnaryActionTree)
-    (scratch : ShorECDLP.Wire) (paths : List ShorECDLP.Wire) (read : ConstantBit n → Bool)
-    (start : Nat) (history : Fin start → Bool) :
-    ((program data live root low hot tree scratch paths start).instantiate read history).run =
-      (canonicalSource data live root low hot tree scratch paths read).run := by
-  have he (h : Fin start → Bool) :
-      ((MeasuredClear.measuredClear data low hot tree root scratch paths start).instantiate read h).run =
-      ((MeasuredClear.measuredClear data low hot tree root scratch paths 0).instantiate read Fin.elim0).run := by
-    rw [MeasuredClear.measuredClear_run,MeasuredClear.measuredClear_run]
-  rw [program,append_run_fixed _ _ _ _ _ he,canonicalSource,AdaptiveCircuit.run_seq,literalProgram_run]
-  simp only [AdaptiveCircuit.run_seq]
-
-theorem program_history {n} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → ShorECDLP.Wire) (root : ShorECDLP.Wire)
-    (low : Fin 3 → ShorECDLP.Wire) (hot : Fin 8 → ShorECDLP.Wire) (tree : UnaryActionTree)
-    (scratch : ShorECDLP.Wire) (paths : List ShorECDLP.Wire) (read : ConstantBit n → Bool)
-    (start finish : Nat) (h₁ : Fin start → Bool) (h₂ : Fin finish → Bool) :
-    ((program data live root low hot tree scratch paths start).instantiate read h₁).run =
-      ((program data live root low hot tree scratch paths finish).instantiate read h₂).run :=
-  (program_run_source data live root low hot tree scratch paths read start h₁).trans
-    (program_run_source data live root low hot tree scratch paths read finish h₂).symm
-
-theorem cornerFixed_run (read : ConstantBit 32768 → Bool) (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    ((cornerFixed wide start).instantiate read history).run = (cornerSource read wide).run := by
-  rw [cornerFixed,castSumCount,castFinish_instantiate]
-  exact program_history _ _ _ _ _ _ _ _ _ _ _ _ _
-
-theorem rowProgram_run (read : ConstantBit 32768 → Bool) (wide : Bool)
-    (before : Code 32768) (after : WCode 32768) (start : Nat) (history : Fin start → Bool) :
-    ((rowProgram wide before after start).instantiate read history).run =
-      (((sourceFor read wide before).seq (cornerSource read wide)).seq
-        (WEX.source read (bits wide) windowPaths windowRoot (normalizeW after))).run := by
-  rw [rowProgram,castFinish_instantiate,
-    append_run_fixed _ _ _ _ _ (fun h => compile_run read (bits wide) windowPaths windowRoot (normalizeW after) _ h)]
-  simp only [AdaptiveCircuit.run_seq]
-  rw [append_run_fixed _ _ _ _ _ (fun h => cornerFixed_run read wide _ h)]
-  simp only [AdaptiveCircuit.run_seq]
-  rw [programFor_run]
-
-def fixRecordCount {n} (records fixed : Nat) (h : records=fixed)
-    (p : (start : Nat) → Straight n start (start+records)) (start : Nat) : Straight n start (start+fixed) :=
-  castFinish (congrArg (fun r => start+r) h) (p start)
-
-def fixedRow (wide : Bool) (start : Nat) : Straight 32768 start
-    (start+(if wide then 1816761 else 1687737)) :=
-  fixRecordCount _ _ (row_records wide) (rowProgram wide beforeCode afterCode) start
-
-theorem sourceFor_before (read : ConstantBit 32768 → Bool) (wide : Bool) :
-    sourceFor read wide beforeCode = beforeSource read wide := by cases wide <;> rfl
-
-theorem fixedRow_run (read : ConstantBit 32768 → Bool) (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    ((fixedRow wide start).instantiate read history).run =
-      (((beforeSource read wide).seq (cornerSource read wide)).seq (afterSource read wide)).run := by
-  rw [fixedRow,fixRecordCount,castFinish_instantiate,rowProgram_run,sourceFor_before]
-  rfl
-
-def fullNodes (wide : Bool) : Nat := if wide then 16383 else 8191
-
-def rawCredit (wide : Bool) (code : WCode 32768) : Nat :=
-  literalToffolis (normalizeW code) + traversals code * fullNodes wide
-
-def creditSaving (wide : Bool) : Nat := if wide then 14329 else 7161
-
-theorem creditFor_relation (wide : Bool) (code : Code 32768) :
-    creditFor wide code + masksFor wide code * creditSaving wide = rawCredit wide (erase code) := by
-  cases wide
-  · exact WEXUnlookupWidth13.ccx_relation code
-  · exact WEXUnlookupWidth14.ccx_relation code
-
-theorem rawCredit_append (wide : Bool) (a b : WCode 32768) :
-    rawCredit wide (a++b) = rawCredit wide a + rawCredit wide b := by
-  simp only [rawCredit,normalize_append,literalToffolis_append,traversals_append,Nat.add_mul]
+    (ECDSAAdd.Arithmetic.regValue_zero _ _).mpr
+      (fun w hw => hs.2.1 w (List.mem_append_left _ hw))
+  have h := fastWindowSignProgram_point ⟨false,s⟩ (Bridge.toB P) point work m
+  apply ECDSAAdd.State.extensionality
+  · exact h.1
+  unfold signPointState
+  rw [inputPoint_eq s P hP]
+  apply StreamPoint.state_eq s _ _ secp
+  · by_cases hb : s 870 = true
+    · simpa [hb] using h.2.1
+    · have hf : s 870 = false := Bool.eq_false_iff.mpr hb
+      simpa [hf, Bridge.toB_neg] using h.2.1
+  · intro w hw
+    apply h.2.2 w
+    intro hy
+    exact hw (by simp [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, hy])
+
+
+open ECDSAAdd.RecordedQuantum
+
+theorem finiteSignFlag_physical (sign inf flag : Wire) (hsf : sign ≠ flag) (hif : inf ≠ flag) :
+    GatePhysical (finiteSignFlag sign inf flag) := by
+  simp [finiteSignFlag, GatePhysical, PhysicalInstr, ECDSAAdd.ProperGate, hsf, hif]
+
+theorem finiteSignReflection_physical (K : NegLayout) (sign inf flag p : Nat)
+    (hn : (K.wires flag).Nodup) (hsf : sign ≠ flag) (hif : inf ≠ flag) :
+    GatePhysical (finiteSignReflection K sign inf flag p) := by
+  simp only [finiteSignReflection, gatePhysical_append]
+  exact ⟨⟨finiteSignFlag_physical sign inf flag hsf hif,
+    K.reflection_physical flag (p+1) hn⟩, finiteSignFlag_physical sign inf flag hsf hif⟩
+
+theorem finiteSignErase_physical (sign inf flag : Wire) : GatePhysical (finiteSignErase sign inf flag) := by
+  simp [finiteSignErase, chainErase, GatePhysical, PhysicalInstr, ECDSAAdd.ProperGate]
+
+theorem finiteSignMeasured_physical (K : NegLayout) (sign inf flag p : Nat)
+    (hn : (K.wires flag).Nodup) (hsf : sign ≠ flag) (hif : inf ≠ flag) :
+    GatePhysical (finiteSignMeasured K sign inf flag p) := by
+  simp only [finiteSignMeasured, gatePhysical_append]
+  exact ⟨⟨finiteSignFlag_physical sign inf flag hsf hif,
+    K.reflection_physical flag (p+1) hn⟩, finiteSignErase_physical sign inf flag⟩
+
+theorem fastWindowSign_physical : GatePhysical fastWindowSignProgram := by
+  unfold fastWindowSignProgram
+  exact finiteSignMeasured_physical (negateYLayout streamLayout) 870 838 streamLayout.core.generic ECDSAAdd.p
+    (negateYLayout_nodup_generic streamLayout streamLayout_widths streamLayout_nodup)
+    (by decide +kernel) (by decide +kernel)
+
+theorem finiteSignReflection_support (K : NegLayout) (sign inf flag p : Nat) :
+    ECDSAAdd.wires (finiteSignReflection K sign inf flag p) ⊆ (sign :: inf :: K.wires flag).toFinset := by
+  have hr := K.reflection_support flag (p+1)
+  simp only [finiteSignReflection, ECDSAAdd.wires_append, Finset.union_subset_iff]
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · intro w hw
+    simp [finiteSignFlag, ECDSAAdd.wires, ECDSAAdd.Instr.wires] at hw
+    rcases hw with rfl | rfl | rfl <;> simp [CompactRecoveryNegateLayout.wires]
+  · exact hr.trans (fun w hw => List.mem_toFinset.mpr
+      (List.mem_cons_of_mem sign (List.mem_cons_of_mem inf (List.mem_toFinset.mp hw))))
+  · intro w hw
+    simp [finiteSignFlag, ECDSAAdd.wires, ECDSAAdd.Instr.wires] at hw
+    rcases hw with rfl | rfl | rfl <;> simp [CompactRecoveryNegateLayout.wires]
+
+theorem finiteSignMeasured_slots (K : NegLayout) (sign inf flag p : Nat) (width : K.word.length = 256) :
+    ECDSAAdd.Challenge.gateSlots (finiteSignMeasured K sign inf flag p) ≤ 100000 := by
+  have flip := ECDSAAdd.Baselines.maskedConstant_gateSlots_le flag K.word (2^K.word.length-1)
+  have add := ECDSAAdd.Baselines.mappedConst_gateSlots_le (some flag) K.word K.carries K.cin (p+1)
+  simp only [finiteSignMeasured, finiteSignErase, chainErase, CompactRecoveryNegateLayout.reflection,
+    CompactRecoveryNegateLayout.complement, CompactRecoveryNegateLayout.add,
+    ECDSAAdd.Challenge.gateSlots_append, finiteSignFlag, ECDSAAdd.Baselines.gateSlots_cons,
+    ECDSAAdd.Baselines.gateSlots_nil, ECDSAAdd.Challenge.instructionSlots, List.length_nil, List.length_cons]
   omega
 
-theorem oldCorner_credit (wide : Bool) : rawCredit wide oldCorner = fullNodes wide := by
-  rw [rawCredit,oldCorner_normalize]
-  simp only [oldCorner,literalToffolis,traversals,Nat.zero_add,Nat.add_zero,Nat.one_mul]
+theorem fastWindowSign_slots : ECDSAAdd.Challenge.gateSlots fastWindowSignProgram ≤ 100000 :=
+  finiteSignMeasured_slots _ _ _ _ _ (negateYLayout_widths streamLayout streamLayout_widths).1
 
-def rowCredit (wide : Bool) (before : Code 32768) (after : WCode 32768) : Nat :=
-  creditFor wide before + cornerRecords wide + rawCredit wide after
+theorem fastWindowSign_normalized_counts :
+    ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) ≤ 256 ∧
+      ECDSAAdd.measurementCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) = 256 := by
+  exact ⟨(ECDSAAdd.Baselines.normalize_toffoli fastWindowSignProgram).trans fastWindowSign_counts.1.le,
+    (ECDSAAdd.Baselines.normalize_measurements fastWindowSignProgram).trans fastWindowSign_counts.2⟩
 
-theorem full_credit_bound (wide : Bool) :
-    2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) +
-      rawCredit wide (erase WEXUnlookup.row) ≤ 2163901 + 21 * fullNodes wide := by
-  have ht := WEX.clearReferenceRow_traversals
-  rw [traversals_normalize] at ht
-  rw [rawCredit,erase_row,ht]
-  cases wide
-  · have h := WEX.clearReferenceRow_count_upper 13
-    simpa only [fullNodes,if_false,Bool.false_eq_true,show 2^13-1=8191 by norm_num,Nat.add_assoc] using h
-  · have h := WEX.clearReferenceRow_count_upper 14
-    simpa only [fullNodes,if_true,show 2^14-1=16383 by norm_num,Nat.add_assoc] using h
+theorem fastWindowSign_credit {n : Nat} (start : Nat) :
+    AndGadget.residue (Bridge.translate (literalT (n := n)
+      (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)) start) = 0 ∧
+    AndGadget.added (Bridge.translate (literalT (n := n)
+      (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)) start) ≤ 256 := by
+  refine ⟨WEXCredit.literal_residue _ _, ?_⟩
+  rw [WEXCredit.literal_added]
+  exact fastWindowSign_normalized_counts.1
 
-theorem rowCredit_of (wide : Bool) (before : Code 32768) (after ref : WCode 32768) (a : Nat)
-    (hb : creditFor wide before + 5 * creditSaving wide = rawCredit wide (erase before))
-    (hf : 2*a + rawCredit wide ref ≤ 2163901 + 21*fullNodes wide)
-    (he : ref = erase before ++ oldCorner ++ after) :
-    2*a + rowCredit wide before after ≤ if wide then 2422483 else 2293459 := by
-  have hc := congrArg (rawCredit wide) he
-  rw [rawCredit_append,rawCredit_append,oldCorner_credit] at hc
-  unfold rowCredit
-  cases wide <;> simp only [fullNodes,creditSaving,cornerRecords,if_false,if_true,Bool.false_eq_true] at * <;> omega
+theorem finiteSignMeasured_support (K : NegLayout) (sign inf flag p : Nat) :
+    ECDSAAdd.wires (finiteSignMeasured K sign inf flag p) ⊆ (sign :: inf :: K.wires flag).toFinset := by
+  have hr := K.reflection_support flag (p+1)
+  simp only [finiteSignMeasured, ECDSAAdd.wires_append, Finset.union_subset_iff]
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · intro w hw
+    simp [finiteSignFlag, ECDSAAdd.wires, ECDSAAdd.Instr.wires] at hw
+    rcases hw with rfl | rfl | rfl <;> simp [CompactRecoveryNegateLayout.wires]
+  · exact hr.trans (fun w hw => List.mem_toFinset.mpr
+      (List.mem_cons_of_mem sign (List.mem_cons_of_mem inf (List.mem_toFinset.mp hw))))
+  · intro w hw
+    simp [finiteSignErase, chainErase, ECDSAAdd.wires, ECDSAAdd.Instr.wires, ECDSAAdd.correctionWires] at hw
+    rcases hw with rfl | rfl | rfl <;> simp [CompactRecoveryNegateLayout.wires]
 
-theorem row_credit_upper (wide : Bool) :
-    2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) +
-      rowCredit wide beforeCode afterCode ≤ if wide then 2422483 else 2293459 := by
-  have hb := creditFor_relation wide beforeCode
-  rw [before_masks] at hb
-  exact rowCredit_of wide beforeCode afterCode (erase WEXUnlookup.row) _ hb (full_credit_bound wide) split_reference
+open Quantum Challenge AndGadget WEXCredit Paper2607_13816 Paper2607_13816.ChallengeMigration
 
-theorem bits_nodes (wide : Bool) : 2^(bits wide).length-1=fullNodes wide := by
-  cases wide <;> norm_num [bits,fullNodes,WEXUnlookupWidth13.bits,WEXUnlookupWidth14.bits,WEX.widthBits]
+def nFastProgram (start : Nat) : Straight 32768 start (start+256) :=
+  literalFixed (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) 256
+    ((literal_meas (n := 32768) _).trans fastWindowSign_normalized_counts.2) start
 
-theorem compile_tCount_raw (read : ConstantBit 32768 → Bool) (wide : Bool) (code : WCode 32768)
-    (hp : ∀ i ∈ code, PlacedPair (bits wide) windowPaths windowRoot i) (start : Nat) (history : Fin start → Bool) :
-    ((WEX.compile (bits wide) windowPaths windowRoot (normalizeW code) start).instantiate read history).tCount =
-      7 * rawCredit wide code := by
-  have hl := pair_layouts_of_placed (bits wide) windowPaths windowRoot (normalizeW code)
-    (by cases wide <;> decide +kernel) (pair_placed_normalize _ _ _ _ hp)
-  rw [WEX.compile_tCount read _ _ _ _ hl start history,traversals_normalize,bits_nodes,rawCredit]
-  ring
+theorem nFastProgram_run (start : Nat) (read : ConstantBit 32768 → Bool) (history : Fin start → Bool) :
+    ((nFastProgram start).instantiate read history).run =
+      (literalSource (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)).run :=
+  literalFixed_run (n := 32768) _ _ _ start read history
 
-theorem cornerFixed_tCount (read : ConstantBit 32768 → Bool) (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    ((cornerFixed wide start).instantiate read history).tCount = 7*cornerRecords wide := by
-  rw [cornerFixed,castSumCount,castFinish_instantiate,cornerProgram,
-    program_tCount _ _ _ _ _ _ _ _ (high_layout wide),corner_length,high_nodes]
-  cases wide <;> rfl
-
-theorem rowProgram_tCount (read : ConstantBit 32768 → Bool) (wide : Bool)
-    (before : Code 32768) (after : WCode 32768) (hg : GeometryFor wide before)
-    (hp : ∀ i ∈ after, PlacedPair (bits wide) windowPaths windowRoot i) (start : Nat) (history : Fin start → Bool) :
-    ((rowProgram wide before after start).instantiate read history).tCount = 7*rowCredit wide before after := by
-  rw [rowProgram,castFinish_instantiate,
-    append_tCount_fixed _ _ _ _ _ (fun h => compile_tCount_raw read wide after hp _ h),
-    append_tCount_fixed _ _ _ _ _ (fun h => cornerFixed_tCount read wide _ h),
-    programFor_tCount read wide before hg,rowCredit]
-  ring
-
-theorem fixedRow_tCount (read : ConstantBit 32768 → Bool) (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    ((fixedRow wide start).instantiate read history).tCount = 7*rowCredit wide beforeCode afterCode := by
-  rw [fixedRow,fixRecordCount,castFinish_instantiate]
-  apply rowProgram_tCount
-  · cases wide
-    · exact before_geometry13
-    · exact before_geometry14
-  · exact after_placed wide
-
-open AndGadget WEXCredit
-
-theorem programFor_residue (wide : Bool) (code : Code 32768) (start : Nat) :
-    residue (programFor wide code start) = 0 := by
-  cases wide
-  · exact WEXUnlookupWidth13.program_residue code start
-  · exact WEXUnlookupWidth14.program_residue code start
-
-theorem program_residue {n} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → ShorECDLP.Wire) (root : ShorECDLP.Wire)
-    (low : Fin 3 → ShorECDLP.Wire) (hot : Fin 8 → ShorECDLP.Wire) (tree : UnaryActionTree)
-    (scratch : ShorECDLP.Wire) (paths : List ShorECDLP.Wire) (start : Nat) :
-    residue (program data live root low hot tree scratch paths start) = 0 := by
-  rw [program,residue_append,MeasuredClear.measuredClear_residue,
-    residue_literal_HPFree _ (cells_classical root (data.map fun p => (live p,p.target)))]
-
-theorem cornerFixed_residue (wide : Bool) (start : Nat) : residue (cornerFixed wide start) = 0 := by
-  rw [cornerFixed,castSumCount,residue_cast,cornerProgram]
-  exact program_residue _ _ _ _ _ _ _ _ _
-
-theorem rowProgram_residue (wide : Bool) (before : Code 32768) (after : WCode 32768) (start : Nat) :
-    residue (rowProgram wide before after start) = 0 := by
-  rw [rowProgram,residue_cast,residue_append,residue_append,
-    programFor_residue,cornerFixed_residue,compile_residue]
-
-theorem fixedRow_residue (wide : Bool) (start : Nat) : residue (fixedRow wide start) = 0 := by
-  rw [fixedRow,fixRecordCount,residue_cast]
-  exact rowProgram_residue _ _ _ _
-
-theorem credit_from_t {n s e} (p : Straight n s e) (c : Nat)
-    (hz : residue p = 0)
-    (ht : ∀ read history, (p.instantiate read history).tCount = 7*c) : ProgramCredit p c := by
-  refine ⟨hz,?_⟩
-  have h := exact_t p hz (fun _=>false) (fun _=>false)
-  have t := ht (fun _=>false) (fun _=>false)
-  omega
-
-theorem fixedRow_credit (wide : Bool) (start : Nat) : ProgramCredit (fixedRow wide start)
-    (rowCredit wide beforeCode afterCode) :=
-  credit_from_t _ _ (fixedRow_residue wide start) (fun read history => fixedRow_tCount read wide start history)
-
-theorem cells_wellFormed (q : ShorECDLP.Wire) (pairs : List (ShorECDLP.Wire × ShorECDLP.Wire))
-    (hn : (q :: pairWires pairs).Nodup) : CircuitWellFormed (cells q pairs) := by
-  have hq := (List.nodup_cons.mp hn).1
-  have hd := (source_live_disjoint pairs (List.nodup_cons.mp hn).2).symm
-  intro g hg
-  obtain ⟨p,hp,hg⟩ := List.mem_flatMap.mp hg
-  have ha : q ≠ p.1 := fun he => hq (he.symm ▸ List.mem_flatMap.mpr ⟨p,hp,by simp⟩)
-  have hb : q ≠ p.2 := fun he => hq (he.symm ▸ List.mem_flatMap.mpr ⟨p,hp,by simp⟩)
-  have hab : p.1 ≠ p.2 := by
-    intro he
-    exact List.disjoint_left.mp hd (List.mem_map.mpr ⟨p,hp,rfl⟩)
-      (he.symm ▸ List.mem_map.mpr ⟨p,hp,rfl⟩)
-  simp only [cell,List.mem_cons,List.mem_nil_iff,or_false] at hg
-  rcases hg with rfl | rfl <;> simp [Gate.WellFormed,ha,hb,hab,Ne.symm hab]
-
-theorem program_wellFormed {n} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → ShorECDLP.Wire) (root : ShorECDLP.Wire)
-    (low : Fin 3 → ShorECDLP.Wire) (hot : Fin 8 → ShorECDLP.Wire) (tree : UnaryActionTree)
-    (scratch : ShorECDLP.Wire) (paths : List ShorECDLP.Wire) (start : Nat)
-    (hn : (root :: pairWires (data.map fun p => (live p,p.target))).Nodup)
-    (hl : tree.Layout root paths) (hi : Function.Injective hot) (hdlow : ∀ i j, low i ≠ hot j)
-    (hs : scratch ∉ root :: tree.indexWires.dedup ++ paths) (hh : scratch ∉ MeasuredClear.hotBank hot) :
-    (program data live root low hot tree scratch paths start).WellFormed := by
-  apply straight_append_wellFormed
-  · exact literalProgram_wellFormed _ (cells_wellFormed root _ hn)
-  · exact MeasuredClear.measuredClear_wellFormed data low hot tree root scratch paths hl hi hdlow hs hh start
-
-theorem cornerFixed_wellFormed (wide : Bool) (start : Nat) : (cornerFixed wide start).WellFormed := by
-  rw [cornerFixed,castSumCount,castFinish_wellFormed,cornerProgram]
-  apply program_wellFormed
-  · exact corner_pairs_nd probeRows
-  · exact high_layout wide
-  · intro i j he; apply Fin.ext; simp [hot] at he; omega
-  · intro i j
-    have hi := i.isLt; have hj := j.isLt
-    simp only [WEXUnlookup.low,hot]
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  · intro hm
-    have hb : 855 ≤ (14115 : ShorECDLP.Wire) ∧ (14115 : ShorECDLP.Wire)<14115 :=
-      decoder_bounds wide 14115 (by simp only [List.mem_cons,List.mem_append] at hm ⊢;tauto)
-    exact (lt_irrefl 14115) hb.2
-  · intro hm
-    obtain ⟨i,he⟩ := List.mem_ofFn.mp hm
-    simp only [hot] at he
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-
-theorem programFor_wellFormed (wide : Bool) (code : Code 32768) (hg : GeometryFor wide code)
-    (hp : ∀ p, WInstr.literal p ∈ erase code → GatePhysical p) (start : Nat) :
-    (programFor wide code start).WellFormed := by
-  cases wide
-  · exact WEXUnlookupWidth13.program_wellFormed code hg hp start
-  · exact WEXUnlookupWidth14.program_wellFormed code hg hp start
-
-theorem rowProgram_wellFormed (wide : Bool) (before : Code 32768) (after : WCode 32768)
-    (hg : GeometryFor wide before)
-    (hb : ∀ p, WInstr.literal p ∈ erase before → GatePhysical p)
-    (ha : ∀ i ∈ after, PlacedPair (bits wide) windowPaths windowRoot i)
-    (hp : ∀ p, WInstr.literal p ∈ after → GatePhysical p) (start : Nat) :
-    (rowProgram wide before after start).WellFormed := by
-  rw [rowProgram,castFinish_wellFormed]
-  apply straight_append_wellFormed
-  · exact straight_append_wellFormed _ _ (programFor_wellFormed wide before hg hb start)
-      (cornerFixed_wellFormed wide _)
-  · exact pair_compile_wellFormed (bits wide) windowPaths windowRoot (normalizeW after)
-      (by cases wide <;> decide +kernel) (pair_placed_normalize _ _ _ _ ha) (normalized_literals_valid after hp) _
-
-theorem before_literal_physical : ∀ p, WInstr.literal p ∈ erase beforeCode → GatePhysical p := by
-  intro p hp
-  have hm : WInstr.literal p ∈ erase beforeCode ++ oldCorner ++ afterCode :=
-    List.mem_append_left _ (List.mem_append_left _ hp)
-  rw [← split_reference,erase_row] at hm
-  exact clearReferenceRow_physical probeRows p hm
-
-theorem fixedRow_wellFormed (wide : Bool) (start : Nat) : (fixedRow wide start).WellFormed := by
-  rw [fixedRow,fixRecordCount,castFinish_wellFormed]
-  apply rowProgram_wellFormed
-  · cases wide
-    · exact before_geometry13
-    · exact before_geometry14
-  · exact before_literal_physical
-  · exact after_placed wide
-  · intro p hp
-    exact clearReferenceRow_physical probeRows p (after_member (.literal p) hp)
-
-theorem corner_data_source {n} (rows : Nat → Fin n) :
-    (cornerData rows).map MeasuredClear.ClearPort.target ⊆ sourceSupport := by
-  intro w hw
-  obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hw
-  have hb := corner_source_bounds rows p hp
-  apply (sourceSupport_mem _).mpr
-  right
-  unfold oldWork
-  dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-  omega
-
-theorem corner_live_source {n} (rows : Nat → Fin n) (p : MeasuredClear.ClearPort n)
-    (hp : p ∈ cornerData rows) : cornerLive p ∈ sourceSupport := by
-  have hm : cornerLive p ∈ PointAddLayout.pointWires streamLayout.point := by
-    rw [← cornerTargets rows,← corner_live_targets rows]
-    exact List.mem_map.mpr ⟨p,hp,rfl⟩
-  exact resident_cover _ (List.mem_append_left _ (List.mem_append_left _ hm))
-
-theorem decoder_source (wide : Bool) : streamLayout.core.equalNegY :: List.ofFn WEXUnlookup.low ++
-    (tableAddressTree (high wide) 0 1).indexWires.dedup ++ highPaths wide ⊆ sourceSupport := by
-  apply source_of_bounds
-  intro w hw
-  have hroot : streamLayout.core.equalNegY = 14112 := by decide +kernel
-  have hlow : List.ofFn WEXUnlookup.low = [855,856,857] := by decide +kernel
-  rw [hroot,hlow,high_index] at hw
-  cases wide <;>
-    simp only [high,highPaths,Bool.false_eq_true,if_false,if_true,WEXUnlookupWidth13.high,
-      WEXUnlookupWidth14.high,WEXUnlookupWidth13.highPaths,WEXUnlookupWidth14.highPaths,
-      List.mem_cons,List.mem_append,List.mem_nil_iff,or_false,List.mem_range'_1] at hw <;>
-    unfold fixedPort oldWork <;> dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at * <;> omega
-
-theorem scratch_in_data {n} (rows : Nat → Fin n) :
-    (14115 : ShorECDLP.Wire) ∈ (cornerData rows).map MeasuredClear.ClearPort.target := by
-  rw [corner_source_targets,cornerTargets]
-  apply List.mem_map.mpr
-  refine ⟨838,?_,rfl⟩
-  simp [PointAddLayout.pointWires,streamLayout_point]
-
-theorem cells_support (q : ShorECDLP.Wire) (pairs : List (ShorECDLP.Wire × ShorECDLP.Wire))
-    (S : List ShorECDLP.Wire) (hq : q ∈ S) (hp : ∀ p ∈ pairs, p.1 ∈ S ∧ p.2 ∈ S) :
-    circuitWires (cells q pairs) ⊆ S := by
-  intro w hw
-  obtain ⟨g,hg,hw⟩ := List.mem_flatMap.mp hw
-  obtain ⟨p,hp',hg⟩ := List.mem_flatMap.mp hg
-  have hm := hp p hp'
-  simp only [cell,List.mem_cons,List.mem_nil_iff,or_false] at hg
-  rcases hg with rfl | rfl
-  · simp only [gateWires,List.mem_cons,List.mem_nil_iff,or_false] at hw
-    rcases hw with rfl | rfl | rfl
-    · exact hq
-    · exact hm.1
-    · exact hm.2
-  · simp only [gateWires,List.mem_cons,List.mem_nil_iff,or_false] at hw
-    rcases hw with rfl | rfl
-    · exact hm.2
-    · exact hm.1
-
-theorem cornerFixed_support (wide : Bool) (start : Nat) :
-    ChallengeMigration.straightWires (cornerFixed wide start) ⊆ sourceSupport := by
-  rw [cornerFixed,castSumCount,support_cast,cornerProgram,program,straightWires_append,literalProgram_support]
-  apply List.append_subset.mpr
+theorem nFastProgram_credit (start : Nat) :
+    WEXCredit.ProgramCredit (nFastProgram start)
+      (ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)) := by
+  unfold nFastProgram literalFixed
   constructor
-  · apply cells_support
-    · exact decoder_source wide (by simp)
-    · intro pair hpair
-      obtain ⟨p,hp,he⟩ : ∃ p ∈ cornerData probeRows, (cornerLive p,p.target) = pair := List.mem_map.mp hpair
-      subst pair
-      exact ⟨corner_live_source probeRows p hp,corner_data_source probeRows (List.mem_map.mpr ⟨p,hp,rfl⟩)⟩
-  · rw [support_agrees]
-    apply List.Subset.trans (MeasuredClear.measuredClear_static _ _ _ _ _ _ _ (scratch_in_data probeRows) start)
-    intro w hw
-    simp only [MeasuredClear.clearSupport,List.mem_append,List.mem_cons,or_assoc] at hw
-    rcases hw with hd | hl | hh | hr | hi | hp
-    · exact corner_data_source probeRows hd
-    · exact decoder_source wide (by simp only [List.mem_cons,List.mem_append];tauto)
-    · obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hh
-      exact corner_data_source probeRows (hot_in_source probeRows i)
-    · subst w; exact decoder_source wide (by simp)
-    · exact decoder_source wide (by simp [hi])
-    · exact decoder_source wide (by simp [hp])
-
-theorem programFor_support (wide : Bool) (code : Code 32768) (hg : GeometryFor wide code)
-    (hw : OldWithin (erase code)) (start : Nat) :
-    ChallengeMigration.straightWires (programFor wide code start) ⊆ logicalSupport := by
-  cases wide
-  · exact WEXUnlookupWidth13.program_support code hg hw start
-  · exact WEXUnlookupWidth14.program_support code hg hw start
-
-theorem raw_compile_support (wide : Bool) (code : WCode 32768) (hw : OldWithin code) (start : Nat) :
-    ChallengeMigration.straightWires (WEX.compile (bits wide) windowPaths windowRoot (normalizeW code) start) ⊆ sourceSupport := by
-  cases wide
-  · exact WEXUnlookupWidth13.old_compile_support code hw start
-  · exact WEXUnlookupWidth14.old_compile_support code hw start
-
-theorem rowProgram_support (wide : Bool) (before : Code 32768) (after : WCode 32768)
-    (hg : GeometryFor wide before) (hb : OldWithin (erase before)) (ha : OldWithin after) (start : Nat) :
-    ChallengeMigration.straightWires (rowProgram wide before after start) ⊆ logicalSupport := by
-  rw [rowProgram,support_cast,straightWires_append,straightWires_append]
-  exact List.append_subset.mpr ⟨List.append_subset.mpr
-    ⟨programFor_support wide before hg hb start,(cornerFixed_support wide _).trans (List.subset_append_left _ _)⟩,
-    (raw_compile_support wide after ha _).trans (List.subset_append_left _ _)⟩
-
-theorem before_oldWithin : OldWithin (erase beforeCode) := by
-  apply oldWithin_sub _ (clearReferenceRow probeRows) _ row_oldWithin
-  intro i hi
-  have hm : i ∈ erase beforeCode ++ oldCorner ++ afterCode := List.mem_append_left _ (List.mem_append_left _ hi)
-  rwa [← split_reference,erase_row] at hm
-
-theorem after_oldWithin : OldWithin afterCode :=
-  oldWithin_sub _ (clearReferenceRow probeRows) after_member row_oldWithin
-
-theorem fixedRow_support (wide : Bool) (start : Nat) :
-    ChallengeMigration.straightWires (fixedRow wide start) ⊆ logicalSupport := by
-  rw [fixedRow,fixRecordCount,support_cast]
-  apply rowProgram_support
-  · cases wide
-    · exact before_geometry13
-    · exact before_geometry14
-  · exact before_oldWithin
-  · exact after_oldWithin
-
-theorem cells_length (q : ShorECDLP.Wire) (pairs : List (ShorECDLP.Wire × ShorECDLP.Wire)) :
-    (cells q pairs).length = 2*pairs.length := by
-  induction pairs with
-  | nil => rfl
-  | cons p pairs ih =>
-    change (cell q p.1 p.2 ++ cells q pairs).length = 2*(pairs.length+1)
-    rw [List.length_append,ih]
-    change 2+2*pairs.length = 2*(pairs.length+1)
-    omega
-
-theorem program_slots {n} (data : List (MeasuredClear.ClearPort n))
-    (live : MeasuredClear.ClearPort n → ShorECDLP.Wire) (root : ShorECDLP.Wire)
-    (low : Fin 3 → ShorECDLP.Wire) (hot : Fin 8 → ShorECDLP.Wire) (tree : UnaryActionTree)
-    (scratch : ShorECDLP.Wire) (paths : List ShorECDLP.Wire) (hl : tree.Layout root paths) (start : Nat) :
-    (program data live root low hot tree scratch paths start).gateSlots =
-      2*data.length + 32*data.length*tree.leaves + 10*tree.internalNodes + 60 := by
-  rw [program,Straight.gateSlots_append,literalProgram_slots,cells_length,List.length_map,
-    MeasuredClear.measuredClear_slots _ _ _ _ _ _ _ hl]
-  omega
-
-theorem cornerFixed_slots (wide : Bool) (start : Nat) : (cornerFixed wide start).gateSlots ≤ 34000000 := by
-  rw [cornerFixed,castSumCount,castFinish_gateSlots,cornerProgram,
-    program_slots _ _ _ _ _ _ _ _ (high_layout wide),corner_length,high_nodes,MeasuredClear.addressTree_leaves]
-  cases wide <;> norm_num [high,WEXUnlookupWidth13.high,WEXUnlookupWidth14.high]
-
-theorem programFor_slots (wide : Bool) (code : Code 32768) (hg : GeometryFor wide code) (start : Nat) :
-    (programFor wide code start).gateSlots ≤
-      codeSlots (bits wide) (normalizeW (erase code)) + masksFor wide code * 33595442 := by
-  cases wide
-  · exact WEXUnlookupWidth13.program_slots_upper code hg start
-  · exact WEXUnlookupWidth14.program_slots_upper code hg start
-
-theorem codeSlots_append {n} (bs : List ShorECDLP.Wire) (a b : WCode n) :
-    codeSlots bs (a++b) = codeSlots bs a + codeSlots bs b := by
-  induction a with
-  | nil => simp [codeSlots]
-  | cons i a ih => cases i <;> simp only [List.cons_append,codeSlots,ih,Nat.add_assoc]
-
-theorem raw_full_slots (wide : Bool) : codeSlots (bits wide) (normalizeW (erase WEXUnlookup.row)) +
-    5*33595442 ≤ 1000000000 := by
-  rw [erase_row]
-  have hc := WEX.codeSlots_bound (bits wide) (normalizeW (clearReferenceRow probeRows))
-  rw [literalSlotSum_normalize,portTotal_normalize,traversals_normalize] at hc
-  have hl := WEX.clearReferenceRow_literal_slots_bound
-  have hp := WEX.clearReferenceRow_portTotal
-  have ht := WEX.clearReferenceRow_traversals
-  rw [traversals_normalize] at ht
-  rw [ht] at hc
-  cases wide <;>
-    simp only [bits,if_false,if_true,Bool.false_eq_true,WEXUnlookupWidth13.bits,WEXUnlookupWidth14.bits,
-      WEX.widthBits,List.length_range'] at hc ⊢ <;> norm_num at hc ⊢ <;> omega
-
-theorem rowProgram_slots_raw (wide : Bool) (before : Code 32768) (after : WCode 32768)
-    (hg : GeometryFor wide before) (ha : ∀ i ∈ after, PlacedPair (bits wide) windowPaths windowRoot i)
-    (start : Nat) : (rowProgram wide before after start).gateSlots ≤
-      codeSlots (bits wide) (normalizeW (erase before)) + masksFor wide before*33595442 +
-        34000000 + codeSlots (bits wide) (normalizeW after) := by
-  have hb := programFor_slots wide before hg start
-  have hc := cornerFixed_slots wide (start+recordsFor wide before)
-  have hl := pair_layouts_of_placed (bits wide) windowPaths windowRoot (normalizeW after)
-    (by cases wide <;> decide +kernel) (pair_placed_normalize _ _ _ _ ha)
-  have hd := compile_slots (bits wide) windowPaths windowRoot (normalizeW after) hl
-    (start+recordsFor wide before+cornerRecords wide)
-  rw [rowProgram,castFinish_gateSlots,Straight.gateSlots_append,Straight.gateSlots_append]
-  omega
-
-theorem rowProgram_slots_cut (wide : Bool) (before : Code 32768) (after ref : WCode 32768)
-    (hg : GeometryFor wide before) (ha : ∀ i ∈ after, PlacedPair (bits wide) windowPaths windowRoot i)
-    (hm : masksFor wide before = 5)
-    (hf : codeSlots (bits wide) (normalizeW ref)+5*33595442 ≤ 1000000000)
-    (he : ref = erase before ++ oldCorner ++ after) (start : Nat) :
-    (rowProgram wide before after start).gateSlots ≤ 1100000000 := by
-  have hs := rowProgram_slots_raw wide before after hg ha start
-  rw [hm] at hs
-  have hc := congrArg (fun c : WCode 32768 => codeSlots (bits wide) (normalizeW c)) he
-  dsimp only [] at hc
-  rw [normalize_append,normalize_append,codeSlots_append,codeSlots_append] at hc
-  omega
-
-theorem fixedRow_slots (wide : Bool) (start : Nat) : (fixedRow wide start).gateSlots ≤ 1100000000 := by
-  rw [fixedRow,fixRecordCount,castFinish_gateSlots]
-  apply rowProgram_slots_cut wide beforeCode afterCode (erase WEXUnlookup.row)
-  · cases wide
-    · exact before_geometry13
-    · exact before_geometry14
-  · exact after_placed wide
-  · exact before_masks wide
-  · exact raw_full_slots wide
-  · exact split_reference
-
-end
-end ShorECDLP.Entrant.CornerClear
-
-
-namespace ShorECDLP.Entrant.CornerClear
-open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
-open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout
-open ECDSAAdd.Secp256k1 ECDSAAdd.ShorPort ECDSAAdd.Arithmetic.CompressedPointDialog
-open WEX WEXUnlookup ECDSAAdd.Entrant
-noncomputable section
-set_option maxHeartbeats 4000000
-set_option maxRecDepth 20000
-set_option linter.unusedSimpArgs false
-local instance : DecidableEq ECDSAAdd.Secp256k1.Point := Classical.typeDecidableEq _
-open AndGadget WEXCredit
-def replacementSource (read : ConstantBit 32768 → Bool) (wide : Bool) : AdaptiveCircuit :=
-  ((beforeSource read wide).seq (cornerSource read wide)).seq (afterSource read wide)
-
-
-def wrappedSource (row : AdaptiveCircuit) : AdaptiveCircuit :=
-  (WEX.prefixSource.seq ((WEX.signSource.seq row).seq WEX.signSource)).seq WEX.suffixSource
-
-
-def surroundGeneric (records signRecords : Nat)
-    (pre post : (start : Nat) → Straight 32768 start start)
-    (sign : (start : Nat) → Straight 32768 start (start+signRecords))
-    (row : (start : Nat) → Straight 32768 start (start+records))
-    (start : Nat) : Straight 32768 start (start+(records+2*signRecords)) :=
-  castFinish (by omega)
-    (((((pre start).append (sign start)).append (row (start+signRecords))).append
-      (sign (start+signRecords+records))).append (post (start+signRecords+records+signRecords)))
-
-def surroundRow (records : Nat) (row : (start : Nat) → Straight 32768 start (start+records))
-    (start : Nat) : Straight 32768 start (start+(records+2*1022)) :=
-  surroundGeneric records 1022 WEX.prefixProgram WEX.suffixProgram WEX.nProgram row start
-
-theorem surroundRow_run (records : Nat) (row : (start : Nat) → Straight 32768 start (start+records))
-    (source : (ConstantBit 32768 → Bool) → AdaptiveCircuit)
-    (hr : ∀ start read history, ((row start).instantiate read history).run = (source read).run)
-    (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
-    ((surroundRow records row start).instantiate read history).run = (wrappedSource (source read)).run := by
-  rw [surroundRow,surroundGeneric,castFinish_instantiate]
-  exact five_run read _ _ _ _ _ WEX.prefixSource WEX.signSource (source read) WEX.signSource WEX.suffixSource
-    (WEX.prefixProgram_run _ read) (WEX.nProgram_run _ read) (hr _ read)
-    (WEX.nProgram_run _ read) (WEX.suffixProgram_run _ read) history
-
-
-def bodyRecords (wide : Bool) : Nat := if wide then 1818805 else 1689781
-
-
-theorem body_record_count (wide : Bool) :
-    (if wide then 1816761 else 1687737)+2*1022=bodyRecords wide := by cases wide <;> rfl
-
-
-def bodyProgram (wide : Bool) (start : Nat) : Straight 32768 start (start+bodyRecords wide) :=
-  fixRecordCount _ _ (body_record_count wide) (surroundRow _ (fixedRow wide)) start
-
-
-theorem bodyProgram_run (read : ConstantBit 32768 → Bool) (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    ((bodyProgram wide start).instantiate read history).run = (wrappedSource (replacementSource read wide)).run := by
-  rw [bodyProgram,fixRecordCount,castFinish_instantiate]
-  exact surroundRow_run _ (fixedRow wide) (fun read => replacementSource read wide)
-    (fun start read history => fixedRow_run read wide start history) read start history
-
-
-theorem surroundRow_credit (records : Nat) (row : (start : Nat) → Straight 32768 start (start+records))
-    (c : Nat) (hr : ∀ start, ProgramCredit (row start) c) (start : Nat) :
-    ProgramCredit (surroundRow records row start)
-      (2*ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)+c) := by
-  let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)
-  have hl : ProgramCredit (WEX.nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hh : ProgramCredit (WEX.nProgram (start+1022+records)) a := ⟨n_residue _,n_added _⟩
-  rw [surroundRow,surroundGeneric]
-  apply credit_cast
-  exact five_credit a c (prefix_credit start) hl (hr (start+1022)) hh (suffix_credit _)
-
-
-theorem bodyProgram_credit (wide : Bool) (start : Nat) : ProgramCredit (bodyProgram wide start)
-    (2*ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)+
-      rowCredit wide beforeCode afterCode) := by
-  rw [bodyProgram,fixRecordCount]
-  apply credit_cast
-  exact surroundRow_credit (if wide then 1816761 else 1687737) (fixedRow wide) (rowCredit wide beforeCode afterCode) (fixedRow_credit wide) start
-
-
-theorem tCount_from_credit {n s e} (p : Straight n s e) (c : Nat) (hc : ProgramCredit p c)
-    (read : ConstantBit n → Bool) (history : Fin s → Bool) :
-    (p.instantiate read history).tCount = 7*c :=
-  (exact_t p hc.1 read history).trans (congrArg (fun k => 7*k) hc.2)
-
-theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (wide : Bool) (start : Nat) (history : Fin start → Bool) :
-    ((bodyProgram wide start).instantiate read history).tCount =
-      7*(2*ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)+rowCredit wide beforeCode afterCode) :=
-  tCount_from_credit (bodyProgram wide start)
-    (2*ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)+rowCredit wide beforeCode afterCode)
-    (bodyProgram_credit wide start) read history
-
-attribute [local irreducible] Straight.WellFormed
-
-theorem surroundGeneric_wellFormed (records signRecords : Nat)
-    (pre post : (start : Nat) → Straight 32768 start start)
-    (sign : (start : Nat) → Straight 32768 start (start+signRecords))
-    (row : (start : Nat) → Straight 32768 start (start+records))
-    (hp : ∀ start, (pre start).WellFormed) (hq : ∀ start, (post start).WellFormed)
-    (hs : ∀ start, (sign start).WellFormed) (hr : ∀ start, (row start).WellFormed) (start : Nat) :
-    (surroundGeneric records signRecords pre post sign row start).WellFormed := by
-  rw [surroundGeneric,castFinish_wellFormed]
-  exact straight_append_wellFormed _ _ (straight_append_wellFormed _ _
-    (straight_append_wellFormed _ _ (straight_append_wellFormed _ _ (hp start) (hs start)) (hr _)) (hs _)) (hq _)
-
-theorem surroundRow_eq_generic (records : Nat)
-    (row : (start : Nat) → Straight 32768 start (start+records)) (start : Nat) :
-    surroundRow records row start =
-      surroundGeneric records 1022 WEX.prefixProgram WEX.suffixProgram WEX.nProgram row start := rfl
-
-theorem surroundRow_wellFormed (records : Nat) (row : (start : Nat) → Straight 32768 start (start+records))
-    (hr : ∀ start, (row start).WellFormed) (start : Nat) : (surroundRow records row start).WellFormed :=
-  Eq.mpr (congrArg Straight.WellFormed (surroundRow_eq_generic records row start))
-    (surroundGeneric_wellFormed records 1022 WEX.prefixProgram WEX.suffixProgram WEX.nProgram row
-      WEX.prefixProgram_wellFormed WEX.suffixProgram_wellFormed WEX.nProgram_wellFormed hr start)
-
-theorem fixRecordCount_wellFormed {n} (records fixed : Nat) (h : records=fixed)
-    (p : (start : Nat) → Straight n start (start+records)) (hp : ∀ start, (p start).WellFormed) (start : Nat) :
-    (fixRecordCount records fixed h p start).WellFormed := by
-  rw [fixRecordCount,castFinish_wellFormed]
-  exact hp start
-
-theorem bodyProgram_wellFormed (wide : Bool) (start : Nat) : (bodyProgram wide start).WellFormed :=
-  fixRecordCount_wellFormed _ _ (body_record_count wide) (surroundRow (if wide then 1816761 else 1687737) (fixedRow wide))
-    (fun start => surroundRow_wellFormed (if wide then 1816761 else 1687737) (fixedRow wide) (fixedRow_wellFormed wide) start) start
-
-theorem prefix_in_source (start : Nat) : ChallengeMigration.straightWires (WEX.prefixProgram start) ⊆ sourceSupport := by
-  rw [WEX.prefixProgram,straightWires_append,literalProgram_support,literalProgram_support]
-  apply source_of_bounds
-  decide +kernel
-
-
-theorem suffix_in_source (start : Nat) : ChallengeMigration.straightWires (WEX.suffixProgram start) ⊆ sourceSupport := by
-  rw [WEX.suffixProgram,straightWires_append,literalProgram_support,literalProgram_support]
-  apply source_of_bounds
-  decide +kernel
-
-
-attribute [local irreducible] ChallengeMigration.straightWires Straight.gateSlots
-
-theorem surroundRow_support (records : Nat) (row : (start : Nat) → Straight 32768 start (start+records))
-    (hr : ∀ start, ChallengeMigration.straightWires (row start) ⊆ logicalSupport) (start : Nat) :
-    ChallengeMigration.straightWires (surroundRow records row start) ⊆ logicalSupport := by
-  rw [surroundRow,surroundGeneric,support_cast]
-  simp only [straightWires_append,List.append_subset]
-  exact ⟨⟨⟨⟨(prefix_in_source start).trans (List.subset_append_left _ _),
-    (WEX.nProgram_source start).trans (List.subset_append_left _ _)⟩,hr _⟩,
-    (WEX.nProgram_source _).trans (List.subset_append_left _ _)⟩,
-    (suffix_in_source _).trans (List.subset_append_left _ _)⟩
-
-
-theorem bodyProgram_support (wide : Bool) (start : Nat) :
-    ChallengeMigration.straightWires (bodyProgram wide start) ⊆ logicalSupport := by
-  rw [bodyProgram,fixRecordCount,support_cast]
-  exact surroundRow_support _ (fixedRow wide) (fixedRow_support wide) start
-
-
-theorem surroundRow_slots (records : Nat) (row : (start : Nat) → Straight 32768 start (start+records))
-    (hr : ∀ start, (row start).gateSlots ≤ 1100000000) (start : Nat) :
-    (surroundRow records row start).gateSlots ≤ 1200000000 := by
-  have hrow := hr (start+1022)
-  rw [surroundRow,surroundGeneric,castFinish_gateSlots]
-  simp only [Straight.gateSlots_append,WEX.nProgram_slots,WEX.prefixProgram,WEX.suffixProgram,literalProgram_slots]
-  have len : (signedAddressCircuit 836 870 windowBits).length = 30 := by decide +kernel
-  simp only [len,List.length_cons,List.length_nil]
-  have sign := literal_slot_bound (n := 32768) (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)
-  rw [ECDSAAdd.Baselines.normalize_slots] at sign
-  have bound := WEX.sign_slots_bound
-  omega
-
-
-theorem bodyProgram_slots (wide : Bool) (start : Nat) : (bodyProgram wide start).gateSlots ≤ 1200000000 := by
-  rw [bodyProgram,fixRecordCount,castFinish_gateSlots]
-  exact surroundRow_slots _ (fixedRow wide) (fixedRow_slots wide) start
-
-
-def compactProgram (wide : Bool) (start : Nat) : Straight 32768 start (start+bodyRecords wide) :=
-  relabelStraight WEX.compactPerm (bodyProgram wide start)
-
-
-theorem logical_source : logicalSupport ⊆ sourceSupport := by
-  intro w hw
-  rcases List.mem_append.mp hw with hw | hw
-  · exact hw
-  · obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
-    exact WEXUnlookup.recycledHot_source i
-
-
-theorem compactProgram_support (wide : Bool) (start : Nat) :
-    ChallengeMigration.straightWires (compactProgram wide start) ⊆ WEXUnlookup.compactSupport := by
-  rw [compactProgram,straightWires_relabel]
-  intro w hw
-  obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
-  exact List.mem_range.mpr (WEX.compactPerm_bound v (logical_source (bodyProgram_support wide start hv)))
-
-
-theorem wrapped_coherent_of (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (row : AdaptiveCircuit)
-    (hc : CoherentlyImplementsOn row (Finsupp.lmapDomain ℂ ℂ (rowPointState coeffs Q)) WEXUnlookup.LiveReady) :
-    CoherentlyImplementsOn (wrappedSource row) (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) WEXUnlookup.Ready := by
-  have first := composeCoherent WEXUnlookup.sign_coherent hc (fun s hs => live_write _ s hs)
-  have middle := composeCoherent (f := fun s => rowPointState coeffs Q (signPointState s)) (g := signPointState)
-    first WEXUnlookup.sign_coherent (fun s hs => live_write _ _ (live_write _ s hs))
-  have head := composeCoherent WEXUnlookup.prefix_coherent middle
-    (fun s hs => ⟨windowPrepare_live _ (rootFlip_live s hs.1),prefix_hot s hs.2⟩)
-  exact composeCoherent (f := fun s => middleState coeffs Q (prefixState s)) (g := suffixState)
-    head WEX.suffix_coherent (fun _ _ => True.intro)
-
-
-theorem rowState_full (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (wide : Bool)
-    (ha : WEX.WidthAliased (if wide then 14 else 13) coeffs) :
-    rowState coeffs Q wide = WEX.rowPointState coeffs Q := by
-  funext s
-  unfold rowState WEX.rowPointState
-  cases wide
-  · rw [show bits false = WEX.widthBits 13 from rfl,WEX.width_table 13 (by omega) coeffs Q ha s]
-  · rw [show bits true = WEX.widthBits 14 from rfl,WEX.width_table 14 (by omega) coeffs Q ha s]
-
-
-theorem replacement_coherent (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (wide : Bool)
-    (ha : WEX.WidthAliased (if wide then 14 else 13) coeffs) :
-    CoherentlyImplementsOn (replacementSource (readConstant coeffs Q) wide)
-      (Finsupp.lmapDomain ℂ ℂ (WEX.rowPointState coeffs Q)) WEXUnlookup.LiveReady := by
-  have h := rowSource_coherent coeffs Q hQ hn wide
-  rw [rowState_full coeffs Q wide ha] at h
-  simpa only [replacementSource,rowSource,prefixSource,WEXUnlookup.LiveReady] using h
-
-
-theorem bodyProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (wide : Bool)
-    (ha : WEX.WidthAliased (if wide then 14 else 13) coeffs) (start : Nat) (history : Fin start → Bool) :
-    CoherentlyImplementsOn ((bodyProgram wide start).instantiate (readConstant coeffs Q) history)
-      (Finsupp.lmapDomain ℂ ℂ (WEX.bodyState coeffs Q)) WEXUnlookup.Ready := by
-  obtain ⟨cs,aligned,mass⟩ := wrapped_coherent_of coeffs Q _ (replacement_coherent coeffs Q hQ hn wide ha)
+  · rw [WEXCredit.residue_naive_cast]
+    exact WEXCredit.literal_residue _ _
+  · rw [WEXCredit.added_naive_cast, WEXCredit.literal_added]
+
+
+def widthFastBodyRecords (k : Nat) : Nat := widthAddRecords k + 512
+
+def widthFastBodyProgram (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    Straight 32768 start (start + widthFastBodyRecords k) :=
+  NaiveChallenge.castFinish (by unfold widthFastBodyRecords; omega)
+    (((((prefixProgram start).append (nFastProgram start)).append
+      (widthAddProgram k hk (start + 256))).append
+      (nFastProgram (start + 256 + widthAddRecords k))).append
+      (suffixProgram (start + 256 + widthAddRecords k + 256)))
+
+def widthFastMiddleSource (k : Nat) (coeffs : Fin 32768 → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) : AdaptiveCircuit :=
+  ((literalSource (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)).seq
+    (widthRowSource k coeffs Q)).seq (literalSource (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram))
+
+def widthFastBodySource (k : Nat) (coeffs : Fin 32768 → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) : AdaptiveCircuit :=
+  (prefixSource.seq (widthFastMiddleSource k coeffs Q)).seq suffixSource
+
+theorem widthFastMiddle_coherent (k : Nat) (hk : k ≤ 15) (coeffs : Fin 32768 → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (hQ : ShorECDLP.order • Q = 0)
+    (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) :
+    CoherentlyImplementsOn (widthFastMiddleSource k coeffs Q)
+      (Finsupp.lmapDomain ℂ ℂ (widthMiddleState k coeffs Q)) liveReady := by
+  have hs := fastWindowSign_coherent
+  have first := composeCoherent hs (widthRowSource_coherent k hk coeffs Q hQ hn)
+    (fun s h => liveReady_write _ s h)
+  have all := composeCoherent first hs (fun s h => liveReady_write _ _ (liveReady_write _ s h))
+  exact all
+
+theorem widthFastBodySource_coherent (k : Nat) (hk : k ≤ 15) (coeffs : Fin 32768 → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (hQ : ShorECDLP.order • Q = 0)
+    (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) :
+    CoherentlyImplementsOn (widthFastBodySource k coeffs Q)
+      (Finsupp.lmapDomain ℂ ℂ (widthBodyState k coeffs Q)) windowReady := by
+  have h := composeCoherent prefix_coherent (widthFastMiddle_coherent k hk coeffs Q hQ hn)
+    (fun s hs => windowPrepare_live _ (rootFlip_live s hs))
+  exact composeCoherent (f := fun s => widthMiddleState k coeffs Q (prefixState s)) (g := suffixState)
+    h suffix_coherent (fun _ _ => trivial)
+
+theorem widthFastBodyProgram_run (k : Nat) (hk : k ≤ 15) (start : Nat)
+    (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (history : Fin start → Bool) :
+    ((widthFastBodyProgram k hk start).instantiate (readConstant coeffs Q) history).run =
+      (widthFastBodySource k coeffs Q).run := by
+  rw [widthFastBodyProgram,NaiveChallenge.instantiate_castFinish]
+  rw [append_run_fixed _ _ _ _ _ (fun h => suffixProgram_run _ _ h),AdaptiveCircuit.run_seq]
+  rw [append_run_fixed _ _ _ _ _ (fun h => nFastProgram_run _ _ h),AdaptiveCircuit.run_seq]
+  rw [append_run_fixed _ _ _ _ _ (fun h => widthAddProgram_run k hk _ coeffs Q h),AdaptiveCircuit.run_seq]
+  rw [append_run_fixed _ _ _ _ _ (fun h => nFastProgram_run _ _ h),AdaptiveCircuit.run_seq,prefixProgram_run]
+  simp only [← AdaptiveCircuit.run_seq,widthFastBodySource,widthFastMiddleSource,adaptive_seq_assoc]
+
+theorem widthFastBodyProgram_coherent (k : Nat) (hk : k ≤ 15) (coeffs : Fin 32768 → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (hQ : ShorECDLP.order • Q = 0)
+    (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (halias : WidthAliased k coeffs)
+    (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((widthFastBodyProgram k hk start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) windowReady := by
+  have h := widthFastBodySource_coherent k hk coeffs Q hQ hn
+  have he := h.congrIdeal (secondIdeal := Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) (by
+    intro s hs
+    obtain ⟨P,hP⟩ := hs.1.2
+    have he : widthBodyState k coeffs Q s = bodyState coeffs Q s := by
+      rw [widthBodyState_correct k hk coeffs Q halias s hs P hP,bodyState_correct coeffs Q s hs P hP]
+    simp only [Finsupp.lmapDomain_apply,Finsupp.mapDomain_single,ket,he])
+  obtain ⟨cs,aligned,mass⟩ := he
   refine ⟨cs,?_,mass⟩
-  rw [bodyProgram_run]
+  rw [widthFastBodyProgram_run]
   exact aligned
 
+theorem widthFastBodyProgram_credit (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    WEXCredit.ProgramCredit (widthFastBodyProgram k hk start)
+      (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) +
+        literalToffolis (normalizeW (rowAddCode probeRows)) + 21 * (2 ^ k - 1)) := by
+  let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
+  let b := literalToffolis (normalizeW (rowAddCode probeRows))
+  have hl : WEXCredit.ProgramCredit (nFastProgram start) a := nFastProgram_credit start
+  have ha : WEXCredit.ProgramCredit (widthAddProgram k hk (start + 256)) (b + 21 * (2 ^ k - 1)) :=
+    widthAddProgram_credit k hk _
+  have hr : WEXCredit.ProgramCredit (nFastProgram (start + 256 + widthAddRecords k)) a := nFastProgram_credit _
+  have ht := WEXCredit.credit_append (WEXCredit.credit_append (WEXCredit.credit_append
+    (WEXCredit.credit_append (WEXCredit.prefix_credit start) hl) ha) hr)
+    (WEXCredit.suffix_credit (start + 256 + widthAddRecords k + 256))
+  have hn : (((0 + a) + (b + 21 * (2 ^ k - 1))) + a) + 0 = 2 * a + b + 21 * (2 ^ k - 1) := by omega
+  have ht : WEXCredit.ProgramCredit _ (2 * a + b + 21 * (2 ^ k - 1)) := hn ▸ ht
+  unfold widthFastBodyProgram
+  exact WEXCredit.credit_naive_cast _ ht
 
-theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (wide : Bool)
-    (ha : WEX.WidthAliased (if wide then 14 else 13) coeffs) (start : Nat) (history : Fin start → Bool) :
-    CoherentlyImplementsOn ((compactProgram wide start).instantiate (readConstant coeffs Q) history)
-      (Finsupp.lmapDomain ℂ ℂ (WEX.compactState coeffs Q))
+
+theorem nFastProgram_wellFormed (start : Nat) : (nFastProgram start).WellFormed :=
+  literalFixed_wellFormed (n := 32768) _ _ _
+    (ECDSAAdd.Baselines.normalize_physical fastWindowSignProgram
+      (by simpa only [GatePhysical] using fastWindowSign_physical)) start
+
+theorem nFastProgram_slots (start : Nat) : (nFastProgram start).gateSlots =
+    Bridge.tmplSlots (literalT (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)) :=
+  literalFixed_slots (n := 32768) _ _ _ start
+
+theorem nFastProgram_source (start : Nat) : ChallengeMigration.straightWires (nFastProgram start) ⊆ sourceSupport := by
+  apply literalFixed_support (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) 256
+    ((literal_meas (n := 32768) _).trans fastWindowSign_normalized_counts.2) sourceSupport (start := start)
+  rw [ECDSAAdd.Baselines.normalize_wires]
+  have hs := finiteSignMeasured_support (negateYLayout streamLayout) 870 838 streamLayout.core.generic ECDSAAdd.p
+  have cover : 870 :: 838 :: (negateYLayout streamLayout).wires streamLayout.core.generic ⊆ sourceSupport := by
+    apply source_of_bounds; decide +kernel
+  exact hs.trans (fun w hw => List.mem_toFinset.mpr (cover (List.mem_toFinset.mp hw)))
+
+attribute [local irreducible] widthAddProgram compile Bridge.translate ECDSAAdd.Baselines.normalizeProgram
+  ECDSAAdd.toffoliCount literalToffolis normalizeW Nat.add Nat.mul
+
+theorem widthFastBodyProgram_wellFormed (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    (widthFastBodyProgram k hk start).WellFormed := by
+  rw [widthFastBodyProgram,NaiveChallenge.wellFormed_castFinish]
+  apply ChallengeMigration.straight_append_wellFormed
+  · apply ChallengeMigration.straight_append_wellFormed
+    · apply ChallengeMigration.straight_append_wellFormed
+      · exact ChallengeMigration.straight_append_wellFormed _ _ (prefixProgram_wellFormed start) (nFastProgram_wellFormed start)
+      · exact widthAddProgram_wellFormed k hk (start + 256)
+    · exact nFastProgram_wellFormed _
+  · exact suffixProgram_wellFormed _
+
+theorem widthFastBodyProgram_slots (k : Nat) (hk : k = 12 ∨ k = 13) (start : Nat) :
+    (widthFastBodyProgram k (by omega) start).gateSlots ≤ 1100000000 := by
+  rw [widthFastBodyProgram,NaiveChallenge.gateSlots_castFinish]
+  simp only [Straight.gateSlots_append,nFastProgram_slots,widthAddProgram_slots,prefixProgram,suffixProgram,literalProgram_slots]
+  have len : (signedAddressCircuit 836 870 windowBits).length = 30 := by decide +kernel
+  simp only [len,List.length_cons,List.length_nil]
+  have sign := literal_slot_bound (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
+  rw [ECDSAAdd.Baselines.normalize_slots] at sign
+  have bound := fastWindowSign_slots
+  have row := widthRow_slots_bound k hk start
+  rw [widthAddProgram_slots] at row
+  omega
+
+theorem widthFastBodyProgram_source (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    ChallengeMigration.straightWires (widthFastBodyProgram k hk start) ⊆ sourceSupport := by
+  have hp : ChallengeMigration.straightWires (prefixProgram start) ⊆ sourceSupport := by
+    rw [prefixProgram,straightWires_append,literalProgram_support,literalProgram_support]
+    decide +kernel
+  have hs (j : Nat) : ChallengeMigration.straightWires (suffixProgram j) ⊆ sourceSupport := by
+    rw [suffixProgram,straightWires_append,literalProgram_support,literalProgram_support]
+    decide +kernel
+  rw [widthFastBodyProgram,support_castFinish]
+  simp only [straightWires_append,List.append_subset]
+  exact ⟨⟨⟨⟨hp,nFastProgram_source _⟩,widthAddProgram_source k hk _⟩,nFastProgram_source _⟩,hs _⟩
+
+
+attribute [local irreducible] widthFastBodyProgram AndGadget.added
+
+theorem widthFastBodyProgram_tBound (k : Nat) (hk : k ≤ 15) (start : Nat)
+    (read : ConstantBit 32768 → Bool) (history : Fin start → Bool) :
+    ((widthFastBodyProgram k hk start).instantiate read history).tCount ≤
+      7 * (2162369 + 21 * (2 ^ k - 1)) := by
+  have ha := literalToffolis_normalize (rowAddCode probeRows)
+  have hc := (finite23_literal_counts streamLayout probeRows).1.trans
+    (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
+  have hrow : literalToffolis (rowAddCode probeRows) = 2161857 := by
+    simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
+      Nat.zero_add,Nat.add_zero,hc]
+  rw [hrow] at ha
+  have hs := widthFastBodyProgram_credit k hk start
+  have ht := WEXCredit.exact_t (widthFastBodyProgram k hk start) hs.1 read history
+  rw [hs.2] at ht
+  have hn := fastWindowSign_normalized_counts.1
+  omega
+
+def widthFastCompactProgram (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    Straight 32768 start (start + widthFastBodyRecords k) :=
+  relabelStraight compactPerm (widthFastBodyProgram k hk start)
+
+theorem widthFastCompactProgram_support (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    ChallengeMigration.straightWires (widthFastCompactProgram k hk start) ⊆ List.range 1634 := by
+  rw [widthFastCompactProgram,straightWires_relabel]
+  intro w hw
+  obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
+  exact List.mem_range.mpr (compactPerm_bound v (widthFastBodyProgram_source k hk start hv))
+
+theorem widthFastCompactProgram_slots (k : Nat) (hk : k = 12 ∨ k = 13) (start : Nat) :
+    (widthFastCompactProgram k (by omega) start).gateSlots ≤ 1100000000 := by
+  rw [widthFastCompactProgram,relabelStraight_slots]
+  exact widthFastBodyProgram_slots k hk start
+
+theorem widthFastCompactProgram_t (k : Nat) (hk : k ≤ 15) (start : Nat)
+    (read : ConstantBit 32768 → Bool) (history : Fin start → Bool) :
+    ((widthFastCompactProgram k hk start).instantiate read history).tCount ≤
+      7 * (2162369 + 21 * (2 ^ k - 1)) := by
+  rw [widthFastCompactProgram,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount]
+  exact widthFastBodyProgram_tBound k hk start read history
+
+theorem widthFastCompactProgram_coherent (k : Nat) (hk : k ≤ 15) (coeffs : Fin 32768 → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (hQ : ShorECDLP.order • Q = 0)
+    (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (halias : WidthAliased k coeffs)
+    (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((widthFastCompactProgram k hk start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (compactState coeffs Q))
+      (fun s => compactReady s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
+  have h := (widthFastBodyProgram_coherent k hk coeffs Q hQ hn halias start history).relabel compactPerm
+  have hr : CoherentlyImplementsOn
+      (((widthFastBodyProgram k hk start).instantiate (readConstant coeffs Q) history).relabel compactPerm)
+      ((relabelState compactPerm).comp ((Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)).comp
+        (relabelState compactPerm.symm)))
+      (fun s => compactReady s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
+    obtain ⟨cs,hc,hm⟩ := h
+    refine ⟨cs,hc.imp (fun _ _ hb s hs => hb s hs.1),hm⟩
+  have he := hr.congrIdeal (secondIdeal := Finsupp.lmapDomain ℂ ℂ (compactState coeffs Q))
+    (by intro s _; simp [compactState,compactPull,LinearMap.comp_apply,relabelState,ket])
+  rw [widthFastCompactProgram,relabelStraight_instantiate]
+  exact he
+
+private theorem fastResidue_relabel {n s e : Nat} (p : Straight n s e) (f : Wire ≃ Wire) :
+    residue (relabelStraight f p) = residue p := by
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g with
+    | literal g => cases g <;> simp_all [relabelStraight,relabelTemplateGate,Gate.relabel,residue,primitivePhaseCost]
+    | whenBit r v g => cases g <;> simp_all [relabelStraight,relabelTemplateGate,Gate.relabel,residue,tCost]
+  | recordGate i v g p ih => cases g <;> simp_all [relabelStraight,Gate.relabel,residue,tCost]
+  | measure => simp_all [relabelStraight,residue]
+
+theorem widthFastCompactProgram_credit (k : Nat) (hk : k ≤ 15) (start : Nat) :
+    WEXCredit.ProgramCredit (widthFastCompactProgram k hk start)
+      (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) +
+        literalToffolis (normalizeW (rowAddCode probeRows)) + 21 * (2 ^ k - 1)) := by
+  constructor
+  · rw [widthFastCompactProgram,fastResidue_relabel]
+    exact (widthFastBodyProgram_credit k hk start).1
+  · rw [widthFastCompactProgram,added_relabel]
+    exact (widthFastBodyProgram_credit k hk start).2
+
+open ShorECDLP.Entrant.Schedule33.Flexible
+
+def widthFastNarrow (k : Nat) (hk : k = 12 ∨ k = 13) : ModNarrow compactBody k where
+  records := widthFastBodyRecords k
+  tBound := 7 * (2162369 + 21 * (2 ^ k - 1))
+  credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) +
+    literalToffolis (normalizeW (rowAddCode probeRows)) + 21 * (2 ^ k - 1)
+  program := widthFastCompactProgram k (by omega)
+  coherent := by
+    intro coeffs Q hQ hn halias start history
+    have ha : WidthAliased k coeffs := by simpa only [WidthAliased, ModAliased, reducedAddress] using halias
+    have h := widthFastCompactProgram_coherent k (by omega) coeffs Q hQ hn ha start history
+    simpa only [Single.BodyValid, compactBody] using h
+  wellFormed := by
+    intro start
+    rw [widthFastCompactProgram]
+    exact (relabelStraight_wellFormed compactPerm (widthFastBodyProgram k (by omega) start)).mpr
+      (widthFastBodyProgram_wellFormed k (by omega) start)
+  slots := by
+    intro start
+    have h := widthFastCompactProgram_slots k hk start
+    simpa only [compactBody] using h
+  wires := by
+    intro start
+    have h := widthFastCompactProgram_support k (by omega) start
+    simpa only [compactBody] using h
+  tCount := widthFastCompactProgram_t k (by omega)
+  zero := fun start => (widthFastCompactProgram_credit k (by omega) start).1
+  count_eq := fun start => (widthFastCompactProgram_credit k (by omega) start).2
+
+end
+end ShorECDLP.Entrant.WEX
+
+namespace ShorECDLP.Entrant.Schedule33.Flexible
+open Quantum ShorECDLP.Secp256k1 ShorECDLP.Challenge AndGadget WEXCredit
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Entrant.Single ShorECDLP.Entrant.Single.Distribution ShorECDLP.Entrant.Schedule33
+variable [body : Single.WindowBody]
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+variable [ledger : Single.ProducerResources body] [cover : SupportCover body ledger]
+
+omit body ledger cover in
+private theorem widenFastDual {limits : Limits} {layout : DecodeLayout} {entry : StraightEntry}
+    {old new : Bounds} (cert : Certificate limits layout entry old)
+    (hq : old.qubits ≤ new.qubits) (ht : old.tModel ≤ new.tModel)
+    (hm : old.measurements ≤ new.measurements) : Certificate limits layout entry new :=
+  { cert with resources := fun Q =>
+      ⟨(cert.resources Q).1.trans hq, (cert.resources Q).2.1.trans ht, (cert.resources Q).2.2.trans hm⟩ }
+
+theorem dual_fast_certificate (n13 : ModNarrow body 12) (n14 : ModNarrow body 13)
+    (hSupport : ledger.support.length ≤ 1634)
+    (hSlot : body.slotBound ≤ 3000000000)
+    (hR13 : n13.records ≤ 1643406) (hR14 : n14.records ≤ 1729422)
+    (hReset : body.reset.length ≤ 854)
+    (hT13 : n13.tBound ≤ 15738548) (hT14 : n14.tBound ≤ 16340660)
+    (hC13 : n13.credit ≤ 2248364) (hC14 : n14.credit ≤ 2334380)
+    (hq : (1930 : Wire) ∉ ledger.support) (hy : (1931 : Wire) ∉ 1930 :: ledger.support) :
+    letI : Programs body := dualPrograms n13 n14
+    Certificate officialLimits (lowerLayout 1930 entry layout) (fourEntry 1930 1931 entry)
+      ⟨1636, 307080818, 594176689⟩ := by
+  letI : Programs body := dualPrograms n13 n14
+  have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
+  have hbaseS : 34 * windowSlots + 176648 ≤ officialLimits.gateSlots := by
+    change 34 * windowSlots + 176648 ≤ 4000000000000000
+    omega
+  have hbaseR : 65535 + 29 * (dualPrograms n13 n14).records14 + 4 * (dualPrograms n13 n14).records13 +
+      474 + body.reset.length + 34114 ≤ officialLimits.measurements := by
+    change 65535 + 29 * n14.records + 4 * n13.records + 474 + body.reset.length + 34114 ≤ 47471340504
+    omega
+  have hsrc : 458745 + 29 * (dualPrograms n13 n14).cost14 + 4 * (dualPrograms n13 n14).cost13 +
+      56773 ≤ 537348850 := by
+    change 458745 + 29 * n14.tBound + 4 * n13.tBound + 56773 ≤ 537348850
+    omega
+  have hslots : 34 * windowSlots + 176648 + 24 * 537348850 + 2 ≤ officialLimits.gateSlots := by
+    change 34 * windowSlots + 176648 + 24 * 537348850 + 2 ≤ 4000000000000000
+    omega
+  have hrecords : 65535 + 29 * (dualPrograms n13 n14).records14 + 4 * (dualPrograms n13 n14).records13 +
+      474 + body.reset.length + 34114 + 537348850 ≤ officialLimits.measurements := by
+    change 65535 + 29 * n14.records + 4 * n13.records + 474 + body.reset.length + 34114 + 537348850 ≤ 47471340504
+    omega
+  have raw := bounded_four_certificate (dualProgramCredit n13 n14) 1930 1931 537348850
+    hbaseS hbaseR hsrc hslots hrecords hq hy
+  have hcounts := (source_counts 1930 1931 537348850 hbaseS hbaseR hsrc).1
+  have hcursor : entry.finalCursor ≤ 56827839 := by
+    rw [source_cursor]
+    change 65535 + 29 * n14.records + 4 * n13.records + 474 + body.reset.length + 34114 ≤ 56827839
+    omega
+  apply widenFastDual raw
+  · change ledger.support.length + 2 ≤ 1636
+    omega
+  · change 4 * (65535 + 29 * n14.credit + 4 * n13.credit) + 56773 + 1 ≤ 307080818
+    omega
+  · change entry.finalCursor + added entry.program ≤ 594176689
+    omega
+
+end
+end ShorECDLP.Entrant.Schedule33.Flexible
+
+namespace ShorECDLP.Entrant.Schedule33.FastFinal
+open Quantum ShorECDLP.Secp256k1 ShorECDLP.Challenge AndGadget WEXCredit
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Entrant.Schedule33.Flexible
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] WEX.widthFastNarrow WEX.widthCompactProgram WEX.widthBodyProgram
+  WEX.compile WEX.normalizeW ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount WEX.literalToffolis
+  Nat.add Nat.mul AndGadget.added
+
+def narrow12 : ModNarrow WEX.compactBody 12 := WEX.widthFastNarrow 12 (Or.inl rfl)
+def narrow13 : ModNarrow WEX.compactBody 13 := WEX.widthFastNarrow 13 (Or.inr rfl)
+
+attribute [local irreducible] narrow12 narrow13
+
+theorem n12_records : narrow12.records ≤ 1643406 := by
+  rw [narrow12, WEX.widthFastNarrow]
+  norm_num [WEX.widthFastBodyRecords, WEX.widthAddRecords]
+
+theorem n13_records : narrow13.records ≤ 1729422 := by
+  rw [narrow13, WEX.widthFastNarrow]
+  norm_num [WEX.widthFastBodyRecords, WEX.widthAddRecords]
+
+theorem n12_cost : narrow12.tBound ≤ 15738548 := by
+  rw [narrow12, WEX.widthFastNarrow]
+  norm_num
+
+theorem n13_cost : narrow13.tBound ≤ 16340660 := by
+  rw [narrow13, WEX.widthFastNarrow]
+  norm_num
+
+private theorem count12_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15738548) :
+    c ≤ 2248364 := by omega
+private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16340660) :
+    c ≤ 2334380 := by omega
+
+theorem n12_credit : narrow12.credit ≤ 2248364 := by
+  let read : ConstantBit 32768 → Bool := fun _ => false
+  have ht := narrow12.tCount 0 read Fin.elim0
+  have he := WEXCredit.exact_t (narrow12.program 0) (narrow12.zero 0) read Fin.elim0
+  have hc := narrow12.count_eq 0
+  have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
+  exact count12_bound _ _ he' (ht.trans n12_cost)
+
+theorem n13_credit : narrow13.credit ≤ 2334380 := by
+  let read : ConstantBit 32768 → Bool := fun _ => false
+  have ht := narrow13.tCount 0 read Fin.elim0
+  have he := WEXCredit.exact_t (narrow13.program 0) (narrow13.zero 0) read Fin.elim0
+  have hc := narrow13.count_eq 0
+  have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
+  exact count13_bound _ _ he' (ht.trans n13_cost)
+
+local instance bodyInstance : Single.WindowBody := WEX.compactBody
+local instance resourcesInstance : Single.ProducerResources bodyInstance :=
+  Single.ProducerResources.ofBody WEX.compactBody
+    (by change resetWires.Nodup; exact resetWires_nodup)
+    (by change (0 : Wire) ∈ resetWires; decide +kernel)
+    (by change (1 : Wire) ∈ resetWires; decide +kernel)
+local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
+local instance programInstance : Programs bodyInstance := dualPrograms narrow12 narrow13
+
+def entry : StraightEntry := fourEntry 1930 1931 Flexible.entry
+def layout : DecodeLayout := lowerLayout 1930 Flexible.entry Flexible.layout
+def bounds : Bounds := ⟨1636, 307080818, 594176689⟩
+
+theorem certificate : Certificate officialLimits layout entry bounds := by
+  apply @dual_fast_certificate bodyInstance resourcesInstance coverInstance narrow12 narrow13
+  · change (List.range 1634).length ≤ 1634
+    simp
+  · rw [bodyInstance, WEX.compactBody]
+    decide +kernel
+  · exact n12_records
+  · exact n13_records
+  · change WEX.compactBody.reset.length ≤ 854
+    exact WEX.compactBody_resource_ledger.2.2.2.le
+  · exact n12_cost
+  · exact n13_cost
+  · exact n12_credit
+  · exact n13_credit
+  · change (1930 : Wire) ∉ List.range 1634
+    simp
+  · change (1931 : Wire) ∉ 1930 :: List.range 1634
+    simp
+end
+end ShorECDLP.Entrant.Schedule33.FastFinal
+
+
+namespace ShorECDLP.Entrant.WEXUnlookup
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration WEX
+noncomputable section
+set_option maxHeartbeats 4000000
+set_option maxRecDepth 20000
+
+def fastSignSource : AdaptiveCircuit := literalSource (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram)
+
+theorem fastSign_coherent : CoherentlyImplementsOn fastSignSource (Finsupp.lmapDomain ℂ ℂ signPointState) LiveReady := by
+  obtain ⟨cs,aligned,mass⟩ := WEX.fastWindowSign_coherent
+  exact ⟨cs,aligned.imp (fun _ _ hb s hs => hb s hs.1),mass⟩
+end
+end ShorECDLP.Entrant.WEXUnlookup
+
+
+namespace ShorECDLP.Entrant.WEXUnlookupWidth13
+open Quantum Challenge AndGadget WEXCredit Paper2607_13816 Paper2607_13816.ChallengeMigration WEX WEXUnlookup
+open ShorECDLP.Entrant.Schedule33.Flexible
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+attribute [local irreducible] program blockProgram clearProgram addFixed WEX.compile Bridge.translate
+  ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
+  WEX.literalToffolis WEX.normalizeW WEXUnlookup.compactBody ccx Nat.add Nat.mul
+def fastMiddleSource (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
+  (fastSignSource.seq (rowSource coeffs Q)).seq fastSignSource
+
+theorem fastMiddle_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 13 coeffs) :
+    CoherentlyImplementsOn (fastMiddleSource coeffs Q) (Finsupp.lmapDomain ℂ ℂ (middleState coeffs Q)) LiveReady := by
+  have first := composeCoherent fastSign_coherent (rowSource_coherent coeffs Q hQ hn halias)
+    (fun s hs => live_write _ s hs)
+  exact composeCoherent (f := fun s => rowPointState coeffs Q (signPointState s)) (g := signPointState)
+    first fastSign_coherent (fun s hs => live_write _ _ (live_write _ s hs))
+
+def fastBodySource (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
+  (prefixSource.seq (fastMiddleSource coeffs Q)).seq suffixSource
+
+theorem fastBodySource_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 13 coeffs) :
+    CoherentlyImplementsOn (fastBodySource coeffs Q) (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready := by
+  have h := composeCoherent WEXUnlookup.prefix_coherent (fastMiddle_coherent coeffs Q hQ hn halias)
+    (fun s hs => ⟨windowPrepare_live _ (rootFlip_live s hs.1),prefix_hot s hs.2⟩)
+  exact composeCoherent (f := fun s => middleState coeffs Q (prefixState s)) (g := suffixState)
+    h WEX.suffix_coherent (fun _ _ => True.intro)
+def fastBodyProgram (start : Nat) : Straight 32768 start (start+1670324) :=
+  castFinish (by omega)
+    (((((prefixProgram start).append (nFastProgram start)).append (addFixed (start+256))).append
+      (nFastProgram (start+256+1669812))).append (suffixProgram (start+256+1669812+256)))
+
+attribute [local irreducible] fastBodyProgram
+
+theorem fastBodyProgram_run_read (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
+    ((fastBodyProgram start).instantiate read history).run =
+      ((prefixSource.seq ((fastSignSource.seq (sourceCode read row)).seq fastSignSource)).seq suffixSource).run := by
+  rw [fastBodyProgram,castFinish_instantiate]
+  exact five_run read _ _ _ _ _ prefixSource fastSignSource (sourceCode read row) fastSignSource suffixSource
+    (prefixProgram_run _ read) (nFastProgram_run _ read) (addFixed_run read _)
+    (nFastProgram_run _ read) (suffixProgram_run _ read) history
+
+theorem fastBodyProgram_run (start : Nat) (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (history : Fin start → Bool) :
+    ((fastBodyProgram start).instantiate (readConstant coeffs Q) history).run = (fastBodySource coeffs Q).run := by
+  have he : fastBodySource coeffs Q =
+      ((prefixSource.seq ((fastSignSource.seq (sourceCode (readConstant coeffs Q) row)).seq fastSignSource)).seq suffixSource) := by
+    delta fastBodySource fastMiddleSource rowSource
+    rfl
+  have hr := fastBodyProgram_run_read (readConstant coeffs Q) start history
+  exact hr.trans (congrArg AdaptiveCircuit.run he.symm)
+
+theorem fastBodyProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 13 coeffs) (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((fastBodyProgram start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready := by
+  obtain ⟨cs,aligned,mass⟩ := fastBodySource_coherent coeffs Q hQ hn halias
+  refine ⟨cs,?_,mass⟩
+  rw [fastBodyProgram_run]
+  exact aligned
+
+theorem fastBodyProgram_credit (start : Nat) : ProgramCredit (fastBodyProgram start)
+    (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row) := by
+  let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
+  have hl : ProgramCredit (nFastProgram start) a := WEX.nFastProgram_credit start
+  have hr : ProgramCredit (nFastProgram (start+256+1669812)) a := WEX.nFastProgram_credit _
+  rw [fastBodyProgram]
+  apply credit_cast
+  exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+256)) hr
+    (suffix_credit (start+256+1669812+256))
+
+theorem fastBodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
+    ((fastBodyProgram start).instantiate read history).tCount =
+      7*(2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row) := by
+  have hc := fastBodyProgram_credit start
+  have h := exact_t (fastBodyProgram start) hc.1 read history
+  rw [hc.2] at h
+  exact h
+
+theorem fastBodyProgram_wellFormed (start : Nat) : (fastBodyProgram start).WellFormed := by
+  rw [fastBodyProgram,castFinish_wellFormed]
+  apply straight_append_wellFormed
+  · apply straight_append_wellFormed
+    · apply straight_append_wellFormed
+      · exact straight_append_wellFormed _ _ (prefixProgram_wellFormed start) (nFastProgram_wellFormed start)
+      · exact addFixed_wellFormed _
+    · exact nFastProgram_wellFormed _
+  · exact suffixProgram_wellFormed _
+
+theorem fastBodyProgram_support (start : Nat) : ChallengeMigration.straightWires (fastBodyProgram start) ⊆ logicalSupport := by
+  have hp : ChallengeMigration.straightWires (prefixProgram start) ⊆ sourceSupport := by
+    rw [prefixProgram,straightWires_append,literalProgram_support,literalProgram_support]
+    decide +kernel
+  have hs (j : Nat) : ChallengeMigration.straightWires (suffixProgram j) ⊆ sourceSupport := by
+    rw [suffixProgram,straightWires_append,literalProgram_support,literalProgram_support]
+    decide +kernel
+  rw [fastBodyProgram,support_cast]
+  simp only [straightWires_append,List.append_subset]
+  exact ⟨⟨⟨⟨hp.trans (List.subset_append_left _ _),(nFastProgram_source _).trans (List.subset_append_left _ _)⟩,
+    addFixed_support _⟩,(nFastProgram_source _).trans (List.subset_append_left _ _)⟩,(hs _).trans (List.subset_append_left _ _)⟩
+
+theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gateSlots ≤ 1100000000 := by
+  have hr := row_slots_upper (start+256)
+  rw [fastBodyProgram,castFinish_gateSlots]
+  simp only [Straight.gateSlots_append,nFastProgram_slots,addFixed,castFinish_gateSlots,
+    prefixProgram,suffixProgram,literalProgram_slots]
+  have len : (signedAddressCircuit 836 870 windowBits).length = 30 := by decide +kernel
+  simp only [len,List.length_cons,List.length_nil]
+  have sign := literal_slot_bound (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
+  rw [ECDSAAdd.Baselines.normalize_slots] at sign
+  have bound := fastWindowSign_slots
+  omega
+def fastCompactProgram (start : Nat) : Straight 32768 start (start+1670324) :=
+  relabelStraight WEX.compactPerm (fastBodyProgram start)
+
+theorem fastCompactProgram_support (start : Nat) :
+    ChallengeMigration.straightWires (fastCompactProgram start) ⊆ compactSupport := by
+  rw [fastCompactProgram,straightWires_relabel]
+  intro w hw
+  obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
+  have hh := fastBodyProgram_support start hv
+  rcases List.mem_append.mp hh with ho | hh
+  · exact List.mem_range.mpr (WEX.compactPerm_bound v ho)
+  · obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hh
+    exact List.mem_range.mpr (WEX.compactPerm_bound _ (recycledHot_source i))
+
+theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 13 coeffs) (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((fastCompactProgram start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (compactState coeffs Q))
       (fun s => WEXUnlookup.compactReady s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
-  have hc := bodyProgram_coherent coeffs Q hQ hn wide ha start history
+  have hc : CoherentlyImplementsOn ((fastBodyProgram start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready :=
+    fastBodyProgram_coherent coeffs Q hQ hn halias start history
   have h := hc.relabel WEX.compactPerm
   have hr : CoherentlyImplementsOn
-      (((bodyProgram wide start).instantiate (readConstant coeffs Q) history).relabel WEX.compactPerm)
-      ((relabelState WEX.compactPerm).comp ((Finsupp.lmapDomain ℂ ℂ (WEX.bodyState coeffs Q)).comp
+      (((fastBodyProgram start).instantiate (readConstant coeffs Q) history).relabel WEX.compactPerm)
+      ((relabelState WEX.compactPerm).comp ((Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)).comp
         (relabelState WEX.compactPerm.symm)))
       (fun s => WEXUnlookup.compactReady s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
     obtain ⟨cs,aligned,mass⟩ := h
@@ -62328,90 +63822,275 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : ShorECD
     apply hb s
     refine ⟨hs.1.1,?_⟩
     intro i
-    exact (WEXUnlookup.pull_hot s i).trans (hs.1.2 i)
-  have he := hr.congrIdeal (secondIdeal := Finsupp.lmapDomain ℂ ℂ (WEX.compactState coeffs Q))
-    (by intro s _; simp [WEX.compactState,WEX.compactPull,LinearMap.comp_apply,relabelState,ket])
-  rw [compactProgram,relabelStraight_instantiate]
+    exact (pull_hot s i).trans (hs.1.2 i)
+  have he := hr.congrIdeal (secondIdeal := Finsupp.lmapDomain ℂ ℂ (compactState coeffs Q))
+    (by intro s _; simp [compactState,compactPull,LinearMap.comp_apply,relabelState,ket])
+  rw [fastCompactProgram,relabelStraight_instantiate]
   exact he
 
+theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
+    ccx row ≤ 2274002 := by
+  have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
+  have hc := (finite23_literal_counts streamLayout probeRows).1.trans
+    (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2161857 := by
+    rw [WEX.clearReferenceRow_literalToffolis]
+    simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
+      Nat.zero_add,Nat.add_zero,hc]
+  rw [hrow] at ha
+  have hs := WEX.fastWindowSign_normalized_counts.1
+  have hr := WEXUnlookupWidth13.row_ccx_relation
+  omega
 
-def narrowCost (wide : Bool) : Nat := if wide then 16957381 else 16054213
-
-
-theorem narrow_cost_bound (wide : Bool) (c : Nat) (hc : c ≤ if wide then 2422483 else 2293459) :
-    7*c ≤ narrowCost wide := by
-  cases wide <;> simp only [narrowCost,if_false,if_true,Bool.false_eq_true] at * <;> omega
-
-
-def narrow (wide : Bool) : Schedule33.Flexible.ModNarrow WEXUnlookup.compactBody (if wide then 14 else 13) where
-  records := bodyRecords wide
-  tBound := narrowCost wide
-  credit := 2*ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)+rowCredit wide beforeCode afterCode
-  program := compactProgram wide
+def fastNarrow : ModNarrow WEXUnlookup.compactBody 13 where
+  records := 1670324
+  tBound := 15918014
+  credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row
+  program := fastCompactProgram
   coherent := by
     intro coeffs Q hQ hn halias start history
-    have ha : WEX.WidthAliased (if wide then 14 else 13) coeffs := by
-      simpa only [WEX.WidthAliased,Schedule33.Flexible.ModAliased,Schedule33.Flexible.reducedAddress] using halias
-    have h := compactProgram_coherent coeffs Q hQ hn wide ha start history
-    simpa only [Single.BodyValid,WEXUnlookup.compactBody] using h
+    have ha : WEX.WidthAliased 13 coeffs := by simpa only [WEX.WidthAliased, ModAliased, reducedAddress] using halias
+    have h := fastCompactProgram_coherent coeffs Q hQ hn ha start history
+    simpa only [Single.BodyValid, WEXUnlookup.compactBody] using h
   wellFormed := by
     intro start
-    rw [compactProgram]
-    exact (relabelStraight_wellFormed WEX.compactPerm (bodyProgram wide start)).mpr (bodyProgram_wellFormed wide start)
+    rw [fastCompactProgram]
+    exact (relabelStraight_wellFormed WEX.compactPerm (fastBodyProgram start)).mpr (fastBodyProgram_wellFormed start)
   slots := by
     intro start
-    rw [compactProgram,relabelStraight_slots]
-    exact (bodyProgram_slots wide start).trans (by change (1200000000 : Nat) ≤ 2000000000;omega)
+    rw [fastCompactProgram,relabelStraight_slots]
+    exact (fastBodyProgram_slots_upper start).trans (by rw [WEXUnlookup.compactBody]; decide +kernel)
   wires := by
     intro start
-    simpa only [WEXUnlookup.compactBody] using compactProgram_support wide start
+    simpa only [WEXUnlookup.compactBody] using fastCompactProgram_support start
   tCount := by
     intro start read history
-    rw [compactProgram,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount,bodyProgram_tCount]
-    exact narrow_cost_bound wide (2*ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram)+rowCredit wide beforeCode afterCode) (row_credit_upper wide)
+    rw [fastCompactProgram,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount,fastBodyProgram_tCount]
+    have h := fastCount_upper
+    omega
   zero := by
     intro start
-    rw [compactProgram,WEXUnlookup.residue_relabel]
-    exact (bodyProgram_credit wide start).1
+    rw [fastCompactProgram,WEXUnlookup.residue_relabel]
+    exact (fastBodyProgram_credit start).1
   count_eq := by
     intro start
-    rw [compactProgram,AndGadget.added_relabel]
-    exact (bodyProgram_credit wide start).2
+    rw [fastCompactProgram,AndGadget.added_relabel]
+    exact (fastBodyProgram_credit start).2
+end
+end ShorECDLP.Entrant.WEXUnlookupWidth13
 
 
-theorem narrow_credit_upper (wide : Bool) : (narrow wide).credit ≤ if wide then 2422483 else 2293459 :=
-  row_credit_upper wide
+namespace ShorECDLP.Entrant.WEXUnlookupWidth14
+open Quantum Challenge AndGadget WEXCredit Paper2607_13816 Paper2607_13816.ChallengeMigration WEX WEXUnlookup
+open ShorECDLP.Entrant.Schedule33.Flexible
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+attribute [local irreducible] program blockProgram clearProgram addFixed WEX.compile Bridge.translate
+  ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
+  WEX.literalToffolis WEX.normalizeW WEXUnlookup.compactBody ccx Nat.add Nat.mul
+def fastMiddleSource (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
+  (fastSignSource.seq (rowSource coeffs Q)).seq fastSignSource
 
+theorem fastMiddle_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 14 coeffs) :
+    CoherentlyImplementsOn (fastMiddleSource coeffs Q) (Finsupp.lmapDomain ℂ ℂ (middleState coeffs Q)) LiveReady := by
+  have first := composeCoherent fastSign_coherent (rowSource_coherent coeffs Q hQ hn halias)
+    (fun s hs => live_write _ s hs)
+  exact composeCoherent (f := fun s => rowPointState coeffs Q (signPointState s)) (g := signPointState)
+    first fastSign_coherent (fun s hs => live_write _ _ (live_write _ s hs))
 
-def asUniform (m : Schedule33.Flexible.ModNarrow WEXUnlookup.compactBody 14) :
-    Schedule33.Flexible.UniformNarrow WEXUnlookup.compactBody where
-  records := m.records
-  tBound := m.tBound
-  credit := m.credit
-  program := m.program
+def fastBodySource (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
+  (prefixSource.seq (fastMiddleSource coeffs Q)).seq suffixSource
+
+theorem fastBodySource_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 14 coeffs) :
+    CoherentlyImplementsOn (fastBodySource coeffs Q) (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready := by
+  have h := composeCoherent WEXUnlookup.prefix_coherent (fastMiddle_coherent coeffs Q hQ hn halias)
+    (fun s hs => ⟨windowPrepare_live _ (rootFlip_live s hs.1),prefix_hot s hs.2⟩)
+  exact composeCoherent (f := fun s => middleState coeffs Q (prefixState s)) (g := suffixState)
+    h WEX.suffix_coherent (fun _ _ => True.intro)
+def fastBodyProgram (start : Nat) : Straight 32768 start (start+1781940) :=
+  castFinish (by omega)
+    (((((prefixProgram start).append (nFastProgram start)).append (addFixed (start+256))).append
+      (nFastProgram (start+256+1781428))).append (suffixProgram (start+256+1781428+256)))
+
+attribute [local irreducible] fastBodyProgram
+
+theorem fastBodyProgram_run_read (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
+    ((fastBodyProgram start).instantiate read history).run =
+      ((prefixSource.seq ((fastSignSource.seq (sourceCode read row)).seq fastSignSource)).seq suffixSource).run := by
+  rw [fastBodyProgram,castFinish_instantiate]
+  exact five_run read _ _ _ _ _ prefixSource fastSignSource (sourceCode read row) fastSignSource suffixSource
+    (prefixProgram_run _ read) (nFastProgram_run _ read) (addFixed_run read _)
+    (nFastProgram_run _ read) (suffixProgram_run _ read) history
+
+theorem fastBodyProgram_run (start : Nat) (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (history : Fin start → Bool) :
+    ((fastBodyProgram start).instantiate (readConstant coeffs Q) history).run = (fastBodySource coeffs Q).run := by
+  have he : fastBodySource coeffs Q =
+      ((prefixSource.seq ((fastSignSource.seq (sourceCode (readConstant coeffs Q) row)).seq fastSignSource)).seq suffixSource) := by
+    delta fastBodySource fastMiddleSource rowSource
+    rfl
+  have hr := fastBodyProgram_run_read (readConstant coeffs Q) start history
+  exact hr.trans (congrArg AdaptiveCircuit.run he.symm)
+
+theorem fastBodyProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 14 coeffs) (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((fastBodyProgram start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready := by
+  obtain ⟨cs,aligned,mass⟩ := fastBodySource_coherent coeffs Q hQ hn halias
+  refine ⟨cs,?_,mass⟩
+  rw [fastBodyProgram_run]
+  exact aligned
+
+theorem fastBodyProgram_credit (start : Nat) : ProgramCredit (fastBodyProgram start)
+    (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row) := by
+  let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
+  have hl : ProgramCredit (nFastProgram start) a := WEX.nFastProgram_credit start
+  have hr : ProgramCredit (nFastProgram (start+256+1781428)) a := WEX.nFastProgram_credit _
+  rw [fastBodyProgram]
+  apply credit_cast
+  exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+256)) hr
+    (suffix_credit (start+256+1781428+256))
+
+theorem fastBodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
+    ((fastBodyProgram start).instantiate read history).tCount =
+      7*(2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row) := by
+  have hc := fastBodyProgram_credit start
+  have h := exact_t (fastBodyProgram start) hc.1 read history
+  rw [hc.2] at h
+  exact h
+
+theorem fastBodyProgram_wellFormed (start : Nat) : (fastBodyProgram start).WellFormed := by
+  rw [fastBodyProgram,castFinish_wellFormed]
+  apply straight_append_wellFormed
+  · apply straight_append_wellFormed
+    · apply straight_append_wellFormed
+      · exact straight_append_wellFormed _ _ (prefixProgram_wellFormed start) (nFastProgram_wellFormed start)
+      · exact addFixed_wellFormed _
+    · exact nFastProgram_wellFormed _
+  · exact suffixProgram_wellFormed _
+
+theorem fastBodyProgram_support (start : Nat) : ChallengeMigration.straightWires (fastBodyProgram start) ⊆ logicalSupport := by
+  have hp : ChallengeMigration.straightWires (prefixProgram start) ⊆ sourceSupport := by
+    rw [prefixProgram,straightWires_append,literalProgram_support,literalProgram_support]
+    decide +kernel
+  have hs (j : Nat) : ChallengeMigration.straightWires (suffixProgram j) ⊆ sourceSupport := by
+    rw [suffixProgram,straightWires_append,literalProgram_support,literalProgram_support]
+    decide +kernel
+  rw [fastBodyProgram,support_cast]
+  simp only [straightWires_append,List.append_subset]
+  exact ⟨⟨⟨⟨hp.trans (List.subset_append_left _ _),(nFastProgram_source _).trans (List.subset_append_left _ _)⟩,
+    addFixed_support _⟩,(nFastProgram_source _).trans (List.subset_append_left _ _)⟩,(hs _).trans (List.subset_append_left _ _)⟩
+
+theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gateSlots ≤ 1100000000 := by
+  have hr := row_slots_upper (start+256)
+  rw [fastBodyProgram,castFinish_gateSlots]
+  simp only [Straight.gateSlots_append,nFastProgram_slots,addFixed,castFinish_gateSlots,
+    prefixProgram,suffixProgram,literalProgram_slots]
+  have len : (signedAddressCircuit 836 870 windowBits).length = 30 := by decide +kernel
+  simp only [len,List.length_cons,List.length_nil]
+  have sign := literal_slot_bound (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
+  rw [ECDSAAdd.Baselines.normalize_slots] at sign
+  have bound := fastWindowSign_slots
+  omega
+def fastCompactProgram (start : Nat) : Straight 32768 start (start+1781940) :=
+  relabelStraight WEX.compactPerm (fastBodyProgram start)
+
+theorem fastCompactProgram_support (start : Nat) :
+    ChallengeMigration.straightWires (fastCompactProgram start) ⊆ compactSupport := by
+  rw [fastCompactProgram,straightWires_relabel]
+  intro w hw
+  obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
+  have hh := fastBodyProgram_support start hv
+  rcases List.mem_append.mp hh with ho | hh
+  · exact List.mem_range.mpr (WEX.compactPerm_bound v ho)
+  · obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hh
+    exact List.mem_range.mpr (WEX.compactPerm_bound _ (recycledHot_source i))
+
+theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
+    (hQ : order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0)
+    (halias : WEX.WidthAliased 14 coeffs) (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((fastCompactProgram start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (compactState coeffs Q))
+      (fun s => WEXUnlookup.compactReady s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
+  have hc : CoherentlyImplementsOn ((fastBodyProgram start).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready :=
+    fastBodyProgram_coherent coeffs Q hQ hn halias start history
+  have h := hc.relabel WEX.compactPerm
+  have hr : CoherentlyImplementsOn
+      (((fastBodyProgram start).instantiate (readConstant coeffs Q) history).relabel WEX.compactPerm)
+      ((relabelState WEX.compactPerm).comp ((Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)).comp
+        (relabelState WEX.compactPerm.symm)))
+      (fun s => WEXUnlookup.compactReady s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
+    obtain ⟨cs,aligned,mass⟩ := h
+    refine ⟨cs,aligned.imp ?_,mass⟩
+    intro b c hb s hs
+    apply hb s
+    refine ⟨hs.1.1,?_⟩
+    intro i
+    exact (pull_hot s i).trans (hs.1.2 i)
+  have he := hr.congrIdeal (secondIdeal := Finsupp.lmapDomain ℂ ℂ (compactState coeffs Q))
+    (by intro s _; simp [compactState,compactPull,LinearMap.comp_apply,relabelState,ket])
+  rw [fastCompactProgram,relabelStraight_instantiate]
+  exact he
+
+theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
+    ccx row ≤ 2385618 := by
+  have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
+  have hc := (finite23_literal_counts streamLayout probeRows).1.trans
+    (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2161857 := by
+    rw [WEX.clearReferenceRow_literalToffolis]
+    simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
+      Nat.zero_add,Nat.add_zero,hc]
+  rw [hrow] at ha
+  have hs := WEX.fastWindowSign_normalized_counts.1
+  have hr := WEXUnlookupWidth14.row_ccx_relation
+  omega
+
+def fastNarrow : ModNarrow WEXUnlookup.compactBody 14 where
+  records := 1781940
+  tBound := 16699326
+  credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row
+  program := fastCompactProgram
   coherent := by
     intro coeffs Q hQ hn halias start history
-    have ha : Schedule33.Flexible.ModAliased 14 coeffs := by
-      simpa only [Schedule33.Flexible.ModAliased,Schedule33.Flexible.reducedAddress,Schedule33.Flexible.HalfAliased] using halias
-    exact m.coherent coeffs Q hQ hn ha start history
-  wellFormed := m.wellFormed
-  slots := m.slots
-  wires := m.wires
-  tCount := m.tCount
-  zero := m.zero
-  count_eq := m.count_eq
-
-
-theorem asUniform_credit_bound (m : Schedule33.Flexible.ModNarrow WEXUnlookup.compactBody 14)
-    (cap : Nat) (hc : m.credit ≤ cap) : (asUniform m).credit ≤ cap := hc
-
-def uniform14 : Schedule33.Flexible.UniformNarrow WEXUnlookup.compactBody := asUniform (narrow true)
-
-theorem uniform14_credit_upper : uniform14.credit ≤ 2422483 :=
-  asUniform_credit_bound (narrow true) 2422483 (narrow_credit_upper true)
-
+    have ha : WEX.WidthAliased 14 coeffs := by simpa only [WEX.WidthAliased, ModAliased, reducedAddress] using halias
+    have h := fastCompactProgram_coherent coeffs Q hQ hn ha start history
+    simpa only [Single.BodyValid, WEXUnlookup.compactBody] using h
+  wellFormed := by
+    intro start
+    rw [fastCompactProgram]
+    exact (relabelStraight_wellFormed WEX.compactPerm (fastBodyProgram start)).mpr (fastBodyProgram_wellFormed start)
+  slots := by
+    intro start
+    rw [fastCompactProgram,relabelStraight_slots]
+    exact (fastBodyProgram_slots_upper start).trans (by rw [WEXUnlookup.compactBody]; decide +kernel)
+  wires := by
+    intro start
+    simpa only [WEXUnlookup.compactBody] using fastCompactProgram_support start
+  tCount := by
+    intro start read history
+    rw [fastCompactProgram,relabelStraight_instantiate,AdaptiveCircuit.relabel_tCount,fastBodyProgram_tCount]
+    have h := fastCount_upper
+    omega
+  zero := by
+    intro start
+    rw [fastCompactProgram,WEXUnlookup.residue_relabel]
+    exact (fastBodyProgram_credit start).1
+  count_eq := by
+    intro start
+    rw [fastCompactProgram,AndGadget.added_relabel]
+    exact (fastBodyProgram_credit start).2
 end
-end ShorECDLP.Entrant.CornerClear
+end ShorECDLP.Entrant.WEXUnlookupWidth14
+
 
 namespace ShorECDLP.Entrant.Schedule31Eighteen264.Flexible
 open Quantum ShorECDLP.Secp256k1 ShorECDLP.Challenge AndGadget WEXCredit
@@ -62422,23 +64101,25 @@ variable [body : Single.WindowBody] [ledger : Single.ProducerResources body] [co
 noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
+
 omit body ledger cover in
-theorem cornerBoundsWiden {limits : Limits} {layout : DecodeLayout} {entry : StraightEntry}
+private theorem fastClearWiden {limits : Limits} {layout : DecodeLayout} {entry : StraightEntry}
     {old new : Bounds} (cert : Certificate limits layout entry old)
     (hq : old.qubits ≤ new.qubits) (ht : old.tModel ≤ new.tModel)
     (hm : old.measurements ≤ new.measurements) : Certificate limits layout entry new :=
   { cert with resources := fun Q =>
       ⟨(cert.resources Q).1.trans hq, (cert.resources Q).2.1.trans ht, (cert.resources Q).2.2.trans hm⟩ }
-theorem matched_corner_certificate (n14 : ModNarrow body 13) (n15 : UniformNarrow body)
+
+theorem matched_fast_clear_certificate (n14 : ModNarrow body 13) (n15 : UniformNarrow body)
     (hSupport : ledger.support.length ≤ 1634) (hSlot : body.slotBound ≤ 3000000000)
-    (hR14 : n14.records ≤ 1689781) (hR15 : n15.records ≤ 1818805)
+    (hR14 : n14.records ≤ 1670324) (hR15 : n15.records ≤ 1781940)
     (hReset : body.reset.length ≤ 854)
-    (hT14 : n14.tBound ≤ 16054213) (hT15 : n15.tBound ≤ 16957381)
-    (hC14 : n14.credit ≤ 2293459) (hC15 : n15.credit ≤ 2422483)
+    (hT14 : n14.tBound ≤ 15918014) (hT15 : n15.tBound ≤ 16699326)
+    (hC14 : n14.credit ≤ 2274002) (hC15 : n15.credit ≤ 2385618)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := dualPrograms n14 n15
     Certificate officialLimits (lowerLayout 1938 entry layout) (fourEntry 1938 1939 entry)
-      ⟨1636, 295815653, 572896482⟩ := by
+      ⟨1636, 292010345, 565285866⟩ := by
   letI : Programs body := dualPrograms n14 n15
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 176382 ≤ officialLimits.gateSlots := by
@@ -62449,34 +64130,34 @@ theorem matched_corner_certificate (n14 : ModNarrow body 13) (n15 : UniformNarro
     change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 ≤ 47471340504
     omega
   have hsrc : 1835001 + 20 * (dualPrograms n14 n15).cost15 + 11 * (dualPrograms n14 n15).cost14 +
-      56244 ≤ 517635208 := by
-    change 1835001 + 20 * n15.tBound + 11 * n14.tBound + 56244 ≤ 517635208
+      56244 ≤ 510975919 := by
+    change 1835001 + 20 * n15.tBound + 11 * n14.tBound + 56244 ≤ 510975919
     omega
-  have hslots : 32 * windowSlots + 176382 + 24 * 517635208 + 2 ≤ officialLimits.gateSlots := by
-    change 32 * windowSlots + 176382 + 24 * 517635208 + 2 ≤ 4000000000000000
+  have hslots : 32 * windowSlots + 176382 + 24 * 510975919 + 2 ≤ officialLimits.gateSlots := by
+    change 32 * windowSlots + 176382 + 24 * 510975919 + 2 ≤ 4000000000000000
     omega
   have hrecords : 262143 + 20 * (dualPrograms n14 n15).records15 + 11 * (dualPrograms n14 n15).records14 +
-      472 + body.reset.length + 34114 + 517635208 ≤ officialLimits.measurements := by
-    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 + 517635208 ≤ 47471340504
+      472 + body.reset.length + 34114 + 510975919 ≤ officialLimits.measurements := by
+    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 + 510975919 ≤ 47471340504
     omega
-  have raw := bounded_four_certificate (dualProgramCredit n14 n15) 1938 1939 517635208
+  have raw := bounded_four_certificate (dualProgramCredit n14 n15) 1938 1939 510975919
     hbaseS hbaseR hsrc hslots hrecords hq hy
-  have hcounts := (source_counts 1938 1939 517635208 hbaseS hbaseR hsrc).1
-  have hcursor : entry.finalCursor ≤ 55261274 := by
+  have hcounts := (source_counts 1938 1939 510975919 hbaseS hbaseR hsrc).1
+  have hcursor : entry.finalCursor ≤ 54309947 := by
     rw [source_cursor]
-    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 ≤ 55261274
+    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 ≤ 54309947
     omega
-  apply cornerBoundsWiden raw
+  apply fastClearWiden raw
   · change ledger.support.length + 2 ≤ 1636
     omega
-  · change 4 * (262143 + 20 * n15.credit + 11 * n14.credit) + 56244 + 1 ≤ 295815653
+  · change 4 * (262143 + 20 * n15.credit + 11 * n14.credit) + 56244 + 1 ≤ 292010345
     omega
-  · change entry.finalCursor + added entry.program ≤ 572896482
+  · change entry.finalCursor + added entry.program ≤ 565285866
     omega
 end
 end ShorECDLP.Entrant.Schedule31Eighteen264.Flexible
 
-namespace ShorECDLP.Entrant.Schedule31Eighteen264.Flexible.CornerFinal
+namespace ShorECDLP.Entrant.Schedule31Eighteen264.Flexible.FastClearFinal
 open Quantum ShorECDLP.Secp256k1 ShorECDLP.Challenge AndGadget WEXCredit
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 open ShorECDLP.Entrant.Single ShorECDLP.Entrant.Single.Distribution
@@ -62484,63 +64165,104 @@ open ShorECDLP.Entrant.Schedule33.Flexible
 noncomputable section
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
-theorem n13_records : (CornerClear.narrow false).records ≤ 1689781 := by exact le_rfl
-theorem n14_records : CornerClear.uniform14.records ≤ 1818805 := by exact le_rfl
-theorem n13_cost : (CornerClear.narrow false).tBound ≤ 16054213 := by exact le_rfl
-theorem n14_cost : CornerClear.uniform14.tBound ≤ 16957381 := by exact le_rfl
-theorem n14_credit : CornerClear.uniform14.credit ≤ 2422483 := CornerClear.uniform14_credit_upper
-
-attribute [local irreducible] CornerClear.narrow CornerClear.uniform14 CornerClear.compactProgram
-  CornerClear.bodyProgram CornerClear.rowCredit CornerClear.creditFor
+attribute [local irreducible] WEXUnlookupWidth13.compactProgram WEXUnlookupWidth14.compactProgram
+  WEXUnlookupWidth13.bodyProgram WEXUnlookupWidth14.bodyProgram
+  WEXUnlookupWidth13.ccx WEXUnlookupWidth14.ccx
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount
   WEX.literalToffolis WEX.normalizeW Nat.add Nat.mul AndGadget.added
+
+def narrow13 : ModNarrow WEXUnlookup.compactBody 13 := WEXUnlookupWidth13.fastNarrow
+
+def uniform14 : UniformNarrow WEXUnlookup.compactBody where
+  records := WEXUnlookupWidth14.fastNarrow.records
+  tBound := WEXUnlookupWidth14.fastNarrow.tBound
+  credit := WEXUnlookupWidth14.fastNarrow.credit
+  program := WEXUnlookupWidth14.fastNarrow.program
+  coherent := by
+    intro coeffs Q hQ hn halias start history
+    have ha : ModAliased 14 coeffs := by
+      simpa only [ModAliased, reducedAddress, HalfAliased] using halias
+    exact WEXUnlookupWidth14.fastNarrow.coherent coeffs Q hQ hn ha start history
+  wellFormed := WEXUnlookupWidth14.fastNarrow.wellFormed
+  slots := WEXUnlookupWidth14.fastNarrow.slots
+  wires := WEXUnlookupWidth14.fastNarrow.wires
+  tCount := WEXUnlookupWidth14.fastNarrow.tCount
+  zero := WEXUnlookupWidth14.fastNarrow.zero
+  count_eq := WEXUnlookupWidth14.fastNarrow.count_eq
+
+theorem n13_records : narrow13.records ≤ 1670324 := by
+  exact le_rfl
+theorem n14_records : uniform14.records ≤ 1781940 := by
+  exact le_rfl
+theorem n13_cost : narrow13.tBound ≤ 15918014 := by
+  exact le_rfl
+theorem n14_cost : uniform14.tBound ≤ 16699326 := by
+  exact le_rfl
+
+attribute [local irreducible] narrow13 uniform14
 local instance bodyInstance : Single.WindowBody := WEXUnlookup.compactBody
 local instance resourcesInstance : Single.ProducerResources bodyInstance :=
   Single.ProducerResources.ofBody WEXUnlookup.compactBody
     (by change resetWires.Nodup; exact resetWires_nodup)
     (by change (0 : Wire) ∈ resetWires; decide +kernel)
     (by change (1 : Wire) ∈ resetWires; decide +kernel)
-local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw;exact hw⟩
-local instance programInstance : Programs bodyInstance := dualPrograms (CornerClear.narrow false) CornerClear.uniform14
+local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
+local instance programInstance : Programs bodyInstance := dualPrograms narrow13 uniform14
+
+private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15918014) :
+    c ≤ 2274002 := by omega
+private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16699326) :
+    c ≤ 2385618 := by omega
+
+theorem n13_credit : narrow13.credit ≤ 2274002 := by
+  let read : ConstantBit 32768 → Bool := fun _ => false
+  have ht := narrow13.tCount 0 read Fin.elim0
+  have he := WEXCredit.exact_t (narrow13.program 0) (narrow13.zero 0) read Fin.elim0
+  have hc := narrow13.count_eq 0
+  have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
+  exact count13_bound _ _ he' (ht.trans n13_cost)
+theorem n14_credit : uniform14.credit ≤ 2385618 := by
+  let read : ConstantBit 32768 → Bool := fun _ => false
+  have ht := uniform14.tCount 0 read Fin.elim0
+  have he := WEXCredit.exact_t (uniform14.program 0) (uniform14.zero 0) read Fin.elim0
+  have hc := uniform14.count_eq 0
+  have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
+  exact count14_bound _ _ he' (ht.trans n14_cost)
 
 def entry : StraightEntry := fourEntry 1938 1939 Flexible.entry
 def layout : DecodeLayout := lowerLayout 1938 Flexible.entry Flexible.layout
-def bounds : Bounds := ⟨1636,295815653,572896482⟩
+def bounds : Bounds := ⟨1636, 292010345, 565285866⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
-  apply @matched_corner_certificate bodyInstance resourcesInstance coverInstance (CornerClear.narrow false) CornerClear.uniform14
-  · change (List.range 1634).length ≤ 1634
-    simp only [List.length_range]
-    exact le_rfl
-  · change (2000000000 : Nat) ≤ 3000000000
-    omega
+  apply @matched_fast_clear_certificate bodyInstance resourcesInstance coverInstance narrow13 uniform14
+  · change WEXUnlookup.compactSupport.length ≤ 1634
+    norm_num [WEXUnlookup.compactSupport,MeasuredClear.hotBank]
+  · rw [bodyInstance, WEXUnlookup.compactBody]
+    decide +kernel
   · exact n13_records
   · exact n14_records
   · change WEXUnlookup.compactBody.reset.length ≤ 854
     exact WEXUnlookup.compactBody_ledger.2.2.2.le
   · exact n13_cost
   · exact n14_cost
-  · exact CornerClear.narrow_credit_upper false
+  · exact n13_credit
   · exact n14_credit
-  · change (1938 : Wire) ∉ List.range 1634
-    simp only [List.mem_range]
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
-  · change (1939 : Wire) ∉ (1938 : Wire) :: List.range 1634
-    simp only [List.mem_cons,List.mem_range]
-    try dsimp only [ShorECDLP.Wire,ECDSAAdd.Wire] at *
-    omega
+  · change (1938 : Wire) ∉ WEXUnlookup.compactSupport
+    decide +kernel
+  · change (1939 : Wire) ∉ 1938 :: WEXUnlookup.compactSupport
+    decide +kernel
 end
-end ShorECDLP.Entrant.Schedule31Eighteen264.Flexible.CornerFinal
+end ShorECDLP.Entrant.Schedule31Eighteen264.Flexible.FastClearFinal
 
 namespace ShorECDLP.Entrant
 open Challenge
+
+def bounds : Bounds := ⟨1636,292010345,565285866⟩
 noncomputable section
-def bounds : Bounds := ⟨1636,295815653,572896482⟩
-def entry : StraightEntry := Schedule31Eighteen264.Flexible.CornerFinal.entry
-def layout : DecodeLayout := Schedule31Eighteen264.Flexible.CornerFinal.layout
+def entry : StraightEntry := Schedule31Eighteen264.Flexible.FastClearFinal.entry
+def layout : DecodeLayout := Schedule31Eighteen264.Flexible.FastClearFinal.layout
 set_option maxRecDepth 30000 in
 set_option maxHeartbeats 4000000 in
-theorem certificate : Certificate officialLimits layout entry bounds := Schedule31Eighteen264.Flexible.CornerFinal.certificate
+theorem certificate : Certificate officialLimits layout entry bounds := Schedule31Eighteen264.Flexible.FastClearFinal.certificate
 end
 end ShorECDLP.Entrant
