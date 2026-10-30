@@ -1,3 +1,10 @@
+import ShorECDLP.Submission.«2607_13816».Arithmetic.InPlaceSupport
+import ShorECDLP.Submission.«2607_13816».Challenge.InPlace
+import ShorECDLP.Submission.«2607_13816».Challenge.MeasuredWrapper
+import ShorECDLP.Submission.«2607_13816».Challenge.Wrapper
+import ShorECDLP.Submission.«2607_13816».EEA.MeasuredStep
+import ShorECDLP.Submission.«2607_13816».EEA.MeasuredWrapper
+import ShorECDLP.Submission.«2607_13816».EEA.ScheduleResources
 
 import ShorECDLP.Submission.«2607_13816».Arithmetic.InPlaceSupport
 import ShorECDLP.Submission.«2607_13816».Challenge.InPlace
@@ -8520,4 +8527,2088 @@ theorem multiplication_wires_bound : multiplication.wires ⊆ List.range 836 :=
   multiplication_wires_subset.trans secp256k1InPlaceMultiplication_wires_subset
 end
 end ShorECDLP.Entrant.MeasuredQuotient
+end
+
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+/-- Phase-3 increment before the inverse quotient selector. -/
+def first (r : IndexedStepRegisters) : Circuit :=
+  computeControl [r.phase1,r.phase2] 1 r.control r.sourceScratch ++
+    controlledIncrement r.control r.lengthQ (r.sourceScratch.take (r.lengthQ.length-1)) ++
+      computeControl [r.phase1,r.phase2] 1 r.control r.sourceScratch
+
+/-- Phase-2 decrement after the inverse quotient selector. -/
+def last (r : IndexedStepRegisters) : Circuit :=
+  computeControl [r.phase1,r.phase2] 2 r.control r.sourceScratch ++
+    controlledDecrement r.control r.lengthQ (r.sourceScratch.take (r.lengthQ.length-1)) ++
+      computeControl [r.phase1,r.phase2] 2 r.control r.sourceScratch
+
+theorem source_view (r : IndexedStepRegisters) (w : ActiveWindow) :
+    blockDInverse r w = (first r ++ blockD2Forward r w) ++ last r := by
+  unfold blockDInverse first last blockD2Forward
+  simp only [List.append_assoc]
+  rfl
+
+theorem first_HPFree (r : IndexedStepRegisters) : HPFree (first r) := by
+  simp [first,hpFree_append,computeControl_HPFree,controlledIncrement_HPFree]
+
+def block (r : IndexedStepRegisters) (w : ActiveWindow) : AdaptiveCircuit :=
+  ((AdaptiveCircuit.unitary (first r) .done).seq (blockD2 r w)).seq
+    (.unitary (last r) .done)
+
+/-- The quotient decoder requires its actual entry scratch to be clean.
+This local contract deliberately makes no claim for arbitrary inverse-step inputs. -/
+theorem block_coherent (r : IndexedStepRegisters) (width T : Nat)
+    (hl : IndexedStepLayout r width T) :
+    CoherentlyImplementsOn (block r (certifiedActiveWindows width T).quotientSwap)
+      (Quantum.run (blockDInverse r (certifiedActiveWindows width T).quotientSwap))
+      (fun s => IndexedStepReady r (Classical.run (first r) s)) := by
+  have hf := CoherentlyImplementsOn.unitary (first r)
+    (fun s => IndexedStepReady r (Classical.run (first r) s))
+  have hm := hf.seq (blockD2_coherent r width T hl) (by
+    intro s hs
+    rw [run_ket_agrees_classical _ _ (first_HPFree r)]
+    exact supportedOn_ket _ _ hs)
+  have hall := hm.seq (CoherentlyImplementsOn.unitary (last r) (fun _ => True))
+    (by intro s hs t ht; trivial)
+  apply hall.congrIdeal
+  intro s hs
+  simp only [source_view,Quantum.run_append,LinearMap.comp_apply]
+
+attribute [local irreducible] d2Program
+
+def program (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow) :
+    (count : Nat) × Straight n start (start+count) :=
+  surroundCompiled (first r) (last r) (d2Program n start r w)
+
+theorem program_run (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (program n start r w) read history = (block r w).run := by
+  simpa only [block,circuit_seq_assoc,AdaptiveCircuit.seq] using
+    surroundCompiled_run (first r) (last r) (d2Program n start r w)
+      (blockD2 r w) read history (d2Program_run n start r w read history)
+
+theorem program_tCount (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (program n start r w) read history = (block r w).tCount := by
+  simpa only [block,circuit_seq_assoc,AdaptiveCircuit.seq] using
+    surroundCompiled_tCount (first r) (last r) (d2Program n start r w)
+      (blockD2 r w) read history (d2Program_tCount n start r w read history)
+
+theorem block_saving (r : IndexedStepRegisters) (width T : Nat)
+    (hl : IndexedStepLayout r width T) :
+    let w := (certifiedActiveWindows width T).quotientSwap
+    (block r w).tCount + 7*(quotientSwapTree (r.quotient w) w.start w.stop).internalNodes =
+      ShorECDLP.tCount (blockDInverse r w) := by
+  dsimp only
+  let w := (certifiedActiveWindows width T).quotientSwap
+  have hd : (quotientSwap (r.quotient w) w.start w.stop).tCount +
+      7*(quotientSwapTree (r.quotient w) w.start w.stop).internalNodes =
+      ShorECDLP.tCount (quotientSwapUnitary (r.quotient w) w.start w.stop) := by
+    rw [quotientSwap_tCount _ hl.quotient,quotientSwapUnitary_tCount _ hl.quotient]
+    dsimp only [w]
+    omega
+  simp only [source_view,block,blockD2,blockD2Forward,adaptive_tCount_seq,
+    AdaptiveCircuit.tCount,ShorECDLP.tCount_append]
+  change ShorECDLP.tCount (first r) +
+    (0 + ((quotientSwap (r.quotient w) w.start w.stop).tCount + (0 + 0))) +
+    (ShorECDLP.tCount (last r) + 0) +
+    7*(quotientSwapTree (r.quotient w) w.start w.stop).internalNodes =
+    ShorECDLP.tCount (first r) +
+      ((0 + ShorECDLP.tCount (quotientSwapUnitary (r.quotient w) w.start w.stop)) + 0) +
+      ShorECDLP.tCount (last r)
+  omega
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+section
+namespace ShorECDLP.Paper2607_13816
+open Classical Quantum
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 4000000
+private def reverseFoundation_source_blockAInverse
+    (registers : IndexedStepRegisters) : Circuit :=
+  circuit! {
+    measuredStepPlain_toggleTerminal registers;
+    terminalEpochRestore registers.terminal registers.shiftEpoch registers.quotientLow;
+    gate! Gate.CX registers.terminal registers.phase1;
+    (preShiftUnitary registers.preShift).adjoint;
+    gate! Gate.CX registers.terminal registers.phase1;
+    terminalPaddingInverse registers.terminalPadding;
+    measuredStepPlain_toggleTerminal registers
+  }
+private theorem reverseFoundation_view_blockAInverse : blockAInverse = reverseFoundation_source_blockAInverse := rfl
+
+private def reverseFoundation_source_blockCInverse (registers : IndexedStepRegisters) : Circuit :=
+  circuit! {
+    measuredStepPlain_toggleTerminal registers;
+    terminalEpochSpill registers.terminal registers.shiftEpoch registers.quotientLow;
+    measuredStepPlain_toggleTerminal registers
+  }
+private theorem reverseFoundation_view_blockCInverse : blockCInverse = reverseFoundation_source_blockCInverse := rfl
+
+private def reverseFoundation_source_blockDInverse
+    (registers : IndexedStepRegisters) (window : ActiveWindow) : Circuit :=
+  circuit! {
+    measuredStepPlain_phase3LengthControl registers;
+    controlledIncrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+    measuredStepPlain_phase3LengthControl registers;
+    measuredStepPlain_quotientXorControl registers;
+    quotientSwapUnitary (registers.quotient window) window.start window.stop;
+    measuredStepPlain_quotientXorControlInverse registers;
+    measuredStepPlain_phase2LengthControl registers;
+    controlledDecrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+    measuredStepPlain_phase2LengthControl registers
+  }
+private theorem reverseFoundation_view_blockDInverse : blockDInverse = reverseFoundation_source_blockDInverse := rfl
+private def measuredReverseReady_blockB1Inverse
+    (registers : IndexedStepRegisters) (n : Nat) (window : ActiveWindow) : Circuit :=
+  circuit! {
+    measuredStepPlain_remainderSubControl registers;
+    intervalAddSubInverseUnitary (registers.remainder window) n window.start window.stop
+      .sub true .work1;
+    measuredStepPlain_remainderSubControl registers
+  }
+
+private def measuredReverseReady_blockB3Inverse
+    (registers : IndexedStepRegisters) (n : Nat) (window : ActiveWindow) : Circuit :=
+  circuit! {
+    measuredStepPlain_remainderRestoreControl registers;
+    intervalAddSubInverseUnitary (registers.remainder window) n window.start window.stop
+      .add false .work1;
+    measuredStepPlain_remainderRestoreControl registers
+  }
+
+private def measuredReverseReady_blockBInverse
+    (registers : IndexedStepRegisters) (n : Nat) (window : ActiveWindow) : Circuit :=
+  circuit! {
+    measuredReverseReady_blockB3Inverse registers n window;
+    blockB2 registers;
+    measuredReverseReady_blockB1Inverse registers n window
+  }
+
+private def measuredReverseReady_blockEInverse
+    (registers : IndexedStepRegisters) (n : Nat) (window : ActiveWindow) : Circuit :=
+  circuit! {
+    prepareLatestPaperTBoundary registers.tBoundary n;
+    measuredStepPlain_coefficientAddControl registers;
+    coefficientPrefixInverseUnitary (registers.coefficient window) window.start window.stop
+      .add true .work2;
+    measuredStepPlain_coefficientAddControl registers;
+    gate! Gate.CX registers.phase1 registers.sign;
+    measuredStepPlain_coefficientTemporaryControl registers;
+    measuredStepPlain_coefficientSubControl registers;
+    measuredStepPlain_coefficientTemporaryControl registers;
+    coefficientPrefixInverseUnitary (registers.coefficient window) window.start window.stop
+      .sub false .work2;
+    measuredStepPlain_coefficientTemporaryControl registers;
+    measuredStepPlain_coefficientSubControl registers;
+    measuredStepPlain_coefficientTemporaryControl registers;
+    restoreLatestPaperTBoundary registers.tBoundary n
+  }
+
+private def measuredReverseReady_blockFInverse (registers : IndexedStepRegisters) : Circuit :=
+  (postShiftUnitary registers.postShift).adjoint
+
+private def measuredReverseReady_blockGInverse (registers : IndexedStepRegisters) : Circuit :=
+  phaseUpdateEpochInverseUnitary registers.phaseUpdate registers.shiftEpoch
+
+private theorem measuredReverseReady_remainderPhase2Control_wellFormed
+    (registers : IndexedStepRegisters) (n T : Nat)
+    (hlayout : IndexedStepLayout registers n T) :
+    CircuitWellFormed (measuredStepPlain_remainderPhase2Control registers) := by
+  exact rControlNonterminal_wellFormed _ _ _ _ _ _ hlayout.remainderPhase2
+
+private theorem measuredReverseReady_remainderRestoreControl_wellFormed
+    (registers : IndexedStepRegisters) (n T : Nat)
+    (hlayout : IndexedStepLayout registers n T) :
+    CircuitWellFormed (measuredStepPlain_remainderRestoreControl registers) := by
+  have hmiddle := rControlNonterminal_wellFormed
+    [registers.phase1, registers.terminal] 0 registers.control
+    registers.lengthRPrime (registers.blockScratch.getD 0 0)
+    (registers.blockScratch.drop 1) hlayout.remainderRestore
+  have hccx : Gate.WellFormed
+      (.CCX registers.phase2 registers.sign registers.terminal) := by
+    have hphysical := hlayout.remainderRestoreCCX
+    simp only [List.nodup_cons, List.mem_cons, List.not_mem_nil, or_false,
+      not_or] at hphysical
+    exact ⟨hphysical.1.1, hphysical.1.2, hphysical.2.1⟩
+  intro gate hgate
+  simp only [measuredStepPlain_remainderRestoreControl, List.mem_append, List.mem_cons,
+    List.not_mem_nil, or_false] at hgate
+  rcases hgate with (rfl | hgate) | rfl
+  · exact hccx
+  · exact hmiddle gate hgate
+  · exact hccx
+
+private theorem measuredReverseReady_blockB2_wellFormed
+    (registers : IndexedStepRegisters) (n T : Nat)
+    (hlayout : IndexedStepLayout registers n T) :
+    CircuitWellFormed (blockB2 registers) := by
+  simp only [measuredStepPlain_view_blockB2, measuredStepPlain_source_blockB2, circuitWellFormed_append]
+  refine ⟨⟨measuredReverseReady_remainderPhase2Control_wellFormed registers n T hlayout, ?_⟩,
+    measuredReverseReady_remainderPhase2Control_wellFormed registers n T hlayout⟩
+  simpa [CircuitWellFormed, Gate.WellFormed] using hlayout.controlSign
+
+private theorem measuredReverseReady_run_cx_twice
+    (control target : Wire) (state : BasisState) (hne : control ≠ target) :
+    run ([.CX control target] : Circuit)
+        (run ([.CX control target] : Circuit) state) = state := by
+  simpa [Circuit.adjoint] using
+    (run_adjoint_run_classical ([.CX control target] : Circuit)
+      (by simp [CircuitWellFormed, Gate.WellFormed, hne]) state)
+
+private theorem measuredReverseReady_run_selfAdjoint_twice
+    (circuit : Circuit) (state : BasisState)
+    (hself : circuit.adjoint = circuit)
+    (hwellFormed : CircuitWellFormed circuit) :
+    run circuit (run circuit state) = state := by
+  simpa only [hself] using
+    run_adjoint_run_classical circuit hwellFormed state
+
+private theorem measuredReverseReady_run_run_adjoint_classical_indexedStep
+    (circuit : Circuit) (state : BasisState)
+    (hwellFormed : CircuitWellFormed circuit) :
+    run circuit (run circuit.adjoint state) = state := by
+  simpa using run_adjoint_run_classical circuit.adjoint
+    ((circuitWellFormed_adjoint circuit).2 hwellFormed) state
+
+private theorem measuredReverseReady_indexedStep_decrementBits_incrementBits
+    (carry : Bool) (bits : List Bool) :
+    decrementBits carry (incrementBits carry bits) = bits := by
+  induction bits generalizing carry with
+  | nil => rfl
+  | cons bit bits ih =>
+      cases carry <;> cases bit <;>
+        simp [incrementBits, decrementBits, ih]
+
+private theorem measuredReverseReady_indexedStep_incrementBits_decrementBits
+    (carry : Bool) (bits : List Bool) :
+    incrementBits carry (decrementBits carry bits) = bits := by
+  induction bits generalizing carry with
+  | nil => rfl
+  | cons bit bits ih =>
+      cases carry <;> cases bit <;>
+        simp [incrementBits, decrementBits, ih]
+
+private theorem measuredReverseReady_indexedStep_basisState_eq_of_word
+    (wires : List Wire) (left right : BasisState)
+    (hvalues : wireValues wires left = wireValues wires right)
+    (houtside : ∀ wire, wire ∉ wires → left wire = right wire) :
+    left = right := by
+  induction wires with
+  | nil =>
+      funext wire
+      exact houtside wire (by simp)
+  | cons head tail ih =>
+      have hhead : left head = right head := by
+        have h := congrArg List.head? hvalues
+        simpa [wireValues] using h
+      have htail : wireValues tail left = wireValues tail right := by
+        have h := congrArg List.tail hvalues
+        simpa [wireValues] using h
+      apply ih htail
+      intro wire hwire
+      by_cases heq : wire = head
+      · subst wire
+        exact hhead
+      · exact houtside wire (by simp [heq, hwire])
+
+private theorem measuredReverseReady_indexedStep_run_decrement_after_increment
+    (control : Wire) (register carries : List Wire) (state : BasisState)
+    (hlength : register.length = carries.length + 1)
+    (hnd : (control :: register ++ carries).Nodup)
+    (hclean : Clean carries state) :
+    run (controlledDecrement control register carries)
+        (run (controlledIncrement control register carries) state) = state := by
+  let increased := run (controlledIncrement control register carries) state
+  have hinc := controlledIncrement_correct control register carries state
+    hlength hnd hclean
+  have hcontrol := controlledIncrement_control control register carries state
+    hlength hnd hclean
+  have hcleanIncreased := controlledIncrement_clean control register carries state
+    hlength hnd hclean
+  have hdec := controlledDecrement_correct control register carries increased
+    hlength hnd hcleanIncreased
+  apply measuredReverseReady_indexedStep_basisState_eq_of_word register _ state
+  · rw [hdec.1]
+    rw [show increased control = state control by exact hcontrol, hinc.1,
+      measuredReverseReady_indexedStep_decrementBits_incrementBits]
+  · intro wire hwire
+    rw [hdec.2 wire hwire]
+    exact hinc.2 wire hwire
+
+private theorem measuredReverseReady_indexedStep_run_increment_after_decrement
+    (control : Wire) (register carries : List Wire) (state : BasisState)
+    (hlength : register.length = carries.length + 1)
+    (hnd : (control :: register ++ carries).Nodup)
+    (hclean : Clean carries state) :
+    run (controlledIncrement control register carries)
+        (run (controlledDecrement control register carries) state) = state := by
+  let decreased := run (controlledDecrement control register carries) state
+  have hdec := controlledDecrement_correct control register carries state
+    hlength hnd hclean
+  have hcontrol := controlledDecrement_control control register carries state
+    hlength hnd hclean
+  have hcleanDecreased := controlledDecrement_clean control register carries state
+    hlength hnd hclean
+  have hinc := controlledIncrement_correct control register carries decreased
+    hlength hnd hcleanDecreased
+  apply measuredReverseReady_indexedStep_basisState_eq_of_word register _ state
+  · rw [hinc.1]
+    rw [show decreased control = state control by exact hcontrol, hdec.1,
+      measuredReverseReady_indexedStep_incrementBits_decrementBits]
+  · intro wire hwire
+    rw [hinc.2 wire hwire]
+    exact hdec.2 wire hwire
+
+private theorem measuredReverseReady_remainderRestoreControl_selfAdjoint
+    (registers : IndexedStepRegisters) :
+    (measuredStepPlain_remainderRestoreControl registers).adjoint =
+      measuredStepPlain_remainderRestoreControl registers := by
+  simp [measuredStepPlain_remainderRestoreControl, measuredStepPlain_toggleRControl, circuit_adjoint_append,
+    rControlNonterminal_selfAdjoint]
+
+private theorem measuredReverseReady_blockB2_selfAdjoint
+    (registers : IndexedStepRegisters) :
+    (blockB2 registers).adjoint = blockB2 registers := by
+  have hcontrol : (measuredStepPlain_remainderPhase2Control registers).adjoint =
+      measuredStepPlain_remainderPhase2Control registers := by
+    exact rControlNonterminal_selfAdjoint _ _ _ _ _ _
+  simp [measuredStepPlain_view_blockB2, measuredStepPlain_source_blockB2, circuit_adjoint_append, hcontrol]
+
+private theorem measuredReverseReady_blockAInverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T)
+    (hready : IndexedStepReady registers state) :
+    run (blockAInverse registers) (run (blockAForward registers) state) = state := by
+  have hblock : Clean registers.blockScratch state := by
+    apply measuredStepPlain_clean_mono hready
+    intro wire hwire
+    exact hlayout.measuredStepPlain_blockScratch_mem_sharedScratch hwire
+  let marked := run (measuredStepPlain_toggleTerminal registers) state
+  have hmarkedBlock : Clean registers.blockScratch marked := by
+    rw [show marked =
+        state[registers.terminal ↦ Bool.xor (state registers.terminal)
+          (registerMatches (measuredStepPlain_terminalConditionWires registers)
+            (measuredStepPlain_terminalConditionValue registers) state)] by
+      simpa only [marked, measuredStepPlain_toggleTerminal] using
+        run_computeControl (measuredStepPlain_terminalConditionWires registers)
+          (measuredStepPlain_terminalConditionValue registers) registers.terminal
+          registers.blockScratch state hlayout.terminalControl hblock]
+    exact measuredStepPlain_clean_upd_not_mem hblock hlayout.measuredStepPlain_terminal_not_blockScratch
+  have hpadding : Clean registers.terminalPadding.scratch marked :=
+    measuredStepPlain_clean_mono hmarkedBlock hlayout.measuredStepPlain_terminalPadding_scratch_sub_block
+  simp only [reverseFoundation_view_blockAInverse, reverseFoundation_source_blockAInverse, measuredStepPlain_view_blockAForward, measuredStepPlain_source_blockAForward, measuredStepPlain_toggleTerminal,
+    Classical.run_append]
+  rw [run_computeControl_twice (measuredStepPlain_terminalConditionWires registers)
+      (measuredStepPlain_terminalConditionValue registers) registers.terminal registers.blockScratch
+      _ hlayout.terminalControl]
+  rw [run_terminalEpochRestore_after_spill _ _ _ _ hlayout.terminalEpoch]
+  rw [measuredReverseReady_run_cx_twice registers.terminal registers.phase1 _ (by
+    simpa [List.nodup_cons] using hlayout.terminalPhase)]
+  rw [run_preShiftUnitary_adjoint_after _ _ hlayout.preShift]
+  rw [measuredReverseReady_run_cx_twice registers.terminal registers.phase1 _ (by
+    simpa [List.nodup_cons] using hlayout.terminalPhase)]
+  rw [show run (terminalPaddingInverse registers.terminalPadding)
+      (run (terminalPaddingForward registers.terminalPadding)
+        (run (computeControl (measuredStepPlain_terminalConditionWires registers)
+          (measuredStepPlain_terminalConditionValue registers) registers.terminal
+          registers.blockScratch) state)) =
+      run (computeControl (measuredStepPlain_terminalConditionWires registers)
+        (measuredStepPlain_terminalConditionValue registers) registers.terminal
+        registers.blockScratch) state by
+    simpa only [marked, measuredStepPlain_toggleTerminal] using
+      run_terminalPaddingInverse_after_forward registers.terminalPadding marked
+        hlayout.terminalPadding hpadding]
+  exact run_computeControl_twice (measuredStepPlain_terminalConditionWires registers)
+    (measuredStepPlain_terminalConditionValue registers) registers.terminal registers.blockScratch
+    state hlayout.terminalControl
+
+private theorem measuredReverseReady_blockB1Inverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (window : ActiveWindow)
+    (state : BasisState) (hlayout : IndexedStepLayout registers n T)
+    (hwindow : window = (certifiedActiveWindows n T).remainder)
+    (hready : measuredStepPlain_IndexedStepBorrowedReady registers state) :
+    run (measuredReverseReady_blockB1Inverse registers n window)
+        (run (blockB1Forward registers n window) state) = state := by
+  have hinterval := measuredStepPlain_remainderSubControl_intervalReady registers n T window state
+    hlayout hwindow hready
+  simp only [measuredReverseReady_blockB1Inverse, measuredStepPlain_view_blockB1Forward, measuredStepPlain_source_blockB1Forward, Classical.run_append]
+  rw [show Classical.run (measuredStepPlain_remainderSubControl registers)
+      (Classical.run (measuredStepPlain_remainderSubControl registers)
+        (run (intervalAddSubUnitary (registers.remainder window) n
+          window.start window.stop .sub true .work1)
+          (run (measuredStepPlain_remainderSubControl registers) state))) =
+      run (intervalAddSubUnitary (registers.remainder window) n
+        window.start window.stop .sub true .work1)
+        (run (measuredStepPlain_remainderSubControl registers) state) by
+    simpa [measuredStepPlain_remainderSubControl, measuredStepPlain_toggleRControl] using
+      run_rControlNonterminal_twice [registers.phase1] 0 registers.control
+        registers.lengthRPrime registers.terminal registers.blockScratch
+        (run (intervalAddSubUnitary (registers.remainder window) n
+          window.start window.stop .sub true .work1)
+          (run (measuredStepPlain_remainderSubControl registers) state)) hlayout.remainderSub]
+  rw [run_intervalAddSubInverseUnitary_after_forward
+    (registers.remainder window) n window.start window.stop .sub true .work1
+    (run (measuredStepPlain_remainderSubControl registers) state) (by simpa [hwindow] using hlayout.remainder)
+    hinterval]
+  simpa [measuredStepPlain_remainderSubControl, measuredStepPlain_toggleRControl] using
+    run_rControlNonterminal_twice [registers.phase1] 0 registers.control
+      registers.lengthRPrime registers.terminal registers.blockScratch state
+      hlayout.remainderSub
+
+private theorem measuredReverseReady_blockB3Inverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (window : ActiveWindow)
+    (state : BasisState) (hlayout : IndexedStepLayout registers n T)
+    (hwindow : window = (certifiedActiveWindows n T).remainder)
+    (hready : measuredStepPlain_IndexedStepBorrowedReady registers state) :
+    run (measuredReverseReady_blockB3Inverse registers n window)
+        (run (blockB3Forward registers n window) state) = state := by
+  have hinterval := measuredStepPlain_remainderRestoreControl_intervalReady registers n T window state
+    hlayout hwindow hready
+  simp only [measuredReverseReady_blockB3Inverse, measuredStepPlain_view_blockB3Forward, measuredStepPlain_source_blockB3Forward, Classical.run_append]
+  rw [measuredReverseReady_run_selfAdjoint_twice (measuredStepPlain_remainderRestoreControl registers) _
+    (measuredReverseReady_remainderRestoreControl_selfAdjoint registers)
+    (measuredReverseReady_remainderRestoreControl_wellFormed registers n T hlayout)]
+  rw [run_intervalAddSubInverseUnitary_after_forward
+    (registers.remainder window) n window.start window.stop .add false .work1
+    (run (measuredStepPlain_remainderRestoreControl registers) state)
+    (by simpa [hwindow] using hlayout.remainder) hinterval]
+  exact measuredReverseReady_run_selfAdjoint_twice (measuredStepPlain_remainderRestoreControl registers) state
+    (measuredReverseReady_remainderRestoreControl_selfAdjoint registers)
+    (measuredReverseReady_remainderRestoreControl_wellFormed registers n T hlayout)
+
+private theorem measuredReverseReady_blockBInverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (window : ActiveWindow)
+    (state : BasisState) (hlayout : IndexedStepLayout registers n T)
+    (hwindow : window = (certifiedActiveWindows n T).remainder)
+    (hready : measuredStepPlain_IndexedStepBorrowedReady registers state) :
+    run (measuredReverseReady_blockBInverse registers n window)
+        (run (blockBForward registers n window) state) = state := by
+  let afterB1 := run (blockB1Forward registers n window) state
+  let afterB2 := run (blockB2 registers) afterB1
+  have hfirst := measuredStepPlain_blockB1Forward_correct registers n T window state hlayout hwindow hready
+  have hreadyB1 : measuredStepPlain_IndexedStepBorrowedReady registers afterB1 := by
+    simpa only [afterB1] using hfirst.2
+  have hsecond := measuredStepPlain_blockB2_correct registers n T afterB1 hlayout hreadyB1
+  have hreadyB2 : measuredStepPlain_IndexedStepBorrowedReady registers afterB2 := by
+    simpa only [afterB2] using hsecond.2
+  simp only [measuredReverseReady_blockBInverse, blockBForward, Classical.run_append]
+  rw [show run (measuredReverseReady_blockB3Inverse registers n window)
+      (run (blockB3Forward registers n window) afterB2) = afterB2 by
+    exact measuredReverseReady_blockB3Inverse_after_forward registers n T window afterB2 hlayout
+      hwindow hreadyB2]
+  rw [measuredReverseReady_run_selfAdjoint_twice (blockB2 registers) afterB1
+    (measuredReverseReady_blockB2_selfAdjoint registers) (measuredReverseReady_blockB2_wellFormed registers n T hlayout)]
+  exact measuredReverseReady_blockB1Inverse_after_forward registers n T window state hlayout hwindow hready
+
+private theorem measuredReverseReady_blockCInverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T) :
+    run (blockCInverse registers) (run (blockCForward registers) state) = state := by
+  simp only [reverseFoundation_view_blockCInverse, reverseFoundation_source_blockCInverse, measuredStepPlain_view_blockCForward, measuredStepPlain_source_blockCForward, measuredStepPlain_toggleTerminal,
+    Classical.run_append]
+  rw [run_computeControl_twice (measuredStepPlain_terminalConditionWires registers)
+    (measuredStepPlain_terminalConditionValue registers) registers.terminal registers.blockScratch
+    _ hlayout.terminalControl]
+  rw [run_terminalEpochSpill_after_restore _ _ _ _ hlayout.terminalEpoch]
+  exact run_computeControl_twice (measuredStepPlain_terminalConditionWires registers)
+    (measuredStepPlain_terminalConditionValue registers) registers.terminal registers.blockScratch
+    state hlayout.terminalControl
+
+private theorem measuredReverseReady_run_phase2LengthControl_twice
+    (registers : IndexedStepRegisters) (n T : Nat) (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T) :
+    run (measuredStepPlain_phase2LengthControl registers)
+        (run (measuredStepPlain_phase2LengthControl registers) state) = state := by
+  simpa only [measuredStepPlain_phase2LengthControl] using
+    run_computeControl_twice [registers.phase1, registers.phase2] 2
+      registers.control registers.sourceScratch state hlayout.phase2Length
+
+private theorem measuredReverseReady_run_phase3LengthControl_twice
+    (registers : IndexedStepRegisters) (n T : Nat) (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T) :
+    run (measuredStepPlain_phase3LengthControl registers)
+        (run (measuredStepPlain_phase3LengthControl registers) state) = state := by
+  simpa only [measuredStepPlain_phase3LengthControl] using
+    run_computeControl_twice [registers.phase1, registers.phase2] 1
+      registers.control registers.sourceScratch state hlayout.phase3Length
+
+private theorem measuredReverseReady_blockD1Inverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T)
+    (hready : IndexedStepReady registers state) :
+    run (circuit! {
+      measuredStepPlain_phase2LengthControl registers;
+      controlledDecrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+      measuredStepPlain_phase2LengthControl registers
+    })
+      (run (circuit! {
+        measuredStepPlain_phase2LengthControl registers;
+        controlledIncrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+        measuredStepPlain_phase2LengthControl registers
+      }) state) = state := by
+  have hsource : Clean registers.sourceScratch state := by
+    intro wire hwire
+    exact hready wire (by simp [IndexedStepRegisters.sharedScratch, hwire])
+  have henabled := measuredStepPlain_run_computeControl_state [registers.phase1, registers.phase2] 2
+    registers.control registers.sourceScratch state hlayout.phase2Length hsource
+  have henabledRun : run (measuredStepPlain_phase2LengthControl registers) state =
+      measuredStepPlain_matchXorState [registers.phase1, registers.phase2] 2
+        registers.control state := by
+    simpa only [measuredStepPlain_phase2LengthControl] using henabled.1
+  have hcarries : Clean (measuredStepPlain_lengthCarries registers)
+      (run (measuredStepPlain_phase2LengthControl registers) state) := by
+    rw [henabledRun]
+    intro wire hwire
+    exact henabled.2 wire (List.mem_of_mem_take hwire)
+  simp only [Classical.run_append]
+  rw [measuredReverseReady_run_phase2LengthControl_twice registers n T _ hlayout]
+  rw [measuredReverseReady_indexedStep_run_decrement_after_increment registers.control registers.lengthQ
+    (measuredStepPlain_lengthCarries registers) (run (measuredStepPlain_phase2LengthControl registers) state)
+    hlayout.lengthCarryCapacity hlayout.lengthCarryPhysical hcarries]
+  exact measuredReverseReady_run_phase2LengthControl_twice registers n T state hlayout
+
+private theorem measuredReverseReady_blockD3Inverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T)
+    (hready : IndexedStepReady registers state) :
+    run (circuit! {
+      measuredStepPlain_phase3LengthControl registers;
+      controlledIncrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+      measuredStepPlain_phase3LengthControl registers
+    })
+      (run (circuit! {
+        measuredStepPlain_phase3LengthControl registers;
+        controlledDecrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+        measuredStepPlain_phase3LengthControl registers
+      }) state) = state := by
+  have hsource : Clean registers.sourceScratch state := by
+    intro wire hwire
+    exact hready wire (by simp [IndexedStepRegisters.sharedScratch, hwire])
+  have henabled := measuredStepPlain_run_computeControl_state [registers.phase1, registers.phase2] 1
+    registers.control registers.sourceScratch state hlayout.phase3Length hsource
+  have henabledRun : run (measuredStepPlain_phase3LengthControl registers) state =
+      measuredStepPlain_matchXorState [registers.phase1, registers.phase2] 1
+        registers.control state := by
+    simpa only [measuredStepPlain_phase3LengthControl] using henabled.1
+  have hcarries : Clean (measuredStepPlain_lengthCarries registers)
+      (run (measuredStepPlain_phase3LengthControl registers) state) := by
+    rw [henabledRun]
+    intro wire hwire
+    exact henabled.2 wire (List.mem_of_mem_take hwire)
+  simp only [Classical.run_append]
+  rw [measuredReverseReady_run_phase3LengthControl_twice registers n T _ hlayout]
+  rw [measuredReverseReady_indexedStep_run_increment_after_decrement registers.control registers.lengthQ
+    (measuredStepPlain_lengthCarries registers) (run (measuredStepPlain_phase3LengthControl registers) state)
+    hlayout.lengthCarryCapacity hlayout.lengthCarryPhysical hcarries]
+  exact measuredReverseReady_run_phase3LengthControl_twice registers n T state hlayout
+
+private theorem measuredReverseReady_quotientXorControlInverse_eq_adjoint
+    (registers : IndexedStepRegisters) :
+    measuredStepPlain_quotientXorControlInverse registers =
+      (measuredStepPlain_quotientXorControl registers).adjoint := by
+  rfl
+
+private theorem measuredReverseReady_blockD2_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (window : ActiveWindow)
+    (state : BasisState) (hlayout : IndexedStepLayout registers n T)
+    (hwindow : window = (certifiedActiveWindows n T).quotientSwap)
+    (hready : IndexedStepReady registers state) :
+    run (circuit! {
+      measuredStepPlain_quotientXorControl registers;
+      quotientSwapUnitary (registers.quotient window) window.start window.stop;
+      measuredStepPlain_quotientXorControlInverse registers
+    })
+      (run (circuit! {
+        measuredStepPlain_quotientXorControl registers;
+        quotientSwapUnitary (registers.quotient window) window.start window.stop;
+        measuredStepPlain_quotientXorControlInverse registers
+      }) state) = state := by
+  have hqLayout : QuotientSwapLayout (registers.quotient window)
+      window.start window.stop := by
+    subst window
+    exact hlayout.quotient
+  have hsource : Clean registers.sourceScratch state := by
+    intro wire hwire
+    exact hready wire (by simp [IndexedStepRegisters.sharedScratch, hwire])
+  let enabled1 := measuredStepPlain_xorWireState registers.phase1 registers.control state
+  let enabled2 := measuredStepPlain_xorWireState registers.phase2 registers.control enabled1
+  have henabledRun : run (measuredStepPlain_quotientXorControl registers) state = enabled2 := by
+    rfl
+  have henabledSource : Clean registers.sourceScratch enabled2 := by
+    intro wire hwire
+    have hcontrol : wire ≠ registers.control := by
+      intro equality
+      subst wire
+      exact hlayout.measuredStepPlain_control_not_sourceScratch hwire
+    simp [enabled2, enabled1, measuredStepPlain_xorWireState, upd, hcontrol,
+      hsource wire hwire]
+  have hqReady : QuotientSwapReady (registers.quotient window) enabled2 := by
+    intro wire hwire
+    exact henabledSource wire (List.mem_of_mem_take hwire)
+  have hxorWellFormed := measuredStepPlain_quotientXorControl_wellFormed registers n T hlayout
+  simp only [Classical.run_append]
+  rw [show run (measuredStepPlain_quotientXorControl registers)
+      (run (measuredStepPlain_quotientXorControlInverse registers)
+        (run (quotientSwapUnitary (registers.quotient window)
+          window.start window.stop)
+          (run (measuredStepPlain_quotientXorControl registers) state))) =
+      run (quotientSwapUnitary (registers.quotient window)
+        window.start window.stop)
+        (run (measuredStepPlain_quotientXorControl registers) state) by
+    rw [measuredReverseReady_quotientXorControlInverse_eq_adjoint]
+    exact measuredReverseReady_run_run_adjoint_classical_indexedStep (measuredStepPlain_quotientXorControl registers)
+      _ hxorWellFormed]
+  rw [show run (quotientSwapUnitary (registers.quotient window)
+      window.start window.stop)
+      (run (quotientSwapUnitary (registers.quotient window)
+        window.start window.stop)
+        (run (measuredStepPlain_quotientXorControl registers) state)) =
+      run (measuredStepPlain_quotientXorControl registers) state by
+    rw [henabledRun]
+    exact run_quotientSwapUnitary_after_forward
+      (registers.quotient window) enabled2 hqLayout hqReady]
+  rw [measuredReverseReady_quotientXorControlInverse_eq_adjoint]
+  exact run_adjoint_run_classical (measuredStepPlain_quotientXorControl registers)
+    hxorWellFormed state
+
+private theorem measuredReverseReady_blockDInverse_after_forward
+    (registers : IndexedStepRegisters) (n T : Nat) (window : ActiveWindow)
+    (state : BasisState) (hlayout : IndexedStepLayout registers n T)
+    (hwindow : window = (certifiedActiveWindows n T).quotientSwap)
+    (hready : IndexedStepReady registers state) :
+    run (blockDInverse registers window)
+        (run (blockDForward registers window) state) = state := by
+  let firstForward : Circuit := circuit! {
+    measuredStepPlain_phase2LengthControl registers;
+    controlledIncrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+    measuredStepPlain_phase2LengthControl registers
+  }
+  let middle : Circuit := circuit! {
+    measuredStepPlain_quotientXorControl registers;
+    quotientSwapUnitary (registers.quotient window) window.start window.stop;
+    measuredStepPlain_quotientXorControlInverse registers
+  }
+  let lastForward : Circuit := circuit! {
+    measuredStepPlain_phase3LengthControl registers;
+    controlledDecrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+    measuredStepPlain_phase3LengthControl registers
+  }
+  let firstInverse : Circuit := circuit! {
+    measuredStepPlain_phase3LengthControl registers;
+    controlledIncrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+    measuredStepPlain_phase3LengthControl registers
+  }
+  let lastInverse : Circuit := circuit! {
+    measuredStepPlain_phase2LengthControl registers;
+    controlledDecrement registers.control registers.lengthQ (measuredStepPlain_lengthCarries registers);
+    measuredStepPlain_phase2LengthControl registers
+  }
+  have hfirst := measuredStepPlain_blockD1Forward_correct registers n T state hlayout hready
+  have hfirstReady : IndexedStepReady registers (run firstForward state) := by
+    simpa only [firstForward] using hfirst.2
+  have hmiddle := measuredStepPlain_blockD2Forward_correct registers n T window
+    (run firstForward state) hlayout hwindow hfirstReady
+  have hmiddleReady : IndexedStepReady registers
+      (run middle (run firstForward state)) := by
+    simpa only [middle] using hmiddle.2
+  rw [show run (blockDInverse registers window)
+      (run (blockDForward registers window) state) =
+      run lastInverse
+        (run middle
+          (run firstInverse
+            (run lastForward
+              (run middle (run firstForward state))))) by
+    simp [reverseFoundation_view_blockDInverse, reverseFoundation_source_blockDInverse, blockDForward, measuredStepPlain_view_blockD1Forward, measuredStepPlain_source_blockD1Forward, measuredStepPlain_view_blockD2Forward, measuredStepPlain_source_blockD2Forward, measuredStepPlain_view_blockD3Forward, measuredStepPlain_source_blockD3Forward, firstForward, middle,
+      lastForward, firstInverse, lastInverse, Classical.run_append]]
+  rw [show run firstInverse
+      (run lastForward (run middle (run firstForward state))) =
+      run middle (run firstForward state) by
+    exact measuredReverseReady_blockD3Inverse_after_forward registers n T
+      (run middle (run firstForward state)) hlayout hmiddleReady]
+  rw [show run middle (run middle (run firstForward state)) =
+      run firstForward state by
+    exact measuredReverseReady_blockD2_after_forward registers n T window
+      (run firstForward state) hlayout hwindow hfirstReady]
+  exact measuredReverseReady_blockD1Inverse_after_forward registers n T state hlayout hready
+
+private def measuredReverseReady_inverseCoefficientEntry (r : IndexedStepRegisters) (n : Nat) : Circuit :=
+  measuredReverseReady_blockFInverse r ++ prepareLatestPaperTBoundary r.tBoundary n ++ measuredStepPlain_coefficientAddControl r
+
+private def measuredReverseReady_inverseCoefficientMiddle (r : IndexedStepRegisters) : Circuit :=
+  measuredStepPlain_coefficientAddControl r ++ [.CX r.phase1 r.sign] ++ measuredStepPlain_coefficientTemporaryControl r ++
+    measuredStepPlain_coefficientSubControl r ++ measuredStepPlain_coefficientTemporaryControl r
+
+private def measuredReverseReady_inverseRemainderEntry (r : IndexedStepRegisters) (n : Nat) (window : ActiveWindow) : Circuit :=
+  measuredStepPlain_coefficientTemporaryControl r ++ measuredStepPlain_coefficientSubControl r ++ measuredStepPlain_coefficientTemporaryControl r ++
+    restoreLatestPaperTBoundary r.tBoundary n ++ blockDInverse r window ++ blockCInverse r ++
+    measuredStepPlain_remainderRestoreControl r
+
+private def measuredReverseReady_inverseRemainderMiddle (r : IndexedStepRegisters) : Circuit :=
+  measuredStepPlain_remainderRestoreControl r ++ blockB2 r ++ measuredStepPlain_remainderSubControl r
+
+private def measuredReverseReady_inverseStepFinish (r : IndexedStepRegisters) : Circuit :=
+  measuredStepPlain_remainderSubControl r ++ blockAInverse r
+
+private def reverseFoundation_source_indexedStepInverseUnitary
+    (registers : IndexedStepRegisters) (n T : Nat) : Circuit :=
+  let windows := certifiedActiveWindows n T
+  circuit! {
+    blockHInverse registers n T;
+    measuredReverseReady_blockGInverse registers;
+    measuredReverseReady_blockFInverse registers;
+    measuredReverseReady_blockEInverse registers n windows.coefficient;
+    blockDInverse registers windows.quotientSwap;
+    blockCInverse registers;
+    measuredReverseReady_blockBInverse registers n windows.remainder;
+    blockAInverse registers
+  }
+private theorem reverseFoundation_view_indexedStepInverseUnitary : indexedStepInverseUnitary = reverseFoundation_source_indexedStepInverseUnitary := rfl
+
+private theorem measuredReverseReady_inverseAdaptive_source_split (registers : IndexedStepRegisters) (n T : Nat) :
+    ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1) ++ (measuredReverseReady_inverseStepFinish registers))=indexedStepInverseUnitary registers n T := by
+  simp only [reverseFoundation_view_indexedStepInverseUnitary,reverseFoundation_source_indexedStepInverseUnitary,measuredReverseReady_inverseCoefficientEntry,measuredReverseReady_inverseCoefficientMiddle,
+    measuredReverseReady_inverseRemainderEntry,measuredReverseReady_inverseRemainderMiddle,measuredReverseReady_inverseStepFinish,measuredReverseReady_blockEInverse,
+    measuredReverseReady_blockBInverse,measuredReverseReady_blockB1Inverse,measuredReverseReady_blockB3Inverse,List.append_assoc]
+
+private theorem measuredReverseReady_inverseAdaptive_coefficient_coherent (registers : IndexedStepRegisters) (n T : Nat)
+    (hlayout : IndexedStepLayout registers n T) :
+    Quantum.CoherentlyImplementsOn
+      ((((((measuredStepPlain_adaptiveUnitary (blockHInverse registers n T)).seq (phaseUpdateEpochInverseAdaptive registers.phaseUpdate registers.shiftEpoch)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseCoefficientEntry registers n))).seq (coefficientPrefixInverseAdaptive (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseCoefficientMiddle registers))).seq (coefficientPrefixInverseAdaptive (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2))
+      (Quantum.run ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2))) (IndexedStepInverseAdaptiveInput registers n T) := by
+  have hf10 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1) ++ (measuredReverseReady_inverseStepFinish registers)) := by
+    rw [measuredReverseReady_inverseAdaptive_source_split]
+    exact indexedStepInverseUnitary_HPFree registers n T
+  have hf9 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1)) := ((hpFree_append _ _).mp hf10).1
+  have hf8 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers)) := ((hpFree_append _ _).mp hf9).1
+  have hf7 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1)) := ((hpFree_append _ _).mp hf8).1
+  have hf6 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap)) := ((hpFree_append _ _).mp hf7).1
+  have hf5 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2)) := ((hpFree_append _ _).mp hf6).1
+  have hf4 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers)) := ((hpFree_append _ _).mp hf5).1
+  have hf3 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2)) := ((hpFree_append _ _).mp hf4).1
+  have hf2 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n)) := ((hpFree_append _ _).mp hf3).1
+  have hf1 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers)) := ((hpFree_append _ _).mp hf2).1
+  have hf0 : HPFree ((blockHInverse registers n T)) := ((hpFree_append _ _).mp hf1).1
+  have h0 := Quantum.CoherentlyImplementsOn.unitary (blockHInverse registers n T) (IndexedStepInverseAdaptiveInput registers n T)
+  have h1 := measuredStepPlain_indexedStep_coherent_seq_circuits h0 (phaseUpdateEpochInverseAdaptive_coherent _ _ hlayout.phaseUpdate) hf0
+    (fun _ hs => hs.phase)
+  have h2 := measuredStepPlain_indexedStep_coherent_seq_circuits h1 (Quantum.CoherentlyImplementsOn.unitary (measuredReverseReady_inverseCoefficientEntry registers n) (fun _ => True)) hf1
+    (fun _ _ => trivial)
+  have h3 := measuredStepPlain_indexedStep_coherent_seq_circuits h2 (coefficientPrefixInverseAdaptive_coherent (registers.coefficient (certifiedActiveWindows n T).coefficient) .add true .work2 hlayout.coefficient) hf2
+    (fun _ hs => hs.coefficientAdd)
+  have h4 := measuredStepPlain_indexedStep_coherent_seq_circuits h3 (Quantum.CoherentlyImplementsOn.unitary (measuredReverseReady_inverseCoefficientMiddle registers) (fun _ => True)) hf3
+    (fun _ _ => trivial)
+  have h5 := measuredStepPlain_indexedStep_coherent_seq_circuits h4 (coefficientPrefixInverseAdaptive_coherent (registers.coefficient (certifiedActiveWindows n T).coefficient) .sub false .work2 hlayout.coefficient) hf4
+    (fun _ hs => hs.coefficientSub)
+  exact h5
+
+end
+end ShorECDLP.Paper2607_13816
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.ReverseReady
+open Quantum Classical Paper2607_13816
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+def remainderPrefix (r : IndexedStepRegisters) (n T : Nat) : Circuit :=
+  (blockAForward r ++ blockBForward r n (certifiedActiveWindows n T).remainder) ++ blockCForward r
+
+theorem prefix_ready (r : IndexedStepRegisters) (n T : Nat) (s : BasisState)
+    (hl : IndexedStepLayout r n T) (hs : IndexedStepReady r s) (he : IndexedStepEpochEncoded r s) :
+    IndexedStepReady r (Classical.run (remainderPrefix r n T) s) := by
+  have hA := measuredStepPlain_blockAForward_borrowedReady r n T s hl hs he
+  have hB := measuredStepPlain_blockBForward_correct r n T _ _ hl rfl hA
+  have hC := measuredStepPlain_blockCForward_correct r n T _ hl hB.2
+  simpa only [remainderPrefix,Classical.run_append] using hC.2
+
+theorem d1_ready (r : IndexedStepRegisters) (n T : Nat) (s : BasisState)
+    (hl : IndexedStepLayout r n T) (hs : IndexedStepReady r s) :
+    IndexedStepReady r (Classical.run (blockD1Forward r) s) :=
+  (measuredStepPlain_blockD1Forward_correct r n T s hl hs).2
+
+theorem d2_ready (r : IndexedStepRegisters) (n T : Nat) (s : BasisState)
+    (hl : IndexedStepLayout r n T) (hs : IndexedStepReady r s) :
+    IndexedStepReady r (Classical.run (blockD2Forward r (certifiedActiveWindows n T).quotientSwap) s) :=
+  (measuredStepPlain_blockD2Forward_correct r n T _ s hl rfl hs).2
+
+theorem d_ready (r : IndexedStepRegisters) (n T : Nat) (s : BasisState)
+    (hl : IndexedStepLayout r n T) (hs : IndexedStepReady r s) :
+    IndexedStepReady r (Classical.run (blockDForward r (certifiedActiveWindows n T).quotientSwap) s) :=
+  (measuredStepPlain_blockDForward_correct r n T _ s hl rfl hs).2
+
+theorem first_after_last (r : IndexedStepRegisters) (n T : Nat) (s : BasisState)
+    (hl : IndexedStepLayout r n T) (hs : IndexedStepReady r s) :
+    Classical.run (Reverse.first r) (Classical.run (blockD3Forward r) s) = s := by
+  exact measuredReverseReady_blockD3Inverse_after_forward r n T s hl hs
+
+/-- A forward Block-D image meets the measured inverse decoder's local contract. -/
+theorem inverse_entry_ready (r : IndexedStepRegisters) (n T : Nat) (s : BasisState)
+    (hl : IndexedStepLayout r n T) (hs : IndexedStepReady r s) :
+    IndexedStepReady r (Classical.run (Reverse.first r)
+      (Classical.run (blockDForward r (certifiedActiveWindows n T).quotientSwap) s)) := by
+  have h1 := d1_ready r n T s hl hs
+  have h2 := d2_ready r n T _ hl h1
+  simp only [blockDForward,Classical.run_append]
+  rw [first_after_last r n T _ hl h2]
+  exact h2
+
+/-- The literal inverse prefix ending immediately before Block D. -/
+def beforeD (r : IndexedStepRegisters) (n T : Nat) : Circuit :=
+  ((blockHInverse r n T ++ measuredReverseReady_blockGInverse r) ++ measuredReverseReady_blockFInverse r) ++
+    measuredReverseReady_blockEInverse r n (certifiedActiveWindows n T).coefficient
+
+def EntryReady (r : IndexedStepRegisters) (n T : Nat) (s : BasisState) : Prop :=
+  IndexedStepReady r (Classical.run (Reverse.first r) (Classical.run (beforeD r n T) s))
+
+theorem entry_after_forward
+    (registers : IndexedStepRegisters) (n T boundary4 boundary5 : Nat)
+    (hboundary4 : (endIterationWindowsAt n T).k4 ≤ boundary4 ∧
+      boundary4 ≤ (endIterationWindowsAt n T).K4)
+    (hboundary5 : (endIterationWindowsAt n T).k5 ≤ boundary5 ∧
+      boundary5 ≤ (endIterationWindowsAt n T).K5Decode n)
+    (state : BasisState)
+    (hlayout : IndexedStepLayout registers n T)
+    (hready : IndexedStepReady registers state)
+    (hencoded : IndexedStepEpochEncoded registers state)
+    (hroutes : T % 4 = 0 →
+      indexedStepEndRoutes registers n T state = (boundary4, boundary5)) :
+    EntryReady registers n T
+      (run (indexedStepUnitary registers n T) state) := by
+  let windows := certifiedActiveWindows n T
+  let afterA := run (blockAForward registers) state
+  let afterB := run (blockBForward registers n windows.remainder) afterA
+  let afterC := run (blockCForward registers) afterB
+  let afterD := run (blockDForward registers windows.quotientSwap) afterC
+  let suffix := ((blockDInverse registers windows.quotientSwap ++ blockCInverse registers) ++
+    measuredReverseReady_blockBInverse registers n windows.remainder) ++ blockAInverse registers
+  have hABorrowed : measuredStepPlain_IndexedStepBorrowedReady registers afterA :=
+    measuredStepPlain_blockAForward_borrowedReady registers n T state hlayout hready hencoded
+  have hB := measuredStepPlain_blockBForward_correct registers n T windows.remainder afterA hlayout rfl hABorrowed
+  have hCReady : IndexedStepReady registers afterC :=
+    (measuredStepPlain_blockCForward_correct registers n T afterB hlayout hB.2).2
+  have hprefixInverse : run suffix afterD = state := by
+    simp only [suffix,Classical.run_append,afterD]
+    rw [measuredReverseReady_blockDInverse_after_forward registers n T windows.quotientSwap afterC hlayout rfl hCReady]
+    dsimp only [afterC]
+    rw [measuredReverseReady_blockCInverse_after_forward registers n T afterB hlayout]
+    dsimp only [afterB]
+    rw [measuredReverseReady_blockBInverse_after_forward registers n T windows.remainder afterA hlayout rfl hABorrowed]
+    exact measuredReverseReady_blockAInverse_after_forward registers n T state hlayout hready
+  have hsplit : indexedStepInverseUnitary registers n T = beforeD registers n T ++ suffix := by
+    rw [reverseFoundation_view_indexedStepInverseUnitary]
+    simp only [reverseFoundation_source_indexedStepInverseUnitary,beforeD,suffix,windows,List.append_assoc]
+  have hsuffixWF : CircuitWellFormed suffix := by
+    have hw := indexedStepInverseUnitary_wellFormed registers n T hlayout
+    rw [hsplit] at hw
+    exact (circuitWellFormed_append _ _).mp hw |>.2
+  have hinjective : Function.Injective (Classical.run suffix) :=
+    Function.LeftInverse.injective (run_adjoint_run_classical suffix hsuffixWF)
+  have hwhole := indexedStepInverseUnitary_after_forward registers n T boundary4 boundary5
+    hboundary4 hboundary5 state hlayout hready hencoded hroutes
+  rw [hsplit,Classical.run_append] at hwhole
+  have hentry : run (beforeD registers n T) (run (indexedStepUnitary registers n T) state) = afterD :=
+    hinjective (hwhole.trans hprefixInverse.symm)
+  unfold EntryReady
+  rw [hentry]
+  exact inverse_entry_ready registers n T afterC hlayout hCReady
+end
+end ShorECDLP.Entrant.MeasuredQuotient.ReverseReady
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Paper2607_13816
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 4000000
+
+private theorem reverseFoundation_restrict {a : AdaptiveCircuit} {v : State →ₗ[ℂ] State}
+    {P Q : BasisState → Prop} (h : CoherentlyImplementsOn a v P)
+    (hp : ∀ s, Q s → P s) : CoherentlyImplementsOn a v Q := by
+  obtain ⟨cs,hc,hm⟩ := h
+  exact ⟨cs,hc.imp (fun _ _ hb s hs => hb s (hp s hs)),hm⟩
+
+def entryBefore (r : IndexedStepRegisters) (n : Nat) : Circuit :=
+  measuredStepPlain_coefficientTemporaryControl r ++ measuredStepPlain_coefficientSubControl r ++ measuredStepPlain_coefficientTemporaryControl r ++
+    restoreLatestPaperTBoundary r.tBoundary n
+
+def entryAfter (r : IndexedStepRegisters) : Circuit :=
+  blockCInverse r ++ measuredStepPlain_remainderRestoreControl r
+
+theorem entryBefore_view (r : IndexedStepRegisters) (n : Nat) :
+    entryBefore r n = computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++
+      computeControl [r.phase1,r.terminal] 1 r.control r.blockScratch ++
+      computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++
+      restoreLatestPaperTBoundary r.tBoundary n := rfl
+
+theorem entryAfter_view (r : IndexedStepRegisters) :
+    entryAfter r = blockCInverse r ++
+      (([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control
+        r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal]) := rfl
+
+def entry (r : IndexedStepRegisters) (n T : Nat) : AdaptiveCircuit :=
+  ((AdaptiveCircuit.unitary (entryBefore r n) .done).seq
+    (block r (certifiedActiveWindows n T).quotientSwap)).seq (.unitary (entryAfter r) .done)
+
+theorem entryBefore_HPFree (r : IndexedStepRegisters) (n : Nat) : HPFree (entryBefore r n) := by
+  simp [entryBefore,measuredStepPlain_coefficientTemporaryControl,measuredStepPlain_coefficientSubControl,
+    computeControl_HPFree,restoreLatestPaperTBoundary_HPFree]
+
+theorem last_HPFree (r : IndexedStepRegisters) : HPFree (last r) := by
+  simp [last,hpFree_append,computeControl_HPFree,controlledDecrement_HPFree]
+
+theorem entryAfter_HPFree (r : IndexedStepRegisters) : HPFree (entryAfter r) := by
+  have h := indexedStepInverseUnitary_HPFree r 256 0
+  have hc : HPFree (blockCInverse r) := by
+    simp only [indexedStepInverseUnitary,hpFree_append] at h
+    tauto
+  have hg : HPFree ([.CCX r.phase2 r.sign r.terminal] : Circuit) := by
+    intro g hg
+    have he := List.mem_singleton.mp hg
+    subst g
+    trivial
+  simp only [entryAfter_view,hpFree_append]
+  exact ⟨hc,⟨⟨hg,rControlNonterminal_HPFree _ _ _ _ _ _⟩,hg⟩⟩
+
+theorem entry_coherent (r : IndexedStepRegisters) (n T : Nat) (hl : IndexedStepLayout r n T) :
+    CoherentlyImplementsOn (entry r n T)
+      (Quantum.run (measuredReverseReady_inverseRemainderEntry r n (certifiedActiveWindows n T).quotientSwap))
+      (fun s => IndexedStepReady r (Classical.run (first r) (Classical.run (entryBefore r n) s))) := by
+  have hf := CoherentlyImplementsOn.unitary (entryBefore r n)
+    (fun s => IndexedStepReady r (Classical.run (first r) (Classical.run (entryBefore r n) s)))
+  have hm := hf.seq (block_coherent r n T hl) (by
+    intro s hs
+    rw [run_ket_agrees_classical _ _ (entryBefore_HPFree r n)]
+    exact supportedOn_ket _ _ hs)
+  have hall := hm.seq (CoherentlyImplementsOn.unitary (entryAfter r) (fun _ => True))
+    (by intro s hs t ht; trivial)
+  apply hall.congrIdeal
+  intro s hs
+  simp only [entryBefore,entryAfter,measuredReverseReady_inverseRemainderEntry,Quantum.run_append,LinearMap.comp_apply]
+
+def rawStep (registers : IndexedStepRegisters) (n T : Nat) :
+    Quantum.AdaptiveCircuit :=
+  (((((((((((measuredStepPlain_adaptiveUnitary (blockHInverse registers n T)).seq (phaseUpdateEpochInverseAdaptive registers.phaseUpdate registers.shiftEpoch)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseCoefficientEntry registers n))).seq (coefficientPrefixInverseAdaptive (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseCoefficientMiddle registers))).seq (coefficientPrefixInverseAdaptive (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2)).seq (entry registers n T)).seq (intervalAddSubInverse (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseRemainderMiddle registers))).seq (intervalAddSubInverse (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseStepFinish registers)))
+
+theorem rawStep_coherent (registers : IndexedStepRegisters) (n T : Nat)
+    (hlayout : IndexedStepLayout registers n T) :
+    Quantum.CoherentlyImplementsOn (rawStep registers n T)
+      (Quantum.run (indexedStepInverseUnitary registers n T))
+      (fun s => IndexedStepInverseAdaptiveInput registers n T s ∧ ReverseReady.EntryReady registers n T s) := by
+  have hf10 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1) ++ (measuredReverseReady_inverseStepFinish registers)) := by
+    rw [measuredReverseReady_inverseAdaptive_source_split]
+    exact indexedStepInverseUnitary_HPFree registers n T
+  have hf9 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1)) := ((hpFree_append _ _).mp hf10).1
+  have hf8 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1) ++ (measuredReverseReady_inverseRemainderMiddle registers)) := ((hpFree_append _ _).mp hf9).1
+  have hf7 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap) ++ (intervalAddSubInverseUnitary (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1)) := ((hpFree_append _ _).mp hf8).1
+  have hf6 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2) ++ (measuredReverseReady_inverseRemainderEntry registers n (certifiedActiveWindows n T).quotientSwap)) := ((hpFree_append _ _).mp hf7).1
+  have hf5 : HPFree ((blockHInverse registers n T) ++ (measuredReverseReady_blockGInverse registers) ++ (measuredReverseReady_inverseCoefficientEntry registers n) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2) ++ (measuredReverseReady_inverseCoefficientMiddle registers) ++ (coefficientPrefixInverseUnitary (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2)) := ((hpFree_append _ _).mp hf6).1
+  have h5 := reverseFoundation_restrict (measuredReverseReady_inverseAdaptive_coefficient_coherent registers n T hlayout)
+    (Q := fun s => IndexedStepInverseAdaptiveInput registers n T s ∧ ReverseReady.EntryReady registers n T s) (fun _ hs => hs.1)
+  have h6 := measuredStepPlain_indexedStep_coherent_seq_circuits h5 (entry_coherent registers n T hlayout) hf5 (by
+    intro s hs
+    simpa only [ReverseReady.EntryReady,ReverseReady.beforeD,entryBefore,
+      measuredReverseReady_inverseCoefficientEntry,measuredReverseReady_inverseCoefficientMiddle,measuredReverseReady_blockEInverse,Classical.run_append] using hs.2)
+  have h7 := measuredStepPlain_indexedStep_coherent_seq_circuits h6 (intervalAddSubInverse_coherent (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1 hlayout.remainder) hf6
+    (fun _ hs => hs.1.remainderAdd)
+  have h8 := measuredStepPlain_indexedStep_coherent_seq_circuits h7 (Quantum.CoherentlyImplementsOn.unitary (measuredReverseReady_inverseRemainderMiddle registers) (fun _ => True)) hf7
+    (fun _ _ => trivial)
+  have h9 := measuredStepPlain_indexedStep_coherent_seq_circuits h8 (intervalAddSubInverse_coherent (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1 hlayout.remainder) hf8
+    (fun _ hs => hs.1.remainderSub)
+  have h10 := measuredStepPlain_indexedStep_coherent_seq_circuits h9 (Quantum.CoherentlyImplementsOn.unitary (measuredReverseReady_inverseStepFinish registers) (fun _ => True)) hf9
+    (fun _ _ => trivial)
+  simpa only [rawStep,measuredReverseReady_inverseAdaptive_source_split] using h10
+
+
+def tail (registers : IndexedStepRegisters) (n T : Nat) :
+    Quantum.AdaptiveCircuit :=
+  (((((((((((Quantum.AdaptiveCircuit.done).seq (phaseUpdateEpochInverseAdaptive registers.phaseUpdate registers.shiftEpoch)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseCoefficientEntry registers n))).seq (coefficientPrefixInverseAdaptive (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .add true .work2)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseCoefficientMiddle registers))).seq (coefficientPrefixInverseAdaptive (registers.coefficient (certifiedActiveWindows n T).coefficient) (certifiedActiveWindows n T).coefficient.start (certifiedActiveWindows n T).coefficient.stop .sub false .work2)).seq (entry registers n T)).seq (intervalAddSubInverse (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .add false .work1)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseRemainderMiddle registers))).seq (intervalAddSubInverse (registers.remainder (certifiedActiveWindows n T).remainder) n (certifiedActiveWindows n T).remainder.start (certifiedActiveWindows n T).remainder.stop .sub true .work1)).seq (measuredStepPlain_adaptiveUnitary (measuredReverseReady_inverseStepFinish registers)))
+
+theorem rawStep_factor (r : IndexedStepRegisters) (n T : Nat) :
+    rawStep r n T = (AdaptiveCircuit.unitary (blockHInverse r n T) .done).seq (tail r n T) := by
+  simp only [rawStep,tail,circuit_seq_assoc,measuredStepPlain_adaptiveUnitary,AdaptiveCircuit.seq]
+
+def step (r : IndexedStepRegisters) (n T : Nat) : AdaptiveCircuit :=
+  (measuredBlockHInverse r n T).seq (tail r n T)
+
+def Input (r : IndexedStepRegisters) (n T : Nat) (s : BasisState) : Prop :=
+  IndexedStepReady r s ∧ IndexedStepInverseAdaptiveInput r n T s ∧ ReverseReady.EntryReady r n T s
+
+theorem step_coherent (r : IndexedStepRegisters) (n T : Nat) (hl : IndexedStepLayout r n T) :
+    CoherentlyImplementsOn (step r n T) (Quantum.run (indexedStepInverseUnitary r n T)) (Input r n T) := by
+  have ho := reverseFoundation_restrict (rawStep_coherent r n T hl) (Q := Input r n T) (fun _ hs => hs.2)
+  rw [rawStep_factor] at ho
+  exact replaceInitialUnitary (blockHInverse_wellFormed r n T hl) (blockHInverse_HPFree r n T)
+    (reverseFoundation_restrict (measuredBlockHInverse_coherent r n T hl) (Q := Input r n T) (fun _ hs => hs.1)) ho
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Paper2607_13816
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] indexedStepUnitary indexedStepEndRoutes
+
+theorem input_after_forward (T : Nat) (hT : 1 ≤ T) (hmax : T ≤ 1620)
+    (s : BasisState) (hl : IndexedStepLayout indexedStepProductionRegisters 256 T)
+    (hs : IndexedStepReady indexedStepProductionRegisters s)
+    (he : IndexedStepEpochEncoded indexedStepProductionRegisters s) :
+    Input indexedStepProductionRegisters 256 T
+      (Classical.run (indexedStepUnitary indexedStepProductionRegisters 256 T) s) := by
+  let r := indexedStepProductionRegisters
+  let routes := indexedStepEndRoutes r 256 T s
+  have hb := secp256k1IndexedStepRoutesValid T hT hmax s
+  have hb4 : (endIterationWindowsAt 256 T).k4 ≤ routes.1 ∧ routes.1 ≤ (endIterationWindowsAt 256 T).K4 := ⟨hb.1,hb.2.1⟩
+  have hb5 : (endIterationWindowsAt 256 T).k5 ≤ routes.2 ∧ routes.2 ≤ (endIterationWindowsAt 256 T).K5Decode 256 := ⟨hb.2.2.1,hb.2.2.2⟩
+  refine ⟨(indexedStepUnitary_correct r 256 T routes.1 routes.2 hb4 hb5 s hl hs he (fun _ => rfl)).2,?_,?_⟩
+  · exact indexedStepInverseAdaptiveInput_after_forward r 256 T routes.1 routes.2 hb4 hb5 s hl hs he (fun _ => rfl)
+  · exact ReverseReady.entry_after_forward r 256 T routes.1 routes.2 hb4 hb5 s hl hs he (fun _ => rfl)
+
+def schedule (r : IndexedStepRegisters) (n start : Nat) : Nat → AdaptiveCircuit
+  | 0 => .unitary [] .done
+  | count+1 => (schedule r n (start+1) count).seq (step r n start)
+
+def ScheduleInput (r : IndexedStepRegisters) (n start : Nat) : Nat → BasisState → Prop
+  | 0, _ => True
+  | count+1, s => ScheduleInput r n (start+1) count s ∧
+      Input r n start (Classical.run (indexedScheduleInverseUnitary r n (start+1) count) s)
+
+private theorem reverseFoundation_seq_coherent {a b : AdaptiveCircuit} {u v : Circuit} {P Q : BasisState → Prop}
+    (ha : CoherentlyImplementsOn a (Quantum.run u) P)
+    (hb : CoherentlyImplementsOn b (Quantum.run v) Q)
+    (hu : HPFree u) (hp : ∀ s, P s → Q (Classical.run u s)) :
+    CoherentlyImplementsOn (a.seq b) (Quantum.run (u ++ v)) P := by
+  have h := ha.seq hb (by
+    intro s hs
+    rw [run_ket_agrees_classical u s hu]
+    exact supportedOn_ket Q _ (hp s hs))
+  apply h.congrIdeal
+  intro s _
+  exact (Quantum.run_append u v (ket s)).symm
+
+theorem schedule_coherent (r : IndexedStepRegisters) (n start count : Nat)
+    (hl : IndexedScheduleLayout r n start count) :
+    CoherentlyImplementsOn (schedule r n start count)
+      (Quantum.run (indexedScheduleInverseUnitary r n start count)) (ScheduleInput r n start count) := by
+  induction hl with
+  | done start =>
+      simpa [schedule,indexedScheduleInverseUnitary] using
+        (CoherentlyImplementsOn.unitary ([] : Circuit) (ScheduleInput r n start 0))
+  | @step start count head tail ih =>
+      have ht := reverseFoundation_restrict ih (Q := ScheduleInput r n start (count+1)) (fun _ h => h.1)
+      exact reverseFoundation_seq_coherent ht (step_coherent r n start head)
+        (indexedScheduleInverseUnitary_HPFree r n (start+1) count) (fun _ h => h.2)
+
+private theorem reverseFoundation_production_actual (start count : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 start count)
+    (hstart : 1 ≤ start) (hstop : start + count ≤ 1621) (s : BasisState)
+    (hinput : IndexedScheduleAdaptiveInput indexedStepProductionRegisters 256 start count s) :
+    Classical.run (indexedScheduleInverseUnitary indexedStepProductionRegisters 256 start count)
+      (Classical.run (indexedScheduleUnitary indexedStepProductionRegisters 256 start count) s) = s ∧
+    ScheduleInput indexedStepProductionRegisters 256 start count
+      (Classical.run (indexedScheduleUnitary indexedStepProductionRegisters 256 start count) s) := by
+  induction hl generalizing s with
+  | done start => exact ⟨rfl,trivial⟩
+  | @step start count head tail ih =>
+      let r := indexedStepProductionRegisters
+      let routes := indexedStepEndRoutes r 256 start s
+      have hb := secp256k1IndexedStepRoutesValid start hstart (by omega) s
+      have hhead := indexedStepInverseUnitary_after_forward r 256 start routes.1 routes.2
+        ⟨hb.1,hb.2.1⟩ ⟨hb.2.2.1,hb.2.2.2⟩ s head hinput.1 hinput.2.1 (fun _ => rfl)
+      have hready := input_after_forward start hstart (by omega) s head hinput.1 hinput.2.1
+      have htail := ih (by omega) (by omega)
+        (Classical.run (indexedStepUnitary r 256 start) s) hinput.2.2
+      constructor
+      · simp only [indexedScheduleUnitary,indexedScheduleInverseUnitary,Classical.run_append]
+        rw [htail.1]
+        exact hhead
+      · simp only [ScheduleInput,indexedScheduleUnitary,Classical.run_append]
+        refine ⟨htail.2,?_⟩
+        rw [htail.1]
+        exact hready
+
+def reverse (r : IndexedStepRegisters) : AdaptiveCircuit := schedule r 256 1 secp256k1ScheduleLength
+
+attribute [local irreducible] schedule ScheduleInput indexedScheduleUnitary indexedScheduleInverseUnitary
+private theorem reverseFoundation_reverse_view (r : IndexedStepRegisters) :
+    reverse r = schedule r 256 1 secp256k1ScheduleLength := rfl
+
+theorem reverse_coherent_forward_image :
+    CoherentlyImplementsOn (reverse indexedStepProductionRegisters)
+      (Quantum.run (secp256k1EEAReverseUnitary indexedStepProductionRegisters))
+      (fun state => ∃ s : BasisState,
+        Clean (List.range' 0 263 ++ List.range' 519 61) s ∧
+        0 < boolWordToNat (wireValues (List.range' 263 256) s) ∧
+        boolWordToNat (wireValues (List.range' 263 256) s) < ShorECDLP.p ∧
+        state = Classical.run (secp256k1EEAForwardUnitary indexedStepProductionRegisters) (eeaPreprocessIdealState s)) := by
+  have h := schedule_coherent indexedStepProductionRegisters 256 1
+    secp256k1ScheduleLength secp256k1ScheduleLayout_production
+  obtain ⟨cs,hc,hm⟩ := h
+  refine ⟨cs,?_,hm⟩
+  apply hc.imp
+  intro b c hb state hs
+  obtain ⟨s,hclean,hx,hxp,rfl⟩ := hs
+  exact hb _ (reverseFoundation_production_actual 1 1620 secp256k1ScheduleLayout_production
+    (by decide) (by decide) (eeaPreprocessIdealState s)
+    (secp256k1EEAForward_adaptiveInput s hclean hx hxp)).2
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Paper2607_13816
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem reverseFoundation_basisLift_ket (f : BasisState → BasisState) (s : BasisState) :
+    Finsupp.lmapDomain ℂ ℂ f (ket s) = ket (f s) := by
+  simp [ket]
+private theorem reverseFoundation_coherent_basis_strengthen {program : AdaptiveCircuit}
+    {ideal : State →ₗ[ℂ] State} {Valid Stronger : BasisState → Prop}
+    (h : CoherentlyImplementsOn program ideal Valid)
+    (hsub : ∀ s, Stronger s → Valid s) :
+    CoherentlyImplementsOn program ideal Stronger := by
+  obtain ⟨cs, ha, hm⟩ := h
+  exact ⟨cs,ha.imp (fun b c hb s hs => hb s (hsub s hs)),hm⟩
+private theorem reverseFoundation_coherent_basis_seq {first second : AdaptiveCircuit}
+    {f g : BasisState → BasisState} {Valid Next : BasisState → Prop}
+    (hf : CoherentlyImplementsOn first (Finsupp.lmapDomain ℂ ℂ f) Valid)
+    (hg : CoherentlyImplementsOn second (Finsupp.lmapDomain ℂ ℂ g) Next)
+    (hnext : ∀ s, Valid s → Next (f s)) :
+    CoherentlyImplementsOn (first.seq second)
+      (Finsupp.lmapDomain ℂ ℂ (fun s => g (f s))) Valid := by
+  have h := hf.seq hg (by
+    intro s hs
+    rw [reverseFoundation_basisLift_ket]
+    exact supportedOn_ket Next _ (hnext s hs))
+  apply h.congrIdeal
+  intro s _
+  simp only [LinearMap.comp_apply,reverseFoundation_basisLift_ket]
+
+def wrapper : AdaptiveCircuit :=
+  (secp256k1EEAReversePostprocessing.seq (reverse indexedStepProductionRegisters)).seq eeaUnpreprocess
+
+attribute [local irreducible] secp256k1EEAOutputIdealState secp256k1EEAReverseWrapperIdealState
+  reverse secp256k1EEAReverseUnitary
+theorem wrapper_coherent :
+    CoherentlyImplementsOn wrapper
+      (Finsupp.lmapDomain ℂ ℂ secp256k1EEAReverseWrapperIdealState)
+      (fun s => ∃ original, Secp256k1EEAInputValid original ∧ s = secp256k1EEAOutputIdealState original) := by
+  have hp := reverseFoundation_coherent_basis_strengthen secp256k1EEAReversePostprocessing_coherent
+    (Stronger := fun s => ∃ original, Secp256k1EEAInputValid original ∧
+      s = secp256k1EEAOutputIdealState original) (by
+        intro s hs
+        obtain ⟨original,ho,rfl⟩ := hs
+        have h := (secp256k1EEAOutputIdealState_correct original ho.1 ho.2.1 ho.2.2).2.2.2.2
+        exact ⟨h 560 (by decide),h 561 (by decide),h 562 (by decide)⟩)
+  have hfree : HPFree (secp256k1EEAReverseUnitary indexedStepProductionRegisters) := by
+    unfold secp256k1EEAReverseUnitary
+    exact indexedScheduleInverseUnitary_HPFree indexedStepProductionRegisters 256 1 secp256k1ScheduleLength
+  have hi := reverse_coherent_forward_image.congrIdeal
+    (secondIdeal := Finsupp.lmapDomain ℂ ℂ (fun s => Classical.run
+      (secp256k1EEAReverseUnitary indexedStepProductionRegisters) s)) (by
+        intro s hs
+        rw [reverseFoundation_basisLift_ket,Quantum.run_ket_agrees_classical
+          (secp256k1EEAReverseUnitary indexedStepProductionRegisters) s
+          hfree])
+  have hpi := reverseFoundation_coherent_basis_seq hp hi (by
+    intro s hs
+    obtain ⟨original,ho,rfl⟩ := hs
+    exact ⟨original,ho.1,ho.2.1,ho.2.2,secp256k1EEAReversePostprocessing_output original ho⟩)
+  have hall := reverseFoundation_coherent_basis_seq hpi eeaUnpreprocess_coherent (by
+    intro s hs
+    obtain ⟨original,ho,rfl⟩ := hs
+    refine ⟨original,ho,?_⟩
+    rw [secp256k1EEAReversePostprocessing_output original ho]
+    exact secp256k1EEAReverseUnitary_after_forward_preprocessed original ho.1 ho.2.1 ho.2.2)
+  apply hall.congrIdeal
+  intro s hs
+  simp only [reverseFoundation_basisLift_ket]
+  simp only [secp256k1EEAReverseWrapperIdealState]
+
+theorem wrapper_coherent_localImage :
+    CoherentlyImplementsOn wrapper
+      (Finsupp.lmapDomain ℂ ℂ secp256k1EEAReverseWrapperIdealState)
+      Secp256k1EEAForwardLocalImage := by
+  obtain ⟨cs,ha,hm⟩ := wrapper_coherent
+  refine ⟨cs,ha.imp (fun b c hb s hs => hb s ?_),hm⟩
+  obtain ⟨original,ho,hagree⟩ := hs
+  refine ⟨fun w => if w < 580 then original w else s w,?_,?_⟩
+  · exact (Secp256k1EEAInputValid_congrOn original _ (by intro w hw; simp [hw])).mp ho
+  · rw [secp256k1EEAOutputIdealState_patchOutside]
+    funext w
+    by_cases hw : w < 580
+    · simp only [if_pos hw]; exact hagree w hw
+    · simp only [if_neg hw]
+
+
+
+def bankWrapper : AdaptiveCircuit := wrapper.relabel eeaWorkspaceExchange
+
+theorem bankWrapper_coherent_localImage :
+    CoherentlyImplementsOn bankWrapper
+      ((relabelState eeaWorkspaceExchange).comp
+        ((Finsupp.lmapDomain ℂ ℂ secp256k1EEAReverseWrapperIdealState).comp
+          (relabelState eeaWorkspaceExchange.symm)))
+      (fun s => Secp256k1EEAForwardLocalImage (relabelBasis eeaWorkspaceExchange.symm s)) :=
+  wrapper_coherent_localImage.relabel eeaWorkspaceExchange
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] program phaseInverseProgram coefficientInverseProgram intervalInverseProgram hInverseProgram
+def stepSources (r : IndexedStepRegisters) (T : Nat) : List AdaptiveCircuit :=
+  ([measuredBlockHInverse r 256 T,
+    phaseUpdateEpochInverseAdaptive r.phaseUpdate r.shiftEpoch,
+    .unitary ((blockFForward r).adjoint ++ prepareLatestPaperTBoundary r.tBoundary 256 ++ computeControl [r.phase1] 1 r.control r.blockScratch) .done,
+    coefficientPrefixInverseAdaptive (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .add true .work2,
+    .unitary (computeControl [r.phase1] 1 r.control r.blockScratch ++ [.CX r.phase1 r.sign] ++ computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++ computeControl [r.phase1,r.terminal] 1 r.control r.blockScratch ++ computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch) .done,
+    coefficientPrefixInverseAdaptive (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .sub false .work2,
+    .unitary (entryBefore r 256) .done,
+    block r (certifiedActiveWindows 256 T).quotientSwap,
+    .unitary (entryAfter r) .done,
+    intervalAddSubInverse (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .add false .work1,
+    .unitary ((([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal]) ++ blockB2 r ++ rControlNonterminal [r.phase1] 0 r.control r.lengthRPrime r.terminal r.blockScratch) .done,
+    intervalAddSubInverse (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .sub true .work1,
+    .unitary (rControlNonterminal [r.phase1] 0 r.control r.lengthRPrime r.terminal r.blockScratch ++ blockAInverse r) .done] : List AdaptiveCircuit)
+def stepSegments (n : Nat) (r : IndexedStepRegisters) (T : Nat) : List (FixedSegment n) :=
+  ([(fun cursor => hInverseProgram n cursor r 256 T),
+    (fun cursor => phaseInverseProgram n cursor r.phaseUpdate r.shiftEpoch),
+    (fun _ => ⟨0, literalProgram ((blockFForward r).adjoint ++ prepareLatestPaperTBoundary r.tBoundary 256 ++ computeControl [r.phase1] 1 r.control r.blockScratch)⟩),
+    (fun cursor => coefficientInverseProgram n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .add true .work2),
+    (fun _ => ⟨0, literalProgram (computeControl [r.phase1] 1 r.control r.blockScratch ++ [.CX r.phase1 r.sign] ++ computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++ computeControl [r.phase1,r.terminal] 1 r.control r.blockScratch ++ computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch)⟩),
+    (fun cursor => coefficientInverseProgram n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .sub false .work2),
+    (fun _ => ⟨0,literalProgram (entryBefore r 256)⟩),
+    (fun cursor => program n cursor r (certifiedActiveWindows 256 T).quotientSwap),
+    (fun _ => ⟨0,literalProgram (entryAfter r)⟩),
+    (fun cursor => intervalInverseProgram n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .add false .work1),
+    (fun _ => ⟨0, literalProgram ((([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal]) ++ blockB2 r ++ rControlNonterminal [r.phase1] 0 r.control r.lengthRPrime r.terminal r.blockScratch)⟩),
+    (fun cursor => intervalInverseProgram n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .sub true .work1),
+    (fun _ => ⟨0, literalProgram (rControlNonterminal [r.phase1] 0 r.control r.lengthRPrime r.terminal r.blockScratch ++ blockAInverse r)⟩)] : List (FixedSegment n))
+
+theorem stepSources_eq (r : IndexedStepRegisters) (T : Nat) :
+    sequenceCircuit (stepSources r T) = step r 256 T := by
+  simp only [stepSources,sequenceCircuit,step,tail,entry,measuredStepPlain_adaptiveUnitary,
+    measuredReverseReady_inverseCoefficientEntry,measuredReverseReady_inverseCoefficientMiddle,measuredReverseReady_inverseRemainderMiddle,measuredReverseReady_inverseStepFinish,
+    measuredReverseReady_blockFInverse,entryBefore,entryAfter,measuredStepPlain_coefficientTemporaryControl,measuredStepPlain_coefficientSubControl,
+    measuredStepPlain_coefficientAddControl,measuredStepPlain_remainderRestoreControl,measuredStepPlain_remainderSubControl,
+    adaptive_seq_assoc,adaptive_seq_done]
+  rfl
+
+def stepProgram (n start : Nat) (r : IndexedStepRegisters) (T : Nat) :
+    (count : Nat) × Straight n start (start+count) := sequenceProgram n (stepSegments n r T) start
+attribute [local irreducible] stepProgram
+theorem stepProgram_run (n start : Nat) (r : IndexedStepRegisters) (T : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (stepProgram n start r T) read history = (step r 256 T).run := by
+  unfold stepProgram
+  rw [← stepSources_eq r T]
+  apply sequenceProgram_run
+  unfold stepSegments stepSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))))))
+  · intro cursor h
+    exact hInverseProgram_run n cursor r 256 T read h
+  · intro cursor h
+    exact phaseInverseProgram_run n cursor r.phaseUpdate r.shiftEpoch read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact coefficientInverseProgram_run n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .add true .work2 read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact coefficientInverseProgram_run n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .sub false .work2 read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact program_run n cursor r _ read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact intervalInverseProgram_run n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .add false .work1 read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact intervalInverseProgram_run n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .sub true .work1 read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+
+theorem stepProgram_tCount (n start : Nat) (r : IndexedStepRegisters) (T : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (stepProgram n start r T) read history = (step r 256 T).tCount := by
+  unfold stepProgram
+  rw [← stepSources_eq r T]
+  apply sequenceProgram_tCount
+  unfold stepSegments stepSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))))))
+  · intro cursor h
+    exact hInverseProgram_tCount n cursor r 256 T read h
+  · intro cursor h
+    exact phaseInverseProgram_tCount n cursor r.phaseUpdate r.shiftEpoch read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact coefficientInverseProgram_tCount n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .add true .work2 read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact coefficientInverseProgram_tCount n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) (certifiedActiveWindows 256 T).coefficient.start (certifiedActiveWindows 256 T).coefficient.stop .sub false .work2 read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact program_tCount n cursor r _ read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact intervalInverseProgram_tCount n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .add false .work1 read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact intervalInverseProgram_tCount n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 (certifiedActiveWindows 256 T).remainder.start (certifiedActiveWindows 256 T).remainder.stop .sub true .work1 read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+
+
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+attribute [local irreducible] stepProgram
+def scheduleProgram (n : Nat) (r : IndexedStepRegisters) :
+    (count first start : Nat) → (events : Nat) × Straight n start (start+events)
+  | 0, _, _ => ⟨0, literalProgram []⟩
+  | count+1, first, start =>
+    let before := scheduleProgram n r count (first+1) start
+    appendCompiled before (stepProgram n (start+before.1) r first)
+
+theorem scheduleProgram_run (n : Nat) (r : IndexedStepRegisters) (count first start : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (scheduleProgram n r count first start) read history =
+      (schedule r 256 first count).run := by
+  induction count generalizing first start with
+  | zero =>
+    exact literalProgram_run [] read history
+  | succ count ih =>
+    unfold scheduleProgram schedule
+    dsimp only
+    apply appendCompiled_run_eq
+    · exact ih (first+1) start history
+    · intro h
+      exact stepProgram_run n _ r first read h
+
+theorem scheduleProgram_tCount (n : Nat) (r : IndexedStepRegisters) (count first start : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (scheduleProgram n r count first start) read history =
+      (schedule r 256 first count).tCount := by
+  induction count generalizing first start with
+  | zero =>
+    rfl
+  | succ count ih =>
+    unfold scheduleProgram schedule
+    dsimp only
+    apply appendCompiled_tCount_eq
+    · exact ih (first+1) start history
+    · intro h
+      exact stepProgram_tCount n _ r first read h
+
+def reverseProgram (n start : Nat) (r : IndexedStepRegisters) :
+    (count : Nat) × Straight n start (start+count) := scheduleProgram n r secp256k1ScheduleLength 1 start
+theorem reverseProgram_run (n start : Nat) (r : IndexedStepRegisters)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (reverseProgram n start r) read history = (reverse r).run :=
+  scheduleProgram_run n r secp256k1ScheduleLength 1 start read history
+
+theorem reverseProgram_tCount (n start : Nat) (r : IndexedStepRegisters)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (reverseProgram n start r) read history = (reverse r).tCount :=
+  scheduleProgram_tCount n r secp256k1ScheduleLength 1 start read history
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+attribute [local irreducible] reverseProgram
+def wrapperSources  : List AdaptiveCircuit :=
+  ([.unitary (terminalWork1Clear) .done,
+    secp256k1EEAParityCorrection,
+    .unitary (terminalEpochCompression ++ canonicalWork2InverseRotation) .done,
+    reverse indexedStepProductionRegisters,
+    eeaUnpreprocess] : List AdaptiveCircuit)
+def wrapperSegments (n : Nat)  : List (FixedSegment n) :=
+  ([(fun _ => ⟨0, literalProgram (terminalWork1Clear)⟩),
+    (fun cursor => productionParityProgram n cursor),
+    (fun _ => ⟨0, literalProgram (terminalEpochCompression ++ canonicalWork2InverseRotation)⟩),
+    (fun cursor => reverseProgram n cursor indexedStepProductionRegisters),
+    (fun cursor => unpreprocessProgram n cursor)] : List (FixedSegment n))
+theorem wrapperSources_eq  :
+    sequenceCircuit (wrapperSources ) = wrapper := by
+  simp only [wrapperSources, sequenceCircuit, wrapper, secp256k1EEAReversePostprocessing, adaptive_seq_assoc, adaptive_seq_done]
+
+def wrapperProgram (n start : Nat)  : (count : Nat) × Straight n start (start+count) :=
+  sequenceProgram n (wrapperSegments n ) start
+attribute [local irreducible] wrapperProgram
+theorem wrapperProgram_run (n start : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (wrapperProgram n start ) read history = (wrapper).run := by
+  unfold wrapperProgram
+  rw [← wrapperSources_eq ]
+  apply sequenceProgram_run
+  unfold wrapperSegments wrapperSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact productionParityProgram_run n cursor read h
+  · intro cursor h
+    exact literalCompiled_run _ read h
+  · intro cursor h
+    exact reverseProgram_run n cursor indexedStepProductionRegisters read h
+  · intro cursor h
+    exact unpreprocessProgram_run n cursor read h
+
+theorem wrapperProgram_tCount (n start : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (wrapperProgram n start ) read history = (wrapper).tCount := by
+  unfold wrapperProgram
+  rw [← wrapperSources_eq ]
+  apply sequenceProgram_tCount
+  unfold wrapperSegments wrapperSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact productionParityProgram_tCount n cursor read h
+  · intro cursor h
+    exact literalCompiled_tCount _ read h
+  · intro cursor h
+    exact reverseProgram_tCount n cursor indexedStepProductionRegisters read h
+  · intro cursor h
+    exact unpreprocessProgram_tCount n cursor read h
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+theorem step_tCount (r : IndexedStepRegisters) (T : Nat) (hl : IndexedStepLayout r 256 T) :
+    let w := (certifiedActiveWindows 256 T).quotientSwap
+    (step r 256 T).tCount + 7*(quotientSwapTree (r.quotient w) w.start w.stop).internalNodes =
+      (measuredIndexedStepInverse r 256 T).tCount := by
+  have hd := block_saving r 256 T hl
+  dsimp only at hd ⊢
+  rw [← stepSources_eq, ← measuredInverseStepSources_eq]
+  simp only [stepSources,measuredInverseStepSources,sequenceCircuit,adaptive_tCount_seq,
+    AdaptiveCircuit.tCount,ShorECDLP.tCount_append,entryBefore_view,entryAfter_view]
+  omega
+
+theorem production_step_tCount (T : Nat) (hl : IndexedStepLayout indexedStepProductionRegisters 256 T) :
+    (step indexedStepProductionRegisters 256 T).tCount + 7*nodeBudget T =
+      (measuredIndexedStepInverse indexedStepProductionRegisters 256 T).tCount := by
+  have h := step_tCount indexedStepProductionRegisters T hl
+  dsimp only at h
+  rwa [production_nodes T hl] at h
+
+theorem schedule_tCount (first count : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 first count) :
+    (schedule indexedStepProductionRegisters 256 first count).tCount + scheduleSaving first count =
+      (measuredIndexedScheduleInverse indexedStepProductionRegisters 256 first count).tCount := by
+  induction hl with
+  | done first => rfl
+  | @step first count head tail ih =>
+      have hh := production_step_tCount first head
+      simp only [schedule,measuredIndexedScheduleInverse,scheduleSaving,adaptive_tCount_seq]
+      omega
+
+attribute [local irreducible] AdaptiveCircuit.tCount schedule measuredIndexedScheduleInverse
+private theorem reverseFoundation_schedule_saving_value (first count saving : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 first count)
+    (hv : scheduleSaving first count = saving) :
+    (schedule indexedStepProductionRegisters 256 first count).tCount + saving =
+      (measuredIndexedScheduleInverse indexedStepProductionRegisters 256 first count).tCount :=
+  (congrArg (fun x => (schedule indexedStepProductionRegisters 256 first count).tCount + x) hv.symm).trans
+    (schedule_tCount first count hl)
+
+theorem wrapper_saving : wrapper.tCount + 1690738 = secp256k1MeasuredEEAReverseWrapper.tCount := by
+  have h := reverseFoundation_schedule_saving_value 1 secp256k1ScheduleLength 1690738 secp256k1ScheduleLayout_production scheduleSaving_total
+  simp only [wrapper,secp256k1MeasuredEEAReverseWrapper,reverse,secp256k1MeasuredEEAReverse,
+    adaptive_tCount_seq]
+  change _ + 1690738 = _
+  omega
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem reverseFoundation_measurements_seq (a b : AdaptiveCircuit) :
+    (a.seq b).measurementCount = a.measurementCount + b.measurementCount := by
+  induction a with
+  | done => simp only [AdaptiveCircuit.seq,AdaptiveCircuit.measurementCount,Nat.zero_add]
+  | unitary gs a ih => simpa only [AdaptiveCircuit.seq,AdaptiveCircuit.measurementCount] using ih
+  | xMeasureReset w a b iha ihb =>
+    simp only [AdaptiveCircuit.seq,AdaptiveCircuit.measurementCount,iha,ihb,Nat.add_max_add_right]
+    omega
+
+theorem block_measurements (r : IndexedStepRegisters) (n T : Nat) (hl : IndexedStepLayout r n T) :
+    let w := (certifiedActiveWindows n T).quotientSwap
+    (block r w).measurementCount = (quotientSwapTree (r.quotient w) w.start w.stop).internalNodes := by
+  dsimp only
+  simp only [block,blockD2,reverseFoundation_measurements_seq,AdaptiveCircuit.measurementCount,
+    quotientSwap_measurementCount _ hl.quotient,Nat.zero_add,Nat.add_zero]
+
+theorem step_measurements (r : IndexedStepRegisters) (T : Nat) (hl : IndexedStepLayout r 256 T) :
+    let w := (certifiedActiveWindows 256 T).quotientSwap
+    (step r 256 T).measurementCount = (measuredIndexedStepInverse r 256 T).measurementCount +
+      (quotientSwapTree (r.quotient w) w.start w.stop).internalNodes := by
+  have hd := block_measurements r 256 T hl
+  dsimp only at hd ⊢
+  rw [← stepSources_eq, ← measuredInverseStepSources_eq]
+  simp only [stepSources,measuredInverseStepSources,sequenceCircuit,
+    reverseFoundation_measurements_seq,AdaptiveCircuit.measurementCount]
+  omega
+
+theorem schedule_measurements (first count : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 first count) :
+    (schedule indexedStepProductionRegisters 256 first count).measurementCount =
+      (measuredIndexedScheduleInverse indexedStepProductionRegisters 256 first count).measurementCount +
+        scheduleExtraRecords first count := by
+  induction hl with
+  | done first => rfl
+  | @step first count head tail ih =>
+    have h := step_measurements indexedStepProductionRegisters first head
+    dsimp only at h
+    rw [production_nodes first head] at h
+    simp only [schedule,measuredIndexedScheduleInverse,reverseFoundation_measurements_seq,scheduleExtraRecords,
+      List.range'_succ,List.map_cons,List.sum_cons] at ih ⊢
+    omega
+
+attribute [local irreducible] schedule measuredIndexedScheduleInverse AdaptiveCircuit.measurementCount
+private theorem reverseFoundation_schedule_measurements_value (first count extra : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 first count)
+    (hv : scheduleExtraRecords first count = extra) :
+    (schedule indexedStepProductionRegisters 256 first count).measurementCount =
+      (measuredIndexedScheduleInverse indexedStepProductionRegisters 256 first count).measurementCount + extra :=
+  (schedule_measurements first count hl).trans
+    (congrArg (fun x => (measuredIndexedScheduleInverse indexedStepProductionRegisters 256 first count).measurementCount + x) hv)
+
+theorem wrapper_measurements : wrapper.measurementCount =
+    secp256k1MeasuredEEAReverseWrapper.measurementCount + 241534 := by
+  have h := reverseFoundation_schedule_measurements_value 1 secp256k1ScheduleLength 241534 secp256k1ScheduleLayout_production scheduleExtraRecords_total
+  simp only [wrapper,secp256k1MeasuredEEAReverseWrapper,reverse,secp256k1MeasuredEEAReverse,reverseFoundation_measurements_seq]
+  omega
+
+theorem wrapperProgram_count (n start : Nat) :
+    (wrapperProgram n start).1 = wrapper.measurementCount :=
+  compiled_count_of_run (wrapperProgram n start) (fun _ => false) (fun _ => false)
+    wrapper (wrapperProgram_run n start (fun _ => false) (fun _ => false))
+
+theorem wrapperProgram_count_delta (n start : Nat) :
+    (wrapperProgram n start).1 = (measuredReverseWrapperProgram n start).1 + 241534 :=
+  (wrapperProgram_count n start).trans (wrapper_measurements.trans
+    (congrArg (fun x => x + 241534)
+      (compiled_count_of_run (measuredReverseWrapperProgram n start) (fun _ => false) (fun _ => false)
+        secp256k1MeasuredEEAReverseWrapper
+        (measuredReverseWrapperProgram_run n start (fun _ => false) (fun _ => false))).symm))
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+theorem adaptive_seq_wellFormed_parts (first second : AdaptiveCircuit)
+    (h : (first.seq second).WellFormed) : first.WellFormed ∧ second.WellFormed := by
+  induction first with
+  | done => exact ⟨trivial,h⟩
+  | unitary gs next ih =>
+    have hh := ih h.2
+    exact ⟨⟨h.1,hh.1⟩,hh.2⟩
+  | xMeasureReset w p q ihp ihq =>
+    have hp := ihp h.1
+    have hq := ihq h.2
+    exact ⟨⟨hp.1,hq.1⟩,hp.2⟩
+
+theorem sequenceCircuit_wellFormed_members (sources : List AdaptiveCircuit)
+    (h : (sequenceCircuit sources).WellFormed) : ∀ source ∈ sources, source.WellFormed := by
+  induction sources with
+  | nil => simp
+  | cons source rest ih =>
+    have hs := adaptive_seq_wellFormed_parts source (sequenceCircuit rest) h
+    intro c hc
+    rcases List.mem_cons.mp hc with rfl | hc
+    · exact hs.1
+    · exact ih hs.2 c hc
+
+private theorem reverseFoundation_sequence_wf (sources : List AdaptiveCircuit)
+    (h : ∀ c ∈ sources, c.WellFormed) : (sequenceCircuit sources).WellFormed := by
+  induction sources with
+  | nil => trivial
+  | cons c cs ih => exact (h c (by simp)).seq (ih (fun x hx => h x (by simp [hx])))
+
+theorem block_wellFormed (r : IndexedStepRegisters) (T : Nat)
+    (hl : IndexedStepLayout r 256 T)
+    (hd : CircuitWellFormed (blockDInverse r (certifiedActiveWindows 256 T).quotientSwap)) :
+    (block r (certifiedActiveWindows 256 T).quotientSwap).WellFormed := by
+  rw [source_view] at hd
+  have hp := (circuitWellFormed_append _ _).mp hd
+  have hf := (circuitWellFormed_append _ _).mp hp.1
+  have hd2 := hf.2
+  change CircuitWellFormed ((before r ++ quotientSwapUnitary (r.quotient (certifiedActiveWindows 256 T).quotientSwap)
+    (certifiedActiveWindows 256 T).quotientSwap.start (certifiedActiveWindows 256 T).quotientSwap.stop) ++ after r) at hd2
+  simp only [circuitWellFormed_append] at hd2
+  have hnew : (blockD2 r (certifiedActiveWindows 256 T).quotientSwap).WellFormed :=
+    (AdaptiveCircuit.WellFormed.seq ⟨hd2.1.1,trivial⟩
+      ((quotientSwap_wellFormed _ hl.quotient).seq ⟨hd2.2,trivial⟩))
+  exact ((show (AdaptiveCircuit.unitary (first r) .done).WellFormed from ⟨hf.1,trivial⟩).seq hnew).seq
+    (show (AdaptiveCircuit.unitary (last r) .done).WellFormed from ⟨hp.2,trivial⟩)
+
+private def reverseFoundation_oldMiddle (r : IndexedStepRegisters) (T : Nat) : Circuit :=
+  computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++ computeControl [r.phase1,r.terminal] 1 r.control r.blockScratch ++ computeControl [r.phase2,r.sign] 2 r.terminal r.blockScratch ++ restoreLatestPaperTBoundary r.tBoundary 256 ++ blockDInverse r (certifiedActiveWindows 256 T).quotientSwap ++ blockCInverse r ++ (([.CCX r.phase2 r.sign r.terminal] ++ rControlNonterminal [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)) ++ [.CCX r.phase2 r.sign r.terminal])
+
+theorem step_wellFormed (r : IndexedStepRegisters) (T : Nat)
+    (hl : IndexedStepLayout r 256 T) : (step r 256 T).WellFormed := by
+  have ho := measuredIndexedStepInverse_wellFormed r 256 T hl
+  rw [← measuredInverseStepSources_eq] at ho
+  have hs := sequenceCircuit_wellFormed_members _ ho
+  have hm := (hs (.unitary (reverseFoundation_oldMiddle r T) .done) (by simp [measuredInverseStepSources,reverseFoundation_oldMiddle])).1
+  have hc : CircuitWellFormed (entryBefore r 256) ∧
+      CircuitWellFormed (blockDInverse r (certifiedActiveWindows 256 T).quotientSwap) ∧
+      CircuitWellFormed (entryAfter r) := by
+    simpa only [reverseFoundation_oldMiddle,entryBefore_view,entryAfter_view,circuitWellFormed_append,and_assoc] using hm
+  rw [← stepSources_eq]
+  apply reverseFoundation_sequence_wf
+  intro c h
+  simp only [stepSources,List.mem_cons,List.not_mem_nil,or_false] at h
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact ⟨hc.1,trivial⟩
+  · exact block_wellFormed r T hl hc.2.1
+  · exact ⟨hc.2.2,trivial⟩
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+  · exact hs _ (by simp [measuredInverseStepSources])
+
+theorem schedule_wellFormed (r : IndexedStepRegisters) (first count : Nat)
+    (hl : IndexedScheduleLayout r 256 first count) : (schedule r 256 first count).WellFormed := by
+  induction hl with
+  | done first => simp [schedule,AdaptiveCircuit.WellFormed,CircuitWellFormed]
+  | step head tail ih => simpa only [schedule] using ih.seq (step_wellFormed _ _ head)
+
+attribute [local irreducible] schedule measuredIndexedScheduleInverse
+private theorem reverseFoundation_reverse_source_view (r : IndexedStepRegisters) :
+    reverse r = schedule r 256 1 secp256k1ScheduleLength := rfl
+
+theorem reverse_wellFormed : (reverse indexedStepProductionRegisters).WellFormed :=
+  (congrArg AdaptiveCircuit.WellFormed (reverseFoundation_reverse_source_view indexedStepProductionRegisters)).mpr
+    (schedule_wellFormed _ _ _ secp256k1ScheduleLayout_production)
+
+theorem wrapper_wellFormed : wrapper.WellFormed := by
+  have ho := secp256k1MeasuredEEAReverseWrapper_wellFormed
+  have hu := adaptive_seq_wellFormed_parts _ _ ho
+  have hp := adaptive_seq_wellFormed_parts _ _ hu.1
+  exact (hp.1.seq reverse_wellFormed).seq hu.2
+
+theorem bankWrapper_wellFormed : bankWrapper.WellFormed := by
+  rw [bankWrapper,AdaptiveCircuit.relabel_wellFormed]
+  exact wrapper_wellFormed
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+def divisionAfterReset (outcomes : List Bool) : AdaptiveCircuit :=
+  (((bankWrapper.seq fig15MultiplyToData).seq
+    (.unitary (registerZCorrection (List.range' 580 256) outcomes) .done)).seq
+      fig15MultiplyToDataInverse).seq (.unitary fig15SwapOutput .done)
+private theorem reverseFoundation_division_continuation_wellFormed (outcomes : List Bool) :
+    (divisionAfterReset outcomes).WellFormed := by
+  exact (((bankWrapper_wellFormed.seq measuredDivision_figure15_multipliers_wellFormed.2.1).seq
+    (measuredDivision_figure15_unitary_wellFormed _ (registerZCorrection_wellFormed (List.range' 580 256) outcomes))).seq measuredDivision_figure15_multipliers_wellFormed.2.2).seq
+      (measuredDivision_figure15_unitary_wellFormed _ measuredDivision_figure15_swap_wellFormed)
+
+private theorem reverseFoundation_division_continuation_coherent (outcomes : List Bool) :
+    CoherentlyImplementsOn (divisionAfterReset outcomes)
+      ((Quantum.run fig15SwapOutput).comp (measuredDivision_divisionUncomputeMap outcomes)) measuredDivision_divisionResetValid := by
+  have hr : CoherentlyImplementsOn bankWrapper measuredDivision_divisionRestoreMap measuredDivision_divisionResetValid := by
+    apply measuredDivision_coherent_strengthen bankWrapper_coherent_localImage
+    rintro t ⟨s,hs,rfl⟩
+    exact fig15DivisionReset_inverseReady s hs
+  have hm := hr.seq fig15MultiplyToData_coherent (by
+    rintro t ⟨s,hs,rfl⟩
+    rw [measuredDivision_division_restore_ket]
+    exact supportedOn_ket _ _ (measuredDivision_restored_horner s hs))
+  have hz := hm.seq (CoherentlyImplementsOn.unitary
+    (registerZCorrection (List.range' 580 256) outcomes) (fun _ => True)) (by
+      intro t ht u hu; trivial)
+  have hi := hz.seq fig15MultiplyToDataInverse_coherent (by
+    rintro t ⟨s,hs,rfl⟩
+    change SupportedOn _ (measuredDivision_divisionCorrectMap outcomes _)
+    rw [measuredDivision_division_correct_ket s hs]
+    exact measuredDivision_supported_phase _ _ ⟨fig15DivisionRestoredState s,measuredDivision_restored_horner s hs,rfl⟩)
+  exact hi.seq (CoherentlyImplementsOn.unitary fig15SwapOutput (fun _ => True))
+    (by intro t ht u hu; trivial)
+
+private theorem reverseFoundation_division_reset_coherent :
+    CoherentlyImplementsOn (measureResetThen (List.range' 580 256) divisionAfterReset)
+      (Finsupp.lmapDomain ℂ ℂ measuredDivision_divisionPreparedOutput) measuredDivision_divisionPreparedValid :=
+  measureResetThen_coherent (List.range' 580 256) divisionAfterReset
+    (fun outcomes => (Quantum.run fig15SwapOutput).comp (measuredDivision_divisionUncomputeMap outcomes))
+    (fun _ => measuredDivision_divisionResetValid) measuredDivision_divisionPreparedValid measuredDivision_divisionPreparedOutput List.nodup_range'
+    (fun outcomes _ => reverseFoundation_division_continuation_wellFormed outcomes)
+    reverseFoundation_division_continuation_coherent (fun outcomes _ t ht => measuredDivision_division_reset_correct outcomes t ht)
+    (fig15WorkProductState (secp256k1EEAOutputIdealState measuredDivision_divisionWitness))
+    ⟨measuredDivision_divisionWitness,measuredDivision_divisionWitness_valid,rfl⟩
+
+attribute [local irreducible] MeasuredQuotient.wrapper fig15MultiplyToWork secp256k1EEAOutputIdealState
+  fig15WorkProductState measureResetThen divisionAfterReset
+
+def division : AdaptiveCircuit :=
+  (MeasuredQuotient.wrapper.seq fig15MultiplyToWork).seq
+    (measureResetThen (List.range' 580 256) divisionAfterReset)
+theorem division_coherent :
+    CoherentlyImplementsOn division
+      (Finsupp.lmapDomain ℂ ℂ fig15DivisionOutputState) Secp256k1InPlaceInputValid := by
+  have h := MeasuredQuotient.divisionPrefix_coherent.seq reverseFoundation_division_reset_coherent (by
+    intro s hs
+    rw [measuredDivision_basis_lift_ket]
+    exact supportedOn_ket _ _ ⟨s,hs,rfl⟩)
+  apply h.congrIdeal
+  intro s hs
+  simp only [LinearMap.comp_apply,measuredDivision_basis_lift_ket]
+  delta measuredDivision_divisionPreparedOutput fig15DivisionOutputState fig15DivisionRestoredState
+  rfl
+attribute [local irreducible] wrapperProgram divisionCorrectionProgram multiplyWorkProgram multiplyDataProgram
+
+def bankWrapperProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  relabelCompiled eeaWorkspaceExchange (wrapperProgram n start)
+theorem bankWrapperProgram_run (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (bankWrapperProgram n start) read history = bankWrapper.run :=
+  relabelCompiled_run _ _ _ read history (wrapperProgram_run n start read history)
+theorem bankWrapperProgram_tCount (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (bankWrapperProgram n start) read history = bankWrapper.tCount :=
+  relabelCompiled_tCount _ _ _ read history (wrapperProgram_tCount n start read history)
+
+attribute [local irreducible] bankWrapperProgram
+def divisionAfterResetProgram (n start : Nat) (prior : List (Fin start)) :
+    (count : Nat) × Straight n start (start+count) :=
+  let eea := bankWrapperProgram n start
+  appendRetaining (appendCompiled eea (multiplyDataProgram n (start+eea.1)))
+    (divisionCorrectionProgram n) prior
+
+theorem divisionAfterResetProgram_run (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (divisionAfterResetProgram n start prior) read history = (divisionAfterReset (prior.map history)).run := by
+  unfold divisionAfterResetProgram
+  have h := appendRetaining_run
+    (appendCompiled (bankWrapperProgram n start) (multiplyDataProgram n _))
+    (divisionCorrectionProgram n) prior (bankWrapper.seq fig15MultiplyToData)
+    (fun outcomes => (AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) outcomes) .done).seq divisionCleanupSource)
+    read history (by
+      apply appendCompiled_run_eq
+      · exact bankWrapperProgram_run n start read history
+      · intro h; exact multiplyDataProgram_run n _ read h)
+    (fun cursor indices h => divisionCorrectionProgram_run n cursor indices read h)
+  simpa only [divisionAfterReset, divisionCleanupSource, adaptive_seq_assoc] using h
+
+theorem divisionAfterResetProgram_tCount (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (divisionAfterResetProgram n start prior) read history = (divisionAfterReset (prior.map history)).tCount := by
+  unfold divisionAfterResetProgram
+  have h := appendRetaining_tCount
+    (appendCompiled (bankWrapperProgram n start) (multiplyDataProgram n _))
+    (divisionCorrectionProgram n) prior (bankWrapper.seq fig15MultiplyToData)
+    (fun outcomes => (AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) outcomes) .done).seq divisionCleanupSource)
+    read history (by
+      apply appendCompiled_tCount_eq
+      · exact bankWrapperProgram_tCount n start read history
+      · intro h; exact multiplyDataProgram_tCount n _ read h)
+    (fun cursor indices h => divisionCorrectionProgram_tCount n cursor indices read h)
+  simpa only [divisionAfterReset, divisionCleanupSource, adaptive_seq_assoc] using h
+
+attribute [local irreducible] divisionAfterResetProgram
+
+attribute [local irreducible] MeasuredQuotient.wrapperProgram
+def divisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  let eea := MeasuredQuotient.wrapperProgram n start
+  let first := appendCompiled eea (multiplyWorkProgram n (start+eea.1))
+  appendCompiled first (collectProgram n (divisionAfterResetProgram n)
+    (List.range' 580 256) (start+first.1) ([] : List (Fin _)))
+
+theorem divisionProgram_run (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (divisionProgram n start) read history = division.run := by
+  unfold divisionProgram division
+  apply appendCompiled_run_eq
+  · apply appendCompiled_run_eq
+    · exact MeasuredQuotient.wrapperProgram_run n start read history
+    · intro h; exact multiplyWorkProgram_run n _ read h
+  · intro h
+    exact collectProgram_run n (divisionAfterResetProgram n) divisionAfterReset read
+      (fun cursor prior h => divisionAfterResetProgram_run n cursor prior read h) _ _ ([] : List (Fin _)) h
+
+theorem divisionProgram_tCount (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (divisionProgram n start) read history = division.tCount := by
+  unfold divisionProgram division
+  apply appendCompiled_tCount_eq
+  · apply appendCompiled_tCount_eq
+    · exact MeasuredQuotient.wrapperProgram_tCount n start read history
+    · intro h; exact multiplyWorkProgram_tCount n _ read h
+  · intro h
+    exact collectProgram_tCount n (divisionAfterResetProgram n) divisionAfterReset read
+      (fun cursor prior h => divisionAfterResetProgram_tCount n cursor prior read h) _ _ ([] : List (Fin _)) h
+
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem reverseFoundation_reset_t_saving (ws : List Wire) (a b : List Bool → AdaptiveCircuit) (saving : Nat)
+    (h : ∀ outcomes, (a outcomes).tCount + saving = (b outcomes).tCount) :
+    (measureResetThen ws a).tCount + saving = (measureResetThen ws b).tCount := by
+  induction ws generalizing a b with
+  | nil => exact h []
+  | cons w ws ih =>
+    simp only [measureResetThen,AdaptiveCircuit.tCount]
+    rw [← Nat.add_max_add_right,ih _ _ (fun bs => h (false :: bs)),ih _ _ (fun bs => h (true :: bs))]
+
+private theorem reverseFoundation_reset_measurements (ws : List Wire) (a b : List Bool → AdaptiveCircuit) (extra : Nat)
+    (h : ∀ outcomes, (a outcomes).measurementCount = (b outcomes).measurementCount + extra) :
+    (measureResetThen ws a).measurementCount = (measureResetThen ws b).measurementCount + extra := by
+  induction ws generalizing a b with
+  | nil => exact h []
+  | cons w ws ih =>
+    simp only [measureResetThen,AdaptiveCircuit.measurementCount,ih _ _ (fun bs => h (false :: bs)),
+      ih _ _ (fun bs => h (true :: bs)),Nat.add_max_add_right,Nat.add_assoc]
+
+theorem bankWrapper_saving : bankWrapper.tCount + 1690738 = secp256k1MeasuredEEAReverseInDataBank.tCount := by
+  simpa only [bankWrapper,secp256k1MeasuredEEAReverseInDataBank,AdaptiveCircuit.relabel_tCount] using wrapper_saving
+
+theorem bankWrapper_measurements : bankWrapper.measurementCount = secp256k1MeasuredEEAReverseInDataBank.measurementCount + 241534 := by
+  simpa only [bankWrapper,secp256k1MeasuredEEAReverseInDataBank,AdaptiveCircuit.relabel_measurementCount] using wrapper_measurements
+
+attribute [local irreducible] bankWrapper secp256k1MeasuredEEAReverseInDataBank
+  AdaptiveCircuit.tCount AdaptiveCircuit.measurementCount
+
+theorem divisionAfterReset_saving (outcomes : List Bool) :
+    (divisionAfterReset outcomes).tCount + 1690738 = (fig15DivisionAfterReset outcomes).tCount := by
+  have h := bankWrapper_saving
+  simp only [divisionAfterReset,fig15DivisionAfterReset,adaptive_tCount_seq]
+  omega
+
+theorem divisionAfterReset_measurements (outcomes : List Bool) :
+    (divisionAfterReset outcomes).measurementCount = (fig15DivisionAfterReset outcomes).measurementCount + 241534 := by
+  have h := bankWrapper_measurements
+  simp only [divisionAfterReset,fig15DivisionAfterReset,reverseFoundation_measurements_seq]
+  omega
+
+attribute [local irreducible] divisionAfterReset fig15DivisionAfterReset measureResetThen
+
+theorem division_saving : division.tCount + 1690738 = MeasuredQuotient.division.tCount := by
+  have h := reverseFoundation_reset_t_saving (List.range' 580 256) _ _ _ divisionAfterReset_saving
+  simp only [division,MeasuredQuotient.division,adaptive_tCount_seq]
+  omega
+
+theorem division_measurements : division.measurementCount = MeasuredQuotient.division.measurementCount + 241534 := by
+  have h := reverseFoundation_reset_measurements (List.range' 580 256) _ _ _ divisionAfterReset_measurements
+  simp only [division,MeasuredQuotient.division,reverseFoundation_measurements_seq]
+  omega
+
+theorem division_T : division.tCount = 242679927 := by
+  have h := division_saving
+  rw [MeasuredQuotient.division_T] at h
+  omega
+
+theorem division_measurementCount : division.measurementCount = 15190375 :=
+  division_measurements.trans (congrArg (fun x => x+241534) MeasuredQuotient.division_measurementCount)
+
+theorem divisionProgram_count (n start : Nat) : (divisionProgram n start).1 = 15190375 :=
+  (compiled_count_of_run (divisionProgram n start) (fun _ => false) (fun _ => false)
+    division (divisionProgram_run n start (fun _ => false) (fun _ => false))).trans division_measurementCount
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem reverseFoundation_circuitWires_append (a b : Circuit) :
+    circuitWires (a++b) = circuitWires a ++ circuitWires b := List.flatMap_append
+private theorem reverseFoundation_seq_support_mono {a b c d : AdaptiveCircuit}
+    (ha : a.wires ⊆ c.wires) (hb : b.wires ⊆ d.wires) :
+    (a.seq b).wires ⊆ (c.seq d).wires := by
+  intro w hw
+  simp only [modularWires_seq] at hw ⊢
+  exact hw.imp (fun h => ha h) (fun h => hb h)
+
+theorem block_wires_subset (r : IndexedStepRegisters) (w : ActiveWindow) :
+    (block r w).wires ⊆ circuitWires (blockDInverse r w) := by
+  have ht := d2_wires_subset r w
+  intro q hq
+  simp only [block,source_view,modularWires_seq,AdaptiveCircuit.wires,reverseFoundation_circuitWires_append,
+    List.mem_append,List.not_mem_nil,or_false] at hq ⊢
+  simp only [List.subset_def] at ht
+  tauto
+
+private theorem reverseFoundation_entry_tail_wires_subset (r : IndexedStepRegisters) (T : Nat) (tail : AdaptiveCircuit) :
+    ((AdaptiveCircuit.unitary (entryBefore r 256) .done).seq
+      ((block r (certifiedActiveWindows 256 T).quotientSwap).seq
+        ((AdaptiveCircuit.unitary (entryAfter r) .done).seq tail))).wires ⊆
+      ((AdaptiveCircuit.unitary (reverseFoundation_oldMiddle r T) .done).seq tail).wires := by
+  have ht := block_wires_subset r (certifiedActiveWindows 256 T).quotientSwap
+  intro q hq
+  simp only [modularWires_seq,AdaptiveCircuit.wires,reverseFoundation_oldMiddle,entryBefore_view,entryAfter_view,
+    reverseFoundation_circuitWires_append,List.mem_append,List.not_mem_nil,or_false] at hq ⊢
+  simp only [List.subset_def] at ht
+  tauto
+
+theorem step_wires_subset (r : IndexedStepRegisters) (T : Nat) :
+    (step r 256 T).wires ⊆ (measuredIndexedStepInverse r 256 T).wires := by
+  rw [← stepSources_eq,← measuredInverseStepSources_eq]
+  simp only [stepSources,measuredInverseStepSources,sequenceCircuit]
+  apply reverseFoundation_seq_support_mono (List.Subset.refl _)
+  apply reverseFoundation_seq_support_mono (List.Subset.refl _)
+  apply reverseFoundation_seq_support_mono (List.Subset.refl _)
+  apply reverseFoundation_seq_support_mono (List.Subset.refl _)
+  apply reverseFoundation_seq_support_mono (List.Subset.refl _)
+  apply reverseFoundation_seq_support_mono (List.Subset.refl _)
+  exact reverseFoundation_entry_tail_wires_subset r T _
+
+attribute [local irreducible] step measuredIndexedStepInverse
+
+theorem schedule_wires_subset (r : IndexedStepRegisters) (first count : Nat) :
+    (schedule r 256 first count).wires ⊆ (measuredIndexedScheduleInverse r 256 first count).wires := by
+  induction count generalizing first with
+  | zero => simp [schedule,measuredIndexedScheduleInverse,AdaptiveCircuit.wires,circuitWires]
+  | succ count ih =>
+    simpa only [schedule,measuredIndexedScheduleInverse] using
+      reverseFoundation_seq_support_mono (ih (first+1)) (step_wires_subset r first)
+
+attribute [local irreducible] schedule measuredIndexedScheduleInverse AdaptiveCircuit.wires
+private theorem reverseFoundation_reverse_wire_view (r : IndexedStepRegisters) :
+    reverse r = schedule r 256 1 secp256k1ScheduleLength := rfl
+private theorem reverseFoundation_old_reverse_view (r : IndexedStepRegisters) :
+    secp256k1MeasuredEEAReverse r = measuredIndexedScheduleInverse r 256 1 secp256k1ScheduleLength := rfl
+
+theorem reverse_wires_subset (r : IndexedStepRegisters) :
+    (reverse r).wires ⊆ (secp256k1MeasuredEEAReverse r).wires := by
+  rw [reverseFoundation_reverse_wire_view,reverseFoundation_old_reverse_view]
+  exact schedule_wires_subset r 1 secp256k1ScheduleLength
+
+theorem wrapper_wires_subset : wrapper.wires ⊆ secp256k1MeasuredEEAReverseWrapper.wires := by
+  unfold wrapper secp256k1MeasuredEEAReverseWrapper
+  exact reverseFoundation_seq_support_mono (reverseFoundation_seq_support_mono (List.Subset.refl _)
+    (reverse_wires_subset indexedStepProductionRegisters)) (List.Subset.refl _)
+private theorem reverseFoundation_reset_support_mono (ws : List Wire) (a b : List Bool → AdaptiveCircuit)
+    (h : ∀ outcomes, (a outcomes).wires ⊆ (b outcomes).wires) :
+    (measureResetThen ws a).wires ⊆ (measureResetThen ws b).wires := by
+  induction ws generalizing a b with
+  | nil => exact h []
+  | cons w ws ih =>
+    have h0 := ih _ _ (fun bs => h (false::bs))
+    have h1 := ih _ _ (fun bs => h (true::bs))
+    intro q hq
+    simp only [measureResetThen,AdaptiveCircuit.wires,List.mem_cons,List.mem_append] at hq ⊢
+    exact hq.imp id (fun hn => hn.imp (fun hh => h0 hh) (fun hh => h1 hh))
+
+theorem bankWrapper_wires_subset : bankWrapper.wires ⊆ secp256k1MeasuredEEAReverseInDataBank.wires := by
+  simp only [bankWrapper,secp256k1MeasuredEEAReverseInDataBank,AdaptiveCircuit.relabel_wires]
+  exact List.map_subset _ wrapper_wires_subset
+
+attribute [local irreducible] bankWrapper secp256k1MeasuredEEAReverseInDataBank
+
+theorem divisionAfterReset_wires_subset (outcomes : List Bool) :
+    (divisionAfterReset outcomes).wires ⊆ (fig15DivisionAfterReset outcomes).wires := by
+  unfold divisionAfterReset fig15DivisionAfterReset
+  exact reverseFoundation_seq_support_mono (reverseFoundation_seq_support_mono (reverseFoundation_seq_support_mono
+    (reverseFoundation_seq_support_mono bankWrapper_wires_subset (List.Subset.refl _)) (List.Subset.refl _))
+      (List.Subset.refl _)) (List.Subset.refl _)
+
+attribute [local irreducible] divisionAfterReset fig15DivisionAfterReset measureResetThen
+
+theorem division_wires_subset : division.wires ⊆ MeasuredQuotient.division.wires := by
+  unfold division MeasuredQuotient.division
+  exact reverseFoundation_seq_support_mono (List.Subset.refl _) (reverseFoundation_reset_support_mono _ _ _ divisionAfterReset_wires_subset)
+
+theorem division_wires_bound : division.wires ⊆ List.range 836 :=
+  division_wires_subset.trans MeasuredQuotient.division_wires_bound
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
 end

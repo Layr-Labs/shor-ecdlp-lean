@@ -80,7 +80,7 @@ private theorem restore_hp : HPFree fig15ZeroRestore := by
   rw [fig15ZeroRestore, nonzeroInputRestore, hpFree_append]
   exact ⟨by simp [HPFree], computeEqConst_HPFree _ _ _ _⟩
 
-def division : AdaptiveCircuit := (prepare.seq ShorECDLP.Entrant.MeasuredQuotient.division).seq restore
+def division : AdaptiveCircuit := (prepare.seq ShorECDLP.Entrant.MeasuredQuotient.Reverse.division).seq restore
 def multiplication : AdaptiveCircuit := (prepare.seq ShorECDLP.Entrant.MeasuredQuotient.multiplication).seq restore
 
 private theorem output_clean (f : BasisState → BasisState) (s : BasisState)
@@ -129,7 +129,7 @@ private theorem wrapper_coherent (program : AdaptiveCircuit) (ideal : BasisState
 
 theorem division_coherent : CoherentlyImplementsOn division
     (Finsupp.lmapDomain ℂ ℂ zeroAllowedDivisionOutputState) Secp256k1ZeroAllowedInputValid := by
-  apply wrapper_coherent _ _ ShorECDLP.Entrant.MeasuredQuotient.division_coherent
+  apply wrapper_coherent _ _ ShorECDLP.Entrant.MeasuredQuotient.Reverse.division_coherent
   intro s hs
   apply output_clean _ s hs
   intro w hw
@@ -146,12 +146,12 @@ theorem multiplication_coherent : CoherentlyImplementsOn multiplication
   simp [hw]
 
 
-theorem division_counts : division.tCount = 244374235 ∧ division.measurementCount = 14949349 := by
+theorem division_counts : division.tCount = 242683497 ∧ division.measurementCount = 15190883 := by
   simp [division, prepare, restore, adaptive_tCount_seq, modularMeasurements_seq,
     AdaptiveCircuit.tCount, AdaptiveCircuit.measurementCount, tCost, reg, scratch, cx,
     computeEqConstAdaptive_tCount, computeEqConstAdaptive_measurementCount,
     mcxVChainAdaptiveToffoliCost, mcxVChainMeasurementCost,
-    ShorECDLP.Entrant.MeasuredQuotient.division_T, ShorECDLP.Entrant.MeasuredQuotient.division_measurementCount]
+    ShorECDLP.Entrant.MeasuredQuotient.Reverse.division_T, ShorECDLP.Entrant.MeasuredQuotient.Reverse.division_measurementCount]
 
 theorem multiplication_counts : multiplication.tCount = 244374235 ∧ multiplication.measurementCount = 14949349 := by
   simp [multiplication, prepare, restore, adaptive_tCount_seq, modularMeasurements_seq,
@@ -268,12 +268,12 @@ theorem coordinateSource_coherent (x y : Nat → Nat) :
 
 
 open ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.divisionProgram ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram equalityProgram
-  ShorECDLP.Entrant.MeasuredQuotient.division ShorECDLP.Entrant.MeasuredQuotient.multiplication
+attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram equalityProgram
+  ShorECDLP.Entrant.MeasuredQuotient.Reverse.division ShorECDLP.Entrant.MeasuredQuotient.multiplication
 
 def zDivisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
   let a := equalityProgram n start reg 0 837 scratch
-  let b := ShorECDLP.Entrant.MeasuredQuotient.divisionProgram n (start+a.1)
+  let b := ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram n (start+a.1)
   appendCompiled a (prependCompiled cx (appendCompiled b
     (prependCompiled cx (equalityProgram n (start+a.1+b.1) reg 0 837 scratch))))
 
@@ -288,12 +288,12 @@ theorem zDivisionProgram_run (n start : Nat) (read : ConstantBit n → Bool) (hi
   unfold zDivisionProgram division prepare restore
   dsimp only
   rw [adaptive_seq_assoc, adaptive_seq_assoc]
-  apply appendCompiled_run_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (ShorECDLP.Entrant.MeasuredQuotient.division.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
+  apply appendCompiled_run_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (ShorECDLP.Entrant.MeasuredQuotient.Reverse.division.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
   · exact equalityProgram_run _ _ _ _ _ _ _ _
   · intro h
     apply prependCompiled_run_eq
-    apply appendCompiled_run_eq _ _ read h ShorECDLP.Entrant.MeasuredQuotient.division (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
-    · exact ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_run _ _ _ _
+    apply appendCompiled_run_eq _ _ read h ShorECDLP.Entrant.MeasuredQuotient.Reverse.division (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
+    · exact ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_run _ _ _ _
     · intro h
       apply prependCompiled_run_eq
       exact equalityProgram_run _ _ _ _ _ _ _ _
@@ -318,12 +318,12 @@ theorem zDivisionProgram_tCount (n start : Nat) (read : ConstantBit n → Bool) 
   unfold zDivisionProgram division prepare restore
   dsimp only
   rw [adaptive_seq_assoc, adaptive_seq_assoc]
-  apply appendCompiled_tCount_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (ShorECDLP.Entrant.MeasuredQuotient.division.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
+  apply appendCompiled_tCount_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (ShorECDLP.Entrant.MeasuredQuotient.Reverse.division.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
   · exact equalityProgram_tCount _ _ _ _ _ _ _ _
   · intro h
     apply prependCompiled_tCount_eq
-    apply appendCompiled_tCount_eq _ _ read h ShorECDLP.Entrant.MeasuredQuotient.division (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
-    · exact ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_tCount _ _ _ _
+    apply appendCompiled_tCount_eq _ _ read h ShorECDLP.Entrant.MeasuredQuotient.Reverse.division (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
+    · exact ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_tCount _ _ _ _
     · intro h
       apply prependCompiled_tCount_eq
       exact equalityProgram_tCount _ _ _ _ _ _ _ _
@@ -646,7 +646,7 @@ open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.Chall
 set_option maxRecDepth 4096
 set_option maxHeartbeats 1000000
 attribute [local irreducible] ZeroAdaptive.prepare ZeroAdaptive.restore
-  ShorECDLP.Entrant.MeasuredQuotient.division ShorECDLP.Entrant.MeasuredQuotient.multiplication
+  ShorECDLP.Entrant.MeasuredQuotient.Reverse.division ShorECDLP.Entrant.MeasuredQuotient.multiplication
 
 private theorem gate_relabel_refl (g : Gate) : g.relabel (Equiv.refl Wire) = g := by
   cases g <;> rfl
@@ -680,8 +680,8 @@ private theorem arithmetic_relabel (p : AdaptiveCircuit) (hs : p.wires ⊆ List.
     _ = p := adaptive_relabel_refl p
 
 theorem division_source_relabel :
-    ShorECDLP.Entrant.MeasuredQuotient.division.relabel exchange = ShorECDLP.Entrant.MeasuredQuotient.division :=
-  arithmetic_relabel _ ShorECDLP.Entrant.MeasuredQuotient.division_wires_bound
+    ShorECDLP.Entrant.MeasuredQuotient.Reverse.division.relabel exchange = ShorECDLP.Entrant.MeasuredQuotient.Reverse.division :=
+  arithmetic_relabel _ ShorECDLP.Entrant.MeasuredQuotient.Reverse.division_wires_bound
 
 theorem multiplication_source_relabel :
     ShorECDLP.Entrant.MeasuredQuotient.multiplication.relabel exchange = ShorECDLP.Entrant.MeasuredQuotient.multiplication :=
@@ -741,7 +741,7 @@ def fieldProgram (n start : Nat) (arithmetic : FixedSegment n) :
   surroundCompiled flip flip (sequenceProgram n (coreSegments n arithmetic) start)
 
 def divisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
-  fieldProgram n start (ShorECDLP.Entrant.MeasuredQuotient.divisionProgram n)
+  fieldProgram n start (ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram n)
 
 def multiplicationProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
   fieldProgram n start (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n)
@@ -764,11 +764,11 @@ theorem divisionProgram_run (n start : Nat) (read : ConstantBit n → Bool)
     (history : Fin start → Bool) :
     compiledRun (divisionProgram n start) read history = division.run := by
   have h := surroundCompiled_run flip flip
-    (sequenceProgram n (coreSegments n (ShorECDLP.Entrant.MeasuredQuotient.divisionProgram n)) start)
-    (coreSource ShorECDLP.Entrant.MeasuredQuotient.division) read history
+    (sequenceProgram n (coreSegments n (ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram n)) start)
+    (coreSource ShorECDLP.Entrant.MeasuredQuotient.Reverse.division) read history
     (coreProgram_run n start _ _ read history (fun start h =>
-      ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_run n start read h))
-  have he : coreSource ShorECDLP.Entrant.MeasuredQuotient.division = ZeroAdaptive.division.relabel exchange := by
+      ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_run n start read h))
+  have he : coreSource ShorECDLP.Entrant.MeasuredQuotient.Reverse.division = ZeroAdaptive.division.relabel exchange := by
     simp only [coreSource, sequenceCircuit, ZeroAdaptive.division,
       AdaptiveCircuit.relabel_seq, division_source_relabel, adaptive_seq_done, adaptive_seq_assoc]
   rw [he] at h
@@ -799,7 +799,7 @@ theorem borrowed_measurements (program : AdaptiveCircuit) :
     (borrowed program).measurementCount = program.measurementCount := by
   simp [borrowed, flip, modularMeasurements_seq, AdaptiveCircuit.measurementCount]
 
-theorem division_counts : division.tCount = 244374235 ∧ division.measurementCount = 14949349 := by
+theorem division_counts : division.tCount = 242683497 ∧ division.measurementCount = 15190883 := by
   simpa only [division, borrowed_tCount, borrowed_measurements] using ZeroAdaptive.division_counts
 
 theorem multiplication_counts : multiplication.tCount = 244374235 ∧ multiplication.measurementCount = 14949349 := by
@@ -842,9 +842,9 @@ theorem fieldProgram_tCount (n start : Nat) (arithmetic : FixedSegment n)
 theorem divisionProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
     (history : Fin start → Bool) :
     compiledTCount (divisionProgram n start) read history = division.tCount :=
-  fieldProgram_tCount n start (ShorECDLP.Entrant.MeasuredQuotient.divisionProgram n)
-    ShorECDLP.Entrant.MeasuredQuotient.division read history
-    (fun cursor h => ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_tCount n cursor read h)
+  fieldProgram_tCount n start (ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram n)
+    ShorECDLP.Entrant.MeasuredQuotient.Reverse.division read history
+    (fun cursor h => ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_tCount n cursor read h)
 
 theorem multiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
     (history : Fin start → Bool) :
@@ -4920,6 +4920,133 @@ end ShorECDLP.Entrant.MeasuredQuotient
 
 end
 
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+theorem program_slots_le (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow) :
+    (program n start r w).2.gateSlots ≤ (blockDInverse r w).length +
+      2*(quotientSwapTree (r.quotient w) w.start w.stop).internalNodes := by
+  have h := MeasuredQuotient.d2Program_slots_le n start r w
+  simp only [program,surroundCompiled_slots,source_view,List.length_append]
+  omega
+
+theorem program_slots_production (n start T : Nat)
+    (hl : IndexedStepLayout indexedStepProductionRegisters 256 T) :
+    (program n start indexedStepProductionRegisters (certifiedActiveWindows 256 T).quotientSwap).2.gateSlots ≤ 4516 := by
+  let w := (certifiedActiveWindows 256 T).quotientSwap
+  have hd := program_slots_le n start indexedStepProductionRegisters w
+  have ho := production_blockDInverse_length T hl
+  have hn := quotientSwapTree_nodes_le (indexedStepProductionRegisters.quotient w) w.start w.stop hl.quotient.k_le_K
+  have hk : w.stop ≤ 258 := by simp only [w,certifiedActiveWindows,quotientSwapWindow]; omega
+  dsimp only [w] at hd hn hk
+  omega
+
+attribute [local irreducible] program phaseInverseProgram hInverseProgram
+theorem stepProgram_slots_production (n start T : Nat) (hl : IndexedStepLayout indexedStepProductionRegisters 256 T) :
+    (stepProgram n start indexedStepProductionRegisters T).2.gateSlots≤200000 := by
+  have hp := prepareLatestPaperTBoundary_length256 (indexedStepProductionRegisters).tBoundary hl.tBoundary (by rfl)
+  have hr := restoreLatestPaperTBoundary_length256 (indexedStepProductionRegisters).tBoundary hl.tBoundary (by rfl)
+  have h1 := computeControl_length_le [(indexedStepProductionRegisters).phase1] 1 (indexedStepProductionRegisters).control (indexedStepProductionRegisters).blockScratch
+  have h2 := computeControl_length_le [(indexedStepProductionRegisters).phase2,(indexedStepProductionRegisters).sign] 2 (indexedStepProductionRegisters).terminal (indexedStepProductionRegisters).blockScratch
+  have h3 := computeControl_length_le [(indexedStepProductionRegisters).phase1,(indexedStepProductionRegisters).terminal] 1 (indexedStepProductionRegisters).control (indexedStepProductionRegisters).blockScratch
+  have h4 := rControlNonterminal_length_le [(indexedStepProductionRegisters).phase1,(indexedStepProductionRegisters).terminal] 0 (indexedStepProductionRegisters).control (indexedStepProductionRegisters).lengthRPrime ((indexedStepProductionRegisters).blockScratch.getD 0 0) ((indexedStepProductionRegisters).blockScratch.drop 1)
+  have h5 := rControlNonterminal_length_le [(indexedStepProductionRegisters).phase1] 0 (indexedStepProductionRegisters).control (indexedStepProductionRegisters).lengthRPrime (indexedStepProductionRegisters).terminal (indexedStepProductionRegisters).blockScratch
+  have hb := blockB2_length_le indexedStepProductionRegisters
+  simp only [List.length_cons,List.length_nil] at h1 h2 h3 h4 h5
+  change _≤4*9+4*2+7 at h4
+  change _≤4*9+4*1+7 at h5
+  change _≤8*9+31 at hb
+  have h := sequenceProgram_slots_le n (stepSegments n indexedStepProductionRegisters T)
+    ([100000,248,1929,14500,33,14500,500,4516,100,23500,210,23500,2700] : List Nat) (by
+      unfold stepSegments
+      refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))))))
+      · intro s; exact production_hInverseProgram_slots n s T hl
+      · intro s; exact phaseInverseProgram_slots n s (indexedStepProductionRegisters).phaseUpdate (indexedStepProductionRegisters).shiftEpoch
+      · intro s; simp only [literalProgram_slots,List.length_append,circuit_adjoint_length,production_blockF_length]; omega
+      · intro s; exact production_coefficient_slots n s T (RippleMode.add.inverse) true hl
+      · intro s; simp only [literalProgram_slots,List.length_append,List.length_cons,List.length_nil]; omega
+      · intro s; exact production_coefficient_slots n s T (RippleMode.sub.inverse) false hl
+      · intro s; simp only [literalProgram_slots,entryBefore_view,List.length_append]; omega
+      · intro s; exact program_slots_production n s T hl
+      · intro s; simp only [literalProgram_slots,entryAfter_view,List.length_append,List.length_cons,List.length_nil,production_blockCInverse_length]; omega
+      · intro s; exact production_interval_slots n s T (RippleMode.add.inverse) false hl
+      · intro s; simp only [literalProgram_slots,List.length_append,List.length_cons,List.length_nil]; omega
+      · intro s; exact production_interval_slots n s T (RippleMode.sub.inverse) true hl
+      · intro s; simp only [literalProgram_slots,List.length_append,production_blockAInverse_length]; omega) start
+  simp only [List.sum_cons,List.sum_nil] at h
+  unfold stepProgram
+  omega
+
+
+attribute [local irreducible] stepProgram
+
+theorem scheduleProgram_slots_production (n first count start : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 first count) :
+    (scheduleProgram n indexedStepProductionRegisters count first start).2.gateSlots ≤ count*200000 := by
+  induction hl generalizing start with
+  | done first => exact Nat.zero_le _
+  | @step T count head tail ih =>
+    have ht := ih start
+    have hh := stepProgram_slots_production n (start+(scheduleProgram n indexedStepProductionRegisters count (T+1) start).1) T head
+    rw [scheduleProgram,appendCompiled_slots]
+    omega
+
+attribute [local irreducible] scheduleProgram
+private theorem reverse_program_view (n start : Nat) :
+    reverseProgram n start indexedStepProductionRegisters =
+      scheduleProgram n indexedStepProductionRegisters 1620 1 start := rfl
+
+theorem reverseProgram_slots_production (n start : Nat) :
+    (reverseProgram n start indexedStepProductionRegisters).2.gateSlots ≤ 324000000 := by
+  rw [reverse_program_view]
+  exact scheduleProgram_slots_production n 1 1620 start secp256k1ScheduleLayout_production
+
+attribute [local irreducible] reverseProgram unpreprocessProgram productionParityProgram
+
+theorem wrapperProgram_slots_production (n start : Nat) :
+    (wrapperProgram n start).2.gateSlots ≤ 325000000 := by
+  have h := sequenceProgram_slots_le n (wrapperSegments n)
+    ([251,13570,7891,324000000,600000] : List Nat) (by
+      unfold wrapperSegments
+      refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil))))
+      · intro s; simp only [literalProgram_slots,terminalWork1Clear_length]; decide
+      · intro s; exact productionParityProgram_slots n s
+      · intro s; simp only [literalProgram_slots,List.length_append,canonicalWork2InverseRotation_length,terminalEpochCompression_length]; decide
+      · intro s; exact reverseProgram_slots_production n s
+      · intro s; exact unpreprocessProgram_slots n s) start
+  simp only [List.sum_cons,List.sum_nil] at h
+  unfold wrapperProgram
+  omega
+
+attribute [local irreducible] wrapperProgram multiplyWorkProgram multiplyDataProgram divisionCorrectionProgram
+
+theorem bankWrapperProgram_slots_production (n start : Nat) :
+    (bankWrapperProgram n start).2.gateSlots ≤ 325000000 := by
+  simpa only [bankWrapperProgram,relabelCompiled_slots] using wrapperProgram_slots_production n start
+
+theorem divisionAfterResetProgram_slots (n start : Nat) (prior : List (Fin start)) :
+    (divisionAfterResetProgram n start prior).2.gateSlots ≤ 341001536 := by
+  have he := bankWrapperProgram_slots_production n start
+  have hm (s : Nat) := multiplyDataProgram_slots n s
+  have hc (s : Nat) (p : List (Fin s)) := divisionCorrectionProgram_slots n s p
+  simp only [divisionAfterResetProgram,appendRetaining,appendCompiled_slots]
+  grind only
+
+attribute [local irreducible] divisionAfterResetProgram collectProgram MeasuredQuotient.wrapperProgram
+
+theorem divisionProgram_slots (n start : Nat) : (divisionProgram n start).2.gateSlots ≤ 675000000 := by
+  have he := MeasuredQuotient.wrapperProgram_slots_production n start
+  have hm (s : Nat) := multiplyWorkProgram_slots n s
+  have hc (s : Nat) (p : List (Fin s)) := collectProgram_slots_le n (divisionAfterResetProgram n)
+    341001536 (divisionAfterResetProgram_slots n) (List.range' 580 256) s p
+  simp only [divisionProgram,appendCompiled_slots]
+  grind only
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
 -- ==== part: Streaming/WindowSlots ====
 
 section
@@ -4941,10 +5068,10 @@ theorem fig15ZeroRestore_length : fig15ZeroRestore.length=1022 := by
 
 theorem zDivisionProgram_slots (n start : Nat) :
     (zDivisionProgram n start).2.gateSlots≤676000000 := by
-  have h := ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
+  have h := ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
   have h1 := equalityProgram_slots n start reg 0 837 scratch
   have h2 := equalityProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1 +
-    (ShorECDLP.Entrant.MeasuredQuotient.divisionProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
+    (ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
   simp only [reg, List.length_cons, List.length_range'] at h1 h2
   simp only [zDivisionProgram, appendCompiled_slots, prependCompiled_slots, cx, List.length_singleton]
   simp only [reg] at *
@@ -5200,8 +5327,8 @@ theorem old_coordinate_numeric_counts (x y : Nat → Nat) :
 
 /-- The two measured guards in each field operation preserve the coordinate map. -/
 theorem coordinate_numeric_counts (x y : Nat → Nat) :
-    (coordinateSource x y).tCount = 501754351 ∧
-    (coordinateSource x y).measurementCount = 30756786 := by
+    (coordinateSource x y).tCount = 500063613 ∧
+    (coordinateSource x y).measurementCount = 30998320 := by
   have h := old_coordinate_numeric_counts x y
   have hsq := fig14SquareSubtract_counts
   have hin := ShorECDLP.Entrant.SquareInPlace.paddedSquare_counts
@@ -5234,7 +5361,7 @@ theorem windowYNegate_numeric_counts :
   · simpa only [primitiveResources] using hm
 
 theorem sharedAdaptiveCoordinateProgram_count (w : OddWindow) (start : Nat) :
-    (sharedAdaptiveCoordinateProgram w start).1 = 30756786 := by
+    (sharedAdaptiveCoordinateProgram w start).1 = 30998320 := by
   have h := compiled_count_of_run (sharedAdaptiveCoordinateProgram w start)
     (readConstant coefficientAt (0 : Point)) (fun _ => false) _
     (sharedAdaptiveCoordinateProgram_run w start 0 (by simp) (fun _ => false))
@@ -5272,7 +5399,7 @@ theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
   omega
 
 theorem ipxWindowSources_tCount (Q : Point) (w : OddWindow) :
-    (sequenceCircuit (ipxWindowSources Q w)).tCount = 504822024 := by
+    (sequenceCircuit (ipxWindowSources Q w)).tCount = 503131286 := by
   unfold ipxWindowSources
   rw [sequenceCircuit_four_tCount,(coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1,ipxSource_tCount]
@@ -5287,7 +5414,7 @@ theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0
 theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
     (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      504822024 := by
+      503131286 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
     (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
@@ -5300,7 +5427,7 @@ theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : o
   exact h
 
 theorem ipxWindowCore_count (w : OddWindow) (start : Nat) :
-    (ipxWindowCore w start).1 = 31190921 := by
+    (ipxWindowCore w start).1 = 31432455 := by
   simp only [ipxWindowCore,ipxWindowSegments,sequenceProgram,appendCompiled,
     sharedAdaptiveCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
 
@@ -5310,9 +5437,9 @@ theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
   simp only [surroundCompiled,prependCompiled,appendCompiled,Nat.add_zero]
 
 theorem actualIpxWindow_count (w : OddWindow) :
-    (actualIpxWindow w).count = 31190921 := by
+    (actualIpxWindow w).count = 31432455 := by
   unfold actualIpxWindow closedWindow
-  change 0 + (ipxWindowPrepared w 0).1 = 31190921
+  change 0 + (ipxWindowPrepared w 0).1 = 31432455
   rw [Nat.zero_add]
   have hp : (ipxWindowPrepared w 0).1 = (ipxWindowCore w 0).1 := by
     unfold ipxWindowPrepared
@@ -5330,18 +5457,18 @@ theorem axisCount_constant {n : Nat} (ws : List (OuterWindow n)) (m : Nat)
     simp only [List.length_cons,Nat.add_mul,Nat.one_mul]
     omega
 
-theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 467929606 := by
+theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 471552616 := by
   unfold ipxLeftWindows
   rw [axisCount,actualFirstWindow_count]
-  rw [axisCount_constant _ 31190921]
+  rw [axisCount_constant _ 31432455]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
     exact actualIpxWindow_count _
 
-theorem ipxRightWindows_count : axisCount ipxRightWindows = 405482181 := by
+theorem ipxRightWindows_count : axisCount ipxRightWindows = 408622123 := by
   unfold ipxRightWindows
-  rw [axisCount_constant _ 31190921]
+  rw [axisCount_constant _ 31432455]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
@@ -5354,7 +5481,7 @@ theorem standardOuterPlan_lists_stride {n : Nat} (left right : List (OuterWindow
       axisCount left + axisCount right + reset.length := by
   simp only [OuterPlan.stride,standardOuterPlan,Vector.toList,List.toList_toArray]
 
-theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 873412641 := by
+theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 880175593 := by
   have h := standardOuterPlan_lists_stride ipxLeftWindows ipxRightWindows
     ipxLeftWindows_length ipxRightWindows_length resetWires
   apply h.trans
@@ -5362,11 +5489,11 @@ theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 873412641 := by
 
 /-- Exact final record count includes the first lookup, all 28 addition windows,
 all Fourier measurements, and the full 854-wire reset in each of 56 rounds. -/
-theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48911107896 := by
+theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 49289833208 := by
   rw [ipxOuterPlan_stride]
 
 /-- Exact final record count of the entrant's 6-round program. -/
-theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5240475846 := by
+theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5281053558 := by
   rw [ipxOuterPlan_stride]
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -9001,6 +9128,235 @@ end
 end ShorECDLP.Entrant.MeasuredQuotient
 end
 
+namespace ShorECDLP.Entrant.MeasuredQuotient.Reverse
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem circuitWires_append (a b : Circuit) :
+    circuitWires (a++b) = circuitWires a ++ circuitWires b := List.flatMap_append
+
+theorem program_support_subset (n start : Nat) (r : IndexedStepRegisters) (w : ActiveWindow) :
+    straightWires (program n start r w).2 ⊆ circuitWires (blockDInverse r w) := by
+  have ht := MeasuredQuotient.d2Program_support_subset n start r w
+  intro q hq
+  simp only [program,surroundCompiled_support,source_view,circuitWires_append,List.mem_append] at hq ⊢
+  simp only [List.subset_def] at ht
+  tauto
+
+attribute [local irreducible] coefficientInverseProgram intervalInverseProgram phaseInverseProgram hInverseProgram
+  blockAInverse blockCInverse blockDInverse blockFForward
+private theorem support_to_580 (support : List Wire)
+    (h : support.all (fun w => decide (w < 580)) = true) :
+    ∀ w ∈ support, w ∈ List.range 580 := by
+  intro w hw
+  exact List.mem_range.mpr (of_decide_eq_true ((List.all_eq_true.mp h) w hw))
+
+
+private theorem range580_of_closed (ws : List Wire) (h : ws.all (fun w => decide (w < 580)) = true)
+    (w : Wire) (hw : w ∈ ws) : w ∈ List.range 580 := support_to_580 ws h w hw
+
+
+private theorem window_mem {work : List Wire} {window : ActiveWindow} {w : Wire}
+    (hw : w ∈ IndexedStepRegisters.windowSlice work window) : w ∈ work :=
+  List.mem_of_mem_drop (List.mem_of_mem_take hw)
+
+
+private theorem production_remainder_support (window : ActiveWindow) :
+    ∀ w ∈ (indexedStepProductionRegisters.remainder window).allWires, w ∈ List.range 580 := by
+  let r := indexedStepProductionRegisters
+  intro w hw
+  change w ∈ [r.control,r.sign] ++
+    (IndexedStepRegisters.windowSlice r.work1 window ++ (IndexedStepRegisters.windowSlice r.work2 window ++
+    (r.lengthT ++ (r.lengthQ ++ (r.lengthS ++
+    (r.shiftEpoch :: (r.sourceScratch ++ r.remainderRepairScratch)).take (r.remainderScratchSize window)))))) at hw
+  simp only [List.mem_append,List.mem_cons,List.not_mem_nil,or_false] at hw
+  rcases hw with (hw | hw) | hw | hw | hw | hw | hw | hw
+  · subst w; exact List.mem_range.mpr (show (558 : Nat) < 580 by decide)
+  · subst w; exact List.mem_range.mpr (show (3 : Nat) < 580 by decide)
+  · exact range580_of_closed r.work1 (by decide +kernel) w (window_mem hw)
+  · exact range580_of_closed r.work2 (by decide +kernel) w (window_mem hw)
+  · exact range580_of_closed r.lengthT (by decide +kernel) w hw
+  · exact range580_of_closed r.lengthQ (by decide +kernel) w hw
+  · exact range580_of_closed r.lengthS (by decide +kernel) w hw
+  · exact range580_of_closed (r.shiftEpoch :: (r.sourceScratch ++ r.remainderRepairScratch))
+      (by decide +kernel) w (List.mem_of_mem_take hw)
+
+
+private theorem gate_support_580 (g : Gate)
+    (h : (gateWires g).all (fun w => decide (w < 580)) = true) :
+    PaperCircuitUsesOnly (List.range 580) ([g] : Circuit) := by
+  intro g' hg
+  simp only [List.mem_singleton] at hg
+  subst g'
+  exact support_to_580 _ h
+
+
+private theorem production_coefficient_support (window : ActiveWindow) :
+    ∀ w ∈ (indexedStepProductionRegisters.coefficient window).allWires, w ∈ List.range 580 := by
+  let r := indexedStepProductionRegisters
+  intro w hw
+  change w ∈ [r.control,r.sign] ++
+    (IndexedStepRegisters.windowSlice r.work1 window ++ (IndexedStepRegisters.windowSlice r.work2 window ++
+    (r.lengthT ++ r.blockScratch.take (max (quotientSwapUnaryDepth window.start window.stop) r.lengthT.length+3)))) at hw
+  simp only [List.mem_append,List.mem_cons,List.not_mem_nil,or_false] at hw
+  rcases hw with (hw | hw) | hw | hw | hw | hw
+  · subst w; exact List.mem_range.mpr (show (558 : Nat) < 580 by decide)
+  · subst w; exact List.mem_range.mpr (show (3 : Nat) < 580 by decide)
+  · exact range580_of_closed r.work1 (by decide +kernel) w (window_mem hw)
+  · exact range580_of_closed r.work2 (by decide +kernel) w (window_mem hw)
+  · exact range580_of_closed r.lengthT (by decide +kernel) w hw
+  · exact range580_of_closed r.blockScratch (by decide +kernel) w (List.mem_of_mem_take hw)
+
+
+theorem stepProgram_support_production (n start T : Nat)
+    (hl : IndexedStepLayout indexedStepProductionRegisters 256 T) :
+    straightWires (stepProgram n start indexedStepProductionRegisters T).2 ⊆ List.range 580 := by
+  let r := indexedStepProductionRegisters
+  have hs := circuitWires_subset_of_usesOnly (indexedStepInverseUnitary_production_usesOnly T hl)
+  simp only [indexedStepInverseUnitary,circuitWires,List.flatMap_append,List.append_subset] at hs
+  obtain ⟨⟨⟨⟨⟨⟨⟨hH,hG⟩,hF⟩,hE⟩,hD⟩,hC⟩,hB⟩,hA⟩ := hs
+  have hsf := circuitWires_subset_of_usesOnly (indexedStepUnitary_production_usesOnly T hl)
+  simp only [indexedStepUnitary,circuitWires,List.flatMap_append,List.append_subset] at hsf
+  have hforwardF : PaperCircuitUsesOnly (List.range 580) (blockFForward r) := by
+    intro g hg w hw
+    exact hsf.1.1.2 (List.mem_flatMap.mpr ⟨g,hg,hw⟩)
+  have hFadj := circuitWires_subset_of_usesOnly hforwardF.adjoint
+  have hcAdd := circuitWires_subset_of_usesOnly ((computeControl_usesOnly [r.phase1] 1 r.control r.blockScratch).mono (support_to_580 _ (by decide +kernel)))
+  have hcSub := circuitWires_subset_of_usesOnly ((computeControl_usesOnly [r.phase1,r.terminal] 1 r.control r.blockScratch).mono (support_to_580 _ (by decide +kernel)))
+  have hcTmp := circuitWires_subset_of_usesOnly ((computeControl_usesOnly [r.phase2,r.sign] 2 r.terminal r.blockScratch).mono (support_to_580 _ (by decide +kernel)))
+  have hprep := circuitWires_subset_of_usesOnly ((prepareLatestPaperTBoundary_usesOnly r.tBoundary 256).mono (support_to_580 _ (by decide +kernel)))
+  have hrest := circuitWires_subset_of_usesOnly ((restoreLatestPaperTBoundary_usesOnly r.tBoundary 256).mono (support_to_580 _ (by decide +kernel)))
+  have hx := circuitWires_subset_of_usesOnly (gate_support_580 (.CX r.phase1 r.sign) (by decide +kernel))
+  have hterm := circuitWires_subset_of_usesOnly (gate_support_580 (.CCX r.phase2 r.sign r.terminal) (by decide +kernel))
+  have hrst := circuitWires_subset_of_usesOnly ((rControlNonterminal_usesOnly [r.phase1,r.terminal] 0 r.control r.lengthRPrime (r.blockScratch.getD 0 0) (r.blockScratch.drop 1)).mono (support_to_580 _ (by decide +kernel)))
+  have hrsub := circuitWires_subset_of_usesOnly ((rControlNonterminal_usesOnly [r.phase1] 0 r.control r.lengthRPrime r.terminal r.blockScratch).mono (support_to_580 _ (by decide +kernel)))
+  have hrc := (rControlNonterminal_usesOnly [r.phase1,r.phase2] 2 r.control r.lengthRPrime r.terminal r.blockScratch).mono (support_to_580 _ (by decide +kernel))
+  have hrx := gate_support_580 (.CX r.control r.sign) (by decide +kernel)
+  have hB2 : circuitWires (blockB2 r) ⊆ List.range 580 := circuitWires_subset_of_usesOnly ((hrc.append hrx).append hrc)
+  have hci mode phase cursor := (coefficientInverseProgram_support_layout n cursor (r.coefficient (certifiedActiveWindows 256 T).coefficient) _ _ mode phase .work2 hl.coefficient).trans (fun _ h => production_coefficient_support _ _ h)
+  have hii mode phase cursor := (intervalInverseProgram_support_layout n cursor (r.remainder (certifiedActiveWindows 256 T).remainder) 256 _ _ mode phase .work1 hl.remainder).trans (fun _ h => production_remainder_support _ _ h)
+  have hphase cursor := (phaseInverseProgram_support n cursor r.phaseUpdate r.shiftEpoch).trans (support_to_580 _ (by decide +kernel))
+  unfold stepProgram
+  apply sequenceProgram_support
+  intro seg hseg cursor
+  simp only [stepSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
+  rcases hseg with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl
+  · exact (hPrograms_support_production n _ T hl.endIteration).2
+  · exact hphase _
+  · simp only [literalProgram_support,circuitWires,List.flatMap_append,List.append_subset]
+    exact ⟨⟨hFadj,hprep⟩,hcAdd⟩
+  · exact hci _ _ _
+  · simp only [literalProgram_support,circuitWires,List.flatMap_append,List.append_subset]
+    exact ⟨⟨⟨⟨hcAdd,hx⟩,hcTmp⟩,hcSub⟩,hcTmp⟩
+  · exact hci _ _ _
+  · simp only [literalProgram_support,entryBefore_view,circuitWires,List.flatMap_append,List.append_subset]
+    exact ⟨⟨⟨hcTmp,hcSub⟩,hcTmp⟩,hrest⟩
+  · exact (program_support_subset n cursor r _).trans hD
+  · simp only [literalProgram_support,entryAfter_view,circuitWires,List.flatMap_append,List.append_subset]
+    exact ⟨hC,⟨hterm,hrst⟩,hterm⟩
+  · exact hii _ _ _
+  · simp only [literalProgram_support,circuitWires,List.flatMap_append,List.append_subset]
+    exact ⟨⟨⟨⟨hterm,hrst⟩,hterm⟩,hB2⟩,hrsub⟩
+  · exact hii _ _ _
+  · simp only [literalProgram_support,circuitWires,List.flatMap_append,List.append_subset]
+    exact ⟨hrsub,hA⟩
+
+
+
+attribute [local irreducible] stepProgram
+
+theorem scheduleProgram_support_production (n first count start : Nat)
+    (hl : IndexedScheduleLayout indexedStepProductionRegisters 256 first count) :
+    straightWires (scheduleProgram n indexedStepProductionRegisters count first start).2 ⊆ List.range 580 := by
+  induction hl generalizing start with
+  | done first => simp [scheduleProgram,literalProgram_support,circuitWires]
+  | step head tail ih =>
+    rw [scheduleProgram,appendCompiled_support,List.append_subset]
+    exact ⟨ih _,stepProgram_support_production n _ _ head⟩
+
+attribute [local irreducible] scheduleProgram
+private theorem reverse_support_view (n start : Nat) :
+    reverseProgram n start indexedStepProductionRegisters =
+      scheduleProgram n indexedStepProductionRegisters 1620 1 start := rfl
+
+theorem reverseProgram_support_production (n start : Nat) :
+    straightWires (reverseProgram n start indexedStepProductionRegisters).2 ⊆ List.range 580 := by
+  rw [reverse_support_view]
+  exact scheduleProgram_support_production n 1 1620 start secp256k1ScheduleLayout_production
+
+attribute [local irreducible] unpreprocessProgram productionParityProgram reverseProgram
+  eeaUnpreprocess secp256k1EEAParityCorrection canonicalWork2InverseRotation terminalEpochCompression terminalWork1Clear
+theorem wrapperProgram_support (n start : Nat) :
+    straightWires (wrapperProgram n start).2 ⊆ List.range 580 := by
+  have hmid : circuitWires (terminalEpochCompression ++ canonicalWork2InverseRotation) ⊆ List.range 580 := by
+    intro w hw
+    apply secp256k1EEAReverseWrapper_wires_subset
+    simp only [secp256k1EEAReverseWrapper,secp256k1EEAReversePostprocessing,modularWires_seq,AdaptiveCircuit.wires,
+      circuitWires,List.flatMap_append,List.mem_append,List.not_mem_nil,or_false] at hw ⊢
+    aesop
+  have hclear : circuitWires terminalWork1Clear ⊆ List.range 580 := by
+    intro w hw
+    apply secp256k1EEAReverseWrapper_wires_subset
+    simp only [secp256k1EEAReverseWrapper,secp256k1EEAReversePostprocessing,modularWires_seq,AdaptiveCircuit.wires,
+      circuitWires,List.flatMap_append,List.mem_append,List.not_mem_nil,or_false] at hw ⊢
+    aesop
+  unfold wrapperProgram
+  apply sequenceProgram_support
+  intro seg hseg cursor
+  simp only [wrapperSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
+  rcases hseg with rfl|rfl|rfl|rfl|rfl
+  · simpa only [literalProgram_support] using hclear
+  · exact productionParityProgram_support n _
+  · simpa only [literalProgram_support] using hmid
+  · exact reverseProgram_support_production n _
+  · exact unpreprocessProgram_support n _
+
+
+private theorem exchanged_580_in_base (w : Wire) (hw : w ∈ List.range 580) :
+    eeaWorkspaceExchange w ∈ windowBaseSupport := by
+  have h : (List.range 580).all (fun w => decide (eeaWorkspaceExchange w < 837)) = true := by decide +kernel
+  have hlt := of_decide_eq_true ((List.all_eq_true.mp h) w hw)
+  simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+  exact Or.inl (Or.inl hlt)
+
+private theorem data_in_base : List.range' 580 256 ⊆ windowBaseSupport := by
+  intro w hw
+  simp only [List.mem_range'] at hw
+  simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+  exact Or.inl (Or.inl (by omega))
+
+theorem bankWrapperProgram_support_static (n start : Nat) :
+    straightWires (bankWrapperProgram n start).2 ⊆ windowBaseSupport := by
+  rw [bankWrapperProgram,relabelCompiled_support]
+  intro w hw
+  obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
+  exact exchanged_580_in_base v (wrapperProgram_support n start hv)
+
+theorem divisionAfterResetProgram_support_static (n start : Nat) (prior : List (Fin start)) :
+    straightWires (divisionAfterResetProgram n start prior).2 ⊆ windowBaseSupport := by
+  simp only [divisionAfterResetProgram,appendRetaining,appendCompiled_support,List.append_subset]
+  exact ⟨⟨bankWrapperProgram_support_static n start,multiplyDataProgram_support_static n _⟩,
+    ChallengeMigration.divisionCorrectionProgram_support_static n _ _⟩
+
+private theorem range_in_base (k : Nat) (hk : k ≤ 837) : List.range k ⊆ windowBaseSupport := by
+  intro w hw
+  have := List.mem_range.mp hw
+  simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+  exact Or.inl (Or.inl (by omega))
+
+attribute [local irreducible] wrapperProgram bankWrapperProgram divisionAfterResetProgram collectProgram MeasuredQuotient.wrapperProgram
+
+theorem divisionProgram_support_static (n start : Nat) :
+    straightWires (divisionProgram n start).2 ⊆ windowBaseSupport := by
+  simp only [divisionProgram,appendCompiled_support,List.append_subset]
+  refine ⟨⟨(MeasuredQuotient.wrapperProgram_support n start).trans (range_in_base _ (by omega)),multiplyWorkProgram_support_static n _⟩,?_⟩
+  exact collectProgram_support n (divisionAfterResetProgram n) windowBaseSupport
+    (divisionAfterResetProgram_support_static n) _ data_in_base _ _
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.Reverse
+
 -- ==== part: Streaming/CoordinateSupport ====
 
 section
@@ -9056,7 +9412,7 @@ private theorem zero_cx_support : circuitWires cx ⊆ coordinateBaseSupport := b
 theorem zDivisionProgram_support_static (n start : Nat) :
     straightWires (zDivisionProgram n start).2 ⊆ coordinateBaseSupport := by
   simp only [zDivisionProgram,appendCompiled_support,prependCompiled_support,List.append_subset]
-  exact ⟨zero_eq_support _ _,zero_cx_support,(ShorECDLP.Entrant.MeasuredQuotient.divisionProgram_support_static _ _).trans old_in_complete,
+  exact ⟨zero_eq_support _ _,zero_cx_support,(ShorECDLP.Entrant.MeasuredQuotient.Reverse.divisionProgram_support_static _ _).trans old_in_complete,
     zero_cx_support,zero_eq_support _ _⟩
 
 theorem zMultiplicationProgram_support_static (n start : Nat) :
