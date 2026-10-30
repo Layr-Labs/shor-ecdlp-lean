@@ -51951,6 +51951,328 @@ theorem finite_safe {n} (read : CBit n → Bool) (L : ControlledPointLayout)
 end
 end ShorECDLP.Entrant.WEXUnlookup
 
+/-!
+## Second paired-leaf fusion (20 lookup traversals per addition)
+
+The final parity unload of the second paired equality (`wPairEqualTight` under
+`infinitySelect`/`equalNegY`) is immediately followed by the initial load of the doubled-point
+short equality (`wShortEqual` under `double`/`doubleSelect`).  Both are uncontrolled lookups on
+the same address, so one traversal whose leaf applies the two duplicate-free port chunks in order
+performs both XOR actions.  This is the same leaf fusion as `wPairShortFused` on the prefix, now
+applied to the suffix; the specialized programs are literally equal.
+-/
+namespace ShorECDLP.Entrant.WEX
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Entrant ECDSAAdd.Arithmetic.ControlledPointLayout
+noncomputable section
+set_option maxHeartbeats 8000000
+set_option maxRecDepth 20000
+
+def shortEqPorts {n : Nat} (L : ControlledPointLayout) (fin : Nat → ConstantBit n)
+    (xr : Nat → Nat → ConstantBit n) (y0 : Nat → ConstantBit n) : List (LookupPort n) :=
+  ⟨fin, false, L.point.finite⟩ :: indexedPorts L.point.x xr true ++
+    indexedPorts (L.point.y.take 1) (fun a _ => y0 a) true
+
+theorem shortEqual_expanded {n : Nat} (L : ControlledPointLayout) (c t : Wire)
+    (fin : Nat → ConstantBit n) (xr : Nat → Nat → ConstantBit n) (y0 : Nat → ConstantBit n) :
+    wShortEqual L c t fin xr y0 = [.lookup none (shortEqPorts L fin xr y0)] ++
+      wLiteral (zeroControlled c t (zeroPorts (shortSrc L) (L.dialogPool.take 258))) ++
+      [.lookup none (shortEqPorts L fin xr y0)] := rfl
+
+def suffixShortPorts {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) : List (LookupPort n) :=
+  shortEqPorts L (wBit rows .doubleInfinity) (wFields rows .doubleX) (wBit rows .doubleY)
+
+def fusedSuffix {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n :=
+  wCornersOne L rows ++ wLiteral (pointDialogGenericFlag L) ++
+  wPairShortFused L L.infinitySelect L.core.equalNegY (wBit rows .infinity) (wFields rows .x)
+    (wBit rows .y) (wBit rows .negY) (suffixShortPorts L rows)
+    (zeroControlled L.core.double L.doubleSelect (zeroPorts (shortSrc L) (L.dialogPool.take 258))) ++
+  wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
+  wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
+  wLiteral (Arith.padding (L.core.poolWire 0) 49864)
+
+theorem specialize_fusedSuffix {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) (a : Nat) :
+    specialize (fusedSuffix L rows) a = specialize (WEXUnlookup.suffixCode L rows) a := by
+  rw [fusedSuffix, WEXUnlookup.suffixCode, shortEqual_expanded]
+  simp only [suffixShortPorts, specialize_append, specialize_pairShortFused, List.append_assoc]
+
+theorem finite23_split2 {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    wFinite23 L rows = WEXUnlookup.fusedPrefixCode L rows ++ wGeneric L rows ++
+      WEXUnlookup.suffixCode L rows := by
+  simp only [wFinite23, WEXUnlookup.fusedPrefixCode, WEXUnlookup.suffixCode, List.append_assoc]
+
+def wFinite20 {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n :=
+  WEXUnlookup.fusedPrefixCode L rows ++ wGeneric L rows ++ fusedSuffix L rows
+
+theorem specialize_finite20 {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n)
+    (a : Nat) : specialize (wFinite20 L rows) a = specialize (wFinite23 L rows) a := by
+  simp only [wFinite20, finite23_split2, specialize_append, specialize_fusedSuffix]
+
+theorem fusedSuffix_unfold {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    WEXUnlookup.suffixCode L rows =
+      wCornersOne L rows ++ wLiteral (pointDialogGenericFlag L) ++
+      (wPairEqualTight L L.infinitySelect L.core.equalNegY (wBit rows .infinity) (wFields rows .x)
+        (wBit rows .y) (wBit rows .negY) ++ [.lookup none (suffixShortPorts L rows)] ++
+        wLiteral (zeroControlled L.core.double L.doubleSelect
+          (zeroPorts (shortSrc L) (L.dialogPool.take 258))) ++
+        [.lookup none (suffixShortPorts L rows)]) ++
+      wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
+      wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
+      wLiteral (Arith.padding (L.core.poolWire 0) 49864) := by
+  rw [WEXUnlookup.suffixCode, shortEqual_expanded]
+  simp only [suffixShortPorts, List.append_assoc]
+
+theorem pairShortFused_literalRecords {n : Nat} (L : ControlledPointLayout) (t₁ t₂ : Wire)
+    (fin : Nat → ConstantBit n) (xr : Nat → Nat → ConstantBit n) (r₁ r₂ : Nat → ConstantBit n)
+    (short : List (LookupPort n)) (z : ECDSAAdd.Program) :
+    literalRecords (wPairShortFused L t₁ t₂ fin xr r₁ r₂ short z) =
+      literalRecords (wPairEqualTight L t₁ t₂ fin xr r₁ r₂ ++ [.lookup none short] ++ wLiteral z ++
+        [.lookup none short]) := by
+  simp only [wPairShortFused, wPairEqualTight, wPairXorParity, wLiteral, literalRecords_append,
+    literalRecords, Nat.zero_add, Nat.add_zero]
+
+theorem pairShortFused_literalToffolis {n : Nat} (L : ControlledPointLayout) (t₁ t₂ : Wire)
+    (fin : Nat → ConstantBit n) (xr : Nat → Nat → ConstantBit n) (r₁ r₂ : Nat → ConstantBit n)
+    (short : List (LookupPort n)) (z : ECDSAAdd.Program) :
+    literalToffolis (normalizeW (wPairShortFused L t₁ t₂ fin xr r₁ r₂ short z)) =
+      literalToffolis (normalizeW (wPairEqualTight L t₁ t₂ fin xr r₁ r₂ ++ [.lookup none short] ++
+        wLiteral z ++ [.lookup none short])) := by
+  simp only [normalizeW, List.map_append, wPairShortFused, wPairEqualTight, wPairXorParity, wLiteral,
+    List.map_cons, List.map_nil, normalizeWInstr, literalToffolis_append, literalToffolis,
+    Nat.zero_add, Nat.add_zero]
+
+theorem pairShortFused_literalSlotSum {n : Nat} (L : ControlledPointLayout) (t₁ t₂ : Wire)
+    (fin : Nat → ConstantBit n) (xr : Nat → Nat → ConstantBit n) (r₁ r₂ : Nat → ConstantBit n)
+    (short : List (LookupPort n)) (z : ECDSAAdd.Program) :
+    literalSlotSum (wPairShortFused L t₁ t₂ fin xr r₁ r₂ short z) =
+      literalSlotSum (wPairEqualTight L t₁ t₂ fin xr r₁ r₂ ++ [.lookup none short] ++ wLiteral z ++
+        [.lookup none short]) := by
+  simp only [wPairShortFused, wPairEqualTight, wPairXorParity, wLiteral, literalSlotSum_append',
+    literalSlotSum, Nat.zero_add, Nat.add_zero]
+
+theorem pairShortFused_portTotal {n : Nat} (L : ControlledPointLayout) (t₁ t₂ : Wire)
+    (fin : Nat → ConstantBit n) (xr : Nat → Nat → ConstantBit n) (r₁ r₂ : Nat → ConstantBit n)
+    (short : List (LookupPort n)) (z : ECDSAAdd.Program) :
+    portTotal (wPairShortFused L t₁ t₂ fin xr r₁ r₂ short z) =
+      portTotal (wPairEqualTight L t₁ t₂ fin xr r₁ r₂ ++ [.lookup none short] ++ wLiteral z ++
+        [.lookup none short]) := by
+  simp only [wPairShortFused, wPairEqualTight, wPairXorParity, pairParityPorts, wLiteral,
+    portTotal_append', portTotal, List.length_append, List.length_cons]
+  omega
+
+theorem finite20_literalRecords {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    literalRecords (wFinite20 L rows) = literalRecords (wFinite23 L rows) := by
+  rw [finite23_split2, fusedSuffix_unfold]
+  simp only [wFinite20, fusedSuffix, literalRecords_append, pairShortFused_literalRecords]
+
+theorem finite20_literalToffolis {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    literalToffolis (normalizeW (wFinite20 L rows)) = literalToffolis (normalizeW (wFinite23 L rows)) := by
+  have h := pairShortFused_literalToffolis L L.infinitySelect L.core.equalNegY (wBit rows .infinity)
+    (wFields rows .x) (wBit rows .y) (wBit rows .negY) (suffixShortPorts L rows)
+    (zeroControlled L.core.double L.doubleSelect (zeroPorts (shortSrc L) (L.dialogPool.take 258)))
+  simp only [normalizeW] at h ⊢
+  rw [finite23_split2, fusedSuffix_unfold]
+  simp only [wFinite20, fusedSuffix, List.map_append, literalToffolis_append] at h ⊢
+  rw [h]
+
+theorem finite20_literalSlotSum {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    literalSlotSum (wFinite20 L rows) = literalSlotSum (wFinite23 L rows) := by
+  rw [finite23_split2, fusedSuffix_unfold]
+  simp only [wFinite20, fusedSuffix, literalSlotSum_append', pairShortFused_literalSlotSum]
+
+theorem finite20_portTotal {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    portTotal (wFinite20 L rows) = portTotal (wFinite23 L rows) := by
+  rw [finite23_split2, fusedSuffix_unfold]
+  simp only [wFinite20, fusedSuffix, portTotal_append', pairShortFused_portTotal]
+
+theorem traversals_finite20 {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    traversals (wFinite20 L rows) = 20 := by
+  have h := traversals_finite23 L rows
+  rw [finite23_split2, fusedSuffix_unfold] at h
+  simp only [wFinite20, fusedSuffix, traversals_append, traversals_pairShortFused]
+  simp only [traversals_append, tight_traversals] at h
+  simp only [traversals, wLiteral] at h ⊢
+  omega
+
+theorem fusedSuffix_member {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n)
+    (i : WInstr n) (hi : i ∈ fusedSuffix L rows) :
+    i ∈ WEXUnlookup.suffixCode L rows ∨
+      i = .lookup none (pairParityPorts L (wBit rows .infinity) (wFields rows .x) (wBit rows .negY) ++
+        suffixShortPorts L rows) := by
+  rw [fusedSuffix_unfold]
+  simp only [fusedSuffix, wPairShortFused, wPairEqualTight, wPairXorParity, pairParityPorts,
+    List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hi ⊢
+  aesop
+
+theorem finite20_member {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n)
+    (i : WInstr n) (hi : i ∈ wFinite20 L rows) :
+    i ∈ wFinite23 L rows ∨
+      i = .lookup none (pairParityPorts L (wBit rows .infinity) (wFields rows .x) (wBit rows .negY) ++
+        suffixShortPorts L rows) := by
+  rw [finite23_split2]
+  simp only [wFinite20, List.mem_append] at hi ⊢
+  rcases hi with (hp | hg) | hs
+  · exact Or.inl (Or.inl (Or.inl hp))
+  · exact Or.inl (Or.inl (Or.inr hg))
+  · rcases fusedSuffix_member L rows i hs with h | h
+    · exact Or.inl (Or.inr h)
+    · exact Or.inr h
+
+theorem finite20_literal_subset {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n)
+    (p : ECDSAAdd.Program) (hp : WInstr.literal p ∈ wFinite20 L rows) :
+    WInstr.literal p ∈ wFinite23 L rows := by
+  rcases finite20_member L rows (.literal p) hp with old | fused
+  · exact old
+  · cases fused
+
+theorem window20_placed (rows : Nat → Fin 32768) :
+    ∀ i ∈ wFinite20 streamLayout rows, PlacedPair windowBits windowPaths windowRoot i := by
+  let left := pairParityPorts streamLayout (wBit rows .infinity) (wFields rows .x) (wBit rows .negY)
+  let right := suffixShortPorts streamLayout rows
+  have leftMem : WInstr.lookup none left ∈ wFiniteTight streamLayout rows := by
+    simp only [left, pairParityPorts, wFiniteTight, wPairEqualTight, wPairXorParity,
+      List.mem_append, List.mem_cons, List.not_mem_nil, or_false, true_or, or_true]
+  have rightMem : WInstr.lookup none right ∈ wFiniteTight streamLayout rows := by
+    simp only [right, suffixShortPorts, shortEqPorts, wFiniteTight, wShortEqual, wShortXor,
+      List.mem_append, List.mem_cons, List.not_mem_nil, or_false, true_or, or_true]
+  have hlen : left.length = 258 := by
+    simp [left, pairParityPorts]
+    exact streamLayout_widths.inputX
+  have hleft := windowOne_placed rows _ leftMem
+  have hright := windowOne_placed rows _ rightMem
+  intro i hi
+  rcases finite20_member streamLayout rows i hi with old | fused
+  · exact window23_placed rows i old
+  · subst i
+    exact fused_leaf_placed windowBits windowPaths windowRoot left right hlen hleft hright
+
+def rowAddCode2 (rows : Nat → Fin 32768) : WCode 32768 :=
+  wLiteral ([.X 838]) ++ wFinite20 streamLayout rows ++ wLiteral ([.X 838])
+
+theorem rowAddCode2_placed (rows : Nat → Fin 32768) :
+    ∀ i ∈ rowAddCode2 rows, PlacedPair windowBits windowPaths windowRoot i := by
+  intro i hi
+  simp only [rowAddCode2, List.mem_append] at hi
+  rcases hi with (hi | hi) | hi
+  · exact rowAddCode_placed rows i (by simp only [rowAddCode, List.mem_append]; exact Or.inl (Or.inl hi))
+  · exact window20_placed rows i hi
+  · exact rowAddCode_placed rows i (by simp only [rowAddCode, List.mem_append]; exact Or.inr hi)
+
+theorem rowAddCode2_physical (rows : Nat → Fin 32768) :
+    ∀ p, WInstr.literal p ∈ rowAddCode2 rows → GatePhysical p := by
+  intro p hp
+  apply rowAddCode_physical rows p
+  simp only [rowAddCode2, List.mem_append] at hp
+  simp only [rowAddCode, List.mem_append]
+  rcases hp with (hp | hp) | hp
+  · exact Or.inl (Or.inl hp)
+  · exact Or.inl (Or.inr (finite20_literal_subset streamLayout rows p hp))
+  · exact Or.inr hp
+
+theorem rowAddCode2_literal_subset (rows : Nat → Fin 32768) (p : ECDSAAdd.Program)
+    (hp : WInstr.literal p ∈ rowAddCode2 rows) : WInstr.literal p ∈ rowAddCode rows := by
+  simp only [rowAddCode2, List.mem_append] at hp
+  simp only [rowAddCode, List.mem_append]
+  rcases hp with (hp | hp) | hp
+  · exact Or.inl (Or.inl hp)
+  · exact Or.inl (Or.inr (finite20_literal_subset streamLayout rows p hp))
+  · exact Or.inr hp
+
+theorem specialize_rowAddCode2 (rows : Nat → Fin 32768) (a : Nat) :
+    specialize (rowAddCode2 rows) a = specialize (rowAddCode rows) a := by
+  simp only [rowAddCode2, rowAddCode, specialize_append, specialize_finite20]
+
+theorem row2_literalToffolis (rows : Nat → Fin 32768) :
+    literalToffolis (normalizeW (rowAddCode2 rows)) = literalToffolis (normalizeW (rowAddCode rows)) := by
+  have h := finite20_literalToffolis streamLayout rows
+  simp only [normalizeW] at h ⊢
+  simp only [rowAddCode2, rowAddCode, List.map_append, literalToffolis_append, h]
+
+theorem row2_literalRecords (rows : Nat → Fin 32768) :
+    literalRecords (rowAddCode2 rows) = literalRecords (rowAddCode rows) := by
+  simp only [rowAddCode2, rowAddCode, literalRecords_append, finite20_literalRecords]
+
+theorem row2_traversals (rows : Nat → Fin 32768) : traversals (rowAddCode2 rows) = 20 := by
+  simp only [rowAddCode2, traversals_append, wLiteral, traversals_finite20, traversals]
+
+theorem rowAdd2_traversals : traversals (normalizeW (rowAddCode2 probeRows)) = 20 := by
+  rw [traversals_normalize]
+  exact row2_traversals probeRows
+
+theorem rowAdd2_literal_slots_bound : literalSlotSum (rowAddCode2 probeRows) ≤ 50000002 := by
+  have h := rowAdd_literal_slots_bound
+  simp only [rowAddCode, literalSlotSum_append'] at h
+  simp only [rowAddCode2, literalSlotSum_append', finite20_literalSlotSum]
+  exact h
+
+theorem rowAdd2_portTotal : portTotal (rowAddCode2 probeRows) ≤ 20000 := by
+  have h := rowAdd_portTotal
+  simp only [rowAddCode, portTotal_append'] at h
+  simp only [rowAddCode2, portTotal_append', finite20_portTotal]
+  exact h
+
+theorem row2_sourceLookupOK : (normalizeW (rowAddCode2 probeRows)).all sourceLookupOK = true := by
+  decide +kernel
+
+theorem rowAdd2_records : codeRecords windowBits windowPaths windowRoot
+    (normalizeW (rowAddCode2 probeRows)) = 2212239 := by
+  have layouts := pair_layouts_of_placed windowBits windowPaths windowRoot _
+    (by simp [windowBits,windowPaths]) (pair_placed_normalize _ _ _ _ (rowAddCode2_placed probeRows))
+  have h := wrapper_record_ledger windowBits windowPaths windowRoot ([.X 838]) ([.X 838])
+    (wFinite20 streamLayout probeRows) 1556899 20
+    ((finite20_literalRecords streamLayout probeRows).trans ((finite23_literal_counts streamLayout probeRows).2.trans
+      (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).2))
+    (traversals_finite20 streamLayout probeRows) layouts
+  simp only [show ECDSAAdd.measurementCount ([.X 838]) = 0 by simp only [ECDSAAdd.measurementCount]] at h
+  norm_num [windowBits] at h
+  simpa only [rowAddCode2, List.append_assoc, windowBits] using h
+
+theorem width2_placed (k : Nat) (hk : k ≤ 15) (rows : Nat → Fin 32768) :
+    ∀ i ∈ rowAddCode2 rows, PlacedPair (widthBits k) windowPaths windowRoot i := by
+  intro i hi
+  have hp := rowAddCode2_placed rows i hi
+  cases i with
+  | literal p =>
+    intro w hw
+    exact hp w ((List.Sublist.cons₂ windowRoot (width_sublist k hk)).subset hw)
+  | lookup c ports =>
+    refine ⟨(List.Sublist.cons₂ _ (width_sublist k hk)).nodup hp.1, hp.2.1, hp.2.2.1, ?_⟩
+    apply List.disjoint_left.mpr
+    intro w hw ht
+    exact List.disjoint_left.mp hp.2.2.2
+      ((List.Sublist.cons₂ _ (List.Sublist.cons₂ _ (width_sublist k hk))).subset hw) ht
+
+attribute [local irreducible] compile codeRecords literalRecords literalToffolis ECDSAAdd.measurementCount ECDSAAdd.toffoliCount
+
+theorem width2_records (k : Nat) (hk : k ≤ 15) :
+    codeRecords (widthBits k) windowPaths windowRoot (normalizeW (rowAddCode2 probeRows)) =
+      1556899 + 20 * (2 ^ k - 1) := by
+  have layouts := pair_layouts_of_placed (widthBits k) windowPaths windowRoot _
+    (by simpa [widthBits,windowPaths] using hk) (pair_placed_normalize _ _ _ _ (width2_placed k hk probeRows))
+  rw [codeRecords_eq _ _ _ _ layouts,literalRecords_normalize,traversals_normalize]
+  have counts := (finite20_literalRecords streamLayout probeRows).trans
+    ((finite23_literal_counts streamLayout probeRows).2.trans
+    (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).2)
+  simp only [rowAddCode2,literalRecords_append,wLiteral,literalRecords,ECDSAAdd.measurementCount,
+    Nat.zero_add,Nat.add_zero,counts,traversals_append,traversals_finite20]
+  simp [widthBits,traversals]
+
+private theorem count20_aux (a b t : Nat) (h : 2 * a + b + 21 * t ≤ 2163901 + 21 * t) :
+    2 * a + b + 20 * t ≤ 2163901 + 20 * t := by omega
+
+attribute [local irreducible] ECDSAAdd.Baselines.normalizeProgram normalizeW rowAddCode2 rowAddCode
+
+theorem row2_count_upper (k : Nat) :
+    2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram) +
+      literalToffolis (normalizeW (rowAddCode2 probeRows)) + 20 * (2^k-1) ≤
+      2163901 + 20 * (2^k-1) := by
+  rw [row2_literalToffolis]
+  exact count20_aux _ _ (2^k-1) (generic_count_upper k)
+
+end
+end ShorECDLP.Entrant.WEX
+
+
 namespace ShorECDLP.Entrant.WEX
 open Quantum Challenge ShorECDLP.Secp256k1 Paper2607_13816 Paper2607_13816.ChallengeMigration
 open ECDSAAdd ECDSAAdd.RecordedQuantum ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
@@ -52173,57 +52495,59 @@ theorem tightReferenceRow_width_records (k : Nat) (hk : k ≤ 15) :
   simp [widthBits,traversals]
 
 end
-noncomputable def clearReferenceRow (rows : Nat → Fin 32768) : WCode 32768 := rowAddCode rows
+noncomputable def clearReferenceRow (rows : Nat → Fin 32768) : WCode 32768 := rowAddCode2 rows
 
 theorem clearReferenceRow_placed (rows : Nat → Fin 32768) :
-    ∀ i ∈ clearReferenceRow rows, PlacedPair windowBits windowPaths windowRoot i := rowAddCode_placed rows
+    ∀ i ∈ clearReferenceRow rows, PlacedPair windowBits windowPaths windowRoot i := rowAddCode2_placed rows
 
 theorem clearReferenceRow_physical (rows : Nat → Fin 32768) :
-    ∀ p, WInstr.literal p ∈ clearReferenceRow rows → GatePhysical p := rowAddCode_physical rows
+    ∀ p, WInstr.literal p ∈ clearReferenceRow rows → GatePhysical p := rowAddCode2_physical rows
 
 theorem clearReferenceRow_run (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • Q = 0)
     (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (s : BasisState) (hs : liveReady s) (m : List Bool) :
     ECDSAAdd.run ((specialize (normalizeW (clearReferenceRow probeRows))
       (tableAddressValue windowBits s)).instantiate (readConstant coeffs Q)) m ⟨false,s⟩ =
-        ⟨false,rowPointState coeffs Q s⟩ := rowAddCode_run coeffs Q hQ hn s hs m
+        ⟨false,rowPointState coeffs Q s⟩ := by
+  rw [clearReferenceRow, specialize_normalize_run, specialize_rowAddCode2, ← specialize_normalize_run]
+  exact rowAddCode_run coeffs Q hQ hn s hs m
 
 theorem clearReferenceRow_run_any (a : Nat) (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • Q = 0)
     (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) (s : BasisState) (hs : liveReady s) (m : List Bool) :
     ECDSAAdd.run ((specialize (normalizeW (clearReferenceRow probeRows))
       a).instantiate (readConstant coeffs Q)) m ⟨false,s⟩ =
-        ⟨false,pointWrite (inputPoint s + Single.Physical.tablePoint coeffs Q a) s⟩ :=
-  rowAddCode_run_any a coeffs Q hQ hn s hs m
+        ⟨false,pointWrite (inputPoint s + Single.Physical.tablePoint coeffs Q a) s⟩ := by
+  rw [clearReferenceRow, specialize_normalize_run, specialize_rowAddCode2, ← specialize_normalize_run]
+  exact rowAddCode_run_any a coeffs Q hQ hn s hs m
 
-theorem clearReferenceRow_traversals : traversals (normalizeW (clearReferenceRow probeRows)) = 21 :=
-  rowAdd_traversals
+theorem clearReferenceRow_traversals : traversals (normalizeW (clearReferenceRow probeRows)) = 20 :=
+  rowAdd2_traversals
 
 theorem clearReferenceRow_records : codeRecords windowBits windowPaths windowRoot
-    (normalizeW (clearReferenceRow probeRows)) = 2245006 := rowAdd_records
+    (normalizeW (clearReferenceRow probeRows)) = 2212239 := rowAdd2_records
 
 theorem clearReferenceRow_sourceLookupOK :
-    (normalizeW (clearReferenceRow probeRows)).all sourceLookupOK = true := row_sourceLookupOK
+    (normalizeW (clearReferenceRow probeRows)).all sourceLookupOK = true := row2_sourceLookupOK
 
 theorem clearReferenceRow_literal_slots_bound : literalSlotSum (clearReferenceRow probeRows) ≤ 50000002 :=
-  rowAdd_literal_slots_bound
+  rowAdd2_literal_slots_bound
 
-theorem clearReferenceRow_portTotal : portTotal (clearReferenceRow probeRows) ≤ 20000 := rowAdd_portTotal
+theorem clearReferenceRow_portTotal : portTotal (clearReferenceRow probeRows) ≤ 20000 := rowAdd2_portTotal
 
 theorem clearReferenceRow_count_upper (k : Nat) :
     2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram) +
-      literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21 * (2^k-1) ≤
-      2163901 + 21 * (2^k-1) := by
-  have h := generic_count_upper k
-  have e : clearReferenceRow probeRows = rowAddCode probeRows := rfl
+      literalToffolis (normalizeW (clearReferenceRow probeRows)) + 20 * (2^k-1) ≤
+      2163901 + 20 * (2^k-1) := by
+  have e : clearReferenceRow probeRows = rowAddCode2 probeRows := rfl
   rw [e]
-  exact h
+  exact row2_count_upper k
 
 theorem clearReferenceRow_width_placed (k : Nat) (hk : k ≤ 15) (rows : Nat → Fin 32768) :
     ∀ i ∈ clearReferenceRow rows, PlacedPair (widthBits k) windowPaths windowRoot i :=
-  width_placed k hk rows
+  width2_placed k hk rows
 
 theorem clearReferenceRow_width_records (k : Nat) (hk : k ≤ 15) :
     codeRecords (widthBits k) windowPaths windowRoot (normalizeW (clearReferenceRow probeRows)) =
-      1556899 + 21 * (2 ^ k - 1) := width_records k hk
+      1556899 + 20 * (2 ^ k - 1) := width2_records k hk
 
 end ShorECDLP.Entrant.WEX
 
@@ -52955,16 +53279,26 @@ def tightRow : Code 32768 := [.plain (wLiteral [.X 838])] ++ finite streamLayout
   rw [erase_append,erase_append,erase_finite,erase_plain]
   rfl
 
-def row : Code 32768 := [.plain (wLiteral [.X 838])] ++ fusedFinite streamLayout probeRows ++
+/-- Both paired leaves fused: prefix (pair/short-neg) and suffix (pair/short-double). -/
+def fusedFinite2 {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : Code n :=
+  [.plain (fusedPrefixCode L rows)] ++ generic L rows ++ [.plain (WEX.fusedSuffix L rows)]
+
+@[simp] theorem erase_fusedFinite2 {n} (L : ControlledPointLayout) (rows : Nat → Fin n) :
+    erase (fusedFinite2 L rows) = WEX.wFinite20 L rows := by
+  unfold fusedFinite2
+  rw [erase_append,erase_append,erase_generic,erase_plain,erase_plain]
+  simp only [WEX.wFinite20, List.append_assoc]
+
+def row : Code 32768 := [.plain (wLiteral [.X 838])] ++ fusedFinite2 streamLayout probeRows ++
   [.plain (wLiteral [.X 838])]
 @[simp] theorem erase_row : erase row = clearReferenceRow probeRows := by
   unfold row
-  rw [erase_append,erase_append,erase_fusedFinite,erase_plain]
+  rw [erase_append,erase_append,erase_fusedFinite2,erase_plain]
   rfl
 
 theorem row_masked_tight (site : MaskedSite 32768) (hb : Block.masked site ∈ row) :
     Block.masked site ∈ tightRow := by
-  simpa [row,tightRow,fusedFinite,finite] using hb
+  simpa [row,tightRow,fusedFinite2,finite] using hb
 
 theorem safe_plain_swap {n} (read : ConstantBit n → Bool) (address : Nat) (p q : WCode n)
     (hs : specialize p address = specialize q address) (pre rest : Code n) (st : ECDSAAdd.State)
@@ -52993,7 +53327,7 @@ theorem row_hotavoid : ∀ i ∈ clearReferenceRow probeRows, HotAvoid i := by
   cases i with
   | literal p =>
     have hs : ECDSAAdd.wires p ⊆ sourceSupport.toFinset := by
-      simp only [clearReferenceRow,rowAddCode,List.mem_append] at hi
+      simp only [clearReferenceRow,rowAddCode2,List.mem_append] at hi
       rcases hi with (hi | hi) | hi
       · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
         subst p
@@ -53001,7 +53335,7 @@ theorem row_hotavoid : ∀ i ∈ clearReferenceRow probeRows, HotAvoid i := by
         have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
         subst w
         exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
-      · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p hi))
+      · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p (finite20_literal_subset streamLayout probeRows p hi)))
       · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
         subst p
         intro w hw
@@ -53036,7 +53370,7 @@ theorem const_shared {n} (r : List Wire) (refs : Nat → Nat → ConstantBit n) 
 @[simp] theorem shared_plain {n} (code : WCode n) : Shared (.plain code) := True.intro
 
 theorem row_shared : ∀ b ∈ row, Shared b := by
-  simp [row,fusedFinite,generic,core,recovery,constAdd,const_shared]
+  simp [row,fusedFinite2,generic,core,recovery,constAdd,const_shared]
 
 theorem row_geometry : ∀ b ∈ row, BlockGeometry b := by
   intro b hb
@@ -53091,14 +53425,24 @@ theorem row_safe_of_boundary (read : ConstantBit 32768 → Bool) (address : Nat)
         (generic streamLayout probeRows ++ [Block.plain (suffixCode streamLayout probeRows)] ++
           [Block.plain (wLiteral [.X 838])]) := by
     simp [tightRow,finite,List.append_assoc]
-  have e₂ : row = [Block.plain (wLiteral [.X 838])] ++
+  rw [e₁] at h
+  have h' := safe_plain_swap read address _ _ (specialize_fusedPrefix streamLayout probeRows address).symm _ _ _ h
+  have e₃ : [Block.plain (wLiteral [.X 838])] ++
       Block.plain (fusedPrefixCode streamLayout probeRows) ::
         (generic streamLayout probeRows ++ [Block.plain (suffixCode streamLayout probeRows)] ++
-          [Block.plain (wLiteral [.X 838])]) := by
-    simp [row,fusedFinite,List.append_assoc]
-  rw [e₁] at h
-  rw [e₂]
-  exact safe_plain_swap read address _ _ (specialize_fusedPrefix streamLayout probeRows address).symm _ _ _ h
+          [Block.plain (wLiteral [.X 838])]) =
+      ([Block.plain (wLiteral [.X 838]), Block.plain (fusedPrefixCode streamLayout probeRows)] ++
+        generic streamLayout probeRows) ++
+        Block.plain (suffixCode streamLayout probeRows) :: [Block.plain (wLiteral [.X 838])] := by
+    simp [List.append_assoc]
+  have e₄ : row =
+      ([Block.plain (wLiteral [.X 838]), Block.plain (fusedPrefixCode streamLayout probeRows)] ++
+        generic streamLayout probeRows) ++
+        Block.plain (WEX.fusedSuffix streamLayout probeRows) :: [Block.plain (wLiteral [.X 838])] := by
+    simp [row,fusedFinite2,List.append_assoc]
+  rw [e₃] at h'
+  rw [e₄]
+  exact safe_plain_swap read address _ _ (WEX.specialize_fusedSuffix streamLayout probeRows address).symm _ _ _ h'
 
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
 
@@ -53326,19 +53670,19 @@ theorem records_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry
 
 theorem records_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 5)
-    (ho : codeRecords windowBits windowPaths windowRoot (normalizeW (erase code)) = 2245006) :
-    records code = 2102961 := by
+    (ho : codeRecords windowBits windowPaths windowRoot (normalizeW (erase code)) = 2212239) :
+    records code = 2070194 := by
   have h := records_relation code hg
   rw [hm,ho] at h
   omega
 
-theorem row_records : records row = 2102961 := by
+theorem row_records : records row = 2070194 := by
   apply records_credit5 row row_geometry row_masks
   exact (congrArg (fun c : WCode 32768 => codeRecords windowBits windowPaths windowRoot (normalizeW c)) erase_row).trans clearReferenceRow_records
 
 theorem row_history_length (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool)
     (branch : InstrumentBranch) (hb : branch ∈ ((program row start).instantiate read history).run) :
-    branch.history.length = 2102961 := by
+    branch.history.length = 2070194 := by
   have h := straight_history_length (program row start) read history branch hb
   exact h.trans ((congrArg (fun m => (start+m)-start) row_records).trans (by omega))
 
@@ -53551,7 +53895,7 @@ def OldWithin {n} (code : WCode n) : Prop :=
 theorem row_oldWithin : OldWithin (clearReferenceRow probeRows) := by
   refine ⟨?_,?_⟩
   · intro p hi
-    simp only [clearReferenceRow,rowAddCode,List.mem_append] at hi
+    simp only [clearReferenceRow,rowAddCode2,List.mem_append] at hi
     rcases hi with (hi | hi) | hi
     · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
       subst p
@@ -53559,7 +53903,7 @@ theorem row_oldWithin : OldWithin (clearReferenceRow probeRows) := by
       have he : w = 838 := by simpa [ECDSAAdd.wires,ECDSAAdd.Instr.wires] using hw
       subst w
       exact List.mem_toFinset.mpr ((sourceSupport_mem 838).mpr (Or.inl (by decide +kernel)))
-    · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p hi))
+    · exact finiteOne_literal_source probeRows p (tight_finite_literal_subset streamLayout probeRows p (finite23_literal_subset streamLayout probeRows p (finite20_literal_subset streamLayout probeRows p hi)))
     · simp only [wLiteral,List.mem_singleton,WInstr.literal.injEq] at hi
       subst p
       intro w hw
@@ -53771,7 +54115,7 @@ theorem ccx_credit5 {n} (code : Code n) (k : Nat) (hm : masks code = 5)
   rw [hm] at h
   omega
 
-theorem row_ccx_relation : ccx row + 143325 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21*32767 := by
+theorem row_ccx_relation : ccx row + 143325 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 20*32767 := by
   have ht := WEX.clearReferenceRow_traversals
   rw [traversals_normalize] at ht
   apply ccx_credit5 row _ row_masks
@@ -53817,7 +54161,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   ECDSAAdd.toffoliCount ECDSAAdd.measurementCount lookupMeasurements WEX.portOps tableAddressTree
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps ccx masks
 
-def addFixed (start : Nat) : Straight 32768 start (start+2102961) :=
+def addFixed (start : Nat) : Straight 32768 start (start+2070194) :=
   castFinish (congrArg (fun m => start+m) row_records) (program row start)
 
 theorem addFixed_run (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
@@ -53845,10 +54189,10 @@ open AndGadget in
   rw [addFixed,residue_cast]
   exact program_residue row start
 
-def bodyProgram (start : Nat) : Straight 32768 start (start+2105005) :=
+def bodyProgram (start : Nat) : Straight 32768 start (start+2072238) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nProgram start)).append (addFixed (start+1022))).append
-      (nProgram (start+1022+2102961))).append (suffixProgram (start+1022+2102961+1022)))
+      (nProgram (start+1022+2070194))).append (suffixProgram (start+1022+2070194+1022)))
 
 theorem regroup_runs (p l a r s : AdaptiveCircuit) :
     ((((p.run.seq l.run).seq a.run).seq r.run).seq s.run) =
@@ -53917,11 +54261,11 @@ open AndGadget WEXCredit in
  theorem bodyProgram_credit (start : Nat) : ProgramCredit (bodyProgram start) (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + WEXUnlookup.ccx WEXUnlookup.row) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)
   have hl : ProgramCredit (nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hr : ProgramCredit (nProgram (start+1022+2102961)) a := ⟨n_residue _,n_added _⟩
+  have hr : ProgramCredit (nProgram (start+1022+2070194)) a := ⟨n_residue _,n_added _⟩
   rw [bodyProgram]
   apply credit_cast
   exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+1022)) hr
-    (suffix_credit (start+1022+2102961+1022))
+    (suffix_credit (start+1022+2070194+1022))
 
 open AndGadget WEXCredit in
  theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
@@ -54003,9 +54347,9 @@ attribute [local irreducible] program blockProgram clearProgram bodyProgram addF
 
 theorem upper_from_source (a b c : Nat)
     (hs : 7*a + (7*b+5046118) + 7*a ≤ 20193425)
-    (hr : c+143325=b+21*32767) : 2*a+c ≤ 2708683 := by omega
+    (hr : c+143325=b+20*32767) : 2*a+c ≤ 2675916 := by omega
 
-theorem window_count_upper : (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + WEXUnlookup.ccx WEXUnlookup.row) ≤ 2708683 := by
+theorem window_count_upper : (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + WEXUnlookup.ccx WEXUnlookup.row) ≤ 2675916 := by
   have h := WEX.clearReferenceRow_count_upper 15
   have r := row_ccx_relation
   norm_num at h
@@ -54053,7 +54397,7 @@ theorem compactReady_first (s : BasisState) (hs : FirstWindowInput s) (P : Secp2
 
 def compactSupport : List Wire := List.range 1634
 
-def compactProgram (start : Nat) : Straight 32768 start (start+2105005) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+2072238) :=
   relabelStraight compactPerm (bodyProgram start)
 
 theorem compactProgram_support (start : Nat) :
@@ -54098,8 +54442,8 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact he
 
 def compactBody : Single.WindowBody where
-  records := 2105005
-  tBound := 18960781
+  records := 2072238
+  tBound := 18731412
   slotBound := 2000000000
   support := compactSupport
   reset := resetWires
@@ -54128,7 +54472,7 @@ def compactBody : Single.WindowBody where
     intro w hw
     exact compact_base_support hw
 
-theorem compactBody_ledger : compactBody.records = 2105005 ∧ compactBody.tBound = 18960781 ∧
+theorem compactBody_ledger : compactBody.records = 2072238 ∧ compactBody.tBound = 18731412 ∧
     compactBody.support.length = 1634 ∧ compactBody.reset.length = 854 := by
   exact ⟨rfl,rfl,by norm_num [compactBody,compactSupport,MeasuredClear.hotBank],by norm_num [compactBody,resetWires]⟩
 
@@ -55505,16 +55849,16 @@ theorem records_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry
 
 theorem records_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 5)
-    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1728910) :
-    records code = 1694385 := by
+    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1720719) :
+    records code = 1686194 := by
   have h := records_relation code hg
   rw [hm,ho] at h
   omega
 
-theorem row_records : records row = 1694385 := by
+theorem row_records : records row = 1686194 := by
   apply records_credit5 row row_geometry row_masks
   have h := WEX.clearReferenceRow_width_records 13 (by omega)
-  have hn : 1556899 + 21 * (2 ^ 13 - 1) = 1728910 := by norm_num
+  have hn : 1556899 + 20 * (2 ^ 13 - 1) = 1720719 := by norm_num
   exact (congrArg (fun c : WCode 32768 => codeRecords bits windowPaths windowRoot (normalizeW c)) erase_row).trans (by simpa only [bits] using h.trans hn)
 
 end
@@ -55599,16 +55943,16 @@ theorem records_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry
 
 theorem records_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 5)
-    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1900942) :
-    records code = 1830577 := by
+    (ho : codeRecords bits windowPaths windowRoot (normalizeW (erase code)) = 1884559) :
+    records code = 1814194 := by
   have h := records_relation code hg
   rw [hm,ho] at h
   omega
 
-theorem row_records : records row = 1830577 := by
+theorem row_records : records row = 1814194 := by
   apply records_credit5 row row_geometry row_masks
   have h := WEX.clearReferenceRow_width_records 14 (by omega)
-  have hn : 1556899 + 21 * (2 ^ 14 - 1) = 1900942 := by norm_num
+  have hn : 1556899 + 20 * (2 ^ 14 - 1) = 1884559 := by norm_num
   exact (congrArg (fun c : WCode 32768 => codeRecords bits windowPaths windowRoot (normalizeW c)) erase_row).trans (by simpa only [bits] using h.trans hn)
 
 end
@@ -55924,7 +56268,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   lookupMeasurements WEX.portOps tableAddressTree MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps MeasuredClear.measuredClear ccx Nat.add Nat.mul
 
-def addFixed (start : Nat) : Straight 32768 start (start+1694385) :=
+def addFixed (start : Nat) : Straight 32768 start (start+1686194) :=
   castFinish (congrArg (fun m => start+m) row_records) (program row start)
 
 attribute [local irreducible] addFixed
@@ -55956,10 +56300,10 @@ theorem addFixed_credit (start : Nat) : ProgramCredit (addFixed start) (ccx row)
   have ht := addFixed_tCount (fun _ => false) start (fun _ => false)
   omega
 
-def bodyProgram (start : Nat) : Straight 32768 start (start+1696429) :=
+def bodyProgram (start : Nat) : Straight 32768 start (start+1688238) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nProgram start)).append (addFixed (start+1022))).append
-      (nProgram (start+1022+1694385))).append (suffixProgram (start+1022+1694385+1022)))
+      (nProgram (start+1022+1686194))).append (suffixProgram (start+1022+1686194+1022)))
 
 attribute [local irreducible] bodyProgram
 
@@ -55995,11 +56339,11 @@ theorem bodyProgram_credit (start : Nat) : ProgramCredit (bodyProgram start)
     (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)
   have hl : ProgramCredit (nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hr : ProgramCredit (nProgram (start+1022+1694385)) a := ⟨n_residue _,n_added _⟩
+  have hr : ProgramCredit (nProgram (start+1022+1686194)) a := ⟨n_residue _,n_added _⟩
   rw [bodyProgram]
   apply credit_cast
   exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+1022)) hr
-    (suffix_credit (start+1022+1694385+1022))
+    (suffix_credit (start+1022+1686194+1022))
 
 theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((bodyProgram start).instantiate read history).tCount =
@@ -56032,7 +56376,7 @@ theorem bodyProgram_support (start : Nat) : ChallengeMigration.straightWires (bo
     addFixed_support _⟩,(nProgram_source _).trans (List.subset_append_left _ _)⟩,(hs _).trans (List.subset_append_left _ _)⟩
 
 theorem row_ccx_relation : ccx row + 5 * 7161 =
-    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21 * 8191 := by
+    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 20 * 8191 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
   have ht := WEX.clearReferenceRow_traversals
@@ -56041,12 +56385,12 @@ theorem row_ccx_relation : ccx row + 5 * 7161 =
   exact hr
 
 private theorem count_bound (a b c : Nat)
-    (hr : c + 5 * 7161 = b + 21 * 8191)
-    (hb : 2 * a + b + 21 * (2^13 - 1) ≤ 2163901 + 21 * (2^13 - 1)) :
-    2 * a + c ≤ 2300107 := by omega
+    (hr : c + 5 * 7161 = b + 20 * 8191)
+    (hb : 2 * a + b + 20 * (2^13 - 1) ≤ 2163901 + 20 * (2^13 - 1)) :
+    2 * a + c ≤ 2291916 := by omega
 
 theorem count_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) +
-    ccx row ≤ 2300107 := by
+    ccx row ≤ 2291916 := by
   exact count_bound _ _ _ row_ccx_relation (WEX.clearReferenceRow_count_upper 13)
 
 end
@@ -56061,7 +56405,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   lookupMeasurements WEX.portOps tableAddressTree MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps MeasuredClear.measuredClear ccx Nat.add Nat.mul
 
-def addFixed (start : Nat) : Straight 32768 start (start+1830577) :=
+def addFixed (start : Nat) : Straight 32768 start (start+1814194) :=
   castFinish (congrArg (fun m => start+m) row_records) (program row start)
 
 attribute [local irreducible] addFixed
@@ -56093,10 +56437,10 @@ theorem addFixed_credit (start : Nat) : ProgramCredit (addFixed start) (ccx row)
   have ht := addFixed_tCount (fun _ => false) start (fun _ => false)
   omega
 
-def bodyProgram (start : Nat) : Straight 32768 start (start+1832621) :=
+def bodyProgram (start : Nat) : Straight 32768 start (start+1816238) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nProgram start)).append (addFixed (start+1022))).append
-      (nProgram (start+1022+1830577))).append (suffixProgram (start+1022+1830577+1022)))
+      (nProgram (start+1022+1814194))).append (suffixProgram (start+1022+1814194+1022)))
 
 attribute [local irreducible] bodyProgram
 
@@ -56132,11 +56476,11 @@ theorem bodyProgram_credit (start : Nat) : ProgramCredit (bodyProgram start)
     (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)
   have hl : ProgramCredit (nProgram start) a := ⟨n_residue start,n_added start⟩
-  have hr : ProgramCredit (nProgram (start+1022+1830577)) a := ⟨n_residue _,n_added _⟩
+  have hr : ProgramCredit (nProgram (start+1022+1814194)) a := ⟨n_residue _,n_added _⟩
   rw [bodyProgram]
   apply credit_cast
   exact five_credit a (ccx row) (prefix_credit start) hl (addFixed_credit (start+1022)) hr
-    (suffix_credit (start+1022+1830577+1022))
+    (suffix_credit (start+1022+1814194+1022))
 
 theorem bodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((bodyProgram start).instantiate read history).tCount =
@@ -56169,7 +56513,7 @@ theorem bodyProgram_support (start : Nat) : ChallengeMigration.straightWires (bo
     addFixed_support _⟩,(nProgram_source _).trans (List.subset_append_left _ _)⟩,(hs _).trans (List.subset_append_left _ _)⟩
 
 theorem row_ccx_relation : ccx row + 5 * 14329 =
-    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 21 * 16383 := by
+    literalToffolis (normalizeW (clearReferenceRow probeRows)) + 20 * 16383 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
   have ht := WEX.clearReferenceRow_traversals
@@ -56178,12 +56522,12 @@ theorem row_ccx_relation : ccx row + 5 * 14329 =
   exact hr
 
 private theorem count_bound (a b c : Nat)
-    (hr : c + 5 * 14329 = b + 21 * 16383)
-    (hb : 2 * a + b + 21 * (2^14 - 1) ≤ 2163901 + 21 * (2^14 - 1)) :
-    2 * a + c ≤ 2436299 := by omega
+    (hr : c + 5 * 14329 = b + 20 * 16383)
+    (hb : 2 * a + b + 20 * (2^14 - 1) ≤ 2163901 + 20 * (2^14 - 1)) :
+    2 * a + c ≤ 2419916 := by omega
 
 theorem count_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) +
-    ccx row ≤ 2436299 := by
+    ccx row ≤ 2419916 := by
   exact count_bound _ _ _ row_ccx_relation (WEX.clearReferenceRow_count_upper 14)
 
 end
@@ -56353,7 +56697,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW WEXUnlookup.compactBody ccx Nat.add Nat.mul
 
-def compactProgram (start : Nat) : Straight 32768 start (start+1696429) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+1688238) :=
   relabelStraight WEX.compactPerm (bodyProgram start)
 
 theorem compactProgram_support (start : Nat) :
@@ -56395,8 +56739,8 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact he
 
 def narrow : ModNarrow WEXUnlookup.compactBody 13 where
-  records := 1696429
-  tBound := 16100749
+  records := 1688238
+  tBound := 16043412
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row
   program := compactProgram
   coherent := by
@@ -56441,7 +56785,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW WEXUnlookup.compactBody ccx Nat.add Nat.mul
 
-def compactProgram (start : Nat) : Straight 32768 start (start+1832621) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+1816238) :=
   relabelStraight WEX.compactPerm (bodyProgram start)
 
 theorem compactProgram_support (start : Nat) :
@@ -56483,8 +56827,8 @@ theorem compactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact he
 
 def narrow : ModNarrow WEXUnlookup.compactBody 14 where
-  records := 1832621
-  tBound := 17054093
+  records := 1816238
+  tBound := 16939412
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.windowSignProgram) + ccx row
   program := compactProgram
   coherent := by
@@ -59925,14 +60269,14 @@ private theorem clear22Widen {limits : Limits} {layout : DecodeLayout} {entry : 
 
 theorem matched_clear22_certificate (n14 : ModNarrow body 13) (n15 : UniformNarrow body)
     (hSupport : ledger.support.length ≤ 1634) (hSlot : body.slotBound ≤ 3000000000)
-    (hR14 : n14.records ≤ 1696429) (hR15 : n15.records ≤ 1832621)
+    (hR14 : n14.records ≤ 1688238) (hR15 : n15.records ≤ 1816238)
     (hReset : body.reset.length ≤ 854)
-    (hT14 : n14.tBound ≤ 16100749) (hT15 : n15.tBound ≤ 17054093)
-    (hC14 : n14.credit ≤ 2300107) (hC15 : n15.credit ≤ 2436299)
+    (hT14 : n14.tBound ≤ 16043412) (hT15 : n15.tBound ≤ 16939412)
+    (hC14 : n14.credit ≤ 2291916) (hC15 : n15.credit ≤ 2419916)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := dualPrograms n14 n15
     Certificate officialLimits (lowerLayout 1938 entry layout) (fourEntry 1938 1939 entry)
-      ⟨1636, 297213445, 575692066⟩ := by
+      ⟨1636, 295542401, 572349978⟩ := by
   letI : Programs body := dualPrograms n14 n15
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 176382 ≤ officialLimits.gateSlots := by
@@ -59943,29 +60287,29 @@ theorem matched_clear22_certificate (n14 : ModNarrow body 13) (n15 : UniformNarr
     change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 ≤ 47471340504
     omega
   have hsrc : 1835001 + 20 * (dualPrograms n14 n15).cost15 + 11 * (dualPrograms n14 n15).cost14 +
-      56244 ≤ 520081344 := by
-    change 1835001 + 20 * n15.tBound + 11 * n14.tBound + 56244 ≤ 520081344
+      56244 ≤ 517157017 := by
+    change 1835001 + 20 * n15.tBound + 11 * n14.tBound + 56244 ≤ 517157017
     omega
-  have hslots : 32 * windowSlots + 176382 + 24 * 520081344 + 2 ≤ officialLimits.gateSlots := by
-    change 32 * windowSlots + 176382 + 24 * 520081344 + 2 ≤ 4000000000000000
+  have hslots : 32 * windowSlots + 176382 + 24 * 517157017 + 2 ≤ officialLimits.gateSlots := by
+    change 32 * windowSlots + 176382 + 24 * 517157017 + 2 ≤ 4000000000000000
     omega
   have hrecords : 262143 + 20 * (dualPrograms n14 n15).records15 + 11 * (dualPrograms n14 n15).records14 +
-      472 + body.reset.length + 34114 + 520081344 ≤ officialLimits.measurements := by
-    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 + 520081344 ≤ 47471340504
+      472 + body.reset.length + 34114 + 517157017 ≤ officialLimits.measurements := by
+    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 + 517157017 ≤ 47471340504
     omega
-  have raw := bounded_four_certificate (dualProgramCredit n14 n15) 1938 1939 520081344
+  have raw := bounded_four_certificate (dualProgramCredit n14 n15) 1938 1939 517157017
     hbaseS hbaseR hsrc hslots hrecords hq hy
-  have hcounts := (source_counts 1938 1939 520081344 hbaseS hbaseR hsrc).1
-  have hcursor : entry.finalCursor ≤ 55610722 := by
+  have hcounts := (source_counts 1938 1939 517157017 hbaseS hbaseR hsrc).1
+  have hcursor : entry.finalCursor ≤ 55192961 := by
     rw [source_cursor]
-    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 ≤ 55610722
+    change 262143 + 20 * n15.records + 11 * n14.records + 472 + body.reset.length + 34114 ≤ 55192961
     omega
   apply clear22Widen raw
   · change ledger.support.length + 2 ≤ 1636
     omega
-  · change 4 * (262143 + 20 * n15.credit + 11 * n14.credit) + 56244 + 1 ≤ 297213445
+  · change 4 * (262143 + 20 * n15.credit + 11 * n14.credit) + 56244 + 1 ≤ 295542401
     omega
-  · change entry.finalCursor + added entry.program ≤ 575692066
+  · change entry.finalCursor + added entry.program ≤ 572349978
     omega
 end
 end ShorECDLP.Entrant.Schedule31Eighteen264.Flexible
@@ -60004,13 +60348,13 @@ def uniform14 : UniformNarrow WEXUnlookup.compactBody where
   zero := WEXUnlookupWidth14.narrow.zero
   count_eq := WEXUnlookupWidth14.narrow.count_eq
 
-theorem n13_records : narrow13.records ≤ 1696429 := by
+theorem n13_records : narrow13.records ≤ 1688238 := by
   exact le_rfl
-theorem n14_records : uniform14.records ≤ 1832621 := by
+theorem n14_records : uniform14.records ≤ 1816238 := by
   exact le_rfl
-theorem n13_cost : narrow13.tBound ≤ 16100749 := by
+theorem n13_cost : narrow13.tBound ≤ 16043412 := by
   exact le_rfl
-theorem n14_cost : uniform14.tBound ≤ 17054093 := by
+theorem n14_cost : uniform14.tBound ≤ 16939412 := by
   exact le_rfl
 
 attribute [local irreducible] narrow13 uniform14
@@ -60023,19 +60367,19 @@ local instance resourcesInstance : Single.ProducerResources bodyInstance :=
 local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
 local instance programInstance : Programs bodyInstance := dualPrograms narrow13 uniform14
 
-private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16100749) :
-    c ≤ 2300107 := by omega
-private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 17054093) :
-    c ≤ 2436299 := by omega
+private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16043412) :
+    c ≤ 2291916 := by omega
+private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16939412) :
+    c ≤ 2419916 := by omega
 
-theorem n13_credit : narrow13.credit ≤ 2300107 := by
+theorem n13_credit : narrow13.credit ≤ 2291916 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow13.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow13.program 0) (narrow13.zero 0) read Fin.elim0
   have hc := narrow13.count_eq 0
   have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
   exact count13_bound _ _ he' (ht.trans n13_cost)
-theorem n14_credit : uniform14.credit ≤ 2436299 := by
+theorem n14_credit : uniform14.credit ≤ 2419916 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := uniform14.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (uniform14.program 0) (uniform14.zero 0) read Fin.elim0
@@ -60045,7 +60389,7 @@ theorem n14_credit : uniform14.credit ≤ 2436299 := by
 
 def entry : StraightEntry := fourEntry 1938 1939 Flexible.entry
 def layout : DecodeLayout := lowerLayout 1938 Flexible.entry Flexible.layout
-def bounds : Bounds := ⟨1636, 297213445, 575692066⟩
+def bounds : Bounds := ⟨1636, 295542401, 572349978⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   apply @matched_clear22_certificate bodyInstance resourcesInstance coverInstance narrow13 uniform14
@@ -60074,7 +60418,7 @@ end
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1636,297213445,575692066⟩
+def bounds : Bounds := ⟨1636,295542401,572349978⟩
 def entry : StraightEntry := Schedule31Eighteen264.Flexible.Clear22Final.entry
 def layout : DecodeLayout := Schedule31Eighteen264.Flexible.Clear22Final.layout
 set_option maxRecDepth 30000 in
