@@ -477,7 +477,7 @@ theorem coordinateProgram_count_eq (start : Nat) :
     (List.Forall₂.cons (fun _ => rfl) .nil))))))))
 
 theorem coordinate_numeric_counts (x y : Nat → Nat) :
-    (coordinateSource x y).tCount = 510196414 ∧
+    (coordinateSource x y).tCount = 505135827 ∧
     (coordinateSource x y).measurementCount = 30273718 := by
   rw [coordinate_tCount, coordinate_measurements]
   exact Paper2607_13816.ChallengeMigration.coordinate_numeric_counts x y
@@ -564,6 +564,7 @@ theorem multiplicationProgram_slots (n start : Nat) : (multiplicationProgram n s
 
 attribute [local irreducible] divisionProgram multiplicationProgram
   fieldLookupAddProgram yNegateProgram pointSquareProgram signedFieldProgram xNegateProgram
+  ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram
 
 theorem adaptiveCoordinateProgram_wellFormed (start : Nat) : (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2.WellFormed := by
   exact sequenceProgram_wellFormed 32768 ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments (by
@@ -573,7 +574,7 @@ theorem adaptiveCoordinateProgram_wellFormed (start : Nat) : (ShorECDLP.Entrant.
     · exact fieldLookupXProgram_wellFormed _ _
     · exact signedFieldProgram_wellFormed _ _
     · exact divisionProgram_wellFormed _ _
-    · exact pointSquareProgram_wellFormed _ _
+    · exact paddedSquareProgram_wellFormed _ _
     · exact fieldLookupXProgram_wellFormed _ _
     · exact multiplicationProgram_wellFormed _ _
     · exact xNegateProgram_wellFormed _ _
@@ -589,7 +590,7 @@ theorem adaptiveCoordinateProgram_slots (start : Nat) :
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact signedFieldProgram_slots _ s
       · intro s; exact divisionProgram_slots _ s
-      · intro s; exact pointSquareProgram_slots _ s
+      · intro s; exact paddedSquareProgram_slots _ s
       · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
       · intro s; exact multiplicationProgram_slots _ s
       · intro s; exact xNegateProgram_slots _ s
@@ -694,7 +695,7 @@ theorem adaptiveCoordinateProgram_support (start : Nat) :
   · exact hf _ _
   · exact hs _ _
   · exact divisionProgram_support _ _
-  · exact pointSquareProgram_support_static _ _
+  · exact paddedSquareProgram_support_static _ _
   · exact hf _ _
   · exact multiplicationProgram_support _ _
   · exact xNegateProgram_support_static _ _
@@ -880,7 +881,7 @@ theorem signedFieldProgram_tCount (coeffs : Fin 32768 → PointCoeff) (field : P
 noncomputable def adaptiveCoordinateSources (Q : Point) (coeffs : Fin 32768 → PointCoeff) : List AdaptiveCircuit :=
   [fig14LookupX (fun l => baseFieldValue (tablePoint coeffs Q l) .negX),
    signedPointLookupY (fun l => baseFieldValue (tablePoint coeffs Q l) .negY),
-   ShorECDLP.Entrant.BorrowFlag.division, fig14SquareSubtract,
+   ShorECDLP.Entrant.BorrowFlag.division, ShorECDLP.Entrant.SquareInPlace.paddedSquare,
    fig14LookupX (fun l => baseFieldValue (tablePoint coeffs Q l) .tripleX),
    ShorECDLP.Entrant.BorrowFlag.multiplication, fig14Negate,
    fig14LookupX (fun l => baseFieldValue (tablePoint coeffs Q l) .x),
@@ -914,7 +915,7 @@ theorem adaptiveCoordinateProgram_run (coeffs : Fin 32768 → PointCoeff) (start
   · intro cursor h
     exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_run 32768 cursor _ h
   · intro cursor h
-    exact pointSquareProgram_run 32768 cursor _ h
+    exact ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram_run 32768 cursor _ h
   · intro cursor h
     exact fig14LookupX_compiled coeffs .tripleX cursor Q h
   · intro cursor h
@@ -943,7 +944,7 @@ theorem adaptiveCoordinateProgram_tCount (coeffs : Fin 32768 → PointCoeff) (st
   · intro cursor h
     exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_tCount 32768 cursor _ h
   · intro cursor h
-    exact pointSquareProgram_tCount 32768 cursor _ h
+    exact ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact fieldLookupAddProgram_tCount_source coeffs .tripleX _ cursor Q (by simp) h
   · intro cursor h
@@ -2553,7 +2554,7 @@ theorem batch_t (coeffs : Fin 32768 → PointCoeff) (Q : Point) :
   rw [placedBatchSource, ipxSourceOps_tCount _ _ _ _ ipxTree_layout, ipxSchedule_cost, batchWindowTree_nodes]
 
 theorem sources_t (coeffs : Fin 32768 → PointCoeff) (Q : Point) :
-    (sequenceCircuit (sources coeffs Q)).tCount = 513264087 := by
+    (sequenceCircuit (sources coeffs Q)).tCount = 508203500 := by
   unfold sources
   rw [sequenceCircuit_four_tCount, (ShorECDLP.Entrant.BorrowFlag.coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1, batch_t]
@@ -2573,7 +2574,7 @@ theorem core_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
 
 theorem actual_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    ((actual.program start).instantiate (readConstant coeffs Q) history).tCount = 513264087 := by
+    ((actual.program start).instantiate (readConstant coeffs Q) history).tCount = 508203500 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (core 0)
     (sequenceCircuit (sources coeffs Q)) (readConstant coeffs Q) Fin.elim0
@@ -2603,7 +2604,7 @@ theorem signedWindow_count (w : SignedWindow) : (signedWindow w).count = 3070785
 
 theorem signedWindow_t (Q : Point) (w : SignedWindow) (start : Nat)
     (history : Fin start → Bool) :
-    (((signedWindow w).program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 513264087 := by
+    (((signedWindow w).program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 508203500 := by
   unfold signedWindow
   rw [reindexStraight_instantiate, readConstant_reindex (signedRow w)
     (windowCoefficients w) mixedCoefficientAt Q (fun _ => rfl)]
@@ -2656,7 +2657,7 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Paper2607_13816
 open ShorECDLP.Paper2607_13816.ChallengeMigration
 
-def bodyT (count : Nat) : Nat := if count = 1023 then 7161 else 513264087
+def bodyT (count : Nat) : Nat := if count = 1023 then 7161 else 508203500
 
 def metadataT : List (Nat × Nat) → Nat → Nat
   | [], _ => 0
@@ -3418,10 +3419,10 @@ theorem windows_t (Q : Point) (w : Window 951296)
   · rw [signedWindow_t Q s start history, signedWindow_count]
     simp [bodyT]
 
-theorem left_t_budget : metadataT leftMetadata 0 = 8212267798 := by
+theorem left_t_budget : metadataT leftMetadata 0 = 8131298406 := by
   norm_num [leftMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
-theorem right_t_budget : metadataT rightMetadata 0 = 6672454659 := by
+theorem right_t_budget : metadataT rightMetadata 0 = 6606667028 := by
   norm_num [rightMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
 theorem slots_budget : metadataSlots 3000000000 leftMetadata 0 +
@@ -3482,21 +3483,21 @@ open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 theorem left_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8212267798 := by
+    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8131298406 := by
   have h := axis_t leftWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_left _ hw)) start List.nil history
   rwa [left_metadata, List.length_nil, left_t_budget] at h
 
 theorem right_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis rightWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 6672454659 := by
+    ((axis rightWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 6606667028 := by
   have h := axis_t rightWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_right _ hw)) start List.nil history
   rwa [right_metadata, List.length_nil, right_t_budget] at h
 
 theorem trial_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 14884722457 := by
+    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 14737965434 := by
   unfold trial
-  exact framed_t_le _ _ _ _ _ history 8212267798 6672454659
+  exact framed_t_le _ _ _ _ _ history 8131298406 6606667028
     (left_axis_t Q start history) (fun h => right_axis_t Q _ h) (fun h => resetBody_t _ _ h)
 
 theorem program_wellFormed : program.WellFormed := by
@@ -3510,7 +3511,7 @@ theorem program_slots : program.gateSlots ≤ 90000057249 := by
   exact trial_slots 0
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14884722457 := by
+    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 14737965434 := by
   unfold program
   rw [castFinish_instantiate]
   exact trial_t Q 0 Fin.elim0
@@ -3582,7 +3583,7 @@ theorem program_qubits (read : ConstantBit 951296 → Bool) :
 
 theorem program_resource_facts (Q : Point) :
     (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).qubits ≤ 854 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 14884722457 ∧
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 14737965434 ∧
     (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 890530088 :=
   ⟨program_qubits _, program_t Q, program_measurements _⟩
 
@@ -3593,7 +3594,7 @@ theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
 theorem one_candidate_check : layout.trials.length * decoderCandidateLimit layout.kind layout.params = 1 := by
   simp [layout, decoderCandidateLimit]
 
-theorem resource_product : 854 * 14884722457 = 12711552978278 := by norm_num
+theorem resource_product : 854 * 14737965434 = 12586222480636 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
