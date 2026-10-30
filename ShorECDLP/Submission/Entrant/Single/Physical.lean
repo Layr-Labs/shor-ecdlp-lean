@@ -10,6 +10,8 @@ import ShorECDLP.Challenge.Decoder
 import ShorECDLP.Challenge.Resources
 
 
+open ShorECDLP.Entrant.ZeroAdaptive
+
 /-! Deterministic classical rounding encoded as ordinary recorded gates.
 All gates are Clifford gates on two previously reset wires. -/
 namespace ShorECDLP.Entrant.RoundedReadout
@@ -426,6 +428,768 @@ termination_by _ _ bits => bits.length
 end ShorECDLP.Entrant.RoundedReadout
 
 
+section
+/-! Source part after CoordinateParts; requires Entrant Streaming Resources/Semantics imports. -/
+namespace ShorECDLP.Entrant.BorrowFlag
+open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+set_option maxRecDepth 4096
+set_option maxHeartbeats 1000000
+attribute [local irreducible] Paper2607_13816.ChallengeMigration.divisionProgram
+  Paper2607_13816.ChallengeMigration.multiplicationProgram equalityProgram
+
+private theorem fieldProgram_count_eq (n start : Nat) (arithmetic : FixedSegment n) :
+    (fieldProgram n start arithmetic).1 =
+      (let a := equalityProgram n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch
+       let b := arithmetic (start+a.1)
+       appendCompiled a (prependCompiled ZeroAdaptive.cx (appendCompiled b
+         (prependCompiled ZeroAdaptive.cx
+           (equalityProgram n (start+a.1+b.1) ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch))))).1 := by
+  simp only [fieldProgram, coreSegments, prepareProgram, restoreProgram,
+    sequenceProgram, surroundCompiled, appendCompiled, prependCompiled,
+    relabelCompiled, Nat.add_zero]
+
+theorem divisionProgram_count_eq (n start : Nat) :
+    (divisionProgram n start).1 = (ZeroAdaptive.zDivisionProgram n start).1 :=
+  fieldProgram_count_eq n start (Paper2607_13816.ChallengeMigration.divisionProgram n)
+
+theorem multiplicationProgram_count_eq (n start : Nat) :
+    (multiplicationProgram n start).1 = (ZeroAdaptive.zMultiplicationProgram n start).1 :=
+  fieldProgram_count_eq n start (Paper2607_13816.ChallengeMigration.multiplicationProgram n)
+
+private theorem sequence_count_eq {n : Nat} (ps qs : List (FixedSegment n))
+    (h : List.Forall₂ (fun p q => ∀ start, (p start).1 = (q start).1) ps qs) (start : Nat) :
+    (sequenceProgram n ps start).1 = (sequenceProgram n qs start).1 := by
+  induction h generalizing start with
+  | nil => rfl
+  | @cons p q ps qs hp h ih =>
+    simp only [sequenceProgram, appendCompiled]
+    rw [hp start, ih]
+
+theorem coordinateProgram_count_eq (start : Nat) :
+    (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).1 = (ZeroAdaptive.adaptiveCoordinateProgram start).1 := by
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram ZeroAdaptive.adaptiveCoordinateProgram
+  apply sequence_count_eq
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments ZeroAdaptive.adaptiveCoordinateSegments
+  refine List.Forall₂.cons (fun _ => rfl) (List.Forall₂.cons (fun _ => rfl)
+    (List.Forall₂.cons (divisionProgram_count_eq 32768) (List.Forall₂.cons (fun _ => rfl)
+    (List.Forall₂.cons (fun _ => rfl) (List.Forall₂.cons (multiplicationProgram_count_eq 32768)
+    (List.Forall₂.cons (fun _ => rfl) (List.Forall₂.cons (fun _ => rfl)
+    (List.Forall₂.cons (fun _ => rfl) .nil))))))))
+
+theorem coordinate_numeric_counts (x y : Nat → Nat) :
+    (coordinateSource x y).tCount = 510196414 ∧
+    (coordinateSource x y).measurementCount = 30273718 := by
+  rw [coordinate_tCount, coordinate_measurements]
+  exact Paper2607_13816.ChallengeMigration.coordinate_numeric_counts x y
+
+private theorem cx_physical : CircuitWellFormed ZeroAdaptive.cx := by
+  intro g hg
+  have he := List.mem_singleton.mp hg
+  subst g
+  change (837 : Wire) ≠ 263
+  decide
+
+private theorem flip_physical : CircuitWellFormed flip := by
+  intro g hg
+  have he := List.mem_singleton.mp hg
+  subst g
+  trivial
+
+theorem prepareProgram_wellFormed (n start : Nat) : (prepareProgram n start).2.WellFormed := by
+  unfold prepareProgram
+  apply appendCompiled_wellFormed
+  · exact equalityProgram_wellFormed _ _ _ _ _ _
+      (computeEqConstAdaptive_wellFormed _ _ _ _ ZeroAdaptive.layout)
+  · exact literalProgram_wellFormed _ cx_physical
+
+theorem restoreProgram_wellFormed (n start : Nat) : (restoreProgram n start).2.WellFormed := by
+  unfold restoreProgram
+  apply prependCompiled_wellFormed _ _ cx_physical
+  exact equalityProgram_wellFormed _ _ _ _ _ _
+    (computeEqConstAdaptive_wellFormed _ _ _ _ ZeroAdaptive.layout)
+
+theorem fieldProgram_wellFormed (n start : Nat) (arithmetic : FixedSegment n)
+    (ha : ∀ start, (arithmetic start).2.WellFormed) :
+    (fieldProgram n start arithmetic).2.WellFormed := by
+  unfold fieldProgram
+  apply surroundCompiled_wellFormed _ _ _ flip_physical flip_physical
+  apply sequenceProgram_wellFormed
+  intro p hp cursor
+  simp only [coreSegments, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with rfl | rfl | rfl
+  · exact (relabelCompiled_wellFormed exchange _).mpr (prepareProgram_wellFormed n cursor)
+  · exact ha cursor
+  · exact (relabelCompiled_wellFormed exchange _).mpr (restoreProgram_wellFormed n cursor)
+
+theorem divisionProgram_wellFormed (n start : Nat) : (divisionProgram n start).2.WellFormed :=
+  fieldProgram_wellFormed n start _ (Paper2607_13816.ChallengeMigration.divisionProgram_wellFormed n)
+
+theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgram n start).2.WellFormed :=
+  fieldProgram_wellFormed n start _ (Paper2607_13816.ChallengeMigration.multiplicationProgram_wellFormed n)
+
+theorem prepareProgram_slots (n start : Nat) : (prepareProgram n start).2.gateSlots ≤ 1538 := by
+  have h := equalityProgram_slots n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch
+  simp only [ZeroAdaptive.reg, List.length_cons, List.length_range'] at h
+  simp only [prepareProgram, appendCompiled_slots, literalProgram_slots,
+    ZeroAdaptive.cx, ZeroAdaptive.reg, List.length_singleton]
+  omega
+
+theorem restoreProgram_slots (n start : Nat) : (restoreProgram n start).2.gateSlots ≤ 1538 := by
+  have h := equalityProgram_slots n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch
+  simp only [ZeroAdaptive.reg, List.length_cons, List.length_range'] at h
+  simp only [restoreProgram, prependCompiled_slots, ZeroAdaptive.cx, ZeroAdaptive.reg, List.length_singleton]
+  omega
+
+theorem fieldProgram_slots (n start : Nat) (arithmetic : FixedSegment n)
+    (ha : ∀ start, (arithmetic start).2.gateSlots ≤ 675000000) :
+    (fieldProgram n start arithmetic).2.gateSlots ≤ 676000000 := by
+  have h := sequenceProgram_slots_le n (coreSegments n arithmetic) ([1538,675000000,1538] : List Nat) (by
+    unfold coreSegments
+    refine List.Forall₂.cons ?_ (List.Forall₂.cons ha (List.Forall₂.cons ?_ .nil))
+    · intro cursor
+      rw [relabelCompiled_slots]
+      exact prepareProgram_slots n cursor
+    · intro cursor
+      rw [relabelCompiled_slots]
+      exact restoreProgram_slots n cursor) start
+  simp only [List.sum_cons, List.sum_nil] at h
+  simp only [fieldProgram, surroundCompiled_slots, flip, List.length_singleton]
+  omega
+
+theorem divisionProgram_slots (n start : Nat) : (divisionProgram n start).2.gateSlots ≤ 676000000 :=
+  fieldProgram_slots n start _ (Paper2607_13816.ChallengeMigration.divisionProgram_slots n)
+
+theorem multiplicationProgram_slots (n start : Nat) : (multiplicationProgram n start).2.gateSlots ≤ 676000000 :=
+  fieldProgram_slots n start _ (Paper2607_13816.ChallengeMigration.multiplicationProgram_slots n)
+
+attribute [local irreducible] divisionProgram multiplicationProgram
+  fieldLookupAddProgram yNegateProgram pointSquareProgram signedFieldProgram xNegateProgram
+
+theorem adaptiveCoordinateProgram_wellFormed (start : Nat) : (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2.WellFormed := by
+  exact sequenceProgram_wellFormed 32768 ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments (by
+    intro p hp cursor
+    simp only [ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
+    rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+    · exact fieldLookupXProgram_wellFormed _ _
+    · exact signedFieldProgram_wellFormed _ _
+    · exact divisionProgram_wellFormed _ _
+    · exact pointSquareProgram_wellFormed _ _
+    · exact fieldLookupXProgram_wellFormed _ _
+    · exact multiplicationProgram_wellFormed _ _
+    · exact xNegateProgram_wellFormed _ _
+    · exact fieldLookupXProgram_wellFormed _ _
+    · exact signedFieldProgram_wellFormed _ _) start
+
+theorem adaptiveCoordinateProgram_slots (start : Nat) :
+    (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2.gateSlots≤1500000000 := by
+  have h := sequenceProgram_slots_le 32768 ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
+    ([17449459,17502203,676000000,15750663,17449459,676000000,26370,17449459,17502203] : List Nat) (by
+      unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments
+      refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ List.Forall₂.nil))))))))
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
+      · intro s; exact signedFieldProgram_slots _ s
+      · intro s; exact divisionProgram_slots _ s
+      · intro s; exact pointSquareProgram_slots _ s
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
+      · intro s; exact multiplicationProgram_slots _ s
+      · intro s; exact xNegateProgram_slots _ s
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
+      · intro s; exact signedFieldProgram_slots _ s) start
+  simp only [List.sum_cons,List.sum_nil] at h
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram
+  omega
+
+
+end ShorECDLP.Entrant.BorrowFlag
+
+namespace ShorECDLP.Entrant.BorrowFlag
+open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+
+private theorem eq_layout_support (n start : Nat) :
+    straightWires (equalityProgram n start ZeroAdaptive.reg 0 837 ZeroAdaptive.scratch).2 ⊆ zeroAllowedLayout := by
+  apply equalityProgram_support
+  · intro w hw
+    simp [ZeroAdaptive.reg] at hw
+    simp [zeroAllowedLayout]
+    dsimp only [Wire] at *
+    omega
+  · simp [zeroAllowedLayout]
+  · intro w hw
+    simp [ZeroAdaptive.scratch] at hw
+    simp [zeroAllowedLayout]
+    dsimp only [Wire] at *
+    omega
+
+private theorem cx_layout_support : circuitWires ZeroAdaptive.cx ⊆ zeroAllowedLayout := by
+  simp [ZeroAdaptive.cx, circuitWires, gateWires, zeroAllowedLayout]
+
+private theorem exchanged_layout_in_base (w : Wire) (hw : w ∈ zeroAllowedLayout) :
+    exchange w ∈ windowBaseSupport := by
+  simp only [zeroAllowedLayout, List.mem_append, List.mem_range, List.mem_singleton] at hw
+  rcases hw with hw | rfl
+  · have ha : w ≠ (836 : Wire) := by dsimp only [Wire] at *; omega
+    have hb : w ≠ (837 : Wire) := by dsimp only [Wire] at *; omega
+    simp only [exchange, Equiv.swap_apply_def, if_neg ha, if_neg hb]
+    simp only [windowBaseSupport, List.mem_append, List.mem_range, List.mem_singleton, List.mem_range'_1]
+    left; left; omega
+  · simp [exchange, windowBaseSupport]
+
+private theorem prepare_support (n start : Nat) :
+    straightWires (prepareProgram n start).2 ⊆ zeroAllowedLayout := by
+  simp only [prepareProgram, appendCompiled_support, literalProgram_support, List.append_subset]
+  exact ⟨eq_layout_support n start, cx_layout_support⟩
+
+private theorem restore_support (n start : Nat) :
+    straightWires (restoreProgram n start).2 ⊆ zeroAllowedLayout := by
+  simp only [restoreProgram, prependCompiled_support, List.append_subset]
+  exact ⟨cx_layout_support, eq_layout_support n start⟩
+
+private theorem relabeled_support {n start : Nat}
+    (p : (count : Nat) × Straight n start (start+count))
+    (hp : straightWires p.2 ⊆ zeroAllowedLayout) :
+    straightWires (relabelCompiled exchange p).2 ⊆ windowBaseSupport := by
+  rw [relabelCompiled_support]
+  intro w hw
+  obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hw
+  exact exchanged_layout_in_base v (hp hv)
+
+private theorem flip_support : circuitWires flip ⊆ windowBaseSupport := by
+  simp [flip, circuitWires, gateWires, windowBaseSupport]
+
+theorem fieldProgram_support (n start : Nat) (arithmetic : FixedSegment n)
+    (ha : ∀ start, straightWires (arithmetic start).2 ⊆ windowBaseSupport) :
+    straightWires (fieldProgram n start arithmetic).2 ⊆ windowBaseSupport := by
+  simp only [fieldProgram, surroundCompiled_support, List.append_subset]
+  refine ⟨⟨flip_support, ?_⟩, flip_support⟩
+  apply sequenceProgram_support
+  intro seg hseg cursor
+  simp only [coreSegments, List.mem_cons, List.not_mem_nil, or_false] at hseg
+  rcases hseg with rfl | rfl | rfl
+  · exact relabeled_support _ (prepare_support n cursor)
+  · exact ha cursor
+  · exact relabeled_support _ (restore_support n cursor)
+
+theorem divisionProgram_support (n start : Nat) :
+    straightWires (divisionProgram n start).2 ⊆ windowBaseSupport :=
+  fieldProgram_support n start _ (Paper2607_13816.ChallengeMigration.divisionProgram_support_static n)
+
+theorem multiplicationProgram_support (n start : Nat) :
+    straightWires (multiplicationProgram n start).2 ⊆ windowBaseSupport :=
+  fieldProgram_support n start _ (Paper2607_13816.ChallengeMigration.multiplicationProgram_support_static n)
+
+theorem adaptiveCoordinateProgram_support (start : Nat) :
+    straightWires (ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram start).2 ⊆ windowBaseSupport := by
+  have ha : List.range' 263 256 ⊆ windowBaseSupport := by
+    intro w hw
+    simp only [List.mem_range'_1] at hw
+    simp only [windowBaseSupport, List.mem_append, List.mem_range, List.mem_singleton, List.mem_range'_1]
+    left; left; omega
+  have hf field cursor := fieldLookupAddProgram_support_static field _ ha (by simp) cursor
+  have hs field cursor := signedFieldProgram_support_static field cursor
+  unfold ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateProgram
+  apply sequenceProgram_support
+  intro seg hseg cursor
+  simp only [ShorECDLP.Entrant.BorrowFlag.adaptiveCoordinateSegments, List.mem_cons, List.mem_nil_iff, or_false] at hseg
+  rcases hseg with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact hf _ _
+  · exact hs _ _
+  · exact divisionProgram_support _ _
+  · exact pointSquareProgram_support_static _ _
+  · exact hf _ _
+  · exact multiplicationProgram_support _ _
+  · exact xNegateProgram_support_static _ _
+  · exact hf _ _
+  · exact hs _ _
+
+end ShorECDLP.Entrant.BorrowFlag
+
+end
+
+section
+namespace ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP Classical Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1 ShorECDLP.Entrant.ZeroAdaptive
+local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨p_prime⟩
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] fieldLookupAddProgram signedFieldProgram ShorECDLP.Entrant.BorrowFlag.divisionProgram pointSquareProgram ShorECDLP.Entrant.BorrowFlag.multiplicationProgram xNegateProgram yNegateProgram
+theorem sequenceCircuit_three_tCount (a b c : AdaptiveCircuit) :
+    (sequenceCircuit [a,b,c]).tCount = a.tCount+b.tCount+c.tCount := by
+  simp only [sequenceCircuit,adaptive_tCount_seq,AdaptiveCircuit.tCount]
+  omega
+
+/-! ## The coordinate sequence without its final sign negation
+
+The upstream window runs the nine-stage coordinate program, whose last stage is the signed `Y`
+lookup `N; A; N` (`N` the sign-controlled negation `windowYNegate` of `Y`, `A` the table addition
+of `-y`), and then `N` once more before the correction. These two negations are adjacent and `N`
+is an involution on reduced words, so the window here runs the first eight stages, then `N; A`,
+and goes straight to the correction. -/
+
+/-- The first eight stages of the adaptive coordinate source. -/
+noncomputable def coord8Circuit (x y : Nat → Nat) : AdaptiveCircuit :=
+  (((((((fig14LookupX (fun a => (ShorECDLP.p-x a)%ShorECDLP.p)).seq
+    (signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p))).seq
+    ShorECDLP.Entrant.BorrowFlag.division).seq fig14SquareSubtract).seq
+    (fig14LookupX (fun a => (3*x a)%ShorECDLP.p))).seq
+    ShorECDLP.Entrant.BorrowFlag.multiplication).seq fig14Negate).seq
+    (fig14LookupX (fun a => x a%ShorECDLP.p))
+
+/-- The table addition `A` of the last signed `Y` lookup. -/
+noncomputable def coordYAdd (y : Nat → Nat) : AdaptiveCircuit :=
+  lookupModularAddProgram (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) pointLookupAddress
+    pointLookupPath (List.range' 7 256) (List.range' 580 256) secp256k1ReductionConstantBits
+    ShorECDLP.p 836 559 560 561 558
+
+/-- The coordinate sequence with its final sign negation removed. -/
+noncomputable def tailCoordinateCircuit (x y : Nat → Nat) : AdaptiveCircuit :=
+  ((coord8Circuit x y).seq windowYNegate).seq (coordYAdd y)
+
+theorem adaptiveCoordinateSource_split (x y : Nat → Nat) :
+    ShorECDLP.Entrant.BorrowFlag.coordinateSource x y =
+      (coord8Circuit x y).seq (signedPointLookupY (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)) := rfl
+
+theorem signedPointLookupY_split (table : Nat → Nat) :
+    signedPointLookupY table =
+      (windowYNegate.seq (lookupModularAddProgram table pointLookupAddress pointLookupPath
+        (List.range' 7 256) (List.range' 580 256) secp256k1ReductionConstantBits ShorECDLP.p
+        836 559 560 561 558)).seq windowYNegate := by
+  simp only [signedPointLookupY,signedLookupModularAddProgram,windowYNegate,List.length_range']
+
+def tailCoordinateSegments : List (FixedSegment 32768) :=
+  [fieldLookupAddProgram .negX (List.range' 263 256), signedFieldProgram .negY,
+   ShorECDLP.Entrant.BorrowFlag.divisionProgram 32768, pointSquareProgram 32768,
+   fieldLookupAddProgram .tripleX (List.range' 263 256), ShorECDLP.Entrant.BorrowFlag.multiplicationProgram 32768,
+   xNegateProgram 32768, fieldLookupAddProgram .x (List.range' 263 256), yNegateProgram,
+   fieldLookupAddProgram .negY (List.range' 580 256)]
+
+def tailCoordinateProgram (start : Nat) : (count : Nat) × Straight 32768 start (start+count) :=
+  sequenceProgram 32768 tailCoordinateSegments start
+
+noncomputable def tailCoordinateSources (Q : Point) (w : OddWindow) : List AdaptiveCircuit :=
+  [fig14LookupX (fun l => baseFieldValue (windowPoint Q w l) .negX),
+   signedPointLookupY (fun l => baseFieldValue (windowPoint Q w l) .negY),
+   ShorECDLP.Entrant.BorrowFlag.division, fig14SquareSubtract,
+   fig14LookupX (fun l => baseFieldValue (windowPoint Q w l) .tripleX),
+   ShorECDLP.Entrant.BorrowFlag.multiplication, fig14Negate,
+   fig14LookupX (fun l => baseFieldValue (windowPoint Q w l) .x), windowYNegate,
+   lookupModularAddProgram (fun l => fieldValue (windowPoint Q w l) .negY)
+     pointLookupAddress pointLookupPath (List.range' 7 256) (List.range' 580 256)
+     secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558]
+
+theorem tailCoordinateSources_eq (Q : Point) (w : OddWindow) :
+    sequenceCircuit (tailCoordinateSources Q w) =
+      tailCoordinateCircuit (fun l => fieldValue (windowPoint Q w l) .x)
+        (fun l => fieldValue (windowPoint Q w l) .y) := by
+  have hx (P : Point) : baseFieldValue P .x = fieldValue P .x := rfl
+  have hn (P : Point) : baseFieldValue P .negX = fieldValue P .negX := rfl
+  have hy (P : Point) : baseFieldValue P .negY = fieldValue P .negY := rfl
+  have ht (P : Point) : baseFieldValue P .tripleX = fieldValue P .tripleX := rfl
+  simp only [tailCoordinateSources, hx, hn, hy, ht, sequenceCircuit, tailCoordinateCircuit,
+    coord8Circuit, coordYAdd, adaptive_seq_assoc, adaptive_seq_done, field_negX, field_negY,
+    field_tripleX, field_x_mod]
+
+theorem tailCoordinateProgram_run (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
+    (history : Fin start → Bool) :
+    compiledRun (tailCoordinateProgram start) (readConstant (oddWindowCoefficients w) Q) history =
+      (tailCoordinateCircuit (fun l => fieldValue (windowPoint Q w l) .x)
+        (fun l => fieldValue (windowPoint Q w l) .y)).run := by
+  unfold tailCoordinateProgram
+  rw [← tailCoordinateSources_eq]
+  apply sequenceProgram_run
+  unfold tailCoordinateSegments tailCoordinateSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_
+    (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_
+    (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ List.Forall₂.nil)))))))))
+  · intro cursor h; exact fig14LookupX_compiled w .negX cursor Q hQ h
+  · intro cursor h; exact signedFieldProgram_run w .negY cursor Q hQ h
+  · intro cursor h; exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_run 32768 cursor _ h
+  · intro cursor h; exact pointSquareProgram_run 32768 cursor _ h
+  · intro cursor h; exact fig14LookupX_compiled w .tripleX cursor Q hQ h
+  · intro cursor h; exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_run 32768 cursor _ h
+  · intro cursor h; exact xNegateProgram_run 32768 cursor _ h
+  · intro cursor h; exact fig14LookupX_compiled w .x cursor Q hQ h
+  · intro cursor h; exact yNegateProgram_run cursor _ h
+  · intro cursor h; exact fieldLookupAddProgram_run w .negY _ cursor Q hQ (by simp) h
+
+def sharedTailCoordinateProgram (w : OddWindow) (start : Nat) :
+    (count : Nat) × Straight 983040 start (start+count) :=
+  reindexCompiled (windowIndex w) (tailCoordinateProgram start)
+
+theorem sharedTailCoordinateProgram_run (w : OddWindow) (start : Nat) (Q : Point)
+    (hQ : order • Q = 0) (history : Fin start → Bool) :
+    compiledRun (sharedTailCoordinateProgram w start) (readConstant coefficientAt Q) history =
+      (tailCoordinateCircuit (fun l => fieldValue (windowPoint Q w l) .x)
+        (fun l => fieldValue (windowPoint Q w l) .y)).run := by
+  unfold sharedTailCoordinateProgram reindexCompiled compiledRun
+  rw [reindexStraight_instantiate, readConstant_reindex _ _ _ Q (coefficientAt_window w)]
+  exact tailCoordinateProgram_run w start Q hQ history
+
+theorem tailCoordinateProgram_tCount (w : OddWindow) (start : Nat) (Q : Point)
+    (hQ : order • Q = 0) (history : Fin start → Bool) :
+    compiledTCount (tailCoordinateProgram start) (readConstant (oddWindowCoefficients w) Q) history =
+      (tailCoordinateCircuit (fun l => fieldValue (windowPoint Q w l) .x)
+        (fun l => fieldValue (windowPoint Q w l) .y)).tCount := by
+  unfold tailCoordinateProgram
+  rw [← tailCoordinateSources_eq]
+  apply sequenceProgram_tCount
+  unfold tailCoordinateSegments tailCoordinateSources
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_
+    (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_
+    (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ List.Forall₂.nil)))))))))
+  · intro cursor h; exact fieldLookupAddProgram_tCount_source w .negX _ cursor Q hQ (by simp) h
+  · intro cursor h; exact signedFieldProgram_tCount w .negY cursor Q hQ h
+  · intro cursor h; exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_tCount 32768 cursor _ h
+  · intro cursor h; exact pointSquareProgram_tCount 32768 cursor _ h
+  · intro cursor h; exact fieldLookupAddProgram_tCount_source w .tripleX _ cursor Q hQ (by simp) h
+  · intro cursor h; exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_tCount 32768 cursor _ h
+  · intro cursor h; exact xNegateProgram_tCount 32768 cursor _ h
+  · intro cursor h; exact fieldLookupAddProgram_tCount_source w .x _ cursor Q hQ (by simp) h
+  · intro cursor h; exact yNegateProgram_tCount cursor _ h
+  · intro cursor h; exact fieldLookupAddProgram_tCount_source w .negY _ cursor Q hQ (by simp) h
+
+theorem sharedTailCoordinateProgram_tCount (w : OddWindow) (start : Nat) (Q : Point)
+    (hQ : order • Q = 0) (history : Fin start → Bool) :
+    compiledTCount (sharedTailCoordinateProgram w start) (readConstant coefficientAt Q) history =
+      (tailCoordinateCircuit (fun l => fieldValue (windowPoint Q w l) .x)
+        (fun l => fieldValue (windowPoint Q w l) .y)).tCount := by
+  unfold sharedTailCoordinateProgram reindexCompiled compiledTCount
+  rw [reindexStraight_instantiate, readConstant_reindex _ _ _ Q (coefficientAt_window w)]
+  exact tailCoordinateProgram_tCount w start Q hQ history
+
+theorem borrowed_coordinate_numeric_counts (x y : Nat → Nat) :
+    (ShorECDLP.Entrant.BorrowFlag.coordinateSource x y).tCount = 510196414 ∧
+    (ShorECDLP.Entrant.BorrowFlag.coordinateSource x y).measurementCount = 30273718 := by
+  have h := old_coordinate_numeric_counts x y
+  have hd := ShorECDLP.Entrant.BorrowFlag.division_counts
+  have hm := ShorECDLP.Entrant.BorrowFlag.multiplication_counts
+  have od := secp256k1ZeroAllowedDivision_resources
+  have om := secp256k1ZeroAllowedMultiplication_resources
+  simp only [ShorECDLP.Entrant.BorrowFlag.coordinateSource, signedLookupCoordinateProgram,
+    adaptive_tCount_seq, modularMeasurements_seq] at h ⊢
+  omega
+private theorem tail_measurementCount_seq (first second : AdaptiveCircuit) :
+    (first.seq second).measurementCount = first.measurementCount + second.measurementCount := by
+  induction first with
+  | done => simp [AdaptiveCircuit.seq, AdaptiveCircuit.measurementCount]
+  | unitary circuit next ih =>
+      simp [AdaptiveCircuit.seq, AdaptiveCircuit.measurementCount, ih]
+  | xMeasureReset wire onFalse onTrue ihFalse ihTrue =>
+      simp [AdaptiveCircuit.seq, AdaptiveCircuit.measurementCount,
+        ihFalse, ihTrue, Nat.add_max_add_right, Nat.add_assoc]
+
+/-- The coordinate tail is the coordinate program minus one sign negation. -/
+theorem tail_numeric_counts (x y : Nat → Nat) :
+    (tailCoordinateCircuit x y).tCount = 510174980 ∧
+    (tailCoordinateCircuit x y).measurementCount = 30272696 := by
+  obtain ⟨hc1,hc2⟩ := borrowed_coordinate_numeric_counts x y
+  obtain ⟨hn1,hn2⟩ := windowYNegate_numeric_counts
+  rw [adaptiveCoordinateSource_split,signedPointLookupY_split] at hc1 hc2
+  unfold tailCoordinateCircuit coordYAdd
+  simp only [adaptive_tCount_seq,tail_measurementCount_seq] at hc1 hc2 ⊢
+  constructor <;> omega
+
+theorem sharedTailCoordinateProgram_count (w : OddWindow) (start : Nat) :
+    (sharedTailCoordinateProgram w start).1 = 30272696 := by
+  have h := compiled_count_of_run (sharedTailCoordinateProgram w start)
+    (readConstant coefficientAt (0 : Point)) (fun _ => false) _
+    (sharedTailCoordinateProgram_run w start 0 (by simp) (fun _ => false))
+  exact h.trans (tail_numeric_counts _ _).2
+
+theorem tailCoordinateProgram_slots (start : Nat) :
+    (tailCoordinateProgram start).2.gateSlots≤1500000000 := by
+  have h := sequenceProgram_slots_le 32768 tailCoordinateSegments
+    ([17449459,17502203,676000000,15750663,17449459,676000000,26370,17449459,26372,17449459] :
+      List Nat) (by
+      unfold tailCoordinateSegments
+      refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_
+        (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_
+        (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ List.Forall₂.nil)))))))))
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
+      · intro s; exact signedFieldProgram_slots _ s
+      · intro s; exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_slots _ s
+      · intro s; exact pointSquareProgram_slots _ s
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
+      · intro s; exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_slots _ s
+      · intro s; exact xNegateProgram_slots _ s
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)
+      · intro s; exact yNegateProgram_slots_le s
+      · intro s; exact fieldLookupAddProgram_slots _ _ s (by simp)) start
+  simp only [List.sum_cons,List.sum_nil] at h
+  unfold tailCoordinateProgram
+  omega
+
+
+theorem tailCoordinateProgram_wellFormed (start : Nat) :
+    (tailCoordinateProgram start).2.WellFormed := by
+  unfold tailCoordinateProgram
+  apply sequenceProgram_wellFormed
+  intro p hp cursor
+  simp only [tailCoordinateSegments,List.mem_cons,List.not_mem_nil,or_false] at hp
+  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact fieldLookupXProgram_wellFormed _ _
+  · exact signedFieldProgram_wellFormed _ _
+  · exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_wellFormed _ _
+  · exact pointSquareProgram_wellFormed _ _
+  · exact fieldLookupXProgram_wellFormed _ _
+  · exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_wellFormed _ _
+  · exact xNegateProgram_wellFormed _ _
+  · exact fieldLookupXProgram_wellFormed _ _
+  · exact yNegateProgram_wellFormed _
+  · exact fieldLookupYProgram_wellFormed _ _
+theorem tailCoordinateProgram_support_static (start : Nat) :
+    straightWires (tailCoordinateProgram start).2 ⊆ windowBaseSupport := by
+  have ha : List.range' 263 256 ⊆ windowBaseSupport := by
+    intro w hw
+    simp only [List.mem_range'_1] at hw
+    simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+    omega
+  have hy : List.range' 580 256 ⊆ windowBaseSupport := by
+    intro w hw
+    simp only [List.mem_range'_1] at hw
+    simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+    omega
+  have hf field cursor := (fieldLookupAddProgram_support_static field _ ha (by simp) cursor)
+  have hs field cursor := (signedFieldProgram_support_static field cursor)
+  unfold tailCoordinateProgram
+  apply sequenceProgram_support
+  intro seg hseg cursor
+  simp only [tailCoordinateSegments,List.mem_cons,List.mem_nil_iff,or_false] at hseg
+  rcases hseg with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl
+  · exact hf _ _
+  · exact hs _ _
+  · exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_support _ _
+  · exact (pointSquareProgram_support_static _ _)
+  · exact hf _ _
+  · exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_support _ _
+  · exact (xNegateProgram_support_static _ _)
+  · exact hf _ _
+  · exact (yNegateProgram_support_static _)
+  · exact (fieldLookupAddProgram_support_static _ _ hy (by simp) cursor)
+private theorem restrictCoherent {a : AdaptiveCircuit} {v : State →ₗ[ℂ] State}
+    {P R : BasisState → Prop} (h : CoherentlyImplementsOn a v R)
+    (hp : ∀ s, P s → R s) : CoherentlyImplementsOn a v P := by
+  obtain ⟨cs,hc,hm⟩ := h
+  exact ⟨cs,hc.imp (fun _ _ hb s hs => hb s (hp s hs)),hm⟩
+
+/-! ### The coordinate tail without its final negation
+
+`tailCoordinateCircuit` runs the first eight coordinate stages, the negation `N` and the table
+addition `A`. The upstream coordinate program runs `N` once more. Since `N` is an involution on
+reduced words, the tail implements `N` after the upstream coordinate map. -/
+
+private theorem tail_division_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (zeroAllowedDivisionOutputState s) := by
+  refine ⟨fig14Division_ready s hs.1,?_⟩
+  rw [zeroAllowedDivisionOutputState_frame s hs.1]
+  simpa using hs.2
+private theorem tail_multiplication_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (zeroAllowedMultiplicationOutputState s) := by
+  refine ⟨fig14Multiplication_ready s hs.1,?_⟩
+  rw [zeroAllowedMultiplicationOutputState_frame s hs.1]
+  simpa using hs.2
+private theorem tail_square_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (fig14SquareSubtractState s) :=
+  ⟨fig14SquareSubtractState_ready s hs.1,
+    ((fig14SquareSubtractState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+private theorem tail_negate_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (fig14NegateState s) :=
+  ⟨fig14NegateState_ready s hs.1,
+    ((fig14NegateState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+private theorem tail_yneg_ready (s : BasisState) (hs : PointLookupValid s) :
+    PointLookupValid (windowYNegateState s) :=
+  ⟨windowYNegateState_ready s hs.1,
+    ((windowYNegateState_correct s hs.1).2 836 (by decide +kernel)).trans hs.2⟩
+
+/-- The state after the first eight coordinate stages, as in `signedLookupCoordinateState`. -/
+noncomputable def coord8State (x y : Nat → Nat) (s : BasisState) : BasisState :=
+  let s1 := fig14LookupXState (fun a => (ShorECDLP.p-x a)%ShorECDLP.p) s
+  let s2 := signedPointLookupYState (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) s1
+  let s3 := zeroAllowedDivisionOutputState s2
+  let s4 := fig14SquareSubtractState s3
+  let s5 := fig14LookupXState (fun a => (3*x a)%ShorECDLP.p) s4
+  let s6 := zeroAllowedMultiplicationOutputState s5
+  let s7 := fig14NegateState s6
+  fig14LookupXState (fun a => x a%ShorECDLP.p) s7
+
+noncomputable def coordYAddState (y : Nat → Nat) : BasisState → BasisState :=
+  lookupModularAddState (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) pointLookupAddress
+    (List.range' 7 256) (List.range' 580 256) secp256k1ReductionConstantBits ShorECDLP.p 836 559 558
+
+theorem coord8Circuit_coherent (x y : Nat → Nat) :
+    CoherentlyImplementsOn (coord8Circuit x y) (Finsupp.lmapDomain ℂ ℂ (coord8State x y))
+      PointLookupValid ∧ ∀ s, PointLookupValid s → PointLookupValid (coord8State x y s) := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have h1 := fig14LookupX_coherent (fun a => (ShorECDLP.p-x a)%ShorECDLP.p) (fun _ => hk _)
+  have r1 := fig14LookupXState_ready (fun a => (ShorECDLP.p-x a)%ShorECDLP.p) (fun _ => hk _)
+  have h2 := signedPointLookupY_coherent (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) (fun _ => hk _)
+  have r2 := signedPointLookupYState_ready (fun a => (ShorECDLP.p-y a)%ShorECDLP.p) (fun _ => hk _)
+  have h3 : CoherentlyImplementsOn ShorECDLP.Entrant.BorrowFlag.division
+      (Finsupp.lmapDomain ℂ ℂ zeroAllowedDivisionOutputState) PointLookupValid :=
+    ShorECDLP.Entrant.BorrowFlag.division_coherent
+  have h4 : CoherentlyImplementsOn fig14SquareSubtract
+      (Finsupp.lmapDomain ℂ ℂ fig14SquareSubtractState) PointLookupValid :=
+    restrictCoherent fig14SquareSubtract_coherent (fun s hs => hs.1)
+  have h5 := fig14LookupX_coherent (fun a => (3*x a)%ShorECDLP.p) (fun _ => hk _)
+  have r5 := fig14LookupXState_ready (fun a => (3*x a)%ShorECDLP.p) (fun _ => hk _)
+  have h6 : CoherentlyImplementsOn ShorECDLP.Entrant.BorrowFlag.multiplication
+      (Finsupp.lmapDomain ℂ ℂ zeroAllowedMultiplicationOutputState) PointLookupValid :=
+    ShorECDLP.Entrant.BorrowFlag.multiplication_coherent
+  have h7 : CoherentlyImplementsOn fig14Negate
+      (Finsupp.lmapDomain ℂ ℂ fig14NegateState) PointLookupValid :=
+    restrictCoherent fig14Negate_coherent (fun s hs => hs.1)
+  have h8 := fig14LookupX_coherent (fun a => x a%ShorECDLP.p) (fun _ => hk _)
+  have r8 := fig14LookupXState_ready (fun a => x a%ShorECDLP.p) (fun _ => hk _)
+  have c2 := composeCoherent h1 h2 r1
+  have v2 := fun s hs => r2 _ (r1 s hs)
+  have c3 := composeCoherent c2 h3 v2
+  have v3 := fun s hs => tail_division_ready _ (v2 s hs)
+  have c4 := composeCoherent c3 h4 v3
+  have v4 := fun s hs => tail_square_ready _ (v3 s hs)
+  have c5 := composeCoherent c4 h5 v4
+  have v5 := fun s hs => r5 _ (v4 s hs)
+  have c6 := composeCoherent c5 h6 v5
+  have v6 := fun s hs => tail_multiplication_ready _ (v5 s hs)
+  have c7 := composeCoherent c6 h7 v6
+  have v7 := fun s hs => tail_negate_ready _ (v6 s hs)
+  have c8 := composeCoherent c7 h8 v7
+  exact ⟨c8,fun s hs => r8 _ (v7 s hs)⟩
+
+private theorem tail_input_disjoint :
+    (836::pointLookupAddress++pointLookupPath).Disjoint (List.range' 7 256) := by
+  apply List.disjoint_left.mpr
+  intro w hw ht
+  simp only [pointLookupAddress,pointLookupPath,List.mem_cons,List.mem_append,List.mem_range'] at hw ht
+  rcases hw with (rfl | ⟨i,hi,hwi⟩) | ⟨i,hi,hwi⟩ <;> obtain ⟨j,hj,hwj⟩ := ht <;> omega
+
+private theorem tail_path_disjoint : pointLookupPath.Disjoint (List.range' 580 256) := by
+  apply List.disjoint_left.mpr
+  intro w hw ht
+  simp only [pointLookupPath,List.mem_range'] at hw ht
+  omega
+
+private theorem tail_address_disjoint : pointLookupAddress.Disjoint (List.range' 580 256) := by
+  apply List.disjoint_left.mpr
+  intro w hw ht
+  simp only [pointLookupAddress,List.mem_range'] at hw ht
+  omega
+
+private theorem tail_add_layout :
+    ([836,559,560,561,558] ++ List.range' 7 256 ++ List.range' 580 256 : List Wire).Nodup := by
+  decide +kernel
+
+private theorem tail_point_valid (s : BasisState) (hs : PointLookupValid s) :
+    LookupModularValid pointLookupPath (List.range' 7 256) (List.range' 580 256)
+      ShorECDLP.p 836 559 560 561 558 s := by
+  refine ⟨?_,?_,hs.2,?_,?_,?_,?_,hs.1.2.2.2⟩
+  · intro w hw
+    apply hs.1.1 w
+    simp [pointLookupPath] at hw ⊢
+    omega
+  · intro w hw
+    apply hs.1.1 w
+    simp at hw ⊢
+    omega
+  · exact hs.1.1 559 (by decide +kernel)
+  · exact hs.1.1 560 (by decide +kernel)
+  · exact hs.1.1 561 (by decide +kernel)
+  · exact hs.1.1 558 (by decide +kernel)
+
+theorem coordYAdd_coherent (y : Nat → Nat) :
+    CoherentlyImplementsOn (coordYAdd y) (Finsupp.lmapDomain ℂ ℂ (coordYAddState y))
+      PointLookupValid := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have h := lookupModularAddProgram_coherent (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+    pointLookupAddress pointLookupPath (List.range' 7 256) (List.range' 580 256)
+    secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558
+    (by decide +kernel) (by decide +kernel) tail_input_disjoint tail_path_disjoint
+    (by simp) (by simp) (by simp [secp256k1ReductionConstantBits]) tail_add_layout
+    ShorECDLP.Secp256k1.p_prime.pos (by decide +kernel)
+    (by rw [secp256k1ReductionConstant_value]; decide +kernel) (fun _ => hk _)
+  exact restrictCoherent h tail_point_valid
+
+/-- The sign negation of `Y` is an involution on reduced words. -/
+theorem windowYNegateState_twice (t : BasisState) (h558 : t 558 = false)
+    (hy : boolWordToNat (wireValues (List.range' 580 256) t) < ShorECDLP.p) :
+    windowYNegateState (windowYNegateState t) = t := by
+  have hc (u : BasisState) (h5 : u 558 = false)
+      (hu : boolWordToNat (wireValues (List.range' 580 256) u) < ShorECDLP.p) :
+      boolWordToNat (wireValues (List.range' 580 256) (windowYNegateState u)) =
+        (if u 854 then boolWordToNat (wireValues (List.range' 580 256) u)
+          else (ShorECDLP.p-boolWordToNat (wireValues (List.range' 580 256) u))%ShorECDLP.p) ∧
+      ∀ w, w ∉ List.range' 580 256 → windowYNegateState u w = u w :=
+    negativeModularNegateState_correct _ _ ShorECDLP.p 854 558 u
+      (by simp) (by simp) (by decide +kernel) (by decide +kernel) (by decide +kernel)
+      (by decide +kernel) h5 (by simp; decide +kernel) hu
+      (by rw [boolWordToNat_constantBits,Nat.mod_eq_of_lt (by decide +kernel)])
+  have h1 := hc t h558 hy
+  have h558' : windowYNegateState t 558 = false := (h1.2 558 (by decide +kernel)).trans h558
+  have hy' : boolWordToNat (wireValues (List.range' 580 256) (windowYNegateState t)) <
+      ShorECDLP.p := by
+    rw [h1.1]
+    split
+    · exact hy
+    · exact Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have h2 := hc _ h558' hy'
+  have hs : windowYNegateState t 854 = t 854 := h1.2 854 (by decide +kernel)
+  have hv : boolWordToNat (wireValues (List.range' 580 256)
+      (windowYNegateState (windowYNegateState t))) =
+        boolWordToNat (wireValues (List.range' 580 256) t) := by
+    rw [h2.1,hs,h1.1]
+    generalize boolWordToNat (wireValues (List.range' 580 256) t) = v at hy ⊢
+    cases t 854
+    · simp only [Bool.false_eq_true,if_false]
+      rcases Nat.eq_zero_or_pos v with rfl | hv0
+      · simp
+      · rw [Nat.mod_eq_of_lt (show ShorECDLP.p - v < ShorECDLP.p by omega),
+          show ShorECDLP.p - (ShorECDLP.p - v) = v by omega, Nat.mod_eq_of_lt hy]
+    · simp
+  have he := boolWordToNat_injective_of_length (by simp [wireValues]) hv
+  funext w
+  by_cases hw : w ∈ List.range' 580 256
+  · exact List.map_inj_left.mp he w hw
+  · exact (h2.2 w hw).trans (h1.2 w hw)
+
+theorem tailCoordinateState_eq (x y : Nat → Nat) (s : BasisState) (hs : PointLookupValid s) :
+    coordYAddState y (windowYNegateState (coord8State x y s)) =
+      windowYNegateState (signedLookupCoordinateState x y s) := by
+  have hk (k : Nat) : k%ShorECDLP.p<ShorECDLP.p := Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+  have ht := tail_yneg_ready _ ((coord8Circuit_coherent x y).2 s hs)
+  have hv := tail_point_valid _ ht
+  have hu := lookupModularAddState_correct (fun a => (ShorECDLP.p-y a)%ShorECDLP.p)
+    pointLookupAddress pointLookupPath (List.range' 7 256) (List.range' 580 256)
+    secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558
+    tail_input_disjoint tail_address_disjoint (by simp) (by simp [secp256k1ReductionConstantBits])
+    tail_add_layout (by decide +kernel) (by rw [secp256k1ReductionConstant_value]; decide +kernel)
+    (fun _ => hk _) _ hv
+  have hsplit : signedLookupCoordinateState x y s =
+      windowYNegateState (coordYAddState y (windowYNegateState (coord8State x y s))) := by
+    simp only [signedLookupCoordinateState,coord8State,coordYAddState,signedPointLookupYState,
+      signedLookupModularAddState,windowYNegateState,List.length_range']
+  rw [hsplit,windowYNegateState_twice]
+  · exact (hu.2 558 (by decide +kernel)).trans hv.2.2.2.2.2.2.1
+  · change boolWordToNat (wireValues (List.range' 580 256) (lookupModularAddState _ _ _ _ _ _ _ _ _ _)) < _
+    rw [hu.1]
+    exact Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+
+theorem tailCoordinateCircuit_coherent (x y : Nat → Nat) :
+    CoherentlyImplementsOn (tailCoordinateCircuit x y)
+      (Finsupp.lmapDomain ℂ ℂ (fun s => windowYNegateState (signedLookupCoordinateState x y s)))
+      PointLookupValid := by
+  obtain ⟨c8,v8⟩ := coord8Circuit_coherent x y
+  have hN : CoherentlyImplementsOn windowYNegate
+      (Finsupp.lmapDomain ℂ ℂ windowYNegateState) PointLookupValid :=
+    restrictCoherent windowYNegate_coherent (fun s hs => hs.1)
+  have c9 := composeCoherent c8 hN v8
+  have c10 := composeCoherent c9 (coordYAdd_coherent y) (fun s hs => tail_yneg_ready _ (v8 s hs))
+  apply c10.congrIdeal
+  intro s hs
+  simp only [Finsupp.lmapDomain_apply,ket,Finsupp.mapDomain_single]
+  rw [tailCoordinateState_eq x y s hs]
+
+
+end ShorECDLP.Paper2607_13816.ChallengeMigration
+end
+
 /-! EDITABLE. Single-trial entrant: mixed-width circuit and resource proofs.
 Concatenated in dependency order to bound parallel kernel replay memory.
 Original provenance comments are retained beside each source part. -/
@@ -439,7 +1203,7 @@ Only the public coefficient read function is generalized here. -/
 
 namespace ShorECDLP.Entrant.Single.Physical
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.ZeroAdaptive
 
 attribute [local irreducible] fieldLoadProgram modularAddProgram divisionProgram multiplicationProgram
   squareSubtractProgram modularNegateProgram secp256k1InPlaceDivision secp256k1InPlaceMultiplication
@@ -598,83 +1362,91 @@ theorem signedFieldProgram_tCount (coeffs : Fin 32768 → PointCoeff) (field : P
     · intro h
       exact yNegateProgram_tCount _ _ h
 
-noncomputable def coordinateSources (Q : Point) (coeffs : Fin 32768 → PointCoeff) : List AdaptiveCircuit :=
+noncomputable def tailCoordinateCircuits (Q : Point) (coeffs : Fin 32768 → PointCoeff) : List AdaptiveCircuit :=
   [fig14LookupX (fun l => baseFieldValue (tablePoint coeffs Q l) .negX),
    signedPointLookupY (fun l => baseFieldValue (tablePoint coeffs Q l) .negY),
-   secp256k1ZeroAllowedDivision, fig14SquareSubtract,
+   ShorECDLP.Entrant.BorrowFlag.division, fig14SquareSubtract,
    fig14LookupX (fun l => baseFieldValue (tablePoint coeffs Q l) .tripleX),
-   secp256k1ZeroAllowedMultiplication, fig14Negate,
+   ShorECDLP.Entrant.BorrowFlag.multiplication, fig14Negate,
    fig14LookupX (fun l => baseFieldValue (tablePoint coeffs Q l) .x),
-   signedPointLookupY (fun l => baseFieldValue (tablePoint coeffs Q l) .negY)]
+   windowYNegate,
+   lookupModularAddProgram (fun l => fieldValue (tablePoint coeffs Q l) .negY)
+     pointLookupAddress pointLookupPath (List.range' 7 256) (List.range' 580 256)
+     secp256k1ReductionConstantBits ShorECDLP.p 836 559 560 561 558]
 
-theorem coordinateSources_eq (Q : Point) (coeffs : Fin 32768 → PointCoeff) :
-    sequenceCircuit (coordinateSources Q coeffs) =
-      signedLookupCoordinateProgram (fun l => fieldValue (tablePoint coeffs Q l) .x)
+theorem tailCoordinateCircuits_eq (Q : Point) (coeffs : Fin 32768 → PointCoeff) :
+    sequenceCircuit (tailCoordinateCircuits Q coeffs) =
+      tailCoordinateCircuit (fun l => fieldValue (tablePoint coeffs Q l) .x)
         (fun l => fieldValue (tablePoint coeffs Q l) .y) := by
   have hx (P : Point) : baseFieldValue P .x = fieldValue P .x := rfl
   have hn (P : Point) : baseFieldValue P .negX = fieldValue P .negX := rfl
   have hy (P : Point) : baseFieldValue P .negY = fieldValue P .negY := rfl
   have ht (P : Point) : baseFieldValue P .tripleX = fieldValue P .tripleX := rfl
-  simp only [coordinateSources, hx, hn, hy, ht, sequenceCircuit, signedLookupCoordinateProgram,
+  simp only [tailCoordinateCircuits, hx, hn, hy, ht, sequenceCircuit, tailCoordinateCircuit, coord8Circuit, coordYAdd,
     adaptive_seq_assoc, adaptive_seq_done, field_negX, field_negY, field_tripleX, field_x_mod]
 
-theorem coordinateProgram_run (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
+theorem tailCoordinateProgram_run (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    compiledRun (coordinateProgram start) (readConstant coeffs Q) history =
-      (signedLookupCoordinateProgram (fun l => fieldValue (tablePoint coeffs Q l) .x)
+    compiledRun (tailCoordinateProgram start) (readConstant coeffs Q) history =
+      (tailCoordinateCircuit (fun l => fieldValue (tablePoint coeffs Q l) .x)
         (fun l => fieldValue (tablePoint coeffs Q l) .y)).run := by
-  unfold coordinateProgram
-  rw [← coordinateSources_eq]
+  unfold tailCoordinateProgram
+  rw [← tailCoordinateCircuits_eq]
   apply sequenceProgram_run
-  unfold coordinateSegments coordinateSources
-  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))
+  unfold tailCoordinateSegments tailCoordinateCircuits
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil))))))))))
   · intro cursor h
     exact fig14LookupX_compiled coeffs .negX cursor Q h
   · intro cursor h
     exact signedFieldProgram_run coeffs .negY cursor Q h
   · intro cursor h
-    exact zeroDivisionProgram_run 32768 cursor _ h
+    exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_run 32768 cursor _ h
   · intro cursor h
     exact pointSquareProgram_run 32768 cursor _ h
   · intro cursor h
     exact fig14LookupX_compiled coeffs .tripleX cursor Q h
   · intro cursor h
-    exact zeroMultiplicationProgram_run 32768 cursor _ h
+    exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_run 32768 cursor _ h
   · intro cursor h
     exact xNegateProgram_run 32768 cursor _ h
   · intro cursor h
     exact fig14LookupX_compiled coeffs .x cursor Q h
   · intro cursor h
-    exact signedFieldProgram_run coeffs .negY cursor Q h
+    exact yNegateProgram_run cursor _ h
+  · intro cursor h
+    exact fieldLookupAddProgram_run coeffs .negY _ cursor Q (by simp) h
 
-theorem coordinateProgram_tCount (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
+theorem tailCoordinateProgram_tCount (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    compiledTCount (coordinateProgram start) (readConstant coeffs Q) history =
-      (signedLookupCoordinateProgram (fun l => fieldValue (tablePoint coeffs Q l) .x)
+    compiledTCount (tailCoordinateProgram start) (readConstant coeffs Q) history =
+      (tailCoordinateCircuit (fun l => fieldValue (tablePoint coeffs Q l) .x)
         (fun l => fieldValue (tablePoint coeffs Q l) .y)).tCount := by
-  unfold coordinateProgram
-  rw [← coordinateSources_eq]
+  unfold tailCoordinateProgram
+  rw [← tailCoordinateCircuits_eq]
   apply sequenceProgram_tCount
-  unfold coordinateSegments coordinateSources
-  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil)))))))))
+  unfold tailCoordinateSegments tailCoordinateCircuits
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.nil))))))))))
   · intro cursor h
     exact fieldLookupAddProgram_tCount_source coeffs .negX _ cursor Q (by simp) h
   · intro cursor h
     exact signedFieldProgram_tCount coeffs .negY cursor Q h
   · intro cursor h
-    exact zeroDivisionProgram_tCount 32768 cursor _ h
+    exact ShorECDLP.Entrant.BorrowFlag.divisionProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact pointSquareProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact fieldLookupAddProgram_tCount_source coeffs .tripleX _ cursor Q (by simp) h
   · intro cursor h
-    exact zeroMultiplicationProgram_tCount 32768 cursor _ h
+    exact ShorECDLP.Entrant.BorrowFlag.multiplicationProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact xNegateProgram_tCount 32768 cursor _ h
   · intro cursor h
     exact fieldLookupAddProgram_tCount_source coeffs .x _ cursor Q (by simp) h
   · intro cursor h
-    exact signedFieldProgram_tCount coeffs .negY cursor Q h
+    unfold windowYNegate
+    exact yNegateProgram_tCount cursor _ h
+  · intro cursor h
+    exact fieldLookupAddProgram_tCount_source coeffs .negY _ cursor Q (by simp) h
 
 end ShorECDLP.Entrant.Single.Physical
 
@@ -921,16 +1693,17 @@ by the caller. Adapted from the Apache-2.0 licensed Streaming WindowBody. -/
 
 namespace ShorECDLP.Entrant.Single.Physical
 open ShorECDLP Classical Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.ZeroAdaptive
 
 attribute [local irreducible] batchWindowTree
-attribute [local irreducible] coordinateProgram yNegateProgram
+attribute [local irreducible] tailCoordinateProgram yNegateProgram
   ipxProgramOf sequenceProgram surroundCompiled relabelCompiled
 
 theorem correction_count (start : Nat) :
-    (ipxProgramOf tableRows batchWindowTree pointLookupPath start).1 = 425971 := by
+    (ipxProgramOf tableRows batchWindowTree pointLookupPath start).1 = 432091 := by
   simp only [ipxProgramOf]
   rw [ipxOps_measurements _ _ _ ipxTree_layout, ipxSchedule_queries, batchWindowTree_nodes]
+  norm_num [ipxSchedule_tests]
 
 @[irreducible] def placedProgram (start : Nat) : (count : Nat) × Straight 32768 start (start+count) :=
   ipxProgramOf tableRows batchWindowTree pointLookupPath start
@@ -943,11 +1716,11 @@ theorem placedProgram_run (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q :
   simp only [ipxProgramOf, lookupProgram_run, ipxOps_source, placedBatchSource]
 
 def segments : List (FixedSegment 32768) :=
-  [coordinateProgram, yNegateProgram, placedProgram, yNegateProgram]
+  [tailCoordinateProgram, placedProgram, yNegateProgram]
 
 @[irreducible] noncomputable def sources (coeffs : Fin 32768 → PointCoeff) (Q : Point) : List AdaptiveCircuit :=
-  [signedLookupCoordinateProgram (fun l => fieldValue (tablePoint coeffs Q l) .x)
-    (fun l => fieldValue (tablePoint coeffs Q l) .y), windowYNegate,
+  [tailCoordinateCircuit (fun l => fieldValue (tablePoint coeffs Q l) .x)
+    (fun l => fieldValue (tablePoint coeffs Q l) .y),
     placedBatchSource coeffs Q, windowYNegate]
 
 @[irreducible] def core (start : Nat) : (count : Nat) × Straight 32768 start (start+count) :=
@@ -960,9 +1733,8 @@ theorem core_run (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
   unfold core
   apply sequenceProgram_run
   unfold segments sources
-  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact coordinateProgram_run coeffs cursor Q h
-  · intro cursor h; exact yNegateProgram_run cursor _ h
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil))
+  · intro cursor h; exact tailCoordinateProgram_run coeffs cursor Q h
   · intro cursor h; exact placedProgram_run coeffs cursor Q h
   · intro cursor h; exact yNegateProgram_run cursor _ h
 
@@ -982,15 +1754,15 @@ theorem prepared_run (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Poin
   unfold prepared preparedSource
   exact surroundCompiled_run _ _ _ _ _ _ (core_run coeffs start Q history)
 
-theorem coordinate_count (start : Nat) : (coordinateProgram start).1 = 30272702 := by
-  have h := sharedCoordinateProgram_count (.right ⟨0, by decide⟩) start
-  simpa only [sharedCoordinateProgram, reindexCompiled] using h
+theorem coordinate_count (start : Nat) : (tailCoordinateProgram start).1 = 30272696 := by
+  have h := sharedTailCoordinateProgram_count (.right ⟨0, by decide⟩) start
+  simpa only [sharedTailCoordinateProgram, reindexCompiled] using h
 
 theorem negate_count (start : Nat) : (yNegateProgram start).1 = 1022 := by
   have h := sharedYNegateProgram_count (.right ⟨0, by decide⟩) start
   simpa only [sharedYNegateProgram, reindexCompiled] using h
 
-theorem placed_count (start : Nat) : (placedProgram start).1 = 425971 := by
+theorem placed_count (start : Nat) : (placedProgram start).1 = 432091 := by
   unfold placedProgram
   exact correction_count start
 
@@ -1003,15 +1775,15 @@ private theorem sequence_count (n : Nat) (ps : List (FixedSegment n)) (counts : 
     simp only [sequenceProgram, appendCompiled, List.sum_cons]
     rw [hp, ih]
 
-theorem core_count (start : Nat) : (core start).1 = 30700717 := by
-  have h := sequence_count 32768 segments ([30272702, 1022, 425971, 1022] : List Nat) (by
+theorem core_count (start : Nat) : (core start).1 = 30705809 := by
+  have h := sequence_count 32768 segments ([30272696, 432091, 1022] : List Nat) (by
     unfold segments
-    exact List.Forall₂.cons coordinate_count (List.Forall₂.cons negate_count
-      (List.Forall₂.cons placed_count (List.Forall₂.cons negate_count .nil)))) start
+    exact List.Forall₂.cons coordinate_count
+      (List.Forall₂.cons placed_count (List.Forall₂.cons negate_count .nil))) start
   unfold core
   exact h
 
-theorem prepared_count (start : Nat) : (prepared start).1 = 30700717 := by
+theorem prepared_count (start : Nat) : (prepared start).1 = 30705809 := by
   unfold prepared
   rw [surroundCompiled_count, core_count]
 
@@ -1042,7 +1814,7 @@ and address-placement proofs. The library supplies all arithmetic coherence. -/
 
 namespace ShorECDLP.Entrant.Single.Physical
 open ShorECDLP Classical Quantum ShorECDLP.Secp256k1 ShorECDLP.Challenge
-open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.ZeroAdaptive
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨p_prime⟩
 
 private theorem restrictCoherent {a : AdaptiveCircuit} {v : State →ₗ[ℂ] State}
@@ -1112,17 +1884,24 @@ theorem batchedWindowSources_coherent (coeffs : Fin 32768 → PointCoeff) (Q : P
       (Finsupp.lmapDomain ℂ ℂ (batchedWindowState coeffs Q)) BatchedWindowValid := by
   let xs := fun a => fieldValue (tablePoint coeffs Q a) .x
   let ys := fun a => fieldValue (tablePoint coeffs Q a) .y
-  have hfirst : CoherentlyImplementsOn (signedLookupCoordinateProgram xs ys)
-      (Finsupp.lmapDomain ℂ ℂ (signedLookupCoordinateState xs ys)) BatchedWindowValid :=
-    restrictCoherent (signedLookupCoordinateProgram_coherent xs ys) (fun s hs => hs.1.1)
-  have h := composeCoherent hfirst (signedBatchSource_coherent coeffs Q) (by
-    intro s hs
+  have hfirst : CoherentlyImplementsOn (tailCoordinateCircuit xs ys)
+      (Finsupp.lmapDomain ℂ ℂ (fun s => windowYNegateState (signedLookupCoordinateState xs ys s)))
+      BatchedWindowValid :=
+    restrictCoherent (tailCoordinateCircuit_coherent xs ys) (fun s hs => hs.1.1)
+  have hready (s : BasisState) (hs : BatchedWindowValid s) :
+      SignedBatchReady coeffs Q (signedLookupCoordinateState xs ys s) := by
     obtain ⟨hs,P,hP⟩ := hs
     cases he : tablePoint coeffs Q (tableAddressValue pointLookupAddress s) with
     | zero => exact False.elim (hn _ he)
-    | some hC => exact batchedWindow_coordinate_ready coeffs Q hQ s hs hC he P hP)
-  simpa only [sources,sequenceCircuit,signedBatchSource,adaptive_seq_assoc,adaptive_seq_done,
-    batchedWindowState,xs,ys] using h
+    | some hC => exact batchedWindow_coordinate_ready coeffs Q hQ s hs hC he P hP
+  have hmid := composeCoherent hfirst (placedBatchSource_state coeffs Q) (fun s hs => by
+    have hb := windowYNegateState_batchedReady _ (hready s hs).1
+    exact ipxInv_of_valid _ hb.1.1 hb.1.2)
+  have hlast := composeCoherent hmid windowYNegate_coherent (fun s hs => by
+    obtain ⟨hr,x,y,hC,hrow,hord,P,hdata⟩ := hready s hs
+    exact signedBatchState_middle_ready coeffs Q _ hr.1.1 hr.1.2 hC hrow hord P hdata)
+  simpa only [sources,sequenceCircuit,adaptive_seq_assoc,adaptive_seq_done,
+    batchedWindowState,signedBatchState,xs,ys] using hlast
 theorem batchedWindowState_valid (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • Q = 0)
     (hn : ∀ a, tablePoint coeffs Q a ≠ 0)
     (s : BasisState) (hs : BatchedWindowValid s) : BatchedWindowValid (batchedWindowState coeffs Q s) := by
@@ -1550,10 +2329,10 @@ theorem exponents_match_widths : suffixExponents widths = exponents := by
   simp [widths, exponents, suffixExponents]
 
 @[irreducible] def leftMetadata : List (Nat × Nat) :=
-  (65535, 16) :: List.replicate 7 (30700717, 16) ++ List.replicate 9 (30700717, 15)
+  (65535, 16) :: List.replicate 7 (30705809, 16) ++ List.replicate 9 (30705809, 15)
 
 @[irreducible] def rightMetadata : List (Nat × Nat) :=
-  List.replicate 14 (30700717, 16)
+  List.replicate 14 (30705809, 16)
 
 theorem left_widths : leftMetadata.map Prod.snd = widths := by
   simp [leftMetadata, widths]
@@ -1561,10 +2340,10 @@ theorem left_widths : leftMetadata.map Prod.snd = widths := by
 theorem right_widths : rightMetadata.map Prod.snd = rightWidths := by
   simp [rightMetadata, rightWidths]
 
-theorem left_record_count : recordCount leftMetadata = 491277270 := by
+theorem left_record_count : recordCount leftMetadata = 491358742 := by
   norm_num [leftMetadata, recordCount, List.replicate]
 
-theorem right_record_count : recordCount rightMetadata = 429810262 := by
+theorem right_record_count : recordCount rightMetadata = 429881550 := by
   norm_num [rightMetadata, recordCount, List.replicate]
 
 theorem left_positions_length (start : Nat) : (positions leftMetadata start).length = 263 := by
@@ -1575,7 +2354,7 @@ theorem right_positions_length (start : Nat) : (positions rightMetadata start).l
 
 theorem projected_rows : 65536 + 21 * 32768 + 9 * 16384 = 901120 := by norm_num
 
-theorem projected_records : 491277270 + 429810262 + 854 = 921088386 := by norm_num
+theorem projected_records : 491358742 + 429881550 + 854 = 921241146 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
@@ -2127,13 +2906,13 @@ end
 section
 namespace ShorECDLP.Entrant.Single.Physical
 open ShorECDLP Classical Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
-open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration ShorECDLP.Entrant.ZeroAdaptive
 attribute [local irreducible] batchWindowTree
-attribute [local irreducible] coordinateProgram yNegateProgram
-  signedLookupCoordinateProgram placedBatchSource windowYNegate ipxProgramOf
+attribute [local irreducible] tailCoordinateProgram yNegateProgram
+  tailCoordinateCircuit placedBatchSource windowYNegate ipxProgramOf
   sequenceProgram surroundCompiled relabelCompiled
 
-theorem actual_count : actual.count = 30700717 := by
+theorem actual_count : actual.count = 30705809 := by
   unfold actual closedWindow
   rfl
 
@@ -2145,13 +2924,13 @@ theorem placed_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
   simp only [ipxProgramOf, lookupProgram_tCount, ipxOps_source, placedBatchSource]
 
 theorem batch_t (coeffs : Fin 32768 → PointCoeff) (Q : Point) :
-    (placedBatchSource coeffs Q).tCount = 3067645 := by
+    (placedBatchSource coeffs Q).tCount = 3024805 := by
   rw [placedBatchSource, ipxSourceOps_tCount _ _ _ _ ipxTree_layout, ipxSchedule_cost, batchWindowTree_nodes]
 
 theorem sources_t (coeffs : Fin 32768 → PointCoeff) (Q : Point) :
-    (sequenceCircuit (sources coeffs Q)).tCount = 513314039 := by
+    (sequenceCircuit (sources coeffs Q)).tCount = 513221219 := by
   unfold sources
-  rw [sequenceCircuit_four_tCount, (coordinate_numeric_counts _ _).1,
+  rw [sequenceCircuit_three_tCount, (tail_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1, batch_t]
 
 theorem core_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
@@ -2161,15 +2940,14 @@ theorem core_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
   unfold core
   apply sequenceProgram_tCount
   unfold segments sources
-  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-  · intro cursor h; exact coordinateProgram_tCount coeffs cursor Q h
-  · intro cursor h; unfold windowYNegate; exact yNegateProgram_tCount cursor _ h
+  refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil))
+  · intro cursor h; exact tailCoordinateProgram_tCount coeffs cursor Q h
   · intro cursor h; exact placed_t coeffs cursor Q h
   · intro cursor h; unfold windowYNegate; exact yNegateProgram_tCount cursor _ h
 
 theorem actual_t (coeffs : Fin 32768 → PointCoeff) (start : Nat) (Q : Point)
     (history : Fin start → Bool) :
-    ((actual.program start).instantiate (readConstant coeffs Q) history).tCount = 513314039 := by
+    ((actual.program start).instantiate (readConstant coeffs Q) history).tCount = 513221219 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (core 0)
     (sequenceCircuit (sources coeffs Q)) (readConstant coeffs Q) Fin.elim0
@@ -2193,13 +2971,13 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
-theorem signedWindow_count (w : SignedWindow) : (signedWindow w).count = 30700717 := by
+theorem signedWindow_count (w : SignedWindow) : (signedWindow w).count = 30705809 := by
   unfold signedWindow
   exact Physical.actual_count
 
 theorem signedWindow_t (Q : Point) (w : SignedWindow) (start : Nat)
     (history : Fin start → Bool) :
-    (((signedWindow w).program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 513314039 := by
+    (((signedWindow w).program start).instantiate (readConstant mixedCoefficientAt Q) history).tCount = 513221219 := by
   unfold signedWindow
   rw [reindexStraight_instantiate, readConstant_reindex (signedRow w)
     (windowCoefficients w) mixedCoefficientAt Q (fun _ => rfl)]
@@ -2222,22 +3000,22 @@ def params : DecoderParams := ⟨263, 224, by omega, by omega, by omega, by omeg
 def trialPositions : TrialPositions params where
   left := ⟨(positions leftMetadata 0).toArray, by
     simpa only [List.size_toArray, params] using left_positions_length 0⟩
-  right := ⟨(positions rightMetadata 491277270).toArray, by
-    simpa only [List.size_toArray, params] using right_positions_length 491277270⟩
+  right := ⟨(positions rightMetadata 491358742).toArray, by
+    simpa only [List.size_toArray, params] using right_positions_length 491358742⟩
 
 def layout : DecodeLayout := ⟨.nearestPair, params, [trialPositions], by simp⟩
 
 theorem left_position_bound (i : Nat) (hi : i ∈ trialPositions.left.toList) :
-    i < 491277270 := by
+    i < 491358742 := by
   have h := positions_bounds leftMetadata 0 i
     (show i ∈ positions leftMetadata 0 from by simpa [trialPositions] using hi)
   rw [left_record_count] at h
   omega
 
 theorem right_position_bound (i : Nat) (hi : i ∈ trialPositions.right.toList) :
-    491277270 ≤ i ∧ i < 921087532 := by
-  have h := positions_bounds rightMetadata 491277270 i
-    (show i ∈ positions rightMetadata 491277270 from by simpa [trialPositions] using hi)
+    491358742 ≤ i ∧ i < 921240292 := by
+  have h := positions_bounds rightMetadata 491358742 i
+    (show i ∈ positions rightMetadata 491358742 from by simpa [trialPositions] using hi)
   rw [right_record_count] at h
   omega
 
@@ -2252,7 +3030,7 @@ namespace ShorECDLP.Entrant.Single
 open Quantum ShorECDLP.Challenge ShorECDLP.Paper2607_13816
 open ShorECDLP.Paper2607_13816.ChallengeMigration
 
-def bodyT (count : Nat) : Nat := if count = 65535 then 458745 else 513314039
+def bodyT (count : Nat) : Nat := if count = 65535 then 458745 else 513221219
 
 def metadataT : List (Nat × Nat) → Nat → Nat
   | [], _ => 0
@@ -2479,10 +3257,10 @@ theorem right_metadata : rightWindows.map (fun w => (w.count, w.wires.length)) =
   simp [rightWindows, rightSigned, signedWindow_count, signedWindow_wires,
     SignedWindow.width, bank, rightMetadata]
 
-theorem left_count : axisCount leftWindows = 491277270 := by
+theorem left_count : axisCount leftWindows = 491358742 := by
   rw [← recordCount_eq_axisCount, left_metadata, left_record_count]
 
-theorem right_count : axisCount rightWindows = 429810262 := by
+theorem right_count : axisCount rightWindows = 429881550 := by
   rw [← recordCount_eq_axisCount, right_metadata, right_record_count]
 
 theorem left_positions (start : Nat) : axisPositions leftWindows start = positions leftMetadata start := by
@@ -2515,14 +3293,14 @@ theorem resetBody_wellFormed (start : Nat) : (resetBody start).WellFormed := by
   exact resetProgram_wellFormed _ _ _
 
 theorem resetBody_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
-    ((resetBody start).instantiate read history).wires ⊆ 837 :: resetWires := by
+    ((resetBody start).instantiate read history).wires ⊆ resetWires := by
   unfold resetBody
   rw [castFinish_instantiate]
-  exact resetProgram_support _ _ _ _ read history (List.subset_cons_of_subset 837 (List.Subset.refl _))
+  exact resetProgram_support _ _ _ _ read history (List.Subset.refl _)
 
 def trialCount : Nat := axisCount leftWindows + axisCount rightWindows + 854
 
-theorem trialCount_eq : trialCount = 921088386 := by
+theorem trialCount_eq : trialCount = 921241146 := by
   rw [trialCount, left_count, right_count]
 
 /-- One trial, with independent same-axis feedback histories and a final reset. -/
@@ -2532,7 +3310,7 @@ theorem trialCount_eq : trialCount = 921088386 := by
     (resetBody (start + axisCount leftWindows + axisCount rightWindows))
     (by unfold trialCount; omega)
 
-@[irreducible] def program : Straight 901120 0 921088386 :=
+@[irreducible] def program : Straight 901120 0 921241146 :=
   castFinish (by rw [trialCount_eq]) (trial 0)
 
 theorem left_output_records (start : Nat) (prior : List (Fin start))
@@ -2570,7 +3348,7 @@ theorem layout_read_right (history : List Bool) :
   rw [layout_right_positions]
 
 theorem program_history_length (read : ConstantBit 901120 → Bool) (b : InstrumentBranch)
-    (hb : b ∈ (program.instantiate read Fin.elim0).run) : b.history.length = 921088386 := by
+    (hb : b ∈ (program.instantiate read Fin.elim0).run) : b.history.length = 921241146 := by
   exact straight_history_length program read Fin.elim0 b hb
 
 end ShorECDLP.Entrant.Single
@@ -2584,10 +3362,9 @@ namespace ShorECDLP.Entrant.Single.Physical
 open ShorECDLP Quantum ShorECDLP.Challenge
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 attribute [local irreducible] batchWindowTree
-attribute [local irreducible] coordinateProgram yNegateProgram ipxProgramOf
+attribute [local irreducible] tailCoordinateProgram yNegateProgram ipxProgramOf
 
-private theorem old_in_complete : resetWires ⊆ completeBatchedSupport :=
-  List.subset_cons_of_subset 837 (List.Subset.refl _)
+private theorem old_in_complete : resetWires ⊆ resetWires := List.Subset.refl _
 
 theorem placed_wellFormed (start : Nat) : (placedProgram start).2.WellFormed := by
   unfold placedProgram
@@ -2598,9 +3375,8 @@ theorem core_wellFormed (start : Nat) : (core start).2.WellFormed := by
   apply sequenceProgram_wellFormed
   intro p hp cursor
   simp only [segments, List.mem_cons, List.not_mem_nil, or_false] at hp
-  rcases hp with rfl | rfl | rfl | rfl
-  · exact coordinateProgram_wellFormed cursor
-  · exact yNegateProgram_wellFormed cursor
+  rcases hp with rfl | rfl | rfl
+  · exact tailCoordinateProgram_wellFormed cursor
   · exact placed_wellFormed cursor
   · exact yNegateProgram_wellFormed cursor
 
@@ -2622,20 +3398,19 @@ private theorem closed_relabel_support {n e f : Nat} (h : e = f) (perm : Wire �
       (straightWires p).map perm := by
   simp only [closedWindow, straightWires_shift, straightWires_castFinish, straightWires_relabel]
 
-theorem placed_slots (start : Nat) : (placedProgram start).2.gateSlots ≤ 1183793236 := by
+theorem placed_slots (start : Nat) : (placedProgram start).2.gateSlots ≤ 1183842436 := by
   unfold placedProgram
   simp only [ipxProgramOf, lookupProgram_slots]
   have h := ipxOps_slots_le tableRows batchWindowTree pointLookupPath ipxSchedule
   rw [ipxSlotBound_schedule, batchWindowTree_nodes] at h
   omega
 
-theorem core_slots (start : Nat) : (core start).2.gateSlots ≤ 2683845980 := by
+theorem core_slots (start : Nat) : (core start).2.gateSlots ≤ 2683868808 := by
   have h := sequenceProgram_slots_le 32768 segments
-    ([1500000000, 26372, 1183793236, 26372] : List Nat) (by
+    ([1500000000, 1183842436, 26372] : List Nat) (by
       unfold segments
-      refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil)))
-      · intro s; exact coordinateProgram_slots s
-      · intro s; exact yNegateProgram_slots_le s
+      refine List.Forall₂.cons ?_ (List.Forall₂.cons ?_ (List.Forall₂.cons ?_ .nil))
+      · intro s; exact tailCoordinateProgram_slots s
       · intro s; exact placed_slots s
       · intro s; exact yNegateProgram_slots_le s) start
   unfold core
@@ -2654,20 +3429,22 @@ theorem actual_slots (start : Nat) : (actual.program start).gateSlots ≤ 300000
   exact prepared_slots 0
 
 theorem coordinate_support (start : Nat) :
-    (straightWires (coordinateProgram start).2).map (windowAddressPerm 855 (by decide)) ⊆
-      completeBatchedSupport := by
-  have h := sharedCoordinateProgram_support_static (.right ⟨0, by decide⟩) start
-  simpa only [sharedCoordinateProgram, reindexCompiled_support] using h
+    (straightWires (tailCoordinateProgram start).2).map (windowAddressPerm 855 (by decide)) ⊆
+      resetWires := by
+  intro z hz
+  obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hz
+  exact windowBaseSupport_relocated v
+    (tailCoordinateProgram_support_static start hv)
 
 theorem negate_support (start : Nat) :
     (straightWires (yNegateProgram start).2).map (windowAddressPerm 855 (by decide)) ⊆
-      completeBatchedSupport := by
+      resetWires := by
   have h := (sharedYNegateProgram_support_static (.right ⟨0, by decide⟩) start).trans old_in_complete
   simpa only [sharedYNegateProgram, reindexCompiled_support] using h
 
 theorem placed_support (start : Nat) :
     (straightWires (placedProgram start).2).map (windowAddressPerm 855 (by decide)) ⊆
-      completeBatchedSupport := by
+      resetWires := by
   have hraw : straightWires (ipxProgramOf tableRows batchWindowTree pointLookupPath start).2 ⊆ ipxRawSupport := by
     apply ipxProgramOf_support
     · intro c
@@ -2687,21 +3464,21 @@ theorem placed_support (start : Nat) :
   exact old_in_complete (ipxRawSupport_placed v (hraw hv))
 
 theorem core_support (cursor : Nat) : (straightWires (core cursor).2).map
-    (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
+    (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
   unfold core
   apply sequenceProgram_mapped_support
   simp only [segments, List.forall_mem_cons, List.mem_nil_iff, false_implies, implies_true, and_true]
-  exact ⟨coordinate_support, negate_support, placed_support, negate_support⟩
+  exact ⟨coordinate_support, placed_support, negate_support⟩
 
 theorem prepared_support (start : Nat) : (straightWires (prepared start).2).map
-    (windowAddressPerm 855 (by decide)) ⊆ completeBatchedSupport := by
+    (windowAddressPerm 855 (by decide)) ⊆ resetWires := by
   unfold prepared
   simp only [surroundCompiled_support, List.map_append, List.append_subset]
   exact ⟨⟨signedAddressCircuit_support_static.trans old_in_complete, core_support start⟩,
     signedAddressCircuit_support_static.trans old_in_complete⟩
 
 theorem actual_support (start : Nat) :
-    straightWires (actual.program start) ⊆ completeBatchedSupport := by
+    straightWires (actual.program start) ⊆ resetWires := by
   unfold actual
   rw [closed_relabel_support]
   exact prepared_support 0
@@ -2719,9 +3496,7 @@ open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 attribute [local irreducible] firstLookupProgram
 
-private theorem reset_in_complete : resetWires ⊆ completeBatchedSupport := by
-  intro w hw
-  exact List.mem_cons_of_mem 837 hw
+private theorem reset_in_complete : resetWires ⊆ resetWires := List.Subset.refl _
 
 theorem firstWindow_wellFormed (start : Nat) : (firstWindow.program start).WellFormed := by
   unfold firstWindow
@@ -2735,7 +3510,7 @@ theorem firstWindow_slots (start : Nat) : (firstWindow.program start).gateSlots 
   exact h.trans (by norm_num)
 
 theorem firstWindow_support (start : Nat) :
-    straightWires (firstWindow.program start) ⊆ completeBatchedSupport := by
+    straightWires (firstWindow.program start) ⊆ resetWires := by
   have h := (actualFirstWindow_support_static start).trans reset_in_complete
   simp only [actualFirstWindow, straightWires_reindex] at h
   unfold firstWindow
@@ -2754,7 +3529,7 @@ theorem signedWindow_slots (w : SignedWindow) (start : Nat) :
   exact Physical.actual_slots start
 
 theorem signedWindow_support (w : SignedWindow) (start : Nat) :
-    straightWires ((signedWindow w).program start) ⊆ completeBatchedSupport := by
+    straightWires ((signedWindow w).program start) ⊆ resetWires := by
   unfold signedWindow
   rw [straightWires_reindex]
   exact Physical.actual_support start
@@ -3011,10 +3786,10 @@ theorem windows_t (Q : Point) (w : Window 901120)
   · rw [signedWindow_t Q s start history, signedWindow_count]
     simp [bodyT]
 
-theorem left_t_budget : metadataT leftMetadata 0 = 8213517822 := by
+theorem left_t_budget : metadataT leftMetadata 0 = 8212032702 := by
   norm_num [leftMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
-theorem right_t_budget : metadataT rightMetadata 0 = 7186421522 := by
+theorem right_t_budget : metadataT rightMetadata 0 = 7185122042 := by
   norm_num [rightMetadata, metadataT, bodyT, List.replicate, fourierSlots]
 
 theorem slots_budget : metadataSlots 3000000000 leftMetadata 0 +
@@ -3075,21 +3850,21 @@ open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 
 theorem left_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8213517822 := by
+    ((axis leftWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 8212032702 := by
   have h := axis_t leftWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_left _ hw)) start List.nil history
   rwa [left_metadata, List.length_nil, left_t_budget] at h
 
 theorem right_axis_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((axis rightWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 7186421522 := by
+    ((axis rightWindows start List.nil).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 7185122042 := by
   have h := axis_t rightWindows (readConstant mixedCoefficientAt Q)
     (fun w hw => windows_t Q w (List.mem_append_right _ hw)) start List.nil history
   rwa [right_metadata, List.length_nil, right_t_budget] at h
 
 theorem trial_t (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 15399939344 := by
+    ((trial start).instantiate (readConstant mixedCoefficientAt Q) history).tCount ≤ 15397154744 := by
   unfold trial
-  exact framed_t_le _ _ _ _ _ history 8213517822 7186421522
+  exact framed_t_le _ _ _ _ _ history 8212032702 7185122042
     (left_axis_t Q start history) (fun h => right_axis_t Q _ h) (fun h => resetBody_t _ _ h)
 
 theorem program_wellFormed : program.WellFormed := by
@@ -3103,21 +3878,21 @@ theorem program_slots : program.gateSlots ≤ 93000059918 := by
   exact trial_slots 0
 
 theorem program_t (Q : Point) :
-    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 15399939344 := by
+    (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0).tCount ≤ 15397154744 := by
   unfold program
   rw [castFinish_instantiate]
   exact trial_t Q 0 Fin.elim0
 
 theorem program_measurements (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).measurementCount = 921088386 := by
+    (program.instantiate read Fin.elim0).measurementCount = 921241146 := by
   exact program.measurementCount read Fin.elim0
 
-theorem stream_support : streamAddress ⊆ completeBatchedSupport := by
+theorem stream_support : streamAddress ⊆ resetWires := by
   intro v hv
-  exact List.mem_cons_of_mem 837 (List.mem_append_right _ hv)
+  exact List.mem_append_right _ hv
 
 theorem windows_bank_support (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows) :
-    w.wires ⊆ completeBatchedSupport := by
+    w.wires ⊆ resetWires := by
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
   · unfold firstWindow
     intro v hv
@@ -3129,54 +3904,54 @@ theorem windows_bank_support (w : Window 901120) (hw : w ∈ leftWindows ++ righ
 
 theorem windows_support (w : Window 901120) (hw : w ∈ leftWindows ++ rightWindows)
     (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
-    ((w.program start).instantiate read history).wires ⊆ completeBatchedSupport := by
+    ((w.program start).instantiate read history).wires ⊆ resetWires := by
   apply (straight_instantiate_support _ read history).trans
   rcases windows_cases w hw with rfl | ⟨s, rfl⟩
   · exact firstWindow_support start
   · exact signedWindow_support s start
 
-private theorem flag_support : (836 : Wire) ∈ completeBatchedSupport := by
-  simp [completeBatchedSupport, resetWires]
+private theorem flag_support : (836 : Wire) ∈ resetWires := by
+  simp [resetWires]
 
 theorem left_axis_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
-    ((axis leftWindows start List.nil).instantiate read history).wires ⊆ completeBatchedSupport :=
-  axis_support leftWindows completeBatchedSupport
+    ((axis leftWindows start List.nil).instantiate read history).wires ⊆ resetWires :=
+  axis_support leftWindows resetWires
     (fun w hw => windows_bank_support w (List.mem_append_left _ hw))
     (fun w hw => windows_support w (List.mem_append_left _ hw)) start List.nil read history
 
 theorem right_axis_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
-    ((axis rightWindows start List.nil).instantiate read history).wires ⊆ completeBatchedSupport :=
-  axis_support rightWindows completeBatchedSupport
+    ((axis rightWindows start List.nil).instantiate read history).wires ⊆ resetWires :=
+  axis_support rightWindows resetWires
     (fun w hw => windows_bank_support w (List.mem_append_right _ hw))
     (fun w hw => windows_support w (List.mem_append_right _ hw)) start List.nil read history
 
 theorem trial_support (start : Nat) (read : ConstantBit 901120 → Bool) (history : Fin start → Bool) :
-    ((trial start).instantiate read history).wires ⊆ completeBatchedSupport := by
+    ((trial start).instantiate read history).wires ⊆ resetWires := by
   unfold trial
-  exact framed_support _ _ _ _ read history completeBatchedSupport flag_support
+  exact framed_support _ _ _ _ read history resetWires flag_support
     (left_axis_support start read history) (fun h => right_axis_support _ read h)
     (fun h => resetBody_support _ read h)
 
 theorem program_support (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).wires ⊆ completeBatchedSupport := by
+    (program.instantiate read Fin.elim0).wires ⊆ resetWires := by
   unfold program
   rw [castFinish_instantiate]
   exact trial_support 0 read Fin.elim0
 
 theorem program_qubits (read : ConstantBit 901120 → Bool) :
-    (program.instantiate read Fin.elim0).qubitCount ≤ 855 := by
+    (program.instantiate read Fin.elim0).qubitCount ≤ 854 := by
   have hs : (program.instantiate read Fin.elim0).wires.dedup.toFinset ⊆
-      completeBatchedSupport.toFinset := by
+      resetWires.toFinset := by
     intro w hw
     exact List.mem_toFinset.mpr (program_support read (by simpa using hw))
   have hc := (Finset.card_le_card hs).trans (List.toFinset_card_le _)
   rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
-  simpa only [AdaptiveCircuit.qubitCount, completeBatchedSupport_length] using hc
+  simpa only [AdaptiveCircuit.qubitCount, resetWires_length] using hc
 
 theorem program_resource_facts (Q : Point) :
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).qubits ≤ 855 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 15399939344 ∧
-    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 921088386 :=
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).qubits ≤ 854 ∧
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).tModel ≤ 15397154744 ∧
+    (resources (program.instantiate (readConstant mixedCoefficientAt Q) Fin.elim0)).measurements = 921241146 :=
   ⟨program_qubits _, program_t Q, program_measurements _⟩
 
 theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
@@ -3186,7 +3961,7 @@ theorem table_rows_limit : mixedCoefficientTable.length ≤ 983040 := by
 theorem one_candidate_check : layout.trials.length * decoderCandidateLimit layout.kind layout.params = 1 := by
   simp [layout, decoderCandidateLimit]
 
-theorem resource_product : 855 * 15399939344 = 13166948139120 := by norm_num
+theorem resource_product : 854 * 15397154744 = 13149170151376 := by norm_num
 
 end ShorECDLP.Entrant.Single
 
