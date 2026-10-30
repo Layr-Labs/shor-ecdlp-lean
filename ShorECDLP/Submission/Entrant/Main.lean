@@ -1,3 +1,4 @@
+import ShorECDLP.Submission.Entrant.CreditWindow
 import ShorECDLP.Submission.Entrant.Catalyst
 import ShorECDLP.Submission.«2607_13816».Challenge.Support
 import ShorECDLP.Submission.Entrant.Single.Physical
@@ -3465,17 +3466,17 @@ structure CountedWindow (n : Nat) where
   countProof : ∀ start, AtLeast (source.program start) saving
 
 def leftCountes : List (CountedWindow 901120) :=
-  ⟨Single.firstWindow,0,fun _ => AtLeast.zero _⟩ ::
-    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,73280778,signedCount w⟩)
+  ⟨Single.firstWindow,32767,WindowCredit.firstFullCount⟩ ::
+    Single.leftSigned.map (fun w => ⟨Single.signedWindow w,73323441,WindowCredit.signedFullCount w⟩)
 def rightCountes : List (CountedWindow 901120) :=
-  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,73280778,signedCount w⟩)
+  Single.rightSigned.map (fun w => ⟨Single.signedWindow w,73323441,WindowCredit.signedFullCount w⟩)
 private theorem leftCountes_source : leftCountes.map CountedWindow.source = Single.leftWindows := by
   simp [leftCountes, Single.leftWindows]
 private theorem rightCountes_source : rightCountes.map CountedWindow.source = Single.rightWindows := by
   simp [rightCountes, Single.rightWindows]
-private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1172492448 := by
+private theorem leftCountes_saving : (leftCountes.map CountedWindow.saving).sum = 1173207823 := by
   simp [leftCountes, Single.leftSigned]
-private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 952650114 := by
+private theorem rightCountes_saving : (rightCountes.map CountedWindow.saving).sum = 953204733 := by
   simp [rightCountes, Single.rightSigned]
 
 theorem axisCountProof {n} : (ps : List (CountedWindow n)) → (start : Nat) → (prior : List (Fin start)) →
@@ -3499,14 +3500,14 @@ theorem AtLeast.framed {n s m k e f dl dr} (p : Straight n s m) (q : Straight n 
   unfold Single.framed
   exact AtLeast.gate _ ((AtLeast.append hp ((AtLeast.append hq (AtLeast.gate _ (AtLeast.zero _))).castCount (Nat.add_zero dr))).castFinish h)
 
-theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2125142562 := by
+theorem trialCount (start : Nat) : AtLeast (Single.trial start) 2126412556 := by
   have hl := (axisCountFor leftCountes Single.leftWindows leftCountes_source start List.nil).castCount leftCountes_saving
   have hr := (axisCountFor rightCountes Single.rightWindows rightCountes_source
     (start+Single.axisCount Single.leftWindows) List.nil).castCount rightCountes_saving
   unfold Single.trial
   exact (AtLeast.framed _ _ _ _ hl hr).castCount (by decide)
 
-theorem programCount : AtLeast Single.program 2125142562 := by
+theorem programCount : AtLeast Single.program 2126412556 := by
   unfold Single.program
   exact (trialCount 0).castFinish _
 
@@ -3515,7 +3516,7 @@ theorem AtLeast.fixedEntry {n e d} (f : Fin n → PointCoeff) (p : Straight n 0 
   unfold Single.fixedEntry
   exact hp.reindex _
 
-theorem entryCount : AtLeast Rounded.entry.program 2125142562 := by
+theorem entryCount : AtLeast Rounded.entry.program 2126412556 := by
   unfold Rounded.entry Rounded.program
   apply AtLeast.fixedEntry
   exact ((AtLeast.append programCount (AtLeast.zero Rounded.readout)).castCount (by omega))
@@ -3536,12 +3537,12 @@ attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.en
 
 
 
-theorem parent_added_lower : 2095451202 ≤ added Parent.entry.program := by
+theorem parent_added_lower : 2096721196 ≤ added Parent.entry.program := by
   have h := dropped_added Optimization.entryPatch.drops
   have hc := entryCount
-  change 2125142562 ≤ added Rounded.entry.program at hc
+  change 2126412556 ≤ added Rounded.entry.program at hc
   unfold Parent.entry Optimization.replaceEntry
-  change 2095451202 ≤ added Optimization.entryPatch.program
+  change 2096721196 ≤ added Optimization.entryPatch.program
   omega
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) (ws : List Wire)
     (hp : Within ws p) : Within ws (reindexStraight f p) := by
@@ -3610,11 +3611,11 @@ set_option maxRecDepth 10000
 attribute [local irreducible] added lower lowerEntry lowerLayout Optimization.entryPatch
 noncomputable def entry : StraightEntry := lowerEntry 1024 Parent.entry
 noncomputable def layout : DecodeLayout := lowerLayout 1024 Parent.entry Parent.layout
-def bounds : Bounds := ⟨855, 10486202741, 8265980838⟩
+def bounds : Bounds := ⟨855, 10483662753, 8265980838⟩
 
 private theorem resourceArithmetic (a slots cursor oldT newT maxSlots maxRecords newRecords : Nat)
-    (ha : a ≤ 7375384892) (hl : 2095451202 ≤ a) (hs : slots ≤ 90000176648)
-    (hc : cursor ≤ 890595946) (ho : oldT ≤ 14677105145) (hn : 10486202741 ≤ newT)
+    (ha : a ≤ 7375384892) (hl : 2096721196 ≤ a) (hs : slots ≤ 90000176648)
+    (hc : cursor ≤ 890595946) (ho : oldT ≤ 14677105145) (hn : 10483662753 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hlm : 47471340504 ≤ maxRecords)
     (hnm : 8265980838 ≤ newRecords) :
     slots + 18*a ≤ maxSlots ∧ cursor+a ≤ maxRecords ∧ oldT ≤ newT + 2*a ∧
@@ -3672,10 +3673,10 @@ private theorem lowerEntry_slots (q : Wire) (e : StraightEntry) :
 private theorem five_within : Within (1024 :: resetWires) Five.entry.program :=
   lowerEntry_within 1024 Parent.entry resetWires parent_within
 
-private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2095451202 ≤ a) :
-    2095451202 ≤ s := by omega
+private theorem saved_bound (a b s : Nat) (he : s = a+b) (hl : 2096721196 ≤ a) :
+    2096721196 ≤ s := by omega
 
-private theorem five_saved : 2095451202 ≤ Catalyst.saved Five.entry.program :=
+private theorem five_saved : 2096721196 ≤ Catalyst.saved Five.entry.program :=
   saved_bound (added Parent.entry.program) (Catalyst.saved Parent.entry.program)
     (Catalyst.saved Five.entry.program) (lowerEntry_saved 1024 Parent.entry) parent_added_lower
 
@@ -3688,11 +3689,11 @@ private theorem five_slots : Five.entry.program.gateSlots ≤ 230350301035 :=
 
 noncomputable def entry : StraightEntry := Catalyst.compileEntry 1025 Five.entry
 noncomputable def layout : DecodeLayout := Five.layout
-def bounds : Bounds := ⟨856, 8390751540, 8265980838⟩
+def bounds : Bounds := ⟨856, 8386941558, 8265980838⟩
 
 private theorem resourceArithmetic (s a c oldT newT maxSlots m : Nat)
-    (hs : s ≤ 230350301035) (ha : a ≤ s) (hl : 2095451202 ≤ a)
-    (hc : c ≤ 8265980838) (ho : oldT ≤ 10486202741) (hn : 8390751540 ≤ newT)
+    (hs : s ≤ 230350301035) (ha : a ≤ s) (hl : 2096721196 ≤ a)
+    (hc : c ≤ 8265980838) (ho : oldT ≤ 10483662753) (hn : 8386941558 ≤ newT)
     (hls : 4000000000000000 ≤ maxSlots) (hm : 8265980838 ≤ m) :
     s + 3*a + 2 ≤ maxSlots ∧ oldT + 1 ≤ newT + a ∧ c ≤ m := by omega
 
