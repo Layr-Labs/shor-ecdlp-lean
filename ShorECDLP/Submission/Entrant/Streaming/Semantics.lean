@@ -3177,6 +3177,54 @@ theorem zMultiplicationProgram_wellFormed (n start : Nat) : (zMultiplicationProg
 
 attribute [local irreducible] squareSubtractProgram
 
+theorem doublesProgram_wellFormed (n k start : Nat) (a : Wire) (rest dirty : List Wire) (bits : List Bool)
+    (p : Nat) (c r t f : Wire) (hk : (a::rest).length=bits.length) (hd : (a::rest).length=dirty.length)
+    (hnd : ([c,r,t,f]++(a::rest)++dirty).Nodup) :
+    (ShorECDLP.Entrant.SquareInPlace.doublesProgram n k start (a::rest) dirty bits p c r t f).2.WellFormed := by
+  induction k generalizing start with
+  | zero => trivial
+  | succ k ih =>
+    simp only [ShorECDLP.Entrant.SquareInPlace.doublesProgram]
+    exact appendCompiled_wellFormed _ _ (modularDoubleProgram_wellFormed n start a rest dirty bits p c r t f hk hd hnd) (ih _)
+
+theorem padsProgram_wellFormed (n k start : Nat) (w : Wire) :
+    (ShorECDLP.Entrant.SquareInPlace.padsProgram n k start w).2.WellFormed := by
+  induction k generalizing start with
+  | zero => trivial
+  | succ k ih =>
+    simp only [ShorECDLP.Entrant.SquareInPlace.padsProgram]
+    exact appendCompiled_wellFormed _ _ trivial (ih _)
+
+private theorem inPlace_square_layout :
+    ([558,559,561,562,560] ++ List.range' 580 256 ++ (263 :: List.range' 264 255)).Nodup := by decide +kernel
+private theorem inPlace_double_layout :
+    ([560,561,562,559] ++ (263 :: List.range' 264 255) ++ List.range' 580 256).Nodup := by decide +kernel
+
+attribute [local irreducible] squareInverseProgram modularDoubleProgram
+  ShorECDLP.Entrant.SquareInPlace.doublesProgram ShorECDLP.Entrant.SquareInPlace.padsProgram
+
+theorem inPlaceSquareProgram_wellFormed (n start : Nat) :
+    (ShorECDLP.Entrant.SquareInPlace.inPlaceSquareProgram n start).2.WellFormed := by
+  have hp : (squareInverseProgram n start (List.range' 580 256) (List.range' 580 256) (263 :: List.range' 264 255)
+      (constantBits 256 ShorECDLP.p) ShorECDLP.p 558 559 561 562 560).2.WellFormed :=
+    squareInverseProgram_wellFormed n start (List.range' 580 256) (List.range' 580 256) 263 (List.range' 264 255)
+      (constantBits 256 ShorECDLP.p) ShorECDLP.p 558 559 561 562 560
+      (by simp) (by simp [constantBits_length]) inPlace_square_layout (fun _ h => h)
+  have hq := doublesProgram_wellFormed n 255 (start + (squareInverseProgram n start (List.range' 580 256)
+      (List.range' 580 256) (263 :: List.range' 264 255) (constantBits 256 ShorECDLP.p) ShorECDLP.p 558 559 561 562 560).1)
+      263 (List.range' 264 255) (List.range' 580 256) secp256k1ReductionConstantBits ShorECDLP.p 560 561 562 559
+      (by simp [secp256k1ReductionConstantBits]) (by simp) inPlace_double_layout
+  exact appendCompiled_wellFormed _ _ hp hq
+
+attribute [local irreducible] ShorECDLP.Entrant.SquareInPlace.inPlaceSquareProgram in
+theorem paddedSquareProgram_wellFormed (n start : Nat) :
+    (ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram n start).2.WellFormed := by
+  unfold ShorECDLP.Entrant.SquareInPlace.paddedSquareProgram
+  exact appendCompiled_wellFormed (ShorECDLP.Entrant.SquareInPlace.inPlaceSquareProgram n start)
+    (ShorECDLP.Entrant.SquareInPlace.padsProgram n 131327
+      (start + (ShorECDLP.Entrant.SquareInPlace.inPlaceSquareProgram n start).1) 558)
+    (inPlaceSquareProgram_wellFormed n start) (padsProgram_wellFormed n 131327 _ 558)
+
 theorem pointSquareProgram_wellFormed (n start : Nat) : (pointSquareProgram n start).2.WellFormed := by
   unfold pointSquareProgram
   apply squareSubtractProgram_wellFormed
@@ -3282,7 +3330,7 @@ theorem adaptiveCoordinateProgram_wellFormed (start : Nat) : (adaptiveCoordinate
   · exact fieldLookupXProgram_wellFormed _ _
   · exact signedFieldProgram_wellFormed _ _
   · exact zDivisionProgram_wellFormed _ _
-  · exact pointSquareProgram_wellFormed _ _
+  · exact paddedSquareProgram_wellFormed _ _
   · exact fieldLookupXProgram_wellFormed _ _
   · exact zMultiplicationProgram_wellFormed _ _
   · exact xNegateProgram_wellFormed _ _
