@@ -81,7 +81,7 @@ private theorem restore_hp : HPFree fig15ZeroRestore := by
   exact ⟨by simp [HPFree], computeEqConst_HPFree _ _ _ _⟩
 
 def division : AdaptiveCircuit := (prepare.seq ShorECDLP.Entrant.MeasuredQuotient.division).seq restore
-def multiplication : AdaptiveCircuit := (prepare.seq secp256k1InPlaceMultiplication).seq restore
+def multiplication : AdaptiveCircuit := (prepare.seq ShorECDLP.Entrant.MeasuredQuotient.multiplication).seq restore
 
 private theorem output_clean (f : BasisState → BasisState) (s : BasisState)
     (hs : Secp256k1ZeroAllowedInputValid s)
@@ -138,7 +138,7 @@ theorem division_coherent : CoherentlyImplementsOn division
 
 theorem multiplication_coherent : CoherentlyImplementsOn multiplication
     (Finsupp.lmapDomain ℂ ℂ zeroAllowedMultiplicationOutputState) Secp256k1ZeroAllowedInputValid := by
-  apply wrapper_coherent _ _ secp256k1InPlaceMultiplication_coherent
+  apply wrapper_coherent _ _ ShorECDLP.Entrant.MeasuredQuotient.multiplication_coherent
   intro s hs
   apply output_clean _ s hs
   intro w hw
@@ -153,12 +153,12 @@ theorem division_counts : division.tCount = 244374235 ∧ division.measurementCo
     mcxVChainAdaptiveToffoliCost, mcxVChainMeasurementCost,
     ShorECDLP.Entrant.MeasuredQuotient.division_T, ShorECDLP.Entrant.MeasuredQuotient.division_measurementCount]
 
-theorem multiplication_counts : multiplication.tCount = 246064973 ∧ multiplication.measurementCount = 14707815 := by
+theorem multiplication_counts : multiplication.tCount = 244374235 ∧ multiplication.measurementCount = 14949349 := by
   simp [multiplication, prepare, restore, adaptive_tCount_seq, modularMeasurements_seq,
     AdaptiveCircuit.tCount, AdaptiveCircuit.measurementCount, tCost, reg, scratch, cx,
     computeEqConstAdaptive_tCount, computeEqConstAdaptive_measurementCount,
     mcxVChainAdaptiveToffoliCost, mcxVChainMeasurementCost,
-    secp256k1InPlaceMultiplication_T, secp256k1InPlaceMultiplication_measurements]
+    ShorECDLP.Entrant.MeasuredQuotient.multiplication_T, ShorECDLP.Entrant.MeasuredQuotient.multiplication_measurementCount]
 
 noncomputable section
 /-- Five sequential field-word queries, each loaded and cleared around its modular addition. -/
@@ -268,8 +268,8 @@ theorem coordinateSource_coherent (x y : Nat → Nat) :
 
 
 open ShorECDLP.Challenge ShorECDLP.Secp256k1
-attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.divisionProgram multiplicationProgram equalityProgram
-  ShorECDLP.Entrant.MeasuredQuotient.division secp256k1InPlaceMultiplication
+attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.divisionProgram ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram equalityProgram
+  ShorECDLP.Entrant.MeasuredQuotient.division ShorECDLP.Entrant.MeasuredQuotient.multiplication
 
 def zDivisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
   let a := equalityProgram n start reg 0 837 scratch
@@ -279,7 +279,7 @@ def zDivisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+
 
 def zMultiplicationProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
   let a := equalityProgram n start reg 0 837 scratch
-  let b := multiplicationProgram n (start+a.1)
+  let b := ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n (start+a.1)
   appendCompiled a (prependCompiled cx (appendCompiled b
     (prependCompiled cx (equalityProgram n (start+a.1+b.1) reg 0 837 scratch))))
 
@@ -303,12 +303,12 @@ theorem zMultiplicationProgram_run (n start : Nat) (read : ConstantBit n → Boo
   unfold zMultiplicationProgram multiplication prepare restore
   dsimp only
   rw [adaptive_seq_assoc, adaptive_seq_assoc]
-  apply appendCompiled_run_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (secp256k1InPlaceMultiplication.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
+  apply appendCompiled_run_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (ShorECDLP.Entrant.MeasuredQuotient.multiplication.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
   · exact equalityProgram_run _ _ _ _ _ _ _ _
   · intro h
     apply prependCompiled_run_eq
-    apply appendCompiled_run_eq _ _ read h secp256k1InPlaceMultiplication (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
-    · exact multiplicationProgram_run _ _ _ _
+    apply appendCompiled_run_eq _ _ read h ShorECDLP.Entrant.MeasuredQuotient.multiplication (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
+    · exact ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_run _ _ _ _
     · intro h
       apply prependCompiled_run_eq
       exact equalityProgram_run _ _ _ _ _ _ _ _
@@ -333,12 +333,12 @@ theorem zMultiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → 
   unfold zMultiplicationProgram multiplication prepare restore
   dsimp only
   rw [adaptive_seq_assoc, adaptive_seq_assoc]
-  apply appendCompiled_tCount_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (secp256k1InPlaceMultiplication.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
+  apply appendCompiled_tCount_eq _ _ read history (computeEqConstAdaptive reg 0 837 scratch) (AdaptiveCircuit.unitary cx (ShorECDLP.Entrant.MeasuredQuotient.multiplication.seq (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))))
   · exact equalityProgram_tCount _ _ _ _ _ _ _ _
   · intro h
     apply prependCompiled_tCount_eq
-    apply appendCompiled_tCount_eq _ _ read h secp256k1InPlaceMultiplication (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
-    · exact multiplicationProgram_tCount _ _ _ _
+    apply appendCompiled_tCount_eq _ _ read h ShorECDLP.Entrant.MeasuredQuotient.multiplication (AdaptiveCircuit.unitary cx (computeEqConstAdaptive reg 0 837 scratch))
+    · exact ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_tCount _ _ _ _
     · intro h
       apply prependCompiled_tCount_eq
       exact equalityProgram_tCount _ _ _ _ _ _ _ _
@@ -646,7 +646,7 @@ open Quantum Classical ShorECDLP.Challenge Paper2607_13816 Paper2607_13816.Chall
 set_option maxRecDepth 4096
 set_option maxHeartbeats 1000000
 attribute [local irreducible] ZeroAdaptive.prepare ZeroAdaptive.restore
-  ShorECDLP.Entrant.MeasuredQuotient.division secp256k1InPlaceMultiplication
+  ShorECDLP.Entrant.MeasuredQuotient.division ShorECDLP.Entrant.MeasuredQuotient.multiplication
 
 private theorem gate_relabel_refl (g : Gate) : g.relabel (Equiv.refl Wire) = g := by
   cases g <;> rfl
@@ -684,8 +684,8 @@ theorem division_source_relabel :
   arithmetic_relabel _ ShorECDLP.Entrant.MeasuredQuotient.division_wires_bound
 
 theorem multiplication_source_relabel :
-    secp256k1InPlaceMultiplication.relabel exchange = secp256k1InPlaceMultiplication :=
-  arithmetic_relabel _ secp256k1InPlaceMultiplication_wires_subset
+    ShorECDLP.Entrant.MeasuredQuotient.multiplication.relabel exchange = ShorECDLP.Entrant.MeasuredQuotient.multiplication :=
+  arithmetic_relabel _ ShorECDLP.Entrant.MeasuredQuotient.multiplication_wires_bound
 
 /-- Only guard programs are relabeled: the raw arithmetic compiler is retained. -/
 def prepareProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
@@ -744,7 +744,7 @@ def divisionProgram (n start : Nat) : (count : Nat) × Straight n start (start+c
   fieldProgram n start (ShorECDLP.Entrant.MeasuredQuotient.divisionProgram n)
 
 def multiplicationProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
-  fieldProgram n start (Paper2607_13816.ChallengeMigration.multiplicationProgram n)
+  fieldProgram n start (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n)
 
 theorem coreProgram_run (n start : Nat) (arithmetic : FixedSegment n)
     (source : AdaptiveCircuit) (read : ConstantBit n → Bool) (history : Fin start → Bool)
@@ -779,11 +779,11 @@ theorem multiplicationProgram_run (n start : Nat) (read : ConstantBit n → Bool
     (history : Fin start → Bool) :
     compiledRun (multiplicationProgram n start) read history = multiplication.run := by
   have h := surroundCompiled_run flip flip
-    (sequenceProgram n (coreSegments n (Paper2607_13816.ChallengeMigration.multiplicationProgram n)) start)
-    (coreSource secp256k1InPlaceMultiplication) read history
+    (sequenceProgram n (coreSegments n (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n)) start)
+    (coreSource ShorECDLP.Entrant.MeasuredQuotient.multiplication) read history
     (coreProgram_run n start _ _ read history (fun start h =>
-      Paper2607_13816.ChallengeMigration.multiplicationProgram_run n start read h))
-  have he : coreSource secp256k1InPlaceMultiplication = ZeroAdaptive.multiplication.relabel exchange := by
+      ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_run n start read h))
+  have he : coreSource ShorECDLP.Entrant.MeasuredQuotient.multiplication = ZeroAdaptive.multiplication.relabel exchange := by
     simp only [coreSource, sequenceCircuit, ZeroAdaptive.multiplication,
       AdaptiveCircuit.relabel_seq, multiplication_source_relabel, adaptive_seq_done, adaptive_seq_assoc]
   rw [he] at h
@@ -802,7 +802,7 @@ theorem borrowed_measurements (program : AdaptiveCircuit) :
 theorem division_counts : division.tCount = 244374235 ∧ division.measurementCount = 14949349 := by
   simpa only [division, borrowed_tCount, borrowed_measurements] using ZeroAdaptive.division_counts
 
-theorem multiplication_counts : multiplication.tCount = 246064973 ∧ multiplication.measurementCount = 14707815 := by
+theorem multiplication_counts : multiplication.tCount = 244374235 ∧ multiplication.measurementCount = 14949349 := by
   simpa only [multiplication, borrowed_tCount, borrowed_measurements] using ZeroAdaptive.multiplication_counts
 
 theorem coreProgram_tCount (n start : Nat) (arithmetic : FixedSegment n)
@@ -849,9 +849,9 @@ theorem divisionProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
 theorem multiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → Bool)
     (history : Fin start → Bool) :
     compiledTCount (multiplicationProgram n start) read history = multiplication.tCount :=
-  fieldProgram_tCount n start (Paper2607_13816.ChallengeMigration.multiplicationProgram n)
-    secp256k1InPlaceMultiplication read history
-    (fun cursor h => Paper2607_13816.ChallengeMigration.multiplicationProgram_tCount n cursor read h)
+  fieldProgram_tCount n start (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n)
+    ShorECDLP.Entrant.MeasuredQuotient.multiplication read history
+    (fun cursor h => ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_tCount n cursor read h)
 
 end ShorECDLP.Entrant.BorrowFlag
 
@@ -4886,6 +4886,40 @@ end ShorECDLP.Entrant.MeasuredQuotient
 
 end
 
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] bankWrapperProgram multiplicationAfterResetProgram multiplicationProgram
+  multiplicationCorrectionProgram multiplyWorkProgram multiplyDataProgram collectProgram
+
+theorem bankWrapperProgram_slots (n start : Nat) : (bankWrapperProgram n start).2.gateSlots ≤ 325000000 := by
+  simp only [bankWrapperProgram,relabelCompiled_slots]
+  exact wrapperProgram_slots_production n start
+
+theorem multiplicationAfterResetProgram_slots (n start : Nat) (prior : List (Fin start)) :
+    (multiplicationAfterResetProgram n start prior).2.gateSlots ≤ 666001536 := by
+  have he := bankWrapperProgram_slots n start
+  have hm (s : Nat) := multiplyDataProgram_slots n s
+  have hc (s : Nat) (p : List (Fin s)) := ChallengeMigration.multiplicationCorrectionProgram_slots n s p
+  simp only [multiplicationAfterResetProgram,appendRetaining,appendCompiled_slots]
+  grind only
+
+theorem multiplicationProgram_slots (n start : Nat) : (multiplicationProgram n start).2.gateSlots ≤ 675000000 := by
+  have hm := multiplyWorkProgram_slots n start
+  have hc (s : Nat) (p : List (Fin s)) := collectProgram_slots_le n (multiplicationAfterResetProgram n)
+    666001536 (multiplicationAfterResetProgram_slots n) (List.range' 580 256) s p
+  simp only [multiplicationProgram,appendCompiled_slots]
+  grind only
+
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+
+end
+
 -- ==== part: Streaming/WindowSlots ====
 
 section
@@ -4918,10 +4952,10 @@ theorem zDivisionProgram_slots (n start : Nat) :
 
 theorem zMultiplicationProgram_slots (n start : Nat) :
     (zMultiplicationProgram n start).2.gateSlots≤676000000 := by
-  have h := multiplicationProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
+  have h := ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1)
   have h1 := equalityProgram_slots n start reg 0 837 scratch
   have h2 := equalityProgram_slots n (start + (equalityProgram n start reg 0 837 scratch).1 +
-    (multiplicationProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
+    (ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram n (start + (equalityProgram n start reg 0 837 scratch).1)).1) reg 0 837 scratch
   simp only [reg, List.length_cons, List.length_range'] at h1 h2
   simp only [zMultiplicationProgram, appendCompiled_slots, prependCompiled_slots, cx, List.length_singleton]
   simp only [reg] at *
@@ -5166,8 +5200,8 @@ theorem old_coordinate_numeric_counts (x y : Nat → Nat) :
 
 /-- The two measured guards in each field operation preserve the coordinate map. -/
 theorem coordinate_numeric_counts (x y : Nat → Nat) :
-    (coordinateSource x y).tCount = 503445089 ∧
-    (coordinateSource x y).measurementCount = 30515252 := by
+    (coordinateSource x y).tCount = 501754351 ∧
+    (coordinateSource x y).measurementCount = 30756786 := by
   have h := old_coordinate_numeric_counts x y
   have hsq := fig14SquareSubtract_counts
   have hin := ShorECDLP.Entrant.SquareInPlace.paddedSquare_counts
@@ -5200,7 +5234,7 @@ theorem windowYNegate_numeric_counts :
   · simpa only [primitiveResources] using hm
 
 theorem sharedAdaptiveCoordinateProgram_count (w : OddWindow) (start : Nat) :
-    (sharedAdaptiveCoordinateProgram w start).1 = 30515252 := by
+    (sharedAdaptiveCoordinateProgram w start).1 = 30756786 := by
   have h := compiled_count_of_run (sharedAdaptiveCoordinateProgram w start)
     (readConstant coefficientAt (0 : Point)) (fun _ => false) _
     (sharedAdaptiveCoordinateProgram_run w start 0 (by simp) (fun _ => false))
@@ -5238,7 +5272,7 @@ theorem sequenceCircuit_four_tCount (a b c d : AdaptiveCircuit) :
   omega
 
 theorem ipxWindowSources_tCount (Q : Point) (w : OddWindow) :
-    (sequenceCircuit (ipxWindowSources Q w)).tCount = 506512762 := by
+    (sequenceCircuit (ipxWindowSources Q w)).tCount = 504822024 := by
   unfold ipxWindowSources
   rw [sequenceCircuit_four_tCount,(coordinate_numeric_counts _ _).1,
     windowYNegate_numeric_counts.1,ipxSource_tCount]
@@ -5253,7 +5287,7 @@ theorem actualFirstWindow_tCount (start : Nat) (Q : Point) (hQ : order • Q = 0
 theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : order • Q = 0)
     (history : Fin start → Bool) :
     (((actualIpxWindow w).program start).instantiate (readConstant coefficientAt Q) history).tCount =
-      506512762 := by
+      504822024 := by
   have h := surroundCompiled_tCount (signedAddressCircuit 836 854 pointLookupAddress)
     (signedAddressCircuit 836 854 pointLookupAddress) (ipxWindowCore w 0)
     (sequenceCircuit (ipxWindowSources Q w)) (readConstant coefficientAt Q) Fin.elim0
@@ -5266,7 +5300,7 @@ theorem actualIpxWindow_tCount (w : OddWindow) (start : Nat) (Q : Point) (hQ : o
   exact h
 
 theorem ipxWindowCore_count (w : OddWindow) (start : Nat) :
-    (ipxWindowCore w start).1 = 30949387 := by
+    (ipxWindowCore w start).1 = 31190921 := by
   simp only [ipxWindowCore,ipxWindowSegments,sequenceProgram,appendCompiled,
     sharedAdaptiveCoordinateProgram_count,sharedYNegateProgram_count,ipxProgram_count]
 
@@ -5276,9 +5310,9 @@ theorem surroundCompiled_count {n start : Nat} (before after : Circuit)
   simp only [surroundCompiled,prependCompiled,appendCompiled,Nat.add_zero]
 
 theorem actualIpxWindow_count (w : OddWindow) :
-    (actualIpxWindow w).count = 30949387 := by
+    (actualIpxWindow w).count = 31190921 := by
   unfold actualIpxWindow closedWindow
-  change 0 + (ipxWindowPrepared w 0).1 = 30949387
+  change 0 + (ipxWindowPrepared w 0).1 = 31190921
   rw [Nat.zero_add]
   have hp : (ipxWindowPrepared w 0).1 = (ipxWindowCore w 0).1 := by
     unfold ipxWindowPrepared
@@ -5296,18 +5330,18 @@ theorem axisCount_constant {n : Nat} (ws : List (OuterWindow n)) (m : Nat)
     simp only [List.length_cons,Nat.add_mul,Nat.one_mul]
     omega
 
-theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 464306596 := by
+theorem ipxLeftWindows_count : axisCount ipxLeftWindows = 467929606 := by
   unfold ipxLeftWindows
   rw [axisCount,actualFirstWindow_count]
-  rw [axisCount_constant _ 30949387]
+  rw [axisCount_constant _ 31190921]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
     exact actualIpxWindow_count _
 
-theorem ipxRightWindows_count : axisCount ipxRightWindows = 402342239 := by
+theorem ipxRightWindows_count : axisCount ipxRightWindows = 405482181 := by
   unfold ipxRightWindows
-  rw [axisCount_constant _ 30949387]
+  rw [axisCount_constant _ 31190921]
   · simp
   · intro w hw
     obtain ⟨i,rfl⟩ := List.mem_ofFn.mp hw
@@ -5320,7 +5354,7 @@ theorem standardOuterPlan_lists_stride {n : Nat} (left right : List (OuterWindow
       axisCount left + axisCount right + reset.length := by
   simp only [OuterPlan.stride,standardOuterPlan,Vector.toList,List.toList_toArray]
 
-theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 866649689 := by
+theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 873412641 := by
   have h := standardOuterPlan_lists_stride ipxLeftWindows ipxRightWindows
     ipxLeftWindows_length ipxRightWindows_length resetWires
   apply h.trans
@@ -5328,11 +5362,11 @@ theorem ipxOuterPlan_stride : ipxOuterPlan.stride = 866649689 := by
 
 /-- Exact final record count includes the first lookup, all 28 addition windows,
 all Fourier measurements, and the full 854-wire reset in each of 56 rounds. -/
-theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48532382584 := by
+theorem ipxOuterPlan_finalCursor : 56 * ipxOuterPlan.stride = 48911107896 := by
   rw [ipxOuterPlan_stride]
 
 /-- Exact final record count of the entrant's 6-round program. -/
-theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5199898134 := by
+theorem ipxOuterPlan_finalCursor6 : 6 * ipxOuterPlan.stride = 5240475846 := by
   rw [ipxOuterPlan_stride]
 
 end ShorECDLP.Paper2607_13816.ChallengeMigration
@@ -8922,6 +8956,51 @@ end ShorECDLP.Entrant.MeasuredQuotient
 
 end
 
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] bankWrapperProgram multiplicationAfterResetProgram multiplicationProgram
+  multiplicationCorrectionProgram multiplyWorkProgram multiplyDataProgram collectProgram
+
+private theorem measuredMultiplicationResources_exchanged_580_in_base (w : Wire) (hw : w ∈ List.range 580) :
+    eeaWorkspaceExchange w ∈ windowBaseSupport := by
+  have h : (List.range 580).all (fun w => decide (eeaWorkspaceExchange w < 837)) = true := by decide +kernel
+  have hlt := of_decide_eq_true ((List.all_eq_true.mp h) w hw)
+  simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+  exact Or.inl (Or.inl hlt)
+
+private theorem measuredMultiplicationResources_data_in_base : List.range' 580 256 ⊆ windowBaseSupport := by
+  intro w hw
+  simp only [List.mem_range'] at hw
+  simp only [windowBaseSupport,List.mem_append,List.mem_range,List.mem_singleton,List.mem_range'_1]
+  exact Or.inl (Or.inl (by omega))
+
+theorem bankWrapperProgram_support_static (n start : Nat) :
+    straightWires (bankWrapperProgram n start).2 ⊆ windowBaseSupport := by
+  rw [bankWrapperProgram,relabelCompiled_support]
+  intro w hw
+  obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
+  exact measuredMultiplicationResources_exchanged_580_in_base v (wrapperProgram_support n start hv)
+
+theorem multiplicationAfterResetProgram_support_static (n start : Nat) (prior : List (Fin start)) :
+    straightWires (multiplicationAfterResetProgram n start prior).2 ⊆ windowBaseSupport := by
+  simp only [multiplicationAfterResetProgram,appendRetaining,appendCompiled_support,List.append_subset]
+  exact ⟨⟨bankWrapperProgram_support_static n start,multiplyDataProgram_support_static n _⟩,
+    ChallengeMigration.multiplicationCorrectionProgram_support_static n _ _⟩
+
+theorem multiplicationProgram_support_static (n start : Nat) :
+    straightWires (multiplicationProgram n start).2 ⊆ windowBaseSupport := by
+  simp only [multiplicationProgram,appendCompiled_support,List.append_subset]
+  refine ⟨multiplyWorkProgram_support_static n start,?_⟩
+  exact collectProgram_support n (multiplicationAfterResetProgram n) windowBaseSupport
+    (multiplicationAfterResetProgram_support_static n) _ measuredMultiplicationResources_data_in_base _ _
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+end
+
 -- ==== part: Streaming/CoordinateSupport ====
 
 section
@@ -8983,7 +9062,7 @@ theorem zDivisionProgram_support_static (n start : Nat) :
 theorem zMultiplicationProgram_support_static (n start : Nat) :
     straightWires (zMultiplicationProgram n start).2 ⊆ coordinateBaseSupport := by
   simp only [zMultiplicationProgram,appendCompiled_support,prependCompiled_support,List.append_subset]
-  exact ⟨zero_eq_support _ _,zero_cx_support,(multiplicationProgram_support_static _ _).trans old_in_complete,
+  exact ⟨zero_eq_support _ _,zero_cx_support,(ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_support_static _ _).trans old_in_complete,
     zero_cx_support,zero_eq_support _ _⟩
 
 attribute [local irreducible] fieldLookupAddProgram signedFieldProgram zDivisionProgram

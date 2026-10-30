@@ -3335,10 +3335,39 @@ end ShorECDLP.Entrant.MeasuredQuotient
 
 end
 
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] wrapperProgram multiplicationCorrectionProgram multiplyWorkProgram multiplyDataProgram
+
+theorem bankWrapperProgram_wellFormed (n start : Nat) : (bankWrapperProgram n start).2.WellFormed :=
+  (relabelCompiled_wellFormed eeaWorkspaceExchange _).2
+    (wrapperProgram_wellFormed n start wrapper_wellFormed)
+
+theorem multiplicationAfterResetProgram_wellFormed (n start : Nat) (prior : List (Fin start)) :
+    (multiplicationAfterResetProgram n start prior).2.WellFormed := by
+  unfold multiplicationAfterResetProgram
+  apply appendRetaining_wellFormed
+  · exact appendCompiled_wellFormed _ _ (bankWrapperProgram_wellFormed _ _) (multiplyDataProgram_wellFormed _ _)
+  · exact ChallengeMigration.multiplicationCorrectionProgram_wellFormed n
+
+attribute [local irreducible] multiplicationAfterResetProgram collectProgram
+
+theorem multiplicationProgram_wellFormed (n start : Nat) : (multiplicationProgram n start).2.WellFormed := by
+  unfold multiplicationProgram
+  exact appendCompiled_wellFormed _ _ (multiplyWorkProgram_wellFormed _ _)
+    (collectProgram_wellFormed _ _ (multiplicationAfterResetProgram_wellFormed n) _ _ _)
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+end
+
 namespace ShorECDLP.Paper2607_13816.ChallengeMigration
 open Quantum ShorECDLP.Challenge
 attribute [local irreducible] divisionProgram multiplicationProgram equalityProgram
-attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.divisionProgram
+attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.divisionProgram ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram
 private theorem zero_cx_wellFormed : CircuitWellFormed cx := by
   intro g hg
   have he := List.mem_singleton.mp hg
@@ -3362,7 +3391,7 @@ theorem zMultiplicationProgram_wellFormed (n start : Nat) : (zMultiplicationProg
   · exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
   · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
     apply appendCompiled_wellFormed
-    · exact multiplicationProgram_wellFormed _ _
+    · exact ShorECDLP.Entrant.MeasuredQuotient.multiplicationProgram_wellFormed _ _
     · apply prependCompiled_wellFormed _ _ zero_cx_wellFormed
       exact equalityProgram_wellFormed _ _ _ _ _ _ (computeEqConstAdaptive_wellFormed _ _ _ _ layout)
 

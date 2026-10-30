@@ -1,3 +1,4 @@
+
 import ShorECDLP.Submission.«2607_13816».Arithmetic.InPlaceSupport
 import ShorECDLP.Submission.«2607_13816».Challenge.InPlace
 import ShorECDLP.Submission.«2607_13816».Challenge.MeasuredWrapper
@@ -7694,4 +7695,829 @@ theorem division_wires_bound : division.wires ⊆ List.range 836 :=
 end
 end ShorECDLP.Entrant.MeasuredQuotient
 
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient.SourceGeometry
+open Quantum Classical Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+theorem adaptive_seq_wellFormed_parts (first second : AdaptiveCircuit)
+    (h : (first.seq second).WellFormed) : first.WellFormed ∧ second.WellFormed := by
+  induction first with
+  | done => exact ⟨trivial,h⟩
+  | unitary gs next ih =>
+    have hh := ih h.2
+    exact ⟨⟨h.1,hh.1⟩,hh.2⟩
+  | xMeasureReset w p q ihp ihq =>
+    have hp := ihp h.1
+    have hq := ihq h.2
+    exact ⟨⟨hp.1,hq.1⟩,hp.2⟩
+
+theorem sequenceCircuit_wellFormed_members (sources : List AdaptiveCircuit)
+    (h : (sequenceCircuit sources).WellFormed) : ∀ source ∈ sources, source.WellFormed := by
+  induction sources with
+  | nil => simp
+  | cons source rest ih =>
+    have hs := adaptive_seq_wellFormed_parts source (sequenceCircuit rest) h
+    intro c hc
+    rcases List.mem_cons.mp hc with rfl | hc
+    · exact hs.1
+    · exact ih hs.2 c hc
+
+attribute [local irreducible] schedule measuredIndexedSchedule
+private theorem measuredSourceGeometry_forward_source_view (r : IndexedStepRegisters) :
+    forward r = schedule r 256 1 secp256k1ScheduleLength := rfl
+private theorem measuredSourceGeometry_sequence_wf (sources : List AdaptiveCircuit)
+    (h : ∀ c ∈ sources, c.WellFormed) : (sequenceCircuit sources).WellFormed := by
+  induction sources with
+  | nil => trivial
+  | cons c cs ih =>
+    exact (h c (by simp)).seq (ih (fun x hx => h x (by simp [hx])))
+
+theorem blockCD_wellFormed (r : IndexedStepRegisters) (width T : Nat)
+    (hl : IndexedStepLayout r width T)
+    (hc : CircuitWellFormed (blockCForward r ++ blockDForward r (certifiedActiveWindows width T).quotientSwap)) :
+    (blockCD r width T).WellFormed := by
+  have hp := (circuitWellFormed_append _ _).mp hc
+  have hd := hp.2
+  simp only [blockDForward,circuitWellFormed_append] at hd
+  have hd2 := hd.1.2
+  change CircuitWellFormed ((before r ++ quotientSwapUnitary (r.quotient (certifiedActiveWindows width T).quotientSwap)
+    (certifiedActiveWindows width T).quotientSwap.start (certifiedActiveWindows width T).quotientSwap.stop) ++ after r) at hd2
+  simp only [circuitWellFormed_append] at hd2
+  have hnew : (blockD2 r (certifiedActiveWindows width T).quotientSwap).WellFormed :=
+    (AdaptiveCircuit.WellFormed.seq ⟨hd2.1.1,trivial⟩
+      ((quotientSwap_wellFormed _ hl.quotient).seq ⟨hd2.2,trivial⟩))
+  unfold blockCD blockD
+  exact (show (AdaptiveCircuit.unitary (blockCForward r) .done).WellFormed from ⟨hp.1,trivial⟩).seq
+    (((show (AdaptiveCircuit.unitary (blockD1Forward r) .done).WellFormed from ⟨hd.1.1,trivial⟩).seq hnew).seq
+      (show (AdaptiveCircuit.unitary (blockD3Forward r) .done).WellFormed from ⟨hd.2,trivial⟩))
+
+theorem step_wellFormed (r : IndexedStepRegisters) (width T : Nat)
+    (hl : IndexedStepLayout r width T) : (step r width T).WellFormed := by
+  have ho := measuredIndexedStep_wellFormed r width T hl
+  rw [← measuredStepSources_eq] at ho
+  have hs := sequenceCircuit_wellFormed_members _ ho
+  have hc := (hs (.unitary (blockCForward r ++ blockDForward r (certifiedActiveWindows width T).quotientSwap) .done)
+    (by simp [measuredStepSources])).1
+  rw [← stepSources_eq]
+  apply measuredSourceGeometry_sequence_wf
+  intro c h
+  simp only [stepSources,List.mem_cons,List.not_mem_nil,or_false] at h
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+  · exact blockCD_wellFormed r width T hl hc
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+  · exact hs _ (by simp [measuredStepSources])
+
+theorem schedule_wellFormed (r : IndexedStepRegisters) (width first count : Nat)
+    (hl : IndexedScheduleLayout r width first count) :
+    (schedule r width first count).WellFormed := by
+  induction hl with
+  | done first => simp [schedule,AdaptiveCircuit.WellFormed,CircuitWellFormed]
+  | step head tail ih => simpa only [schedule] using (step_wellFormed _ _ _ head).seq ih
+
+theorem forward_wellFormed : (forward indexedStepProductionRegisters).WellFormed :=
+  (congrArg AdaptiveCircuit.WellFormed (measuredSourceGeometry_forward_source_view indexedStepProductionRegisters)).mpr
+    (schedule_wellFormed _ _ _ _ secp256k1ScheduleLayout_production)
+
+theorem wrapper_wellFormed : wrapper.WellFormed := by
+  have ho := secp256k1MeasuredEEAForwardWrapper_wellFormed
+  have hclear := adaptive_seq_wellFormed_parts _ _ ho
+  have hparity := adaptive_seq_wellFormed_parts _ _ hclear.1
+  have hcanonical := adaptive_seq_wellFormed_parts _ _ hparity.1
+  have hpre := adaptive_seq_wellFormed_parts _ _ hcanonical.1
+  exact (((hpre.1.seq forward_wellFormed).seq hcanonical.2).seq hparity.2).seq hclear.2
+
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient.SourceGeometry
+end
+
+section
+/- Ordinary restatements of Arithmetic.InPlace private proofs (ShorECDLP contributors,
+Apache-2.0); all imports are public. -/
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Classical Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+def bankWrapper : AdaptiveCircuit := wrapper.relabel eeaWorkspaceExchange
+
+theorem bankWrapper_coherent :
+    CoherentlyImplementsOn bankWrapper
+      ((relabelState eeaWorkspaceExchange).comp
+        ((Finsupp.lmapDomain ℂ ℂ secp256k1EEAOutputIdealState).comp
+          (relabelState eeaWorkspaceExchange.symm)))
+      (fun s => Secp256k1EEAInputValid (relabelBasis eeaWorkspaceExchange.symm s)) :=
+  wrapper_coherent.relabel eeaWorkspaceExchange
+
+theorem bankWrapper_wellFormed : bankWrapper.WellFormed := by
+  rw [bankWrapper,AdaptiveCircuit.relabel_wellFormed]
+  exact SourceGeometry.wrapper_wellFormed
+
+def multiplicationAfterReset (outcomes : List Bool) : AdaptiveCircuit :=
+  ((((bankWrapper.seq fig15MultiplyToData).seq
+    (.unitary (registerZCorrection (List.range' 580 256) outcomes) .done)).seq
+      fig15MultiplyToDataInverse).seq secp256k1MeasuredEEAReverseInDataBank).seq
+        (.unitary fig15SwapOutput .done)
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+namespace ShorECDLP.Paper2607_13816
+open Classical Quantum
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+private theorem measuredMultiplication_figure15_layout :
+    ([558,560,561,559] ++ List.range' 263 256 ++ List.range' 580 256 ++ List.range' 7 256).Nodup := by
+  simp only [List.nodup_append]
+  refine ⟨⟨⟨by decide,List.nodup_range',?_⟩,List.nodup_range',?_⟩,List.nodup_range',?_⟩
+  all_goals
+    intro a ha b hb he
+    simp at ha hb
+    omega
+
+
+
+private theorem measuredMultiplication_figure15_data_layout :
+    ([558,560,561,559] ++ List.range' 263 256 ++ List.range' 7 256 ++ List.range' 580 256).Nodup := by
+  simp only [List.nodup_append]
+  refine ⟨⟨⟨by decide,List.nodup_range',?_⟩,List.nodup_range',?_⟩,List.nodup_range',?_⟩
+  all_goals
+    intro a ha b hb he
+    simp at ha hb
+    omega
+
+attribute [local irreducible] hornerMul hornerMulInverse
+
+
+
+private theorem measuredMultiplication_figure15_multipliers_wellFormed :
+    fig15MultiplyToWork.WellFormed ∧ fig15MultiplyToData.WellFormed ∧
+      fig15MultiplyToDataInverse.WellFormed := by
+  have ha : List.range' 7 256 = 7 :: List.range' 8 255 := rfl
+  have hy : List.range' 580 256 = 580 :: List.range' 581 255 := rfl
+  refine ⟨?_,?_,?_⟩
+  · unfold fig15MultiplyToWork
+    rw [ha]
+    apply hornerMul_wellFormed
+    · simp only [List.length_range',List.length_cons]
+    · simp [secp256k1ReductionConstantBits]
+    · rw [← ha]; exact measuredMultiplication_figure15_layout
+  · unfold fig15MultiplyToData
+    rw [hy]
+    apply hornerMul_wellFormed
+    · simp only [List.length_range',List.length_cons]
+    · simp [secp256k1ReductionConstantBits]
+    · rw [← hy]; exact measuredMultiplication_figure15_data_layout
+  · unfold fig15MultiplyToDataInverse
+    rw [hy]
+    apply hornerMulInverse_wellFormed
+    · simp only [List.length_range',List.length_cons]
+    · simp only [List.length_cons,List.length_range',constantBits_length]
+    · rw [← hy]; exact measuredMultiplication_figure15_data_layout
+
+
+
+private theorem measuredMultiplication_figure15_swap_wellFormed : CircuitWellFormed fig15SwapOutput := by
+  intro g hg
+  simp only [fig15SwapOutput,List.mem_flatMap] at hg
+  obtain ⟨i,hi,hg⟩ := hg
+  simp only [List.mem_cons,List.not_mem_nil,or_false] at hg
+  rcases hg with rfl | rfl | rfl <;> norm_num [Gate.WellFormed,Nat.add_right_cancel_iff]
+
+attribute [local irreducible] fig15MultiplyToWork fig15MultiplyToData fig15MultiplyToDataInverse
+  secp256k1MeasuredEEAForwardWrapper ShorECDLP.Entrant.MeasuredQuotient.bankWrapper secp256k1MeasuredEEAReverseInDataBank
+
+
+
+private theorem measuredMultiplication_figure15_unitary_wellFormed (c : Circuit) (h : CircuitWellFormed c) :
+    (AdaptiveCircuit.unitary c .done).WellFormed := ⟨h,trivial⟩
+
+
+
+private theorem measuredMultiplication_multiplication_continuation_wellFormed (outcomes : List Bool) :
+    (ShorECDLP.Entrant.MeasuredQuotient.multiplicationAfterReset outcomes).WellFormed := by
+  exact ((((ShorECDLP.Entrant.MeasuredQuotient.bankWrapper_wellFormed.seq measuredMultiplication_figure15_multipliers_wellFormed.2.1).seq
+    (measuredMultiplication_figure15_unitary_wellFormed _ (registerZCorrection_wellFormed (List.range' 580 256) outcomes))).seq measuredMultiplication_figure15_multipliers_wellFormed.2.2).seq
+      secp256k1MeasuredEEAInDataBank_wellFormed.2).seq (measuredMultiplication_figure15_unitary_wellFormed _ measuredMultiplication_figure15_swap_wellFormed)
+
+private theorem measuredMultiplication_fig15_initial_horner (s : BasisState) (hs : Secp256k1InPlaceInputValid s) :
+    HornerInputValid (List.range' 580 256) (List.range' 7 256) ShorECDLP.p 558 560 561 559 s := by
+  refine ⟨?_,hs.1.1 558 (by decide +kernel),hs.1.1 560 (by decide +kernel),
+    hs.1.1 561 (by decide +kernel),hs.1.1 559 (by decide +kernel),hs.2⟩
+  intro w hw
+  exact hs.1.1 w (by simp at hw ⊢; omega)
+
+
+private theorem measuredMultiplication_coherent_strengthen {program : AdaptiveCircuit}
+    {ideal : State →ₗ[ℂ] State} {Valid Stronger : BasisState → Prop}
+    (h : CoherentlyImplementsOn program ideal Valid) (hsub : ∀ s, Stronger s → Valid s) :
+    CoherentlyImplementsOn program ideal Stronger := by
+  obtain ⟨cs,ha,hm⟩ := h
+  exact ⟨cs,ha.imp (fun b c hb s hs => hb s (hsub s hs)),hm⟩
+
+
+private theorem measuredMultiplication_basis_lift_ket (f : BasisState → BasisState) (s : BasisState) :
+    Finsupp.lmapDomain ℂ ℂ f (ket s) = ket (f s) := by simp [ket]
+attribute [local irreducible] secp256k1EEAOutputIdealState fig15WorkProductState
+
+private theorem measuredMultiplication_clear_outside (targets : List Wire) (s : BasisState) (w : Wire)
+    (hw : w ∉ targets) : clearRegister targets s w = s w := by
+  induction targets generalizing s with
+  | nil => rfl
+  | cons a as ih =>
+    simp only [List.mem_cons,not_or] at hw
+    rw [clearRegister,ih _ hw.2]
+    exact upd_other s a false hw.1
+attribute [local irreducible] clearRegister
+
+
+private theorem measuredMultiplication_exchange_symm (w : Wire) : eeaWorkspaceExchange.symm w = eeaWorkspaceExchange w := rfl
+attribute [local irreducible] secp256k1EEAReverseWrapperIdealState eeaWorkspaceExchange
+
+private theorem measuredMultiplication_phase_congr (targets : List Wire) (outcomes : List Bool) (s t : BasisState)
+    (h : wireValues targets s = wireValues targets t) :
+    registerXPhase targets outcomes s = registerXPhase targets outcomes t := by
+  induction targets generalizing outcomes with
+  | nil => rfl
+  | cons w ws ih =>
+    cases outcomes with
+    | nil => rfl
+    | cons b bs =>
+      simp only [wireValues,List.map_cons,List.cons.injEq] at h
+      simp only [registerXPhase,h.1,ih bs h.2]
+
+private theorem measuredMultiplication_multiplication_reset_input (s : BasisState) (hs : Secp256k1InPlaceInputValid s) :
+    Secp256k1EEAInputValid (relabelBasis eeaWorkspaceExchange.symm
+      (clearRegister (List.range' 580 256) (fig15WorkProductState s))) := by
+  have hm := fig15WorkProductState_correct s (measuredMultiplication_fig15_initial_horner s hs)
+  have hframe (w : Wire) (hw : w ∉ List.range' 7 256) (hy : w ∉ List.range' 580 256) :
+      relabelBasis eeaWorkspaceExchange.symm
+        (clearRegister (List.range' 580 256) (fig15WorkProductState s)) w = s w := by
+    simp only [relabelBasis,Equiv.symm_symm,eeaWorkspaceExchange_frame w (by simpa using hw) (by simpa using hy)]
+    rw [measuredMultiplication_clear_outside _ _ w hy,hm.2 w hw]
+  have hx : wireValues (List.range' 263 256)
+      (relabelBasis eeaWorkspaceExchange.symm
+        (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      wireValues (List.range' 263 256) s := by
+    apply List.map_congr_left
+    intro w hw
+    exact hframe w (by simp at hw ⊢; omega) (by simp at hw ⊢; omega)
+  refine ⟨?_,?_,?_⟩
+  · intro w hw
+    by_cases ha : w ∈ List.range' 7 256
+    · have hh : w = 7+(w-7) := by simp at ha; dsimp only [Wire] at *; omega
+      have hi : w-7 <256 := by simp at ha; dsimp only [Wire] at *; omega
+      simp only [relabelBasis,Equiv.symm_symm]
+      have he : eeaWorkspaceExchange w = 580+(w-7) := by
+        calc
+          eeaWorkspaceExchange w = eeaWorkspaceExchange (7+(w-7)) := congrArg _ hh
+          _ = _ := eeaWorkspaceExchange_work _ hi
+      rw [he]
+      exact clearRegister_clean (List.range' 580 256) _ (580+(w-7)) (by simp only [List.mem_range'_1]; dsimp only [Wire] at *; omega)
+    · rw [hframe w ha (by simp at hw ⊢; dsimp only [Wire] at *; omega)]
+      exact hs.1.1 w hw
+  · rw [hx]; exact hs.1.2.1
+  · rw [hx]; exact hs.1.2.2
+
+
+private theorem measuredMultiplication_multiplication_inverted_A (s : BasisState) (w : Wire)
+    (hw : w ∈ List.range' 7 256) :
+    fig15MultiplicationInvertedState s w = fig15WorkProductState s w := by
+  have hi : w-7 <256 := by simp at hw; dsimp only [Wire] at *; omega
+  have he : eeaWorkspaceExchange w = 580+(w-7) := by
+    calc
+      eeaWorkspaceExchange w = eeaWorkspaceExchange (7+(w-7)) := congrArg _ (by simp at hw; dsimp only [Wire] at *; omega)
+      _ = _ := eeaWorkspaceExchange_work _ hi
+  have hee : eeaWorkspaceExchange (eeaWorkspaceExchange w) = w := by
+    rw [← measuredMultiplication_exchange_symm]; exact eeaWorkspaceExchange.symm_apply_apply w
+  simp only [fig15MultiplicationInvertedState,relabelBasis,measuredMultiplication_exchange_symm]
+  rw [secp256k1EEAOutputIdealState_preservesOutside _ _ (by rw [he]; dsimp only [Wire]; omega)]
+  simp only [relabelBasis,Equiv.symm_symm,hee]
+  exact measuredMultiplication_clear_outside _ _ w (by simp at hw ⊢; omega)
+
+
+private theorem measuredMultiplication_multiplication_inverted_horner (s : BasisState) (hs : Secp256k1InPlaceInputValid s) :
+    HornerInputValid (List.range' 7 256) (List.range' 580 256) ShorECDLP.p 558 560 561 559
+      (fig15MultiplicationInvertedState s) := by
+  have hv := measuredMultiplication_multiplication_reset_input s hs
+  have he := secp256k1EEAOutputIdealState_correct _ hv.1 hv.2.1 hv.2.2
+  refine ⟨?_,?_,?_,?_,?_,?_⟩
+  · intro w hw
+    have hi : w-580 <256 := by simp at hw; dsimp only [Wire] at *; omega
+    have hew : eeaWorkspaceExchange w = 7+(w-580) := by
+      calc
+        eeaWorkspaceExchange w = eeaWorkspaceExchange (580+(w-580)) := congrArg _ (by simp at hw; dsimp only [Wire] at *; omega)
+        _ = _ := eeaWorkspaceExchange_data _ hi
+    simp only [fig15MultiplicationInvertedState,relabelBasis,measuredMultiplication_exchange_symm,hew]
+    exact he.2.2.1 _ (by simp only [List.mem_range'_1]; dsimp only [Wire] at *; omega)
+  · simpa only [fig15MultiplicationInvertedState,relabelBasis,measuredMultiplication_exchange_symm,
+      eeaWorkspaceExchange_frame 558 (by decide) (by decide)] using he.2.2.2.2 558 (by decide +kernel)
+  · simpa only [fig15MultiplicationInvertedState,relabelBasis,measuredMultiplication_exchange_symm,
+      eeaWorkspaceExchange_frame 560 (by decide) (by decide)] using he.2.2.2.2 560 (by decide +kernel)
+  · simpa only [fig15MultiplicationInvertedState,relabelBasis,measuredMultiplication_exchange_symm,
+      eeaWorkspaceExchange_frame 561 (by decide) (by decide)] using he.2.2.2.2 561 (by decide +kernel)
+  · simpa only [fig15MultiplicationInvertedState,relabelBasis,measuredMultiplication_exchange_symm,
+      eeaWorkspaceExchange_frame 559 (by decide) (by decide)] using he.2.2.2.1
+  · have ha : wireValues (List.range' 7 256) (fig15MultiplicationInvertedState s) =
+        wireValues (List.range' 7 256) (fig15WorkProductState s) := by
+      apply List.map_congr_left
+      intro w hw
+      exact measuredMultiplication_multiplication_inverted_A s w hw
+    rw [ha,(fig15WorkProductState_correct s (measuredMultiplication_fig15_initial_horner s hs)).1]
+    exact Nat.mod_lt _ ShorECDLP.Secp256k1.p_prime.pos
+
+private def measuredMultiplication_divisionRestoreMap : State →ₗ[ℂ] State :=
+  (relabelState eeaWorkspaceExchange).comp
+    ((Finsupp.lmapDomain ℂ ℂ secp256k1EEAReverseWrapperIdealState).comp
+      (relabelState eeaWorkspaceExchange.symm))
+
+
+private def measuredMultiplication_divisionRecomputeMap : State →ₗ[ℂ] State :=
+  (Finsupp.lmapDomain ℂ ℂ fig15DataProductState).comp measuredMultiplication_divisionRestoreMap
+
+
+private def measuredMultiplication_divisionCorrectMap (outcomes : List Bool) : State →ₗ[ℂ] State :=
+  (Quantum.run (registerZCorrection (List.range' 580 256) outcomes)).comp measuredMultiplication_divisionRecomputeMap
+
+
+private def measuredMultiplication_divisionUncomputeMap (outcomes : List Bool) : State →ₗ[ℂ] State :=
+  (Finsupp.lmapDomain ℂ ℂ (hornerClearOutput (List.range' 580 256))).comp (measuredMultiplication_divisionCorrectMap outcomes)
+
+
+private theorem measuredMultiplication_supported_phase {Valid : BasisState → Prop} (s : BasisState)
+    (c : ℂ) (hs : Valid s) : SupportedOn Valid (c • ket s) := by
+  intro t ht
+  have hts : s=t := by
+    by_contra h
+    apply ht
+    simp only [Finsupp.smul_apply,ket_ne h,smul_zero]
+  subst t
+  exact hs
+
+
+private def measuredMultiplication_divisionPreparedOutput (t : BasisState) : BasisState :=
+  Classical.run fig15SwapOutput (relabelBasis eeaWorkspaceExchange
+    (secp256k1EEAReverseWrapperIdealState (relabelBasis eeaWorkspaceExchange.symm
+      (clearRegister (List.range' 580 256) t))))
+
+
+private def measuredMultiplication_divisionWitness : BasisState := fun w => decide (w = 263)
+
+
+private theorem measuredMultiplication_divisionWitness_valid : Secp256k1InPlaceInputValid measuredMultiplication_divisionWitness := by
+  refine ⟨⟨?_,?_,?_⟩,?_⟩
+  · intro w hw
+    simp only [List.mem_append,List.mem_range'_1] at hw
+    simp only [measuredMultiplication_divisionWitness, decide_eq_false_iff_not]
+    dsimp only [Wire] at *
+    omega
+  · decide +kernel
+  · decide +kernel
+  · decide +kernel
+
+
+private theorem measuredMultiplication_division_swap_hp : Classical.HPFree fig15SwapOutput := by
+  intro g hg
+  simp only [fig15SwapOutput,List.mem_flatMap] at hg
+  obtain ⟨i,hi,hg⟩ := hg
+  simp only [List.mem_cons,List.not_mem_nil,or_false] at hg
+  rcases hg with rfl | rfl | rfl <;> trivial
+attribute [local irreducible] Classical.run Quantum.run relabelBasis measureResetThen fig15DivisionAfterReset
+  measuredMultiplication_divisionPreparedOutput measuredMultiplication_divisionUncomputeMap
+
+
+private def measuredMultiplication_multiplicationResetValid (t : BasisState) : Prop :=
+  ∃ s, Secp256k1InPlaceInputValid s ∧ t = clearRegister (List.range' 580 256) (fig15WorkProductState s)
+
+
+private def measuredMultiplication_multiplicationInvertMap : State →ₗ[ℂ] State :=
+  (relabelState eeaWorkspaceExchange).comp
+    ((Finsupp.lmapDomain ℂ ℂ secp256k1EEAOutputIdealState).comp (relabelState eeaWorkspaceExchange.symm))
+
+
+private def measuredMultiplication_multiplicationRecomputeMap : State →ₗ[ℂ] State :=
+  (Finsupp.lmapDomain ℂ ℂ fig15DataProductState).comp measuredMultiplication_multiplicationInvertMap
+
+
+private def measuredMultiplication_multiplicationCorrectMap (outcomes : List Bool) : State →ₗ[ℂ] State :=
+  (Quantum.run (registerZCorrection (List.range' 580 256) outcomes)).comp measuredMultiplication_multiplicationRecomputeMap
+
+
+private def measuredMultiplication_multiplicationUncomputeMap (outcomes : List Bool) : State →ₗ[ℂ] State :=
+  (Finsupp.lmapDomain ℂ ℂ (hornerClearOutput (List.range' 580 256))).comp (measuredMultiplication_multiplicationCorrectMap outcomes)
+
+
+private def measuredMultiplication_multiplicationRestoreMap (outcomes : List Bool) : State →ₗ[ℂ] State :=
+  measuredMultiplication_divisionRestoreMap.comp (measuredMultiplication_multiplicationUncomputeMap outcomes)
+
+
+private theorem measuredMultiplication_multiplication_invert_ket (s : BasisState) :
+    measuredMultiplication_multiplicationInvertMap (ket (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      ket (fig15MultiplicationInvertedState s) := by
+  simp only [measuredMultiplication_multiplicationInvertMap,LinearMap.comp_apply,relabelState_ket,measuredMultiplication_basis_lift_ket,
+    fig15MultiplicationInvertedState]
+
+
+private theorem measuredMultiplication_multiplication_recompute_ket (s : BasisState) :
+    measuredMultiplication_multiplicationRecomputeMap (ket (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      ket (fig15DataProductState (fig15MultiplicationInvertedState s)) := by
+  simp only [measuredMultiplication_multiplicationRecomputeMap,LinearMap.comp_apply,measuredMultiplication_multiplication_invert_ket,measuredMultiplication_basis_lift_ket]
+
+
+private theorem measuredMultiplication_multiplication_correct_ket (s : BasisState) (hs : Secp256k1InPlaceInputValid s)
+    (outcomes : List Bool) :
+    measuredMultiplication_multiplicationCorrectMap outcomes (ket (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      registerXPhase (List.range' 580 256) outcomes s •
+        ket (fig15DataProductState (fig15MultiplicationInvertedState s)) := by
+  simp only [measuredMultiplication_multiplicationCorrectMap,LinearMap.comp_apply,measuredMultiplication_multiplication_recompute_ket,
+    fig15MultiplicationRecompute_phase s hs]
+
+
+private theorem measuredMultiplication_multiplication_uncompute_state (s : BasisState) (hs : Secp256k1InPlaceInputValid s) :
+    hornerClearOutput (List.range' 580 256)
+      (fig15DataProductState (fig15MultiplicationInvertedState s)) = fig15MultiplicationInvertedState s := by
+  funext w
+  by_cases hw : w ∈ List.range' 580 256
+  · simp only [hornerClearOutput,if_pos hw]
+    exact ((measuredMultiplication_multiplication_inverted_horner s hs).1 w hw).symm
+  · simp only [hornerClearOutput,if_neg hw]
+    exact (fig15DataProductState_correct _ (measuredMultiplication_multiplication_inverted_horner s hs)).2 w hw
+
+
+private theorem measuredMultiplication_multiplication_uncompute_ket (s : BasisState) (hs : Secp256k1InPlaceInputValid s)
+    (outcomes : List Bool) :
+    measuredMultiplication_multiplicationUncomputeMap outcomes (ket (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      registerXPhase (List.range' 580 256) outcomes s • ket (fig15MultiplicationInvertedState s) := by
+  simp only [measuredMultiplication_multiplicationUncomputeMap,LinearMap.comp_apply,measuredMultiplication_multiplication_correct_ket s hs,
+    map_smul,measuredMultiplication_basis_lift_ket,measuredMultiplication_multiplication_uncompute_state s hs]
+
+
+private theorem measuredMultiplication_bank_relabel_cancel (e : Wire ≃ Wire) (s : BasisState) :
+    relabelBasis e.symm (relabelBasis e s) = s := by
+  funext w
+  simp only [relabelBasis,Equiv.symm_symm,Equiv.symm_apply_apply]
+
+
+private theorem measuredMultiplication_multiplication_inverse_ready (s : BasisState) (hs : Secp256k1InPlaceInputValid s) :
+    Secp256k1EEAForwardLocalImage (relabelBasis eeaWorkspaceExchange.symm (fig15MultiplicationInvertedState s)) := by
+  rw [fig15MultiplicationInvertedState,measuredMultiplication_bank_relabel_cancel]
+  exact ⟨_,measuredMultiplication_multiplication_reset_input s hs,fun _ _ => rfl⟩
+
+
+private theorem measuredMultiplication_multiplication_inverse_ket (s : BasisState) (hs : Secp256k1InPlaceInputValid s) :
+    measuredMultiplication_divisionRestoreMap (ket (fig15MultiplicationInvertedState s)) =
+      ket (clearRegister (List.range' 580 256) (fig15WorkProductState s)) := by
+  simp only [measuredMultiplication_divisionRestoreMap,LinearMap.comp_apply,relabelState_ket,measuredMultiplication_basis_lift_ket]
+  rw [fig15MultiplicationInvertedState,measuredMultiplication_bank_relabel_cancel,
+    secp256k1EEAReverseWrapper_output _ (measuredMultiplication_multiplication_reset_input s hs)]
+  have hc := measuredMultiplication_bank_relabel_cancel eeaWorkspaceExchange.symm
+    (clearRegister (List.range' 580 256) (fig15WorkProductState s))
+  simpa only [Equiv.symm_symm] using congrArg ket hc
+
+
+private theorem measuredMultiplication_multiplication_restore_ket (s : BasisState) (hs : Secp256k1InPlaceInputValid s)
+    (outcomes : List Bool) :
+    measuredMultiplication_multiplicationRestoreMap outcomes (ket (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      registerXPhase (List.range' 580 256) outcomes s •
+        ket (clearRegister (List.range' 580 256) (fig15WorkProductState s)) := by
+  simp only [measuredMultiplication_multiplicationRestoreMap,LinearMap.comp_apply,measuredMultiplication_multiplication_uncompute_ket s hs,
+    map_smul,measuredMultiplication_multiplication_inverse_ket s hs]
+
+
+private theorem measuredMultiplication_multiplication_continuation_coherent (outcomes : List Bool) :
+    CoherentlyImplementsOn (ShorECDLP.Entrant.MeasuredQuotient.multiplicationAfterReset outcomes)
+      ((Quantum.run fig15SwapOutput).comp (measuredMultiplication_multiplicationRestoreMap outcomes)) measuredMultiplication_multiplicationResetValid := by
+  have hf : CoherentlyImplementsOn ShorECDLP.Entrant.MeasuredQuotient.bankWrapper measuredMultiplication_multiplicationInvertMap measuredMultiplication_multiplicationResetValid := by
+    apply measuredMultiplication_coherent_strengthen ShorECDLP.Entrant.MeasuredQuotient.bankWrapper_coherent
+    rintro t ⟨s,hs,rfl⟩
+    exact measuredMultiplication_multiplication_reset_input s hs
+  have hm := hf.seq fig15MultiplyToData_coherent (by
+    rintro t ⟨s,hs,rfl⟩
+    rw [measuredMultiplication_multiplication_invert_ket]
+    exact supportedOn_ket _ _ (measuredMultiplication_multiplication_inverted_horner s hs))
+  have hz := hm.seq (CoherentlyImplementsOn.unitary
+    (registerZCorrection (List.range' 580 256) outcomes) (fun _ => True)) (by
+      intro t ht u hu; trivial)
+  have hi := hz.seq fig15MultiplyToDataInverse_coherent (by
+    rintro t ⟨s,hs,rfl⟩
+    change SupportedOn _ (measuredMultiplication_multiplicationCorrectMap outcomes _)
+    rw [measuredMultiplication_multiplication_correct_ket s hs]
+    exact measuredMultiplication_supported_phase _ _ ⟨fig15MultiplicationInvertedState s,measuredMultiplication_multiplication_inverted_horner s hs,rfl⟩)
+  have hr := hi.seq secp256k1MeasuredEEAReverseInDataBank_coherent_localImage (by
+    rintro t ⟨s,hs,rfl⟩
+    change SupportedOn _ (measuredMultiplication_multiplicationUncomputeMap outcomes _)
+    rw [measuredMultiplication_multiplication_uncompute_ket s hs]
+    exact measuredMultiplication_supported_phase _ _ (measuredMultiplication_multiplication_inverse_ready s hs))
+  exact hr.seq (CoherentlyImplementsOn.unitary fig15SwapOutput (fun _ => True))
+    (by intro t ht u hu; trivial)
+
+
+private def measuredMultiplication_multiplicationPreparedValid (t : BasisState) : Prop :=
+  ∃ s, Secp256k1InPlaceInputValid s ∧ t = fig15WorkProductState s
+
+
+private def measuredMultiplication_multiplicationPreparedOutput (t : BasisState) : BasisState :=
+  Classical.run fig15SwapOutput (clearRegister (List.range' 580 256) t)
+
+
+private theorem measuredMultiplication_multiplication_prepared_phase (s : BasisState) (hs : Secp256k1InPlaceInputValid s)
+    (outcomes : List Bool) :
+    registerXPhase (List.range' 580 256) outcomes (fig15WorkProductState s) =
+      registerXPhase (List.range' 580 256) outcomes s := by
+  apply measuredMultiplication_phase_congr
+  apply List.map_congr_left
+  intro w hw
+  exact (fig15WorkProductState_correct s (measuredMultiplication_fig15_initial_horner s hs)).2 w (by simp at hw ⊢; omega)
+attribute [local irreducible] ShorECDLP.Entrant.MeasuredQuotient.multiplicationAfterReset measuredMultiplication_multiplicationPreparedOutput
+
+
+private theorem measuredMultiplication_multiplication_final_ket (s : BasisState) (hs : Secp256k1InPlaceInputValid s)
+    (outcomes : List Bool) :
+    ((Quantum.run fig15SwapOutput).comp (measuredMultiplication_multiplicationRestoreMap outcomes))
+      (ket (clearRegister (List.range' 580 256) (fig15WorkProductState s))) =
+      registerXPhase (List.range' 580 256) outcomes s •
+        ket (measuredMultiplication_multiplicationPreparedOutput (fig15WorkProductState s)) := by
+  rw [LinearMap.comp_apply,measuredMultiplication_multiplication_restore_ket s hs,map_smul,
+    run_ket_agrees_classical _ _ measuredMultiplication_division_swap_hp,measuredMultiplication_multiplicationPreparedOutput]
+
+
+private theorem measuredMultiplication_multiplication_reset_correct (outcomes : List Bool) (t : BasisState)
+    (ht : measuredMultiplication_multiplicationPreparedValid t) :
+    measuredMultiplication_multiplicationResetValid (clearRegister (List.range' 580 256) t) ∧
+    ((Quantum.run fig15SwapOutput).comp (measuredMultiplication_multiplicationRestoreMap outcomes))
+      (ket (clearRegister (List.range' 580 256) t)) =
+      registerXPhase (List.range' 580 256) outcomes t • ket (measuredMultiplication_multiplicationPreparedOutput t) := by
+  obtain ⟨s,hs,rfl⟩ := ht
+  refine ⟨⟨s,hs,rfl⟩,?_⟩
+  rw [measuredMultiplication_multiplication_prepared_phase s hs]
+  exact measuredMultiplication_multiplication_final_ket s hs outcomes
+
+
+private theorem measuredMultiplication_multiplication_reset_coherent :
+    CoherentlyImplementsOn (measureResetThen (List.range' 580 256) ShorECDLP.Entrant.MeasuredQuotient.multiplicationAfterReset)
+      (Finsupp.lmapDomain ℂ ℂ measuredMultiplication_multiplicationPreparedOutput) measuredMultiplication_multiplicationPreparedValid :=
+  measureResetThen_coherent (List.range' 580 256) ShorECDLP.Entrant.MeasuredQuotient.multiplicationAfterReset
+    (fun outcomes => (Quantum.run fig15SwapOutput).comp (measuredMultiplication_multiplicationRestoreMap outcomes))
+    (fun _ => measuredMultiplication_multiplicationResetValid) measuredMultiplication_multiplicationPreparedValid measuredMultiplication_multiplicationPreparedOutput List.nodup_range'
+    (fun outcomes _ => measuredMultiplication_multiplication_continuation_wellFormed outcomes)
+    measuredMultiplication_multiplication_continuation_coherent (fun outcomes _ t ht => measuredMultiplication_multiplication_reset_correct outcomes t ht)
+    (fig15WorkProductState measuredMultiplication_divisionWitness) ⟨measuredMultiplication_divisionWitness,measuredMultiplication_divisionWitness_valid,rfl⟩
+
+end
+end ShorECDLP.Paper2607_13816
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Classical Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] multiplicationAfterReset fig15MultiplyToWork
+
+def multiplication : AdaptiveCircuit :=
+  fig15MultiplyToWork.seq (measureResetThen (List.range' 580 256) multiplicationAfterReset)
+
+theorem multiplication_coherent :
+    CoherentlyImplementsOn multiplication
+      (Finsupp.lmapDomain ℂ ℂ fig15MultiplicationOutputState) Secp256k1InPlaceInputValid := by
+  have h := fig15MultiplicationPrefix_coherent.seq measuredMultiplication_multiplication_reset_coherent (by
+    intro s hs
+    rw [measuredMultiplication_basis_lift_ket]
+    exact supportedOn_ket _ _ ⟨s,hs,rfl⟩)
+  apply h.congrIdeal
+  intro s hs
+  simp only [LinearMap.comp_apply,measuredMultiplication_basis_lift_ket]
+  rfl
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] wrapperProgram multiplicationCorrectionProgram multiplyWorkProgram multiplyDataProgram
+/-- Transport the fixed wrapper to the source's exchanged data bank. -/
+def bankWrapperProgram (n start : Nat) :
+    (count : Nat) × Straight n start (start+count) :=
+  relabelCompiled eeaWorkspaceExchange (wrapperProgram n start)
+
+theorem bankWrapperProgram_run (n start : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (bankWrapperProgram n start) read history =
+      bankWrapper.run := by
+  exact relabelCompiled_run _ _ _ read history (wrapperProgram_run n start read history)
+
+theorem bankWrapperProgram_tCount (n start : Nat)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (bankWrapperProgram n start) read history =
+      bankWrapper.tCount := by
+  exact relabelCompiled_tCount _ _ _ read history (wrapperProgram_tCount n start read history)
+
+
+attribute [local irreducible] bankWrapperProgram
+def multiplicationAfterResetProgram (n start : Nat) (prior : List (Fin start)) :
+    (count : Nat) × Straight n start (start+count) :=
+  let eea := bankWrapperProgram n start
+  appendRetaining (appendCompiled eea (multiplyDataProgram n (start+eea.1)))
+    (multiplicationCorrectionProgram n) prior
+
+theorem multiplicationAfterResetProgram_run (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (multiplicationAfterResetProgram n start prior) read history = (multiplicationAfterReset (prior.map history)).run := by
+  unfold multiplicationAfterResetProgram
+  have h := appendRetaining_run
+    (appendCompiled (bankWrapperProgram n start) (multiplyDataProgram n _))
+    (multiplicationCorrectionProgram n) prior (bankWrapper.seq fig15MultiplyToData)
+    (fun outcomes => (AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) outcomes) .done).seq multiplicationCleanupSource)
+    read history (by
+      apply appendCompiled_run_eq
+      · exact bankWrapperProgram_run n start read history
+      · intro h; exact multiplyDataProgram_run n _ read h)
+    (fun cursor indices h => multiplicationCorrectionProgram_run n cursor indices read h)
+  simpa only [multiplicationAfterReset, multiplicationCleanupSource, adaptive_seq_assoc] using h
+
+theorem multiplicationAfterResetProgram_tCount (n start : Nat) (prior : List (Fin start))
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (multiplicationAfterResetProgram n start prior) read history = (multiplicationAfterReset (prior.map history)).tCount := by
+  unfold multiplicationAfterResetProgram
+  have h := appendRetaining_tCount
+    (appendCompiled (bankWrapperProgram n start) (multiplyDataProgram n _))
+    (multiplicationCorrectionProgram n) prior (bankWrapper.seq fig15MultiplyToData)
+    (fun outcomes => (AdaptiveCircuit.unitary (registerZCorrection (List.range' 580 256) outcomes) .done).seq multiplicationCleanupSource)
+    read history (by
+      apply appendCompiled_tCount_eq
+      · exact bankWrapperProgram_tCount n start read history
+      · intro h; exact multiplyDataProgram_tCount n _ read h)
+    (fun cursor indices h => multiplicationCorrectionProgram_tCount n cursor indices read h)
+  simpa only [multiplicationAfterReset, multiplicationCleanupSource, adaptive_seq_assoc] using h
+
+attribute [local irreducible] multiplicationAfterResetProgram
+
+def multiplicationProgram (n start : Nat) : (count : Nat) × Straight n start (start+count) :=
+  let first := multiplyWorkProgram n start
+  appendCompiled first (collectProgram n (multiplicationAfterResetProgram n) (List.range' 580 256) (start+first.1) ([] : List (Fin _)))
+
+theorem multiplicationProgram_run (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledRun (multiplicationProgram n start) read history = multiplication.run := by
+  unfold multiplicationProgram multiplication
+  apply appendCompiled_run_eq
+  · exact multiplyWorkProgram_run n start read history
+  · intro h
+    exact collectProgram_run n (multiplicationAfterResetProgram n) multiplicationAfterReset read
+      (fun cursor prior h => multiplicationAfterResetProgram_run n cursor prior read h) _ _ ([] : List (Fin _)) h
+
+theorem multiplicationProgram_tCount (n start : Nat) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    compiledTCount (multiplicationProgram n start) read history = multiplication.tCount := by
+  unfold multiplicationProgram multiplication
+  apply appendCompiled_tCount_eq
+  · exact multiplyWorkProgram_tCount n start read history
+  · intro h
+    exact collectProgram_tCount n (multiplicationAfterResetProgram n) multiplicationAfterReset read
+      (fun cursor prior h => multiplicationAfterResetProgram_tCount n cursor prior read h) _ _ ([] : List (Fin _)) h
+
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+private theorem measuredMultiplicationCost_measurements_seq (a b : AdaptiveCircuit) :
+    (a.seq b).measurementCount = a.measurementCount + b.measurementCount := by
+  induction a with
+  | done => simp only [AdaptiveCircuit.seq,AdaptiveCircuit.measurementCount,Nat.zero_add]
+  | unitary gs a ih => simpa only [AdaptiveCircuit.seq,AdaptiveCircuit.measurementCount] using ih
+  | xMeasureReset w a b iha ihb =>
+    simp only [AdaptiveCircuit.seq,AdaptiveCircuit.measurementCount,iha,ihb,Nat.add_max_add_right]
+    omega
+
+private theorem measuredMultiplicationCost_reset_t_saving (ws : List Wire) (a b : List Bool → AdaptiveCircuit) (saving : Nat)
+    (h : ∀ outcomes, (a outcomes).tCount + saving = (b outcomes).tCount) :
+    (measureResetThen ws a).tCount + saving = (measureResetThen ws b).tCount := by
+  induction ws generalizing a b with
+  | nil => exact h []
+  | cons w ws ih =>
+    simp only [measureResetThen,AdaptiveCircuit.tCount]
+    rw [← Nat.add_max_add_right,ih _ _ (fun bs => h (false :: bs)),ih _ _ (fun bs => h (true :: bs))]
+
+private theorem measuredMultiplicationCost_reset_measurements (ws : List Wire) (a b : List Bool → AdaptiveCircuit) (extra : Nat)
+    (h : ∀ outcomes, (a outcomes).measurementCount = (b outcomes).measurementCount + extra) :
+    (measureResetThen ws a).measurementCount = (measureResetThen ws b).measurementCount + extra := by
+  induction ws generalizing a b with
+  | nil => exact h []
+  | cons w ws ih =>
+    simp only [measureResetThen,AdaptiveCircuit.measurementCount,ih _ _ (fun bs => h (false :: bs)),
+      ih _ _ (fun bs => h (true :: bs)),Nat.add_max_add_right,Nat.add_assoc]
+
+theorem bankWrapper_saving : bankWrapper.tCount + 1690738 = secp256k1MeasuredEEAForwardInDataBank.tCount := by
+  simpa only [bankWrapper,secp256k1MeasuredEEAForwardInDataBank,AdaptiveCircuit.relabel_tCount] using wrapper_saving
+
+theorem bankWrapper_measurements : bankWrapper.measurementCount = secp256k1MeasuredEEAForwardInDataBank.measurementCount + 241534 := by
+  simpa only [bankWrapper,secp256k1MeasuredEEAForwardInDataBank,AdaptiveCircuit.relabel_measurementCount] using wrapper_measurements
+
+attribute [local irreducible] bankWrapper secp256k1MeasuredEEAForwardInDataBank
+  AdaptiveCircuit.tCount AdaptiveCircuit.measurementCount
+
+theorem multiplicationAfterReset_saving (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).tCount + 1690738 = (fig15MultiplicationAfterReset outcomes).tCount := by
+  have h := bankWrapper_saving
+  simp only [multiplicationAfterReset,fig15MultiplicationAfterReset,adaptive_tCount_seq]
+  omega
+
+theorem multiplicationAfterReset_measurements (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).measurementCount = (fig15MultiplicationAfterReset outcomes).measurementCount + 241534 := by
+  have h := bankWrapper_measurements
+  simp only [multiplicationAfterReset,fig15MultiplicationAfterReset,measuredMultiplicationCost_measurements_seq]
+  omega
+
+attribute [local irreducible] multiplicationAfterReset fig15MultiplicationAfterReset measureResetThen
+
+theorem multiplication_saving : multiplication.tCount + 1690738 = secp256k1InPlaceMultiplication.tCount := by
+  have h := measuredMultiplicationCost_reset_t_saving (List.range' 580 256) _ _ _ multiplicationAfterReset_saving
+  simp only [multiplication,secp256k1InPlaceMultiplication,adaptive_tCount_seq]
+  omega
+
+theorem multiplication_measurements : multiplication.measurementCount = secp256k1InPlaceMultiplication.measurementCount + 241534 := by
+  have h := measuredMultiplicationCost_reset_measurements (List.range' 580 256) _ _ _ multiplicationAfterReset_measurements
+  simp only [multiplication,secp256k1InPlaceMultiplication,measuredMultiplicationCost_measurements_seq]
+  omega
+
+theorem multiplication_T : multiplication.tCount = 244370665 := by
+  have h := multiplication_saving
+  rw [secp256k1InPlaceMultiplication_T] at h
+  omega
+
+theorem multiplication_measurementCount : multiplication.measurementCount = 14948841 :=
+  multiplication_measurements.trans (congrArg (fun x => x+241534) secp256k1InPlaceMultiplication_measurements)
+
+theorem multiplicationProgram_count (n start : Nat) : (multiplicationProgram n start).1 = 14948841 :=
+  (compiled_count_of_run (multiplicationProgram n start) (fun _ => false) (fun _ => false)
+    multiplication (multiplicationProgram_run n start (fun _ => false) (fun _ => false))).trans multiplication_measurementCount
+end
+end ShorECDLP.Entrant.MeasuredQuotient
+end
+
+section
+namespace ShorECDLP.Entrant.MeasuredQuotient
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+
+private theorem measuredMultiplicationSourceSupport_seq_support_mono {a b c d : AdaptiveCircuit}
+    (ha : a.wires ⊆ c.wires) (hb : b.wires ⊆ d.wires) :
+    (a.seq b).wires ⊆ (c.seq d).wires := by
+  intro w hw
+  simp only [modularWires_seq] at hw ⊢
+  exact hw.imp (fun h => ha h) (fun h => hb h)
+
+private theorem measuredMultiplicationSourceSupport_reset_support_mono (ws : List Wire) (a b : List Bool → AdaptiveCircuit)
+    (h : ∀ outcomes, (a outcomes).wires ⊆ (b outcomes).wires) :
+    (measureResetThen ws a).wires ⊆ (measureResetThen ws b).wires := by
+  induction ws generalizing a b with
+  | nil => exact h []
+  | cons w ws ih =>
+    have h0 := ih _ _ (fun bs => h (false::bs))
+    have h1 := ih _ _ (fun bs => h (true::bs))
+    intro q hq
+    simp only [measureResetThen,AdaptiveCircuit.wires,List.mem_cons,List.mem_append] at hq ⊢
+    exact hq.imp id (fun hn => hn.imp (fun hh => h0 hh) (fun hh => h1 hh))
+
+theorem bankWrapper_wires_subset : bankWrapper.wires ⊆ secp256k1MeasuredEEAForwardInDataBank.wires := by
+  simp only [bankWrapper,secp256k1MeasuredEEAForwardInDataBank,AdaptiveCircuit.relabel_wires]
+  exact List.map_subset _ wrapper_wires_subset
+
+attribute [local irreducible] bankWrapper secp256k1MeasuredEEAForwardInDataBank
+
+theorem multiplicationAfterReset_wires_subset (outcomes : List Bool) :
+    (multiplicationAfterReset outcomes).wires ⊆ (fig15MultiplicationAfterReset outcomes).wires := by
+  unfold multiplicationAfterReset fig15MultiplicationAfterReset
+  exact measuredMultiplicationSourceSupport_seq_support_mono (measuredMultiplicationSourceSupport_seq_support_mono (measuredMultiplicationSourceSupport_seq_support_mono (measuredMultiplicationSourceSupport_seq_support_mono
+    (measuredMultiplicationSourceSupport_seq_support_mono bankWrapper_wires_subset (List.Subset.refl _)) (List.Subset.refl _))
+      (List.Subset.refl _)) (List.Subset.refl _)) (List.Subset.refl _)
+
+attribute [local irreducible] multiplicationAfterReset fig15MultiplicationAfterReset measureResetThen
+
+theorem multiplication_wires_subset : multiplication.wires ⊆ secp256k1InPlaceMultiplication.wires := by
+  unfold multiplication secp256k1InPlaceMultiplication
+  exact measuredMultiplicationSourceSupport_seq_support_mono (List.Subset.refl _) (measuredMultiplicationSourceSupport_reset_support_mono _ _ _ multiplicationAfterReset_wires_subset)
+
+theorem multiplication_wires_bound : multiplication.wires ⊆ List.range 836 :=
+  multiplication_wires_subset.trans secp256k1InPlaceMultiplication_wires_subset
+end
+end ShorECDLP.Entrant.MeasuredQuotient
 end

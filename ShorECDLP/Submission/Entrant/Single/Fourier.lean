@@ -5576,7 +5576,7 @@ structure Setup {n : Nat} (coeffs : Fin n → PointCoeff) where
   firstWires : first.wires = (bank 16).reverse
   signedWires : ∀ w, (signed w).wires = (bank w.width).reverse
   firstCount : first.count = 65535
-  signedCount : ∀ w, (signed w).count = 30949387
+  signedCount : ∀ w, (signed w).count = 31190921
 
 def Setup.firstModel {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) : WindowModel (readConstant coeffs Q) :=
@@ -5748,7 +5748,7 @@ theorem Setup.right_metadata {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setu
 
 theorem Setup.left_count {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
     (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 495255990 := by
+    axisCount ((s.leftModels Q hQ hn).map WindowModel.physical) = 499120534 := by
   rw [← recordCount_eq_axisCount, s.left_metadata, left_record_count]
 
 theorem Setup.left_positions {n : Nat} {coeffs : Fin n → PointCoeff} (s : Setup coeffs)
