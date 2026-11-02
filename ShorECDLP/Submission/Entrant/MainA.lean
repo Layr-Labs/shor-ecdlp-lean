@@ -10696,10 +10696,10 @@ set_option maxRecDepth 20000
 structure MaskedSite (n : Nat) where
   guard : Wire
   ports : List (LookupPort n)
-  arithmetic : ECDSAAdd.Program
+  arithmetic : WCode n
 
 def MaskedSite.prefix {n} (s : MaskedSite n) : WCode n :=
-  [.lookup (some s.guard) s.ports, .literal s.arithmetic]
+  .lookup (some s.guard) s.ports :: s.arithmetic
 def MaskedSite.code {n} (s : MaskedSite n) : WCode n :=
   s.prefix ++ [.lookup (some s.guard) s.ports]
 
@@ -10802,7 +10802,7 @@ end Checked
 def constSite {n} (L : ECDSAAdd.Arithmetic.ControlledPointLayout) (r : List Wire)
     (refs : Nat → Nat → ConstantBit n) : MaskedSite n :=
   ⟨L.core.generic,indexedPorts (L.recoveryConstant r).src refs true,
-    (L.recoveryConstant r).program SquareReduction.c ECDSAAdd.p⟩
+    wLiteral ((L.recoveryConstant r).program SquareReduction.c ECDSAAdd.p)⟩
 
 def constAdd {n} (L : ECDSAAdd.Arithmetic.ControlledPointLayout) (r : List Wire)
     (refs : Nat → Nat → ConstantBit n) : Code n := [.masked (constSite L r refs)]
@@ -14927,7 +14927,7 @@ theorem scrInCompare_split (rows : Nat → Fin 32768) :
 
 def scrInArith : Program := litConcat scrInMid
 
-def scrInSite (rows : Nat → Fin 32768) : WEXUnlookup.MaskedSite 32768 := ⟨windowRoot, scrInPorts rows, scrInArith⟩
+def scrInSite (rows : Nat → Fin 32768) : WEXUnlookup.MaskedSite 32768 := ⟨windowRoot, scrInPorts rows, wLiteral scrInArith⟩
 
 def portPrefixCode4 (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
