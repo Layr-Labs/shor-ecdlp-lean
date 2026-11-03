@@ -272,7 +272,7 @@ theorem pairSite_geometry (refsA refsB : Nat → Nat → ConstantBit 32768) :
     refine ⟨pairRoot_nodup,?_,?_⟩
     · rw [ht]; exact pairTargets_nodup
     · rw [ht]; intro a ha hb; exact pairTargets_window a ha hb
-  refine ⟨?_,?_,Or.inr (Or.inr ⟨pairSite_targets refsA refsB,pairSite_guard refsA refsB⟩)⟩
+  refine ⟨?_,?_,Or.inr (Or.inr (Or.inl ⟨pairSite_targets refsA refsB,pairSite_guard refsA refsB⟩))⟩
   · intro i hi
     rw [pairSite_code] at hi
     simp only [List.mem_cons,List.mem_singleton,List.not_mem_nil,or_false] at hi

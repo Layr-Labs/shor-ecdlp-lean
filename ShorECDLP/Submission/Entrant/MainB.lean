@@ -550,16 +550,17 @@ def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire :=
 def SiteKind {n} (site : MaskedSite n) : Prop :=
   (portTargets site.ports = List.range' 14115 256 ∧ site.guard = 14113) ∨
     (portTargets site.ports = WEX.scrWires ∧ site.guard = windowRoot) ∨
-    (portTargets site.ports = List.range' 14115 256 ++ List.range' 15399 256 ∧ site.guard = 14113)
+    (portTargets site.ports = List.range' 14115 256 ++ List.range' 15399 256 ∧ site.guard = 14113) ∨
+    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot)
 
 theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     (portTargets site.ports).Nodup ∧ (∀ w ∈ portTargets site.ports, 14115 ≤ w ∧ oldWork w) ∧
     (∀ i : Fin 128, clearHot site i = scratch site + 1 + i.val) ∧
     (∀ i, clearHot site i ∈ portTargets site.ports) ∧
     scratch site ∈ portTargets site.ports ∧
-    (site.guard = 14113 ∨ site.guard = 10015) ∧ site.ports.length ≤ 516 := by
+    (site.guard = 14113 ∨ site.guard = 10015) ∧ site.ports.length ≤ 771 := by
   have hlen : site.ports.length = (portTargets site.ports).length := by simp [portTargets]
-  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
+  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
   · have hc : clearHot site = recycledHot := by
       unfold clearHot
       rw [hg,if_neg (by decide)]
@@ -631,6 +632,28 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_append,List.length_range',List.length_range']
       omega
+  · have hc : clearHot site = scrSiteHot := by
+      unfold clearHot
+      rw [hg,if_pos rfl]
+    have hs : scratch site = 14373 := by rw [scratch,ht,WEX.scrAll_eq]; rfl
+    rw [hc,hs]
+    refine ⟨by rw [ht]; exact WEX.scrAllWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
+    · intro w hw
+      rw [ht,WEX.scrAll_eq] at hw
+      simp only [List.mem_append,List.mem_cons,List.mem_range'_1,List.not_mem_nil,
+        or_false] at hw
+      unfold oldWork
+      dsimp only [Wire] at *
+      omega
+    · intro i
+      simp only [scrSiteHot]
+    · intro i
+      rw [ht]
+      exact List.mem_append_left _ (scrSiteHot_mem i)
+    · rw [ht,WEX.scrAll_eq]
+      simp
+    · rw [hlen,ht,WEX.scrAll_eq]
+      simp
 
 theorem low_lt (i : Fin 7) : low i < 862 := by
   have hi := i.isLt
@@ -2570,7 +2593,7 @@ theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
   rw [(MeasuredClear.recordUnary_counts _ _ _ (site_high_layout site hg) 0).1,high_nodes]
 
 theorem clearProgram_slots {n} (site : MaskedSite n) (hg : SiteGeometry site) (start : Nat) :
-    (clearProgram site start).gateSlots ≤ 33818866 := by
+    (clearProgram site start).gateSlots ≤ 50530546 := by
   rw [clearProgram,clear_slots_gen site high highPaths (site_high_layout site hg),high_nodes,
     show (2:Nat) ^ high.length = 128 by decide +kernel]
   have := (kind_facts site hg.kind).2.2.2.2.2.2
@@ -4268,7 +4291,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   | cons i code ih => cases i <;> simp [codeSlots,ih,Nat.add_assoc]
 
 theorem block_slots_upper {n} (b : Block n) (hg : BlockGeometry b) (start : Nat) :
-    (blockProgram b start).gateSlots ≤ codeSlots bits (normalizeW b.code) + blockMasks b * 33818866 := by
+    (blockProgram b start).gateSlots ≤ codeSlots bits (normalizeW b.code) + blockMasks b * 50530546 := by
   cases b with
   | plain code =>
     have hl := pair_layouts_of_placed bits windowPaths windowRoot (normalizeW code)
@@ -4288,7 +4311,7 @@ theorem block_slots_upper {n} (b : Block n) (hg : BlockGeometry b) (start : Nat)
     omega
 
 theorem program_slots_upper {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b) (start : Nat) :
-    (program code start).gateSlots ≤ codeSlots bits (normalizeW (erase code)) + masks code * 33818866 := by
+    (program code start).gateSlots ≤ codeSlots bits (normalizeW (erase code)) + masks code * 50530546 := by
   induction code generalizing start with
   | nil => simp [program,records,erase,normalizeW,codeSlots,masks,Straight.gateSlots]
   | cons b code ih =>
