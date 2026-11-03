@@ -252,7 +252,7 @@ def pairSite {n} (refsA refsB : Nat → Nat → ConstantBit n) : MaskedSite n :=
   ⟨streamLayout.core.generic,
     indexedPorts (streamLayout.recoveryConstant streamLayout.point.x).src refsA true ++
       indexedPorts pairSrc refsB true,
-    pairArith⟩
+    wLiteral pairArith⟩
 
 def pairAdd {n} (refsA refsB : Nat → Nat → ConstantBit n) : Code n := [.masked (pairSite refsA refsB)]
 
@@ -294,7 +294,7 @@ theorem pairSite_inst {n} (read : ConstantBit n → Bool) (address : Nat)
     (fun i hi => hA i (by omega))
   have iB := maskedT_inst read streamLayout.core.generic pairSrc (refsB address) kB.val
     (fun i hi => hB i (by omega))
-  simp only [pairSite, pairArith, MaskedSite.code, MaskedSite.prefix, specialize, List.cons_append, List.nil_append,
+  simp only [pairSite, pairArith, wLiteral, MaskedSite.code, MaskedSite.prefix, specialize, List.cons_append, List.nil_append,
     List.flatMap_cons,
     List.flatMap_nil, List.append_nil, WInstr.specialize, portTemplate_append,
     portTemplate_indexed_some, Tmpl.instantiate_append, Tmpl.instantiate_lit, iA, iB, List.append_assoc]

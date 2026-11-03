@@ -48,7 +48,7 @@ theorem row2_geometry : ∀ b ∈ row2, BlockGeometry b := by
   · exact ⟨pairSite_geometry _ _,pairSite_placed14 _ _,(pairSite_geometry _ _).bank⟩
   · exact ⟨pairSite_geometry _ _,pairSite_placed14 _ _,(pairSite_geometry _ _).bank⟩
 
-theorem row2_masks14 : masks row2 = 4 := rfl
+theorem row2_masks14 : masks row2 = 5 := rfl
 
 theorem lookup_meas14 (ps : List (LookupPort 32768)) :
     lookupMeasurements (portOps ps bits windowPaths (lookupRoot windowRoot (some streamLayout.core.generic))) =
@@ -91,7 +91,7 @@ theorem row2_records_code14 :
   simp only [erase_append,normalize_append,records_old_append] at *
   omega
 
-theorem row2_records : records row2 = 1674392 := by
+theorem row2_records : records row2 = 1659034 := by
   have h := records_relation row2 row2_geometry
   rw [row2_masks14,WEXUnlookup.row2_lens,row2_records_code14] at h
   omega
@@ -99,7 +99,7 @@ theorem row2_records : records row2 = 1674392 := by
 attribute [local irreducible] program blockProgram clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx Nat.add Nat.mul in
-theorem row2_ccx_upper : ccx row2 ≤ 2279089 := by
+theorem row2_ccx_upper : ccx row2 ≤ 2262960 := by
   have h := ccx_relation row2
   have hn := WEX.literalToffolis_normalize (erase row2)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
@@ -185,7 +185,7 @@ attribute [local irreducible] program blockProgram clearProgram WEX.compile Brid
   lookupMeasurements WEX.portOps tableAddressTree MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps
   MeasuredClear.measuredClear ccx Nat.add Nat.mul
 
-def addFixed2 (start : Nat) : Straight 32768 start (start+1674392) :=
+def addFixed2 (start : Nat) : Straight 32768 start (start+1659034) :=
   castFinish (congrArg (fun m => start+m) row2_records) (program row2 start)
 
 attribute [local irreducible] addFixed2
@@ -258,10 +258,10 @@ theorem fastBodySource_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
     (fun s hs => ⟨windowPrepare_live _ (rootFlip_live s hs.1),prefix_hot s hs.2⟩)
   exact composeCoherent (f := fun s => middleState coeffs Q (prefixState s)) (g := suffixState)
     h WEX.suffix_coherent (fun _ _ => True.intro)
-def fastBodyProgram (start : Nat) : Straight 32768 start (start+1674904) :=
+def fastBodyProgram (start : Nat) : Straight 32768 start (start+1659546) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nFastProgram start)).append (addFixed2 (start+256))).append
-      (nFastProgram (start+256+1674392))).append (suffixProgram (start+256+1674392+256)))
+      (nFastProgram (start+256+1659034))).append (suffixProgram (start+256+1659034+256)))
 
 attribute [local irreducible] fastBodyProgram
 
@@ -297,11 +297,11 @@ theorem fastBodyProgram_credit (start : Nat) : ProgramCredit (fastBodyProgram st
     (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
   have hl : ProgramCredit (nFastProgram start) a := WEX.nFastProgram_credit start
-  have hr : ProgramCredit (nFastProgram (start+256+1674392)) a := WEX.nFastProgram_credit _
+  have hr : ProgramCredit (nFastProgram (start+256+1659034)) a := WEX.nFastProgram_credit _
   rw [fastBodyProgram]
   apply credit_cast
   exact five_credit a (ccx row2) (prefix_credit start) hl (addFixed2_credit (start+256)) hr
-    (suffix_credit (start+256+1674392+256))
+    (suffix_credit (start+256+1659034+256))
 
 theorem fastBodyProgram_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((fastBodyProgram start).instantiate read history).tCount =
@@ -344,7 +344,7 @@ theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gate
   rw [ECDSAAdd.Baselines.normalize_slots] at sign
   have bound := fastWindowSign_slots
   omega
-def fastCompactProgram (start : Nat) : Straight 32768 start (start+1674904) :=
+def fastCompactProgram (start : Nat) : Straight 32768 start (start+1659546) :=
   relabelStraight WEX.compactPerm (fastBodyProgram start)
 
 theorem fastCompactProgram_support (start : Nat) :
@@ -386,14 +386,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx row2 ≤ 2279593 := by
+    ccx row2 ≤ 2263464 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := WEXUnlookupWidth14.row2_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 14 where
-  records := 1674904
-  tBound := 15957151
+  records := 1659546
+  tBound := 15844248
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := fastCompactProgram
   coherent := by

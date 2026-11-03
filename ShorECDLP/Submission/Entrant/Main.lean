@@ -21,14 +21,14 @@ private theorem fusedClearWiden {limits : Limits} {layout : DecodeLayout} {entry
 theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow body 14)
     (n16 : ModNarrow body 15)
     (hSupport : ledger.support.length ≤ 1634) (hSlot : body.slotBound ≤ 3000000000)
-    (hR15 : n15.records ≤ 1708178) (hR16 : n16.records ≤ 1856402)
+    (hR15 : n15.records ≤ 1659546) (hR16 : n16.records ≤ 1758490)
     (hReset : body.reset.length ≤ 854)
-    (hT15 : n15.tBound ≤ 16190069) (hT16 : n16.tBound ≤ 17227637)
-    (hC15 : n15.credit ≤ 2279593) (hC16 : n16.credit ≤ 2394793)
+    (hT15 : n15.tBound ≤ 15844248) (hT16 : n16.tBound ≤ 16536856)
+    (hC15 : n15.credit ≤ 2263464) (hC16 : n16.credit ≤ 2362408)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
     Certificate officialLimits (lowerLayout 1938 entry layout) (fourEntry 1938 1939 entry)
-      ⟨1636, 274229317, 543906879⟩ := by
+      ⟨1636, 271057873, 543906879⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 176382 ≤ officialLimits.gateSlots := by
@@ -60,7 +60,7 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
   apply fusedClearWiden raw
   · change ledger.support.length + 2 ≤ 1636
     omega
-  · change 4 * (131071 + 20 * n16.credit + 9 * n15.credit) + 56244 + 1 ≤ 274229317
+  · change 4 * (131071 + 20 * n16.credit + 9 * n15.credit) + 56244 + 1 ≤ 271057873
     omega
   · change entry.finalCursor + added entry.program ≤ 543906879
     omega
@@ -85,17 +85,17 @@ def narrow13 : ModNarrow WEXUnlookup.compactBody 13 := WEXUnlookupWidth13.fastNa
 def narrow14 : ModNarrow WEXUnlookup.compactBody 14 := WEXUnlookupWidth14.Fused.fastNarrow
 def narrow15 : ModNarrow WEXUnlookup.compactBody 15 := WEXUnlookup.Width15Fused.fastNarrow
 
-theorem n13_records : narrow13.records ≤ 1634066 := by
+theorem n13_records : narrow13.records ≤ 1626836 := by
   exact le_rfl
-theorem n14_records : narrow14.records ≤ 1674904 := by
+theorem n14_records : narrow14.records ≤ 1659546 := by
   exact le_rfl
-theorem n15_records : narrow15.records ≤ 1790104 := by
+theorem n15_records : narrow15.records ≤ 1758490 := by
   exact le_rfl
-theorem n13_cost : narrow13.tBound ≤ 15671285 := by
+theorem n13_cost : narrow13.tBound ≤ 15615278 := by
   exact le_rfl
-theorem n14_cost : narrow14.tBound ≤ 15957151 := by
+theorem n14_cost : narrow14.tBound ≤ 15844248 := by
   exact le_rfl
-theorem n15_cost : narrow15.tBound ≤ 16763551 := by
+theorem n15_cost : narrow15.tBound ≤ 16536856 := by
   exact le_rfl
 
 attribute [local irreducible] narrow13 narrow14 narrow15
@@ -108,28 +108,28 @@ local instance resourcesInstance : Single.ProducerResources bodyInstance :=
 local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
 local instance programInstance : Programs bodyInstance := triPrograms narrow13 narrow14 narrow15
 
-private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15671285) :
-    c ≤ 2238755 := by omega
-private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15957151) :
-    c ≤ 2279593 := by omega
-private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16763551) :
-    c ≤ 2394793 := by omega
+private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15615278) :
+    c ≤ 2230754 := by omega
+private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15844248) :
+    c ≤ 2263464 := by omega
+private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16536856) :
+    c ≤ 2362408 := by omega
 
-theorem n13_credit : narrow13.credit ≤ 2238755 := by
+theorem n13_credit : narrow13.credit ≤ 2230754 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow13.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow13.program 0) (narrow13.zero 0) read Fin.elim0
   have hc := narrow13.count_eq 0
   have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
   exact count13_bound _ _ he' (ht.trans n13_cost)
-theorem n14_credit : narrow14.credit ≤ 2279593 := by
+theorem n14_credit : narrow14.credit ≤ 2263464 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow14.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow14.program 0) (narrow14.zero 0) read Fin.elim0
   have hc := narrow14.count_eq 0
   have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
   exact count14_bound _ _ he' (ht.trans n14_cost)
-theorem n15_credit : narrow15.credit ≤ 2394793 := by
+theorem n15_credit : narrow15.credit ≤ 2362408 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow15.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow15.program 0) (narrow15.zero 0) read Fin.elim0
@@ -139,7 +139,7 @@ theorem n15_credit : narrow15.credit ≤ 2394793 := by
 
 def entry : StraightEntry := fourEntry 1938 1939 Flexible.entry
 def layout : DecodeLayout := lowerLayout 1938 Flexible.entry Flexible.layout
-def bounds : Bounds := ⟨1636, 274229317, 543906879⟩
+def bounds : Bounds := ⟨1636, 271057873, 543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   apply @matched_fused_certificate bodyInstance resourcesInstance coverInstance narrow13 narrow14 narrow15
@@ -165,7 +165,7 @@ end ShorECDLP.Entrant.Schedule29Seventeen247.Flexible.FusedFinal
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1636,274229317,543906879⟩
+def bounds : Bounds := ⟨1636,271057873,543906879⟩
 noncomputable section
 def entry : StraightEntry := Schedule29Seventeen247.Flexible.FusedFinal.entry
 def layout : DecodeLayout := Schedule29Seventeen247.Flexible.FusedFinal.layout
