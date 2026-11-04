@@ -2909,21 +2909,46 @@ set_option maxRecDepth 20000
 
 def scratch {n} (site : MaskedSite n) : Wire := (portTargets site.ports).headD 0
 
-def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire :=
-  if site.guard = windowRoot then scrSiteHot else recycledHot
+/-- The recycled phase bank of a site: the 128 cleared wires after its scratch wire. -/
+def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire := fun i => scratch site + 1 + i.val
 
 def SiteKind {n} (site : MaskedSite n) : Prop :=
   (portTargets site.ports = List.range' 14115 256 ∧ site.guard = 14113) ∨
     (portTargets site.ports = WEX.scrWires ∧ site.guard = windowRoot) ∨
     (portTargets site.ports = List.range' 14115 256 ++ List.range' 15399 256 ∧ site.guard = 14113) ∨
-    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot)
+    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot) ∨
+    (portTargets site.ports = List.range' 14115 256 ∧ site.guard = windowRoot)
 
 theorem scrAllWires_eq : WEX.scrAllWires = WEX.scrWires ++ List.range' 15399 255 := by
   simp only [WEX.scrAllWires, WEX.scrDExtraWires, WEX.map_poolWire _ _ (by norm_num : 1284 + 255 ≤ 5699)]
 
+-- Structural duplicate-freeness proofs: `decide +kernel` on these 771/513-wire lists cost 160 s / 31 s
+-- of kernel replay; the words are increasing runs of ranges, so `omega` on the range bounds suffices.
 theorem scrAllWires_nodup : WEX.scrAllWires.Nodup := by
   rw [scrAllWires_eq, scrWires_eq]
-  decide +kernel
+  simp only [List.nodup_append, List.nodup_cons, List.mem_append, List.mem_cons,
+    List.mem_range'_1, List.not_mem_nil, List.nodup_nil, List.cons_append, false_or, List.append_assoc]
+  repeat' (first | exact List.nodup_range' | (intro _) | constructor)
+  all_goals (try dsimp only [Wire] at *)
+  all_goals first | contradiction | omega
+
+theorem pointTargets_nodup : WEX.scrDTargets.Nodup := by
+  have hf : streamLayout.point.finite = 838 := by rw [streamLayout_point]
+  have hx : streamLayout.point.x = List.range' 263 256 := by rw [streamLayout_point]
+  have hy : streamLayout.point.y = List.range' 580 256 := by rw [streamLayout_point]
+  rw [WEX.scrDTargets, hf, hx, hy]
+  simp only [List.nodup_append, List.nodup_cons, List.mem_append, List.mem_range'_1, List.cons_append]
+  repeat' (first | exact List.nodup_range' | (intro _) | constructor)
+  all_goals (try dsimp only [Wire] at *)
+  all_goals first | contradiction | omega
+
+/-- The two pool words are disjoint ranges (structural; `decide` here costs a minute of kernel time). -/
+theorem kindPool2_nodup : (List.range' 14115 256 ++ List.range' 15399 256).Nodup := by
+  rw [List.nodup_append]
+  refine ⟨List.nodup_range', List.nodup_range', ?_⟩
+  intro a ha b hb
+  simp only [List.mem_range'_1] at ha hb
+  omega
 
 theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     (portTargets site.ports).Nodup ∧ (∀ w ∈ portTargets site.ports, 14115 ≤ w ∧ oldWork w) ∧
@@ -2932,11 +2957,10 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     scratch site ∈ portTargets site.ports ∧
     (site.guard = 14113 ∨ site.guard = 10015) ∧ site.ports.length ≤ 771 := by
   have hlen : site.ports.length = (portTargets site.ports).length := by simp [portTargets]
-  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
-  · have hc : clearHot site = recycledHot := by
-      unfold clearHot
-      rw [hg,if_neg (by decide)]
-    have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
+  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+    have hc : clearHot site = recycledHot := by
+      funext i; simp only [clearHot,hs,recycledHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; exact List.nodup_range',?_,?_,?_,?_,Or.inl hg,?_⟩
     · intro w hw
@@ -2956,10 +2980,9 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_range']
       omega
-  · have hc : clearHot site = scrSiteHot := by
-      unfold clearHot
-      rw [hg,if_pos rfl]
-    have hs : scratch site = 14373 := by rw [scratch,ht]; exact scrWires_head
+  · have hs : scratch site = 14373 := by rw [scratch,ht]; exact scrWires_head
+    have hc : clearHot site = scrSiteHot := by
+      funext i; simp only [clearHot,hs,scrSiteHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; exact WEX.scrWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
     · intro w hw
@@ -2978,12 +3001,11 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       simp
     · rw [hlen,ht,scrWires_eq]
       simp
-  · have hc : clearHot site = recycledHot := by
-      unfold clearHot
-      rw [hg,if_neg (by decide)]
-    have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+    have hc : clearHot site = recycledHot := by
+      funext i; simp only [clearHot,hs,recycledHot]
     rw [hc,hs]
-    refine ⟨by rw [ht]; decide +kernel,?_,?_,?_,?_,Or.inl hg,?_⟩
+    refine ⟨by rw [ht]; exact kindPool2_nodup,?_,?_,?_,?_,Or.inl hg,?_⟩
     · intro w hw
       rw [ht] at hw
       simp only [List.mem_append,List.mem_range'_1] at hw
@@ -3004,10 +3026,9 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_append,List.length_range',List.length_range']
       omega
-  · have hc : clearHot site = scrSiteHot := by
-      unfold clearHot
-      rw [hg,if_pos rfl]
-    have hs : scratch site = 14373 := by rw [scratch,ht,scrAllWires_eq,scrWires_eq]; rfl
+  · have hs : scratch site = 14373 := by rw [scratch,ht,scrAllWires_eq,scrWires_eq]; rfl
+    have hc : clearHot site = scrSiteHot := by
+      funext i; simp only [clearHot,hs,scrSiteHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; exact scrAllWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
     · intro w hw
@@ -3026,6 +3047,28 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       simp
     · rw [hlen,ht,scrAllWires_eq,scrWires_eq]
       simp
+  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+    have hc : clearHot site = recycledHot := by
+      funext i; simp only [clearHot,hs,recycledHot]
+    rw [hc,hs]
+    refine ⟨by rw [ht]; exact List.nodup_range',?_,?_,?_,?_,Or.inr hg,?_⟩
+    · intro w hw
+      rw [ht,List.mem_range'_1] at hw
+      unfold oldWork
+      dsimp only [Wire] at *
+      omega
+    · intro i
+      simp only [recycledHot]
+    · intro i
+      rw [ht,List.mem_range'_1]
+      have hi := i.isLt
+      simp only [recycledHot]
+      dsimp only [Wire] at *
+      omega
+    · rw [ht,List.mem_range'_1]
+      omega
+    · rw [hlen,ht,List.length_range']
+      omega
 
 theorem low_lt (i : Fin 7) : low i < 862 := by
   have hi := i.isLt
@@ -3701,7 +3744,7 @@ theorem scrD_placed (bits : List Wire)
     · rw [WEX.scrDPorts_targets]
       exact scrAllWires_nodup
     · rw [WEX.scrCPorts, WEX.scr_point_targets]
-      decide +kernel
+      exact pointTargets_nodup
 
 theorem scr_placed (bits : List Wire)
     (hp : ∀ i ∈ (WEX.scrInSite probeRows).code, PlacedPair bits windowPaths windowRoot i) :
@@ -3868,7 +3911,7 @@ theorem row_geometry : ∀ b ∈ row, BlockGeometry b := by
     · subst hs
       exact ⟨scr_placed windowBits hp,hh,Or.inr (Or.inl ⟨WEX.scrInPorts_targets probeRows,rfl⟩)⟩
     · subst hs
-      exact ⟨scrD_placed windowBits hp,hh,Or.inr (Or.inr (Or.inr ⟨WEX.scrDPorts_targets probeRows,rfl⟩))⟩
+      exact ⟨scrD_placed windowBits hp,hh,Or.inr (Or.inr (Or.inr (Or.inl ⟨WEX.scrDPorts_targets probeRows,rfl⟩)))⟩
 
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
 
