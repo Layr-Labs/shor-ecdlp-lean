@@ -3,7 +3,7 @@ import ShorECDLP.Submission.Entrant.Schedule261
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1636,269869759,543906879⟩
+def bounds : Bounds := ⟨1621,269869759,543906879⟩
 noncomputable section
 def entry : StraightEntry := Schedule29Seventeen244.Flexible.FusedFinal.entry
 def layout : DecodeLayout := Schedule29Seventeen244.Flexible.FusedFinal.layout
