@@ -1,11 +1,11 @@
-import ShorECDLP.Submission.Entrant.FusedRow14
+import ShorECDLP.Submission.Entrant.PathBody
 import ShorECDLP.Submission.Entrant.SinAverage261
+import ShorECDLP.Submission.Entrant.Readout56
 
 /-! The 17-bit first load followed by four physical-15 and twelve physical-14 left digits
-(261 left bits) and thirteen physical-15 right digits (208 right bits), read out with 56
-neighbouring right words (`NeighborReadout.neighborSuffix56`). The schedule is
-`Schedule29Seventeen245` (Schedule262) with one more left digit narrowed by one bit; the success
-argument is the sharp averaged bound `SinAverage261.pair_success261`. -/
+(261 left bits) and thirteen physical-15 right digits (208 right bits), read with 56
+neighbouring right words (`Readout56.suffix56`). The success argument is the averaged bound
+`SinAverage261.pair_success261`. -/
 
 section
 set_option maxRecDepth 30000
@@ -1246,7 +1246,7 @@ def fineBits : Vector (Fin (131071 + 17 * impl.records16 + 12 * impl.records15 +
 
 def readout : Straight 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length)
     (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length + 34946) :=
-  castFinish (by omega) (NeighborReadout.neighborSuffix56 884736
+  castFinish (by omega) (Readout56.suffix56 884736
     (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits)
 
 def fullProgram : Straight 884736 0 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length + 34946) :=
@@ -1257,20 +1257,20 @@ def positionsFor (ps : Vector Nat 208) : TrialPositions SinAverage261.params261 
   right := ps
 
 def layout : DecodeLayout := ⟨.wrappedShift, SinAverage261.params261,
-  (NeighborReadout.rightWords56 fineBits).map positionsFor, by
-    simp only [List.length_map, NeighborReadout.rightWords56_length]; decide⟩
+  (Readout56.rightWords56 fineBits).map positionsFor, by
+    simp only [List.length_map, Readout56.rightWords56_length]; decide⟩
 
 theorem readout_wellFormed : readout.WellFormed := by
   unfold readout
   rw [castFinish_wellFormed]
-  exact NeighborReadout.neighborSuffix56_wellFormed 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits
+  exact Readout56.suffix56_wellFormed 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits
 
 theorem readout_t (read : ConstantBit 884736 → Bool)
     (h : Fin (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) → Bool) :
     (readout.instantiate read h).tCount = 0 := by
   unfold readout
   rw [castFinish_instantiate]
-  exact NeighborReadout.neighborSuffix56_t 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits read h
+  exact Readout56.suffix56_t 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits read h
 
 end
 end
@@ -1408,7 +1408,7 @@ theorem program_clean (read : ConstantBit 884736 → Bool) (b : InstrumentBranch
   intro s hs
   exact ⟨h s hs 0 ledger.reset_zero, h s hs 1 ledger.reset_one⟩
 
-theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈NeighborReadout.rightWords56 fineBits)
+theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈Readout56.rightWords56 fineBits)
     (Q : Point) (d : Nat) (hd : Q=d•G) (hist : List Bool) (a b : Nat)
     (hl : readWord hist trialPositions.left.toList=some a)
     (hr : readWord hist ps.toList=some b)
@@ -1436,7 +1436,7 @@ theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
   rw [fineBits_vals] at hr
   obtain ⟨a,ha,hp⟩:=Rounded.pairAccept_value _ _ _ _ _ hr hf
   obtain ⟨i,hi⟩:=of_decide_eq_true hp
-  obtain ⟨ps,hps,hread⟩:=NeighborReadout.neighborSuffix56_reads 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) fineBits
+  obtain ⟨ps,hps,hread⟩:=Readout56.suffix56_reads 884736 (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) fineBits
     read history ψ hψ b (by simpa only [readout, castFinish_instantiate] using hb) hn ((i.val : ℤ)-28) (by have h:=i.isLt;omega)
   apply verified_of_reads ps hps Q d hd _ a _ _ hread hi
   rw [NeighborReadout.readWord_append_left]
@@ -1870,7 +1870,7 @@ theorem readout_support (read : ConstantBit 884736 → Bool)
     (readout.instantiate read h).wires ⊆ ledger.support := by
   unfold readout
   rw [castFinish_instantiate]
-  apply (NeighborReadout.neighborSuffix56_support 884736
+  apply (Readout56.suffix56_support 884736
     (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits read h).trans
   have hs : [0,1] ⊆ resetWires := by simp [List.subset_def, resetWires]
   exact hs.trans ledger.initial_support
@@ -1903,13 +1903,13 @@ theorem fullProgram_wellFormed : fullProgram.WellFormed :=
   straight_append_wellFormed _ _ program_wellFormed readout_wellFormed
 
 omit cover in
-theorem fullProgram_slots : fullProgram.gateSlots ≤ 32 * windowSlots + 179032 := by
+theorem fullProgram_slots : fullProgram.gateSlots ≤ 32 * windowSlots + 178240 := by
   unfold fullProgram
   rw [Straight.gateSlots_append]
   have hr : readout.gateSlots = 122311 := by
     unfold readout
     rw [castFinish_gateSlots]
-    exact NeighborReadout.neighborSuffix56_slots 884736
+    exact Readout56.suffix56_slots 884736
       (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) 208 fineBits
   rw [hr]
   have h := program_slots
@@ -1922,7 +1922,7 @@ def bounds : Bounds := ⟨ledger.support.length, 917497 + 17 * impl.cost16 + 12 
   131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length + 34946⟩
 
 theorem certificate
-    (hSlots : 32 * windowSlots + 179032 ≤ officialLimits.gateSlots)
+    (hSlots : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots)
     (hRecords : 131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length + 34946 ≤ officialLimits.measurements) :
     Certificate officialLimits layout entry bounds where
   gateBudget := by
@@ -1935,7 +1935,7 @@ theorem certificate
     decide
   candidateBudget := by
     change 56 * (2*(order/2^208+2)) ≤ 56*(2^49+2)
-    norm_num [order]
+    exact SinAverage261.decoder_budget261
   wellFormed := by
     rw [entry, Single.fixedEntry_wellFormed]
     exact fullProgram_wellFormed
@@ -2116,7 +2116,7 @@ theorem compiler_within : Within ledger.support entry.program := by
   exact fixedEntry_within coefficientAt fullProgram ledger.support fullProgram_within
 
 theorem four_certificate (q y : Wire)
-    (hBaseSlots : 32 * windowSlots + 179032 ≤ officialLimits.gateSlots)
+    (hBaseSlots : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots)
     (hBaseRecords : 131071 + 17 * impl.records16 + 12 * impl.records15 + 469 +
       body.reset.length + 34946 ≤ officialLimits.measurements)
     (hq : q ∉ ledger.support) (hy : y ∉ q :: ledger.support)
@@ -2163,13 +2163,13 @@ theorem source_cursor : entry.finalCursor =
   rw [Single.fixedEntry_cursor]
 
 omit cover in
-theorem source_slots : entry.program.gateSlots ≤ 32 * windowSlots + 179032 := by
+theorem source_slots : entry.program.gateSlots ≤ 32 * windowSlots + 178240 := by
   unfold entry
   rw [Single.fixedEntry_slots]
   exact fullProgram_slots
 
 theorem source_counts (q y : Wire) (sourceBound : Nat)
-    (hBaseSlots : 32 * windowSlots + 179032 ≤ officialLimits.gateSlots)
+    (hBaseSlots : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots)
     (hBaseRecords : 131071 + 17 * impl.records16 + 12 * impl.records15 + 469 +
       body.reset.length + 34946 ≤ officialLimits.measurements)
     (hSource : 917497 + 17 * impl.cost16 + 12 * impl.cost15 + 55458 ≤ sourceBound) :
@@ -2182,11 +2182,11 @@ theorem source_counts (q y : Wire) (sourceBound : Nat)
 
 theorem bounded_four_certificate {c14 c15 c16 : Nat} (hc : ProgramCredit c14 c15 c16)
     (q y : Wire) (sourceBound : Nat)
-    (hBaseSlots : 32 * windowSlots + 179032 ≤ officialLimits.gateSlots)
+    (hBaseSlots : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots)
     (hBaseRecords : 131071 + 17 * impl.records16 + 12 * impl.records15 + 469 +
       body.reset.length + 34946 ≤ officialLimits.measurements)
     (hSource : 917497 + 17 * impl.cost16 + 12 * impl.cost15 + 55458 ≤ sourceBound)
-    (hSlots : 32 * windowSlots + 179032 + 24 * sourceBound + 2 ≤ officialLimits.gateSlots)
+    (hSlots : 32 * windowSlots + 178240 + 24 * sourceBound + 2 ≤ officialLimits.gateSlots)
     (hRecords : 131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length +
       34946 + sourceBound ≤ officialLimits.measurements)
     (hq : q ∉ ledger.support) (hy : y ∉ q :: ledger.support) :
@@ -2282,7 +2282,7 @@ private theorem fusedClearWiden {limits : Limits} {layout : DecodeLayout} {entry
 
 theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow body 14)
     (n16 : ModNarrow body 15)
-    (hSupport : ledger.support.length ≤ 1634) (hSlot : body.slotBound ≤ 3000000000)
+    (hSupport : ledger.support.length ≤ 1619) (hSlot : body.slotBound ≤ 3000000000)
     (hR15 : n15.records ≤ 1659546) (hR16 : n16.records ≤ 1758490)
     (hReset : body.reset.length ≤ 854)
     (hT15 : n15.tBound ≤ 15844248) (hT16 : n16.tBound ≤ 16536856)
@@ -2290,11 +2290,11 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
     Certificate officialLimits (lowerLayout 1938 entry layout) (fourEntry 1938 1939 entry)
-      ⟨1636, 269869759, 543906879⟩ := by
+      ⟨1621, 269869759, 543906879⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
-  have hbaseS : 32 * windowSlots + 179032 ≤ officialLimits.gateSlots := by
-    change 32 * windowSlots + 179032 ≤ 4000000000000000
+  have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
+    change 32 * windowSlots + 178240 ≤ 4000000000000000
     omega
   have hbaseR : 131071 + 17 * (triPrograms n14 n15 n16).records16 + 12 * (triPrograms n14 n15 n16).records15 +
       469 + body.reset.length + 34946 ≤ officialLimits.measurements := by
@@ -2304,8 +2304,8 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
       55458 ≤ 491238726 := by
     change 917497 + 17 * n16.tBound + 12 * n15.tBound + 55458 ≤ 491238726
     omega
-  have hslots : 32 * windowSlots + 179032 + 24 * 491238726 + 2 ≤ officialLimits.gateSlots := by
-    change 32 * windowSlots + 179032 + 24 * 491238726 + 2 ≤ 4000000000000000
+  have hslots : 32 * windowSlots + 178240 + 24 * 491238726 + 2 ≤ officialLimits.gateSlots := by
+    change 32 * windowSlots + 178240 + 24 * 491238726 + 2 ≤ 4000000000000000
     omega
   have hrecords : 131071 + 17 * (triPrograms n14 n15 n16).records16 + 12 * (triPrograms n14 n15 n16).records15 +
       469 + body.reset.length + 34946 + 491238726 ≤ officialLimits.measurements := by
@@ -2320,7 +2320,7 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
     change 131071 + 17 * n16.records + 12 * n15.records + 469 + body.reset.length + 34946 ≤ 52668153
     omega
   apply fusedClearWiden raw
-  · change ledger.support.length + 2 ≤ 1636
+  · change ledger.support.length + 2 ≤ 1621
     omega
   · change 4 * (131071 + 17 * n16.credit + 12 * n15.credit) + 55458 + 1 ≤ 269869759
     omega
@@ -2343,17 +2343,13 @@ attribute [local irreducible] WEXUnlookupWidth13.compactProgram WEXUnlookupWidth
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount
   WEX.literalToffolis WEX.normalizeW Nat.add Nat.mul AndGadget.added
 
-def narrow13 : ModNarrow WEXUnlookup.compactBody 13 := WEXUnlookupWidth13.fastNarrow
-def narrow14 : ModNarrow WEXUnlookup.compactBody 14 := WEXUnlookupWidth14.Fused.fastNarrow
-def narrow15 : ModNarrow WEXUnlookup.compactBody 15 := WEXUnlookup.Width15Fused.fastNarrow
+def narrow13 : ModNarrow PathShare.body2 13 := PathShare.narrow13
+def narrow14 : ModNarrow PathShare.body2 14 := PathShare.narrow14
+def narrow15 : ModNarrow PathShare.body2 15 := PathShare.narrow15
 
-theorem n13_records : narrow13.records ≤ 1626836 := by
-  exact le_rfl
 theorem n14_records : narrow14.records ≤ 1659546 := by
   exact le_rfl
 theorem n15_records : narrow15.records ≤ 1758490 := by
-  exact le_rfl
-theorem n13_cost : narrow13.tBound ≤ 15615278 := by
   exact le_rfl
 theorem n14_cost : narrow14.tBound ≤ 15844248 := by
   exact le_rfl
@@ -2361,29 +2357,20 @@ theorem n15_cost : narrow15.tBound ≤ 16536856 := by
   exact le_rfl
 
 attribute [local irreducible] narrow13 narrow14 narrow15
-local instance bodyInstance : Single.WindowBody := WEXUnlookup.compactBody
+local instance bodyInstance : Single.WindowBody := PathShare.body2
 local instance resourcesInstance : Single.ProducerResources bodyInstance :=
-  Single.ProducerResources.ofBody WEXUnlookup.compactBody
+  Single.ProducerResources.ofBody PathShare.body2
     (by change resetWires.Nodup; exact resetWires_nodup)
     (by change (0 : Wire) ∈ resetWires; decide +kernel)
     (by change (1 : Wire) ∈ resetWires; decide +kernel)
 local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
 local instance programInstance : Programs bodyInstance := triPrograms narrow13 narrow14 narrow15
 
-private theorem count13_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15615278) :
-    c ≤ 2230754 := by omega
 private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15844248) :
     c ≤ 2263464 := by omega
 private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 16536856) :
     c ≤ 2362408 := by omega
 
-theorem n13_credit : narrow13.credit ≤ 2230754 := by
-  let read : ConstantBit 32768 → Bool := fun _ => false
-  have ht := narrow13.tCount 0 read Fin.elim0
-  have he := WEXCredit.exact_t (narrow13.program 0) (narrow13.zero 0) read Fin.elim0
-  have hc := narrow13.count_eq 0
-  have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
-  exact count13_bound _ _ he' (ht.trans n13_cost)
 theorem n14_credit : narrow14.credit ≤ 2263464 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow14.tCount 0 read Fin.elim0
@@ -2401,25 +2388,26 @@ theorem n15_credit : narrow15.credit ≤ 2362408 := by
 
 def entry : StraightEntry := fourEntry 1938 1939 Flexible.entry
 def layout : DecodeLayout := lowerLayout 1938 Flexible.entry Flexible.layout
-def bounds : Bounds := ⟨1636, 269869759, 543906879⟩
+def bounds : Bounds := ⟨1621, 269869759, 543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   apply @matched_fused_certificate bodyInstance resourcesInstance coverInstance narrow13 narrow14 narrow15
-  · change WEXUnlookup.compactSupport.length ≤ 1634
-    norm_num [WEXUnlookup.compactSupport,MeasuredClear.hotBank]
-  · rw [bodyInstance, WEXUnlookup.compactBody]
-    decide +kernel
+  · change PathShare.body2.support.length ≤ 1619
+    exact PathShare.body2_ledger.1.le
+  · change PathShare.body2.slotBound ≤ 3000000000
+    exact (by decide : (2000000000 : Nat) ≤ 3000000000)
   · exact n14_records.trans (by norm_num)
   · exact n15_records.trans (by norm_num)
-  · change WEXUnlookup.compactBody.reset.length ≤ 854
-    exact WEXUnlookup.compactBody_ledger.2.2.2.le
+  · change PathShare.body2.reset.length ≤ 854
+    exact PathShare.body2_ledger.2.le
   · exact n14_cost.trans (by norm_num)
   · exact n15_cost.trans (by norm_num)
   · exact n14_credit
   · exact n15_credit
-  · change (1938 : Wire) ∉ WEXUnlookup.compactSupport
-    decide +kernel
-  · change (1939 : Wire) ∉ 1938 :: WEXUnlookup.compactSupport
-    decide +kernel
+  · change (1938 : Wire) ∉ List.range 1619
+    simp
+  · change (1939 : Wire) ∉ 1938 :: List.range 1619
+    simp
 end
 end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible.FusedFinal
+

@@ -1,20 +1,17 @@
 import ShorECDLP.Submission.Entrant.StackBase
 
-/-! Neighbour readout with 56 words: center, 27 positive shifts and 28 negative shifts.
-A copy of `NeighborReadout.neighborSuffix` (StackBase) with one more negative step.
-The 56 trials exactly fill `budget55 = 56·(2^49+2)`. -/
+/-! Fifty-six neighbouring right words from one sample: the centre, 27 positive shifts and
+28 negative shifts. The construction is `NeighborReadout.neighborSuffix` with one more
+negative step; every gate is a permitted record-controlled Clifford on wires 0 and 1. -/
 
-namespace ShorECDLP.Entrant.NeighborReadout
-open Quantum ShorECDLP.Challenge RoundedReadout
+namespace ShorECDLP.Entrant.Readout56
+open Quantum ShorECDLP.Challenge ShorECDLP.Entrant.RoundedReadout ShorECDLP.Entrant.NeighborReadout
 open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
 noncomputable section
 set_option maxRecDepth 4096
 set_option maxHeartbeats 2000000
-set_option exponentiation.threshold 300
 
-/--56 candidate words from one sample: center,27 positive shifts,28 negative shifts.
-The arithmetic is carried out by explicit permitted record-controlled Clifford gates. -/
-def neighborSuffix56 (n start width : Nat) (bits : Vector (Fin start) width) :
+def suffix56 (n start width : Nat) (bits : Vector (Fin start) width) :
     Straight n start (start+2+168*width) :=
   let c:=initialCursor bits
   let q:=c.lift (27*(2*width))
@@ -35,23 +32,22 @@ theorem rightWords56_length {start width : Nat} (bits : Vector (Fin start) width
 
 attribute [local irreducible] positiveWords negativeWords incrementStep complementStep
 
-
-theorem neighborSuffix56_wellFormed (n start width : Nat) (bits : Vector (Fin start) width) :
-    (neighborSuffix56 n start width bits).WellFormed := by
-  unfold neighborSuffix56
+theorem suffix56_wellFormed (n start width : Nat) (bits : Vector (Fin start) width) :
+    (suffix56 n start width bits).WellFormed := by
+  unfold suffix56
   rw [castFinish_wellFormed]
   apply straight_append_wellFormed _ _ (constantStep_wellFormed _ _)
   apply straight_append_wellFormed _ _ (positiveWords_wellFormed _ _ _ _ _)
   exact straight_append_wellFormed _ _ (complementStep_wellFormed _ _)
     (negativeWords_wellFormed _ _ _ _ _)
 
-theorem neighborSuffix56_slots (n start width : Nat) (bits : Vector (Fin start) width) :
-    (neighborSuffix56 n start width bits).gateSlots=7+588*width := by
-  simp only [neighborSuffix56,castFinish_gateSlots,Straight.gateSlots_append,
+theorem suffix56_slots (n start width : Nat) (bits : Vector (Fin start) width) :
+    (suffix56 n start width bits).gateSlots=7+588*width := by
+  simp only [suffix56,castFinish_gateSlots,Straight.gateSlots_append,
     constantStep_slots,positiveWords_slots,complementStep_slots,negativeWords_slots]
   ring
 
-private theorem append_zero56 {n a b c : Nat} (p : Straight n a b) (q : Straight n b c)
+theorem append_t_zero {n a b c : Nat} (p : Straight n a b) (q : Straight n b c)
     (read : ConstantBit n→Bool)
     (hp : ∀h, (p.instantiate read h).tCount=0)
     (hq : ∀h, (q.instantiate read h).tCount=0) (history : Fin a→Bool) :
@@ -60,22 +56,22 @@ private theorem append_zero56 {n a b c : Nat} (p : Straight n a b) (q : Straight
   have h:=outer_append_t_le p q read history 0 (fun h=>le_of_eq (hq h))
   simpa only [hp,Nat.add_zero] using h
 
-theorem neighborSuffix56_t (n start width : Nat) (bits : Vector (Fin start) width)
+theorem suffix56_t (n start width : Nat) (bits : Vector (Fin start) width)
     (read : ConstantBit n→Bool)(history : Fin start→Bool) :
-    ((neighborSuffix56 n start width bits).instantiate read history).tCount=0 := by
-  unfold neighborSuffix56
+    ((suffix56 n start width bits).instantiate read history).tCount=0 := by
+  unfold suffix56
   rw [castFinish_instantiate]
-  apply append_zero56 _ _ read (constantStep_t _ _ _)
+  apply append_t_zero _ _ read (constantStep_t _ _ _)
   intro h
-  apply append_zero56 _ _ read (positiveWords_t _ _ _ _ _ _)
+  apply append_t_zero _ _ read (positiveWords_t _ _ _ _ _ _)
   intro h
-  exact append_zero56 _ _ read (complementStep_t _ _ _)
+  exact append_t_zero _ _ read (complementStep_t _ _ _)
     (negativeWords_t _ _ _ _ _ _) h
 
-theorem neighborSuffix56_support (n start width : Nat) (bits : Vector (Fin start) width)
+theorem suffix56_support (n start width : Nat) (bits : Vector (Fin start) width)
     (read : ConstantBit n→Bool)(history : Fin start→Bool) :
-    ((neighborSuffix56 n start width bits).instantiate read history).wires⊆[0,1] := by
-  unfold neighborSuffix56
+    ((suffix56 n start width bits).instantiate read history).wires⊆[0,1] := by
+  unfold suffix56
   rw [castFinish_instantiate]
   apply outer_append_support _ _ read history ([0,1] : List Wire) (constantStep_support _ _ _ _)
   intro h
@@ -84,11 +80,11 @@ theorem neighborSuffix56_support (n start width : Nat) (bits : Vector (Fin start
   exact outer_append_support _ _ read h ([0,1] : List Wire) (complementStep_support _ _ _ _)
     (fun hh=>negativeWords_support _ _ _ _ _ _ hh)
 
-
-theorem neighborSuffix56_branch (n start : Nat) (bits : Vector (Fin start) 208)
+/-- Every nonzero readout branch writes all 56 neighbouring residues explicitly. -/
+theorem suffix56_branch (n start : Nat) (bits : Vector (Fin start) 208)
     (read : ConstantBit n→Bool) (history : Fin start→Bool)
     (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
-    (hb : b∈((neighborSuffix56 n start 208 bits).instantiate read history).run)
+    (hb : b∈((suffix56 n start 208 bits).instantiate read history).run)
     (hn : b.kraus ψ≠0) :
     b.kraus ψ=ψ ∧
       (∀i : Fin 27, readWord (List.ofFn history++b.history)
@@ -97,7 +93,7 @@ theorem neighborSuffix56_branch (n start : Nat) (bits : Vector (Fin start) 208)
       (∀i : Fin 28, readWord (List.ofFn history++b.history)
         (sumPositions (start+2+11232+416+i.val*832+416) 208).toList=
         some (2^208-1-((i.val+1+(2^208-1-inputValue bits history))%2^208))) := by
-  unfold neighborSuffix56 at hb
+  unfold suffix56 at hb
   rw [castFinish_instantiate] at hb
   obtain ⟨h₁,a,u,ha,hu,he₁,rfl⟩:=straight_append_branch _ _ read history b hb
   have han : a.kraus ψ≠0 := by
@@ -149,14 +145,14 @@ theorem neighborSuffix56_branch (n start : Nat) (bits : Vector (Fin start) 208)
     simpa only [hcomp.2.2,hqv] using hneg.2 i
 
 /-- The physical word list contains a correct explicit record for every offset -28..27. -/
-theorem neighborSuffix56_reads (n start : Nat) (bits : Vector (Fin start) 208)
+theorem suffix56_reads (n start : Nat) (bits : Vector (Fin start) 208)
     (read : ConstantBit n→Bool) (history : Fin start→Bool)
     (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
-    (hb : b∈((neighborSuffix56 n start 208 bits).instantiate read history).run)
+    (hb : b∈((suffix56 n start 208 bits).instantiate read history).run)
     (hn : b.kraus ψ≠0) (j : ℤ) (hj : -28≤j ∧ j≤27) :
     ∃ps∈rightWords56 bits, readWord (List.ofFn history++b.history) ps.toList=
       some ((((inputValue bits history : Nat) : ℤ)+j)%(2^208 : Nat)).toNat := by
-  have hs:=neighborSuffix56_branch n start bits read history ψ hψ b hb hn
+  have hs:=suffix56_branch n start bits read history ψ hψ b hb hn
   by_cases hz : j=0
   · subst j
     refine ⟨bits.map Fin.val,by simp [rightWords56],?_⟩
@@ -190,6 +186,5 @@ theorem neighborSuffix56_reads (n start : Nat) (bits : Vector (Fin start) 208)
         congr 2
         rw [sub_eq_add_neg,hi]
 
-
 end
-end ShorECDLP.Entrant.NeighborReadout
+end ShorECDLP.Entrant.Readout56
