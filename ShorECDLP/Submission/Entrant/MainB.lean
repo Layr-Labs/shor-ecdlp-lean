@@ -955,14 +955,15 @@ set_option maxRecDepth 20000
 
 def scratch {n} (site : MaskedSite n) : Wire := (portTargets site.ports).headD 0
 
-def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire :=
-  if site.guard = windowRoot then scrSiteHot else recycledHot
+/-- The recycled phase bank of a site: the 128 cleared wires after its scratch wire. -/
+def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire := fun i => scratch site + 1 + i.val
 
 def SiteKind {n} (site : MaskedSite n) : Prop :=
   (portTargets site.ports = List.range' 14115 256 ∧ site.guard = 14113) ∨
     (portTargets site.ports = WEX.scrWires ∧ site.guard = windowRoot) ∨
     (portTargets site.ports = List.range' 14115 256 ++ List.range' 15399 256 ∧ site.guard = 14113) ∨
-    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot)
+    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot) ∨
+    (portTargets site.ports = List.range' 14115 256 ∧ site.guard = windowRoot)
 
 theorem scrAllWires_eq : WEX.scrAllWires = WEX.scrWires ++ List.range' 15399 255 := by
   simp only [WEX.scrAllWires, WEX.scrDExtraWires, WEX.map_poolWire _ _ (by norm_num : 1284 + 255 ≤ 5699)]
@@ -978,11 +979,10 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     scratch site ∈ portTargets site.ports ∧
     (site.guard = 14113 ∨ site.guard = 10015) ∧ site.ports.length ≤ 771 := by
   have hlen : site.ports.length = (portTargets site.ports).length := by simp [portTargets]
-  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
-  · have hc : clearHot site = recycledHot := by
-      unfold clearHot
-      rw [hg,if_neg (by decide)]
-    have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
+  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+    have hc : clearHot site = recycledHot := by
+      funext i; simp only [clearHot,hs,recycledHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; exact List.nodup_range',?_,?_,?_,?_,Or.inl hg,?_⟩
     · intro w hw
@@ -1002,10 +1002,9 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_range']
       omega
-  · have hc : clearHot site = scrSiteHot := by
-      unfold clearHot
-      rw [hg,if_pos rfl]
-    have hs : scratch site = 14373 := by rw [scratch,ht]; exact scrWires_head
+  · have hs : scratch site = 14373 := by rw [scratch,ht]; exact scrWires_head
+    have hc : clearHot site = scrSiteHot := by
+      funext i; simp only [clearHot,hs,scrSiteHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; exact WEX.scrWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
     · intro w hw
@@ -1024,10 +1023,9 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       simp
     · rw [hlen,ht,scrWires_eq]
       simp
-  · have hc : clearHot site = recycledHot := by
-      unfold clearHot
-      rw [hg,if_neg (by decide)]
-    have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+    have hc : clearHot site = recycledHot := by
+      funext i; simp only [clearHot,hs,recycledHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; decide +kernel,?_,?_,?_,?_,Or.inl hg,?_⟩
     · intro w hw
@@ -1050,10 +1048,9 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_append,List.length_range',List.length_range']
       omega
-  · have hc : clearHot site = scrSiteHot := by
-      unfold clearHot
-      rw [hg,if_pos rfl]
-    have hs : scratch site = 14373 := by rw [scratch,ht,scrAllWires_eq,scrWires_eq]; rfl
+  · have hs : scratch site = 14373 := by rw [scratch,ht,scrAllWires_eq,scrWires_eq]; rfl
+    have hc : clearHot site = scrSiteHot := by
+      funext i; simp only [clearHot,hs,scrSiteHot]
     rw [hc,hs]
     refine ⟨by rw [ht]; exact scrAllWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
     · intro w hw
@@ -1072,6 +1069,28 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       simp
     · rw [hlen,ht,scrAllWires_eq,scrWires_eq]
       simp
+  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
+    have hc : clearHot site = recycledHot := by
+      funext i; simp only [clearHot,hs,recycledHot]
+    rw [hc,hs]
+    refine ⟨by rw [ht]; exact List.nodup_range',?_,?_,?_,?_,Or.inr hg,?_⟩
+    · intro w hw
+      rw [ht,List.mem_range'_1] at hw
+      unfold oldWork
+      dsimp only [Wire] at *
+      omega
+    · intro i
+      simp only [recycledHot]
+    · intro i
+      rw [ht,List.mem_range'_1]
+      have hi := i.isLt
+      simp only [recycledHot]
+      dsimp only [Wire] at *
+      omega
+    · rw [ht,List.mem_range'_1]
+      omega
+    · rw [hlen,ht,List.length_range']
+      omega
 
 theorem low_lt (i : Fin 7) : low i < 862 := by
   have hi := i.isLt
@@ -1914,7 +1933,7 @@ theorem row_geometry : ∀ b ∈ row, BlockGeometry b := by
     · subst hs
       exact ⟨scr_placed windowBits hp,hh,Or.inr (Or.inl ⟨WEX.scrInPorts_targets probeRows,rfl⟩)⟩
     · subst hs
-      exact ⟨scrD_placed windowBits hp,hh,Or.inr (Or.inr (Or.inr ⟨WEX.scrDPorts_targets probeRows,rfl⟩))⟩
+      exact ⟨scrD_placed windowBits hp,hh,Or.inr (Or.inr (Or.inr (Or.inl ⟨WEX.scrDPorts_targets probeRows,rfl⟩)))⟩
 
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
 
