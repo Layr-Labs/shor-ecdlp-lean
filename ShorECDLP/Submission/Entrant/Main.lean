@@ -1,6 +1,7 @@
 import ShorECDLP.Submission.Entrant.MainA
 import ShorECDLP.Submission.Entrant.MainB
 import ShorECDLP.Submission.Entrant.StackBase
+import ShorECDLP.Submission.Entrant.SdagKick
 
 -- Entrant/FusedCore.lean
 section
@@ -24263,6 +24264,19 @@ theorem right_t_budget (cost16 : Nat) :
   omega
 
 omit body impl ledger in
+theorem left_dt_budget (cost16 cost15 : Nat) :
+    Single.metadataDT (leftCosts cost16 cost15) 0 =
+      917497 + 4 * cost16 + 12 * cost15 + 33670 := by
+  simp [leftCosts, List.replicate, Single.metadataDT, CatalystS.dropSlots]
+  omega
+
+omit body impl ledger in
+theorem right_dt_budget (cost16 : Nat) :
+    Single.metadataDT (rightCosts cost16) 0 = 13 * cost16 + 21321 := by
+  simp [rightCosts, List.replicate, Single.metadataDT, CatalystS.dropSlots]
+  omega
+
+omit body impl ledger in
 theorem firstWindow_wellFormed (start : Nat) : (firstWindow.program start).WellFormed := by
   exact ScheduleFirst17.window_wellFormed firstRow start
 
@@ -24794,6 +24808,110 @@ theorem four_certificate (q y : Wire)
     (131071 + 17 * c16 + 12 * c15) 55458 q y source compiler_within hq hy
     (parent_credit hc) hslots hrecords
 
+omit cover in
+set_option linter.unusedSimpArgs false in
+theorem producer_dt (Q : Point) :
+    ((CatalystS.drop fullProgram).instantiate (readConstant coefficientAt Q) Fin.elim0).tCount +
+      467 ≤ 7 * (131071 + 17 * c16 + 12 * c15) + 55458 := by
+  let read := readConstant coefficientAt Q
+  have lc : List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start h,
+      ((w.program start).instantiate read h).tCount ≤ k.1) leftWindows
+      (creditLeftCosts (c15 := c15) (c16 := c16)) := by
+    have he : creditLeftCosts (c15 := c15) (c16 := c16) =
+        (917497,17) :: leftDigits.map (fun w => (7 * count c14 c15 c16 w, w.width)) := by
+      simp [creditLeftCosts, leftCosts, leftDigits, List.ofFn_succ, Digit.width, count, List.replicate]
+    rw [he]
+    unfold leftWindows
+    refine .cons ⟨?_, fun start h => (firstWindow_t_uniform Q start h).le⟩
+      (signed_costs_credit hc leftDigits read)
+    simp only [firstWindow, ScheduleFirst17.windowGeneric, List.length_reverse]
+    decide
+  have hl := Single.axis_dt leftWindows read _ lc 0 List.nil Fin.elim0
+  have hr : ∀ h, ((CatalystS.drop (Single.axis rightWindows
+      (0 + Single.axisCount leftWindows) List.nil)).instantiate read h).tCount ≤
+      Single.metadataDT (creditRightCosts (c16 := c16)) 0 := by
+    intro h
+    apply Single.axis_dt rightWindows read _ _ _ List.nil h
+    have he : creditRightCosts (c16 := c16) =
+        rightDigits.map (fun w => (7 * count c14 c15 c16 w, w.width)) := by
+      simp [creditRightCosts, rightCosts, rightDigits, List.ofFn_succ, Digit.width, count, List.replicate]
+    rw [he]
+    simpa only [rightWindows] using signed_costs_credit hc rightDigits read
+  have hln : Single.metadataDT (creditLeftCosts (c15 := c15) (c16 := c16)) 0 =
+      917497 + 4 * (7*c16) + 12 * (7*c15) + 33670 := left_dt_budget _ _
+  have hrn : Single.metadataDT (creditRightCosts (c16 := c16)) 0 =
+      13 * (7*c16) + 21321 := right_dt_budget _
+  have ht := Single.framed_t_le (CatalystS.drop (Single.axis leftWindows 0 List.nil))
+    (CatalystS.drop (Single.axis rightWindows (0 + Single.axisCount leftWindows) List.nil))
+    (CatalystS.drop (resetBody (0 + Single.axisCount leftWindows + Single.axisCount rightWindows)))
+    (show 0 + Single.axisCount leftWindows + Single.axisCount rightWindows +
+      body.reset.length = 0 + trialCount from by unfold trialCount; omega)
+    read Fin.elim0 _ _ hl hr
+    (fun h => Nat.le_zero.mp ((CatalystS.drop_t_le _ read h).trans (resetBody_t _ read h).le))
+  have hp : ((CatalystS.drop program).instantiate read Fin.elim0).tCount ≤
+      Single.metadataDT (creditLeftCosts (c15 := c15) (c16 := c16)) 0 +
+        Single.metadataDT (creditRightCosts (c16 := c16)) 0 := by
+    unfold program trial
+    simpa only [CatalystS.drop_castFinish, castFinish_instantiate, Single.drop_framed] using ht
+  have hs := outer_append_t_le (CatalystS.drop program) (CatalystS.drop readout) read Fin.elim0 0
+    (fun h => (CatalystS.drop_t_le readout read h).trans (readout_t read h).le)
+  unfold fullProgram
+  rw [CatalystS.drop_append]
+  change (((CatalystS.drop program).append (CatalystS.drop readout)).instantiate read
+    Fin.elim0).tCount + 467 ≤ _
+  rw [hln] at hp
+  rw [hrn] at hp
+  omega
+
+theorem kicked_certificate (q y : Wire)
+    (hBaseSlots : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots)
+    (hBaseRecords : 131071 + 17 * impl.records16 + 12 * impl.records15 + 469 +
+      body.reset.length + 34946 ≤ officialLimits.measurements)
+    (hq : q ∉ ledger.support) (hy : y ∉ q :: ledger.support)
+    (hslots : 4 * (entry.program.gateSlots + 18 * added entry.program) + 2 ≤
+      officialLimits.gateSlots)
+    (hrecords : entry.finalCursor + added entry.program ≤ officialLimits.measurements) :
+    Certificate officialLimits (lowerLayout q entry layout)
+      (CatalystS.compileEntry y (lowerEntry q entry))
+      ⟨ledger.support.length + 2, 4 * (131071 + 17 * c16 + 12 * c15) + 55458 + 1 - 467,
+        entry.finalCursor + added entry.program⟩ := by
+  have base := certificate hBaseSlots hBaseRecords
+  let middle : Bounds := ⟨ledger.support.length + 1, bounds.tModel,
+    entry.finalCursor + added entry.program⟩
+  have hm : Certificate officialLimits (lowerLayout q entry layout) (lowerEntry q entry) middle :=
+    lower_certificate officialLimits layout entry bounds middle q ledger.support base
+      compiler_within hq (by omega) hrecords (by rfl) (by dsimp [middle]; omega) (by rfl)
+  refine CatalystS.compile_certificate officialLimits (lowerLayout q entry layout)
+    (lowerEntry q entry) middle _ y (q :: ledger.support) hm
+    (lower_within q entry.program ledger.support compiler_within 0 Fin.elim0) hy ?_ ?_ ?_ ?_
+  · change 4 * (lower q entry.program 0 Fin.elim0).program.gateSlots + 2 ≤ officialLimits.gateSlots
+    rw [lower_slots]
+    omega
+  · change (q :: ledger.support).length + 1 ≤ ledger.support.length + 2
+    simp only [List.length_cons]
+    omega
+  · intro Q
+    have hd := CatalystS.drop_lower_t q entry.program 0 Fin.elim0
+      (readConstant entry.coefficients.get Q) Fin.elim0 Fin.elim0 (by funext i; exact Fin.elim0 i)
+    have hsv := Catalyst.saved_lower q entry.program 0 Fin.elim0
+    have hpd := producer_dt hc Q
+    have he : (CatalystS.drop entry.program).instantiate (readConstant entry.coefficients.get Q)
+        Fin.elim0 = (CatalystS.drop fullProgram).instantiate (readConstant coefficientAt Q)
+        Fin.elim0 := by
+      rw [entry]
+      exact Single.drop_fixedEntry_instantiate coefficientAt fullProgram Q
+    have hcr := parent_credit hc
+    unfold AtLeast at hcr
+    rw [he] at hd
+    change ((CatalystS.drop (lower q entry.program 0 Fin.elim0).program).instantiate
+      (readConstant entry.coefficients.get Q) Fin.elim0).tCount + 1 ≤
+      4 * (131071 + 17 * c16 + 12 * c15) + 55458 + 1 - 467 +
+        Catalyst.saved (lower q entry.program 0 Fin.elim0).program
+    omega
+  · have h := lower_finish q entry.program 0 Fin.elim0
+    change (lower q entry.program 0 Fin.elim0).finish ≤ entry.finalCursor + added entry.program
+    omega
+
 end
 end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
 
@@ -24943,8 +25061,8 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
     (hC15 : n15.credit ≤ 2210442) (hC16 : n16.credit ≤ 2256394)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
-    Certificate officialLimits (lowerLayout 1938 entry layout) (fourEntry 1938 1939 entry)
-      ⟨1620, 260115751, 543906879⟩ := by
+    Certificate officialLimits (lowerLayout 1938 entry layout)
+      (CatalystS.compileEntry 1939 (lowerEntry 1938 entry)) ⟨1620, 260115284, 543906879⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
@@ -24958,25 +25076,25 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
       55458 ≤ 491238726 := by
     change 917497 + 17 * n16.tBound + 12 * n15.tBound + 55458 ≤ 491238726
     omega
-  have hslots : 32 * windowSlots + 178240 + 24 * 491238726 + 2 ≤ officialLimits.gateSlots := by
-    change 32 * windowSlots + 178240 + 24 * 491238726 + 2 ≤ 4000000000000000
-    omega
-  have hrecords : 131071 + 17 * (triPrograms n14 n15 n16).records16 + 12 * (triPrograms n14 n15 n16).records15 +
-      469 + body.reset.length + 34946 + 491238726 ≤ officialLimits.measurements := by
-    change 131071 + 17 * n16.records + 12 * n15.records + 469 + body.reset.length + 34946 +
-      491238726 ≤ 47471340504
-    omega
-  have raw := bounded_four_certificate (triProgramCredit n14 n15 n16) 1938 1939 491238726
-    hbaseS hbaseR hsrc hslots hrecords hq hy
-  have hcounts := (source_counts 1938 1939 491238726 hbaseS hbaseR hsrc).1
+  have hsl := source_slots (body := body) (impl := triPrograms n14 n15 n16) (ledger := ledger)
   have hcursor : entry.finalCursor ≤ 52668153 := by
     rw [source_cursor]
     change 131071 + 17 * n16.records + 12 * n15.records + 469 + body.reset.length + 34946 ≤ 52668153
     omega
+  have hcounts := (source_counts 1938 1939 491238726 hbaseS hbaseR hsrc).1
+  have hslots : 4 * (entry.program.gateSlots + 18 * added entry.program) + 2 ≤
+      officialLimits.gateSlots := by
+    change _ ≤ 4000000000000000
+    omega
+  have hrecords : entry.finalCursor + added entry.program ≤ officialLimits.measurements := by
+    change _ ≤ 47471340504
+    omega
+  have raw := kicked_certificate (triProgramCredit n14 n15 n16) 1938 1939
+    hbaseS hbaseR hq hy hslots hrecords
   apply fusedClearWiden raw
   · change ledger.support.length + 2 ≤ 1620
     omega
-  · change 4 * (131071 + 17 * n16.credit + 12 * n15.credit) + 55458 + 1 ≤ 260115751
+  · change 4 * (131071 + 17 * n16.credit + 12 * n15.credit) + 55458 + 1 - 467 ≤ 260115284
     omega
   · change entry.finalCursor + added entry.program ≤ 543906879
     omega
@@ -25040,9 +25158,9 @@ theorem n15_credit : narrow15.credit ≤ 2256394 := by
   have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
   exact count15_bound _ _ he' (ht.trans n15_cost)
 
-def entry : StraightEntry := fourEntry 1938 1939 Flexible.entry
+def entry : StraightEntry := CatalystS.compileEntry 1939 (lowerEntry 1938 Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 Flexible.entry Flexible.layout
-def bounds : Bounds := ⟨1620, 260115751, 543906879⟩
+def bounds : Bounds := ⟨1620, 260115284, 543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   apply @matched_fused_certificate bodyInstance resourcesInstance coverInstance narrow13 narrow14 narrow15
@@ -25073,7 +25191,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1620,260115751,543906879⟩
+def bounds : Bounds := ⟨1620,260115284,543906879⟩
 noncomputable section
 def entry : StraightEntry := Schedule29Seventeen244.Flexible.FusedFinal.entry
 def layout : DecodeLayout := Schedule29Seventeen244.Flexible.FusedFinal.layout
