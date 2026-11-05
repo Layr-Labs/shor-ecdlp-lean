@@ -5978,7 +5978,7 @@ theorem narrow_body_t_bound (start : Nat) (read : ConstantBit 32768 → Bool) (h
   have ha := WEX.literalToffolis_normalize (WEX.rowAddCode WEX.probeRows)
   have hc := (WEX.finite23_literal_counts WEX.streamLayout WEX.probeRows).1.trans
     (WEX.tight_finite_literal_counts WEX.streamLayout WEX.streamLayout_widths WEX.streamLayout_nodup WEX.probeRows).1
-  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2160145 := by
+  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2159783 := by
     simp only [WEX.rowAddCode,WEX.literalToffolis_append,WEX.wLiteral,WEX.literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
@@ -11075,7 +11075,7 @@ def suffixCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n 
     (wFields rows .doubleX) (wBit rows .doubleY) ++
   wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
   wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
-  wLiteral (Arith.padding (L.core.poolWire 0) 51574)
+  wLiteral (Arith.padding (L.core.poolWire 0) 51936)
 
 def fusedPrefixCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n :=
   wLiteral ([.CX L.control L.core.double]) ++ wLiteral ([.CX L.control L.core.equalX]) ++
@@ -11751,143 +11751,19 @@ theorem scr_all_not (S L : List Wire) (h : (S.all fun a => !L.contains a) = true
   have := List.all_eq_true.mp h a ha
   simp [hl] at this
 
-
-namespace FastWireRanges
-theorem poolWire_eq (i : Nat) (hi : i < 5699) : streamLayout.core.poolWire i = 14115 + i := by
-  rw [deltaPoolWire_eq]
-  change ((List.range' 4115 5699).map streamWire).getD i 0 = 14115 + i
-  rw [List.getD_eq_getElem _ _ (by simp; omega)]
-  simp only [List.getElem_map, List.getElem_range']
-  unfold streamWire
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
-  omega
-
-theorem map_poolWire (s n : Nat) (h : s + n ≤ 5699) :
-    (List.range' s n).map streamLayout.core.poolWire = List.range' (14115 + s) n := by
-  apply List.ext_getElem
-  · simp
-  · intro i h1 h2
-    have hi : i < n := by simpa using h1
-    rw [List.getElem_map, List.getElem_range', List.getElem_range', poolWire_eq _ (by omega)]
-    exact (Nat.add_assoc _ _ _).symm
-
-theorem scrWires_eq : WEX.scrWires =
-    (14373 :: List.range' 14374 256 ++ [14883]) ++ (14884 :: List.range' 14885 256 ++ [15141]) := by
-  simp only [WEX.scrWires, WEX.scrPairWires, WEX.scrShortWires,
-    map_poolWire _ _ (by norm_num : 259 + 256 ≤ 5699), map_poolWire _ _ (by norm_num : 770 + 256 ≤ 5699),
-    poolWire_eq _ (by norm_num : 258 < 5699), poolWire_eq _ (by norm_num : 768 < 5699),
-    poolWire_eq _ (by norm_num : 769 < 5699), poolWire_eq _ (by norm_num : 1026 < 5699)]
-
-theorem scrWires_bounds : ∀ a ∈ WEX.scrWires, 14373 ≤ a ∧ a < 15142 := by
-  rw [scrWires_eq]
-  intro a ha
-  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil,
-    or_false] at ha
-  dsimp only [Wire] at *
-  omega
-
-theorem scr_source : ∀ a ∈ scrWires, fixedPort a ∨ oldWork a := by
-  rw [scrWires_eq]
-  intro a ha
-  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at ha
-  unfold fixedPort oldWork
-  dsimp only [Wire] at *
-  omega
-
-theorem targets_bound : ∀ a ∈ scrPairTargets, a < 1000 := by
-  intro a ha
-  simp only [scrPairTargets, streamLayout_point] at ha
-  have hy : yLow streamLayout = 580 := rfl
-  rw [hy] at ha
-  simp only [List.mem_cons, List.mem_append, List.mem_range'_1, List.not_mem_nil, or_false] at ha
-  dsimp only [PointReg.finite, PointReg.x, Wire] at *
-  omega
-
-theorem pair_disjoint : ∀ a ∈ scrWires, a ∉ scrPairTargets := by
-  intro a ha ht
-  have := scrWires_bounds a ha
-  have := targets_bound a ht
-  dsimp only [Wire] at *
-  omega
-
-theorem short_targets_bound : ∀ a ∈ scrShortTargets, a < 1000 := by
-  intro a ha
-  simp only [scrShortTargets, streamLayout_point] at ha
-  change a ∈ (838 :: List.range' 263 256 ++ (List.range' 580 256).take 1) at ha
-  have htake : (List.range' 580 256).take 1 = [580] := rfl
-  rw [htake] at ha
-  simp only [List.mem_cons, List.mem_append, List.mem_range'_1, List.not_mem_nil, or_false] at ha
-  dsimp only [Wire] at *
-  omega
-
-theorem short_disjoint : ∀ a ∈ scrWires, a ∉ scrShortTargets := by
-  intro a ha ht
-  have := scrWires_bounds a ha
-  have := short_targets_bound a ht
-  dsimp only [Wire] at *
-  omega
-
-theorem y_disjoint : ∀ a ∈ scrWires, a ∉ [yLow streamLayout] := by
-  intro a ha ht
-  have := scrWires_bounds a ha
-  have hy : yLow streamLayout = 580 := rfl
-  simp only [List.mem_singleton] at ht
-  rw [hy] at ht
-  dsimp only [Wire] at *
-  omega
-
-theorem bounded_disjoint (T : List Wire) (hb : (T.all fun w => decide (w < 14373 ∨ 15142 ≤ w)) = true) :
-    ∀ a ∈ scrWires, a ∉ T := by
-  intro a ha ht
-  have hlo := scrWires_bounds a ha
-  have hhi : a < 14373 ∨ 15142 ≤ a := of_decide_eq_true (List.all_eq_true.mp hb a ht)
-  dsimp only [Wire] at *
-  omega
-
-theorem p1_disjoint : ∀ a ∈ scrWires, a ∉ (streamLayout.control :: [yLow streamLayout,
-    streamLayout.infinitySelect, streamLayout.core.equalNegY] ++ (pairPorts streamLayout).flatMap ZeroBit.wires) := by
-  apply bounded_disjoint
-  decide +kernel
-
-theorem p2_disjoint : ∀ a ∈ scrWires, a ∉ (streamLayout.core.double :: streamLayout.doubleSelect ::
-    (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258)).flatMap ZeroBit.wires) := by
-  apply bounded_disjoint
-  decide +kernel
-
-theorem short_targets_eq : scrShortTargets = scrPairTargets := by
-  unfold scrShortTargets scrPairTargets
-  rw [streamLayout_point]
-  rfl
-
-end FastWireRanges
-
-namespace FastWireRanges
-theorem scratch_nodup : scrWires.Nodup := by
-  rw [scrWires_eq]
-  have h : ((14373 :: List.range' 14374 256 ++ [14883]) ++
-      (14884 :: List.range' 14885 256 ++ [15141])).Sublist (List.range' 14373 769) := by
-    decide +kernel
-  exact List.Nodup.sublist h List.nodup_range'
-end FastWireRanges
-
-theorem scrWires_nodup : scrWires.Nodup := by
-  exact FastWireRanges.scratch_nodup
-theorem scrWires_pair_targets : ∀ a ∈ scrWires, a ∉ scrPairTargets := by
-  exact FastWireRanges.pair_disjoint
-
-theorem scrWires_short_targets : ∀ a ∈ scrWires, a ∉ scrShortTargets := by
-  exact FastWireRanges.short_disjoint
-
-theorem scrWires_y : ∀ a ∈ scrWires, a ∉ [yLow streamLayout] := by
-  exact FastWireRanges.y_disjoint
-
+theorem scrWires_nodup : scrWires.Nodup := by decide +kernel
+theorem scrWires_pair_targets : ∀ a ∈ scrWires, a ∉ scrPairTargets :=
+  scr_all_not _ _ (by decide +kernel)
+theorem scrWires_short_targets : ∀ a ∈ scrWires, a ∉ scrShortTargets :=
+  scr_all_not _ _ (by decide +kernel)
+theorem scrWires_y : ∀ a ∈ scrWires, a ∉ [yLow streamLayout] :=
+  scr_all_not _ _ (by decide +kernel)
 theorem scrWires_p1 : ∀ a ∈ scrWires, a ∉ (streamLayout.control :: [yLow streamLayout,
-    streamLayout.infinitySelect, streamLayout.core.equalNegY] ++ (pairPorts streamLayout).flatMap ZeroBit.wires) := by
-  exact FastWireRanges.p1_disjoint
-
+    streamLayout.infinitySelect, streamLayout.core.equalNegY] ++ (pairPorts streamLayout).flatMap ZeroBit.wires) :=
+  scr_all_not _ _ (by decide +kernel)
 theorem scrWires_p2 : ∀ a ∈ scrWires, a ∉ (streamLayout.core.double :: streamLayout.doubleSelect ::
-    (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258)).flatMap ZeroBit.wires) := by
-  exact FastWireRanges.p2_disjoint
+    (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258)).flatMap ZeroBit.wires) :=
+  scr_all_not _ _ (by decide +kernel)
 
 attribute [local irreducible] streamLayout
 
@@ -12232,66 +12108,10 @@ theorem scrCorners_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
   simp only [List.append_assoc]
 
 
-
-namespace FastWireRanges
-theorem pair_targets_source : ∀ a ∈ scrPairTargets, fixedPort a ∨ oldWork a := by
-  intro a ha
-  simp only [scrPairTargets, streamLayout_point] at ha
-  have hy : yLow streamLayout = 580 := rfl
-  rw [hy] at ha
-  simp only [List.mem_cons, List.mem_append, List.mem_range'_1, List.not_mem_nil, or_false] at ha
-  unfold fixedPort oldWork
-  dsimp only [PointReg.finite, PointReg.x, Wire] at *
-  omega
-
-theorem pair_targets_used : ∀ a ∈ scrPairTargets, a ∈ streamLayout.dialogUsedWires := by
-  intro a ha
-  apply List.mem_append_left
-  apply List.mem_append_left
-  apply List.mem_append_left
-  change a ∈ streamLayout.point.finite :: streamLayout.point.x ++ streamLayout.point.y
-  simp only [scrPairTargets, List.mem_cons, List.mem_append, List.not_mem_nil, or_false] at ha
-  rcases ha with (h | h) | h
-  · exact List.mem_cons.mpr (Or.inl h)
-  · exact List.mem_cons_of_mem _ (List.mem_append_left _ h)
-  · subst a
-    exact List.mem_cons_of_mem _ (List.mem_append_right _ (by
-      rw [streamLayout_point]
-      change 580 ∈ List.range' 580 256
-      simp))
-
-theorem check_pair : (scrPairWires ++ scrPairTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
-  apply List.all_eq_true.mpr
-  intro a ha
-  have key : (fixedPort a ∨ oldWork a) ∧ a ∈ streamLayout.dialogUsedWires := by
-    rcases List.mem_append.mp ha with h | h
-    · have hs : a ∈ scrWires := List.mem_append_left _ h
-      exact ⟨scr_source a hs, List.mem_append_right _ (scrWires_pool a hs)⟩
-    · exact ⟨pair_targets_source a h, pair_targets_used a h⟩
-  simpa using key
-
-theorem check_short : (scrShortWires ++ scrShortTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
-  apply List.all_eq_true.mpr
-  intro a ha
-  have key : (fixedPort a ∨ oldWork a) ∧ a ∈ streamLayout.dialogUsedWires := by
-    rcases List.mem_append.mp ha with h | h
-    · have hs : a ∈ scrWires := List.mem_append_right _ h
-      exact ⟨scr_source a hs, List.mem_append_right _ (scrWires_pool a hs)⟩
-    · rw [short_targets_eq] at h
-      exact ⟨pair_targets_source a h, pair_targets_used a h⟩
-  simpa using key
-
-end FastWireRanges
-
 theorem scrCheck_pair : (scrPairWires ++ scrPairTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
-  exact FastWireRanges.check_pair
-
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
 theorem scrCheck_short : (scrShortWires ++ scrShortTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
-  exact FastWireRanges.check_short
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
 
 theorem scrCx_facts (S T : List Wire)
     (hc : (S ++ T).all (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true)
@@ -12459,42 +12279,17 @@ theorem scrCompare_lookup_cases (rows : Nat → Fin 32768) (c : Option Wire) (po
     exact Or.inl (Or.inl (Or.inr hm))
   tauto
 
-
-namespace FastWireRanges
-theorem geometry (rows : Nat → Fin 32768) :
+theorem scrPorts_geometry (rows : Nat → Fin 32768) :
     lookupPlacedOK windowBits windowPaths windowRoot (.lookup none (scrPorts rows)) = true := by
   change geometryOK windowBits windowPaths windowRoot none (portTargets (scrPorts rows)) = true
   rw [scrPorts_targets]
-  unfold geometryOK
-  simp only [Bool.and_eq_true, decide_eq_true_eq]
-  refine ⟨⟨by decide +kernel, scrWires_nodup⟩, ?_⟩
-  apply List.all_eq_true.mpr
-  intro a ha
-  have hab : a < 14373 := by
-    change a ∈ (10015 :: 10015 :: List.range' 855 15 ++ List.range' 10000 15) at ha
-    simp only [List.mem_cons, List.mem_append, List.mem_range'_1, List.not_mem_nil, or_false] at ha
-    dsimp only [Wire] at *
-    omega
-  have hnot : a ∉ scrWires := by
-    intro h
-    have := scrWires_bounds a h
-    dsimp only [Wire] at *
-    omega
-  simpa using hnot
-
-theorem sourceOK (rows : Nat → Fin 32768) : sourceLookupOK (.lookup none (scrPorts rows)) = true := by
-  simp only [sourceLookupOK, Option.toList_none, List.all_nil, Bool.true_and, scrPorts_targets]
-  exact List.all_eq_true.mpr (fun a ha => decide_eq_true (scr_source a ha))
-
-end FastWireRanges
-
-theorem scrPorts_geometry (rows : Nat → Fin 32768) :
-    lookupPlacedOK windowBits windowPaths windowRoot (.lookup none (scrPorts rows)) = true := by
-  exact FastWireRanges.geometry rows
+  decide +kernel
 
 theorem scrPorts_sourceOK (rows : Nat → Fin 32768) :
     sourceLookupOK (.lookup none (scrPorts rows)) = true := by
-  exact FastWireRanges.sourceOK rows
+  simp only [sourceLookupOK, Option.toList_none, List.all_nil, Bool.true_and, scrPorts_targets]
+  decide +kernel
+
 
 end
 end ShorECDLP.Entrant.WEX
@@ -12516,13 +12311,13 @@ def portSuffixCode (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51574)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
 
 theorem portSuffix_shape (rows : Nat → Fin 32768) :
     let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51574)
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
     portSuffixCode rows = (scrCorners rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOutCompare rows ++ Z ∧
     WEXUnlookup.suffixCode streamLayout rows =
       (wCornersOne streamLayout rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOldCompare rows ++ Z := by
@@ -12692,7 +12487,7 @@ theorem portRow_shape (rows : Nat → Fin 32768) :
     let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51574)
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
     let X : WCode 32768 := wLiteral ([.X 838])
     let H : WCode 32768 := WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows
     portFinite rows = H ++ scrCorners rows ++ F ++ scrOutCompare rows ++ Z ∧
@@ -14129,7 +13924,7 @@ def portSuffixCodeD (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51574)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
 
 
 
@@ -14398,7 +14193,7 @@ theorem portSuffixD_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin
         portBits read (scrDExtraBits rows) a) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51574))) := by
+          Arith.padding (streamLayout.core.poolWire 0) 51936))) := by
   simp only [portSuffixCodeD, scrDMiddle, specialize_append, Tmpl.instantiate_append, scr_lookup_inst, specialize_literal,
     Tmpl.instantiate_lit, scr_chain_inst, scrDPorts_targets, scrDPorts_bits, List.append_assoc]
 
@@ -14431,7 +14226,7 @@ theorem portSuffixD_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
           (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) address)))))) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51574))))
+          Arith.padding (streamLayout.core.poolWire 0) 51936))))
     (thirdCorners streamLayout C) (secondCorners streamLayout C) (thirdCorners_records _ _)
     (thirdCorners_run streamLayout streamLayout_widths streamLayout_nodup C) m s
   have r2 := run_replace_inside (secondCorners streamLayout C ++ (pointDialogGenericFlag streamLayout ++
@@ -14440,7 +14235,7 @@ theorem portSuffixD_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
           (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) address)) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51574))))
+          Arith.padding (streamLayout.core.poolWire 0) 51936))))
     (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) address) ++ [.X (yLow streamLayout)])
     (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .negY)) address))
     (by simp [xBits_records, measurementCount])
@@ -14605,7 +14400,7 @@ def sfxB (rows : Nat → Fin 32768) : WCode 32768 :=
 def sfxZ : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51574)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
 def sfxF : WCode 32768 := wLiteral (pointDialogGenericFlag streamLayout)
 def sfxL (rows : Nat → Fin 32768) : WCode 32768 := [.lookup none (scrDPorts rows)]
 def sfxL' (rows : Nat → Fin 32768) : WCode 32768 := [.lookup none (scrPorts rows)]
