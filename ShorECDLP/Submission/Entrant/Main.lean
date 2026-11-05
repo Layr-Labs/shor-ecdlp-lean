@@ -23848,19 +23848,1267 @@ end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible.FusedFinal
 
 end
 
+namespace ShorECDLP.Entrant.ConditionalCatalyst
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open RoundedReadout NeighborReadout
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 5000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+theorem weight4_addStep {n start : Nat} (carry bit : Fin start) :
+    weight4 (addStep (n:=n) carry bit) = 0 := rfl
+
+theorem weight4_addWord {n : Nat} (start : Nat) (carry : Fin start) (bits : List (Fin start)) :
+    weight4 (addWord (n:=n) start carry bits) = 0 := by
+  match bits with
+  | [] => simp [addWord, complementWord, weight4]
+  | bit::bits =>
+    simp only [addWord, weight4_cast, weight4_append, weight4_addStep, Nat.zero_add]
+    exact weight4_addWord _ _ _
+termination_by bits.length
+
+theorem weight4_complementWord {n : Nat} (start : Nat) (carry : Fin start) (bits : List (Fin start)) :
+    weight4 (complementWord (n:=n) start carry bits) = 0 := by
+  match bits with
+  | [] => simp [addWord, complementWord, weight4]
+  | bit::bits =>
+    simp only [complementWord, weight4_cast, weight4_append, weight4_addStep, Nat.zero_add]
+    exact weight4_complementWord _ _ _
+termination_by bits.length
+
+theorem weight4_increment (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    weight4 (incrementStep n c) = 0 := by
+  simp [incrementStep, weight4_cast, weight4_addWord]
+
+theorem weight4_complement (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    weight4 (complementStep n c) = 0 := by
+  simp [complementStep, weight4_cast, weight4_complementWord]
+
+theorem weight4_positive (n : Nat) (steps start width : Nat) (c : WordCursor start width) :
+    weight4 (positiveWords n steps start width c) = 0 := by
+  induction steps generalizing start with
+  | zero => simp [positiveWords, weight4_cast, weight4]
+  | succ steps ih => simp [positiveWords, weight4_cast, weight4_append, weight4_increment, ih]
+
+theorem weight4_negative (n : Nat) (steps start width : Nat) (c : WordCursor start width) :
+    weight4 (negativeWords n steps start width c) = 0 := by
+  induction steps generalizing start with
+  | zero => simp [negativeWords, weight4_cast, weight4]
+  | succ steps ih => simp [negativeWords, negativeStep, weight4_cast, weight4_append,
+      weight4_increment, weight4_complement, ih]
+
+theorem weight4_suffix56 (n start width : Nat) (bits : Vector (Fin start) width) :
+    weight4 (Readout56.suffix56 n start width bits) = 0 := by
+  simp [Readout56.suffix56, weight4_cast, weight4_append, weight4_positive,
+    weight4_negative, weight4_complement]
+  rfl
+end
+end ShorECDLP.Entrant.ConditionalCatalyst
+namespace ShorECDLP.Entrant.ConditionalCatalyst
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+theorem weight4_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
+    weight4 (reindexStraight f p) = weight4 p := by
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g <;> simp_all [reindexStraight, reindexGate, weight4]
+  | recordGate => simp_all [reindexStraight, reindexGate, weight4]
+  | measure => simp_all [reindexStraight, reindexGate, weight4]
+
+theorem weight4_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n 0 e) :
+    weight4 (Single.fixedEntry f p).program = weight4 p := by
+  unfold Single.fixedEntry
+  exact weight4_reindex p _
+
+theorem weight4_reset (n start : Nat) (ws : List Wire) : weight4 (resetProgram n start ws) = 0 := by
+  induction ws generalizing start with
+  | nil => rfl
+  | cons w ws ih => simpa [resetProgram, weight4_cast, weight4] using ih (start+1)
+
+theorem weight4_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
+    (r : Straight n k e) (h : e=f) :
+    weight4 (Single.framed p q r h) = weight4 p + weight4 q + weight4 r := by
+  simp [Single.framed, weight4, weight4_cast, weight4_append, weightedLiteral,
+    weightedGate, phaseTwoGate, tCost, Nat.add_assoc]
+end
+end ShorECDLP.Entrant.ConditionalCatalyst
+
+namespace ShorECDLP.Entrant.SinAverage261
+open Quantum Secp256k1 Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
+open scoped BigOperators
+noncomputable section
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 10000
+
+theorem approximate_budget_strong (r : ℝ) (hr : 1000000 ≤ r) :
+    (99003 : ℝ) / 100000 ≤ (1 - 1 / r) * (1 - 2 / 10^12) -
+      ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 -
+      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 := by
+  have hinv : 1 / r ≤ (1 : ℝ) / 1000000 :=
+    one_div_le_one_div_of_le (by norm_num) hr
+  have hC : ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 +
+      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ 9963 / 1000000 := by norm_num
+  nlinarith
+
+theorem approximate_pair_success_strong (Q : Point) (d : Nat) (_hn : Q≠0) (_hd : Q=d•G) :
+    (99003 : ℝ)/100000 ≤ ∑a : Fin (2^261),∑b : Fin (2^208),
+      if pairRecovered261 d a.val b.val then asymmetricPairMass order 261 208 d (a,b) else 0 := by
+  have h:=averaged_pair_coverage261 order 261 d order_prime (by decide +kernel) precision261
+    (fun a b=>pairRecovered261 d a.val b.val=true)
+    (fun k hk a b ha hb=>pairRecovered261_of_character d k hk a b ha hb)
+  exact (approximate_budget_strong order (by norm_num [order])).trans h
+end
+end ShorECDLP.Entrant.SinAverage261
+
+namespace ShorECDLP.Entrant.ApproximatePhase34
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open RoundedReadout NeighborReadout
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 5000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+theorem residue_addStep {n start : Nat} (carry bit : Fin start) :
+    residue (addStep (n:=n) carry bit) = 0 := rfl
+
+theorem residue_addWord {n : Nat} (start : Nat) (carry : Fin start) (bits : List (Fin start)) :
+    residue (addWord (n:=n) start carry bits) = 0 := by
+  match bits with
+  | [] => simp [addWord, complementWord, residue]
+  | bit::bits =>
+    simp only [addWord, residue_cast, residue_append, residue_addStep, Nat.zero_add]
+    exact residue_addWord _ _ _
+termination_by bits.length
+
+theorem residue_complementWord {n : Nat} (start : Nat) (carry : Fin start) (bits : List (Fin start)) :
+    residue (complementWord (n:=n) start carry bits) = 0 := by
+  match bits with
+  | [] => simp [addWord, complementWord, residue]
+  | bit::bits =>
+    simp only [complementWord, residue_cast, residue_append, residue_addStep, Nat.zero_add]
+    exact residue_complementWord _ _ _
+termination_by bits.length
+
+theorem residue_increment (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    residue (incrementStep n c) = 0 := by
+  simp [incrementStep, residue_cast, residue_addWord]
+
+theorem residue_complement (n : Nat) {start width : Nat} (c : WordCursor start width) :
+    residue (complementStep n c) = 0 := by
+  simp [complementStep, residue_cast, residue_complementWord]
+
+theorem residue_positive (n : Nat) (steps start width : Nat) (c : WordCursor start width) :
+    residue (positiveWords n steps start width c) = 0 := by
+  induction steps generalizing start with
+  | zero => simp [positiveWords, residue_cast, residue]
+  | succ steps ih => simp [positiveWords, residue_cast, residue_append, residue_increment, ih]
+
+theorem residue_negative (n : Nat) (steps start width : Nat) (c : WordCursor start width) :
+    residue (negativeWords n steps start width c) = 0 := by
+  induction steps generalizing start with
+  | zero => simp [negativeWords, residue_cast, residue]
+  | succ steps ih => simp [negativeWords, negativeStep, residue_cast, residue_append,
+      residue_increment, residue_complement, ih]
+
+theorem residue_suffix56 (n start width : Nat) (bits : Vector (Fin start) width) :
+    residue (Readout56.suffix56 n start width bits) = 0 := by
+  simp [Readout56.suffix56, residue_cast, residue_append, residue_positive,
+    residue_negative, residue_complement]
+  rfl
+end
+end ShorECDLP.Entrant.ApproximatePhase34
+
+namespace ShorECDLP.Entrant.ApproximatePhase34
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 5000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+theorem residue_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
+    (k : Nat) (p : Straight n s e) :
+    residue (feedbackProgram dir w indices k p) = indices.length + residue p := by
+  induction indices generalizing k with
+  | nil => simp [feedbackProgram]
+  | cons i is ih => simp [feedbackProgram, residue, tCost, ih, Nat.add_assoc]; omega
+
+theorem residue_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) :
+    residue (fourierProgram n dir ws start prior) = fourierSlots ws.length prior.length := by
+  induction ws generalizing start with
+  | nil => rfl
+  | cons w ws ih => simp [fourierProgram, residue_cast, residue_feedback,
+      residue, ih, fourierSlots]
+
+theorem residue_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
+    residue (prepareOuterBank ws p) = residue p := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih => simpa [prepareOuterBank, residue, primitivePhaseCost] using ih
+
+theorem removed_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
+    removed 34 (prepareOuterBank ws p) = removed 34 p := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih => simpa [prepareOuterBank, removed, largePhase] using ih
+
+def droppedSlots : Nat → Nat → Nat
+  | 0, _ => 0
+  | width+1, prior => (prior-33) + droppedSlots width (prior+1)
+
+theorem removed_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) :
+    removed 34 (fourierProgram n dir ws start prior) = droppedSlots ws.length prior.length := by
+  induction ws generalizing start with
+  | nil => rfl
+  | cons w ws ih => simp [fourierProgram, removed_cast, removed_feedback,
+      removed, ih, droppedSlots]; omega
+
+theorem residue_axis [body : Single.WindowBody] [ledger : Single.ProducerResources body] {n}
+    (ws : List (Single.Window n)) (costs : List (Nat × Nat))
+    (hw : List.Forall₂ (fun w c => w.wires.length = c.2 ∧ ∀ start,
+      residue (w.program start) ≤ c.1) ws costs) (start : Nat) (prior : List (Fin start)) :
+    residue (Single.axis ws start prior) ≤ Single.metadataT costs prior.length := by
+  induction ws generalizing costs start with
+  | nil => cases hw; rfl
+  | cons w ws ih =>
+    cases hw with
+    | cons head tail =>
+      rename_i c costs
+      simp only [Single.axis, residue_cast, residue_append, residue_prepare, residue_fourier,
+        bankPrior_length]
+      have ht := ih costs tail (start+w.count+w.wires.length) (Single.nextPrior w.count w.wires.length prior)
+      rw [Single.nextPrior_length] at ht
+      have hh := head.2 start
+      simp only [Single.metadataT]
+      rw [head.1] at *
+      omega
+
+def metadataDropped : List Nat → Nat → Nat
+  | [], _ => 0
+  | width::ws,prior => droppedSlots width prior + metadataDropped ws (prior+width)
+
+theorem removed_axis [body : Single.WindowBody] [ledger : Single.ProducerResources body] {n}
+    (ws : List (Single.Window n)) (widths : List Nat)
+    (hw : List.Forall₂ (fun w c => w.wires.length = c) ws widths)
+    (start : Nat) (prior : List (Fin start)) :
+    metadataDropped widths prior.length ≤ removed 34 (Single.axis ws start prior) := by
+  induction ws generalizing widths start with
+  | nil => cases hw; rfl
+  | cons w ws ih =>
+    cases hw with
+    | cons head tail =>
+      rename_i c widths
+      simp only [Single.axis, removed_cast, removed_append, removed_prepare, removed_fourier,
+        bankPrior_length]
+      have ht := ih widths tail (start+w.count+w.wires.length) (Single.nextPrior w.count w.wires.length prior)
+      rw [Single.nextPrior_length] at ht
+      simp only [metadataDropped]
+      rw [head] at *
+      omega
+end
+end ShorECDLP.Entrant.ApproximatePhase34
+
+
+namespace ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+open Quantum ShorECDLP.Secp256k1 ShorECDLP.Challenge
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+open ShorECDLP.Entrant.Single ShorECDLP.Entrant.Single.Distribution RoundedReadout
+variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+attribute [local irreducible] program fullProgram readout Single.fixedEntry
+
+theorem approximate_program_neighbor_strong (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+    (99003 : ℝ)/100000 ≤ Instrument.bornMass
+      (((program.instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
+        (fun b => fineEvent (SinAverage261.pairRecovered261 d) b.history)) (ket zeroBasisState) := by
+  have hQ : order • Q = 0 := by
+    rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
+  rw [program_event_mass Q hn hQ, idealEventMass_distribution Q d hd]
+  exact SinAverage261.approximate_pair_success_strong Q d hn hd
+
+theorem approximate_program_success_strong (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+    (99003/100000 : ℝ) ≤ Instrument.bornMass ((fullProgram.instantiate (readConstant coefficientAt Q) Fin.elim0).run.filter
+      (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
+  apply (approximate_program_neighbor_strong Q d hn hd).trans
+  unfold fullProgram
+  rw [Single.append_run_history]
+  apply Rounded.appended_mass_lower
+  · intro a ha
+    exact AdaptiveCircuit.run_preservesBornMass _
+      (readout.instantiate_wellFormed _ _ readout_wellFormed) _
+  · intro a ha hf b hb hne
+    have hlen : a.history.length = (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) := by
+      have h := straight_history_length program (readConstant coefficientAt Q) Fin.elim0 a ha
+      omega
+    have hh : List.ofFn (Single.historyAfter (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) Fin.elim0 a.history) = a.history := by
+      simpa only [List.ofFn_zero, List.nil_append] using Single.historyAfter_list Fin.elim0 a.history (by simpa only [Nat.zero_add] using hlen)
+    have h := suffix_accept Q d hd (readConstant coefficientAt Q)
+      (Single.historyAfter (131071 + 17 * impl.records16 + 12 * impl.records15 + 469 + body.reset.length) Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
+      (program_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
+    simpa only [hh, InstrumentBranch.seq] using h
+
+end
+end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+
+namespace ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+open Quantum Challenge AndGadget WEXCredit ConditionalCatalyst
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Schedule33.Flexible
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
+variable {c14 c15 c16 : Nat} (hc : ProgramCredit c14 c15 c16)
+attribute [local irreducible] ScheduleFirst17.program
+
+omit body impl ledger in
+theorem conditional_first_weight (start : Nat) : weight4 (firstWindow.program start) = 4*131071 := by
+  unfold firstWindow ScheduleFirst17.windowGeneric
+  rw [weight4_reindex, weight4_zero _ (ScheduleFirst17.program_residue start)]
+  have h := ScheduleFirst17.program_credit (fun _ => (⟨⟨0, by decide⟩,⟨0, by decide⟩⟩ : PointCoeff)) 0 start (fun _ => false)
+  rw [h]
+
+include hc in
+omit ledger in
+theorem conditional_signed_weight (w : Digit) (start : Nat) :
+    weight4 ((signedWindow w).program start) = 4 * count c14 c15 c16 w := by
+  unfold signedWindow
+  rw [weight4_zero _ (hc.zero w start), hc.count_eq w start]
+
+omit body impl ledger in
+theorem conditional_left_budget (cost16 cost15 : Nat) :
+    metadataWeight ((4*131071,17)::List.replicate 4 (cost16,16) ++ List.replicate 12 (cost15,15)) 0 =
+      4*131071+4*cost16+12*cost15+33670 := by
+  simp [List.replicate, metadataWeight, fourierWeight]
+  omega
+
+omit body impl ledger in
+theorem conditional_right_budget (cost16 : Nat) :
+    metadataWeight (List.replicate 13 (cost16,16)) 0 = 13*cost16+21321 := by
+  simp [List.replicate, metadataWeight, fourierWeight]
+  omega
+
+attribute [local irreducible] entry program fullProgram readout Single.fixedEntry Single.axis
+  firstWindow signedWindow resetProgram leftWindows rightWindows
+attribute [local irreducible] ConditionalCatalyst.weight4 ConditionalCatalyst.metadataWeight
+
+include hc in
+omit ledger in
+theorem conditional_signed_costs (ws : List Digit) :
+    List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start,
+      weight4 (w.program start) ≤ k.1)
+      (ws.map signedWindow) (ws.map (fun w => (4 * count c14 c15 c16 w, w.width))) := by
+  induction ws with
+  | nil => exact .nil
+  | cons w ws ih =>
+    refine .cons ⟨?_, fun start => (conditional_signed_weight hc w start).le⟩ ih
+    rw [signedWindow_wires, List.length_reverse, bank_length _ (width_cases w)]
+
+
+include hc in
+theorem conditional_left_axis (start : Nat) :
+    weight4 (Single.axis leftWindows start List.nil) ≤
+      4*131071 + 4*(4*c16) + 12*(4*c15) + 33670 := by
+  let costs := (4*131071,17)::List.replicate 4 (4*c16,16) ++ List.replicate 12 (4*c15,15)
+  have hw : List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start,
+      weight4 (w.program start) ≤ k.1) leftWindows costs := by
+    have he : costs = (4*131071,17)::leftDigits.map (fun w => (4*count c14 c15 c16 w,w.width)) := by
+      simp [costs, leftDigits, List.ofFn_succ, Digit.width, count, List.replicate]
+    rw [he]
+    unfold leftWindows
+    refine .cons ⟨?_, fun start => (conditional_first_weight start).le⟩ (conditional_signed_costs hc leftDigits)
+    simp only [firstWindow, ScheduleFirst17.windowGeneric, List.length_reverse]
+    decide
+  have h := weight4_axis leftWindows costs hw start List.nil
+  exact h.trans (conditional_left_budget (4*c16) (4*c15)).le
+
+include hc in
+theorem conditional_right_axis (start : Nat) :
+    weight4 (Single.axis rightWindows start List.nil) ≤ 13*(4*c16) + 21321 := by
+  let costs := List.replicate 13 (4*c16,16)
+  have hw : List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start,
+      weight4 (w.program start) ≤ k.1) rightWindows costs := by
+    have he : costs = rightDigits.map (fun w => (4*count c14 c15 c16 w,w.width)) := by
+      simp [costs, rightDigits, List.ofFn_succ, Digit.width, count, List.replicate]
+    rw [he]
+    simpa only [rightWindows] using conditional_signed_costs hc rightDigits
+  have h := weight4_axis rightWindows costs hw start List.nil
+  exact h.trans (conditional_right_budget (4*c16)).le
+
+include hc in
+theorem conditional_source_weight : weight4 entry.program ≤
+    4*(131071+17*c16+12*c15) + 54991 := by
+  have hl := conditional_left_axis hc 0
+  have hr := conditional_right_axis hc (0+Single.axisCount leftWindows)
+  have hp : weight4 program ≤ 4*(131071+17*c16+12*c15)+54991 := by
+    simp only [program, weight4_cast, trial, weight4_framed, resetBody, weight4_reset]
+    omega
+  rw [entry, weight4_fixedEntry]
+  unfold fullProgram
+  rw [weight4_append]
+  have hz : weight4 readout = 0 := by
+    simp only [readout, weight4_cast, weight4_suffix56]
+  omega
+end
+end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+namespace ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+open Quantum Secp256k1 Challenge AndGadget WEXCredit ApproximatePhase34
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Schedule33.Flexible
+noncomputable section
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
+attribute [local irreducible] ScheduleFirst17.program entry program fullProgram readout Single.fixedEntry
+  Single.axis firstWindow signedWindow resetProgram leftWindows rightWindows Single.metadataT
+  AndGadget.residue
+
+omit body impl ledger in
+theorem approximate_first_residue (start : Nat) : residue (firstWindow.program start) = 0 := by
+  unfold firstWindow ScheduleFirst17.windowGeneric
+  rw [WEXCredit.residue_reindex]
+  exact ScheduleFirst17.program_residue start
+
+omit body impl ledger in
+theorem approximate_residue_reset (n start : Nat) (ws : List Wire) : residue (resetProgram n start ws) = 0 := by
+  induction ws generalizing start with
+  | nil => simp [resetProgram, residue]
+  | cons w ws ih => simpa [resetProgram, residue_cast, residue] using ih (start+1)
+
+omit ledger in
+theorem approximate_signed_widths (ws : List Digit) :
+    List.Forall₂ (fun w k => w.wires.length = k) (ws.map signedWindow) (ws.map Digit.width) := by
+  induction ws with
+  | nil => exact .nil
+  | cons w ws ih =>
+    refine .cons ?_ ih
+    rw [signedWindow_wires, List.length_reverse, bank_length _ (width_cases w)]
+end
+end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ApproximatePhase34
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+def charge : Gate → ℝ
+  | .P _ k _ => if 28 < k then 7 / (2:ℝ)^k else 0
+  | _ => 0
+
+theorem charge_nonneg (g : Gate) : 0 ≤ charge g := by
+  cases g <;> simp only [charge] <;> positivity
+
+theorem charge_false (g : Gate) (h : largePhase 28 g = false) : charge g = 0 := by
+  cases g <;> simp_all [largePhase,charge]
+
+def errorCost {n s e} : Straight n s e → ℝ
+  | .done => 0
+  | .gate (.literal g) p => charge g + errorCost p
+  | .gate (.whenBit _ _ g) p => charge g + errorCost p
+  | .recordGate _ _ g p => charge g + errorCost p
+  | .measure _ p => errorCost p
+
+theorem dropped_loss {n s e} (read : ConstantBit n → Bool) (p : Straight n s e)
+    (history : Fin s → Bool) (psi : State) (accept : (Fin e → Bool) → Bool)
+    (hp : p.WellFormed) (g : Gate) (hg : largePhase 28 g = true) :
+    expectation read p history (applyGate g psi) accept ≤
+      expectation read p history psi accept + 2*charge g*normSq psi := by
+  cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
+  case P dir k t =>
+    have hd : 0 < 7/(2:ℝ)^k := by positivity
+    have hangle : (phaseAngle dir k)^2 ≤ (7/(2:ℝ)^k)^2 := by
+      have hpi := Real.pi_lt_d2
+      have hb : 2*Real.pi/(2:ℝ)^k ≤ 7/(2:ℝ)^k := by
+        apply div_le_div_of_nonneg_right _ (by positivity)
+        linarith
+      have hz : 0 ≤ 2*Real.pi/(2:ℝ)^k := by positivity
+      cases dir <;> simp only [phaseAngle, neg_sq] <;> nlinarith
+    simpa only [charge, hg, if_true] using
+      expectation_phase_loss read p history psi accept hp dir k t _ hd hangle
+
+theorem trim_expectation {n s e} (read : ConstantBit n → Bool)
+    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
+    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed) :
+    expectation read p history psi accept ≤ expectation read (trim 28 p) history psi accept +
+      2*errorCost p*normSq psi := by
+  induction p generalizing psi with
+  | done => simp [trim, errorCost, expectation]
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      by_cases hg : largePhase 28 g = true
+      · have hs := dropped_loss read p history psi accept hp.2 g hg
+        have hi := ih history psi accept hp.2
+        simp only [trim, hg, if_true, errorCost, expectation, TemplateGate.instantiate, Quantum.run_singleton]
+        nlinarith
+      · have hgf : largePhase 28 g = false := Bool.eq_false_iff.mpr hg
+        have hi := ih history (applyGate g psi) accept hp.2
+        rw [normSq_gate g hp.1 psi] at hi
+        simpa only [trim, hgf, if_false, errorCost, charge_false g hgf, zero_add,
+          expectation, TemplateGate.instantiate, Quantum.run_singleton] using hi
+    | whenBit r v g =>
+      by_cases hg : largePhase 28 g = true
+      · have hi := ih history psi accept hp.2
+        have hs := dropped_loss read p history psi accept hp.2 g hg
+        simp only [trim, hg, if_true, errorCost, expectation, TemplateGate.instantiate]
+        by_cases hr : read r = v
+        · simp only [hr, if_true, Quantum.run_singleton]
+          nlinarith
+        · simp only [hr, if_false, Quantum.run_nil, LinearMap.id_coe, id_eq]
+          have hn := mul_nonneg (charge_nonneg g) (mass_nonneg psi)
+          nlinarith
+      · have hgf : largePhase 28 g = false := Bool.eq_false_iff.mpr hg
+        have hi := ih history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2
+        rw [normSq_template read (.whenBit r v g) hp.1 psi] at hi
+        simpa only [trim, hgf, if_false, errorCost, charge_false g hgf, zero_add, expectation] using hi
+  | recordGate i v g p ih =>
+    by_cases hg : largePhase 28 g = true
+    · have hi := ih history psi accept hp.2
+      have hs := dropped_loss read p history psi accept hp.2 g hg
+      simp only [trim, hg, if_true, errorCost, expectation]
+      by_cases hr : history i = v
+      · simp only [hr, if_true, Quantum.run_singleton]
+        nlinarith
+      · simp only [hr, if_false, Quantum.run_nil, LinearMap.id_coe, id_eq]
+        have hn := mul_nonneg (charge_nonneg g) (mass_nonneg psi)
+        nlinarith
+    · have hgf : largePhase 28 g = false := Bool.eq_false_iff.mpr hg
+      have hi := ih history (Quantum.run (if history i=v then [g] else []) psi) accept hp.2
+      have hn : normSq (Quantum.run (if history i=v then [g] else []) psi) = normSq psi := by
+        apply normSq_run
+        split_ifs
+        · simpa [CircuitWellFormed] using hp.1
+        · simp [CircuitWellFormed]
+      rw [hn] at hi
+      simpa only [trim, hgf, if_false, errorCost, charge_false g hgf, zero_add, expectation] using hi
+  | measure w p ih =>
+    have h0 := ih (Fin.lastCases false history) (xResetKraus w false psi) accept hp
+    have h1 := ih (Fin.lastCases true history) (xResetKraus w true psi) accept hp
+    have hm := normSq_xResetKraus_false_add_true w psi
+    have hme := congrArg (fun x : ℝ => 2*errorCost p*x) hm
+    simp only [trim, errorCost, expectation]
+    nlinarith
+
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ApproximatePhase34
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+theorem charge_bound (k : Nat) (hk : 28 < k) : 7/(2:ℝ)^k ≤ 1 := by
+  have hp : (2:ℝ)^29 ≤ 2^k := pow_le_pow_right₀ (by norm_num) (by omega)
+  apply (div_le_iff₀ (by positivity : (0:ℝ)<2^k)).mpr
+  norm_num at hp ⊢
+  linarith
+
+theorem charge_phase_le (g : Gate) : charge g ≤ (primitivePhaseCost g : ℝ) := by
+  cases g <;> simp only [charge, primitivePhaseCost, Nat.cast_zero, Nat.cast_one, le_refl]
+  case P dir k t => split_ifs with h; exact charge_bound k h; norm_num
+
+theorem charge_t_le (g : Gate) : charge g ≤ (tCost g : ℝ) := by
+  cases g <;> simp only [charge, tCost, Nat.cast_zero, Nat.cast_one, Nat.cast_ofNat, le_refl]
+  case CCX a b c => norm_num
+  case P dir k t => split_ifs with h; exact charge_bound k h; norm_num
+
+theorem error_le_residue {n s e} (p : Straight n s e) : errorCost p ≤ (residue p : ℝ) := by
+  induction p with
+  | done => simp [errorCost,residue]
+  | gate g p ih => cases g <;> simp only [errorCost,residue,Nat.cast_add] <;>
+      first | exact add_le_add (charge_phase_le _) ih | exact add_le_add (charge_t_le _) ih
+  | recordGate i v g p ih => simpa only [errorCost,residue,Nat.cast_add] using add_le_add (charge_t_le g) ih
+  | measure w p ih => exact ih
+
+theorem error_nonneg {n s e} (p : Straight n s e) : 0 ≤ errorCost p := by
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g <;> exact add_nonneg (charge_nonneg _) ih
+  | recordGate i v g p ih => exact add_nonneg (charge_nonneg g) ih
+  | measure w p ih => exact ih
+
+theorem error_zero {n s e} (p : Straight n s e) (h : residue p = 0) : errorCost p = 0 := by
+  have hb := error_le_residue p
+  rw [h, Nat.cast_zero] at hb
+  exact le_antisymm hb (error_nonneg p)
+
+theorem error_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
+    errorCost (p.append q) = errorCost p + errorCost q := by
+  induction p with
+  | done => simp [Straight.append,errorCost]
+  | gate g p ih => cases g <;> simp [Straight.append,errorCost,ih,add_assoc]
+  | recordGate => simp_all [Straight.append,errorCost,add_assoc]
+  | measure => simp_all [Straight.append,errorCost]
+
+theorem error_cast {n s e f} (p : Straight n s e) (h : e=f) : errorCost (castFinish h p) = errorCost p := by subst f; rfl
+
+def potential (k : Nat) : ℝ := 14/(2:ℝ)^(max 29 k)
+
+theorem charge_step (dir : PhaseDir) (w : Wire) (k : Nat) :
+    charge (.P dir k w) + potential (k+1) ≤ potential k := by
+  by_cases hk : 28 < k
+  · have h1 : max 29 k = k := max_eq_right (by omega)
+    have h2 : max 29 (k+1) = k+1 := max_eq_right (by omega)
+    simp only [charge,hk,if_true,potential,h1,h2,pow_succ]
+    have hp : (2:ℝ)^k ≠ 0 := by positivity
+    apply le_of_eq
+    field_simp
+    <;> ring
+  · have h1 : max 29 k = 29 := max_eq_left (by omega)
+    have h2 : max 29 (k+1) = 29 := max_eq_left (by omega)
+    simp [charge,hk,potential,h1,h2]
+
+theorem error_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
+    (k : Nat) (p : Straight n s e) :
+    errorCost (feedbackProgram dir w indices k p) ≤ potential k + errorCost p := by
+  induction indices generalizing k with
+  | nil =>
+    simp only [feedbackProgram]
+    have h : 0 ≤ potential k := by unfold potential; positivity
+    linarith
+  | cons i is ih =>
+    simp only [feedbackProgram,errorCost]
+    have h := ih (k+1)
+    have hc := charge_step dir w k
+    linarith
+
+def unit : ℝ := 7/(2:ℝ)^28
+
+theorem error_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) :
+    errorCost (fourierProgram n dir ws start prior) ≤ ws.length * unit := by
+  induction ws generalizing start with
+  | nil => simp [fourierProgram,errorCost]
+  | cons w ws ih =>
+    simp only [fourierProgram,error_cast,errorCost,charge,List.length_cons,Nat.cast_add,Nat.cast_one]
+    have hf := error_feedback dir w prior 2 (.measure w (fourierProgram n dir ws (start+1) (Fin.last _ :: prior.map Fin.castSucc)))
+    have hi := ih (start+1) (Fin.last _ :: prior.map Fin.castSucc)
+    have he : potential 2 = unit := by norm_num [potential,unit]
+    simp only [he,errorCost] at hf
+    linarith
+
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ApproximatePhase34
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+theorem removed_le_residue {n s e} (p : Straight n s e) : removed 28 p ≤ residue p := by
+  have hg (g : Gate) : (largePhase 28 g).toNat ≤ primitivePhaseCost g ∧
+      (largePhase 28 g).toNat ≤ tCost g := by
+    cases g <;> simp [largePhase, primitivePhaseCost, tCost]
+    rename_i dir k t
+    cases h : decide (28 < k) <;> simp [h]
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g <;> simp only [removed, residue] <;>
+      first | exact Nat.add_le_add (hg _).1 ih | exact Nat.add_le_add (hg _).2 ih
+  | recordGate i v g p ih => exact Nat.add_le_add (hg g).2 ih
+  | measure w p ih => exact ih
+
+theorem dropped_weight (g : Gate) (hg : largePhase 28 g = true) :
+    ConditionalCatalyst.weightedGate g = 1 ∧ ConditionalCatalyst.weightedLiteral g = 1 := by
+  cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
+  case P dir k t =>
+    have hk : k ≠ 2 := by omega
+    simp [ConditionalCatalyst.weightedGate, ConditionalCatalyst.weightedLiteral,
+      ConditionalCatalyst.phaseTwoGate_P, hk, tCost]
+
+theorem weight4_trim {n s e} (p : Straight n s e) :
+    ConditionalCatalyst.weight4 (trim 28 p) + removed 28 p = ConditionalCatalyst.weight4 p := by
+  induction p with
+  | done => rfl
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      by_cases hg : largePhase 28 g = true
+      · have hw := (dropped_weight g hg).2
+        simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]
+        omega
+      · have hgf : largePhase 28 g = false := Bool.eq_false_iff.mpr hg
+        simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
+        omega
+    | whenBit r v g =>
+      by_cases hg : largePhase 28 g = true
+      · have hw := (dropped_weight g hg).1
+        simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]
+        omega
+      · have hgf : largePhase 28 g = false := Bool.eq_false_iff.mpr hg
+        simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
+        omega
+  | recordGate i v g p ih =>
+    by_cases hg : largePhase 28 g = true
+    · have hw := (dropped_weight g hg).1
+      simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]
+      omega
+    · have hgf : largePhase 28 g = false := Bool.eq_false_iff.mpr hg
+      simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
+      omega
+  | measure w p ih => exact ih
+
+@[simp] theorem removed_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
+    removed 28 (p.append q) = removed 28 p + removed 28 q := by
+  induction p with
+  | done => simp [Straight.append, removed]
+  | gate g p ih => cases g <;> simp [Straight.append, removed, ih, Nat.add_assoc]
+  | recordGate => simp_all [Straight.append, removed, Nat.add_assoc]
+  | measure => simp_all [Straight.append, removed]
+
+theorem removed_cast {n s e f} (p : Straight n s e) (h : e=f) :
+    removed 28 (castFinish h p) = removed 28 p := by subst f; rfl
+
+theorem removed_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
+    removed 28 (reindexStraight f p) = removed 28 p := by
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g <;> simp_all [reindexStraight, reindexGate, removed]
+  | recordGate => simp_all [reindexStraight, removed]
+  | measure => simp_all [reindexStraight, removed]
+
+theorem removed_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
+    (k : Nat) (p : Straight n s e) :
+    removed 28 (feedbackProgram dir w indices k p) =
+      (indices.length - min indices.length (29-k)) + removed 28 p := by
+  induction indices generalizing k with
+  | nil => simp [feedbackProgram]
+  | cons i is ih =>
+    simp only [feedbackProgram, removed, largePhase, ih, List.length_cons]
+    by_cases hk : 28 < k
+    · simp only [hk, decide_true, Bool.toNat_true]
+      omega
+    · simp only [hk, decide_false, Bool.toNat_false]
+      omega
+
+theorem trim_t {n s e} (p : Straight n s e) (read : ConstantBit n → Bool)
+    (history : Fin s → Bool) :
+    ((trim 28 p).instantiate read history).tCount ≤ (p.instantiate read history).tCount := by
+  induction p with
+  | done => rfl
+  | gate g p ih =>
+    cases g <;> simp only [trim] <;> split_ifs <;>
+      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
+      (have h := ih history; omega)
+  | recordGate i v g p ih =>
+    simp only [trim]; split_ifs <;>
+      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
+      (have h := ih history; omega)
+  | measure w p ih =>
+    simp only [trim, Straight.instantiate, AdaptiveCircuit.tCount]
+    exact max_le_max (ih _) (ih _)
+
+theorem trim_added {n s e} (p : Straight n s e) : added (trim 28 p) = added p := by
+  induction p with
+  | done => rfl
+  | gate g p ih =>
+    cases g with
+    | literal g => cases g <;> simp [trim, largePhase, added, ih] <;> split_ifs <;> simp_all [added]
+    | whenBit r v g => simp only [trim]; split_ifs <;> simpa only [added] using ih
+  | recordGate i v g p ih => simp only [trim]; split_ifs <;> simpa only [added] using ih
+  | measure w p ih => exact ih
+
+
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ApproximatePhase34
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+
+theorem error_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
+    errorCost (prepareOuterBank ws p) = errorCost p := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih => simpa [prepareOuterBank,errorCost,charge] using ih
+
+theorem error_axis {n}
+    (ws : List (Single.Window n)) (widths : List Nat)
+    (hw : List.Forall₂ (fun w c => w.wires.length = c) ws widths)
+    (hz : ∀ w ∈ ws, ∀ start, residue (w.program start) = 0)
+    (start : Nat) (prior : List (Fin start)) :
+    errorCost (Single.axis ws start prior) ≤ (widths.sum : ℝ)*unit := by
+  induction ws generalizing widths start with
+  | nil => cases hw; simp [Single.axis,errorCost]
+  | cons w ws ih =>
+    cases hw with
+    | cons head tail =>
+      rename_i c widths
+      simp only [Single.axis,error_cast,error_append,error_prepare]
+      have hp := error_zero (w.program start) (hz w (by simp) start)
+      rw [hp,zero_add]
+      have hf := error_fourier n .inverse w.wires (start+w.count) (bankPrior w.count prior)
+      have ht := ih widths tail (fun v hv s => hz v (List.mem_cons_of_mem w hv) s)
+        (start+w.count+w.wires.length) (Single.nextPrior w.count w.wires.length prior)
+      simp only [List.sum_cons,Nat.cast_add]
+      have he : (w.wires.length : ℝ) = (c : ℝ) := by exact_mod_cast head
+      rw [he] at hf
+      exact (add_le_add hf ht).trans_eq (by ring)
+
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ApproximatePhase34
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+def trimEntry (entry : StraightEntry) : StraightEntry where
+  coefficients := entry.coefficients
+  finalCursor := entry.finalCursor
+  program := trim 28 entry.program
+
+theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
+    (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
+    (hs : Within ws entry.program) (herror : errorCost entry.program ≤ 469*unit)
+    (hstrong : ∀ (Q : Secp256k1.Point) (d : Nat), Q ≠ 0 → Q = d • Secp256k1.G →
+      (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
+    Certificate limits layout (trimEntry entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
+  gateBudget := (trim_slots 28 entry.program).trans cert.gateBudget
+  recordBudget := cert.recordBudget
+  tableBudget := cert.tableBudget
+  candidateBudget := cert.candidateBudget
+  wellFormed := trim_wellFormed 28 entry.program cert.wellFormed
+  resources := by
+    intro Q
+    have hsup := (trim_within 28 entry.program ws hs).instantiate
+      (readConstant entry.coefficients.get Q) Fin.elim0
+    have hc : (((trimEntry entry).instantiate Q).wires.dedup.toFinset).card ≤ ws.length := by
+      apply (Finset.card_le_card ?_).trans (List.toFinset_card_le ws)
+      intro w hw
+      apply List.mem_toFinset.mpr
+      apply hsup
+      simpa only [List.mem_toFinset, List.mem_dedup] using hw
+    have hqc : ((trimEntry entry).instantiate Q).qubitCount ≤ ws.length := by
+      rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
+      exact hc
+    refine ⟨hqc, ?_, ?_⟩
+    · exact (trim_t entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
+        (cert.resources Q).2.1
+    · have he := (trimEntry entry).program.measurementCount
+        (readConstant entry.coefficients.get Q) Fin.elim0
+      simpa only [Nat.add_zero] using he.le
+  success := by
+    intro Q d hn hd
+    have h := trim_expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
+      (ket zeroBasisState) (fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome) cert.wellFormed
+    rw [expectation_verified, expectation_verified, normSq_ket] at h
+    have hS := hstrong Q d hn hd
+    change 99/100 ≤ Instrument.bornMass
+      (((trim 28 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
+        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
+    change 99003/100000 ≤ Instrument.bornMass
+      ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
+        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) at hS
+    norm_num [unit] at herror
+    nlinarith
+
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+
+theorem error_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
+    errorCost (reindexStraight f p) = errorCost p := by
+  induction p with
+  | done => rfl
+  | gate g p ih => cases g <;> simp_all [reindexStraight,reindexGate,errorCost]
+  | recordGate => simp_all [reindexStraight,errorCost]
+  | measure => simp_all [reindexStraight,errorCost]
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+open Quantum Secp256k1 Challenge AndGadget WEXCredit WeightedPhase28
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Schedule33.Flexible
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
+variable {c14 c15 c16 : Nat} (hc : ProgramCredit c14 c15 c16)
+attribute [local irreducible] entry program fullProgram readout Single.fixedEntry
+  Single.axis firstWindow signedWindow resetProgram leftWindows rightWindows
+
+include hc in
+omit ledger in
+theorem weighted_signed_zero (w : Digit) (start : Nat) : residue ((signedWindow w).program start) = 0 := by
+  unfold signedWindow
+  exact hc.zero w start
+
+include hc in
+omit ledger in
+theorem weighted_left_error (start : Nat) :
+    errorCost (Single.axis leftWindows start List.nil) ≤ 261*unit := by
+  let widths := 17::List.replicate 4 16 ++ List.replicate 12 15
+  have hw : List.Forall₂ (fun w k => w.wires.length = k) leftWindows widths := by
+    have he : widths = 17::leftDigits.map Digit.width := by
+      simp [widths,leftDigits,List.ofFn_succ,Digit.width,List.replicate]
+    rw [he]
+    unfold leftWindows
+    refine .cons ?_ (approximate_signed_widths leftDigits)
+    simp only [firstWindow,ScheduleFirst17.windowGeneric,List.length_reverse]
+    decide
+  have hz : ∀ w ∈ leftWindows, ∀ s, residue (w.program s) = 0 := by
+    intro w hw s
+    unfold leftWindows at hw
+    simp only [List.mem_cons,List.mem_map] at hw
+    rcases hw with rfl | ⟨d,hd,rfl⟩
+    · exact approximate_first_residue s
+    · exact weighted_signed_zero hc d s
+  have h := error_axis leftWindows widths hw hz start List.nil
+  have he : widths.sum = 261 := by decide +kernel
+  simpa only [he] using h
+
+include hc in
+omit ledger in
+theorem weighted_right_error (start : Nat) :
+    errorCost (Single.axis rightWindows start List.nil) ≤ 208*unit := by
+  let widths := List.replicate 13 16
+  have hw : List.Forall₂ (fun w k => w.wires.length = k) rightWindows widths := by
+    have he : widths = rightDigits.map Digit.width := by
+      simp [widths,rightDigits,List.ofFn_succ,Digit.width,List.replicate]
+    rw [he]
+    simpa only [rightWindows] using approximate_signed_widths rightDigits
+  have hz : ∀ w ∈ rightWindows, ∀ s, residue (w.program s) = 0 := by
+    intro w hw s
+    unfold rightWindows at hw
+    obtain ⟨d,hd,rfl⟩ := List.mem_map.mp hw
+    exact weighted_signed_zero hc d s
+  have h := error_axis rightWindows widths hw hz start List.nil
+  have he : widths.sum = 208 := by decide +kernel
+  simpa only [he] using h
+
+omit body impl ledger in
+theorem weighted_error_reset (n start : Nat) (ws : List Wire) : errorCost (resetProgram n start ws) = 0 :=
+  error_zero _ (approximate_residue_reset n start ws)
+
+omit body impl ledger in
+theorem weighted_error_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
+    (r : Straight n k e) (h : e=f) :
+    errorCost (Single.framed p q r h) = errorCost p + errorCost q + errorCost r := by
+  simp [Single.framed,errorCost,error_cast,error_append,charge,add_assoc]
+
+omit body impl ledger in
+theorem weighted_error_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n 0 e) :
+    errorCost (Single.fixedEntry f p).program = errorCost p := by
+  unfold Single.fixedEntry
+  exact error_reindex p _
+
+include hc in
+theorem weighted_source_error : errorCost entry.program ≤ 469*unit := by
+  have hl := weighted_left_error hc 0
+  have hr := weighted_right_error hc (0+Single.axisCount leftWindows)
+  have hp : errorCost program ≤ 469*unit := by
+    simp only [program,error_cast,trial,weighted_error_framed,resetBody,weighted_error_reset]
+    linarith
+  rw [entry,weighted_error_fixedEntry]
+  unfold fullProgram
+  rw [error_append]
+  have hz : residue readout = 0 := by
+    simp only [readout,residue_cast,ApproximatePhase34.residue_suffix56]
+  rw [error_zero readout hz,add_zero]
+  exact hp
+end
+end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+namespace ShorECDLP.Entrant.WeightedPhase28
+open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
+open ApproximatePhase34
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+theorem removed_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
+    removed 28 (prepareOuterBank ws p) = removed 28 p := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih => simpa [prepareOuterBank, removed, largePhase] using ih
+
+def droppedSlots : Nat → Nat → Nat
+  | 0, _ => 0
+  | width+1, prior => (prior-27) + droppedSlots width (prior+1)
+
+theorem removed_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) :
+    removed 28 (fourierProgram n dir ws start prior) = droppedSlots ws.length prior.length := by
+  induction ws generalizing start with
+  | nil => rfl
+  | cons w ws ih => simp [fourierProgram, removed_cast, removed_feedback,
+      removed, ih, droppedSlots]; omega
+
+def metadataDropped : List Nat → Nat → Nat
+  | [], _ => 0
+  | width::ws,prior => droppedSlots width prior + metadataDropped ws (prior+width)
+
+theorem removed_axis [body : Single.WindowBody] [ledger : Single.ProducerResources body] {n}
+    (ws : List (Single.Window n)) (widths : List Nat)
+    (hw : List.Forall₂ (fun w c => w.wires.length = c) ws widths)
+    (start : Nat) (prior : List (Fin start)) :
+    metadataDropped widths prior.length ≤ removed 28 (Single.axis ws start prior) := by
+  induction ws generalizing widths start with
+  | nil => cases hw; rfl
+  | cons w ws ih =>
+    cases hw with
+    | cons head tail =>
+      rename_i c widths
+      simp only [Single.axis, removed_cast, removed_append, removed_prepare, removed_fourier,
+        bankPrior_length]
+      have ht := ih widths tail (start+w.count+w.wires.length) (Single.nextPrior w.count w.wires.length prior)
+      rw [Single.nextPrior_length] at ht
+      simp only [metadataDropped]
+      rw [head] at *
+      omega
+
+end
+end ShorECDLP.Entrant.WeightedPhase28
+namespace ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+open Quantum Secp256k1 Challenge AndGadget WEXCredit WeightedPhase28
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Schedule33.Flexible
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 10000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
+variable {c14 c15 c16 : Nat} (hc : ProgramCredit c14 c15 c16)
+attribute [local irreducible] entry program fullProgram readout Single.fixedEntry
+  Single.axis firstWindow signedWindow resetProgram leftWindows rightWindows
+  WeightedPhase28.metadataDropped
+theorem weighted28_left_removed (start : Nat) :
+    27261 ≤ ApproximatePhase34.removed 28 (Single.axis leftWindows start List.nil) := by
+  let widths := 17::List.replicate 4 16 ++ List.replicate 12 15
+  have hw : List.Forall₂ (fun w k => w.wires.length = k) leftWindows widths := by
+    have he : widths = 17::leftDigits.map Digit.width := by
+      simp [widths, leftDigits, List.ofFn_succ, Digit.width, List.replicate]
+    rw [he]
+    unfold leftWindows
+    refine .cons ?_ (approximate_signed_widths leftDigits)
+    simp only [firstWindow, ScheduleFirst17.windowGeneric, List.length_reverse]
+    decide
+  have h := removed_axis leftWindows widths hw start List.nil
+  have he : metadataDropped widths 0 = 27261 := by decide +kernel
+  exact he.ge.trans h
+
+theorem weighted28_right_removed (start : Nat) :
+    16290 ≤ ApproximatePhase34.removed 28 (Single.axis rightWindows start List.nil) := by
+  let widths := List.replicate 13 16
+  have hw : List.Forall₂ (fun w k => w.wires.length = k) rightWindows widths := by
+    have he : widths = rightDigits.map Digit.width := by
+      simp [widths, rightDigits, List.ofFn_succ, Digit.width, List.replicate]
+    rw [he]
+    simpa only [rightWindows] using approximate_signed_widths rightDigits
+  have h := removed_axis rightWindows widths hw start List.nil
+  have he : metadataDropped widths 0 = 16290 := by decide +kernel
+  exact he.ge.trans h
+
+omit body impl ledger in
+theorem weighted28_removed_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
+    (r : Straight n k e) (h : e=f) :
+    ApproximatePhase34.removed 28 (Single.framed p q r h) = ApproximatePhase34.removed 28 p + ApproximatePhase34.removed 28 q + ApproximatePhase34.removed 28 r := by
+  simp [Single.framed, ApproximatePhase34.removed, removed_cast, removed_append, ApproximatePhase34.largePhase, Nat.add_assoc]
+
+omit body impl ledger in
+theorem weighted28_removed_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n 0 e) :
+    ApproximatePhase34.removed 28 (Single.fixedEntry f p).program = ApproximatePhase34.removed 28 p := by
+  unfold Single.fixedEntry
+  exact removed_reindex p _
+
+theorem weighted28_source_removed : 43551 ≤ ApproximatePhase34.removed 28 entry.program := by
+  have hl := weighted28_left_removed (body:=body) 0
+  have hr := weighted28_right_removed (body:=body) (0+Single.axisCount leftWindows)
+  have hp : 43551 ≤ ApproximatePhase34.removed 28 program := by
+    simp only [program, removed_cast, trial, weighted28_removed_framed]
+    omega
+  rw [entry, weighted28_removed_fixedEntry]
+  unfold fullProgram
+  rw [removed_append]
+  omega
+
+include hc in
+theorem weighted28_source_weight : ConditionalCatalyst.weight4 (ApproximatePhase34.trim 28 entry.program) ≤
+    4*(131071+17*c16+12*c15)+11440 := by
+  have hw := conditional_source_weight hc
+  have he := weight4_trim entry.program
+  have hr := weighted28_source_removed (body:=body)
+  omega
+end
+end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+namespace ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+open Quantum Secp256k1 Challenge AndGadget WEXCredit
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Schedule33.Flexible ConditionalCatalyst WeightedPhase28
+open ApproximatePhase34 (trim trim_slots trim_within)
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+variable [body : Single.WindowBody] [ledger : Single.ProducerResources body] [cover : SupportCover body ledger]
+attribute [local irreducible] entry program fullProgram readout Single.fixedEntry AndGadget.added
+  ConditionalCatalyst.weight4 ConditionalCatalyst.fourEntry ConditionalCatalyst.metadataWeight
+  ApproximatePhase34.trim
+
+theorem weighted_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow body 14)
+    (n16 : ModNarrow body 15)
+    (qBound c15 c16 : Nat) (hSupport : ledger.support.length + 2 ≤ qBound) (hSlot : body.slotBound ≤ 3000000000)
+    (hR15 : n15.records ≤ 1608084) (hR16 : n16.records ≤ 1654036)
+    (hReset : body.reset.length ≤ 854)
+    (hT15 : n15.tBound ≤ 15473094) (hT16 : n16.tBound ≤ 15794758)
+    (hC15 : n15.credit ≤ c15) (hC16 : n16.credit ≤ c16)
+    (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
+    letI : Programs body := triPrograms n14 n15 n16
+    Certificate officialLimits (lowerLayout 1938 (trimEntry entry) layout) (ConditionalCatalyst.fourEntry 1938 1939 (trimEntry entry))
+      ⟨qBound, 4*(131071+17*c16+12*c15)+11441, 543906879⟩ := by
+  letI : Programs body := triPrograms n14 n15 n16
+  have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
+  have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
+    change 32 * windowSlots + 178240 ≤ 4000000000000000
+    omega
+  have hbaseR : 131071 + 17 * (triPrograms n14 n15 n16).records16 + 12 * (triPrograms n14 n15 n16).records15 +
+      469 + body.reset.length + 34946 ≤ officialLimits.measurements := by
+    change 131071 + 17 * n16.records + 12 * n15.records + 469 + body.reset.length + 34946 ≤ 47471340504
+    omega
+  have hsrc : 917497 + 17 * (triPrograms n14 n15 n16).cost16 + 12 * (triPrograms n14 n15 n16).cost15 +
+      55458 ≤ 491238726 := by
+    change 917497 + 17 * n16.tBound + 12 * n15.tBound + 55458 ≤ 491238726
+    omega
+  have hcounts := (source_counts 1938 1939 491238726 hbaseS hbaseR hsrc).1
+  have hcursor : entry.finalCursor ≤ 52668153 := by
+    rw [source_cursor]
+    change 131071 + 17 * n16.records + 12 * n15.records + 469 + body.reset.length + 34946 ≤ 52668153
+    omega
+  have hslots := source_slots (body:=body) (impl:=triPrograms n14 n15 n16)
+  have credit := triProgramCredit n14 n15 n16
+  have hw := weighted28_source_weight credit
+  have herror := weighted_source_error credit
+  have hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
+      (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
+    intro Q d hn hd
+    rw [entry, Single.fixedEntry_instantiate]
+    exact approximate_program_success_strong Q d hn hd
+  have trimmed := trim_certificate officialLimits layout entry _ ledger.support
+    (certificate hbaseS hbaseR) compiler_within herror hstrong
+  have htrimS := trim_slots 28 entry.program
+  apply ConditionalCatalyst.four_certificate officialLimits layout (trimEntry entry) _ _ 1938 1939 ledger.support
+    trimmed (trim_within 28 entry.program ledger.support compiler_within) hq hy
+  · change 4 * ((trim 28 entry.program).gateSlots + 18 * added (trim 28 entry.program)) + 2 ≤ 4000000000000000
+    rw [trim_added]
+    omega
+  · change entry.finalCursor + added (trim 28 entry.program) ≤ 47471340504
+    rw [trim_added]
+    omega
+  · exact hSupport
+  · change ConditionalCatalyst.weight4 (trim 28 entry.program) + 1 ≤ 4*(131071+17*c16+12*c15)+11441
+    change ConditionalCatalyst.weight4 (trim 28 entry.program) ≤ 4*(131071+17*n16.credit+12*n15.credit)+11440 at hw
+    omega
+  · change entry.finalCursor + added (trim 28 entry.program) ≤ 543906879
+    rw [trim_added]
+    omega
+end
+end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible
+namespace ShorECDLP.Entrant.WeightedFused28
+open Quantum Secp256k1 Challenge AndGadget WEXCredit
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Schedule29Seventeen244.Flexible
+noncomputable section
+set_option maxRecDepth 10000
+set_option maxHeartbeats 2000000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySeqFocus false
+local instance bodyInstance : Single.WindowBody := PathShare.bodyC
+local instance resourcesInstance : Single.ProducerResources bodyInstance :=
+  Single.ProducerResources.ofBody PathShare.bodyC
+    (by change resetWires.Nodup; exact resetWires_nodup)
+    (by change (0 : Wire) ∈ resetWires; decide +kernel)
+    (by change (1 : Wire) ∈ resetWires; decide +kernel)
+local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
+local instance programInstance : Programs bodyInstance := triPrograms FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal.narrow15
+attribute [local irreducible] FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal.narrow15
+  ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
+  ApproximatePhase34.trim
+  Schedule29Seventeen244.Flexible.entry Schedule29Seventeen244.Flexible.program
+  Schedule29Seventeen244.Flexible.fullProgram AndGadget.lowerEntry AndGadget.lowerLayout
+
+def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry)
+def layout : DecodeLayout := lowerLayout 1938 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry) Schedule29Seventeen244.Flexible.layout
+def bounds : Bounds := ⟨1621,4*(131071+17*2256394+12*2210442)+11441,543906879⟩
+
+theorem certificate : Certificate officialLimits layout entry bounds := by
+  unfold entry layout bounds
+  apply @weighted_matched_certificate bodyInstance resourcesInstance coverInstance
+    FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal.narrow15
+    1621 2210442 2256394
+  · change PathShare.bodyC.support.length + 2 ≤ 1621
+    rw [PathShare.bodyC_ledger.1]
+  · change PathShare.bodyC.slotBound ≤ 3000000000
+    exact (by decide : (2000000000 : Nat) ≤ 3000000000)
+  · exact FusedFinal.n14_records
+  · exact FusedFinal.n15_records
+  · change PathShare.bodyC.reset.length ≤ 854
+    exact PathShare.bodyC_ledger.2.le
+  · exact FusedFinal.n14_cost
+  · exact FusedFinal.n15_cost
+  · exact FusedFinal.n14_credit
+  · exact FusedFinal.n15_credit
+  · change (1938 : Wire) ∉ List.range 1619
+    simp
+  · change (1939 : Wire) ∉ 1938 :: List.range 1619
+    simp
+end
+end ShorECDLP.Entrant.WeightedFused28
+
+
 -- Entrant/Main.lean
 section
 
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1621,260115751,543906879⟩
+def bounds : Bounds := ⟨1621,260071733,543906879⟩
 noncomputable section
-def entry : StraightEntry := Schedule29Seventeen244.Flexible.FusedFinal.entry
-def layout : DecodeLayout := Schedule29Seventeen244.Flexible.FusedFinal.layout
+def entry : StraightEntry := WeightedFused28.entry
+def layout : DecodeLayout := WeightedFused28.layout
 set_option maxRecDepth 30000 in
 set_option maxHeartbeats 4000000 in
-theorem certificate : Certificate officialLimits layout entry bounds := Schedule29Seventeen244.Flexible.FusedFinal.certificate
+theorem certificate : Certificate officialLimits layout entry bounds := WeightedFused28.certificate
 end
 end ShorECDLP.Entrant
 
