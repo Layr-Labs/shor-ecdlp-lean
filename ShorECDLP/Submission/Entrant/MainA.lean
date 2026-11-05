@@ -1958,11 +1958,6 @@ open Challenge
 noncomputable section
 set_option maxRecDepth 10000
 
-local instance bodyInstance : Single.WindowBody := Single.eeaBody
-local instance resourcesInstance : Single.ProducerResources bodyInstance := Single.eeaResources
-
-
-
 end
 end ShorECDLP.Entrant.EEARegression
 
@@ -7293,8 +7288,6 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 attribute [local irreducible] program
 
-theorem support_in_reset : support ⊆ resetWires := by decide +kernel
-
 theorem window_wellFormed {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
     ((window rows).program start).WellFormed := by
   unfold window
@@ -7305,12 +7298,6 @@ theorem window_slots {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
   unfold window
   rw [reindexStraight_gateSlots]
   exact program_slots start
-
-theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    straightWires ((window rows).program start) ⊆ resetWires := by
-  unfold window
-  rw [straightWires_reindex]
-  exact (program_support start).trans support_in_reset
 
 theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (Q : Point) (start : Nat) (history : Fin start → Bool) :
@@ -11746,24 +11733,77 @@ def scrOldCompare (rows : Nat → Fin 32768) : WCode 32768 :=
 theorem scrPairWires_length : scrPairWires.length = 258 := by simp [scrPairWires]
 theorem scrShortWires_length : scrShortWires.length = 258 := by simp [scrShortWires]
 
+theorem poolWire_eq (i : Nat) (hi : i < 5699) : streamLayout.core.poolWire i = 14115 + i := by
+  rw [deltaPoolWire_eq]
+  change ((List.range' 4115 5699).map streamWire).getD i 0 = 14115 + i
+  rw [List.getD_eq_getElem _ _ (by simp; omega)]
+  simp only [List.getElem_map, List.getElem_range']
+  unfold streamWire
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+  omega
+
+theorem map_poolWire (s n : Nat) (h : s + n ≤ 5699) :
+    (List.range' s n).map streamLayout.core.poolWire = List.range' (14115 + s) n := by
+  apply List.ext_getElem
+  · simp
+  · intro i h1 h2
+    have hi : i < n := by simpa using h1
+    rw [List.getElem_map, List.getElem_range', List.getElem_range', poolWire_eq _ (by omega)]
+    exact (Nat.add_assoc _ _ _).symm
+
+/-! Explicit scratch-word ranges (pool position `i` is wire `14115 + i`). The checks below use them
+instead of `decide` over `poolWire`-computed lists, which made the kernel re-walk the 5,699-wire pool
+for every comparison (about 290 s of replay). -/
+
+theorem scrPairWires_explicit : scrPairWires = 14373 :: List.range' 14374 256 ++ [14883] := by
+  simp only [scrPairWires, map_poolWire _ _ (by norm_num : 259 + 256 ≤ 5699),
+    poolWire_eq _ (by norm_num : 258 < 5699), poolWire_eq _ (by norm_num : 768 < 5699)]
+
+theorem scrShortWires_explicit : scrShortWires = 14884 :: List.range' 14885 256 ++ [15141] := by
+  simp only [scrShortWires, map_poolWire _ _ (by norm_num : 770 + 256 ≤ 5699),
+    poolWire_eq _ (by norm_num : 769 < 5699), poolWire_eq _ (by norm_num : 1026 < 5699)]
+
+theorem scrWires_range : ∀ a ∈ scrWires, 14373 ≤ a ∧ a < 15142 := by
+  intro a ha
+  rw [scrWires, scrPairWires_explicit, scrShortWires_explicit] at ha
+  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at ha
+  dsimp only [Wire] at *
+  omega
+
+/-- Disjointness from the scratch words by one pass over the other list. -/
+theorem scr_not_of_far (L : List Wire) (h : (L.all fun b => decide (b < 14373 ∨ 15142 ≤ b)) = true) :
+    ∀ a ∈ scrWires, a ∉ L := by
+  intro a ha hm
+  have h1 := List.all_eq_true.mp h a hm
+  have h2 := scrWires_range a ha
+  simp only [decide_eq_true_eq] at h1
+  dsimp only [Wire] at *
+  omega
+
 theorem scr_all_not (S L : List Wire) (h : (S.all fun a => !L.contains a) = true) : ∀ a ∈ S, a ∉ L := by
   intro a ha hl
   have := List.all_eq_true.mp h a ha
   simp [hl] at this
 
-theorem scrWires_nodup : scrWires.Nodup := by decide +kernel
+theorem scrWires_nodup : scrWires.Nodup := by
+  rw [scrWires, scrPairWires_explicit, scrShortWires_explicit]
+  simp only [List.nodup_append, List.nodup_cons, List.mem_append, List.mem_cons,
+    List.mem_range'_1, List.not_mem_nil, List.nodup_nil, List.cons_append, false_or, or_false, List.append_assoc]
+  repeat' (first | exact List.nodup_range' | (intro _) | constructor)
+  all_goals (try dsimp only [Wire] at *)
+  all_goals first | contradiction | omega
 theorem scrWires_pair_targets : ∀ a ∈ scrWires, a ∉ scrPairTargets :=
-  scr_all_not _ _ (by decide +kernel)
+  scr_not_of_far _ (by decide +kernel)
 theorem scrWires_short_targets : ∀ a ∈ scrWires, a ∉ scrShortTargets :=
-  scr_all_not _ _ (by decide +kernel)
+  scr_not_of_far _ (by decide +kernel)
 theorem scrWires_y : ∀ a ∈ scrWires, a ∉ [yLow streamLayout] :=
-  scr_all_not _ _ (by decide +kernel)
+  scr_not_of_far _ (by decide +kernel)
 theorem scrWires_p1 : ∀ a ∈ scrWires, a ∉ (streamLayout.control :: [yLow streamLayout,
     streamLayout.infinitySelect, streamLayout.core.equalNegY] ++ (pairPorts streamLayout).flatMap ZeroBit.wires) :=
-  scr_all_not _ _ (by decide +kernel)
+  scr_not_of_far _ (by decide +kernel)
 theorem scrWires_p2 : ∀ a ∈ scrWires, a ∉ (streamLayout.core.double :: streamLayout.doubleSelect ::
     (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258)).flatMap ZeroBit.wires) :=
-  scr_all_not _ _ (by decide +kernel)
+  scr_not_of_far _ (by decide +kernel)
 
 attribute [local irreducible] streamLayout
 
@@ -12108,10 +12148,41 @@ theorem scrCorners_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
   simp only [List.append_assoc]
 
 
+theorem scrCheck_of (S : List Wire)
+    (hS : ∀ w ∈ S, (fixedPort w ∨ oldWork w) ∧ w ∈ streamLayout.dialogUsedWires) :
+    (S.all fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true :=
+  List.all_eq_true.mpr fun w hw => by simpa using hS w hw
+
+theorem dialogPool_used (w : Wire) (h : w ∈ streamLayout.dialogPool) : w ∈ streamLayout.dialogUsedWires := by
+  unfold ControlledPointLayout.dialogUsedWires
+  exact List.mem_append_right _ h
+
+theorem scrPairTargets_check : (scrPairTargets.all fun w => decide (fixedPort w ∨ oldWork w) &&
+    streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+theorem scrShortTargets_check : (scrShortTargets.all fun w => decide (fixedPort w ∨ oldWork w) &&
+    streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+
 theorem scrCheck_pair : (scrPairWires ++ scrPairTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
+  rw [List.all_append, Bool.and_eq_true]
+  refine ⟨scrCheck_of _ fun w h => ⟨Or.inr ?_, dialogPool_used w (scrWires_pool w (List.mem_append_left _ h))⟩,
+    scrPairTargets_check⟩
+  rw [scrPairWires_explicit] at h
+  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at h
+  unfold oldWork
+  dsimp only [Wire] at *
+  omega
+
 theorem scrCheck_short : (scrShortWires ++ scrShortTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
+  rw [List.all_append, Bool.and_eq_true]
+  refine ⟨scrCheck_of _ fun w h => ⟨Or.inr ?_, dialogPool_used w (scrWires_pool w (List.mem_append_right _ h))⟩,
+    scrShortTargets_check⟩
+  rw [scrShortWires_explicit] at h
+  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at h
+  unfold oldWork
+  dsimp only [Wire] at *
+  omega
 
 theorem scrCx_facts (S T : List Wire)
     (hc : (S ++ T).all (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true)
@@ -12279,15 +12350,28 @@ theorem scrCompare_lookup_cases (rows : Nat → Fin 32768) (c : Option Wire) (po
     exact Or.inl (Or.inl (Or.inr hm))
   tauto
 
+theorem windowRoot_nodup_check : decide (lookupRoot windowRoot none :: windowBits ++ windowPaths).Nodup = true := by
+  decide +kernel
+
 theorem scrPorts_geometry (rows : Nat → Fin 32768) :
     lookupPlacedOK windowBits windowPaths windowRoot (.lookup none (scrPorts rows)) = true := by
   change geometryOK windowBits windowPaths windowRoot none (portTargets (scrPorts rows)) = true
   rw [scrPorts_targets]
-  decide +kernel
+  unfold geometryOK
+  rw [Bool.and_eq_true, Bool.and_eq_true]
+  refine ⟨⟨windowRoot_nodup_check, decide_eq_true scrWires_nodup⟩, List.all_eq_true.mpr fun w hw => ?_⟩
+  have hw' : w < 14373 := by
+    simp only [lookupRoot, Option.getD_none, windowRoot, windowBits, windowPaths, List.mem_cons,
+      List.mem_append, List.mem_range'_1] at hw
+    dsimp only [Wire] at *
+    omega
+  have hn : w ∉ scrWires := fun hm => by have := scrWires_range w hm; dsimp only [Wire] at *; omega
+  simpa [List.contains_iff_mem] using hn
 
 theorem scrPorts_sourceOK (rows : Nat → Fin 32768) :
     sourceLookupOK (.lookup none (scrPorts rows)) = true := by
   simp only [sourceLookupOK, Option.toList_none, List.all_nil, Bool.true_and, scrPorts_targets]
+  rw [scrWires, scrPairWires_explicit, scrShortWires_explicit]
   decide +kernel
 
 
@@ -13218,7 +13302,7 @@ theorem portPrefix_shape (rows : Nat → Fin 32768) :
   simp only [WEXUnlookup.prefixCode, scrInOld, List.append_assoc]
 
 theorem scrInHead_avoid (a : Wire) (ha : a ∈ scrWires) : a ∉ ECDSAAdd.wires scrInHead := by
-  have h := scr_all_not scrWires ([streamLayout.control, streamLayout.core.double, streamLayout.core.equalX,
+  have h := scr_not_of_far ([streamLayout.control, streamLayout.core.double, streamLayout.core.equalX,
     streamLayout.point.finite, streamLayout.infinitySelect] : List Wire) (by decide +kernel) a ha
   intro hq
   apply h
@@ -13736,24 +13820,6 @@ theorem indexed_split {n : Nat} (ws : List Wire) (refs : Nat → Nat → Constan
     indexedPorts (ws.take 1) (fun a _ => refs a 0) v ++ indexedPorts (ws.drop 1) (fun a i => refs a (i+1)) v =
       indexedPorts ws refs v := by
   cases ws <;> rfl
-
-theorem poolWire_eq (i : Nat) (hi : i < 5699) : streamLayout.core.poolWire i = 14115 + i := by
-  rw [deltaPoolWire_eq]
-  change ((List.range' 4115 5699).map streamWire).getD i 0 = 14115 + i
-  rw [List.getD_eq_getElem _ _ (by simp; omega)]
-  simp only [List.getElem_map, List.getElem_range']
-  unfold streamWire
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
-  omega
-
-theorem map_poolWire (s n : Nat) (h : s + n ≤ 5699) :
-    (List.range' s n).map streamLayout.core.poolWire = List.range' (14115 + s) n := by
-  apply List.ext_getElem
-  · simp
-  · intro i h1 h2
-    have hi : i < n := by simpa using h1
-    rw [List.getElem_map, List.getElem_range', List.getElem_range', poolWire_eq _ (by omega)]
-    exact (Nat.add_assoc _ _ _).symm
 
 /-- The explicit wire numbers of the widened output scratch (pool position `i` is wire `14115 + i`). -/
 theorem scrAll_eq_explicit : scrWires ++ (List.range' 1284 255).map streamLayout.core.poolWire =
