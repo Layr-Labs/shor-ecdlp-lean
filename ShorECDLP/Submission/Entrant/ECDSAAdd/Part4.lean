@@ -1,5 +1,4 @@
 -- Vendored from ECDSAAdd (ecdsa.fail Lean challenge), Apache-2.0, Copyright 2026 Runzhou Tao, Anirudh and ECDSAAdd contributors; 139 source modules at c3f340a (listed in MODULES.txt), concatenated. Changes: module paths, expanded notation, private-name renames.
--- The ECDSAAdd.Submission.Entrant.Main section (from HalfConvert on) is the entrant Main.lean of ECDSAAdd e941df5 (submission bfb9475d: streamed-square branch-B accumulator split, second Karatsuba level in the square leaves, C,A,B branch order), with the same transformations, except that its KFull2 section (the nested-Karatsuba leaf squares) is the KFull2 section of ECDSAAdd f30fbab (submission 562d5843: balanced diagonal sharing in the leaf squares, 362 fewer Toffolis), and the derived square count literals are lowered by 362; it replaces the a2af67c (submission 41de28b3) section.
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part1
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part2
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part3
@@ -9135,17 +9134,129 @@ theorem directZero_physical (xs carry : List Wire) (cin flag : Wire) (kernel : P
 end ECDSAAdd.Arithmetic
 end
 
+-- Fast endpoint physicality: structural core/tail with residual offset checks.
+section
+
+/-! Structural physicality of the protected one-bank field programs. -/
+set_option maxRecDepth 8192
+set_option maxHeartbeats 1000000
+set_option linter.unusedSimpArgs false
+namespace ECDSAAdd.Arithmetic.FieldPhysicalFast
+open Arithmetic RecordedQuantum BalancedCircuit
+attribute [local irreducible] GatePhysical addInPlace subInPlace mappedAdd mappedSub
+  literalConstAdd compareLt signComplement rotateLeft rotateRight
+
+private theorem reverse_physical (P : Program) (h : GatePhysical P) : GatePhysical P.reverse := by
+  unfold GatePhysical at h ⊢
+  intro i hi
+  exact h i (List.mem_reverse.mp hi)
+
+private theorem seed_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) : GatePhysical (seedViews L) := by
+  have nd := seedND L hw hn
+  simp only [List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
+    not_or,not_false_eq_true,and_true] at nd
+  simp [seedViews,GatePhysical,PhysicalInstr,ProperGate]
+  tauto
+
+private theorem small_physical (L : Layout) (hn : L.wires.Nodup) :
+    GatePhysical (prepareFold L) ∧ GatePhysical (releaseSelectors L) ∧
+      GatePhysical (BalancedInverse.recoverSelectors L) ∧ GatePhysical (BalancedInverse.undoPreparation L) ∧
+      GatePhysical [.CX L.ymsb L.sourceGuard] ∧ GatePhysical [.CX L.minus L.cout] := by
+  have nd := scalarND L hn
+  simp only [List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
+    not_or,not_false_eq_true,and_true] at nd
+  simp [prepareFold,releaseSelectors,BalancedInverse.recoverSelectors,
+    BalancedInverse.undoPreparation,GatePhysical,PhysicalInstr,ProperGate]
+  tauto
+
+private theorem fold_adder_physical (L : Layout) (hn : L.wires.Nodup) :
+    GatePhysical (mappedAdd (foldBits L) (foldTarget L++[L.cout]) L.carry L.parity) := by
+  have nd : ([L.plus,L.minus]++(L.parity::(foldTarget L++[L.cout])++L.carry)).Nodup := by
+    simpa only [List.cons_append,List.nil_append,List.append_assoc] using foldND L hn
+  have parts := List.nodup_append'.mp nd
+  apply mappedAdd_physical _ _ _ _ parts.2.1
+  intro b hb q hq hbad
+  simp only [foldBits,List.mem_append,List.mem_map,List.mem_singleton] at hb
+  rcases hb with ⟨i,_,rfl⟩ | rfl
+  · have eq : q=(if sparseF.testBit (i+1) then L.plus else L.minus) := by
+      exact (Option.mem_some_iff.mp hq).symm
+    subst q
+    exact List.disjoint_left.mp parts.2.2 (by split_ifs <;> simp) hbad
+  · simp at hq
+
+private theorem fold_sub_physical (L : Layout) (hn : L.wires.Nodup) :
+    GatePhysical (mappedSub (foldBits L) (foldTarget L++[L.cout]) L.carry L.parity) := by
+  simpa only [mappedSub,gatePhysical_append] using
+    And.intro (And.intro (notRegister_physical _) (fold_adder_physical L hn)) (notRegister_physical _)
+
+theorem core_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    GatePhysical (BalancedCircuit.coreProgram L) := by
+  have raw := (signedWords_physical L.sign (rawSource L) (rawTarget L) L.carry (rawLayoutND L hn)).1
+  have small := small_physical L hn
+  have fold : GatePhysical (BalancedCircuit.fold L) := by
+    simpa only [BalancedCircuit.fold,gatePhysical_append] using And.intro (fold_adder_physical L hn) small.2.2.2.2.2
+  have rot := (rotate_physical (rawTarget L) (rawTargetND L hn)).1
+  simp only [BalancedCircuit.coreProgram,gatePhysical_append]
+  refine ⟨seed_physical L hw hn, ?_, small.1, fold, rot, small.2.1⟩
+  simpa only [rawAdd,signedAdd] using raw
+
+theorem tail_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    GatePhysical (OffsetBorrowedInverse.tail L) := by
+  have nd := rawLayoutND L hn
+  have sc := signComplement_physical L.sign (rawSource L)
+    (fun h => (List.nodup_cons.mp nd).1 (by simp [h]))
+  have sub := subInPlace_physical (rawSource L) (rawTarget L) L.carry L.sign nd
+  have raw : GatePhysical (BalancedInverse.rawSubtract L) := by
+    simpa only [BalancedInverse.rawSubtract,gatePhysical_append] using And.intro (And.intro sc sub) sc
+  have small := small_physical L hn
+  have fold : GatePhysical (BalancedInverse.undoFold L) := by
+    simpa only [BalancedInverse.undoFold,gatePhysical_append] using And.intro small.2.2.2.2.2 (fold_sub_physical L hn)
+  have rot := (rotate_physical (rawTarget L) (rawTargetND L hn)).2
+  simp only [OffsetBorrowedInverse.tail,gatePhysical_append]
+  exact ⟨⟨⟨⟨⟨small.2.2.1,rot⟩,fold⟩,small.2.2.2.1⟩,raw⟩,reverse_physical _ (seed_physical L hw hn)⟩
+
+end ECDSAAdd.Arithmetic.FieldPhysicalFast
+
+end
+
+
+namespace ECDSAAdd.Arithmetic.FieldPhysicalFast
+open RecordedQuantum
+set_option maxRecDepth 100000
+set_option maxHeartbeats 16000000
+private theorem ports_nodup : (balancedSharedPorts id 2409).wires.Nodup := by
+  apply balancedSharedPorts_nodup id 2409
+  · have hh : (List.range' 0 2314).Nodup := List.nodup_range'
+    simpa only [skywalkSharedWires, wireBlock, List.map_id] using hh
+  · intro h
+    obtain ⟨i, hi, he⟩ := List.mem_map.mp h
+    have hb := balancedSharedIds_bound i hi
+    change i = 2409 at he
+    omega
+ theorem forward_physical : GatePhysical (OffsetBorrowedField.program id 2409) := by
+  rw [OffsetBorrowedField.program, gatePhysical_append]
+  refine ⟨core_physical _ (balancedSharedPorts_widths _ _) ports_nodup, ?_⟩
+  apply physicalGateCheck_correct
+  decide +kernel
+ theorem inverse_physical : GatePhysical (OffsetBorrowedInverse.program id 2409) := by
+  rw [OffsetBorrowedInverse.program]
+  simp only [gatePhysical_append]
+  refine ⟨⟨?_, ?_⟩, tail_physical _ (balancedSharedPorts_widths _ _) ports_nodup⟩
+  · apply physicalGateCheck_correct
+    decide +kernel
+  · apply physicalGateCheck_correct
+    decide +kernel
+end ECDSAAdd.Arithmetic.FieldPhysicalFast
+
 -- source: ECDSAAdd/Arithmetic/FixedFieldPhysical.lean
 noncomputable section
 namespace ECDSAAdd.Arithmetic
 open RecordedQuantum
 theorem fixedForwardField_physical : GatePhysical (OffsetBorrowedField.program id 2409) := by
-  apply physicalGateCheck_correct
-  decide +kernel
+  exact FieldPhysicalFast.forward_physical
 
 theorem fixedInverseField_physical : GatePhysical (OffsetBorrowedInverse.program id 2409) := by
-  apply physicalGateCheck_correct
-  decide +kernel
+  exact FieldPhysicalFast.inverse_physical
 end ECDSAAdd.Arithmetic
 end
 
@@ -18317,7 +18428,7 @@ original half-field method: submission8e13f110-79c6-44fd-a3a3-0730950fc6e8. -/
 /-! Field segment with halving endpoints.
 
 The protected segment converts both 256-bit field ports to balanced form on
-entry and both back on exit (four compare-based converters, 3,060 Toffolis).
+entry and both back on exit (four compare-based converters, 3,60 Toffolis).
 Here only the target port is converted, by the halving converter of
 `HalfConvert`, which stores the balanced word of `Y/2`; the source port is
 filled from (multiplication) or cleared against (division) the target while
@@ -51243,10 +51354,10 @@ theorem compactSkywalkSignPool_stage_release (w : Nat → Wire)
     (compactSkywalkSignPoolA w i).Clean (run (compactSkywalkSignPoolRelease w i) m s).basis ∧
     (compactSkywalkSignPoolB w i).Clean (run (compactSkywalkSignPoolRelease w i) m s).basis ∧
     signedRegValue (compactSkywalkSignPoolA w i).retained
-      (run (compactSkywalkSignPoolRelease w i) m s).basis =
+      (run (compactSkywalkSignPoolRelease w i) m s).basis = 
         (SkywalkTrace.next^[i] (SkywalkRails.encode false false (x:Int) (p:Int))).a ∧
     signedRegValue (compactSkywalkSignPoolB w i).retained
-      (run (compactSkywalkSignPoolRelease w i) m s).basis =
+      (run (compactSkywalkSignPoolRelease w i) m s).basis = 
         (SkywalkTrace.next^[i] (SkywalkRails.encode false false (x:Int) (p:Int))).b := by
   have copies := compactSkywalkSignPool_stage_copies w x p i hp0 hx0 hpo hp hq hx hc hi s.basis hin
   have h := compactSkywalkSignPool_release_correct w i hi hn s m copies.1 copies.2
@@ -79967,7 +80078,7 @@ def program (C : Point) : Program :=
 
 def entry : Challenge.Entry := fun C => normalizeProgram (program C)
 
-def bounds : Challenge.Bounds := ⟨2156206, 1501376, 1595, 50000004⟩
+def bounds : Challenge.Bounds := ⟨2156568, 1501738, 1595, 50000004⟩
 
 theorem program_correct (C : Point) (b : Bool) (R : Point) :
     Triple (encodes b R) (program C) (encodes b (if b then R+C else R)) := by
@@ -79984,7 +80095,7 @@ theorem program_correct (C : Point) (b : Bool) (R : Point) :
       ((Edges.wrapper_support layout layout_widths layout_nodup _ cy _ hG).trans
         (WrapperOB5.support_used layout layout_widths))
 
-theorem program_toffoli (C : Point) : toffoliCount (program C) ≤ 2156206 := by
+theorem program_toffoli (C : Point) : toffoliCount (program C) ≤ 2156568 := by
   cases C with
   | zero => simp [program, toffoliCount]
   | @some cx cy hc =>
@@ -79995,7 +80106,7 @@ theorem program_toffoli (C : Point) : toffoliCount (program C) ≤ 2156206 := by
     change toffoliCount (Edges.wrapper layout (.some hc) cy (genF layout cx cy)) ≤ _
     omega
 
-theorem program_measurements (C : Point) : measurementCount (program C) ≤ 1501376 := by
+theorem program_measurements (C : Point) : measurementCount (program C) ≤ 1501738 := by
   cases C with
   | zero => simp [program, measurementCount]
   | @some cx cy hc =>
@@ -80047,7 +80158,7 @@ theorem certificate : Challenge.Certificate entry bounds where
   physical C := normalize_physical _ (program_physical C)
   toffoli_le C := (normalize_toffoli _).trans (program_toffoli C)
   measurements_le C := by
-    change measurementCount (normalizeProgram (program C)) ≤ 1501376
+    change measurementCount (normalizeProgram (program C)) ≤ 1501738
     rw [normalize_measurements]
     exact program_measurements C
   qubits_le C := by

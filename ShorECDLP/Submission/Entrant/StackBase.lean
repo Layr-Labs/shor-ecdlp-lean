@@ -30542,9 +30542,43 @@ theorem literal_wires_subset {n : Nat} (read : ConstantBit n → Bool) (code : W
       simp [WInstr.specialize, ECDSAAdd.ShorPort.Tmpl.instantiate_lit]
     · exact (ih h).trans (Finset.subset_union_right)
 
-/-- The native six-module arithmetic inventory lies below the private lookup bank. -/
+/- The native six-module arithmetic inventory lies below the private lookup bank. -/
+
+namespace FastWireBounds
+theorem pool_lt (i : Nat) : ECDSAAdd.Baselines.layout.core.poolWire i < 9817 := by
+  show (List.range' 4115 5699).getD i 0 < 9817
+  rw [List.getD_eq_getElem?_getD]
+  cases h : (List.range' 4115 5699)[i]? with
+  | none => simp
+  | some v =>
+    have hv := List.mem_of_getElem? h
+    rw [List.mem_range'_1] at hv
+    simp only [Option.getD_some]
+    omega
+
+theorem sites_lt : ∀ w ∈ ECDSAAdd.Entrant.sitesQ ECDSAAdd.Baselines.layout, w < 10000 := by
+  intro w hw
+  rw [ECDSAAdd.Entrant.sitesQ, List.mem_append] at hw
+  rcases hw with hw | hw
+  · have h : ((ECDSAAdd.Arithmetic.CompressedPointSquare.residents ECDSAAdd.Baselines.layout).all fun w => decide (w < 10000)) = true := by decide +kernel
+    exact of_decide_eq_true (List.all_eq_true.mp h w hw)
+  · rw [ECDSAAdd.Entrant.sharedPoolQ, List.mem_append, List.mem_append, List.mem_append] at hw
+    rcases hw with ((hw | hw) | hw) | hw
+    · obtain ⟨i, -, rfl⟩ := List.mem_map.mp hw
+      exact (pool_lt i).trans (by decide : (9817 : Nat) < 10000)
+    · obtain ⟨i, -, rfl⟩ := List.mem_map.mp hw
+      exact (pool_lt i).trans (by decide : (9817 : Nat) < 10000)
+    · rw [List.mem_singleton] at hw
+      rw [hw]
+      exact (pool_lt _).trans (by decide : (9817 : Nat) < 10000)
+    · obtain ⟨i, -, rfl⟩ := List.mem_map.mp hw
+      exact (pool_lt i).trans (by decide : (9817 : Nat) < 10000)
+
+end FastWireBounds
+
 theorem nativeSites_lt : ∀ w ∈ ECDSAAdd.Entrant.sitesQ ECDSAAdd.Baselines.layout,
-    w < 10000 := by decide +kernel
+    w < 10000 := by
+  exact FastWireBounds.sites_lt
 
 def nativeBits : List Wire := List.range' 10000 15
 def nativePaths : List Wire := List.range' 10015 15
@@ -36414,11 +36448,25 @@ theorem rowAdd_slots_bound (start : Nat) : (addProgram start).gateSlots ≤ 1000
   norm_num at bound
   omega
 
-theorem sign_slots_bound : ECDSAAdd.Challenge.gateSlots windowSignProgram ≤ 100000 := by
-  have h := negate_slots_bound streamLayout.core.generic
-  simp only [windowSignProgram,signedYProgram,ECDSAAdd.Challenge.gateSlots_append,flagPrepare,flagClear,
-    ECDSAAdd.Baselines.gateSlots_cons,ECDSAAdd.Baselines.gateSlots_nil,ECDSAAdd.Challenge.instructionSlots]
+
+namespace FastWireBounds
+theorem signed_slots (K : NegLayout) (sign flag p c : Nat) :
+    ECDSAAdd.Challenge.gateSlots (signedYProgram K sign flag p c) =
+      4 + ECDSAAdd.Challenge.gateSlots (K.program flag p c) := by
+  simp only [signedYProgram, ECDSAAdd.Challenge.gateSlots_append, flagPrepare, flagClear,
+    ECDSAAdd.Baselines.gateSlots_cons, ECDSAAdd.Baselines.gateSlots_nil,
+    ECDSAAdd.Challenge.instructionSlots]
   omega
+
+theorem sign_slots : ECDSAAdd.Challenge.gateSlots windowSignProgram ≤ 100000 := by
+  rw [windowSignProgram, signed_slots]
+  have h := negate_slots_bound streamLayout.core.generic
+  omega
+
+end FastWireBounds
+
+theorem sign_slots_bound : ECDSAAdd.Challenge.gateSlots windowSignProgram ≤ 100000 := by
+  exact FastWireBounds.sign_slots
 
 theorem bodyProgram_slots_exact (start : Nat) : (bodyProgram start).gateSlots =
     2 * Bridge.tmplSlots (literalT (n := 32768) (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)) +
@@ -36632,7 +36680,9 @@ theorem signedY_support (K : NegLayout) (sign flag p c : Nat)
       (List.mem_cons_of_mem sign (List.mem_toFinset.mp hw)))
   · simp [flagClear,ECDSAAdd.wires,ECDSAAdd.Instr.wires,CompactRecoveryNegateLayout.wires]
 
-theorem nProgram_support (start : Nat) : ChallengeMigration.straightWires (nProgram start) ⊆ bodySupport := by
+
+namespace FastWireBounds
+theorem sign_support (start : Nat) : ChallengeMigration.straightWires (nProgram start) ⊆ bodySupport := by
   apply literalFixed_support (n := 32768) (ECDSAAdd.Baselines.normalizeProgram windowSignProgram) 1022
     ((literal_meas (n := 32768) _).trans
       ((ECDSAAdd.Baselines.normalize_measurements windowSignProgram).trans windowSign_counts.2))
@@ -36641,8 +36691,21 @@ theorem nProgram_support (start : Nat) : ChallengeMigration.straightWires (nProg
   have hs := signedY_support (negateYLayout streamLayout) 870 streamLayout.core.generic
     ECDSAAdd.p SquareReduction.c (negateYLayout_widths streamLayout streamLayout_widths).2
   have cover : 870 :: (negateYLayout streamLayout).wires streamLayout.core.generic ⊆ bodySupport := by
-    decide +kernel
+    have h : ((870 :: (negateYLayout streamLayout).wires streamLayout.core.generic).all fun w => decide (wireBound w ∨ (855 ≤ w ∧ w < 871))) = true := by decide +kernel
+    intro w hw
+    have hh : wireBound w ∨ (855 ≤ w ∧ w < 871) := of_decide_eq_true (List.all_eq_true.mp h w hw)
+    rcases hh with hh | hh
+    · exact wireBound_support w hh
+    · apply base_subset_support
+      simp only [completeBatchedSupport, resetWires, List.mem_cons, List.mem_append, List.mem_range, List.mem_range'_1]
+      dsimp only [Wire] at *
+      exact Or.inr (Or.inr hh)
   exact hs.trans (fun w hw => List.mem_toFinset.mpr (cover (List.mem_toFinset.mp hw)))
+
+end FastWireBounds
+
+theorem nProgram_support (start : Nat) : ChallengeMigration.straightWires (nProgram start) ⊆ bodySupport := by
+  exact FastWireBounds.sign_support start
 
 end
 end ShorECDLP.Entrant.WEX
