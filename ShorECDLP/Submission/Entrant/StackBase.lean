@@ -28978,8 +28978,8 @@ theorem boundary_genericS (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wi
         (fun q hq => hv.rest q (outside q hq))
 
 theorem genericS_counts (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
-    (cx cy : ECDSAAdd.Fp) : ECDSAAdd.toffoliCount (genericS L cx cy) = 2157725 ∧
-      ECDSAAdd.measurementCount (genericS L cx cy) = 1502911 := by
+    (cx cy : ECDSAAdd.Fp) : ECDSAAdd.toffoliCount (genericS L cx cy) = 2157457 ∧
+      ECDSAAdd.measurementCount (genericS L cx cy) = 1503167 := by
   have a k := pointDialogConstantAdd_counts L hw hn L.point.x (Or.inl rfl) k
   have b k := pointDialogConstantAdd_counts L hw hn L.point.y (Or.inr rfl) k
   have ar := Frontier.arithS_counts L
@@ -32200,7 +32200,7 @@ def finiteOneS_base (L : ControlledPointLayout) (C : Point) (cx cy : Fp) : Progr
   pointDialogExceptionEnable L C ++ pointInPlaceDoubleEnable L cy
 
 def finiteOneS (L : ControlledPointLayout) (C : Point) (cx cy : Fp) : Program :=
-  finiteOneS_base L C cx cy ++ Arith.padding (L.core.poolWire 0) 51936
+  finiteOneS_base L C cx cy ++ Arith.padding (L.core.poolWire 0) 51680
 
 
 
@@ -32293,7 +32293,7 @@ theorem finiteOneS_spec (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wire
     Triple (PointDialogBoundary L R b (fun _=>false)) (finiteOneS L (.some hc) cx cy)
       (PointDialogBoundary L (if b then R+.some hc else R) b (fun _=>false)) := by
   exact (finiteOneS_base_spec L hw hn R hc b).seq
-    (Arith.padding_boundary L hw (if b then R+.some hc else R) b 51936)
+    (Arith.padding_boundary L hw (if b then R+.some hc else R) b 51680)
 
 end OneSpec
 end
@@ -32308,13 +32308,13 @@ attribute [local irreducible] Arith.genericS Arith.padding ECDSAAdd.Frontier.ari
 
 theorem finiteOneS_counts (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
     (C : Point) (cx cy : Fp) (h₁ : decide (cy ≠ -cy) = true) (h₂ : exceptionBit C = true) :
-    toffoliCount (finiteOneS L C cx cy) = 2159783 ∧
+    toffoliCount (finiteOneS L C cx cy) = 2159515 ∧
       measurementCount (finiteOneS L C cx cy) = 1556899 := by
   have old := ECDSAAdd.ShorPort.finiteS_counts L hw hn C cx cy h₁ h₂
   have new := secondCorners_counts L hw C
   have oldg := ECDSAAdd.ShorPort.genericS_counts L hw hn cx cy
   have newg := Arith.genericS_counts L hw hn cx cy
-  have pad := Arith.padding_counts (L.core.poolWire 0) 51936
+  have pad := Arith.padding_counts (L.core.poolWire 0) 51680
   have zero : toffoliCount (pointDialogCorners L C) = 0 ∧
       measurementCount (pointDialogCorners L C) = 0 := by
     simp [pointDialogCorners, pointInPlaceCorners, maskedPointConstant_counts]
@@ -32327,7 +32327,7 @@ theorem finiteOneS_physical (L : ControlledPointLayout) (hw : L.Widths) (hn : L.
   have old := ECDSAAdd.ShorPort.finiteS_physical L hw hn C cx cy
   have new := secondCorners_physical L hw hn C
   have gen := Arith.genericS_physical L hw hn cx cy
-  have pad := Arith.padding_physical (L.core.poolWire 0) 51936
+  have pad := Arith.padding_physical (L.core.poolWire 0) 51680
   simp only [finiteOneS,finiteOneS_base, ECDSAAdd.ShorPort.finiteS, gatePhysical_append] at old ⊢
   tauto
 
@@ -32489,7 +32489,7 @@ def wFiniteOne {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) : WC
     (wFields rows .doubleX) (wBit rows .doubleY) ++
   wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
   wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
-  wLiteral (Arith.padding (L.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (L.core.poolWire 0) 51680)
 
 @[simp] theorem traversals_shortNegXor {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) :
     traversals (wShortNegXor L rows) = 1 := rfl
@@ -32742,7 +32742,7 @@ theorem finiteOneS_used (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wire
   have old := ECDSAAdd.ShorPort.finiteS_used L hw hn C cx cy
   have new := secondCorners_used L hw hn C
   have gen := Arith.genericS_used L hw hn cx cy
-  have pad : ECDSAAdd.wires (Arith.padding (L.core.poolWire 0) 51936) ⊆ L.dialogUsedWires.toFinset := by
+  have pad : ECDSAAdd.wires (Arith.padding (L.core.poolWire 0) 51680) ⊆ L.dialogUsedWires.toFinset := by
     apply Finset.Subset.trans (Arith.padding_support _ _)
     intro q hq
     have he : q = L.core.poolWire 0 := by simpa only [Finset.mem_singleton] using hq
@@ -32838,7 +32838,7 @@ theorem finiteOne_literal_counts_of_point {n : Nat} (L : ControlledPointLayout)
     (h₁ : cy ≠ -cy) (h₂ : exceptionBit (.some hc) = true)
     (hD : (.some hc : Point) + .some hc ≠ 0)
     (hDo : ShorECDLP.order • ((.some hc : Point) + .some hc) = 0) :
-    literalToffolis (wFiniteOne L rows) = 2159783 ∧
+    literalToffolis (wFiniteOne L rows) = 2159515 ∧
       literalRecords (wFiniteOne L rows) = 1556899 := by
   let C : Point := .some hc
   let read : CBit n → Bool := fun ref => (fieldValue (toA C) ref.field).testBit ref.bit.val
@@ -32851,7 +32851,7 @@ theorem finiteOne_literal_counts_of_point {n : Nat} (L : ControlledPointLayout)
 
 theorem finiteOne_literal_counts {n : Nat} (L : ControlledPointLayout)
     (hw : L.Widths) (hn : L.wires.Nodup) (rows : Nat → Fin n) :
-    literalToffolis (wFiniteOne L rows) = 2159783 ∧
+    literalToffolis (wFiniteOne L rows) = 2159515 ∧
       literalRecords (wFiniteOne L rows) = 1556899 := by
   let P : Point := Bridge.toB ShorECDLP.Secp256k1.G
   have hP : P ≠ 0 := ShorECDLP.Secp256k1.G_ne_zero
@@ -32875,7 +32875,7 @@ theorem finiteOne_compile_counts {n : Nat} (L : ControlledPointLayout) (hw : L.W
     (hl : LookupLayouts bits paths root (wFiniteOne L rows)) (hbits : bits.length = 15)
     (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     codeRecords bits paths root (wFiniteOne L rows) = 2408841 ∧
-      ((compile bits paths root (wFiniteOne L rows) start).instantiate read history).tCount = 21082075 := by
+      ((compile bits paths root (wFiniteOne L rows) start).instantiate read history).tCount = 21080199 := by
   obtain ⟨ht, hm⟩ := finiteOne_literal_counts L hw hn rows
   constructor
   · rw [codeRecords_eq _ _ _ _ hl, hm, traversals_finiteOne, hbits]
@@ -33849,7 +33849,7 @@ def wFiniteTight {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) : 
     (wFields rows .doubleX) (wBit rows .doubleY) ++
   wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
   wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
-  wLiteral (Arith.padding (L.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (L.core.poolWire 0) 51680)
 
 
 attribute [local irreducible] wGeneric wCornersOne wPairEqual wPairEqualTight wShortNegEqual
@@ -33875,7 +33875,7 @@ theorem tight_pair_literal_counts {n : Nat} (L : ControlledPointLayout) (t₁ t�
 
 theorem tight_finite_literal_counts {n : Nat} (L : ControlledPointLayout)
     (hw : L.Widths) (hn : L.wires.Nodup) (rows : Nat → Fin n) :
-    literalToffolis (wFiniteTight L rows) = 2159783 ∧ literalRecords (wFiniteTight L rows) = 1556899 := by
+    literalToffolis (wFiniteTight L rows) = 2159515 ∧ literalRecords (wFiniteTight L rows) = 1556899 := by
   have h₁ := tight_pair_literal_counts L L.doubleSelect L.genericSelect (wBit rows .infinity)
     (wFields rows .x) (wBit rows .y) (wBit rows .negY)
   have h₂ := tight_pair_literal_counts L L.infinitySelect L.core.equalNegY (wBit rows .infinity)
@@ -33898,7 +33898,7 @@ theorem tight_finite_compile_counts {n : Nat} (L : ControlledPointLayout) (hw : 
     (hl : LookupLayouts bits paths root (wFiniteTight L rows)) (hbits : bits.length = 15)
     (read : CBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     codeRecords bits paths root (wFiniteTight L rows) = 2277773 ∧
-      ((compile bits paths root (wFiniteTight L rows) start).instantiate read history).tCount = 20164599 := by
+      ((compile bits paths root (wFiniteTight L rows) start).instantiate read history).tCount = 20162723 := by
   obtain ⟨ht, hm⟩ := tight_finite_literal_counts L hw hn rows
   constructor
   · rw [codeRecords_eq _ _ _ _ hl, hm, tight_finite_traversals, hbits]
@@ -34566,7 +34566,7 @@ def wFinite23 {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCo
     (wFields rows .doubleX) (wBit rows .doubleY) ++
   wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
   wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
-  wLiteral (Arith.padding (L.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (L.core.poolWire 0) 51680)
 
 theorem specialize_finite23 {n : Nat} (L : ControlledPointLayout) (rows : Nat → Fin n)
     (address : Nat) : specialize (wFinite23 L rows) address =
@@ -35449,7 +35449,7 @@ theorem bodyT_bound :
   have ha := literalToffolis_normalize (rowAddCode probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (rowAddCode probeRows) = 2159783 := by
+  have hrow : literalToffolis (rowAddCode probeRows) = 2159515 := by
     simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
@@ -35701,7 +35701,7 @@ theorem finiteOneS_slots_bound (C : ECDSAAdd.Secp256k1.Point) (cx cy : ECDSAAdd.
   have m4 := hm L.doubleSelect (C+C)
   have m6 := hm L.core.equalNegY (-C)
   have neg := negate_slots_bound L.core.equalNegY
-  have pad := Arith.padding_slots (L.core.poolWire 0) 51936
+  have pad := Arith.padding_slots (L.core.poolWire 0) 51680
   change ECDSAAdd.Challenge.gateSlots (finiteOneS L C cx cy) ≤ _
   simp only [finiteOneS,finiteOneS_base,secondCorners,
     ECDSAAdd.Challenge.gateSlots_append,hf,hz,ECDSAAdd.Baselines.gateSlots_cons,
@@ -36272,7 +36272,7 @@ theorem generic_source (cx cy : ECDSAAdd.Fp) :
     ca _ (Or.inl rfl) _⟩,ar true⟩,re⟩,z⟩
 
 
-theorem padding_source : ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 51936) ⊆
+theorem padding_source : ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 51680) ⊆
     sourceSupport.toFinset := by
   apply Finset.Subset.trans (Arith.padding_support _ _)
   intro q hq
@@ -36343,7 +36343,7 @@ theorem finiteOneS_support_of (L : ControlledPointLayout)
     (old : ECDSAAdd.wires (ECDSAAdd.ShorPort.finiteS L C cx cy) ⊆ S)
     (new : ECDSAAdd.wires (secondCorners L C) ⊆ S)
     (gen : ECDSAAdd.wires (Arith.genericS L cx cy) ⊆ S)
-    (pad : ECDSAAdd.wires (Arith.padding (L.core.poolWire 0) 51936) ⊆ S) :
+    (pad : ECDSAAdd.wires (Arith.padding (L.core.poolWire 0) 51680) ⊆ S) :
     ECDSAAdd.wires (finiteOneS L C cx cy) ⊆ S := by
   simp only [finiteOneS,finiteOneS_base,ECDSAAdd.ShorPort.finiteS,ECDSAAdd.wires_append,
     Finset.union_subset_iff] at old ⊢
