@@ -1,4 +1,5 @@
 -- Vendored from ECDSAAdd (ecdsa.fail Lean challenge), Apache-2.0, Copyright 2026 Runzhou Tao, Anirudh and ECDSAAdd contributors; 139 source modules at c3f340a (listed in MODULES.txt), concatenated. Changes: module paths, expanded notation, private-name renames.
+-- The ECDSAAdd.Submission.Entrant.Main section (from HalfConvert on) is the entrant Main.lean of ECDSAAdd e941df5 (submission bfb9475d: streamed-square branch-B accumulator split, second Karatsuba level in the square leaves, C,A,B branch order), with the same transformations, except that its KFull2 section (the nested-Karatsuba leaf squares) is the KFull2 section of ECDSAAdd f30fbab (submission 562d5843: balanced diagonal sharing in the leaf squares, 362 fewer Toffolis), and the derived square count literals are lowered by 362; it replaces the a2af67c (submission 41de28b3) section.
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part1
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part2
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part3
@@ -9134,31 +9135,340 @@ theorem directZero_physical (xs carry : List Wire) (cin flag : Wire) (kernel : P
 end ECDSAAdd.Arithmetic
 end
 
--- Fast endpoint physicality: structural core/tail with residual offset checks.
-section
-
-/-! Structural physicality of the protected one-bank field programs. -/
+-- Structural replacement for the two whole-program kernel checks below (ShorECDLP entrant).
+noncomputable section
 set_option maxRecDepth 8192
 set_option maxHeartbeats 1000000
 set_option linter.unusedSimpArgs false
-namespace ECDSAAdd.Arithmetic.FieldPhysicalFast
-open Arithmetic RecordedQuantum BalancedCircuit
-attribute [local irreducible] GatePhysical addInPlace subInPlace mappedAdd mappedSub
-  literalConstAdd compareLt signComplement rotateLeft rotateRight
 
-private theorem reverse_physical (P : Program) (h : GatePhysical P) : GatePhysical P.reverse := by
+/-! Structural physicality of the fixed offset-borrowed field programs: every piece is a
+majority/erase/CX/X gate on pairwise distinct wires of the one-bank layout. This replaces
+two kernel evaluations of the whole emitted programs. -/
+namespace ECDSAAdd.Arithmetic.FastFieldPhysical
+open RecordedQuantum BalancedCleanupOffset
+
+theorem rev_physical (P : Program) (h : GatePhysical P) : GatePhysical P.reverse := by
   unfold GatePhysical at h ⊢
   intro i hi
   exact h i (List.mem_reverse.mp hi)
 
-private theorem seed_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) : GatePhysical (seedViews L) := by
+theorem x_physical (q : Wire) : GatePhysical [.X q] := by
+  simp [GatePhysical,PhysicalInstr,ProperGate]
+
+theorem cx_physical (a t : Wire) (h : a ≠ t) : GatePhysical [.CX a t] := by
+  simp [GatePhysical,PhysicalInstr,ProperGate,h]
+
+theorem flipNone_physical (top t : Wire) (h : top ≠ t) : GatePhysical (flipBelow none top t) := by
+  simp [flipBelow,GatePhysical,PhysicalInstr,ProperGate,h]
+
+theorem mappedWires_tail (b : MappedBit) (bits : List MappedBit) (w : Wire)
+    (hw : w ∈ mappedWires bits) : w ∈ mappedWires (b::bits) := by
+  simp only [mappedWires,List.flatMap_cons,List.mem_append] at hw ⊢
+  exact Or.inr hw
+
+/-- The common head-cell facts of both two-prefix chains. -/
+theorem cell_facts (b : MappedBit) (bits : List MappedBit) (target cinC cinB a y c d : Wire)
+    (xs ys cs ds : List Wire)
+    (hn : (target::cinC::cinB::((a::xs)++(y::ys)++(c::cs)++(d::ds))).Nodup)
+    (ha : ∀w∈mappedWires (b::bits),w∉target::cinC::cinB::((a::xs)++(y::ys)++(c::cs)++(d::ds))) :
+    GatePhysical (mappedMajority b y cinC c) ∧ GatePhysical (mappedSum b y cinC) ∧
+      GatePhysical (majority a y cinB d) ∧ d ≠ target ∧ cinB ≠ target := by
+  have head := (List.nodup_append'.mp (head_tail_nd target cinC cinB a y c d xs ys cs ds hn)).1
+  have fresh : ∀w∈b.wire,w∉[a,y,cinC,cinB,c,d,target] := by
+    intro w hw hq
+    exact ha w (mapped_member b bits w hw) (head_mem_scope target cinC cinB a y c d w xs ys cs ds hq)
+  have n3 : [y,cinC,c].Nodup := by
+    apply List.nodup_iff_count.mpr; intro q
+    have h := List.nodup_iff_count.mp head q
+    simp only [List.count_cons,List.count_nil] at h ⊢; omega
+  have n4 : [a,y,cinB,d].Nodup := by
+    apply List.nodup_iff_count.mpr; intro q
+    have h := List.nodup_iff_count.mp head q
+    simp only [List.count_cons,List.count_nil] at h ⊢; omega
+  have nd := head
+  simp only [List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
+    not_or,not_false_eq_true,and_true] at nd
+  rcases nd with ⟨⟨a_y,a_iC,a_iB,a_c,a_d,a_t⟩,
+    ⟨y_iC,y_iB,y_c,y_d,y_t⟩,⟨iC_iB,iC_c,iC_d,iC_t⟩,
+    ⟨iB_c,iB_d,iB_t⟩,⟨c_d,c_t⟩,d_t⟩
+  refine ⟨mappedMajority_physical b y cinC c n3 ?_,mappedSum_physical b y cinC (Ne.symm y_iC) ?_,
+    majority_physical a y cinB d n4,d_t,iB_t⟩
+  · intro q hq hm
+    apply fresh q hq
+    simp only [List.mem_cons,List.not_mem_nil,or_false] at hm ⊢
+    tauto
+  · intro q hq he
+    subst he
+    exact fresh q hq (by simp)
+
+/-- The terminal-parity two-prefix chain is physical on distinct wires. -/
+theorem tpmChain_physical (bits : List MappedBit) (xs ys cs ds : List Wire) (cinC cinB target : Wire)
+    (hb : bits.length=ys.length) (hx : xs.length=ys.length)
+    (hc : cs.length=ys.length) (hd : ds.length=ys.length)
+    (hn : (target::cinC::cinB::(xs++ys++cs++ds)).Nodup)
+    (ha : ∀w∈mappedWires bits,w∉target::cinC::cinB::(xs++ys++cs++ds)) :
+    GatePhysical (TerminalParityMeasure.chain bits xs ys cs ds cinC cinB target) := by
+  induction ys generalizing bits xs cs ds cinC cinB with
+  | nil =>
+    have b := List.eq_nil_of_length_eq_zero (by simpa using hb)
+    have x := List.eq_nil_of_length_eq_zero (by simpa using hx)
+    have c := List.eq_nil_of_length_eq_zero (by simpa using hc)
+    have d := List.eq_nil_of_length_eq_zero (by simpa using hd)
+    subst bits xs cs ds
+    have ht : cinB ≠ target := by
+      intro e
+      subst e
+      simp at hn
+    have e : TerminalParityMeasure.chain [] [] [] [] [] cinC cinB target = flipBelow none cinB target := rfl
+    rw [e]
+    exact flipNone_physical cinB target ht
+  | cons y ys ih =>
+    cases bits with
+    | nil => simp at hb
+    | cons b bits =>
+      cases xs with
+      | nil => simp at hx
+      | cons a xs =>
+        cases cs with
+        | nil => simp at hc
+        | cons c cs =>
+          cases ds with
+          | nil => simp at hd
+          | cons d ds =>
+            obtain ⟨mm,ms,mj,d_t,iB_t⟩ := cell_facts b bits target cinC cinB a y c d xs ys cs ds hn ha
+            cases ys with
+            | nil =>
+              have be := List.eq_nil_of_length_eq_zero (by simpa using hb)
+              have xe := List.eq_nil_of_length_eq_zero (by simpa using hx)
+              have ce := List.eq_nil_of_length_eq_zero (by simpa using hc)
+              have de := List.eq_nil_of_length_eq_zero (by simpa using hd)
+              subst bits xs cs ds
+              have e : TerminalParityMeasure.chain [b] [a] [y] [c] [d] cinC cinB target =
+                  TerminalParityMeasure.leaf b a y cinC cinB d target := rfl
+              rw [e]
+              simp only [TerminalParityMeasure.leaf,TerminalParityMeasure.program,gatePhysical_append]
+              exact ⟨⟨⟨⟨ms,x_physical y⟩,x_physical target,eraseCarry_physical a y cinB target⟩,
+                x_physical y⟩,ms⟩
+            | cons y' ys =>
+              cases bits with
+              | nil => simp at hb
+              | cons b' bits =>
+                have e : TerminalParityMeasure.chain (b::b'::bits) (a::xs) (y::y'::ys) (c::cs) (d::ds)
+                    cinC cinB target =
+                    prepareHead b a y cinC cinB c d++
+                      TerminalParityMeasure.chain (b'::bits) xs (y'::ys) cs ds c d target++
+                      releaseHead b a y cinC cinB c d := rfl
+                have hrec := ih (b'::bits) xs cs ds c d (by simpa using hb) (by simpa using hx)
+                  (by simpa using hc) (by simpa using hd)
+                  (recursive_nd target cinC cinB a y c d xs (y'::ys) cs ds hn)
+                  (fun w hw hq => ha w (mappedWires_tail b (b'::bits) w hw)
+                    (tail_mem_scope target cinC cinB a y c d w xs (y'::ys) cs ds hq))
+                rw [e]
+                simp only [prepareHead,releaseHead,gatePhysical_append]
+                exact ⟨⟨⟨⟨⟨mm,ms⟩,x_physical y⟩,mj⟩,hrec⟩,
+                  ⟨⟨eraseCarry_physical a y cinB d,x_physical y⟩,ms⟩,mappedEraseCarry_physical b y cinC c⟩
+
+/-- The slim comparison two-prefix chain is physical on distinct wires. -/
+theorem slimChain_physical (bits : List MappedBit) (xs ys cs ds : List Wire) (cinC cinB target : Wire)
+    (hb : bits.length=ys.length) (hx : xs.length=ys.length)
+    (hc : cs.length=ys.length) (hd : ds.length=ys.length)
+    (hn : (target::cinC::cinB::(xs++ys++cs++ds)).Nodup)
+    (ha : ∀w∈mappedWires bits,w∉target::cinC::cinB::(xs++ys++cs++ds)) :
+    GatePhysical (BalancedCleanupOffsetSlim.chain bits xs ys cs ds cinC cinB target) := by
+  induction ys generalizing bits xs cs ds cinC cinB with
+  | nil =>
+    have b := List.eq_nil_of_length_eq_zero (by simpa using hb)
+    have x := List.eq_nil_of_length_eq_zero (by simpa using hx)
+    have c := List.eq_nil_of_length_eq_zero (by simpa using hc)
+    have d := List.eq_nil_of_length_eq_zero (by simpa using hd)
+    subst bits xs cs ds
+    have ht : cinB ≠ target := by
+      intro e
+      subst e
+      simp at hn
+    have e : BalancedCleanupOffsetSlim.chain [] [] [] [] [] cinC cinB target = flipBelow none cinB target := rfl
+    rw [e]
+    exact flipNone_physical cinB target ht
+  | cons y ys ih =>
+    cases bits with
+    | nil => simp at hb
+    | cons b bits =>
+      cases xs with
+      | nil => simp at hx
+      | cons a xs =>
+        cases cs with
+        | nil => simp at hc
+        | cons c cs =>
+          cases ds with
+          | nil => simp at hd
+          | cons d ds =>
+            obtain ⟨mm,ms,mj,d_t,iB_t⟩ := cell_facts b bits target cinC cinB a y c d xs ys cs ds hn ha
+            cases ys with
+            | nil =>
+              have be := List.eq_nil_of_length_eq_zero (by simpa using hb)
+              have xe := List.eq_nil_of_length_eq_zero (by simpa using hx)
+              have ce := List.eq_nil_of_length_eq_zero (by simpa using hc)
+              have de := List.eq_nil_of_length_eq_zero (by simpa using hd)
+              subst bits xs cs ds
+              have e : BalancedCleanupOffsetSlim.chain [b] [a] [y] [c] [d] cinC cinB target =
+                  mappedSum b y cinC++[.X y]++(majority a y cinB d++flipBelow none d target++
+                    eraseCarry a y cinB d)++[.X y]++mappedSum b y cinC := rfl
+              rw [e]
+              simp only [gatePhysical_append]
+              exact ⟨⟨⟨⟨ms,x_physical y⟩,⟨mj,flipNone_physical d target d_t⟩,
+                eraseCarry_physical a y cinB d⟩,x_physical y⟩,ms⟩
+            | cons y' ys =>
+              cases bits with
+              | nil => simp at hb
+              | cons b' bits =>
+                have e : BalancedCleanupOffsetSlim.chain (b::b'::bits) (a::xs) (y::y'::ys) (c::cs) (d::ds)
+                    cinC cinB target =
+                    prepareHead b a y cinC cinB c d++
+                      BalancedCleanupOffsetSlim.chain (b'::bits) xs (y'::ys) cs ds c d target++
+                      releaseHead b a y cinC cinB c d := rfl
+                have hrec := ih (b'::bits) xs cs ds c d (by simpa using hb) (by simpa using hx)
+                  (by simpa using hc) (by simpa using hd)
+                  (recursive_nd target cinC cinB a y c d xs (y'::ys) cs ds hn)
+                  (fun w hw hq => ha w (mappedWires_tail b (b'::bits) w hw)
+                    (tail_mem_scope target cinC cinB a y c d w xs (y'::ys) cs ds hq))
+                rw [e]
+                simp only [prepareHead,releaseHead,gatePhysical_append]
+                exact ⟨⟨⟨⟨⟨mm,ms⟩,x_physical y⟩,mj⟩,hrec⟩,
+                  ⟨⟨eraseCarry_physical a y cinB d,x_physical y⟩,ms⟩,mappedEraseCarry_physical b y cinC c⟩
+
+theorem offsetBits_wires (L : Layout) (w : Wire) (hw : w ∈ mappedWires (offsetBits L).tail) :
+    w = L.lower := by
+  have hw' : w ∈ mappedWires (offsetBits L) := by
+    simp only [mappedWires,List.mem_flatMap] at hw ⊢
+    obtain ⟨b,hb,hw⟩ := hw
+    exact ⟨b,List.mem_of_mem_tail hb,hw⟩
+  simp only [mappedWires,offsetBits,List.mem_flatMap,List.mem_map] at hw'
+  obtain ⟨b,⟨i,_,rfl⟩,hb⟩ := hw'
+  split_ifs at hb <;> simp_all
+
+/-- Head/tail split of the four 256-wire words of an offset layout. -/
+theorem heads (L : Layout) (hw : L.Widths) :
+    ∃ a xs y ys c cs d ds, L.y=a::xs ∧ L.r=y::ys ∧ L.offsetCarry=c::cs ∧ L.carry=d::ds ∧
+      xs.length=255 ∧ ys.length=255 ∧ cs.length=255 ∧ ds.length=255 := by
+  have width := BalancedCleanup.widths L.toCircuit.toLayout hw.1
+  have ylen : L.y.length=256 := width.2.2.1
+  have rlen : L.r.length=256 := width.2.1
+  have clen : L.offsetCarry.length=256 := hw.2
+  have dlen : L.carry.length=256 := hw.1.2.2
+  cases ey : L.y with
+  | nil => simp [ey] at ylen
+  | cons a xs =>
+    cases er : L.r with
+    | nil => simp [er] at rlen
+    | cons y ys =>
+      cases ec : L.offsetCarry with
+      | nil => simp [ec] at clen
+      | cons c cs =>
+        cases ed : L.carry with
+        | nil => simp [ed] at dlen
+        | cons d ds =>
+          refine ⟨a,xs,y,ys,c,cs,d,ds,rfl,rfl,rfl,rfl,?_,?_,?_,?_⟩
+          all_goals
+            simp only [ey,er,ec,ed,List.length_cons] at ylen rlen clen dlen
+            omega
+
+theorem offsetBits_tail_length (L : Layout) : (offsetBits L).tail.length=255 := by
+  simp [offsetBits_length]
+
+/-- The shared offset head: entry flip, head majority, chain, and their release. -/
+theorem zeroHeadArgs (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    ∃ a xs y ys c cs d ds, L.y=a::xs ∧ L.r=y::ys ∧ L.offsetCarry=c::cs ∧ L.carry=d::ds ∧
+      xs.length=255 ∧ ys.length=255 ∧ cs.length=255 ∧ ds.length=255 ∧
+      (L.parity::L.one::d::(xs++ys++cs++ds)).Nodup ∧ [a,y,L.cout,d].Nodup ∧
+      (∀w∈mappedWires (offsetBits L).tail,w∉L.parity::L.one::d::(xs++ys++cs++ds)) := by
+  obtain ⟨a,xs,y,ys,c,cs,d,ds,ey,er,ec,ed,lx,ly,lc,ld⟩ := heads L hw
+  have chain := L.chainND hn
+  rw [ey,er,ec,ed] at chain
+  have flags := L.flagsND hn
+  have away := L.flagAway hn L.lower (by simp)
+  rw [ey,er,ec,ed] at away
+  refine ⟨a,xs,y,ys,c,cs,d,ds,ey,er,ec,ed,lx,ly,lc,ld,?_,?_,?_⟩
+  · apply List.nodup_iff_count.mpr; intro q
+    have h := List.nodup_iff_count.mp chain q
+    simp only [List.count_cons,List.count_append,List.count_nil] at h ⊢; omega
+  · apply List.nodup_iff_count.mpr; intro q
+    have h := List.nodup_iff_count.mp chain q
+    simp only [List.count_cons,List.count_append,List.count_nil] at h ⊢; omega
+  · intro w hw hm
+    have e := offsetBits_wires L w hw
+    subst e
+    simp only [List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
+      not_or,not_false_eq_true,and_true] at flags
+    simp only [List.mem_cons,List.mem_append,List.not_mem_nil,or_false] at hm away
+    tauto
+
+theorem front_physical (L : Layout) (hn : L.wires.Nodup) : GatePhysical (front L) := by
+  let C := L.toCircuit.toLayout
+  have hC : C.wires.Nodup := L.cleanupND hn
+  have nd : [C.parity,C.sign,C.lower,C.one,C.rmsb,C.ymsb,C.r0].Nodup := by
+    apply List.nodup_iff_count.mpr
+    intro q
+    have h := List.nodup_iff_count.mp hC q
+    simp only [BalancedCleanup.Layout.wires,List.count_append,List.count_cons,List.count_nil] at h ⊢
+    omega
+  simp only [List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
+    not_or,not_false_eq_true,and_true] at nd
+  have rND : C.r.Nodup := (List.nodup_append'.mp (C.dataND hC)).1
+  have rot := (rotate_physical C.r rND).2
+  have sc := signComplement_physical C.lower C.r (fun h => C.flagAway hC C.lower (by simp) (by simp [h]))
+  have sy := signComplement_physical C.sign C.y (fun h => C.flagAway hC C.sign (by simp) (by simp [h]))
+  have ly := signComplement_physical C.lower C.y (fun h => C.flagAway hC C.lower (by simp) (by simp [h]))
+  have seed : GatePhysical [.CX C.rmsb C.lower] := by
+    simp [GatePhysical,PhysicalInstr,ProperGate]
+    tauto
+  have packet : GatePhysical [.X C.r0,.CX C.sign C.r0,.CX C.lower C.r0] := by
+    simp [GatePhysical,PhysicalInstr,ProperGate]
+    tauto
+  have ps : GatePhysical (BalancedCleanup.prepareSign C) := by
+    simpa only [BalancedCleanup.prepareSign,gatePhysical_append] using And.intro seed sc
+  simp only [front,view,gatePhysical_append]
+  exact ⟨⟨ps,⟨⟨⟨⟨rot,packet⟩,sy⟩,ly⟩,x_physical _⟩⟩,x_physical _⟩
+
+theorem terminalParityOffset_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    GatePhysical (TerminalParityOffset.program L) := by
+  obtain ⟨a,xs,y,ys,c,cs,d,ds,ey,er,ec,ed,lx,ly,lc,ld,cn,hn4,ha⟩ := zeroHeadArgs L hw hn
+  have fr := front_physical L hn
+  have ch := tpmChain_physical (offsetBits L).tail xs ys cs ds L.one d L.parity
+    (by rw [offsetBits_tail_length]; omega) (by omega) (by omega) (by omega) cn ha
+  have mj := majority_physical a y L.cout d hn4
+  have core : GatePhysical (TerminalParityOffset.core L) := by
+    simp only [TerminalParityOffset.core,TerminalParityZeroHead.program,ey,er,ec,ed,
+      List.tail_cons,List.headD_cons,gatePhysical_append]
+    exact ⟨⟨x_physical y,mj⟩,ch,eraseCarry_physical a y L.cout d,x_physical y⟩
+  simp only [TerminalParityOffset.program,gatePhysical_append]
+  exact ⟨⟨fr,core⟩,rev_physical _ fr⟩
+
+theorem cleanupOffsetZero_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    GatePhysical (BalancedCleanupOffsetZero.program L) := by
+  obtain ⟨a,xs,y,ys,c,cs,d,ds,ey,er,ec,ed,lx,ly,lc,ld,cn,hn4,ha⟩ := zeroHeadArgs L hw hn
+  have fr := front_physical L hn
+  have ch := slimChain_physical (offsetBits L).tail xs ys cs ds L.one d L.parity
+    (by rw [offsetBits_tail_length]; omega) (by omega) (by omega) (by omega) cn ha
+  have mj := majority_physical a y L.cout d hn4
+  have core : GatePhysical (BalancedCleanupOffsetZero.core L) := by
+    simp only [BalancedCleanupOffsetZero.core,BalancedCleanupOffsetZeroHead.program,ey,er,ec,ed,
+      List.tail_cons,List.headD_cons,gatePhysical_append]
+    exact ⟨⟨x_physical y,mj⟩,ch,eraseCarry_physical a y L.cout d,x_physical y⟩
+  simp only [BalancedCleanupOffsetZero.program,gatePhysical_append]
+  exact ⟨⟨fr,core⟩,rev_physical _ fr⟩
+
+section Balanced
+open BalancedCircuit
+
+theorem seed_physical (L : BalancedCircuit.Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    GatePhysical (seedViews L) := by
   have nd := seedND L hw hn
   simp only [List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
     not_or,not_false_eq_true,and_true] at nd
   simp [seedViews,GatePhysical,PhysicalInstr,ProperGate]
   tauto
 
-private theorem small_physical (L : Layout) (hn : L.wires.Nodup) :
+theorem small_physical (L : BalancedCircuit.Layout) (hn : L.wires.Nodup) :
     GatePhysical (prepareFold L) ∧ GatePhysical (releaseSelectors L) ∧
       GatePhysical (BalancedInverse.recoverSelectors L) ∧ GatePhysical (BalancedInverse.undoPreparation L) ∧
       GatePhysical [.CX L.ymsb L.sourceGuard] ∧ GatePhysical [.CX L.minus L.cout] := by
@@ -9169,7 +9479,7 @@ private theorem small_physical (L : Layout) (hn : L.wires.Nodup) :
     BalancedInverse.undoPreparation,GatePhysical,PhysicalInstr,ProperGate]
   tauto
 
-private theorem fold_adder_physical (L : Layout) (hn : L.wires.Nodup) :
+theorem fold_adder_physical (L : BalancedCircuit.Layout) (hn : L.wires.Nodup) :
     GatePhysical (mappedAdd (foldBits L) (foldTarget L++[L.cout]) L.carry L.parity) := by
   have nd : ([L.plus,L.minus]++(L.parity::(foldTarget L++[L.cout])++L.carry)).Nodup := by
     simpa only [List.cons_append,List.nil_append,List.append_assoc] using foldND L hn
@@ -9184,23 +9494,24 @@ private theorem fold_adder_physical (L : Layout) (hn : L.wires.Nodup) :
     exact List.disjoint_left.mp parts.2.2 (by split_ifs <;> simp) hbad
   · simp at hq
 
-private theorem fold_sub_physical (L : Layout) (hn : L.wires.Nodup) :
+theorem fold_sub_physical (L : BalancedCircuit.Layout) (hn : L.wires.Nodup) :
     GatePhysical (mappedSub (foldBits L) (foldTarget L++[L.cout]) L.carry L.parity) := by
   simpa only [mappedSub,gatePhysical_append] using
     And.intro (And.intro (notRegister_physical _) (fold_adder_physical L hn)) (notRegister_physical _)
 
-theorem core_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
-    GatePhysical (BalancedCircuit.coreProgram L) := by
+theorem core_physical (L : BalancedCircuit.Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+    GatePhysical (coreProgram L) := by
   have raw := (signedWords_physical L.sign (rawSource L) (rawTarget L) L.carry (rawLayoutND L hn)).1
   have small := small_physical L hn
   have fold : GatePhysical (BalancedCircuit.fold L) := by
-    simpa only [BalancedCircuit.fold,gatePhysical_append] using And.intro (fold_adder_physical L hn) small.2.2.2.2.2
+    simpa only [BalancedCircuit.fold,gatePhysical_append] using
+      And.intro (fold_adder_physical L hn) small.2.2.2.2.2
   have rot := (rotate_physical (rawTarget L) (rawTargetND L hn)).1
-  simp only [BalancedCircuit.coreProgram,gatePhysical_append]
-  refine ⟨seed_physical L hw hn, ?_, small.1, fold, rot, small.2.1⟩
-  simpa only [rawAdd,signedAdd] using raw
+  have ra : GatePhysical (rawAdd L) := by simpa only [rawAdd,signedAdd] using raw
+  simp only [coreProgram,gatePhysical_append]
+  exact ⟨seed_physical L hw hn,ra,small.1,fold,rot,small.2.1⟩
 
-theorem tail_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
+theorem inverseTail_physical (L : BalancedCircuit.Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
     GatePhysical (OffsetBorrowedInverse.tail L) := by
   have nd := rawLayoutND L hn
   have sc := signComplement_physical L.sign (rawSource L)
@@ -9210,53 +9521,57 @@ theorem tail_physical (L : Layout) (hw : L.Widths) (hn : L.wires.Nodup) :
     simpa only [BalancedInverse.rawSubtract,gatePhysical_append] using And.intro (And.intro sc sub) sc
   have small := small_physical L hn
   have fold : GatePhysical (BalancedInverse.undoFold L) := by
-    simpa only [BalancedInverse.undoFold,gatePhysical_append] using And.intro small.2.2.2.2.2 (fold_sub_physical L hn)
+    simpa only [BalancedInverse.undoFold,gatePhysical_append] using
+      And.intro small.2.2.2.2.2 (fold_sub_physical L hn)
   have rot := (rotate_physical (rawTarget L) (rawTargetND L hn)).2
   simp only [OffsetBorrowedInverse.tail,gatePhysical_append]
-  exact ⟨⟨⟨⟨⟨small.2.2.1,rot⟩,fold⟩,small.2.2.2.1⟩,raw⟩,reverse_physical _ (seed_physical L hw hn)⟩
+  exact ⟨⟨⟨⟨⟨small.2.2.1,rot⟩,fold⟩,small.2.2.2.1⟩,raw⟩,rev_physical _ (seed_physical L hw hn)⟩
 
-end ECDSAAdd.Arithmetic.FieldPhysicalFast
+end Balanced
 
+theorem shared_id_nodup : (skywalkSharedWires id).Nodup := by
+  simpa [skywalkSharedWires,wireBlock] using (List.nodup_range' : (List.range' 0 2314).Nodup)
+
+theorem sign_outside : (2409 : Wire) ∉ skywalkSharedWires id := by
+  simp [skywalkSharedWires,wireBlock,List.mem_range'_1]
+
+theorem sign_outside_ids : (2409 : Wire) ∉ balancedSharedIds.map id := by
+  simp only [List.map_id]
+  intro h
+  have bound := balancedSharedIds_bound 2409 h
+  omega
+
+theorem fixedForward : GatePhysical (OffsetBorrowedField.program id 2409) := by
+  let P := balancedSharedPorts id 2409
+  have hP := balancedSharedPorts_nodup id 2409 shared_id_nodup sign_outside_ids
+  have hwP := balancedSharedPorts_widths id 2409
+  have hL := OffsetCleanupBorrowedCaller.nodup id 2409 shared_id_nodup sign_outside
+  have hwL := OffsetCleanupBorrowedCaller.widths id 2409
+  simp only [OffsetBorrowedField.program,gatePhysical_append]
+  exact ⟨core_physical P hwP hP,terminalParityOffset_physical _ hwL hL,(small_physical P hP).2.2.2.2.1⟩
+
+theorem fixedInverse : GatePhysical (OffsetBorrowedInverse.program id 2409) := by
+  let P := balancedSharedPorts id 2409
+  have hP := balancedSharedPorts_nodup id 2409 shared_id_nodup sign_outside_ids
+  have hwP := balancedSharedPorts_widths id 2409
+  have hL := OffsetCleanupBorrowedCaller.nodup id 2409 shared_id_nodup sign_outside
+  have hwL := OffsetCleanupBorrowedCaller.widths id 2409
+  simp only [OffsetBorrowedInverse.program,OffsetBorrowedInverse.recoverParity,gatePhysical_append]
+  exact ⟨⟨(small_physical P hP).2.2.2.2.1,cleanupOffsetZero_physical _ hwL hL⟩,
+    inverseTail_physical P hwP hP⟩
+
+end ECDSAAdd.Arithmetic.FastFieldPhysical
 end
-
-
-namespace ECDSAAdd.Arithmetic.FieldPhysicalFast
-open RecordedQuantum
-set_option maxRecDepth 100000
-set_option maxHeartbeats 16000000
-private theorem ports_nodup : (balancedSharedPorts id 2409).wires.Nodup := by
-  apply balancedSharedPorts_nodup id 2409
-  · have hh : (List.range' 0 2314).Nodup := List.nodup_range'
-    simpa only [skywalkSharedWires, wireBlock, List.map_id] using hh
-  · intro h
-    obtain ⟨i, hi, he⟩ := List.mem_map.mp h
-    have hb := balancedSharedIds_bound i hi
-    change i = 2409 at he
-    omega
- theorem forward_physical : GatePhysical (OffsetBorrowedField.program id 2409) := by
-  rw [OffsetBorrowedField.program, gatePhysical_append]
-  refine ⟨core_physical _ (balancedSharedPorts_widths _ _) ports_nodup, ?_⟩
-  apply physicalGateCheck_correct
-  decide +kernel
- theorem inverse_physical : GatePhysical (OffsetBorrowedInverse.program id 2409) := by
-  rw [OffsetBorrowedInverse.program]
-  simp only [gatePhysical_append]
-  refine ⟨⟨?_, ?_⟩, tail_physical _ (balancedSharedPorts_widths _ _) ports_nodup⟩
-  · apply physicalGateCheck_correct
-    decide +kernel
-  · apply physicalGateCheck_correct
-    decide +kernel
-end ECDSAAdd.Arithmetic.FieldPhysicalFast
 
 -- source: ECDSAAdd/Arithmetic/FixedFieldPhysical.lean
 noncomputable section
 namespace ECDSAAdd.Arithmetic
 open RecordedQuantum
-theorem fixedForwardField_physical : GatePhysical (OffsetBorrowedField.program id 2409) := by
-  exact FieldPhysicalFast.forward_physical
+theorem fixedForwardField_physical : GatePhysical (OffsetBorrowedField.program id 2409) :=
+  FastFieldPhysical.fixedForward
 
-theorem fixedInverseField_physical : GatePhysical (OffsetBorrowedInverse.program id 2409) := by
-  exact FieldPhysicalFast.inverse_physical
+theorem fixedInverseField_physical : GatePhysical (OffsetBorrowedInverse.program id 2409) :=
+  FastFieldPhysical.fixedInverse
 end ECDSAAdd.Arithmetic
 end
 
@@ -18428,7 +18743,7 @@ original half-field method: submission8e13f110-79c6-44fd-a3a3-0730950fc6e8. -/
 /-! Field segment with halving endpoints.
 
 The protected segment converts both 256-bit field ports to balanced form on
-entry and both back on exit (four compare-based converters, 3,60 Toffolis).
+entry and both back on exit (four compare-based converters, 3,060 Toffolis).
 Here only the target port is converted, by the halving converter of
 `HalfConvert`, which stores the balanced word of `Y/2`; the source port is
 filled from (multiplication) or cleared against (division) the target while
@@ -51354,10 +51669,10 @@ theorem compactSkywalkSignPool_stage_release (w : Nat → Wire)
     (compactSkywalkSignPoolA w i).Clean (run (compactSkywalkSignPoolRelease w i) m s).basis ∧
     (compactSkywalkSignPoolB w i).Clean (run (compactSkywalkSignPoolRelease w i) m s).basis ∧
     signedRegValue (compactSkywalkSignPoolA w i).retained
-      (run (compactSkywalkSignPoolRelease w i) m s).basis = 
+      (run (compactSkywalkSignPoolRelease w i) m s).basis =
         (SkywalkTrace.next^[i] (SkywalkRails.encode false false (x:Int) (p:Int))).a ∧
     signedRegValue (compactSkywalkSignPoolB w i).retained
-      (run (compactSkywalkSignPoolRelease w i) m s).basis = 
+      (run (compactSkywalkSignPoolRelease w i) m s).basis =
         (SkywalkTrace.next^[i] (SkywalkRails.encode false false (x:Int) (p:Int))).b := by
   have copies := compactSkywalkSignPool_stage_copies w x p i hp0 hx0 hpo hp hq hx hc hi s.basis hin
   have h := compactSkywalkSignPool_release_correct w i hi hn s m copies.1 copies.2
@@ -80078,7 +80393,7 @@ def program (C : Point) : Program :=
 
 def entry : Challenge.Entry := fun C => normalizeProgram (program C)
 
-def bounds : Challenge.Bounds := ⟨2156568, 1501738, 1595, 50000004⟩
+def bounds : Challenge.Bounds := ⟨2156206, 1501376, 1595, 50000004⟩
 
 theorem program_correct (C : Point) (b : Bool) (R : Point) :
     Triple (encodes b R) (program C) (encodes b (if b then R+C else R)) := by
@@ -80095,7 +80410,7 @@ theorem program_correct (C : Point) (b : Bool) (R : Point) :
       ((Edges.wrapper_support layout layout_widths layout_nodup _ cy _ hG).trans
         (WrapperOB5.support_used layout layout_widths))
 
-theorem program_toffoli (C : Point) : toffoliCount (program C) ≤ 2156568 := by
+theorem program_toffoli (C : Point) : toffoliCount (program C) ≤ 2156206 := by
   cases C with
   | zero => simp [program, toffoliCount]
   | @some cx cy hc =>
@@ -80106,7 +80421,7 @@ theorem program_toffoli (C : Point) : toffoliCount (program C) ≤ 2156568 := by
     change toffoliCount (Edges.wrapper layout (.some hc) cy (genF layout cx cy)) ≤ _
     omega
 
-theorem program_measurements (C : Point) : measurementCount (program C) ≤ 1501738 := by
+theorem program_measurements (C : Point) : measurementCount (program C) ≤ 1501376 := by
   cases C with
   | zero => simp [program, measurementCount]
   | @some cx cy hc =>
@@ -80158,7 +80473,7 @@ theorem certificate : Challenge.Certificate entry bounds where
   physical C := normalize_physical _ (program_physical C)
   toffoli_le C := (normalize_toffoli _).trans (program_toffoli C)
   measurements_le C := by
-    change measurementCount (normalizeProgram (program C)) ≤ 1501738
+    change measurementCount (normalizeProgram (program C)) ≤ 1501376
     rw [normalize_measurements]
     exact program_measurements C
   qubits_le C := by
