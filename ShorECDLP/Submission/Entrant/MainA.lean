@@ -5973,7 +5973,7 @@ theorem narrow_body_t_bound (start : Nat) (read : ConstantBit 32768 → Bool) (h
   have ha := WEX.literalToffolis_normalize (WEX.rowAddCode WEX.probeRows)
   have hc := (WEX.finite23_literal_counts WEX.streamLayout WEX.probeRows).1.trans
     (WEX.tight_finite_literal_counts WEX.streamLayout WEX.streamLayout_widths WEX.streamLayout_nodup WEX.probeRows).1
-  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2159783 := by
+  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2159515 := by
     simp only [WEX.rowAddCode,WEX.literalToffolis_append,WEX.wLiteral,WEX.literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
@@ -11062,7 +11062,7 @@ def suffixCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n 
     (wFields rows .doubleX) (wBit rows .doubleY) ++
   wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
   wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
-  wLiteral (Arith.padding (L.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (L.core.poolWire 0) 51680)
 
 def fusedPrefixCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n :=
   wLiteral ([.CX L.control L.core.double]) ++ wLiteral ([.CX L.control L.core.equalX]) ++
@@ -12395,13 +12395,13 @@ def portSuffixCode (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51680)
 
 theorem portSuffix_shape (rows : Nat → Fin 32768) :
     let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51680)
     portSuffixCode rows = (scrCorners rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOutCompare rows ++ Z ∧
     WEXUnlookup.suffixCode streamLayout rows =
       (wCornersOne streamLayout rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOldCompare rows ++ Z := by
@@ -12571,7 +12571,7 @@ theorem portRow_shape (rows : Nat → Fin 32768) :
     let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51680)
     let X : WCode 32768 := wLiteral ([.X 838])
     let H : WCode 32768 := WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows
     portFinite rows = H ++ scrCorners rows ++ F ++ scrOutCompare rows ++ Z ∧
@@ -13990,7 +13990,7 @@ def portSuffixCodeD (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51680)
 
 
 
@@ -14259,7 +14259,7 @@ theorem portSuffixD_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin
         portBits read (scrDExtraBits rows) a) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51936))) := by
+          Arith.padding (streamLayout.core.poolWire 0) 51680))) := by
   simp only [portSuffixCodeD, scrDMiddle, specialize_append, Tmpl.instantiate_append, scr_lookup_inst, specialize_literal,
     Tmpl.instantiate_lit, scr_chain_inst, scrDPorts_targets, scrDPorts_bits, List.append_assoc]
 
@@ -14292,7 +14292,7 @@ theorem portSuffixD_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
           (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) address)))))) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51936))))
+          Arith.padding (streamLayout.core.poolWire 0) 51680))))
     (thirdCorners streamLayout C) (secondCorners streamLayout C) (thirdCorners_records _ _)
     (thirdCorners_run streamLayout streamLayout_widths streamLayout_nodup C) m s
   have r2 := run_replace_inside (secondCorners streamLayout C ++ (pointDialogGenericFlag streamLayout ++
@@ -14301,7 +14301,7 @@ theorem portSuffixD_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
           (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) address)) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51936))))
+          Arith.padding (streamLayout.core.poolWire 0) 51680))))
     (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) address) ++ [.X (yLow streamLayout)])
     (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .negY)) address))
     (by simp [xBits_records, measurementCount])
@@ -14466,7 +14466,7 @@ def sfxB (rows : Nat → Fin 32768) : WCode 32768 :=
 def sfxZ : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51936)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51680)
 def sfxF : WCode 32768 := wLiteral (pointDialogGenericFlag streamLayout)
 def sfxL (rows : Nat → Fin 32768) : WCode 32768 := [.lookup none (scrDPorts rows)]
 def sfxL' (rows : Nat → Fin 32768) : WCode 32768 := [.lookup none (scrPorts rows)]
