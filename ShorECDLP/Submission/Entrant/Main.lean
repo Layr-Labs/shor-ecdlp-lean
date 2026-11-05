@@ -31397,7 +31397,8 @@ set_option maxRecDepth 10000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySeqFocus false
 
-def lowWire (t : Wire) : Bool := t == 855 || t == 856 || t == 857
+def lowWire (t : Wire) : Bool :=
+  t == 855 || t == 856 || t == 857 || t == 858 || t == 859 || t == 869
 
 def wireCut (t : Wire) : Nat := if lowWire t then 27 else 28
 
@@ -31424,7 +31425,7 @@ def wireTrim {n s e} : Straight n s e → Straight n s e
   | .measure w p => .measure w (wireTrim p)
 
 def wireCharge : Gate → ℝ
-  | .P _ k t => if wireCut t < k then 7 / (2:ℝ)^k else 0
+  | .P _ k t => if wireCut t < k then 63/10/(2:ℝ)^k else 0
   | _ => 0
 
 theorem wireCharge_nonneg (g : Gate) : 0 ≤ wireCharge g := by
@@ -31451,10 +31452,10 @@ theorem wire_dropped_loss {n s e} (read : ConstantBit n → Bool) (p : Straight 
       expectation read p history psi accept + 2*wireCharge g*normSq psi := by
   cases g <;> simp only [wireDrop, Bool.false_eq_true, decide_eq_true_eq] at hg
   case P dir k t =>
-    have hd : 0 < 7/(2:ℝ)^k := by positivity
-    have hangle : (phaseAngle dir k)^2 ≤ (7/(2:ℝ)^k)^2 := by
+    have hd : 0 < 63/10/(2:ℝ)^k := by positivity
+    have hangle : (phaseAngle dir k)^2 ≤ (63/10/(2:ℝ)^k)^2 := by
       have hpi := Real.pi_lt_d2
-      have hb : 2*Real.pi/(2:ℝ)^k ≤ 7/(2:ℝ)^k := by
+      have hb : 2*Real.pi/(2:ℝ)^k ≤ 63/10/(2:ℝ)^k := by
         apply div_le_div_of_nonneg_right _ (by positivity)
         linarith
       have hz : 0 ≤ 2*Real.pi/(2:ℝ)^k := by positivity
@@ -31634,7 +31635,7 @@ set_option maxRecDepth 10000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySeqFocus false
 
-theorem wireCharge_bound (k : Nat) (t : Wire) (hk : wireCut t < k) : 7/(2:ℝ)^k ≤ 1 := by
+theorem wireCharge_bound (k : Nat) (t : Wire) (hk : wireCut t < k) : 63/10/(2:ℝ)^k ≤ 1 := by
   have hc := wireCut_ge t
   have hp : (2:ℝ)^28 ≤ 2^k := pow_le_pow_right₀ (by norm_num) (by omega)
   apply (div_le_iff₀ (by positivity : (0:ℝ)<2^k)).mpr
@@ -31695,7 +31696,7 @@ theorem wire_error_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
   | nil => rfl
   | cons w ws ih => simpa [prepareOuterBank,wireError,wireCharge] using ih
 
-def wirePotential (t : Wire) (k : Nat) : ℝ := 14/(2:ℝ)^(max (wireCut t + 1) k)
+def wirePotential (t : Wire) (k : Nat) : ℝ := 63/5/(2:ℝ)^(max (wireCut t + 1) k)
 
 theorem wireCharge_step (dir : PhaseDir) (w : Wire) (k : Nat) :
     wireCharge (.P dir k w) + wirePotential w (k+1) ≤ wirePotential w k := by
@@ -31725,17 +31726,17 @@ theorem wire_error_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List 
     have hc := wireCharge_step dir w k
     linarith
 
-def wireUnits (ws : List Wire) : Nat := (ws.map (fun w => if lowWire w then 2 else 1)).sum
+def wireUnits (ws : List Wire) : Nat := (ws.map (fun w => if lowWire w then 18 else 9)).sum
 
 theorem wirePotential_two (w : Wire) :
-    wirePotential w 2 = ((if lowWire w then 2 else 1 : Nat) : ℝ) * unit := by
+    wirePotential w 2 = ((if lowWire w then 18 else 9 : Nat) : ℝ) * (unit/10) := by
   have hm : max (wireCut w + 1) 2 = wireCut w + 1 := max_eq_left (by have := wireCut_ge w; omega)
   rw [wirePotential, hm, wireCut]
   split_ifs <;> norm_num [unit]
 
 theorem wire_error_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
     (start : Nat) (prior : List (Fin start)) :
-    wireError (fourierProgram n dir ws start prior) ≤ (wireUnits ws : ℝ) * unit := by
+    wireError (fourierProgram n dir ws start prior) ≤ (wireUnits ws : ℝ) * (unit/10) := by
   induction ws generalizing start with
   | nil => simp [fourierProgram, wireError, wireUnits]
   | cons w ws ih =>
@@ -31744,7 +31745,7 @@ theorem wire_error_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
       (.measure w (fourierProgram n dir ws (start+1) (Fin.last _ :: prior.map Fin.castSucc)))
     have hi := ih (start+1) (Fin.last _ :: prior.map Fin.castSucc)
     have hu : (wireUnits (w :: ws) : ℝ) =
-        ((if lowWire w then 2 else 1 : Nat) : ℝ) + (wireUnits ws : ℝ) := by
+        ((if lowWire w then 18 else 9 : Nat) : ℝ) + (wireUnits ws : ℝ) := by
       simp only [wireUnits, List.map_cons, List.sum_cons, Nat.cast_add]
     simp only [wireError] at hf
     rw [wirePotential_two] at hf
@@ -31759,7 +31760,7 @@ theorem wire_error_axis {n}
     (ws : List (Single.Window n))
     (hz : ∀ w ∈ ws, ∀ start, residue (w.program start) = 0)
     (start : Nat) (prior : List (Fin start)) :
-    wireError (Single.axis ws start prior) ≤ (wireAxisUnits (ws.map (fun w => w.wires)) : ℝ)*unit := by
+    wireError (Single.axis ws start prior) ≤ (wireAxisUnits (ws.map (fun w => w.wires)) : ℝ)*(unit/10) := by
   induction ws generalizing start with
   | nil => simp [Single.axis,wireError,wireAxisUnits]
   | cons w ws ih =>
@@ -31858,7 +31859,7 @@ def wireTrimEntry (entry : StraightEntry) : StraightEntry where
 
 theorem wire_trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
     (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (herror : wireError entry.program ≤ 559*unit)
+    (hs : Within ws entry.program) (herror : wireError entry.program ≤ 5742*(unit/10))
     (hstrong : ∀ (Q : Secp256k1.Point) (d : Nat), Q ≠ 0 → Q = d • Secp256k1.G →
       (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
@@ -31922,10 +31923,10 @@ def sharedLeftWires : List (List Wire) :=
 def sharedRightWires : List (List Wire) :=
   (List.replicate 13 16).map (fun c => (ShorECDLP.Entrant.Schedule29Sixteen245.bank c).reverse)
 
-theorem shared_left_slots : wireMetadata sharedLeftWires 0 = 27309 := by decide +kernel
-theorem shared_right_slots : wireMetadata sharedRightWires 0 = 16326 := by decide +kernel
-theorem shared_left_units : wireAxisUnits sharedLeftWires = 312 := by decide +kernel
-theorem shared_right_units : wireAxisUnits sharedRightWires = 247 := by decide +kernel
+theorem shared_left_slots : wireMetadata sharedLeftWires 0 = 27345 := by decide +kernel
+theorem shared_right_slots : wireMetadata sharedRightWires 0 = 16361 := by decide +kernel
+theorem shared_left_units : wireAxisUnits sharedLeftWires = 3168 := by decide +kernel
+theorem shared_right_units : wireAxisUnits sharedRightWires = 2574 := by decide +kernel
 
 variable [body : Single.WindowBody] [impl : Programs body]
 
@@ -31959,7 +31960,7 @@ attribute [local irreducible] entry program fullProgram readout Single.fixedEntr
 include hc in
 omit ledger in
 theorem shared_left_error (start : Nat) :
-    wireError (Single.axis leftWindows start List.nil) ≤ 312*unit := by
+    wireError (Single.axis leftWindows start List.nil) ≤ 3168*(unit/10) := by
   have hz : ∀ w ∈ leftWindows, ∀ s, residue (w.program s) = 0 := by
     intro w hw s
     unfold leftWindows at hw
@@ -31974,7 +31975,7 @@ theorem shared_left_error (start : Nat) :
 include hc in
 omit ledger in
 theorem shared_right_error (start : Nat) :
-    wireError (Single.axis rightWindows start List.nil) ≤ 247*unit := by
+    wireError (Single.axis rightWindows start List.nil) ≤ 2574*(unit/10) := by
   have hz : ∀ w ∈ rightWindows, ∀ s, residue (w.program s) = 0 := by
     intro w hw s
     unfold rightWindows at hw
@@ -32001,10 +32002,10 @@ theorem wire_error_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n 0
   exact wire_error_reindex p _
 
 include hc in
-theorem shared_source_error : wireError entry.program ≤ 559*unit := by
+theorem shared_source_error : wireError entry.program ≤ 5742*(unit/10) := by
   have hl := shared_left_error hc 0
   have hr := shared_right_error hc (0+Single.axisCount leftWindows)
-  have hp : wireError program ≤ 559*unit := by
+  have hp : wireError program ≤ 5742*(unit/10) := by
     simp only [program,wire_error_cast,trial,wire_error_framed,resetBody,wire_error_reset]
     linarith
   rw [entry,wire_error_fixedEntry]
@@ -32016,13 +32017,13 @@ theorem shared_source_error : wireError entry.program ≤ 559*unit := by
   exact hp
 
 theorem shared_left_removed (start : Nat) :
-    27309 ≤ wireRemoved (Single.axis leftWindows start List.nil) := by
+    27345 ≤ wireRemoved (Single.axis leftWindows start List.nil) := by
   have h := wire_removed_axis leftWindows start List.nil
   rw [shared_left_wires] at h
   exact shared_left_slots.ge.trans h
 
 theorem shared_right_removed (start : Nat) :
-    16326 ≤ wireRemoved (Single.axis rightWindows start List.nil) := by
+    16361 ≤ wireRemoved (Single.axis rightWindows start List.nil) := by
   have h := wire_removed_axis rightWindows start List.nil
   rw [shared_right_wires] at h
   exact shared_right_slots.ge.trans h
@@ -32039,10 +32040,10 @@ theorem wire_removed_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n
   unfold Single.fixedEntry
   exact wire_removed_reindex p _
 
-theorem shared_source_removed : 43635 ≤ wireRemoved entry.program := by
+theorem shared_source_removed : 43706 ≤ wireRemoved entry.program := by
   have hl := shared_left_removed (body:=body) 0
   have hr := shared_right_removed (body:=body) (0+Single.axisCount leftWindows)
-  have hp : 43635 ≤ wireRemoved program := by
+  have hp : 43706 ≤ wireRemoved program := by
     simp only [program, wire_removed_cast, trial, wire_removed_framed]
     omega
   rw [entry, wire_removed_fixedEntry]
@@ -32052,7 +32053,7 @@ theorem shared_source_removed : 43635 ≤ wireRemoved entry.program := by
 
 include hc in
 theorem shared_source_weight : ConditionalCatalyst.weight4 (wireTrim entry.program) ≤
-    4*(65535+18*c16+11*c15)+11356 := by
+    4*(65535+18*c16+11*c15)+11285 := by
   have hw := conditional_source_weight hc
   have he := wire_weight4_trim entry.program
   have hr := shared_source_removed (body:=body)
@@ -32083,7 +32084,7 @@ theorem shared_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bo
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
     Certificate officialLimits (lowerLayout 1938 (wireTrimEntry entry) layout) (ConditionalCatalyst.fourEntry 1938 1939 (wireTrimEntry entry))
-      ⟨qBound, 4*(65535+18*c16+11*c15)+11357, 544000000⟩ := by
+      ⟨qBound, 4*(65535+18*c16+11*c15)+11286, 544000000⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
@@ -32124,8 +32125,8 @@ theorem shared_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bo
     rw [wire_trim_added]
     omega
   · exact hSupport
-  · change ConditionalCatalyst.weight4 (wireTrim entry.program) + 1 ≤ 4*(65535+18*c16+11*c15)+11357
-    change ConditionalCatalyst.weight4 (wireTrim entry.program) ≤ 4*(65535+18*n16.credit+11*n15.credit)+11356 at hw
+  · change ConditionalCatalyst.weight4 (wireTrim entry.program) + 1 ≤ 4*(65535+18*c16+11*c15)+11286
+    change ConditionalCatalyst.weight4 (wireTrim entry.program) ≤ 4*(65535+18*n16.credit+11*n15.credit)+11285 at hw
     omega
   · change entry.finalCursor + added (wireTrim entry.program) ≤ 544000000
     rw [wire_trim_added]
@@ -32161,7 +32162,7 @@ attribute [local irreducible] Schedule29Seventeen244.Flexible.FusedFinal.narrow1
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (WeightedPhase28.wireTrimEntry Schedule29Sixteen245.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (WeightedPhase28.wireTrimEntry Schedule29Sixteen245.Flexible.entry) Schedule29Sixteen245.Flexible.layout
-def bounds : Bounds := ⟨1620,4*(65535+18*2256126+11*2210174)+11357,544000000⟩
+def bounds : Bounds := ⟨1620,4*(65535+18*2256126+11*2210174)+11286,544000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
@@ -32195,7 +32196,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1620,259962225,544000000⟩
+def bounds : Bounds := ⟨1620,259962154,544000000⟩
 noncomputable section
 def entry : StraightEntry := WeightedFirst16Fused28.entry
 def layout : DecodeLayout := WeightedFirst16Fused28.layout
