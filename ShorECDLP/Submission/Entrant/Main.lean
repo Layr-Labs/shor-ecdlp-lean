@@ -2031,13 +2031,13 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   rw [fastCompactProgram,relabelStraight_instantiate]
   exact he
 
-theorem row2_ccx_upper : ccx row2 ≤ 2358851 := by
+theorem row2_ccx_upper : ccx row2 ≤ 2358596 := by
   have h := ccx_relation row2
   have hn := WEX.literalToffolis_normalize (erase row2)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160339 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158804 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160084 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158549 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -2046,14 +2046,14 @@ theorem row2_ccx_upper : ccx row2 ≤ 2358851 := by
   omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx row2 ≤ 2359355 := by
+    ccx row2 ≤ 2359100 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := row2_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 15 where
   records := 1758490
-  tBound := 16515485
+  tBound := 16513700
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := fastCompactProgram
   coherent := by
@@ -2191,13 +2191,13 @@ theorem row2_records : records row2 = 1659034 := by
 attribute [local irreducible] program blockProgram clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx Nat.add Nat.mul in
-theorem row2_ccx_upper : ccx row2 ≤ 2259907 := by
+theorem row2_ccx_upper : ccx row2 ≤ 2259652 := by
   have h := ccx_relation row2
   have hn := WEX.literalToffolis_normalize (erase row2)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160339 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158804 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160084 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158549 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -2478,14 +2478,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx row2 ≤ 2260411 := by
+    ccx row2 ≤ 2260156 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := WEXUnlookupWidth14.row2_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 14 where
   records := 1659546
-  tBound := 15822877
+  tBound := 15821092
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := fastCompactProgram
   coherent := by
@@ -8128,7 +8128,7 @@ attribute [local irreducible] W15.fastBodyProgram W14.fastBodyProgram
 
 def body2 : Single.WindowBody where
   records := 1758490
-  tBound := 16515485
+  tBound := 16513700
   slotBound := 2000000000
   support := List.range 1619
   reset := resetWires
@@ -8157,7 +8157,7 @@ def body2 : Single.WindowBody where
 
 def narrow15 : ModNarrow body2 15 where
   records := 1758490
-  tBound := 16515485
+  tBound := 16513700
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := W15.compactProgram
   coherent := fun coeffs Q hQ hn _ start history => body2.coherent coeffs Q hQ hn start history
@@ -8180,7 +8180,7 @@ def narrow15 : ModNarrow body2 15 where
 
 def narrow14 : ModNarrow body2 14 where
   records := 1659546
-  tBound := 15822877
+  tBound := 15821092
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXUnlookupWidth14.ccx row2
   program := W14.compactProgram
@@ -10482,13 +10482,13 @@ theorem rowC_records : records2 rowC = 1692440 := by
 attribute [local irreducible] program2 blockProgram2 clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx2 Nat.add Nat.mul in
-theorem rowC_ccx_upper : ccx2 rowC ≤ 2293827 := by
+theorem rowC_ccx_upper : ccx2 rowC ≤ 2293572 := by
   have h := ccx2_relation rowC
   have hn := WEX.literalToffolis_normalize (erase2 rowC)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160339 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158804 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160084 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158549 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -10756,14 +10756,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx2 rowC ≤ 2294331 := by
+    ccx2 rowC ≤ 2294076 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := rowC_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 15 where
   records := 1692952
-  tBound := 16060317
+  tBound := 16058532
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx2 rowC
   program := fastCompactProgram
   coherent := by
@@ -11418,13 +11418,13 @@ theorem rowC_records : records2 rowC = 1626264 := by
 attribute [local irreducible] program2 blockProgram2 clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx2 Nat.add Nat.mul in
-theorem rowC_ccx_upper : ccx2 rowC ≤ 2227651 := by
+theorem rowC_ccx_upper : ccx2 rowC ≤ 2227396 := by
   have h := ccx2_relation rowC
   have hn := WEX.literalToffolis_normalize (erase2 rowC)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160339 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158804 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2160084 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158549 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -11704,14 +11704,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx2 rowC ≤ 2228155 := by
+    ccx2 rowC ≤ 2227900 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := WEXUnlookupWidth14.rowC_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 14 where
   records := 1626776
-  tBound := 15597085
+  tBound := 15595300
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx2 rowC
   program := fastCompactProgram
   coherent := by
@@ -13497,7 +13497,7 @@ attribute [local irreducible] W15C.fastBodyProgram W14C.fastBodyProgram
 
 def bodyC : Single.WindowBody where
   records := 1692952
-  tBound := 16060317
+  tBound := 16058532
   slotBound := 2000000000
   support := List.range 1619
   reset := resetWires
@@ -13526,7 +13526,7 @@ def bodyC : Single.WindowBody where
 
 def narrowC15 : ModNarrow bodyC 15 where
   records := 1692952
-  tBound := 16060317
+  tBound := 16058532
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     ccx2 WEXUnlookup.rowC
   program := W15C.compactProgram
@@ -13550,7 +13550,7 @@ def narrowC15 : ModNarrow bodyC 15 where
 
 def narrowC14 : ModNarrow bodyC 14 where
   records := 1626776
-  tBound := 15597085
+  tBound := 15595300
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXUnlookupWidth14.ccx2 WEXUnlookup.rowC
   program := W14C.compactProgram
@@ -19643,10 +19643,10 @@ theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gate
 def compactProgram (start : Nat) : Straight 32768 start (start+1654036) :=
   relabelStraight piH (fastBodyProgram start)
 
-theorem count_arith (s x y : Nat) (h : s + y ≤ 2294331) (hr : x + 38916 = y) : s + x ≤ 2255415 := by omega
+theorem count_arith (s x y : Nat) (h : s + y ≤ 2294076) (hr : x + 38916 = y) : s + x ≤ 2255160 := by omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    fcodeTP rowCF ≤ 2255415 := by
+    fcodeTP rowCF ≤ 2255160 := by
   exact count_arith _ _ _ Width15Corner.fastCount_upper rowCF_tp
 
 end
@@ -19699,7 +19699,7 @@ theorem bodyCF_ledger : bodyCF.support.length = 1617 ∧ bodyCF.reset.length = 8
 /-- The width-15 corner body with the three select-swap sites. -/
 def narrowCF15 : ModNarrow bodyCF 15 where
   records := 1654036
-  tBound := 15787905
+  tBound := 15786120
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXFast.fcodeTP WEXFast.rowCF
   program := WEXFast.W15F.compactProgram
@@ -23276,10 +23276,10 @@ theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gate
 def compactProgram (start : Nat) : Straight 32768 start (start+1608084) :=
   relabelStraight piH (fastBodyProgram start)
 
-theorem count_arith (s x y : Nat) (h : s + y ≤ 2228155) (hr : x + 18692 = y) : s + x ≤ 2209463 := by omega
+theorem count_arith (s x y : Nat) (h : s + y ≤ 2227900) (hr : x + 18692 = y) : s + x ≤ 2209208 := by omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    fcodeTP rowCF ≤ 2209463 :=
+    fcodeTP rowCF ≤ 2209208 :=
   count_arith _ _ _ WEXUnlookupWidth14.Corner.fastCount_upper rowCF_tp
 
 end
@@ -23297,7 +23297,7 @@ attribute [local irreducible] WEXFast14.W14F.fastBodyProgram
 /-- The width-14 corner body with the three select-swap sites. -/
 def narrowCF14 : ModNarrow bodyCF 14 where
   records := 1608084
-  tBound := 15466241
+  tBound := 15464456
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXFast14.fcodeTP WEXFast14.rowCF
   program := WEXFast14.W14F.compactProgram
@@ -27298,12 +27298,12 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
     (hSupport : ledger.support.length ≤ 1618) (hSlot : body.slotBound ≤ 3000000000)
     (hR15 : n15.records ≤ 1608084) (hR16 : n16.records ≤ 1654036)
     (hReset : body.reset.length ≤ 854)
-    (hT15 : n15.tBound ≤ 15466241) (hT16 : n16.tBound ≤ 15787905)
-    (hC15 : n15.credit ≤ 2209463) (hC16 : n16.credit ≤ 2255415)
+    (hT15 : n15.tBound ≤ 15464456) (hT16 : n16.tBound ≤ 15786120)
+    (hC15 : n15.credit ≤ 2209208) (hC16 : n16.credit ≤ 2255160)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
     Certificate officialLimits (lowerLayout 1938 entry layout)
-      (CatalystS.compileEntry 1939 (lowerEntry 1938 entry)) ⟨1620, 260001720, 543906879⟩ := by
+      (CatalystS.compileEntry 1939 (lowerEntry 1938 entry)) ⟨1620, 259972140, 543906879⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
@@ -27335,7 +27335,7 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
   apply fusedClearWiden raw
   · change ledger.support.length + 2 ≤ 1620
     omega
-  · change 4 * (131071 + 17 * n16.credit + 12 * n15.credit) + 55458 + 1 - 467 ≤ 260001720
+  · change 4 * (131071 + 17 * n16.credit + 12 * n15.credit) + 55458 + 1 - 467 ≤ 259972140
     omega
   · change entry.finalCursor + added entry.program ≤ 543906879
     omega
@@ -27364,9 +27364,9 @@ theorem n14_records : narrow14.records ≤ 1608084 := by
   exact le_rfl
 theorem n15_records : narrow15.records ≤ 1654036 := by
   exact le_rfl
-theorem n14_cost : narrow14.tBound ≤ 15466241 := by
+theorem n14_cost : narrow14.tBound ≤ 15464456 := by
   exact le_rfl
-theorem n15_cost : narrow15.tBound ≤ 15787905 := by
+theorem n15_cost : narrow15.tBound ≤ 15786120 := by
   exact le_rfl
 
 attribute [local irreducible] narrow13 narrow14 narrow15
@@ -27379,19 +27379,19 @@ local instance resourcesInstance : Single.ProducerResources bodyInstance :=
 local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw⟩
 local instance programInstance : Programs bodyInstance := triPrograms narrow13 narrow14 narrow15
 
-private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15466241) :
-    c ≤ 2209463 := by omega
-private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15787905) :
-    c ≤ 2255415 := by omega
+private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15464456) :
+    c ≤ 2209208 := by omega
+private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15786120) :
+    c ≤ 2255160 := by omega
 
-theorem n14_credit : narrow14.credit ≤ 2209463 := by
+theorem n14_credit : narrow14.credit ≤ 2209208 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow14.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow14.program 0) (narrow14.zero 0) read Fin.elim0
   have hc := narrow14.count_eq 0
   have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
   exact count14_bound _ _ he' (ht.trans n14_cost)
-theorem n15_credit : narrow15.credit ≤ 2255415 := by
+theorem n15_credit : narrow15.credit ≤ 2255160 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow15.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow15.program 0) (narrow15.zero 0) read Fin.elim0
@@ -27401,7 +27401,7 @@ theorem n15_credit : narrow15.credit ≤ 2255415 := by
 
 def entry : StraightEntry := CatalystS.compileEntry 1939 (lowerEntry 1938 Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 Flexible.entry Flexible.layout
-def bounds : Bounds := ⟨1620, 260001720, 543906879⟩
+def bounds : Bounds := ⟨1620, 259972140, 543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   apply @matched_fused_certificate bodyInstance resourcesInstance coverInstance narrow13 narrow14 narrow15
@@ -28748,13 +28748,13 @@ attribute [local irreducible] FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry) Schedule29Seventeen244.Flexible.layout
-def bounds : Bounds := ⟨1619,4*(131071+17*2255415+12*2209463)+11026,543906879⟩
+def bounds : Bounds := ⟨1619,4*(131071+17*2255160+12*2209208)+11026,543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
   apply @weighted_matched_certificate bodyInstance resourcesInstance coverInstance
     FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal.narrow15
-    1619 2209463 2255415
+    1619 2209208 2255160
   · change PathShare.bodyCF.support.length + 2 ≤ 1619
     rw [PathShare.bodyCF_ledger.1]
   · change PathShare.bodyCF.slotBound ≤ 3000000000
@@ -32963,821 +32963,6 @@ theorem weighted28_source_weight : ConditionalCatalyst.weight4 (ApproximatePhase
   omega
 end
 end ShorECDLP.Entrant.Schedule29Sixteen245.Flexible
-section trimNSplice
-set_option linter.unusedSimpArgs false
-set_option linter.unnecessarySeqFocus false
-set_option linter.unusedVariables false
-
-open ShorECDLP.Entrant
-open ShorECDLP.Entrant.WeightedPhase28
-open ShorECDLP.Entrant.ApproximatePhase34
-open ShorECDLP.Entrant.ConditionalCatalyst
-open ShorECDLP.Entrant.AndGadget
-open ShorECDLP.Challenge
-open ShorECDLP.Paper2607_13816.ChallengeMigration
-open ShorECDLP.Quantum
-
-set_option autoImplicit false
-set_option maxHeartbeats 4000000
-set_option maxRecDepth 100000
-
-/-! Drop every phase gate with k >= 28 (as `trim 27`), plus the first
-N phase gates with k = 27.  The budget counter only gates the k = 27 band. -/
-
-def trimN {n s e} (N : Nat) : Straight n s e → Straight n s e
-  | .done => .done
-  | .gate (.literal g) p =>
-      if largePhase 27 g then trimN N p
-      else if decide (N > 0) && largePhase 26 g then trimN (N - 1) p
-      else .gate (.literal g) (trimN N p)
-  | .gate (.whenBit r v g) p =>
-      if largePhase 27 g then trimN N p
-      else if decide (N > 0) && largePhase 26 g then trimN (N - 1) p
-      else .gate (.whenBit r v g) (trimN N p)
-  | .recordGate i v g p =>
-      if largePhase 27 g then trimN N p
-      else if decide (N > 0) && largePhase 26 g then trimN (N - 1) p
-      else .recordGate i v g (trimN N p)
-  | .measure w p => .measure w (trimN N p)
-
-theorem trimN_added {n s e} (N : Nat) (p : Straight n s e) :
-    added (trimN N p) = added p := by
-  induction p generalizing N with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      simp only [trimN]
-      by_cases h27 : largePhase 27 g = true
-      · cases g <;> simp only [largePhase, Bool.false_eq_true] at h27
-        simp only [largePhase, h27, if_true, added]
-        exact ih N
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · cases g <;> simp only [largePhase, Bool.and_false, Bool.false_eq_true] at hN
-          simp only [largePhase] at h27f
-          simp only [largePhase, Bool.false_eq_true, h27f, if_false, hN, if_true,
-            added, ih (N - 1)]
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          cases g <;> simp only [largePhase] at h27f hNf <;>
-            simp only [largePhase, Bool.false_eq_true, if_false, if_true,
-              added, h27f, hNf, ih N]
-    | whenBit r v g =>
-      simp only [trimN]
-      by_cases h27 : largePhase 27 g = true
-      · cases g <;> simp only [largePhase, Bool.false_eq_true] at h27
-        simp only [largePhase, h27, if_true, added]
-        exact ih N
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · cases g <;> simp only [largePhase, Bool.and_false, Bool.false_eq_true] at hN
-          simp only [largePhase] at h27f
-          simp only [largePhase, Bool.false_eq_true, h27f, if_false, hN, if_true,
-            added, ih (N - 1)]
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          cases g <;> simp only [largePhase] at h27f hNf <;>
-            simp only [largePhase, Bool.false_eq_true, if_false, if_true,
-              added, h27f, hNf, ih N]
-  | recordGate i v g p ih =>
-    simp only [trimN]
-    by_cases h27 : largePhase 27 g = true
-    · simp only [h27, if_true, added]
-      exact ih N
-    · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-      by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-      · simp only [h27f, if_false, hN, if_true, added]
-        exact ih (N - 1)
-      · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-          Bool.eq_false_iff.mpr hN
-        simp only [h27f, if_false, hNf, if_false, added]
-        exact ih N
-  | measure w p ih => simp [trimN, added, ih]
-
-theorem trimN_wellFormed {n s e} (N : Nat) (p : Straight n s e)
-    (hp : p.WellFormed) : (trimN N p).WellFormed := by
-  induction p generalizing N with
-  | done => trivial
-  | gate g p ih =>
-    cases g <;> simp only [trimN] <;> split_ifs <;>
-      first | exact ih _ hp.2 | exact ⟨hp.1, ih _ hp.2⟩
-  | recordGate i v g p ih =>
-    simp only [trimN] <;> split_ifs <;>
-      first | exact ih _ hp.2 | exact ⟨hp.1, ih _ hp.2⟩
-  | measure w p ih => simp only [trimN]; exact ih _ hp
-
-theorem trimN_within {n s e} (N : Nat) (p : Straight n s e) (ws : List ShorECDLP.Wire)
-    (hp : Within ws p) : Within ws (trimN N p) := by
-  induction p generalizing N with
-  | done => trivial
-  | gate g p ih =>
-    cases g <;> simp only [trimN] <;> split_ifs <;>
-      first | exact ih _ hp.2 | exact ⟨hp.1, ih _ hp.2⟩
-  | recordGate i v g p ih =>
-    simp only [trimN] <;> split_ifs <;>
-      first | exact ih _ hp.2 | exact ⟨hp.1, ih _ hp.2⟩
-  | measure w p ih => exact ⟨hp.1, ih _ hp.2⟩
-
-theorem trimN_slots {n s e} (N : Nat) (p : Straight n s e) :
-    (trimN N p).gateSlots ≤ p.gateSlots := by
-  induction p generalizing N with
-  | done => rfl
-  | gate g p ih =>
-    cases g <;> simp only [trimN] <;> split_ifs <;>
-      simp only [Straight.gateSlots] <;> (have h1 := ih N; have h2 := ih (N - 1); omega)
-  | recordGate i v g p ih =>
-    simp only [trimN] <;> split_ifs <;>
-      simp only [Straight.gateSlots] <;> (have h1 := ih N; have h2 := ih (N - 1); omega)
-  | measure w p ih => simp only [trimN, Straight.gateSlots]; exact ih _
-
-theorem trimN_t {n s e} (N : Nat) (p : Straight n s e) (read : ConstantBit n → Bool)
-    (history : Fin s → Bool) :
-    ((trimN N p).instantiate read history).tCount ≤ (p.instantiate read history).tCount := by
-  induction p generalizing N with
-  | done => rfl
-  | gate g p ih =>
-    cases g <;> simp only [trimN] <;> split_ifs <;>
-      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
-      (have h1 := ih N history; have h2 := ih (N - 1) history; omega)
-  | recordGate i v g p ih =>
-    simp only [trimN] <;> split_ifs <;>
-      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
-      (have h1 := ih N history; have h2 := ih (N - 1) history; omega)
-  | measure w p ih =>
-    simp only [trimN, Straight.instantiate, AdaptiveCircuit.tCount]
-    exact max_le_max (ih _ _) (ih _ _)
-
-/-! A k = 27 phase gate still has weight 1 when dropped. -/
-theorem dropped_weight27 (g : ShorECDLP.Gate) (hg : largePhase 26 g = true) :
-    ConditionalCatalyst.weightedGate g = 1 ∧ ConditionalCatalyst.weightedLiteral g = 1 := by
-  cases g <;> simp only [largePhase, Bool.false_eq_true] at hg
-  case P dir k t =>
-    have h1 : 26 < k := by simpa using hg
-    have hk : k ≠ 2 := by omega
-    simp [ConditionalCatalyst.weightedGate, ConditionalCatalyst.weightedLiteral,
-      ConditionalCatalyst.phaseTwoGate_P, hk, ShorECDLP.tCost]
-
-/-! Loss bound for a dropped k = 27 phase gate (unit charge). -/
-theorem dropped_loss27 {n s e} (read : ConstantBit n → Bool) (p : Straight n s e)
-    (history : Fin s → Bool) (psi : State) (accept : (Fin e → Bool) → Bool)
-    (hp : p.WellFormed) (g : ShorECDLP.Gate) (hg : largePhase 26 g = true)
-    (hg27 : largePhase 27 g = false) :
-    expectation read p history (applyGate g psi) accept ≤
-      expectation read p history psi accept + 2*unit*normSq psi := by
-  cases g <;> simp only [largePhase, Bool.false_eq_true] at hg hg27
-  case P dir k t =>
-    have h1 : 26 < k := by simpa using hg
-    have h2 : ¬ 27 < k := by simpa using hg27
-    have hk : k = 27 := by omega
-    subst hk
-    have hd : 0 < (7:ℝ)/(2)^28 := by positivity
-    have hangle : (phaseAngle dir (27:Nat)/2)^2 ≤ ((7:ℝ)/(2)^28)^2 := by
-      have hpi := Real.pi_lt_d2
-      have hb : 2*Real.pi/(2:ℝ)^27/2 ≤ (7:ℝ)/(2)^28 := by
-        rw [pow_succ, div_div]
-        apply div_le_div_of_nonneg_right _ (by positivity)
-        linarith
-      have hz : 0 ≤ 2*Real.pi/(2:ℝ)^27/2 := by positivity
-      cases dir <;> simp only [phaseAngle, neg_div, neg_sq] <;> nlinarith
-    have hunit : (7:ℝ)/(2)^28 = unit := rfl
-    simpa only [hunit] using
-      expectation_phase_half_loss read p history psi accept hp dir (27:Nat) t _ hd hangle
-
-/-! Core accounting: trimming with budget N loses at most
-2*(errorCost p + N*unit).  The k >= 28 drops are paid by errorCost,
-the N k = 27 drops by N*unit. -/
-theorem trimN_expectation {n s e} (read : ConstantBit n → Bool)
-    (p : Straight n s e) (N : Nat) (history : Fin s → Bool) (psi : State)
-    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed) :
-    expectation read p history psi accept ≤
-      expectation read (trimN N p) history psi accept +
-      2*(errorCost p + N*unit)*normSq psi := by
-  induction p generalizing psi N with
-  | done =>
-    have hu : (0:ℝ) ≤ unit := by simp only [unit]; positivity
-    have hN : (0:ℝ) ≤ (N:ℝ) := Nat.cast_nonneg N
-    have hpsi : (0:ℝ) ≤ normSq psi := mass_nonneg psi
-    have hprod : (0:ℝ) ≤ 2*(↑N*unit)*normSq psi :=
-      mul_nonneg (mul_nonneg (by positivity) (mul_nonneg hN hu)) hpsi
-    simp [trimN, errorCost, expectation]
-    exact hprod
-  | measure w p ih =>
-    have h0 := ih N (Fin.lastCases false history) (xResetKraus w false psi) accept hp
-    have h1 := ih N (Fin.lastCases true history) (xResetKraus w true psi) accept hp
-    have hm := normSq_xResetKraus_false_add_true w psi
-    have hme := congrArg (fun x : ℝ => 2*(errorCost p + N*unit)*x) hm
-    simp only [trimN, errorCost, expectation]
-    nlinarith
-  | recordGate i v g p ih =>
-    by_cases h27 : largePhase 27 g = true
-    · have hi := ih N history psi accept hp.2
-      have hs := dropped_loss read p history psi accept hp.2 g h27
-      simp only [trimN, h27, if_true, errorCost, expectation]
-      by_cases hr : history i = v
-      · simp only [hr, if_true, run_singleton]
-        nlinarith
-      · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
-        have hsq : (0:ℝ) ≤ normSq psi := mass_nonneg psi
-        have hu2 : (0:ℝ) ≤ unit := by simp only [unit]; positivity
-        have hn := mul_nonneg (charge_nonneg g) (mass_nonneg psi)
-        nlinarith
-    · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-      by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-      · have hg26 : largePhase 26 g = true := by
-          simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
-          exact hN.2
-        have hs := dropped_loss27 read p history psi accept hp.2 g hg26 h27f
-        have hi := ih (N - 1) history psi accept hp.2
-        have hc0 : charge g = 0 := charge_false g h27f
-        have hNpos : 0 < N := by
-          have h := hN
-          simp at h
-          exact h.1
-        have hcast : ((N - 1 : Nat) : ℝ) = (N:ℝ) - 1 := Nat.cast_pred hNpos
-        simp only [hcast] at hi
-        simp only [trimN, h27f, Bool.false_eq_true, if_false, hN, if_true,
-          errorCost, hc0, zero_add, expectation]
-        by_cases hr : history i = v
-        · simp only [hr, if_true, run_singleton]
-          nlinarith
-        · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
-          have hsq : (0:ℝ) ≤ normSq psi := mass_nonneg psi
-          have hu2 : (0:ℝ) ≤ unit := by simp only [unit]; positivity
-          have hn := mul_nonneg (charge_nonneg g) (mass_nonneg psi)
-          nlinarith
-      · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-          Bool.eq_false_iff.mpr hN
-        have hi := ih N history (run (if history i=v then [g] else []) psi)
-          accept hp.2
-        have hc0 : charge g = 0 := charge_false g h27f
-        have hn : normSq (run (if history i=v then [g] else []) psi) = normSq psi := by
-          apply normSq_run
-          split_ifs
-          · simpa [ShorECDLP.CircuitWellFormed] using hp.1
-          · simp [ShorECDLP.CircuitWellFormed]
-        rw [hn] at hi
-        simp only [trimN, h27f, if_false, hNf, if_false, errorCost, hc0,
-          zero_add, expectation]
-        exact hi
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      by_cases h27 : largePhase 27 g = true
-      · have hs := dropped_loss read p history psi accept hp.2 g h27
-        have hi := ih N history psi accept hp.2
-        simp only [trimN, h27, if_true, errorCost, expectation,
-          TemplateGate.instantiate, run_singleton]
-        nlinarith
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
-            exact hN.2
-          have hs := dropped_loss27 read p history psi accept hp.2 g hg26 h27f
-          have hi := ih (N - 1) history psi accept hp.2
-          have hc0 : charge g = 0 := charge_false g h27f
-          have hNpos : 0 < N := by
-            have h := hN
-            simp at h
-            exact h.1
-          have hcast : ((N - 1 : Nat) : ℝ) = (N:ℝ) - 1 := Nat.cast_pred hNpos
-          simp only [hcast] at hi
-          simp only [trimN, h27f, Bool.false_eq_true, if_false, hN, if_true,
-            errorCost, hc0, zero_add, expectation, TemplateGate.instantiate,
-            run_singleton]
-          nlinarith
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          have hi := ih N history (applyGate g psi) accept hp.2
-          rw [normSq_gate g hp.1 psi] at hi
-          have hc0 : charge g = 0 := charge_false g h27f
-          simp only [trimN, h27f, if_false, hNf, if_false, errorCost, hc0,
-            zero_add, expectation, TemplateGate.instantiate, run_singleton]
-          exact hi
-    | whenBit r v g =>
-      by_cases h27 : largePhase 27 g = true
-      · have hi := ih N history psi accept hp.2
-        have hs := dropped_loss read p history psi accept hp.2 g h27
-        simp only [trimN, h27, if_true, errorCost, expectation, TemplateGate.instantiate]
-        by_cases hr : read r = v
-        · simp only [hr, if_true, run_singleton]
-          nlinarith
-        · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
-          have hsq : (0:ℝ) ≤ normSq psi := mass_nonneg psi
-          have hu2 : (0:ℝ) ≤ unit := by simp only [unit]; positivity
-          have hn := mul_nonneg (charge_nonneg g) (mass_nonneg psi)
-          nlinarith
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
-            exact hN.2
-          have hs := dropped_loss27 read p history psi accept hp.2 g hg26 h27f
-          have hi := ih (N - 1) history psi accept hp.2
-          have hc0 : charge g = 0 := charge_false g h27f
-          have hNpos : 0 < N := by
-            have h := hN
-            simp at h
-            exact h.1
-          have hcast : ((N - 1 : Nat) : ℝ) = (N:ℝ) - 1 := Nat.cast_pred hNpos
-          simp only [hcast] at hi
-          simp only [trimN, h27f, Bool.false_eq_true, if_false, hN, if_true,
-            errorCost, hc0, zero_add, expectation, TemplateGate.instantiate]
-          by_cases hr : read r = v
-          · simp only [hr, if_true, run_singleton]
-            nlinarith
-          · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
-            have hsq : (0:ℝ) ≤ normSq psi := mass_nonneg psi
-            have hu2 : (0:ℝ) ≤ unit := by simp only [unit]; positivity
-            have hn := mul_nonneg (charge_nonneg g) (mass_nonneg psi)
-            nlinarith
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          have hi := ih N history (run ((TemplateGate.whenBit r v g).instantiate read) psi)
-            accept hp.2
-          rw [normSq_template read (.whenBit r v g) hp.1 psi] at hi
-          have hc0 : charge g = 0 := charge_false g h27f
-          simp only [trimN, h27f, if_false, hNf, if_false, errorCost, hc0,
-            zero_add, expectation]
-          exact hi
-
-/-! weight4 bookkeeping: each extra dropped k = 27 gate removes 1. -/
-
-def trimSpent {n s e} (N : Nat) : Straight n s e → Nat
-  | .done => 0
-  | .gate (.literal g) p =>
-      if largePhase 27 g then trimSpent N p
-      else if decide (N > 0) && largePhase 26 g then 1 + trimSpent (N - 1) p
-      else trimSpent N p
-  | .gate (.whenBit r v g) p =>
-      if largePhase 27 g then trimSpent N p
-      else if decide (N > 0) && largePhase 26 g then 1 + trimSpent (N - 1) p
-      else trimSpent N p
-  | .recordGate i v g p =>
-      if largePhase 27 g then trimSpent N p
-      else if decide (N > 0) && largePhase 26 g then 1 + trimSpent (N - 1) p
-      else trimSpent N p
-  | .measure w p => trimSpent N p
-
-theorem weight4_trimN {n s e} (N : Nat) (p : Straight n s e) :
-    ConditionalCatalyst.weight4 (trimN N p) + removed 27 p + trimSpent N p =
-      ConditionalCatalyst.weight4 p := by
-  induction p generalizing N with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      by_cases h27 : largePhase 27 g = true
-      · have hw := (dropped_weight g h27).2
-        simp only [trimN, trimSpent, h27, if_true, removed, Bool.toNat_true,
-          ConditionalCatalyst.weight4, hw]
-        (have h1 := ih N; have h2 := ih (N - 1); omega)
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
-            exact hN.2
-          have hw := (dropped_weight27 g hg26).2
-          simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hN,
-            if_true, removed, Bool.toNat_false, zero_add,
-            ConditionalCatalyst.weight4, hw]
-          (have h1 := ih N; have h2 := ih (N - 1); omega)
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hNf,
-            Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
-            ConditionalCatalyst.weight4]
-          (have h1 := ih N; have h2 := ih (N - 1); omega)
-    | whenBit r v g =>
-      by_cases h27 : largePhase 27 g = true
-      · have hw := (dropped_weight g h27).1
-        simp only [trimN, trimSpent, h27, if_true, removed, Bool.toNat_true,
-          ConditionalCatalyst.weight4, hw]
-        (have h1 := ih N; have h2 := ih (N - 1); omega)
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
-            exact hN.2
-          have hw := (dropped_weight27 g hg26).1
-          simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hN,
-            if_true, removed, Bool.toNat_false, zero_add,
-            ConditionalCatalyst.weight4, hw]
-          (have h1 := ih N; have h2 := ih (N - 1); omega)
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hNf,
-            Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
-            ConditionalCatalyst.weight4]
-          (have h1 := ih N; have h2 := ih (N - 1); omega)
-  | recordGate i v g p ih =>
-    by_cases h27 : largePhase 27 g = true
-    · have hw := (dropped_weight g h27).1
-      simp only [trimN, trimSpent, h27, if_true, removed, Bool.toNat_true,
-        ConditionalCatalyst.weight4, hw]
-      (have h1 := ih N; have h2 := ih (N - 1); omega)
-    · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-      by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-      · have hg26 : largePhase 26 g = true := by
-          simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
-          exact hN.2
-        have hw := (dropped_weight27 g hg26).1
-        simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hN,
-          if_true, removed, Bool.toNat_false, zero_add,
-          ConditionalCatalyst.weight4, hw]
-        (have h1 := ih N; have h2 := ih (N - 1); omega)
-      · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-          Bool.eq_false_iff.mpr hN
-        simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hNf,
-          Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
-          ConditionalCatalyst.weight4]
-        (have h1 := ih N; have h2 := ih (N - 1); omega)
-  | measure w p ih =>
-    simp only [trimN, trimSpent, removed, ConditionalCatalyst.weight4, ih]
-
-/-! === count family: how many k = 27 gates exist (cutoff-26 machinery) === -/
-
-def droppedSlots26 : Nat → Nat → Nat
-  | 0, _ => 0
-  | width+1, prior => (prior - 25) + droppedSlots26 width (prior + 1)
-
-def metadataDropped26 : List Nat → Nat → Nat
-  | [], _ => 0
-  | width :: ws, prior => droppedSlots26 width prior + metadataDropped26 ws (prior + width)
-
-theorem removed26_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
-    removed 26 (p.append q) = removed 26 p + removed 26 q := by
-  induction p with
-  | done => simp [Straight.append, removed]
-  | gate g p ih => cases g <;> simp [Straight.append, removed, ih, Nat.add_assoc]
-  | recordGate i v g p ih => simp_all [Straight.append, removed, Nat.add_assoc]
-  | measure w p ih => simp_all [Straight.append, removed]
-
-theorem removed26_cast {n s e f} (p : Straight n s e) (h : e = f) :
-    removed 26 (castFinish h p) = removed 26 p := by subst f; rfl
-
-theorem removed26_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
-    removed 26 (reindexStraight f p) = removed 26 p := by
-  induction p with
-  | done => rfl
-  | gate g p ih => cases g with
-    | literal g => cases g <;> simp_all [reindexStraight, reindexGate, removed, ih]
-    | whenBit r v g => simp_all [reindexStraight, reindexGate, removed, ih]
-  | recordGate => simp_all [reindexStraight, removed]
-  | measure => simp_all [reindexStraight, removed]
-
-theorem removed26_feedback {n s e} (dir : ShorECDLP.PhaseDir) (w : ShorECDLP.Wire) (indices : List (Fin s))
-    (k : Nat) (p : Straight n s e) :
-    removed 26 (feedbackProgram dir w indices k p) =
-      (indices.length - min indices.length (27 - k)) + removed 26 p := by
-  induction indices generalizing k with
-  | nil => simp [feedbackProgram]
-  | cons i is ih =>
-    simp only [feedbackProgram, removed, largePhase, ih, List.length_cons]
-    by_cases hk : 26 < k
-    · simp only [hk, decide_true, Bool.toNat_true]
-      omega
-    · simp only [hk, decide_false, Bool.toNat_false]
-      omega
-
-theorem removed26_prepare {n s e} (ws : List ShorECDLP.Wire) (p : Straight n s e) :
-    removed 26 (prepareOuterBank ws p) = removed 26 p := by
-  induction ws with
-  | nil => rfl
-  | cons w ws ih => simpa [prepareOuterBank, removed, largePhase] using ih
-
-theorem removed_fourier26 (n : Nat) (dir : ShorECDLP.PhaseDir) (ws : List ShorECDLP.Wire)
-    (start : Nat) (prior : List (Fin start)) :
-    removed 26 (fourierProgram n dir ws start prior) = droppedSlots26 ws.length prior.length := by
-  induction ws generalizing start with
-  | nil => rfl
-  | cons w ws ih => simp [fourierProgram, removed26_cast, removed26_feedback,
-      removed, ih, droppedSlots26]; omega
-
-theorem weighted26_removed_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
-    (r : Straight n k e) (h : e = f) :
-    removed 26 (Single.framed p q r h) = removed 26 p + removed 26 q + removed 26 r := by
-  simp [Single.framed, removed, removed26_cast, removed26_append, largePhase, Nat.add_assoc]
-
-theorem weighted26_removed_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n 0 e) :
-    removed 26 (Single.fixedEntry f p).program = removed 26 p := by
-  unfold Single.fixedEntry
-  exact removed26_reindex p _
-
-theorem largePhase_mono (g : ShorECDLP.Gate) :
-    (largePhase 27 g).toNat ≤ (largePhase 26 g).toNat := by
-  cases g with
-  | P dir k t =>
-    simp only [largePhase]
-    by_cases h : 27 < k
-    · have h26 : 26 < k := by omega
-      simp [h, h26, Bool.toNat_true]
-    · simp [h, Bool.toNat_false, Nat.zero_le]
-  | X t => simp only [largePhase, Bool.toNat_false] <;> omega
-  | H t => simp only [largePhase, Bool.toNat_false] <;> omega
-  | CX a b => simp only [largePhase, Bool.toNat_false] <;> omega
-  | CCX a b c => simp only [largePhase, Bool.toNat_false] <;> omega
-
-theorem largePhase_mono_true (g : ShorECDLP.Gate) (h : largePhase 27 g = true) :
-    largePhase 26 g = true := by
-  cases g with
-  | P dir k t =>
-    simp only [largePhase] at h ⊢
-    have h27 : 27 < k := by simpa using h
-    have h26 : 26 < k := by omega
-    simp [h26]
-  | X t => simp only [largePhase, Bool.false_eq_true] at h
-  | H t => simp only [largePhase, Bool.false_eq_true] at h
-  | CX a b => simp only [largePhase, Bool.false_eq_true] at h
-  | CCX a b c => simp only [largePhase, Bool.false_eq_true] at h
-
-theorem removed27_le_removed26 {n s e} (p : Straight n s e) :
-    removed 27 p ≤ removed 26 p := by
-  induction p with
-  | done => simp only [removed]; omega
-  | gate g p ih =>
-    cases g with
-    | literal g => simp only [removed]; exact Nat.add_le_add (largePhase_mono g) ih
-    | whenBit r v g => simp only [removed]; exact Nat.add_le_add (largePhase_mono g) ih
-  | recordGate i v g p ih => simp only [removed]; exact Nat.add_le_add (largePhase_mono g) ih
-  | measure w p ih => simp only [removed]; exact ih
-
-theorem droppedSlots_mono (w prior : Nat) :
-    WeightedPhase28.droppedSlots w prior ≤ droppedSlots26 w prior := by
-  induction w generalizing prior with
-  | zero => simp only [WeightedPhase28.droppedSlots, droppedSlots26]; omega
-  | succ w ih =>
-    simp only [WeightedPhase28.droppedSlots, droppedSlots26]
-    exact Nat.add_le_add (by omega) (ih (prior + 1))
-
-theorem metadataDropped_mono (ws : List Nat) (p : Nat) :
-    WeightedPhase28.metadataDropped ws p ≤ metadataDropped26 ws p := by
-  induction ws generalizing p with
-  | nil => simp only [WeightedPhase28.metadataDropped, metadataDropped26]; omega
-  | cons w ws ih =>
-    simp only [WeightedPhase28.metadataDropped, metadataDropped26]
-    exact Nat.add_le_add (droppedSlots_mono w p) (ih (p + w))
-
-/-- The count difference of the two cutoffs accumulates through `Single.axis`. -/
-theorem removed_axis_diff [body : Single.WindowBody] [ledger : Single.ProducerResources body] {n}
-    (ws : List (Single.Window n)) (widths : List Nat)
-    (hw : List.Forall₂ (fun w c => w.wires.length = c) ws widths)
-    (start : Nat) (prior : List (Fin start)) :
-    metadataDropped26 widths prior.length - WeightedPhase28.metadataDropped widths prior.length ≤
-      removed 26 (Single.axis ws start prior) - removed 27 (Single.axis ws start prior) := by
-  induction ws generalizing widths start with
-  | nil =>
-    cases hw
-    simp only [metadataDropped26, WeightedPhase28.metadataDropped, Single.axis, removed]
-    omega
-  | cons w ws ih =>
-    cases hw with
-    | cons head tail =>
-      rename_i c widths
-      simp only [Single.axis, removed26_cast, WeightedPhase28.removed_cast,
-        removed26_append, WeightedPhase28.removed_append, removed26_prepare,
-        WeightedPhase28.removed_prepare, removed_fourier26,
-        WeightedPhase28.removed_fourier, bankPrior_length]
-      have ht := ih widths tail (start + w.count + w.wires.length)
-        (Single.nextPrior w.count w.wires.length prior)
-      rw [Single.nextPrior_length] at ht
-      simp only [metadataDropped26, WeightedPhase28.metadataDropped]
-      have hA := removed27_le_removed26 (w.program start)
-      have hR := removed27_le_removed26
-        (Single.axis ws (start + w.count + c) (Single.nextPrior w.count c prior))
-      have hD := droppedSlots_mono c prior.length
-      have hm := metadataDropped_mono widths (prior.length + c)
-      rw [head] at *
-      omega
-
-theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
-    trimSpent N p = min N (removed 26 p - removed 27 p) := by
-  induction p generalizing N with
-  | done => simp only [trimSpent, removed]; omega
-  | gate g p ih =>
-    have hm : removed 27 p ≤ removed 26 p := removed27_le_removed26 p
-    cases g with
-    | literal g =>
-      by_cases h27 : largePhase 27 g = true
-      · have h26t : largePhase 26 g = true := largePhase_mono_true g h27
-        simp only [trimSpent, h27, if_true]
-        simp only [removed, h27, h26t, Bool.toNat_true]
-        have h1 := ih N; omega
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            have h := hN
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-            exact h.2
-          have hNpos : 0 < N := by
-            have h := hN
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-            exact h.1
-          simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hN, if_true]
-          simp only [removed, h27f, hg26, Bool.toNat_true, Bool.toNat_false, zero_add]
-          have h1 := ih N; have h2 := ih (N - 1); omega
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          by_cases h26 : largePhase 26 g = true
-          · have hN0 : N = 0 := by
-              rcases Nat.eq_zero_or_pos N with h0 | hpos
-              · exact h0
-              · simp [h26, hpos] at hNf
-            simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
-            simp only [removed, h26, h27f, Bool.toNat_true, Bool.toNat_false, zero_add]
-            have h1 := ih N; omega
-          · have h26f : largePhase 26 g = false := Bool.eq_false_iff.mpr h26
-            simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
-            simp only [removed, h26f, h27f, Bool.toNat_false, zero_add]
-            have h1 := ih N; omega
-    | whenBit r v g =>
-      by_cases h27 : largePhase 27 g = true
-      · have h26t : largePhase 26 g = true := largePhase_mono_true g h27
-        simp only [trimSpent, h27, if_true]
-        simp only [removed, h27, h26t, Bool.toNat_true]
-        have h1 := ih N; omega
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            have h := hN
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-            exact h.2
-          have hNpos : 0 < N := by
-            have h := hN
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-            exact h.1
-          simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hN, if_true]
-          simp only [removed, h27f, hg26, Bool.toNat_true, Bool.toNat_false, zero_add]
-          have h1 := ih N; have h2 := ih (N - 1); omega
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          by_cases h26 : largePhase 26 g = true
-          · have hN0 : N = 0 := by
-              rcases Nat.eq_zero_or_pos N with h0 | hpos
-              · exact h0
-              · simp [h26, hpos] at hNf
-            simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
-            simp only [removed, h26, h27f, Bool.toNat_true, Bool.toNat_false, zero_add]
-            have h1 := ih N; omega
-          · have h26f : largePhase 26 g = false := Bool.eq_false_iff.mpr h26
-            simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
-            simp only [removed, h26f, h27f, Bool.toNat_false, zero_add]
-            have h1 := ih N; omega
-  | recordGate i v g p ih =>
-      have hm : removed 27 p ≤ removed 26 p := removed27_le_removed26 p
-      by_cases h27 : largePhase 27 g = true
-      · have h26t : largePhase 26 g = true := largePhase_mono_true g h27
-        simp only [trimSpent, h27, if_true]
-        simp only [removed, h27, h26t, Bool.toNat_true]
-        have h1 := ih N; omega
-      · have h27f : largePhase 27 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 26 g) = true
-        · have hg26 : largePhase 26 g = true := by
-            have h := hN
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-            exact h.2
-          have hNpos : 0 < N := by
-            have h := hN
-            simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-            exact h.1
-          simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hN, if_true]
-          simp only [removed, h27f, hg26, Bool.toNat_true, Bool.toNat_false, zero_add]
-          have h1 := ih N; have h2 := ih (N - 1); omega
-        · have hNf : (decide (N > 0) && largePhase 26 g) = false :=
-            Bool.eq_false_iff.mpr hN
-          by_cases h26 : largePhase 26 g = true
-          · have hN0 : N = 0 := by
-              rcases Nat.eq_zero_or_pos N with h0 | hpos
-              · exact h0
-              · simp [h26, hpos] at hNf
-            simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
-            simp only [removed, h26, h27f, Bool.toNat_true, Bool.toNat_false, zero_add]
-            have h1 := ih N; omega
-          · have h26f : largePhase 26 g = false := Bool.eq_false_iff.mpr h26
-            simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
-            simp only [removed, h26f, h27f, Bool.toNat_false, zero_add]
-            have h1 := ih N; omega
-  | measure w p ih => simp only [trimSpent, removed, ih]
-
-/-- Entry wrapper whose program is trimmed with budget `N = 105`. -/
-def trimNEntry (entry : StraightEntry) : StraightEntry where
-  coefficients := entry.coefficients
-  finalCursor := entry.finalCursor
-  program := trimN 105 entry.program
-
-theorem trimN_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
-    (bounds : Bounds) (ws : List ShorECDLP.Wire) (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (herror : errorCost entry.program ≤ 469*unit)
-    (hstrong : ∀ (Q : ShorECDLP.Secp256k1.Point) (d : Nat), Q ≠ 0 →
-      Q = d • ShorECDLP.Secp256k1.G →
-      (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)) :
-    Certificate limits layout (trimNEntry entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
-  gateBudget := (trimN_slots 105 entry.program).trans cert.gateBudget
-  recordBudget := cert.recordBudget
-  tableBudget := cert.tableBudget
-  candidateBudget := cert.candidateBudget
-  wellFormed := trimN_wellFormed 105 entry.program cert.wellFormed
-  resources := by
-    intro Q
-    have hsup := (trimN_within 105 entry.program ws hs).instantiate
-      (readConstant entry.coefficients.get Q) Fin.elim0
-    have hc : (((trimNEntry entry).instantiate Q).wires.dedup.toFinset).card ≤ ws.length := by
-      apply (Finset.card_le_card ?_).trans (List.toFinset_card_le ws)
-      intro w hw
-      apply List.mem_toFinset.mpr
-      apply hsup
-      simpa only [List.mem_toFinset, List.mem_dedup] using hw
-    have hqc : ((trimNEntry entry).instantiate Q).qubitCount ≤ ws.length := by
-      rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
-      exact hc
-    refine ⟨hqc, ?_, ?_⟩
-    · exact (trimN_t 105 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
-        (cert.resources Q).2.1
-    · have he := (trimNEntry entry).program.measurementCount
-        (readConstant entry.coefficients.get Q) Fin.elim0
-      simpa only [Nat.add_zero] using he.le
-  success := by
-    intro Q d hn hd
-    have h := trimN_expectation (readConstant entry.coefficients.get Q) entry.program 105 Fin.elim0
-      (ket ShorECDLP.zeroBasisState) (fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome) cert.wellFormed
-    rw [expectation_verified, expectation_verified, normSq_ket] at h
-    have hS := hstrong Q d hn hd
-    change 99/100 ≤ Instrument.bornMass
-      (((trimN 105 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)
-    change 99003/100000 ≤ Instrument.bornMass
-      ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState) at hS
-    norm_num [unit] at herror h
-    nlinarith
-
-namespace ShorECDLP.Entrant.Schedule29Sixteen245.Flexible
-open Quantum Secp256k1 Challenge AndGadget WEXCredit WeightedPhase28
-open Paper2607_13816 Paper2607_13816.ChallengeMigration
-open Single Schedule33.Flexible
-noncomputable section
-set_option maxHeartbeats 2000000
-set_option maxRecDepth 10000
-set_option linter.unusedSimpArgs false
-set_option linter.unnecessarySeqFocus false
-variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
-variable {c14 c15 c16 : Nat} (hc : ProgramCredit c14 c15 c16)
-
-theorem weighted26_count_left (start : Nat) :
-    235 ≤ ApproximatePhase34.removed 26 (Single.axis leftWindows start List.nil) -
-      ApproximatePhase34.removed 27 (Single.axis leftWindows start List.nil) := by
-  let widths := 16 :: List.replicate 5 16 ++ List.replicate 11 15
-  have hw : List.Forall₂ (fun w k => w.wires.length = k) leftWindows widths := by
-    have he : widths = 16 :: leftDigits.map Digit.width := by
-      simp [widths, leftDigits, List.ofFn_succ, Digit.width, List.replicate]
-    rw [he]
-    unfold leftWindows
-    refine .cons ?_ (approximate_signed_widths leftDigits)
-    simp only [firstWindow, FirstSS.windowGeneric, List.length_reverse]
-    decide
-  have h := removed_axis_diff leftWindows widths hw start List.nil
-  simp only [List.length_nil] at h
-  have he : metadataDropped26 widths 0 = 27730 := by decide +kernel
-  have he2 : WeightedPhase28.metadataDropped widths 0 = 27495 := by decide +kernel
-  omega
-
-theorem weighted26_count :
-    105 ≤ ApproximatePhase34.removed 26 entry.program -
-      ApproximatePhase34.removed 27 entry.program := by
-  have hl := weighted26_count_left 0
-  have hp : 105 ≤ ApproximatePhase34.removed 26 program -
-      ApproximatePhase34.removed 27 program := by
-    simp only [program, removed26_cast, WeightedPhase28.removed_cast, trial,
-      weighted26_removed_framed, weighted28_removed_framed]
-    have hR := removed27_le_removed26
-      (Single.axis rightWindows (0 + Single.axisCount leftWindows) List.nil)
-    have hZ := removed27_le_removed26
-      (resetBody (0 + Single.axisCount leftWindows + Single.axisCount rightWindows))
-    omega
-  rw [entry, weighted26_removed_fixedEntry, weighted28_removed_fixedEntry]
-  unfold fullProgram
-  rw [removed26_append, WeightedPhase28.removed_append]
-  have hRo := removed27_le_removed26 readout
-  omega
-
-include hc in
-theorem weighted26_source_weight : ConditionalCatalyst.weight4 (trimN 105 entry.program) ≤
-    4*(33918+18*c16+11*c15)+10920 := by
-  have hw := weighted28_source_weight hc
-  have hts := weight4_trimN 105 entry.program
-  have ht27 := WeightedPhase28.weight4_trim entry.program
-  have hsp : trimSpent 105 entry.program = 105 := by
-    rw [trimSpent_eq]
-    have hc105 := weighted26_count
-    omega
-  omega
-
-end
-end ShorECDLP.Entrant.Schedule29Sixteen245.Flexible
-end trimNSplice
-
 namespace ShorECDLP.Entrant.Schedule29Sixteen245.Flexible
 open Quantum Secp256k1 Challenge AndGadget WEXCredit
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
@@ -33802,8 +32987,8 @@ theorem weighted_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow 
     (hC15 : n15.credit ≤ c15) (hC16 : n16.credit ≤ c16)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
-    Certificate officialLimits (lowerLayout 1938 (trimNEntry entry) layout) (ConditionalCatalyst.fourEntry 1938 1939 (trimNEntry entry))
-      ⟨qBound, 4*(33918+18*c16+11*c15)+10921, 544000000⟩ := by
+    Certificate officialLimits (lowerLayout 1938 (trimEntry entry) layout) (ConditionalCatalyst.fourEntry 1938 1939 (trimEntry entry))
+      ⟨qBound, 4*(33918+18*c16+11*c15)+11026, 544000000⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
@@ -33824,7 +33009,7 @@ theorem weighted_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow 
     omega
   have hslots := source_slots (body:=body) (impl:=triPrograms n14 n15 n16)
   have credit := triProgramCredit n14 n15 n16
-  have hw := weighted26_source_weight credit
+  have hw := weighted28_source_weight credit
   have herror := weighted_source_error credit
   have hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
       (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
@@ -33832,23 +33017,23 @@ theorem weighted_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow 
     intro Q d hn hd
     rw [entry, Single.fixedEntry_instantiate]
     exact approximate_program_success_strong Q d hn hd
-  have trimmed := trimN_certificate officialLimits layout entry _ ledger.support
+  have trimmed := trim_certificate officialLimits layout entry _ ledger.support
     (certificate hbaseS hbaseR) compiler_within herror hstrong
-  have htrimS := trimN_slots 105 entry.program
-  apply ConditionalCatalyst.four_certificate officialLimits layout (trimNEntry entry) _ _ 1938 1939 ledger.support
-    trimmed (trimN_within 105 entry.program ledger.support compiler_within) hq hy
-  · change 4 * ((trimN 105 entry.program).gateSlots + 18 * added (trimN 105 entry.program)) + 2 ≤ 4000000000000000
-    rw [trimN_added]
+  have htrimS := trim_slots 27 entry.program
+  apply ConditionalCatalyst.four_certificate officialLimits layout (trimEntry entry) _ _ 1938 1939 ledger.support
+    trimmed (trim_within 27 entry.program ledger.support compiler_within) hq hy
+  · change 4 * ((trim 27 entry.program).gateSlots + 18 * added (trim 27 entry.program)) + 2 ≤ 4000000000000000
+    rw [trim_added]
     omega
-  · change entry.finalCursor + added (trimN 105 entry.program) ≤ 47471340504
-    rw [trimN_added]
+  · change entry.finalCursor + added (trim 27 entry.program) ≤ 47471340504
+    rw [trim_added]
     omega
   · exact hSupport
-  · change ConditionalCatalyst.weight4 (trimN 105 entry.program) + 1 ≤ 4*(33918+18*c16+11*c15)+10921
-    change ConditionalCatalyst.weight4 (trimN 105 entry.program) ≤ 4*(33918+18*n16.credit+11*n15.credit)+10920 at hw
+  · change ConditionalCatalyst.weight4 (trim 27 entry.program) + 1 ≤ 4*(33918+18*c16+11*c15)+11026
+    change ConditionalCatalyst.weight4 (trim 27 entry.program) ≤ 4*(33918+18*n16.credit+11*n15.credit)+11025 at hw
     omega
-  · change entry.finalCursor + added (trimN 105 entry.program) ≤ 544000000
-    rw [trimN_added]
+  · change entry.finalCursor + added (trim 27 entry.program) ≤ 544000000
+    rw [trim_added]
     omega
 end
 end ShorECDLP.Entrant.Schedule29Sixteen245.Flexible
@@ -33880,16 +33065,16 @@ attribute [local irreducible] Schedule29Seventeen244.Flexible.FusedFinal.narrow1
   Schedule29Sixteen245.Flexible.entry Schedule29Sixteen245.Flexible.program
   Schedule29Sixteen245.Flexible.fullProgram AndGadget.lowerEntry AndGadget.lowerLayout
 
-def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (trimNEntry Schedule29Sixteen245.Flexible.entry)
-def layout : DecodeLayout := lowerLayout 1938 (trimNEntry Schedule29Sixteen245.Flexible.entry) Schedule29Sixteen245.Flexible.layout
-def bounds : Bounds := ⟨1619,4*(33918+18*2255415+11*2209463)+10921,544000000⟩
+def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (WeightedPhase28.trimEntry Schedule29Sixteen245.Flexible.entry)
+def layout : DecodeLayout := lowerLayout 1938 (WeightedPhase28.trimEntry Schedule29Sixteen245.Flexible.entry) Schedule29Sixteen245.Flexible.layout
+def bounds : Bounds := ⟨1619,4*(33918+18*2255160+11*2209208)+11026,544000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
   apply @weighted_matched_certificate bodyInstance resourcesInstance coverInstance
     Schedule29Seventeen244.Flexible.FusedFinal.narrow13 Schedule29Seventeen244.Flexible.FusedFinal.narrow14
     Schedule29Seventeen244.Flexible.FusedFinal.narrow15
-    1619 2209463 2255415
+    1619 2209208 2255160
   · change PathShare.bodyCF.support.length + 2 ≤ 1619
     rw [PathShare.bodyCF_ledger.1]
   · change PathShare.bodyCF.slotBound ≤ 3000000000
@@ -33916,7 +33101,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1619,259752845,544000000⟩
+def bounds : Bounds := ⟨1619,259723370,544000000⟩
 noncomputable section
 def entry : StraightEntry := WeightedFirst16Fused28.entry
 def layout : DecodeLayout := WeightedFirst16Fused28.layout
