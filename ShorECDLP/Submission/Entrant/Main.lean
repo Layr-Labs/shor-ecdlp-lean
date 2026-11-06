@@ -34272,11 +34272,11 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
             have h1 := ih N; omega
   | measure w p ih => simp only [trimSpent, removed, ih]
 
-/-- Entry wrapper whose program is trimmed with budget `N = 105`. -/
+/-- Entry wrapper whose program is trimmed with budget `N = 106`. -/
 def trimNEntry (entry : StraightEntry) : StraightEntry where
   coefficients := entry.coefficients
   finalCursor := entry.finalCursor
-  program := trimN 105 entry.program
+  program := trimN 106 entry.program
 
 theorem trimN_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
     (bounds : Bounds) (ws : List ShorECDLP.Wire) (cert : Certificate limits layout entry bounds)
@@ -34286,14 +34286,14 @@ theorem trimN_certificate (limits : Limits) (layout : DecodeLayout) (entry : Str
       (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)) :
     Certificate limits layout (trimNEntry entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
-  gateBudget := (trimN_slots 105 entry.program).trans cert.gateBudget
+  gateBudget := (trimN_slots 106 entry.program).trans cert.gateBudget
   recordBudget := cert.recordBudget
   tableBudget := cert.tableBudget
   candidateBudget := cert.candidateBudget
-  wellFormed := trimN_wellFormed 105 entry.program cert.wellFormed
+  wellFormed := trimN_wellFormed 106 entry.program cert.wellFormed
   resources := by
     intro Q
-    have hsup := (trimN_within 105 entry.program ws hs).instantiate
+    have hsup := (trimN_within 106 entry.program ws hs).instantiate
       (readConstant entry.coefficients.get Q) Fin.elim0
     have hc : (((trimNEntry entry).instantiate Q).wires.dedup.toFinset).card ≤ ws.length := by
       apply (Finset.card_le_card ?_).trans (List.toFinset_card_le ws)
@@ -34305,19 +34305,19 @@ theorem trimN_certificate (limits : Limits) (layout : DecodeLayout) (entry : Str
       rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
       exact hc
     refine ⟨hqc, ?_, ?_⟩
-    · exact (trimN_t 105 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
+    · exact (trimN_t 106 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
         (cert.resources Q).2.1
     · have he := (trimNEntry entry).program.measurementCount
         (readConstant entry.coefficients.get Q) Fin.elim0
       simpa only [Nat.add_zero] using he.le
   success := by
     intro Q d hn hd
-    have h := trimN_expectation (readConstant entry.coefficients.get Q) entry.program 105 Fin.elim0
+    have h := trimN_expectation (readConstant entry.coefficients.get Q) entry.program 106 Fin.elim0
       (ket ShorECDLP.zeroBasisState) (fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome) cert.wellFormed
     rw [expectation_verified, expectation_verified, normSq_ket] at h
     have hS := hstrong Q d hn hd
     change 99/100 ≤ Instrument.bornMass
-      (((trimN 105 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
+      (((trimN 106 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)
     change 99003/100000 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
@@ -34356,10 +34356,10 @@ theorem weighted26_count_left (start : Nat) :
   omega
 
 theorem weighted26_count :
-    105 ≤ ApproximatePhase34.removed 26 entry.program -
+    106 ≤ ApproximatePhase34.removed 26 entry.program -
       ApproximatePhase34.removed 27 entry.program := by
   have hl := weighted26_count_left 0
-  have hp : 105 ≤ ApproximatePhase34.removed 26 program -
+  have hp : 106 ≤ ApproximatePhase34.removed 26 program -
       ApproximatePhase34.removed 27 program := by
     simp only [program, removed26_cast, WeightedPhase28.removed_cast, trial,
       weighted26_removed_framed, weighted28_removed_framed]
@@ -34375,12 +34375,12 @@ theorem weighted26_count :
   omega
 
 include hc in
-theorem weighted26_source_weight : ConditionalCatalyst.weight4 (trimN 105 entry.program) ≤
-    4*(33918+18*c16+11*c15)+10920 := by
+theorem weighted26_source_weight : ConditionalCatalyst.weight4 (trimN 106 entry.program) ≤
+    4*(33918+18*c16+11*c15)+10919 := by
   have hw := weighted28_source_weight hc
-  have hts := weight4_trimN 105 entry.program
+  have hts := weight4_trimN 106 entry.program
   have ht27 := WeightedPhase28.weight4_trim entry.program
-  have hsp : trimSpent 105 entry.program = 105 := by
+  have hsp : trimSpent 106 entry.program = 106 := by
     rw [trimSpent_eq]
     have hc105 := weighted26_count
     omega
@@ -34415,7 +34415,7 @@ theorem weighted_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow 
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
     Certificate officialLimits (lowerLayout 1938 (trimNEntry entry) layout) (ConditionalCatalyst.fourEntry 1938 1939 (trimNEntry entry))
-      ⟨qBound, 4*(33918+18*c16+11*c15)+10921, 544000000⟩ := by
+      ⟨qBound, 4*(33918+18*c16+11*c15)+10920, 544000000⟩ := by
   letI : Programs body := triPrograms n14 n15 n16
   have hwin : windowSlots ≤ 3000000000 := max_le le_rfl hSlot
   have hbaseS : 32 * windowSlots + 178240 ≤ officialLimits.gateSlots := by
@@ -34446,20 +34446,20 @@ theorem weighted_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow 
     exact approximate_program_success_strong Q d hn hd
   have trimmed := trimN_certificate officialLimits layout entry _ ledger.support
     (certificate hbaseS hbaseR) compiler_within herror hstrong
-  have htrimS := trimN_slots 105 entry.program
+  have htrimS := trimN_slots 106 entry.program
   apply ConditionalCatalyst.four_certificate officialLimits layout (trimNEntry entry) _ _ 1938 1939 ledger.support
-    trimmed (trimN_within 105 entry.program ledger.support compiler_within) hq hy
-  · change 4 * ((trimN 105 entry.program).gateSlots + 18 * added (trimN 105 entry.program)) + 2 ≤ 4000000000000000
+    trimmed (trimN_within 106 entry.program ledger.support compiler_within) hq hy
+  · change 4 * ((trimN 106 entry.program).gateSlots + 18 * added (trimN 106 entry.program)) + 2 ≤ 4000000000000000
     rw [trimN_added]
     omega
-  · change entry.finalCursor + added (trimN 105 entry.program) ≤ 47471340504
+  · change entry.finalCursor + added (trimN 106 entry.program) ≤ 47471340504
     rw [trimN_added]
     omega
   · exact hSupport
-  · change ConditionalCatalyst.weight4 (trimN 105 entry.program) + 1 ≤ 4*(33918+18*c16+11*c15)+10921
-    change ConditionalCatalyst.weight4 (trimN 105 entry.program) ≤ 4*(33918+18*n16.credit+11*n15.credit)+10920 at hw
+  · change ConditionalCatalyst.weight4 (trimN 106 entry.program) + 1 ≤ 4*(33918+18*c16+11*c15)+10920
+    change ConditionalCatalyst.weight4 (trimN 106 entry.program) ≤ 4*(33918+18*n16.credit+11*n15.credit)+10919 at hw
     omega
-  · change entry.finalCursor + added (trimN 105 entry.program) ≤ 544000000
+  · change entry.finalCursor + added (trimN 106 entry.program) ≤ 544000000
     rw [trimN_added]
     omega
 end
@@ -34494,7 +34494,7 @@ attribute [local irreducible] Schedule29Seventeen244.Flexible.FusedFinal.narrow1
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (trimNEntry Schedule29Sixteen245.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (trimNEntry Schedule29Sixteen245.Flexible.entry) Schedule29Sixteen245.Flexible.layout
-def bounds : Bounds := ⟨1618,4*(33918+18*2255160+11*2209208)+10921,544000000⟩
+def bounds : Bounds := ⟨1618,4*(33918+18*2255160+11*2209208)+10920,544000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
@@ -34528,7 +34528,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1618,259723265,544000000⟩
+def bounds : Bounds := ⟨1618,259723264,544000000⟩
 noncomputable section
 def entry : StraightEntry := WeightedFirst16Fused28.entry
 def layout : DecodeLayout := WeightedFirst16Fused28.layout
