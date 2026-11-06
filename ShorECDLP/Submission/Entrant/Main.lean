@@ -14132,6 +14132,23 @@ theorem hostCtl_host : hostCtl ≠ hostWire := by unfold hostCtl hostWire; decid
 theorem hostWire2_root : hostWire2 ≠ windowRoot := by unfold hostWire2 windowRoot; decide
 theorem hostWire2_host : hostWire2 ≠ hostWire := by unfold hostWire2 hostWire; decide
 
+/-- The double flag: `1` through the generic arithmetic (entry boundary `K` with `cy ≠ -cy`),
+never used by the selector-free field arithmetic or the square. -/
+def hostCtl3 : Wire := 14114
+
+/-- Dialog-pool position 763: arithmetic scratch that no site, unit or select-swap register uses. -/
+def hostWire3 : Wire := 14878
+
+def hostSet3 : List Wire := [hostWire3]
+
+theorem hostWire3_ctl3 : hostWire3 ≠ hostCtl3 := by unfold hostWire3 hostCtl3; decide
+theorem hostCtl3_root : hostCtl3 ≠ windowRoot := by unfold hostCtl3 windowRoot; decide
+theorem hostCtl3_host : hostCtl3 ≠ hostWire := by unfold hostCtl3 hostWire; decide
+theorem hostWire3_root : hostWire3 ≠ windowRoot := by unfold hostWire3 windowRoot; decide
+theorem hostWire3_host : hostWire3 ≠ hostWire := by unfold hostWire3 hostWire; decide
+theorem hostCtl3_host2 : hostCtl3 ≠ hostWire2 := by unfold hostCtl3 hostWire2; decide
+theorem hostCtl3_ctl : hostCtl3 ≠ hostCtl := by unfold hostCtl3 hostCtl; decide
+
 theorem hostP_wires_mem (r R : Wire) (p : ECDSAAdd.Program) (w : Wire) (hw : w ∈ ECDSAAdd.wires (hostP r R p)) :
     w = R ∨ w = r ∨ w ∈ ECDSAAdd.wires p := by
   simp only [hostP, ECDSAAdd.wires_append, relabel_wires, Finset.mem_union, Finset.mem_image] at hw
@@ -14223,6 +14240,100 @@ theorem hostBlock_wires (p : ECDSAAdd.Program) (S : List Wire) (hroot : windowRo
       · exact absurd (e ▸ hw) h2
       · exact Or.inr e)
 
+/-- Root hosting of `hostWire` and `hostWire2`, then `hostWire3` on the double flag when the
+block uses it and not the flag. -/
+def hostBlock3 (p : ECDSAAdd.Program) : ECDSAAdd.Program :=
+  if hostWire3 ∈ ECDSAAdd.wires p ∧ hostCtl3 ∉ ECDSAAdd.wires p then
+    hostP hostWire3 hostCtl3 (hostBlock p)
+  else hostBlock p
+
+theorem hostBlock3_meas (p : ECDSAAdd.Program) :
+    ECDSAAdd.measurementCount (hostBlock3 p) = ECDSAAdd.measurementCount p := by
+  unfold hostBlock3
+  split <;> simp only [hostP_meas, hostBlock_meas]
+
+theorem hostBlock3_toffoli (p : ECDSAAdd.Program) :
+    ECDSAAdd.toffoliCount (hostBlock3 p) = ECDSAAdd.toffoliCount p := by
+  unfold hostBlock3
+  split <;> simp only [hostP_toffoli, hostBlock_toffoli]
+
+theorem hostBlock3_slots {n : Nat} (p : ECDSAAdd.Program) :
+    Bridge.tmplSlots (WEX.literalT (n := n) (hostBlock3 p)) ≤ Bridge.tmplSlots (WEX.literalT (n := n) p) + 6 := by
+  have h2 := hostBlock_slots (n := n) p
+  unfold hostBlock3
+  split
+  · have h1 := hostP_slots (n := n) hostWire3 hostCtl3 (hostBlock p)
+    omega
+  · omega
+
+theorem hostBlock3_valid (p : ECDSAAdd.Program) (h : ∀ i ∈ p, ECDSAAdd.Challenge.instructionValid i) :
+    ∀ i ∈ hostBlock3 p, ECDSAAdd.Challenge.instructionValid i := by
+  unfold hostBlock3
+  split
+  · exact hostP_valid _ _ _ (hostBlock_valid _ h)
+  · exact hostBlock_valid _ h
+
+theorem hostCtl3_inner (p : ECDSAAdd.Program) (h : hostCtl3 ∉ ECDSAAdd.wires p) :
+    hostCtl3 ∉ ECDSAAdd.wires (hostBlock p) := by
+  have base : hostCtl3 ∉ ECDSAAdd.wires (hostP hostWire windowRoot p) := by
+    intro hw
+    rcases hostP_wires_mem _ _ _ _ hw with e | e | e
+    · exact hostCtl3_root e
+    · exact hostCtl3_host e
+    · exact h e
+  unfold hostBlock
+  split
+  · intro hw
+    rcases hostP_wires_mem _ _ _ _ hw with e | e | e
+    · exact hostCtl3_ctl e
+    · exact hostCtl3_host2 e
+    · exact base e
+  · exact base
+
+theorem hostBlock3_run (p : ECDSAAdd.Program) (hR : windowRoot ∉ ECDSAAdd.wires p) (m : List Bool)
+    (s : ECDSAAdd.State) (h1 : s.basis windowRoot = true) (h2 : s.basis hostWire = false)
+    (h3 : (ECDSAAdd.run p m s).basis hostWire = false)
+    (h4 : hostWire2 ∈ ECDSAAdd.wires p → hostCtl ∉ ECDSAAdd.wires p →
+      s.basis hostCtl = true ∧ s.basis hostWire2 = false ∧ (ECDSAAdd.run p m s).basis hostWire2 = false)
+    (h5 : hostWire3 ∈ ECDSAAdd.wires p → hostCtl3 ∉ ECDSAAdd.wires p →
+      s.basis hostCtl3 = true ∧ s.basis hostWire3 = false ∧ (ECDSAAdd.run p m s).basis hostWire3 = false) :
+    ECDSAAdd.run (hostBlock3 p) m s = ECDSAAdd.run p m s := by
+  have inner := hostBlock_run p hR m s h1 h2 h3 h4
+  unfold hostBlock3
+  split
+  · rename_i hc
+    obtain ⟨c1, c2, c3⟩ := h5 hc.1 hc.2
+    rw [host_run hostWire3 hostCtl3 hostWire3_ctl3 _ (hostCtl3_inner p hc.2) m s c1 c2 (by rw [inner]; exact c3), inner]
+  · exact inner
+
+theorem hostBlock3_wires (p : ECDSAAdd.Program) (S : List Wire) (hroot : windowRoot ∈ S) (hctl : hostCtl ∈ S)
+    (hctl3 : hostCtl3 ∈ S) (hR : windowRoot ∉ ECDSAAdd.wires p)
+    (h : ∀ w ∈ ECDSAAdd.wires p, w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ S)
+    (hc : hostWire2 ∈ ECDSAAdd.wires p → hostCtl ∉ ECDSAAdd.wires p)
+    (hc3 : hostWire3 ∈ ECDSAAdd.wires p → hostCtl3 ∉ ECDSAAdd.wires p) :
+    ECDSAAdd.wires (hostBlock3 p) ⊆ S.toFinset := by
+  unfold hostBlock3
+  split
+  · rename_i hcond
+    have hin : ECDSAAdd.wires (hostBlock p) ⊆ (hostWire3 :: S).toFinset :=
+      hostBlock_wires p (hostWire3 :: S) (List.mem_cons_of_mem _ hroot) (List.mem_cons_of_mem _ hctl) hR
+        (fun w hw => by
+          rcases h w hw with e | e | e | e
+          · exact Or.inl e
+          · exact Or.inr (Or.inl e)
+          · exact Or.inr (Or.inr (by rw [e]; exact List.mem_cons_self))
+          · exact Or.inr (Or.inr (List.mem_cons_of_mem _ e))) hc
+    exact hostP_wires hostWire3 hostCtl3 _ S hctl3 (hostCtl3_inner p hcond.2) (fun w hw =>
+      List.mem_cons.mp (List.mem_toFinset.mp (hin hw)))
+  · rename_i hcond
+    have h2 : hostWire3 ∉ ECDSAAdd.wires p := fun hw => hcond ⟨hw, hc3 hw⟩
+    exact hostBlock_wires p S hroot hctl hR (fun w hw => by
+      rcases h w hw with e | e | e | e
+      · exact Or.inl e
+      · exact Or.inr (Or.inl e)
+      · exact absurd (e ▸ hw) h2
+      · exact Or.inr (Or.inr e)) hc
+
 theorem allLit_iff {n} (code : WCode n) : code.all isLit = true ↔ ∀ i ∈ code, ∃ p, i = .literal p := by
   rw [List.all_eq_true]
   constructor
@@ -14237,11 +14348,11 @@ theorem allLit_iff {n} (code : WCode n) : code.all isLit = true ↔ ∀ i ∈ co
 
 def hostCode {n} (code : WCode n) : WCode n :=
   if code.all isLit then
-    [.literal (hostBlock (ECDSAAdd.Baselines.normalizeProgram (litProg code)))]
+    [.literal (hostBlock3 (ECDSAAdd.Baselines.normalizeProgram (litProg code)))]
   else normalizeW code
 
 theorem hostCode_eq_host {n} {code : WCode n} (h : code.all isLit = true) :
-    hostCode code = [.literal (hostBlock (ECDSAAdd.Baselines.normalizeProgram (litProg code)))] := by
+    hostCode code = [.literal (hostBlock3 (ECDSAAdd.Baselines.normalizeProgram (litProg code)))] := by
   simp [hostCode, h]
 
 theorem hostCode_eq_norm {n} {code : WCode n} (h : ¬ code.all isLit = true) : hostCode code = normalizeW code := by
@@ -14263,19 +14374,19 @@ theorem hostCode_counts {n} (bits paths : List Wire) (root : Wire) (code : WCode
   · rw [hostCode_eq_host h]
     obtain ⟨h1, h2, -, h4⟩ := litProg_counts bits paths root code ((allLit_iff code).mp h)
     refine ⟨?_, ?_, ?_⟩
-    · simp only [codeRecords, h1, hostBlock_meas, ECDSAAdd.Baselines.normalize_measurements, Nat.add_zero]
-    · simp only [literalToffolis, h2, hostBlock_toffoli, Nat.add_zero]
+    · simp only [codeRecords, h1, hostBlock3_meas, ECDSAAdd.Baselines.normalize_measurements, Nat.add_zero]
+    · simp only [literalToffolis, h2, hostBlock3_toffoli, Nat.add_zero]
     · simp only [traversals, h4]
   · rw [hostCode_eq_norm h]
     exact ⟨rfl, rfl, traversals_normalize code⟩
 
 theorem hostCode_slots {n} (bits : List Wire) (code : WCode n) :
-    codeSlots bits (hostCode code) ≤ codeSlots bits (normalizeW code) + 4 := by
+    codeSlots bits (hostCode code) ≤ codeSlots bits (normalizeW code) + 6 := by
   by_cases h : code.all isLit = true
   · rw [hostCode_eq_host h]
     obtain ⟨-, -, h3, -⟩ := litProg_counts bits ([] : List Wire) 0 code ((allLit_iff code).mp h)
     rw [h3]
-    have hs := hostBlock_slots (n := n) (ECDSAAdd.Baselines.normalizeProgram (litProg code))
+    have hs := hostBlock3_slots (n := n) (ECDSAAdd.Baselines.normalizeProgram (litProg code))
     simp only [codeSlots]
     omega
   · rw [hostCode_eq_norm h]
@@ -14301,11 +14412,14 @@ theorem blockProgH_run {n} (B : Bank) (read : ConstantBit n → Bool) (b : Block
   | unit u => exact blockProgP2_run B read (.unit u) start history
 
 def HostOK {n} : Block2 n → ECDSAAdd.State → Prop
-  | .plain code, st => (st.basis hostWire = false ∧
+  | .plain code, st => ((st.basis hostWire = false ∧
       ∀ m, (ECDSAAdd.run (litProg code) m st).basis hostWire = false) ∧
       (hostWire2 ∈ ECDSAAdd.wires (litProg code) → hostCtl ∉ ECDSAAdd.wires (litProg code) →
         st.basis hostCtl = true ∧ st.basis hostWire2 = false ∧
-          ∀ m, (ECDSAAdd.run (litProg code) m st).basis hostWire2 = false)
+          ∀ m, (ECDSAAdd.run (litProg code) m st).basis hostWire2 = false)) ∧
+      (hostWire3 ∈ ECDSAAdd.wires (litProg code) → hostCtl3 ∉ ECDSAAdd.wires (litProg code) →
+        st.basis hostCtl3 = true ∧ st.basis hostWire3 = false ∧
+          ∀ m, (ECDSAAdd.run (litProg code) m st).basis hostWire3 = false)
   | .unit _, _ => True
 
 def BlockSimH {n} (read : ConstantBit n → Bool) (B : Bank) (block : Block2 n)
@@ -14326,7 +14440,7 @@ theorem block_simulationH {n} (read : ConstantBit n → Bool) (B : Bank) (hB : B
     have hlit : ∀ i ∈ code, ∃ p, i = .literal p := fun i hi => by
       obtain ⟨p, rfl, -⟩ := hg' i hi; exact ⟨p, rfl⟩
     let P := ECDSAAdd.Baselines.normalizeProgram (litProg code)
-    have hc : hostCode code = [.literal (hostBlock P)] :=
+    have hc : hostCode code = [.literal (hostBlock3 P)] :=
       hostCode_eq_host ((allLit_iff code).mpr hlit)
     have hRP : windowRoot ∉ ECDSAAdd.wires P := by
       intro hw
@@ -14339,17 +14453,17 @@ theorem block_simulationH {n} (read : ConstantBit n → Bool) (B : Bank) (hB : B
       (source read B.bits B.paths windowRoot (hostCode code)).run cs ∧ (cs.map Complex.normSq).sum = 1
     rw [hc]
     obtain ⟨cs,aligned,mass⟩ := lit_simulation read B.bits B.paths windowRoot
-      ([.literal (hostBlock P)] : WCode n) (by simp)
+      ([.literal (hostBlock3 P)] : WCode n) (by simp)
     refine ⟨cs,aligned.imp ?_,mass⟩
     intro b c hb
     obtain ⟨m,hm,hb⟩ := hb
     refine ⟨m, ?_, fun address st hs _ hh _ => ?_⟩
     · rw [hm]
-      simp only [literalRecords, hostBlock_meas, P, ECDSAAdd.Baselines.normalize_measurements, Nat.add_zero]
+      simp only [literalRecords, hostBlock3_meas, P, ECDSAAdd.Baselines.normalize_measurements, Nat.add_zero]
       exact litProg_meas code hlit
     · rw [hb address st]
-      have e1 : (specialize ([.literal (hostBlock P)] : WCode n) address).instantiate read = hostBlock P := by
-        rw [show ([.literal (hostBlock P)] : WCode n) = wLiteral (hostBlock P) from rfl,
+      have e1 : (specialize ([.literal (hostBlock3 P)] : WCode n) address).instantiate read = hostBlock3 P := by
+        rw [show ([.literal (hostBlock3 P)] : WCode n) = wLiteral (hostBlock3 P) from rfl,
           specialize_literal, ECDSAAdd.ShorPort.Tmpl.instantiate_lit]
       have e2 : blockReference2 read address (.plain code : Block2 n) = litProg code := by
         simp only [blockReference2, Block2.code]
@@ -14357,7 +14471,10 @@ theorem block_simulationH {n} (read : ConstantBit n → Bool) (B : Bank) (hB : B
       have hrun : ECDSAAdd.run P m st = ECDSAAdd.run (litProg code) m st :=
         ECDSAAdd.Baselines.normalize_run _ m st
       have hwP : ECDSAAdd.wires P = ECDSAAdd.wires (litProg code) := ECDSAAdd.Baselines.normalize_wires _
-      rw [e1, e2, hostBlock_run P hRP m st hs.2 hh.1.1 (by rw [hrun]; exact hh.1.2 m) (fun c1 c2 => by
+      rw [e1, e2, hostBlock3_run P hRP m st hs.2 hh.1.1.1 (by rw [hrun]; exact hh.1.1.2 m) (fun c1 c2 => by
+          rw [hwP] at c1 c2
+          obtain ⟨d1, d2, d3⟩ := hh.1.2 c1 c2
+          exact ⟨d1, d2, by rw [hrun]; exact d3 m⟩) (fun c1 c2 => by
           rw [hwP] at c1 c2
           obtain ⟨d1, d2, d3⟩ := hh.2 c1 c2
           exact ⟨d1, d2, by rw [hrun]; exact d3 m⟩), hrun]
@@ -14381,7 +14498,7 @@ theorem blockH_tCount {n} (read : ConstantBit n → Bool) (B : Bank) (b : Block2
   | unit u => exact blockProgP2_tCount read B (.unit u) hl start history
 
 theorem blockH_slots {n} (B : Bank) (b : Block2 n) (hl : BlockLay2 B b) (start : Nat) :
-    (blockProgH B b start).gateSlots ≤ blockSP2 B b + 4 := by
+    (blockProgH B b start).gateSlots ≤ blockSP2 B b + 6 := by
   cases b with
   | plain code =>
     have hl' : LookupLayouts B.bits B.paths windowRoot (normalizeW code) := hl
@@ -14389,7 +14506,7 @@ theorem blockH_slots {n} (B : Bank) (b : Block2 n) (hl : BlockLay2 B b) (start :
     exact hostCode_slots B.bits code
   | unit u =>
     have h := blockProgP2_slots B (.unit u) hl start
-    change (blockProgP2 B (.unit u) start).gateSlots ≤ blockSP2 B (.unit u) + 4
+    change (blockProgP2 B (.unit u) start).gateSlots ≤ blockSP2 B (.unit u) + 6
     omega
 
 theorem blockH_wellFormed {n} (B : Bank) (hB : BankOK B) (b : Block2 n) (hgb : BlockGeoP2 B b)
@@ -14405,7 +14522,7 @@ theorem blockH_wellFormed {n} (B : Bank) (hB : BankOK B) (b : Block2 n) (hgb : B
     intro p hp
     rw [List.mem_singleton, WInstr.literal.injEq] at hp
     subst hp
-    apply hostBlock_valid
+    apply hostBlock3_valid
     apply ECDSAAdd.Baselines.normalize_physical
     intro i hi
     obtain ⟨q, hq, hi⟩ := litProg_mem code i hi
@@ -14436,8 +14553,11 @@ theorem blockH_residue {n} (B : Bank) (b : Block2 n) (start : Nat) :
 
 theorem plainH_support {n} (B : Bank) (code : WCode n) (hg : LitAvoid B.bits code)
     (S : List Wire) (hroot : windowRoot ∈ S) (hbits : B.bits ⊆ S) (hpaths : B.paths ⊆ S) (hctlS : hostCtl ∈ S)
-    (hlit : ∀ p, WInstr.literal p ∈ code → ∀ w ∈ ECDSAAdd.wires p, w = hostWire ∨ w = hostWire2 ∨ w ∈ S)
-    (hc : hostWire2 ∈ ECDSAAdd.wires (litProg code) → hostCtl ∉ ECDSAAdd.wires (litProg code)) (start : Nat) :
+    (hctl3S : hostCtl3 ∈ S)
+    (hlit : ∀ p, WInstr.literal p ∈ code → ∀ w ∈ ECDSAAdd.wires p,
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ S)
+    (hc : hostWire2 ∈ ECDSAAdd.wires (litProg code) → hostCtl ∉ ECDSAAdd.wires (litProg code))
+    (hc3 : hostWire3 ∈ ECDSAAdd.wires (litProg code) → hostCtl3 ∉ ECDSAAdd.wires (litProg code)) (start : Nat) :
     ChallengeMigration.straightWires (blockProgH B (.plain code) start) ⊆ S := by
   have hlit' : ∀ i ∈ code, ∃ p, i = .literal p := fun i hi => by
     obtain ⟨p, rfl, -⟩ := hg i hi; exact ⟨p, rfl⟩
@@ -14446,7 +14566,7 @@ theorem plainH_support {n} (B : Bank) (code : WCode n) (hg : LitAvoid B.bits cod
   intro p hp
   rw [List.mem_singleton, WInstr.literal.injEq] at hp
   subst hp
-  apply hostBlock_wires _ S hroot hctlS
+  apply hostBlock3_wires _ S hroot hctlS hctl3S
   · intro hw
     rw [ECDSAAdd.Baselines.normalize_wires] at hw
     obtain ⟨p, hp, hw⟩ := litProg_wires code windowRoot hw
@@ -14459,6 +14579,8 @@ theorem plainH_support {n} (B : Bank) (code : WCode n) (hg : LitAvoid B.bits cod
     exact hlit p hp w hw
   · rw [ECDSAAdd.Baselines.normalize_wires]
     exact hc
+  · rw [ECDSAAdd.Baselines.normalize_wires]
+    exact hc3
 
 end
 end ShorECDLP.Entrant.PathShare
@@ -15012,6 +15134,282 @@ theorem triple_avoidsH2 : AvoidsH2 (constSite streamLayout streamLayout.point.x 
 end
 end ShorECDLP.Entrant.PathShare
 
+/-! ### Code that never touches the third host wire -/
+
+namespace ShorECDLP.Entrant.PathShare
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration WEX WEXUnlookup
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Entrant
+noncomputable section
+set_option maxHeartbeats 16000000
+set_option maxRecDepth 40000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
+
+/-- Every literal and every lookup of the code avoids the host wire. -/
+def AvoidsH3 (code : WCode 32768) : Prop :=
+  (∀ p, WInstr.literal p ∈ code → hostWire3 ∉ ECDSAAdd.wires p) ∧
+    (∀ c ps, WInstr.lookup c ps ∈ code → hostWire3 ∉ portTargets ps ∧ ∀ q ∈ c, q ≠ hostWire3)
+
+theorem avoidsH3_append {a b : WCode 32768} (ha : AvoidsH3 a) (hb : AvoidsH3 b) : AvoidsH3 (a ++ b) := by
+  refine ⟨fun p hp => ?_, fun c ps hp => ?_⟩
+  · rcases List.mem_append.mp hp with h | h
+    · exact ha.1 p h
+    · exact hb.1 p h
+  · rcases List.mem_append.mp hp with h | h
+    · exact ha.2 c ps h
+    · exact hb.2 c ps h
+
+theorem avoidsH3_sub {a b : WCode 32768} (h : ∀ i ∈ a, i ∈ b) (hb : AvoidsH3 b) : AvoidsH3 a :=
+  ⟨fun p hp => hb.1 p (h _ hp), fun c ps hp => hb.2 c ps (h _ hp)⟩
+
+theorem avoidsH3_lit (p : ECDSAAdd.Program) (h : hostWire3 ∉ ECDSAAdd.wires p) :
+    AvoidsH3 (wLiteral (n := 32768) p) := by
+  refine ⟨fun q hq => ?_, fun c ps hp => ?_⟩
+  · simp only [wLiteral, List.mem_singleton, WInstr.literal.injEq] at hq
+    rw [hq]; exact h
+  · simp [wLiteral] at hp
+
+theorem avoidsH3_lookup {c : Option Wire} {ps : List (LookupPort 32768)}
+    (ht : hostWire3 ∉ portTargets ps) (hc : ∀ q ∈ c, q ≠ hostWire3) : AvoidsH3 [.lookup c ps] := by
+  refine ⟨fun p hp => ?_, fun c' ps' hp => ?_⟩
+  · simp at hp
+  · simp only [List.mem_singleton, WInstr.lookup.injEq] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    exact ⟨ht, hc⟩
+
+theorem hostSet3_not_of (L : List Wire) (hL : (L.all fun b => decide (b ≠ 14878)) = true) :
+    ∀ w ∈ hostSet3, w ∉ L := by
+  intro w hw hm
+  have h1 := List.all_eq_true.mp hL w hm
+  simp only [hostSet3, hostWire3, List.mem_singleton] at hw
+  subst hw
+  simp at h1
+
+theorem avoidsH3_of_all (code : WCode 32768) (h : code.all (avoidW hostSet3) = true) : AvoidsH3 code := by
+  refine ⟨fun p hp => progAvoid_sound hostSet3 p (List.all_eq_true.mp h _ hp) hostWire3 (List.mem_singleton_self _),
+    fun c ps hp => ?_⟩
+  obtain ⟨h1, h2⟩ := avoidW_lookup hostSet3 c ps (List.all_eq_true.mp h _ hp)
+  exact ⟨h1 hostWire3 (List.mem_singleton_self _), fun q hq e => h2 q hq (by rw [e]; exact List.mem_singleton_self _)⟩
+
+/-- A reference run of code avoiding the host wire leaves it unchanged, for every record. -/
+theorem avoidsH3_frame (read : ConstantBit 32768 → Bool) (a : Nat) (code : WCode 32768) (h : AvoidsH3 code)
+    (m : List Bool) (st : ECDSAAdd.State) :
+    (ECDSAAdd.run ((specialize code a).instantiate read) m st).basis hostWire3 = st.basis hostWire3 := by
+  induction code generalizing m st with
+  | nil => simp [specialize, ECDSAAdd.ShorPort.Tmpl.instantiate, ECDSAAdd.run]
+  | cons i code ih =>
+    have ht : AvoidsH3 code := ⟨fun p hp => h.1 p (List.mem_cons_of_mem _ hp),
+      fun c ps hp => h.2 c ps (List.mem_cons_of_mem _ hp)⟩
+    rw [show i :: code = [i] ++ code from rfl, specialize_append, ECDSAAdd.ShorPort.Tmpl.instantiate_append,
+      ECDSAAdd.run_append, ih ht]
+    apply ECDSAAdd.run_preserves_outside _ _ _ hostWire3
+    cases i with
+    | literal p =>
+      simp only [specialize, List.flatMap_cons, List.flatMap_nil, List.append_nil, WInstr.specialize,
+        ECDSAAdd.ShorPort.Tmpl.instantiate_lit]
+      exact h.1 p (by simp)
+    | lookup c ps =>
+      simp only [specialize, List.flatMap_cons, List.flatMap_nil, List.append_nil, WInstr.specialize]
+      obtain ⟨hT, hC⟩ := h.2 c ps (by simp)
+      exact lookup_frame read c ps a hostWire3 hT hC
+
+theorem hostWire3_scrAll : hostWire3 ∉ WEX.scrAllWires := by
+  rw [WEX.scrAllWires, WEX.scrWires, pbPairWires_eq, pbShortWires_eq, pbExtraWires_eq]
+  exact hostSet3_not_of _ (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+
+theorem hostWire3_yWires : hostWire3 ∉ WEX.yWires := by
+  intro h
+  exact absurd (WEX.yWires_bounds _ h).2 (by unfold hostWire3; decide)
+
+theorem root_ne_host3 : ∀ q ∈ (some windowRoot : Option Wire), q ≠ hostWire3 := by
+  intro q hq
+  rw [Option.mem_def, Option.some.injEq] at hq
+  subst hq
+  exact hostWire3_root.symm
+
+theorem scrDLookup_avoidsH3 : AvoidsH3 [WInstr.lookup (some windowRoot) (WEX.scrDPorts probeRows)] :=
+  avoidsH3_lookup (by rw [WEX.scrDPorts_targets]; exact hostWire3_scrAll) root_ne_host3
+
+theorem siteLookup_avoidsH3 : AvoidsH3 [WInstr.lookup (some windowRoot) (sitePorts probeRows)] :=
+  avoidsH3_lookup (by rw [sitePorts_targets]; exact hostWire3_scrAll) root_ne_host3
+
+theorem cornerLoad_avoidsH3 : AvoidsH3 [WInstr.lookup (some windowRoot) (WEX.cornerPorts probeRows)] := by
+  refine avoidsH3_lookup ?_ root_ne_host3
+  rw [WEX.cornerPorts_targets]
+  intro hm
+  rcases List.mem_append.mp hm with h | h
+  · exact hostWire3_scrAll h
+  · exact hostWire3_yWires h
+
+theorem yLookup_avoidsH3 : AvoidsH3 [WInstr.lookup (some windowRoot) (WEX.yPorts probeRows)] :=
+  avoidsH3_lookup (by rw [WEX.yPorts_targets]; exact hostWire3_yWires) root_ne_host3
+
+theorem scrNegP_avoidH3 : hostWire3 ∉ ECDSAAdd.wires WEX.scrNegP :=
+  WEX.neg_disjoint (negateYLayout streamLayout) streamLayout.core.equalNegY ECDSAAdd.p SquareReduction.c
+    (negateYLayout_widths streamLayout streamLayout_widths).2 hostSet3 (hostSet3_not_of _ (by decide +kernel))
+    hostWire3 (List.mem_singleton_self _)
+
+theorem sfxCC_avoidsH3 : AvoidsH3 WEX.sfxCC := by
+  simp only [WEX.sfxCC, WEX.scrDWires, pbShortWires_eq, pbExtraWires_eq]
+  exact avoidsH3_of_all _ (by unfold hostSet3 hostWire3; decide +kernel)
+
+theorem scrDMiddle_avoidsH3 : AvoidsH3 WEX.scrDMiddle := by
+  simp only [WEX.scrDMiddle, pbPairWires_eq, pbShortWires_eq]
+  repeat' (with_reducible apply avoidsH3_append)
+  all_goals exact avoidsH3_of_all _ (by unfold hostSet3 hostWire3; decide +kernel)
+
+theorem scrD_avoidsH3 : AvoidsH3 scrDSite.code := by
+  have hP : AvoidsH3 (wLiteral (n := 32768) WEX.scrNegP) := avoidsH3_lit _ scrNegP_avoidH3
+  rw [scrDSite_code, WEX.sfxMidF, WEX.cornersE_split]
+  repeat' (with_reducible apply avoidsH3_append)
+  all_goals first
+    | (with_reducible exact hP)
+    | exact scrDLookup_avoidsH3
+    | exact sfxCC_avoidsH3
+    | exact scrDMiddle_avoidsH3
+    | exact avoidsH3_of_all _ (by unfold hostSet3 hostWire3; decide +kernel)
+
+theorem cornerNeg_avoidsH3 : AvoidsH3 WEX.cornerNeg :=
+  avoidsH3_sub (fun i hi => sfxMid_in_scrD _ (WEX.cornerNeg_sub i hi)) scrD_avoidsH3
+
+theorem scrCWrite_avoidH3 : hostWire3 ∉ ECDSAAdd.wires WEX.scrCWrite := by
+  have h1 : hostWire3 ∉ [streamLayout.doubleSelect] :=
+    hostSet3_not_of _ (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+  have h2 : hostWire3 ∉ WEX.cSources := by
+    rw [WEX.cSources, pbPairWires_eq, WEX.yWires]
+    exact hostSet3_not_of _ (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+  have h3 : hostWire3 ∉ WEX.scrDTargets := hostSet3_not_of _ (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+  intro hm
+  rcases ccxList_wires _ _ _ _ hm with h | h | h
+  · exact h1 (by simp [h])
+  · exact h2 h
+  · exact h3 h
+
+theorem unit1_avoidsH3 : AvoidsH3 WEXUnlookup.cornerUnit₁.code := by
+  rw [WEXUnlookup.cornerUnit₁_code, WEX.cornerUnit₁, WEX.cornerPre₁]
+  refine avoidsH3_append (avoidsH3_append cornerLoad_avoidsH3 ?_) yLookup_avoidsH3
+  refine ⟨fun p hp => ?_, fun c ps hp => ?_⟩
+  · rcases WEX.cornerA1_mem _ hp with h | h
+    · exact scrD_avoidsH3.1 p (sfxMid_in_scrD _ h)
+    · cases h
+      exact scrCWrite_avoidH3
+  · rcases WEX.cornerA1_mem _ hp with h | h
+    · exact scrD_avoidsH3.2 c ps (sfxMid_in_scrD _ h)
+    · cases h
+
+theorem unit2_avoidsH3 : AvoidsH3 WEXUnlookup.cornerUnit₂.code := by
+  apply avoidsH3_sub _ scrD_avoidsH3
+  intro i hi
+  rw [WEXUnlookup.cornerUnit₂_code, WEX.cornerUnit₂] at hi
+  rcases List.mem_append.mp hi with h | h
+  · exact sfxMid_in_scrD _ (WEX.cornerA2_sub _ h)
+  · rw [List.mem_singleton.mp h]
+    exact WEXUnlookup.scrD_unload_mem
+
+theorem ySite_avoidsH3 : AvoidsH3 WEXUnlookup.ySite.code := by
+  apply avoidsH3_sub _ yLookup_avoidsH3
+  intro i hi
+  simp only [WEXUnlookup.ySite, MaskedSite.code, MaskedSite.prefix, List.cons_append, List.nil_append,
+    List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl <;> exact List.mem_singleton_self _
+
+theorem scrDClear_avoidsH3 : AvoidsH3 WEXUnlookup.scrDClear.code := by
+  apply avoidsH3_sub _ scrD_avoidsH3
+  intro i hi
+  simp only [WEXUnlookup.scrDClear, MaskedSite.code, MaskedSite.prefix, List.cons_append, List.nil_append,
+    List.mem_cons, List.not_mem_nil, or_false] at hi
+  rcases hi with rfl | rfl <;> exact WEXUnlookup.scrD_unload_mem
+
+theorem hostWire3_flip : hostWire3 ∉ ECDSAAdd.wires ([.X 838] : ECDSAAdd.Program) := by
+  simp [ECDSAAdd.wires, ECDSAAdd.Instr.wires, hostWire3]
+
+theorem hostWire3_head : hostWire3 ∉ ECDSAAdd.wires scrHeadProgram :=
+  progAvoid_sound hostSet3 scrHeadProgram (by unfold hostSet3 hostWire3 scrHeadProgram; decide +kernel)
+    hostWire3 (List.mem_singleton_self _)
+
+theorem sfxTailF_avoidsH3 : AvoidsH3 WEX.sfxTailF :=
+  avoidsH3_of_all _ (by unfold hostSet3 hostWire3; decide +kernel)
+
+theorem flip_avoidsH3 : AvoidsH3 (wLiteral (n := 32768) [.X 838]) := avoidsH3_lit _ hostWire3_flip
+
+theorem band_not_host3 (w : Nat) (h : newBand w) : w ≠ hostWire3 := by
+  unfold newBand at h
+  unfold hostWire3
+  omega
+
+theorem pair1Prog_avoidH3 : hostWire3 ∉ ECDSAAdd.wires pair1Prog :=
+  wires_avoid_of pair1Prog_subset (fun w hw h => band_not_host3 w (lists_band.1 w h) (List.mem_singleton.mp hw))
+    hostWire3 (List.mem_singleton_self _)
+
+theorem pair2Prog_avoidH3 : hostWire3 ∉ ECDSAAdd.wires pair2Prog :=
+  wires_avoid_of pair2Prog_subset (fun w hw h => band_not_host3 w (lists_band.2.1 w h) (List.mem_singleton.mp hw))
+    hostWire3 (List.mem_singleton_self _)
+
+theorem gf_avoidH3 : hostWire3 ∉ ECDSAAdd.wires (pointDialogGenericFlag streamLayout) :=
+  progAvoid_sound hostSet3 _ (by unfold hostSet3 hostWire3; decide +kernel) hostWire3 (List.mem_singleton_self _)
+
+theorem zrep_avoidH3 : hostWire3 ∉ ECDSAAdd.wires (ECDSAAdd.Frontier.zrep streamLayout) := by
+  intro hm
+  rcases ECDSAAdd.Frontier.zrep_wires streamLayout _ hm with h | h
+  · exact hostSet3_not_of [streamLayout.point.finite] (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+      (by simp [h])
+  · simp only [streamLayout_point, List.mem_range'_1] at h
+    simp only [hostWire3] at h
+    omega
+
+theorem scrInArith_avoidH3 : hostWire3 ∉ ECDSAAdd.wires scrInArith := by
+  simp only [WEX.scrInArith, WEX.scrInMid, pbPairWires_eq, pbShortWires_eq]
+  exact progAvoid_sound hostSet3 _ (by unfold hostSet3 hostWire3; decide +kernel) hostWire3 (List.mem_singleton_self _)
+
+theorem site1Arith_avoidH3 : hostWire3 ∉ ECDSAAdd.wires site1Arith := by
+  simp only [site1Arith, ECDSAAdd.wires_append, Finset.mem_union, not_or]
+  exact ⟨⟨⟨scrInArith_avoidH3, gf_avoidH3⟩, zrep_avoidH3⟩, pair1Prog_avoidH3⟩
+
+theorem site1_avoidsH3 : AvoidsH3 (site1 probeRows).code := by
+  rw [site1_code]
+  exact avoidsH3_append (a := [_]) siteLookup_avoidsH3
+    (avoidsH3_append (a := [_]) (avoidsH3_lit site1Arith site1Arith_avoidH3) siteLookup_avoidsH3)
+
+theorem site2Lookup_avoidsH3 : AvoidsH3 [WInstr.lookup (some windowRoot) (site2Ports probeRows)] :=
+  avoidsH3_lookup (by rw [site2Ports_targets]; exact fun h => hostWire3_scrAll (site2_sub _ h)) root_ne_host3
+
+theorem site2_avoidsH3 : AvoidsH3 (site2 probeRows).code := by
+  rw [site2_code]
+  exact avoidsH3_append (a := [_]) site2Lookup_avoidsH3
+    (avoidsH3_append (a := [_]) (avoidsH3_lit pair2Prog pair2Prog_avoidH3) site2Lookup_avoidsH3)
+
+theorem triple_avoidsH3 : AvoidsH3 (constSite streamLayout streamLayout.point.x (wFields probeRows .tripleX)).code := by
+  have hw : ∀ w ∈ hostSet3, w ∉ (streamLayout.recoveryConstant streamLayout.point.x).wires :=
+    hostSet3_not_of _ (by decide +kernel)
+  have ht : hostWire3 ∉ (streamLayout.recoveryConstant streamLayout.point.x).src :=
+    hostSet3_not_of _ (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+  have hg : streamLayout.core.generic ≠ hostWire3 := fun h =>
+    hostSet3_not_of [streamLayout.core.generic] (by decide +kernel) hostWire3 (List.mem_singleton_self _) (by simp [h])
+  rw [constSite_code]
+  refine ⟨fun p hp => ?_, fun c ps hp => ?_⟩
+  · rcases List.mem_cons.mp hp with h | h
+    · cases h
+    rcases List.mem_cons.mp h with h | h
+    · cases h
+      exact wires_avoid_of (MeasuredCanonicalModLayout.program_wires_subset _ _ _) hw hostWire3
+        (List.mem_singleton_self _)
+    · cases List.mem_singleton.mp h
+  · have hp' : c = some streamLayout.core.generic ∧
+        ps = indexedPorts (streamLayout.recoveryConstant streamLayout.point.x).src (wFields probeRows .tripleX) true := by
+      rcases List.mem_cons.mp hp with h | h
+      · exact WInstr.lookup.inj h
+      rcases List.mem_cons.mp h with h | h
+      · cases h
+      · exact WInstr.lookup.inj (List.mem_singleton.mp h)
+    obtain ⟨rfl, rfl⟩ := hp'
+    refine ⟨fun hm => ht (by rw [indexed_targets] at hm; exact hm), fun q hq => ?_⟩
+    rw [Option.mem_def, Option.some.injEq] at hq
+    subst hq
+    exact hg
+
+end
+end ShorECDLP.Entrant.PathShare
+
 
 namespace ShorECDLP.Entrant.PathShare
 open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration WEX WEXUnlookup
@@ -15062,6 +15460,37 @@ theorem values_state {X Y : ECDSAAdd.Fp} {G : Bool} {base s : BasisState}
     (h : PointDialogValues streamLayout X Y G base s) (hctl : base streamLayout.control = true) : HostState s :=
   ⟨values_host h, values_clean hostWire2_pool h hostWire2 (List.mem_singleton_self _),
     (h.rest hostCtl ctl_not_xy).trans hctl⟩
+
+theorem hostWire3_pool : InPool hostSet3 := by
+  intro q hq
+  simp only [hostSet3, List.mem_singleton] at hq
+  subst hq
+  have hp : streamLayout.dialogPool = ((List.range' 4115 5699).map streamWire).take 2613 := rfl
+  rw [hp,List.mem_iff_getElem]
+  refine ⟨763,by simp only [List.length_take,List.length_map,List.length_range']; norm_num,?_⟩
+  simp only [List.getElem_take,List.getElem_map,List.getElem_range']
+  unfold streamWire hostWire3
+  norm_num
+
+theorem ctl3_not_xy : hostCtl3 ∉ streamLayout.point.x ++ streamLayout.point.y := by
+  simp only [streamLayout_point, List.mem_append, List.mem_range'_1, not_or]
+  unfold hostCtl3
+  omega
+
+/-- Host facts at a dialog boundary: both host wires clean, the double flag `1`. -/
+def HostState3 (s : BasisState) : Prop := s hostWire = false ∧ s hostWire3 = false ∧ s hostCtl3 = true
+
+theorem hostCtl3_eq : hostCtl3 = streamLayout.core.double := by
+  unfold hostCtl3
+  decide +kernel
+
+theorem values_state3 {X Y : ECDSAAdd.Fp} {G : Bool} {base s : BasisState}
+    (h : PointDialogValues streamLayout X Y G base s) (hR3 : base streamLayout.core.double = true) :
+    HostState3 s := by
+  refine ⟨values_host h, values_clean hostWire3_pool h hostWire3 (List.mem_singleton_self _), ?_⟩
+  have hr : s hostCtl3 = base hostCtl3 := h.rest hostCtl3 ctl3_not_xy
+  rw [hostCtl3_eq] at hr ⊢
+  exact hr.trans hR3
 
 def BlockHost {n} (b : Block n) (st : ECDSAAdd.State) : Prop := HostOK (toBlock2 b) st
 
@@ -15118,15 +15547,18 @@ theorem seq (ha : CheckedH read address A a B) (hb : CheckedH read address B b C
 
 theorem plain {code : WCode n} (h : Checked read address A ([.plain code] : Code n) B)
     (hlit : ∀ i ∈ code, ∃ p, i = .literal p)
-    (hA : ∀ s, A s → HostState s) (hB : ∀ s, B s → HostState s) :
+    (hA : ∀ s, A s → HostState s ∧ HostState3 s) (hB : ∀ s, B s → HostState s ∧ HostState3 s) :
     CheckedH read address A ([.plain code] : Code n) B := by
   refine ⟨h, fun st hs => ?_⟩
-  have post : ∀ m, HostState (ECDSAAdd.run (litProg code) m st).basis := fun m => hB _ (by
+  have post : ∀ m, HostState (ECDSAAdd.run (litProg code) m st).basis ∧
+      HostState3 (ECDSAAdd.run (litProg code) m st).basis := fun m => hB _ (by
     have e := (h.correct st m hs).2
     simp only [reference, erase_plain] at e
     rw [litProg_inst read code address hlit] at e
     exact e)
-  exact ⟨⟨⟨(hA _ hs).1, fun m => (post m).1⟩, fun _ _ => ⟨(hA _ hs).2.2, (hA _ hs).2.1, fun m => (post m).2.1⟩⟩,
+  exact ⟨⟨⟨⟨(hA _ hs).1.1, fun m => (post m).1.1⟩,
+    fun _ _ => ⟨(hA _ hs).1.2.2, (hA _ hs).1.2.1, fun m => (post m).1.2.1⟩⟩,
+    fun _ _ => ⟨(hA _ hs).2.2.2, (hA _ hs).2.2.1, fun m => (post m).2.2.1⟩⟩,
     fun _ _ => trivial⟩
 
 theorem masked {site : MaskedSite n} (h : Checked read address A ([.masked site] : Code n) B) :
@@ -15135,22 +15567,25 @@ theorem masked {site : MaskedSite n} (h : Checked read address A ([.masked site]
 
 theorem plainV {p : ECDSAAdd.Program} {X Y X' Y' : ECDSAAdd.Fp} {G G' : Bool} {base base' : BasisState}
     (hctl : base streamLayout.control = true) (hctl' : base' streamLayout.control = true)
+    (hR3 : base streamLayout.core.double = true) (hR3' : base' streamLayout.core.double = true)
     (h : Checked read address (PointDialogValues streamLayout X Y G base) ([.plain (wLiteral p)] : Code n)
       (PointDialogValues streamLayout X' Y' G' base')) :
     CheckedH read address (PointDialogValues streamLayout X Y G base) ([.plain (wLiteral p)] : Code n)
       (PointDialogValues streamLayout X' Y' G' base') :=
-  plain h (by simp [wLiteral]) (fun _ h => values_state h hctl) (fun _ h => values_state h hctl')
+  plain h (by simp [wLiteral]) (fun _ h => ⟨values_state h hctl, values_state3 h hR3⟩)
+    (fun _ h => ⟨values_state h hctl', values_state3 h hR3'⟩)
 
 end CheckedH
 
 theorem literal_checkedV {n} (read : ConstantBit n → Bool) (address : Nat) (p : ECDSAAdd.Program)
     {X Y X' Y' : ECDSAAdd.Fp} {G G' : Bool} {base base' : BasisState}
     (hctl : base streamLayout.control = true) (hctl' : base' streamLayout.control = true)
+    (hR3 : base streamLayout.core.double = true) (hR3' : base' streamLayout.core.double = true)
     (h : ECDSAAdd.Triple (PointDialogValues streamLayout X Y G base) p
       (PointDialogValues streamLayout X' Y' G' base')) :
     CheckedH read address (PointDialogValues streamLayout X Y G base) ([.plain (wLiteral p)] : Code n)
       (PointDialogValues streamLayout X' Y' G' base') :=
-  CheckedH.plainV hctl hctl' (literal_checked read address p _ _ h)
+  CheckedH.plainV hctl hctl' hR3 hR3' (literal_checked read address p _ _ h)
 
 theorem checkedH_host {n} {read : ConstantBit n → Bool} {address : Nat} {code : Code n}
     {A : BasisState → Prop} {X Y : ECDSAAdd.Fp} {G : Bool} {base : BasisState}
@@ -15166,6 +15601,7 @@ theorem chainH_plain (read : ConstantBit 32768 → Bool) (address : Nat)
     {cx cy : ECDSAAdd.Fp} (hc : curve.toAffine.Nonsingular cx cy) (hr : RowReads read (rows address) (.some hc))
     (X Y : ECDSAAdd.Fp) (G : Bool) (base : BasisState)
     (hroot : base windowRoot = true) (hctl : base streamLayout.control = true)
+    (hR3 : base streamLayout.core.double = true)
     (hD : base streamLayout.doubleSelect = false) (hI : base streamLayout.genericSelect = false)
     (X0 X1 a X3 X5 X6 Y6 : ECDSAAdd.Fp)
     (hX0 : X0.val = X.val ^^^ (if base streamLayout.point.finite then 0 else 5))
@@ -15183,29 +15619,29 @@ theorem chainH_plain (read : ConstantBit 32768 → Bool) (address : Nat)
   have gid : ∀ (Z : ECDSAAdd.Fp), Z.val = (Z.val ^^^ (if base streamLayout.doubleSelect then 5 else 0)) ^^^
       (if base streamLayout.genericSelect then 5 else 0) := by
     intro Z; rw [hD, hI]; simp
-  have z1 := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X X0 Y G base hX0)
+  have z1 := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X X0 Y G base hX0)
   have p1 := CheckedH.masked (pair1_checked read address rows hc hr X0 Y G base hroot hctl)
   rw [← hX1d] at p1
-  have g1 := CheckedH.plainV hctl hctl (guard5_checked read address X1 X1 (Y - cy) G base hex (gid X1))
-  have d1 := literal_checkedV read address _ hctl hctl
+  have g1 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address X1 X1 (Y - cy) G base hex (gid X1))
+  have d1 := literal_checkedV read address _ hctl hctl hR3 hR3
     (ECDSAAdd.Frontier.arith3F_step streamLayout hw hn X1 (Y - cy) G base false hX1)
   simp only [Bool.false_eq_true, if_false] at d1
   rw [← ha] at d1
-  have g2 := CheckedH.plainV hctl hctl (guard5_checked read address X1 X1 a G base hex (gid X1))
-  have sq := literal_checkedV read address _ hctl hctl
+  have g2 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address X1 X1 a G base hex (gid X1))
+  have sq := literal_checkedV read address _ hctl hctl hR3 hR3
     (ECDSAAdd.Frontier.GenericOB5.square_step streamLayout hw hn X1 a G base)
   have t3 := CheckedH.masked (addX_checked read address streamLayout hw hn (X1 - (if G then a * a else 0)) a G base (3*cx)
     (wFields rows .tripleX) (row_bits hc hr .tripleX (3*cx) (field_some_tripleX hc)))
   rw [← hX3d] at t3
-  have g3 := CheckedH.plainV hctl hctl (guard5_checked read address X3 X3 a G base hex (gid X3))
-  have m1 := literal_checkedV read address _ hctl hctl
+  have g3 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address X3 X3 a G base hex (gid X3))
+  have m1 := literal_checkedV read address _ hctl hctl hR3 hR3
     (ECDSAAdd.Frontier.arith3F_step streamLayout hw hn X3 a G base true hX3)
   simp only [if_true] at m1
-  have g4 := CheckedH.plainV hctl hctl (guard5_checked read address X3 X3 (a * X3) G base hex (gid X3))
-  have ng := literal_checkedV read address _ hctl hctl (negXReg_step X3 (a * X3) G base (fun _ => hX3))
+  have g4 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address X3 X3 (a * X3) G base hex (gid X3))
+  have ng := literal_checkedV read address _ hctl hctl hR3 hR3 (negXReg_step X3 (a * X3) G base (fun _ => hX3))
   have p2 := CheckedH.masked (pair2_checked read address rows hc hr (if G then -X3 else X3) (a * X3) G base hroot hctl)
   rw [← hX5, ← hY6] at p2
-  have z2 := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X5 X6 Y6 G base hX6)
+  have z2 := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X5 X6 Y6 G base hX6)
   have h := (((((((((((z1.seq p1).seq g1).seq d1).seq g2).seq sq).seq t3).seq g3).seq m1).seq g4).seq ng).seq p2).seq z2
   simpa only [generic3', preBlock, generic3, constAdd, List.append_assoc, List.cons_append, List.nil_append] using h
 
@@ -15215,6 +15651,7 @@ theorem chainH_toggle (read : ConstantBit 32768 → Bool) (address : Nat)
     {cx cy : ECDSAAdd.Fp} (hc : curve.toAffine.Nonsingular cx cy) (hr : RowReads read (rows address) (.some hc))
     (X Y : ECDSAAdd.Fp) (base : BasisState)
     (hroot : base windowRoot = true) (hctl : base streamLayout.control = true)
+    (hR3 : base streamLayout.core.double = true)
     (hfin : base streamLayout.point.finite = true)
     (hex : ¬ (base streamLayout.doubleSelect = true ∧ base streamLayout.genericSelect = true))
     (hD : base streamLayout.doubleSelect = true → X = cx) (hI : base streamLayout.genericSelect = true → X = cx)
@@ -15267,26 +15704,26 @@ theorem chainH_toggle (read : ConstantBit 32768 → Bool) (address : Nat)
       simp
     · exact absurd ⟨hd, hi⟩ hex
   have zid : X.val = X.val ^^^ (if base streamLayout.point.finite then 0 else 5) := by rw [hfin]; simp
-  have z1 := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X X Y false base zid)
+  have z1 := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X X Y false base zid)
   have p1 := CheckedH.masked (pair1_checked read address rows hc hr X Y false base hroot hctl)
-  have g1 := CheckedH.plainV hctl hctl (guard5_checked read address (X - cx) xg (Y - cy) false base hex fwd)
-  have d1 := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.arith3F_step streamLayout hw hn xg (Y - cy) false base false hxg0)
+  have g1 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address (X - cx) xg (Y - cy) false base hex fwd)
+  have d1 := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.arith3F_step streamLayout hw hn xg (Y - cy) false base false hxg0)
   simp only [Bool.false_eq_true, if_false] at d1
-  have g2 := CheckedH.plainV hctl hctl (guard5_checked read address xg (X - cx) ((Y - cy)/xg) false base hex back)
-  have sq := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.GenericOB5.square_step streamLayout hw hn (X - cx) ((Y - cy)/xg) false base)
+  have g2 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address xg (X - cx) ((Y - cy)/xg) false base hex back)
+  have sq := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.GenericOB5.square_step streamLayout hw hn (X - cx) ((Y - cy)/xg) false base)
   simp only [Bool.false_eq_true, if_false, sub_zero] at sq
   have t3 := CheckedH.masked (addX_checked read address streamLayout hw hn (X - cx) ((Y - cy)/xg) false base (3*cx) (wFields rows .tripleX)
     (row_bits hc hr .tripleX (3*cx) (field_some_tripleX hc)))
   simp only [Bool.false_eq_true, if_false, add_zero] at t3
-  have g3 := CheckedH.plainV hctl hctl (guard5_checked read address (X - cx) xg ((Y - cy)/xg) false base hex fwd)
-  have m1 := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.arith3F_step streamLayout hw hn xg ((Y - cy)/xg) false base true hxg0)
+  have g3 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address (X - cx) xg ((Y - cy)/xg) false base hex fwd)
+  have m1 := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.arith3F_step streamLayout hw hn xg ((Y - cy)/xg) false base true hxg0)
   simp only [if_true, div_mul_cancel₀ _ hxg0] at m1
-  have g4 := CheckedH.plainV hctl hctl (guard5_checked read address xg (X - cx) (Y - cy) false base hex back)
-  have ng := literal_checkedV read address _ hctl hctl (negXReg_step (X - cx) (Y - cy) false base (fun h => by cases h))
+  have g4 := CheckedH.plainV hctl hctl hR3 hR3 (guard5_checked read address xg (X - cx) (Y - cy) false base hex back)
+  have ng := literal_checkedV read address _ hctl hctl hR3 hR3 (negXReg_step (X - cx) (Y - cy) false base (fun h => by cases h))
   simp only [Bool.false_eq_true, if_false] at ng
   have p2 := CheckedH.masked (pair2_checked read address rows hc hr (X - cx) (Y - cy) false base hroot hctl)
   simp only [Bool.false_eq_true, if_false, sub_add_cancel] at p2
-  have z2 := literal_checkedV read address _ hctl hctl (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X X Y false base zid)
+  have z2 := literal_checkedV read address _ hctl hctl hR3 hR3 (ECDSAAdd.Frontier.zrep_step streamLayout hw hn X X Y false base zid)
   have h := (((((((((((z1.seq p1).seq g1).seq d1).seq g2).seq sq).seq t3).seq g3).seq m1).seq g4).seq ng).seq p2).seq z2
   simpa only [generic3', preBlock, generic3, constAdd, List.append_assoc, List.cons_append, List.nil_append] using h
 
@@ -15326,6 +15763,12 @@ theorem generic3_host (read : ConstantBit 32768 → Bool) (address : Nat)
     simp only [decide_eq_true_eq, not_and]
     intro h1 h2
     exact hCneg (h1.symm.trans h2)
+  have hR3 : st.basis streamLayout.core.double = true := by
+    obtain ⟨-, _, _, _, _, _, sK⟩ := rd
+    have sDouble : st.basis streamLayout.core.double = (true && decide (cy ≠ -cy)) :=
+      (hs.flags _ (by simp [inPlaceFlags])).trans sK
+    rw [sDouble]
+    simp [h₁]
   cases R with
   | zero =>
     have hG : st.basis streamLayout.core.generic = false := by
@@ -15341,7 +15784,7 @@ theorem generic3_host (read : ConstantBit 32768 → Bool) (address : Nat)
       ⟨hp.2.1, hp.2.2, hG, hs.clean, fun _ _ => rfl⟩
     have hfin : st.basis streamLayout.point.finite = false := hp.1
     have hX1 : (5 : ECDSAAdd.Fp) - cx ≠ 0 := sub_ne_zero.mpr (ECDSAAdd.Frontier.x_ne_five hc).symm
-    have new := chainH_plain read address rows hc hr 0 0 false st.basis hroot hctl hD0 hI0
+    have new := chainH_plain read address rows hc hr 0 0 false st.basis hroot hctl hR3 hD0 hI0
       5 (5 - cx) ((0 - cy)/(5 - cx)) (5 - cx) 5 0 0
       (by rw [hfin, ECDSAAdd.Frontier.finFive_val, ZMod.val_zero]; decide) rfl hX1 rfl (by simp) hX1 (by simp)
       (by rw [hfin, ECDSAAdd.Frontier.finFive_val, ZMod.val_zero]; decide)
@@ -15370,7 +15813,7 @@ theorem generic3_host (read : ConstantBit 32768 → Bool) (address : Nat)
         rcases (sameX_iff_eq_or_neg hrp hc).mp (sub_eq_zero.mp hz) with h | h
         · exact absurd (decide_eq_true h) (by rw [h1]; decide)
         · exact absurd (decide_eq_true h) (by rw [h2]; decide)
-      have new := chainH_toggle read address rows hc hr x y st.basis hroot hctl hfin hex hD hI hX1
+      have new := chainH_toggle read address rows hc hr x y st.basis hroot hctl hR3 hfin hex hD hI hX1
       exact checkedH_host new st values
     | true =>
       have he := ((dialogOrdinary_true true _ _ hC0).mp hG).2
@@ -15386,7 +15829,7 @@ theorem generic3_host (read : ConstantBit 32768 → Bool) (address : Nat)
       let d := cx - genericX x y cx cy
       have hv := generic_inplace_values x y cx cy den.1
       have ha : (y - cy)/(x - cx) = a := rfl
-      have new := chainH_plain read address rows hc hr x y true st.basis hroot hctl hD0 hI0
+      have new := chainH_plain read address rows hc hr x y true st.basis hroot hctl hR3 hD0 hI0
         x (x - cx) a d (-d + cx) (genericX x y cx cy) (genericY x y cx cy)
         (by rw [hfin]; simp) rfl (sub_ne_zero.mpr den.1) ha
         (by simp only [if_true]; exact hv.2.1.symm) den.2 (by simp only [if_true])
@@ -15457,12 +15900,15 @@ theorem host_map {n} (read : ConstantBit n → Bool) (address : Nat) (code : Cod
     exact ih _ (h.2 m hm)
 
 theorem hostOK_avoid (code : WCode 32768) (hlit : ∀ i ∈ code, ∃ p, i = .literal p) (hav : AvoidsH code)
-    (hav2 : AvoidsH2 code) (st : ECDSAAdd.State) (h0 : st.basis hostWire = false) : HostOK (.plain code) st :=
-  ⟨⟨h0, fun m => by
+    (hav2 : AvoidsH2 code) (hav3 : AvoidsH3 code) (st : ECDSAAdd.State) (h0 : st.basis hostWire = false) :
+    HostOK (.plain code) st :=
+  ⟨⟨⟨h0, fun m => by
     rw [← litProg_inst (fun _ => false) code 0 hlit, avoidsH_frame _ _ code hav]
     exact h0⟩, fun h2 _ => absurd h2 (fun hw => by
       obtain ⟨p, hp, hw⟩ := litProg_wires code hostWire2 hw
-      exact hav2.1 p hp hw)⟩
+      exact hav2.1 p hp hw)⟩, fun h2 _ => absurd h2 (fun hw => by
+      obtain ⟨p, hp, hw⟩ := litProg_wires code hostWire3 hw
+      exact hav3.1 p hp hw)⟩
 
 theorem blockRef2_frameH (read : ConstantBit 32768 → Bool) (a : Nat) (b : Block2 32768) (h : AvoidsH b.code)
     (m : List Bool) (st : ECDSAAdd.State) :
@@ -15490,6 +15936,11 @@ theorem head_avoidsH2 : AvoidsH2 scrHead := by
   repeat' (with_reducible apply avoidsH2_append)
   all_goals exact avoidsH2_of_all _ (by unfold hostSet2 hostWire2; decide +kernel)
 
+theorem head_avoidsH3 : AvoidsH3 scrHead := by
+  simp only [scrHead]
+  repeat' (with_reducible apply avoidsH3_append)
+  all_goals exact avoidsH3_of_all _ (by unfold hostSet3 hostWire3; decide +kernel)
+
 theorem rowPost3_host (read : ConstantBit 32768 → Bool) (a : Nat) (t : ECDSAAdd.State)
     (ht : t.basis hostWire = false) : CodeHost2 read a WEXUnlookup.rowPost3 t := by
   have hN : AvoidsH (Block2.plain WEX.cornerNeg).code := cornerNeg_avoidsH
@@ -15497,15 +15948,15 @@ theorem rowPost3_host (read : ConstantBit 32768 → Bool) (a : Nat) (t : ECDSAAd
   have h2 : AvoidsH (Block2.unit WEXUnlookup.cornerUnit₂).code := unit2_avoidsH
   have hS : AvoidsH (Block2.plain WEX.sfxTailF).code := sfxTailF_avoidsH
   rw [WEXUnlookup.rowPost3]
-  refine ⟨hostOK_avoid _ cornerNeg_lit cornerNeg_avoidsH cornerNeg_avoidsH2 t ht, fun m₁ _ => ⟨trivial, fun m₂ _ =>
+  refine ⟨hostOK_avoid _ cornerNeg_lit cornerNeg_avoidsH cornerNeg_avoidsH2 cornerNeg_avoidsH3 t ht, fun m₁ _ => ⟨trivial, fun m₂ _ =>
     ⟨trivial, fun m₃ _ => ?_⟩⟩⟩
   have c3 : (ECDSAAdd.run (blockReference2 read a (.unit WEXUnlookup.cornerUnit₂)) m₃
       (ECDSAAdd.run (blockReference2 read a (.unit WEXUnlookup.cornerUnit₁)) m₂
         (ECDSAAdd.run (blockReference2 read a (.plain WEX.cornerNeg)) m₁ t))).basis hostWire = false := by
     rw [blockRef2_frameH read a _ h2, blockRef2_frameH read a _ h1, blockRef2_frameH read a _ hN]
     exact ht
-  refine ⟨hostOK_avoid _ sfxTailF_lit sfxTailF_avoidsH sfxTailF_avoidsH2 _ c3, fun m₄ _ =>
-    ⟨hostOK_avoid _ flip_lit flip_avoidsH flip_avoidsH2 _ (by rw [blockRef2_frameH read a _ hS]; exact c3),
+  refine ⟨hostOK_avoid _ sfxTailF_lit sfxTailF_avoidsH sfxTailF_avoidsH2 sfxTailF_avoidsH3 _ c3, fun m₄ _ =>
+    ⟨hostOK_avoid _ flip_lit flip_avoidsH flip_avoidsH2 flip_avoidsH3 _ (by rw [blockRef2_frameH read a _ hS]; exact c3),
       fun _ _ => trivial⟩⟩
 
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
@@ -15541,8 +15992,8 @@ theorem rowHead_host (coeffs : Fin 32768 → PointCoeff) (Q : ShorECDLP.Secp256k
         (.plain (wLiteral [.X 838]) : Block 32768)) m₀ ⟨false,s⟩).basis hostWire = false := fun m₀ => by
       rw [flip_reference, ECDSAAdd.run_preserves_outside _ _ _ _ hostWire_flip]
       exact s0
-    exact ⟨hostOK_avoid _ flip_lit flip_avoidsH flip_avoidsH2 _ s0, fun m₀ _ =>
-      ⟨hostOK_avoid _ head_lit head_avoidsH head_avoidsH2 _ (c1 m₀), fun _ _ => ⟨trivial, fun _ _ => trivial⟩⟩⟩
+    exact ⟨hostOK_avoid _ flip_lit flip_avoidsH flip_avoidsH2 flip_avoidsH3 _ s0, fun m₀ _ =>
+      ⟨hostOK_avoid _ head_lit head_avoidsH head_avoidsH2 head_avoidsH3 _ (c1 m₀), fun _ _ => ⟨trivial, fun _ _ => trivial⟩⟩⟩
   cases he : Bridge.toB C with
   | zero =>
     have hzero : C = 0 := congrArg ECDSAAdd.ShorPort.toA he
@@ -15613,8 +16064,8 @@ set_option maxRecDepth 40000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 
-def retiredH (w : Nat) : Prop := retired w ∨ w = 15655 ∨ w = 14879
-instance : DecidablePred retiredH := fun w => inferInstanceAs (Decidable (retired w ∨ w = 15655 ∨ w = 14879))
+def retiredH (w : Nat) : Prop := retired w ∨ w = 15655 ∨ w = 14879 ∨ w = 14878
+instance : DecidablePred retiredH := fun w => inferInstanceAs (Decidable (retired w ∨ w = 15655 ∨ w = 14879 ∨ w = 14878))
 
 def newSourceH : List Wire := sourceSupport.filter (fun w => decide (¬retiredH w))
 
@@ -15625,17 +16076,20 @@ theorem newSourceH_of_bounds (xs : List Wire) (h : ∀ w ∈ xs, (fixedPort w �
     xs ⊆ newSourceH :=
   fun w hw => (newSourceH_mem w).mpr (h w hw)
 
-theorem newSourceH_of_new (w : Nat) (h : w ∈ newSource) (hw : w ≠ hostWire) (hw2 : w ≠ hostWire2) :
-    w ∈ newSourceH := by
+theorem newSourceH_of_new (w : Nat) (h : w ∈ newSource) (hw : w ≠ hostWire) (hw2 : w ≠ hostWire2)
+    (hw3 : w ≠ hostWire3) : w ∈ newSourceH := by
   obtain ⟨h1, h2⟩ := (newSource_mem w).mp h
-  exact (newSourceH_mem w).mpr ⟨h1, fun h3 => h3.elim h2 (fun h4 => h4.elim hw hw2)⟩
+  exact (newSourceH_mem w).mpr ⟨h1, fun h3 => h3.elim h2 (fun h4 => h4.elim hw (fun h5 => h5.elim hw2 hw3))⟩
 
-theorem relaxed_of_new (w : Nat) (h : w ∈ newSource) : w = hostWire ∨ w = hostWire2 ∨ w ∈ newSourceH := by
+theorem relaxed_of_new (w : Nat) (h : w ∈ newSource) :
+    w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH := by
   by_cases e : w = hostWire
   · exact Or.inl e
   · by_cases e2 : w = hostWire2
     · exact Or.inr (Or.inl e2)
-    · exact Or.inr (Or.inr (newSourceH_of_new w h e e2))
+    · by_cases e3 : w = hostWire3
+      · exact Or.inr (Or.inr (Or.inl e3))
+      · exact Or.inr (Or.inr (Or.inr (newSourceH_of_new w h e e2 e3)))
 
 theorem kind_nohost {n} (site : MaskedSite n) (hk : SiteKind site) : hostWire ∉ portTargets site.ports := by
   rcases hk with ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ <;> rw [ht]
@@ -15661,6 +16115,20 @@ theorem kind_nohost2 {n} (site : MaskedSite n) (hk : SiteKind site) : hostWire2 
 theorem ctl_newH : hostCtl ∈ newSourceH :=
   newSourceH_of_bounds [hostCtl] (by unfold hostCtl; decide +kernel) (List.mem_singleton_self _)
 
+theorem kind_nohost3 {n} (site : MaskedSite n) (hk : SiteKind site) : hostWire3 ∉ portTargets site.ports := by
+  rcases hk with ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ | ⟨ht,-⟩ <;> rw [ht]
+  · intro hm; simp only [List.mem_range'_1] at hm; unfold hostWire3 at hm; omega
+  · rw [WEX.scrWires, pbPairWires_eq, pbShortWires_eq]
+    exact hostSet3_not_of _ (by decide +kernel) hostWire3 (List.mem_singleton_self _)
+  · intro hm; simp only [List.mem_append, List.mem_range'_1] at hm; unfold hostWire3 at hm; omega
+  · exact hostWire3_scrAll
+  · intro hm; simp only [List.mem_range'_1] at hm; unfold hostWire3 at hm; omega
+  · intro hm; simp only [List.mem_append, List.mem_cons, List.mem_range'_1] at hm; unfold hostWire3 at hm
+    (try dsimp only [ShorECDLP.Wire, ECDSAAdd.Wire] at hm); all_goals omega
+
+theorem ctl3_newH : hostCtl3 ∈ newSourceH :=
+  newSourceH_of_bounds [hostCtl3] (by unfold hostCtl3; decide +kernel) (List.mem_singleton_self _)
+
 theorem nFast_newH (start : Nat) : ChallengeMigration.straightWires (nFastProgram start) ⊆ newSourceH := by
   apply literalFixed_support (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) 256
     ((literal_meas (n := 32768) _).trans fastWindowSign_normalized_counts.2) newSourceH (start := start)
@@ -15675,7 +16143,7 @@ theorem nFast_newH (start : Nat) : ChallengeMigration.straightWires (nFastProgra
       (fun _ h => h)
   exact sub.trans (hs.trans (fun w hw => List.mem_toFinset.mpr (cover (List.mem_toFinset.mp hw))))
 
-theorem base_support17 : completeBatchedSupport ⊆ List.range 1617 := by
+theorem base_support16 : completeBatchedSupport ⊆ List.range 1616 := by
   intro w hw
   simp only [completeBatchedSupport,resetWires,List.mem_cons,List.mem_append,
     List.mem_range,List.mem_range'_1,List.not_mem_nil,or_false] at hw
@@ -15704,6 +16172,8 @@ def tauWireH (w : Nat) : Nat :=
   else if 19814 ≤ w ∧ w < 19817 then w - 9802
   else if w = 14879 then 15642
   else if w = 15642 then 14879
+  else if w = 14878 then 15641
+  else if w = 15641 then 14878
   else w
 
 theorem tauWireH_involutive : Function.Involutive tauWireH := by
@@ -15731,7 +16201,7 @@ theorem piH_hot (i : Fin 128) : piH (hot i) = hot i := by
   rw [piH_apply, ht]
   exact compactPerm_hot i
 
-theorem piH_bound (w : Nat) (hw : w ∈ newSourceH) : compactWire (tauWireH w) < 1617 := by
+theorem piH_bound (w : Nat) (hw : w ∈ newSourceH) : compactWire (tauWireH w) < 1616 := by
   obtain ⟨h1, h2⟩ := (newSourceH_mem w).mp hw
   unfold retiredH retired at h2
   by_cases hA : 15644 ≤ w ∧ w < 15655
@@ -15755,6 +16225,12 @@ theorem piH_bound (w : Nat) (hw : w ∈ newSourceH) : compactWire (tauWireH w) <
   by_cases hD : w = 15642
   · have ht : tauWireH w = 14879 := by unfold tauWireH; split_ifs <;> omega
     have ho : oldWork 14879 := by unfold oldWork; omega
+    rw [ht, compactWire, if_pos ho]
+    unfold freeAt oldRank
+    split_ifs <;> omega
+  by_cases hE : w = 15641
+  · have ht : tauWireH w = 14878 := by unfold tauWireH; split_ifs <;> omega
+    have ho : oldWork 14878 := by unfold oldWork; omega
     rw [ht, compactWire, if_pos ho]
     unfold freeAt oldRank
     split_ifs <;> omega
@@ -15932,7 +16408,7 @@ theorem relabelH_coherent {s e : Nat} (p : Straight 32768 s e) (coeffs : Fin 327
 
 theorem relabelH_support {s e : Nat} (p : Straight 32768 s e)
     (h : ChallengeMigration.straightWires p ⊆ newSourceH) :
-    ChallengeMigration.straightWires (relabelStraight piH p) ⊆ List.range 1617 := by
+    ChallengeMigration.straightWires (relabelStraight piH p) ⊆ List.range 1616 := by
   rw [straightWires_relabel]
   intro w hw
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hw
@@ -15993,23 +16469,44 @@ theorem rowC_unit_avoidsH2 (u : UnitSite 32768) (hu : Block2.unit u ∈ WEXUnloo
     · exact unit1_avoidsH2
     · exact unit2_avoidsH2
 
+theorem rowC_unit_avoidsH3 (u : UnitSite 32768) (hu : Block2.unit u ∈ WEXUnlookup.rowC) : AvoidsH3 u.code := by
+  rcases List.mem_append.mp hu with h | h
+  · obtain ⟨c, hc, he⟩ := List.mem_map.mp h
+    cases c with
+    | plain code => cases he
+    | masked site =>
+      cases he
+      rcases rowL_masked_cases site (WEXUnlookup.rowHead_sub _ hc) with rfl | rfl | rfl | rfl
+      · exact site1_avoidsH3
+      · exact triple_avoidsH3
+      · exact site2_avoidsH3
+      · exact scrD_avoidsH3
+  · simp only [WEXUnlookup.rowPost3, List.mem_cons, List.not_mem_nil, or_false, reduceCtorEq, false_or,
+      Block2.unit.injEq] at h
+    rcases h with rfl | rfl
+    · exact unit1_avoidsH3
+    · exact unit2_avoidsH3
+
 theorem rowC_look_newH (c : Option Wire) (ps : List (LookupPort 32768))
     (hp : WInstr.lookup c ps ∈ erase2 WEXUnlookup.rowC) :
     (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH := by
   have h := W15C.rowC_look_new c ps hp
   obtain ⟨b, hb, hbc⟩ := List.mem_flatMap.mp hp
   have hav : (hostWire ∉ portTargets ps ∧ ∀ q ∈ c, q ≠ hostWire) ∧
-      (hostWire2 ∉ portTargets ps ∧ ∀ q ∈ c, q ≠ hostWire2) := by
+      (hostWire2 ∉ portTargets ps ∧ ∀ q ∈ c, q ≠ hostWire2) ∧
+      (hostWire3 ∉ portTargets ps ∧ ∀ q ∈ c, q ≠ hostWire3) := by
     cases b with
     | plain code =>
       obtain ⟨p, he⟩ := rowC_plain_lit code hb _ hbc
       cases he
-    | unit u => exact ⟨(rowC_unit_avoidsH u hb).2 c ps hbc, (rowC_unit_avoidsH2 u hb).2 c ps hbc⟩
-  exact ⟨fun q hq => newSourceH_of_new q (h.1 q hq) (hav.1.2 q hq) (hav.2.2 q hq),
-    fun w hw => newSourceH_of_new w (h.2 hw) (fun e => hav.1.1 (e ▸ hw)) (fun e => hav.2.1 (e ▸ hw))⟩
+    | unit u => exact ⟨(rowC_unit_avoidsH u hb).2 c ps hbc, (rowC_unit_avoidsH2 u hb).2 c ps hbc,
+      (rowC_unit_avoidsH3 u hb).2 c ps hbc⟩
+  exact ⟨fun q hq => newSourceH_of_new q (h.1 q hq) (hav.1.2 q hq) (hav.2.1.2 q hq) (hav.2.2.2 q hq),
+    fun w hw => newSourceH_of_new w (h.2 hw) (fun e => hav.1.1 (e ▸ hw)) (fun e => hav.2.1.1 (e ▸ hw))
+      (fun e => hav.2.2.1 (e ▸ hw))⟩
 
 theorem rowC_lit_relaxed (p : ECDSAAdd.Program) (hp : WInstr.literal p ∈ erase2 WEXUnlookup.rowC) :
-    ∀ w ∈ ECDSAAdd.wires p, w = hostWire ∨ w = hostWire2 ∨ w ∈ newSourceH :=
+    ∀ w ∈ ECDSAAdd.wires p, w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH :=
   fun w hw => relaxed_of_new w (List.mem_toFinset.mp (W15C.rowC_lit_new p hp hw))
 
 theorem litProg_wLiteral (p : ECDSAAdd.Program) : litProg (wLiteral (n := 32768) p) = p := by
@@ -16084,6 +16581,77 @@ theorem rowC_plain_ctl (code : WCode 32768) (hb : Block2.plain code ∈ WEXUnloo
       lit_avoid2 _ guard5_avoidH2, lit_ctl _ (ctl_arithS true), lit_avoid2 _ guard5_avoidH2,
       lit_avoid2 _ negXReg_avoidH2, lit_avoid2 _ zrep_avoidH2, code_avoid2 _ cornerNeg_avoidsH2,
       code_avoid2 _ sfxTailF_avoidsH2, lit_avoid2 _ hostWire2_flip⟩
+  exact key _ hb code rfl h2
+
+/-- The generic field arithmetic and the square never use the double flag. -/
+theorem ctl3_sites_not : ∀ w ∈ [hostCtl3], w ∉ ECDSAAdd.Frontier.OB5Support.sites streamLayout := by
+  intro w hw h
+  rw [List.mem_singleton] at hw
+  subst hw
+  simp only [ECDSAAdd.Frontier.OB5Support.sites, List.mem_cons, List.mem_append] at h
+  rcases h with ((h | h) | h) | h
+  · exact absurd h (by unfold hostCtl3; decide +kernel)
+  · rw [streamLayout_point] at h
+    simp only [List.mem_range'_1] at h
+    unfold hostCtl3 at h
+    omega
+  · rw [streamLayout_point] at h
+    simp only [List.mem_range'_1] at h
+    unfold hostCtl3 at h
+    omega
+  · obtain ⟨i, hi, e⟩ := ECDSAAdd.Frontier.OB5Support.pool_index streamLayout _ h
+    rw [streamPool_at i (by omega)] at e
+    unfold hostCtl3 at e
+    (try dsimp only [ShorECDLP.Wire, ECDSAAdd.Wire] at e)
+    all_goals omega
+
+theorem ctl3_arithS (b : Bool) : hostCtl3 ∉ ECDSAAdd.wires (ECDSAAdd.Frontier.arithS streamLayout b) :=
+  wires_avoid_of ((ECDSAAdd.Frontier.arithS_sub streamLayout streamLayout_widths streamLayout_nodup b).wires_sub.trans
+    (ECDSAAdd.Frontier.ArithmeticOB5.arith_support streamLayout streamLayout_widths b)) ctl3_sites_not
+    hostCtl3 (List.mem_singleton_self _)
+
+theorem ctl3_square : hostCtl3 ∉ ECDSAAdd.wires (ECDSAAdd.Frontier.SquareOB5.program streamLayout) :=
+  wires_avoid_of (ECDSAAdd.Frontier.SquareOB5.support streamLayout streamLayout_widths streamLayout_nodup)
+    ctl3_sites_not hostCtl3 (List.mem_singleton_self _)
+
+theorem guard5_avoidH3 : hostWire3 ∉ ECDSAAdd.wires guard5 :=
+  wires_avoid_of guard5_subset (fun w hw h => band_not_host3 w (lists_band.2.2.1 w h) (List.mem_singleton.mp hw))
+    hostWire3 (List.mem_singleton_self _)
+
+theorem negXReg_avoidH3 : hostWire3 ∉ ECDSAAdd.wires negXReg :=
+  wires_avoid_of negXReg_subset (fun w hw h => band_not_host3 w (lists_band.2.2.2 w h) (List.mem_singleton.mp hw))
+    hostWire3 (List.mem_singleton_self _)
+
+theorem lit_avoid3 (p : ECDSAAdd.Program) (h : hostWire3 ∉ ECDSAAdd.wires p) :
+    hostWire3 ∈ ECDSAAdd.wires (litProg (wLiteral (n := 32768) p)) →
+      hostCtl3 ∉ ECDSAAdd.wires (litProg (wLiteral (n := 32768) p)) :=
+  fun hw => absurd (by rwa [litProg_wLiteral] at hw) h
+
+theorem lit_ctl3 (p : ECDSAAdd.Program) (h : hostCtl3 ∉ ECDSAAdd.wires p) :
+    hostWire3 ∈ ECDSAAdd.wires (litProg (wLiteral (n := 32768) p)) →
+      hostCtl3 ∉ ECDSAAdd.wires (litProg (wLiteral (n := 32768) p)) :=
+  fun _ => by rw [litProg_wLiteral]; exact h
+
+theorem code_avoid3 (c : WCode 32768) (h : AvoidsH3 c) :
+    hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c) :=
+  fun hw => absurd hw (fun hw' => by
+    obtain ⟨p, hp, hw''⟩ := litProg_wires c hostWire3 hw'
+    exact h.1 p hp hw'')
+
+/-- A plain block of the corner row that uses the third host wire leaves the double flag alone. -/
+theorem rowC_plain_ctl3 (code : WCode 32768) (hb : Block2.plain code ∈ WEXUnlookup.rowC)
+    (h2 : hostWire3 ∈ ECDSAAdd.wires (litProg code)) : hostCtl3 ∉ ECDSAAdd.wires (litProg code) := by
+  have key : ∀ b ∈ WEXUnlookup.rowC, ∀ c, b = Block2.plain c →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c) := by
+    rw [WEXUnlookup.rowC, WEXUnlookup.rowHead, WEXUnlookup.rowPre3, generic3_list, WEXUnlookup.rowPost3]
+    simp only [List.map_append, List.map_cons, List.map_nil, List.cons_append, List.nil_append,
+      List.forall_mem_cons, List.forall_mem_nil, List.not_mem_nil, toBlock2, Block2.plain.injEq, reduceCtorEq,
+      false_implies, implies_true, forall_eq', forall_const, and_true, true_and]
+    exact ⟨lit_avoid3 _ hostWire3_flip, code_avoid3 _ head_avoidsH3, lit_avoid3 _ guard5_avoidH3,
+      lit_ctl3 _ (ctl3_arithS false), lit_avoid3 _ guard5_avoidH3, lit_ctl3 _ ctl3_square,
+      lit_avoid3 _ guard5_avoidH3, lit_ctl3 _ (ctl3_arithS true), lit_avoid3 _ guard5_avoidH3,
+      lit_avoid3 _ negXReg_avoidH3, lit_avoid3 _ zrep_avoidH3, code_avoid3 _ cornerNeg_avoidsH3,
+      code_avoid3 _ sfxTailF_avoidsH3, lit_avoid3 _ hostWire3_flip⟩
   exact key _ hb code rfl h2
 
 end
@@ -18366,13 +18934,14 @@ theorem selPaths1_new : selPaths1 ⊆ newSourceH := by
 theorem bankHp_new : bankHp ⊆ newSourceH := by
   intro w hw; exact bank_new (bankHp_sub w hw)
 
-theorem work_new (w : Wire) (h : 14115 ≤ w ∧ oldWork w) (hw : w ≠ hostWire) (hw2 : w ≠ hostWire2) :
-    w ∈ newSourceH := by
+theorem work_new (w : Wire) (h : 14115 ≤ w ∧ oldWork w) (hw : w ≠ hostWire) (hw2 : w ≠ hostWire2)
+    (hw3 : w ≠ hostWire3) : w ∈ newSourceH := by
   refine (newSourceH_mem w).mpr ⟨Or.inr h.2, ?_⟩
-  rintro (h1 | h2 | h3)
+  rintro (h1 | h2 | h3 | h4)
   · unfold retired at h1; dsimp only [Wire] at *; omega
   · exact hw h2
   · exact hw2 h3
+  · exact hw3 h4
 
 theorem guard_new (g : Wire) (h : g = 14113 ∨ g = 10015) : g ∈ newSourceH := by
   rcases h with e | e <;> subst e <;> exact newSourceH_of_bounds [_] (by decide +kernel) (List.mem_singleton_self _)
@@ -18401,19 +18970,20 @@ theorem gclear_new_of {n : Nat} (data : List (MeasuredClear.ClearPort n)) (hot :
 namespace FastSite
 variable {n : Nat} (f : FastSite n)
 
-theorem regs_new (hg : FastGeometry f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2) :
+theorem regs_new (hg : FastGeometry f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3) :
     ∀ w ∈ portTargets f.site.ports ++ f.garb, w ∈ newSourceH := by
   intro w hw
-  have hk : w ≠ hostWire ∧ w ≠ hostWire2 := by
+  have hk : w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3 := by
     rcases List.mem_append.mp hw with h | h
-    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h)⟩
+    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h),
+      fun e => kind_nohost3 f.site hg.site.kind (e ▸ h)⟩
     · exact hgarb w h
-  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2
+  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2.1 hk.2.2
 
 theorem fast_support_new (hg : FastGeometry f)
     (hlit : ∀ p, WInstr.literal p ∈ f.site.code → ECDSAAdd.wires p ⊆ newSourceH.toFinset)
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ f.site.code → (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
-    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2)
+    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3)
     (start : Nat) : ChallengeMigration.straightWires (f.fastProgram start) ⊆ newSourceH := by
   have hreg := regs_new f hg hgarb
   have hg0 := guard_new _ (facts f hg).2.2.1
@@ -18457,19 +19027,20 @@ end FastSite
 namespace FastSite1
 variable {n : Nat} (f : FastSite1 n)
 
-theorem regs_new (hg : FastGeometry1 f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2) :
+theorem regs_new (hg : FastGeometry1 f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3) :
     ∀ w ∈ portTargets f.site.ports ++ f.garb, w ∈ newSourceH := by
   intro w hw
-  have hk : w ≠ hostWire ∧ w ≠ hostWire2 := by
+  have hk : w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3 := by
     rcases List.mem_append.mp hw with h | h
-    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h)⟩
+    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h),
+      fun e => kind_nohost3 f.site hg.site.kind (e ▸ h)⟩
     · exact hgarb w h
-  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2
+  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2.1 hk.2.2
 
 theorem fast_support_new (hg : FastGeometry1 f)
     (hlit : ∀ p, WInstr.literal p ∈ f.site.code → ECDSAAdd.wires p ⊆ newSourceH.toFinset)
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ f.site.code → (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
-    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2)
+    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3)
     (start : Nat) : ChallengeMigration.straightWires (f.fastProgram start) ⊆ newSourceH := by
   have hreg := regs_new f hg hgarb
   have hg0 := guard_new _ (facts f hg).2.2.1
@@ -18756,11 +19327,11 @@ def frsave {n} : FCode2 n → Nat
 
 def FNoHost {n} : FBlock2 n → Prop
   | .std _ => True
-  | .fast f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2
-  | .fast1 f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2
+  | .fast f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3
+  | .fast1 f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3
 
 def fblockSlack {n} : FBlock2 n → Nat
-  | .std _ => 4
+  | .std _ => 6
   | .fast f => f.fastSlack
   | .fast1 f => f.fastSlack
 
@@ -18906,28 +19477,33 @@ theorem fprog_wellFormed {n} (code : FCode2 n) (hg : ∀ b ∈ code, FBlockGeo b
 
 theorem fblock_support (b : FBlock2 32768) (hg : FBlockGeo b)
     (hlit : ∀ p, WInstr.literal p ∈ b.forget.code → ∀ w ∈ ECDSAAdd.wires p,
-      w = hostWire ∨ w = hostWire2 ∨ w ∈ newSourceH)
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH)
     (hstrict : ∀ p, WInstr.literal p ∈ b.forget.code →
-      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p) → ∃ c, b = .std (.plain c))
+      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+      ∃ c, b = .std (.plain c))
     (hctl : ∀ c, b = .std (.plain c) → hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c))
+    (hctl3 : ∀ c, b = .std (.plain c) →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c))
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ b.forget.code → (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
     (hgarb : FNoHost b)
     (start : Nat) : ChallengeMigration.straightWires (fblockProg b start) ⊆ newSourceH := by
   have strict : (∀ c, b ≠ .std (.plain c)) → ∀ p, WInstr.literal p ∈ b.forget.code →
       ECDSAAdd.wires p ⊆ newSourceH.toFinset := by
     intro hb p hp w hw
-    rcases hlit p hp w hw with e | e | e
+    rcases hlit p hp w hw with e | e | e | e
     · obtain ⟨c, hc⟩ := hstrict p hp (Or.inl (e ▸ hw))
       exact absurd hc (hb c)
-    · obtain ⟨c, hc⟩ := hstrict p hp (Or.inr (e ▸ hw))
+    · obtain ⟨c, hc⟩ := hstrict p hp (Or.inr (Or.inl (e ▸ hw)))
+      exact absurd hc (hb c)
+    · obtain ⟨c, hc⟩ := hstrict p hp (Or.inr (Or.inr (e ▸ hw)))
       exact absurd hc (hb c)
     · exact List.mem_toFinset.mpr e
   cases b with
   | std b =>
     cases b with
     | plain code =>
-      exact plainH_support bank15 code hg newSourceH root_new bits_new bank_new ctl_newH
-        (fun p hp w hw => hlit p hp w hw) (hctl code rfl) start
+      exact plainH_support bank15 code hg newSourceH root_new bits_new bank_new ctl_newH ctl3_newH
+        (fun p hp w hw => hlit p hp w hw) (hctl code rfl) (hctl3 code rfl) start
     | unit u =>
       have h := programP2_support bank15 bank15_ok (Block2.unit u :: []) (fun d hd => by
           simp only [List.mem_singleton] at hd; subst hd; exact hg) newSourceH root_new bits_new bank_new low_new high_new
@@ -18946,11 +19522,14 @@ theorem fblock_support (b : FBlock2 32768) (hg : FBlockGeo b)
 
 theorem fprog_support (code : FCode2 32768) (hg : ∀ b ∈ code, FBlockGeo b)
     (hlit : ∀ p, WInstr.literal p ∈ erase2 (fforget code) → ∀ w ∈ ECDSAAdd.wires p,
-      w = hostWire ∨ w = hostWire2 ∨ w ∈ newSourceH)
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH)
     (hstrict : ∀ b ∈ code, ∀ p, WInstr.literal p ∈ b.forget.code →
-      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p) → ∃ c, b = .std (.plain c))
+      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+      ∃ c, b = .std (.plain c))
     (hctl : ∀ b ∈ code, ∀ c, b = .std (.plain c) →
       hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c))
+    (hctl3 : ∀ b ∈ code, ∀ c, b = .std (.plain c) →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c))
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ erase2 (fforget code) →
       (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
     (hgarb : ∀ b ∈ code, FNoHost b)
@@ -18960,10 +19539,10 @@ theorem fprog_support (code : FCode2 32768) (hg : ∀ b ∈ code, FBlockGeo b)
   | cons b code ih =>
     rw [fprog, support_cast, straightWires_append]
     exact List.append_subset.mpr ⟨fblock_support b (hg b (by simp))
-      (fun p hm => hlit p (by simp [erase2_cons, hm])) (hstrict b (by simp)) (hctl b (by simp))
+      (fun p hm => hlit p (by simp [erase2_cons, hm])) (hstrict b (by simp)) (hctl b (by simp)) (hctl3 b (by simp))
       (fun c ps hm => hlook c ps (by simp [erase2_cons, hm])) (hgarb b (by simp)) start,
       ih (fun d hd => hg d (by simp [hd])) (fun p hm => hlit p (by simp [erase2_cons, hm]))
-        (fun d hd => hstrict d (by simp [hd])) (fun d hd => hctl d (by simp [hd]))
+        (fun d hd => hstrict d (by simp [hd])) (fun d hd => hctl d (by simp [hd])) (fun d hd => hctl3 d (by simp [hd]))
         (fun c ps hm => hlook c ps (by simp [erase2_cons, hm])) (fun d hd => hgarb d (by simp [hd])) _⟩
 
 
@@ -19343,7 +19922,7 @@ theorem frsave_std (code : Code2 32768) : frsave (code.map FBlock2.std) = 0 := b
   induction code with
   | nil => rfl
   | cons b code ih => simp [frsave, fblockRSave, ih]
-theorem fslack_std (code : Code2 32768) : fslack (code.map FBlock2.std) = 4 * code.length := by
+theorem fslack_std (code : Code2 32768) : fslack (code.map FBlock2.std) = 6 * code.length := by
   induction code with
   | nil => rfl
   | cons b code ih =>
@@ -19362,7 +19941,7 @@ theorem rowCF_rsave : frsave rowCF = 38916 := by
   rw [rowCF, frsave_append, frsave_append, frsave_std, frsave_std]
   simp only [fgeneric3, frsave, fblockRSave, tripleF_garb_length, site2F_garb_length]
 
-theorem rowCF_slack : fslack rowCF = 167783748 := by
+theorem rowCF_slack : fslack rowCF = 167783782 := by
   have h := tripleF.swapNet_slots tripleF_geometry
   rw [show tripleF.site = tripleSite from rfl, tripleSite_length] at h
   have h1 := site2F.swapNet_slots site2F_geometry
@@ -19391,12 +19970,12 @@ theorem rowC_slotsP (start : Nat) :
   rw [W15C.addFixedC, castFinish_gateSlots, programP2_slots bank15 _ W15C.lay15] at h
   exact h
 
-theorem slots_arith (A C : Nat) (h : A ≤ C + 250627564 + 167783748) : A ≤ C + 418411312 := by
+theorem slots_arith (A C : Nat) (h : A ≤ C + 250627564 + 167783782) : A ≤ C + 418411346 := by
   rw [Nat.add_assoc] at h
   exact h
 
 theorem rowCF_slots (start : Nat) : (fprog rowCF start).gateSlots ≤
-    codeSlots windowBits (normalizeW (erase2 WEXUnlookup.rowC)) + 418411312 := by
+    codeSlots windowBits (normalizeW (erase2 WEXUnlookup.rowC)) + 418411346 := by
   have h := fprog_slots rowCF rowCF_geo start
   rw [fforget_rowCF, rowC_slotsP start, rowCF_slack] at h
   exact slots_arith _ _ h
@@ -19417,7 +19996,7 @@ theorem addFixedCF_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (his
   rw [addFixedCF, castFinish_instantiate, fprog_tCount read rowCF rowCF_geo]
 
 theorem addFixedCF_slots (start : Nat) : (addFixedCF start).gateSlots ≤
-    codeSlots windowBits (normalizeW (erase2 WEXUnlookup.rowC)) + 418411312 := by
+    codeSlots windowBits (normalizeW (erase2 WEXUnlookup.rowC)) + 418411346 := by
   rw [addFixedCF, castFinish_gateSlots]
   exact rowCF_slots start
 
@@ -19437,7 +20016,8 @@ theorem addFixedCF_credit (start : Nat) : ProgramCredit (addFixedCF start) (fcod
   omega
 
 theorem rowCF_strict : ∀ b ∈ rowCF, ∀ p, WInstr.literal p ∈ b.forget.code →
-    (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p) → ∃ c, b = .std (.plain c) := by
+    (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+    ∃ c, b = .std (.plain c) := by
   intro b hb p hp hw
   have hmem : b.forget ∈ WEXUnlookup.rowC := by rw [← fforget_rowCF]; exact List.mem_map_of_mem hb
   cases b with
@@ -19445,21 +20025,24 @@ theorem rowCF_strict : ∀ b ∈ rowCF, ∀ p, WInstr.literal p ∈ b.forget.cod
     cases c with
     | plain code => exact ⟨code, rfl⟩
     | unit u =>
-      rcases hw with hw | hw
+      rcases hw with hw | hw | hw
       · exact absurd hw ((rowC_unit_avoidsH u hmem).1 p hp)
       · exact absurd hw ((rowC_unit_avoidsH2 u hmem).1 p hp)
+      · exact absurd hw ((rowC_unit_avoidsH3 u hmem).1 p hp)
   | fast f =>
     have hf := fast_mem_rowCF f hb
     subst hf
-    rcases hw with hw | hw
+    rcases hw with hw | hw | hw
     · exact absurd hw (triple_avoidsH.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
     · exact absurd hw (triple_avoidsH2.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
+    · exact absurd hw (triple_avoidsH3.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
   | fast1 f =>
     have hf := fast1_mem_rowCF f hb
     subst hf
-    rcases hw with hw | hw
+    rcases hw with hw | hw | hw
     · exact absurd hw (site2_avoidsH.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
     · exact absurd hw (site2_avoidsH2.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
+    · exact absurd hw (site2_avoidsH3.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
 
 theorem rowCF_ctl : ∀ b ∈ rowCF, ∀ c, b = .std (.plain c) →
     hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c) := by
@@ -19467,6 +20050,13 @@ theorem rowCF_ctl : ∀ b ∈ rowCF, ∀ c, b = .std (.plain c) →
   have hmem : b.forget ∈ WEXUnlookup.rowC := by rw [← fforget_rowCF]; exact List.mem_map_of_mem hb
   subst hc
   exact rowC_plain_ctl c hmem h2
+
+theorem rowCF_ctl3 : ∀ b ∈ rowCF, ∀ c, b = .std (.plain c) →
+    hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c) := by
+  intro b hb c hc h2
+  have hmem : b.forget ∈ WEXUnlookup.rowC := by rw [← fforget_rowCF]; exact List.mem_map_of_mem hb
+  subst hc
+  exact rowC_plain_ctl3 c hmem h2
 
 theorem rowCF_nohost : ∀ b ∈ rowCF, FNoHost b := by
   intro b hb
@@ -19476,21 +20066,21 @@ theorem rowCF_nohost : ∀ b ∈ rowCF, FNoHost b := by
     rw [fast_mem_rowCF f hb]
     intro w hw
     simp only [tripleF, FastSite.garb, List.mem_append, List.mem_range'_1] at hw
-    unfold hostWire hostWire2
+    unfold hostWire hostWire2 hostWire3
     dsimp only [Wire] at *
-    exact ⟨by omega, by omega⟩
+    exact ⟨by omega, by omega, by omega⟩
   | fast1 f =>
     rw [fast1_mem_rowCF f hb]
     intro w hw
     simp only [FastSite1.garb, site2F, site2G, List.mem_append, List.mem_range'_1] at hw
-    unfold hostWire hostWire2
+    unfold hostWire hostWire2 hostWire3
     dsimp only [Wire] at *
-    exact ⟨by omega, by omega⟩
+    exact ⟨by omega, by omega, by omega⟩
 
 theorem addFixedCF_support (start : Nat) : ChallengeMigration.straightWires (addFixedCF start) ⊆ newSourceH := by
   rw [addFixedCF, support_cast]
   exact fprog_support rowCF rowCF_geo (by rw [fforget_rowCF]; exact rowC_lit_relaxed) rowCF_strict rowCF_ctl
-    (by rw [fforget_rowCF]; exact rowC_look_newH) rowCF_nohost start
+    rowCF_ctl3 (by rw [fforget_rowCF]; exact rowC_look_newH) rowCF_nohost start
 
 def rowSourceCF (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
   fsrc (readConstant coeffs Q) rowCF
@@ -19611,7 +20201,7 @@ theorem fastBodyProgram_support (start : Nat) :
 /-- The arithmetic of the body slot bound over plain variables; the row hypotheses are passed unchanged
 (a defeq-only `simp` change of their types would be re-checked by the kernel on the whole row program). -/
 theorem body_slot_arith (S A G C L L0 P P0 W T : Nat) (sign : S ≤ 3 * G) (bound : G ≤ 100000)
-    (ha : A ≤ C + 418411312) (hc : C ≤ 3 * L + 2 ^ W * P + 10 * T * (2 ^ W - 1)) (hW : W = 15) (hT : T = 9)
+    (ha : A ≤ C + 418411346) (hc : C ≤ 3 * L + 2 ^ W * P + 10 * T * (2 ^ W - 1)) (hW : W = 15) (hT : T = 9)
     (hl2 : L ≤ L0 + 93082 + 513) (hl : L0 ≤ 50021565) (hp2 : P ≤ P0 + 3) (hp : P0 ≤ 20000) :
     0 + 1 + 30 + S + A + S + (30 + (0 + 1)) ≤ 2000000000 := by
   subst hW hT
@@ -19665,7 +20255,7 @@ def bodyCF : Single.WindowBody where
   records := 1654036
   tBound := 15794758
   slotBound := 2000000000
-  support := List.range 1617
+  support := List.range 1616
   reset := resetWires
   ready := readyH
   active := readyH_active
@@ -19688,10 +20278,10 @@ def bodyCF : Single.WindowBody where
     have h := WEXFast.W15F.fastCount_upper
     omega
   wires := fun start => relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)
-  reset_support := fun _ hw => base_support17 (List.mem_cons_of_mem 837 hw)
-  skeleton_support := base_support17
+  reset_support := fun _ hw => base_support16 (List.mem_cons_of_mem 837 hw)
+  skeleton_support := base_support16
 
-theorem bodyCF_ledger : bodyCF.support.length = 1617 ∧ bodyCF.reset.length = 854 := by
+theorem bodyCF_ledger : bodyCF.support.length = 1616 ∧ bodyCF.reset.length = 854 := by
   constructor
   · simp [bodyCF]
   · simp [bodyCF, resetWires]
@@ -22012,13 +22602,14 @@ theorem selPaths1_new : selPaths1 ⊆ newSourceH := by
 theorem bankHp_new : bankHp ⊆ newSourceH := by
   intro w hw; exact bank_new (bankHp_sub w hw)
 
-theorem work_new (w : Wire) (h : 14115 ≤ w ∧ oldWork w) (hw : w ≠ hostWire) (hw2 : w ≠ hostWire2) :
-    w ∈ newSourceH := by
+theorem work_new (w : Wire) (h : 14115 ≤ w ∧ oldWork w) (hw : w ≠ hostWire) (hw2 : w ≠ hostWire2)
+    (hw3 : w ≠ hostWire3) : w ∈ newSourceH := by
   refine (newSourceH_mem w).mpr ⟨Or.inr h.2, ?_⟩
-  rintro (h1 | h2 | h3)
+  rintro (h1 | h2 | h3 | h4)
   · unfold retired at h1; dsimp only [Wire] at *; omega
   · exact hw h2
   · exact hw2 h3
+  · exact hw3 h4
 
 theorem guard_new (g : Wire) (h : g = 14113 ∨ g = 10015) : g ∈ newSourceH := by
   rcases h with e | e <;> subst e <;> exact newSourceH_of_bounds [_] (by decide +kernel) (List.mem_singleton_self _)
@@ -22047,19 +22638,20 @@ theorem gclear_new_of {n : Nat} (data : List (MeasuredClear.ClearPort n)) (hot :
 namespace FastSite
 variable {n : Nat} (f : FastSite n)
 
-theorem regs_new (hg : FastGeometry f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2) :
+theorem regs_new (hg : FastGeometry f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3) :
     ∀ w ∈ portTargets f.site.ports ++ f.garb, w ∈ newSourceH := by
   intro w hw
-  have hk : w ≠ hostWire ∧ w ≠ hostWire2 := by
+  have hk : w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3 := by
     rcases List.mem_append.mp hw with h | h
-    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h)⟩
+    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h),
+      fun e => kind_nohost3 f.site hg.site.kind (e ▸ h)⟩
     · exact hgarb w h
-  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2
+  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2.1 hk.2.2
 
 theorem fast_support_new (hg : FastGeometry f)
     (hlit : ∀ p, WInstr.literal p ∈ f.site.code → ECDSAAdd.wires p ⊆ newSourceH.toFinset)
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ f.site.code → (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
-    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2)
+    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3)
     (start : Nat) : ChallengeMigration.straightWires (f.fastProgram start) ⊆ newSourceH := by
   have hreg := regs_new f hg hgarb
   have hg0 := guard_new _ (facts f hg).2.2.1
@@ -22103,19 +22695,20 @@ end FastSite
 namespace FastSite1
 variable {n : Nat} (f : FastSite1 n)
 
-theorem regs_new (hg : FastGeometry1 f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2) :
+theorem regs_new (hg : FastGeometry1 f) (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3) :
     ∀ w ∈ portTargets f.site.ports ++ f.garb, w ∈ newSourceH := by
   intro w hw
-  have hk : w ≠ hostWire ∧ w ≠ hostWire2 := by
+  have hk : w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3 := by
     rcases List.mem_append.mp hw with h | h
-    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h)⟩
+    · exact ⟨fun e => kind_nohost f.site hg.site.kind (e ▸ h), fun e => kind_nohost2 f.site hg.site.kind (e ▸ h),
+      fun e => kind_nohost3 f.site hg.site.kind (e ▸ h)⟩
     · exact hgarb w h
-  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2
+  exact work_new w ((facts f hg).2.2.2.2.2.2 w hw) hk.1 hk.2.1 hk.2.2
 
 theorem fast_support_new (hg : FastGeometry1 f)
     (hlit : ∀ p, WInstr.literal p ∈ f.site.code → ECDSAAdd.wires p ⊆ newSourceH.toFinset)
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ f.site.code → (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
-    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2)
+    (hgarb : ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3)
     (start : Nat) : ChallengeMigration.straightWires (f.fastProgram start) ⊆ newSourceH := by
   have hreg := regs_new f hg hgarb
   have hg0 := guard_new _ (facts f hg).2.2.1
@@ -22402,11 +22995,11 @@ def frsave {n} : FCode2 n → Nat
 
 def FNoHost {n} : FBlock2 n → Prop
   | .std _ => True
-  | .fast f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2
-  | .fast1 f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2
+  | .fast f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3
+  | .fast1 f => ∀ w ∈ f.garb, w ≠ hostWire ∧ w ≠ hostWire2 ∧ w ≠ hostWire3
 
 def fblockSlack {n} : FBlock2 n → Nat
-  | .std _ => 4
+  | .std _ => 6
   | .fast f => f.fastSlack
   | .fast1 f => f.fastSlack
 
@@ -22552,28 +23145,33 @@ theorem fprog_wellFormed {n} (code : FCode2 n) (hg : ∀ b ∈ code, FBlockGeo b
 
 theorem fblock_support (b : FBlock2 32768) (hg : FBlockGeo b)
     (hlit : ∀ p, WInstr.literal p ∈ b.forget.code → ∀ w ∈ ECDSAAdd.wires p,
-      w = hostWire ∨ w = hostWire2 ∨ w ∈ newSourceH)
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH)
     (hstrict : ∀ p, WInstr.literal p ∈ b.forget.code →
-      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p) → ∃ c, b = .std (.plain c))
+      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+      ∃ c, b = .std (.plain c))
     (hctl : ∀ c, b = .std (.plain c) → hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c))
+    (hctl3 : ∀ c, b = .std (.plain c) →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c))
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ b.forget.code → (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
     (hgarb : FNoHost b)
     (start : Nat) : ChallengeMigration.straightWires (fblockProg b start) ⊆ newSourceH := by
   have strict : (∀ c, b ≠ .std (.plain c)) → ∀ p, WInstr.literal p ∈ b.forget.code →
       ECDSAAdd.wires p ⊆ newSourceH.toFinset := by
     intro hb p hp w hw
-    rcases hlit p hp w hw with e | e | e
+    rcases hlit p hp w hw with e | e | e | e
     · obtain ⟨c, hc⟩ := hstrict p hp (Or.inl (e ▸ hw))
       exact absurd hc (hb c)
-    · obtain ⟨c, hc⟩ := hstrict p hp (Or.inr (e ▸ hw))
+    · obtain ⟨c, hc⟩ := hstrict p hp (Or.inr (Or.inl (e ▸ hw)))
+      exact absurd hc (hb c)
+    · obtain ⟨c, hc⟩ := hstrict p hp (Or.inr (Or.inr (e ▸ hw)))
       exact absurd hc (hb c)
     · exact List.mem_toFinset.mpr e
   cases b with
   | std b =>
     cases b with
     | plain code =>
-      exact plainH_support bank14 code hg newSourceH root_new bits_new bank_new ctl_newH
-        (fun p hp w hw => hlit p hp w hw) (hctl code rfl) start
+      exact plainH_support bank14 code hg newSourceH root_new bits_new bank_new ctl_newH ctl3_newH
+        (fun p hp w hw => hlit p hp w hw) (hctl code rfl) (hctl3 code rfl) start
     | unit u =>
       have h := programP2_support bank14 bank14_ok (Block2.unit u :: []) (fun d hd => by
           simp only [List.mem_singleton] at hd; subst hd; exact hg) newSourceH root_new bits_new bank_new low_new high_new
@@ -22592,11 +23190,14 @@ theorem fblock_support (b : FBlock2 32768) (hg : FBlockGeo b)
 
 theorem fprog_support (code : FCode2 32768) (hg : ∀ b ∈ code, FBlockGeo b)
     (hlit : ∀ p, WInstr.literal p ∈ erase2 (fforget code) → ∀ w ∈ ECDSAAdd.wires p,
-      w = hostWire ∨ w = hostWire2 ∨ w ∈ newSourceH)
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH)
     (hstrict : ∀ b ∈ code, ∀ p, WInstr.literal p ∈ b.forget.code →
-      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p) → ∃ c, b = .std (.plain c))
+      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+      ∃ c, b = .std (.plain c))
     (hctl : ∀ b ∈ code, ∀ c, b = .std (.plain c) →
       hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c))
+    (hctl3 : ∀ b ∈ code, ∀ c, b = .std (.plain c) →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c))
     (hlook : ∀ c ps, WInstr.lookup c ps ∈ erase2 (fforget code) →
       (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
     (hgarb : ∀ b ∈ code, FNoHost b)
@@ -22606,10 +23207,10 @@ theorem fprog_support (code : FCode2 32768) (hg : ∀ b ∈ code, FBlockGeo b)
   | cons b code ih =>
     rw [fprog, support_cast, straightWires_append]
     exact List.append_subset.mpr ⟨fblock_support b (hg b (by simp))
-      (fun p hm => hlit p (by simp [erase2_cons, hm])) (hstrict b (by simp)) (hctl b (by simp))
+      (fun p hm => hlit p (by simp [erase2_cons, hm])) (hstrict b (by simp)) (hctl b (by simp)) (hctl3 b (by simp))
       (fun c ps hm => hlook c ps (by simp [erase2_cons, hm])) (hgarb b (by simp)) start,
       ih (fun d hd => hg d (by simp [hd])) (fun p hm => hlit p (by simp [erase2_cons, hm]))
-        (fun d hd => hstrict d (by simp [hd])) (fun d hd => hctl d (by simp [hd]))
+        (fun d hd => hstrict d (by simp [hd])) (fun d hd => hctl d (by simp [hd])) (fun d hd => hctl3 d (by simp [hd]))
         (fun c ps hm => hlook c ps (by simp [erase2_cons, hm])) (fun d hd => hgarb d (by simp [hd])) _⟩
 
 
@@ -22989,7 +23590,7 @@ theorem frsave_std (code : Code2 32768) : frsave (code.map FBlock2.std) = 0 := b
   induction code with
   | nil => rfl
   | cons b code ih => simp [frsave, fblockRSave, ih]
-theorem fslack_std (code : Code2 32768) : fslack (code.map FBlock2.std) = 4 * code.length := by
+theorem fslack_std (code : Code2 32768) : fslack (code.map FBlock2.std) = 6 * code.length := by
   induction code with
   | nil => rfl
   | cons b code ih =>
@@ -23008,7 +23609,7 @@ theorem rowCF_rsave : frsave rowCF = 18692 := by
   rw [rowCF, frsave_append, frsave_append, frsave_std, frsave_std]
   simp only [fgeneric3, frsave, fblockRSave, tripleF_garb_length, site2F_garb_length]
 
-theorem rowCF_slack : fslack rowCF = 83897668 := by
+theorem rowCF_slack : fslack rowCF = 83897702 := by
   have h := tripleF.swapNet_slots tripleF_geometry
   rw [show tripleF.site = tripleSite from rfl, tripleSite_length] at h
   have h1 := site2F.swapNet_slots site2F_geometry
@@ -23036,10 +23637,10 @@ theorem rowC_slotsP (start : Nat) : codeSP2 bank14 WEXUnlookup.rowC ≤ 10000000
   rw [W14C.addFixedC, castFinish_gateSlots, programP2_slots bank14 _ W14C.lay14] at h
   exact h
 
-theorem rowCF_slots (start : Nat) : (fprog rowCF start).gateSlots ≤ 1083897668 := by
+theorem rowCF_slots (start : Nat) : (fprog rowCF start).gateSlots ≤ 1083897702 := by
   have h := fprog_slots rowCF rowCF_geo start
   rw [fforget_rowCF, rowCF_slack] at h
-  exact Nat.le_trans h (Nat.add_le_add_right (rowC_slotsP start) 83897668)
+  exact Nat.le_trans h (Nat.add_le_add_right (rowC_slotsP start) 83897702)
 
 attribute [local irreducible] fprog fblockProg blockProgP2 clearP WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
@@ -23056,7 +23657,7 @@ theorem addFixedCF_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (his
     ((addFixedCF start).instantiate read history).tCount = 7 * fcodeTP rowCF := by
   rw [addFixedCF, castFinish_instantiate, fprog_tCount read rowCF rowCF_geo]
 
-theorem addFixedCF_slots (start : Nat) : (addFixedCF start).gateSlots ≤ 1083897668 := by
+theorem addFixedCF_slots (start : Nat) : (addFixedCF start).gateSlots ≤ 1083897702 := by
   rw [addFixedCF, castFinish_gateSlots]
   exact rowCF_slots start
 
@@ -23076,7 +23677,8 @@ theorem addFixedCF_credit (start : Nat) : ProgramCredit (addFixedCF start) (fcod
   omega
 
 theorem rowCF_strict : ∀ b ∈ rowCF, ∀ p, WInstr.literal p ∈ b.forget.code →
-    (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p) → ∃ c, b = .std (.plain c) := by
+    (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+    ∃ c, b = .std (.plain c) := by
   intro b hb p hp hw
   have hmem : b.forget ∈ WEXUnlookup.rowC := by rw [← fforget_rowCF]; exact List.mem_map_of_mem hb
   cases b with
@@ -23084,21 +23686,24 @@ theorem rowCF_strict : ∀ b ∈ rowCF, ∀ p, WInstr.literal p ∈ b.forget.cod
     cases c with
     | plain code => exact ⟨code, rfl⟩
     | unit u =>
-      rcases hw with hw | hw
+      rcases hw with hw | hw | hw
       · exact absurd hw ((rowC_unit_avoidsH u hmem).1 p hp)
       · exact absurd hw ((rowC_unit_avoidsH2 u hmem).1 p hp)
+      · exact absurd hw ((rowC_unit_avoidsH3 u hmem).1 p hp)
   | fast f =>
     have hf := fast_mem_rowCF f hb
     subst hf
-    rcases hw with hw | hw
+    rcases hw with hw | hw | hw
     · exact absurd hw (triple_avoidsH.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
     · exact absurd hw (triple_avoidsH2.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
+    · exact absurd hw (triple_avoidsH3.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
   | fast1 f =>
     have hf := fast1_mem_rowCF f hb
     subst hf
-    rcases hw with hw | hw
+    rcases hw with hw | hw | hw
     · exact absurd hw (site2_avoidsH.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
     · exact absurd hw (site2_avoidsH2.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
+    · exact absurd hw (site2_avoidsH3.1 p (by simpa [FBlock2.forget, siteUnit_code] using hp))
 
 theorem rowCF_ctl : ∀ b ∈ rowCF, ∀ c, b = .std (.plain c) →
     hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c) := by
@@ -23106,6 +23711,13 @@ theorem rowCF_ctl : ∀ b ∈ rowCF, ∀ c, b = .std (.plain c) →
   have hmem : b.forget ∈ WEXUnlookup.rowC := by rw [← fforget_rowCF]; exact List.mem_map_of_mem hb
   subst hc
   exact rowC_plain_ctl c hmem h2
+
+theorem rowCF_ctl3 : ∀ b ∈ rowCF, ∀ c, b = .std (.plain c) →
+    hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c) := by
+  intro b hb c hc h2
+  have hmem : b.forget ∈ WEXUnlookup.rowC := by rw [← fforget_rowCF]; exact List.mem_map_of_mem hb
+  subst hc
+  exact rowC_plain_ctl3 c hmem h2
 
 theorem rowCF_nohost : ∀ b ∈ rowCF, FNoHost b := by
   intro b hb
@@ -23115,21 +23727,21 @@ theorem rowCF_nohost : ∀ b ∈ rowCF, FNoHost b := by
     rw [fast_mem_rowCF f hb]
     intro w hw
     simp only [tripleF, FastSite.garb, List.mem_append, List.mem_range'_1] at hw
-    unfold hostWire hostWire2
+    unfold hostWire hostWire2 hostWire3
     dsimp only [Wire] at *
-    exact ⟨by omega, by omega⟩
+    exact ⟨by omega, by omega, by omega⟩
   | fast1 f =>
     rw [fast1_mem_rowCF f hb]
     intro w hw
     simp only [FastSite1.garb, site2F, site2G, List.mem_append, List.mem_range'_1] at hw
-    unfold hostWire hostWire2
+    unfold hostWire hostWire2 hostWire3
     dsimp only [Wire] at *
-    exact ⟨by omega, by omega⟩
+    exact ⟨by omega, by omega, by omega⟩
 
 theorem addFixedCF_support (start : Nat) : ChallengeMigration.straightWires (addFixedCF start) ⊆ newSourceH := by
   rw [addFixedCF, support_cast]
   exact fprog_support rowCF rowCF_geo (by rw [fforget_rowCF]; exact rowC_lit_relaxed) rowCF_strict rowCF_ctl
-    (by rw [fforget_rowCF]; exact rowC_look_newH) rowCF_nohost start
+    rowCF_ctl3 (by rw [fforget_rowCF]; exact rowC_look_newH) rowCF_nohost start
 
 def rowSourceCF (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
   fsrc (readConstant coeffs Q) rowCF
@@ -27418,9 +28030,9 @@ theorem certificate : Certificate officialLimits layout entry bounds := by
   · exact n15_cost.trans (by norm_num)
   · exact n14_credit
   · exact n15_credit
-  · change (1938 : Wire) ∉ List.range 1617
+  · change (1938 : Wire) ∉ List.range 1616
     simp
-  · change (1939 : Wire) ∉ 1938 :: List.range 1617
+  · change (1939 : Wire) ∉ 1938 :: List.range 1616
     simp
 end
 end ShorECDLP.Entrant.Schedule29Seventeen244.Flexible.FusedFinal
@@ -28748,14 +29360,14 @@ attribute [local irreducible] FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry) Schedule29Seventeen244.Flexible.layout
-def bounds : Bounds := ⟨1619,4*(131071+17*2255160+12*2209208)+11026,543906879⟩
+def bounds : Bounds := ⟨1618,4*(131071+17*2255160+12*2209208)+11026,543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
   apply @weighted_matched_certificate bodyInstance resourcesInstance coverInstance
     FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal.narrow15
-    1619 2209208 2255160
-  · change PathShare.bodyCF.support.length + 2 ≤ 1619
+    1618 2209208 2255160
+  · change PathShare.bodyCF.support.length + 2 ≤ 1618
     rw [PathShare.bodyCF_ledger.1]
   · change PathShare.bodyCF.slotBound ≤ 3000000000
     exact (by decide : (2000000000 : Nat) ≤ 3000000000)
@@ -28767,9 +29379,9 @@ theorem certificate : Certificate officialLimits layout entry bounds := by
   · exact FusedFinal.n15_cost.trans (by norm_num)
   · exact FusedFinal.n14_credit
   · exact FusedFinal.n15_credit
-  · change (1938 : Wire) ∉ List.range 1617
+  · change (1938 : Wire) ∉ List.range 1616
     simp
-  · change (1939 : Wire) ∉ 1938 :: List.range 1617
+  · change (1939 : Wire) ∉ 1938 :: List.range 1616
     simp
 end
 end ShorECDLP.Entrant.WeightedFused28
@@ -29977,7 +30589,7 @@ theorem mem_support {w : Nat} (h : w = 836 ∨ (855 ≤ w ∧ w < 870) ∨ w = 5
     pointCorrectionYInf, garb, List.mem_cons, List.mem_append, List.mem_range'_1, List.mem_singleton, List.not_mem_nil, or_false]
   (try dsimp only [Wire] at *); omega
 
-theorem support_range : support ⊆ List.range 1617 := by
+theorem support_range : support ⊆ List.range 1616 := by
   intro w hw
   rw [List.mem_range]
   simp only [support, ScheduleFirst16Opt.bits, selPaths, pointLogicalWires, pointCorrectionX,
@@ -33869,7 +34481,7 @@ local instance resourcesInstance : Single.ProducerResources bodyInstance :=
     (by change (0 : Wire) ∈ resetWires; decide +kernel)
     (by change (1 : Wire) ∈ resetWires; decide +kernel)
 local instance coverInstance : SupportCover bodyInstance resourcesInstance :=
-  ⟨by intro w hw; exact hw, by change FirstSS.support ⊆ List.range 1617; exact FirstSS.support_range⟩
+  ⟨by intro w hw; exact hw, by change FirstSS.support ⊆ List.range 1616; exact FirstSS.support_range⟩
 local instance programInstance : Programs bodyInstance :=
   triPrograms Schedule29Seventeen244.Flexible.FusedFinal.narrow13
     Schedule29Seventeen244.Flexible.FusedFinal.narrow14 Schedule29Seventeen244.Flexible.FusedFinal.narrow15
@@ -33882,15 +34494,15 @@ attribute [local irreducible] Schedule29Seventeen244.Flexible.FusedFinal.narrow1
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (trimNEntry Schedule29Sixteen245.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (trimNEntry Schedule29Sixteen245.Flexible.entry) Schedule29Sixteen245.Flexible.layout
-def bounds : Bounds := ⟨1619,4*(33918+18*2255160+11*2209208)+10921,544000000⟩
+def bounds : Bounds := ⟨1618,4*(33918+18*2255160+11*2209208)+10921,544000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
   apply @weighted_matched_certificate bodyInstance resourcesInstance coverInstance
     Schedule29Seventeen244.Flexible.FusedFinal.narrow13 Schedule29Seventeen244.Flexible.FusedFinal.narrow14
     Schedule29Seventeen244.Flexible.FusedFinal.narrow15
-    1619 2209208 2255160
-  · change PathShare.bodyCF.support.length + 2 ≤ 1619
+    1618 2209208 2255160
+  · change PathShare.bodyCF.support.length + 2 ≤ 1618
     rw [PathShare.bodyCF_ledger.1]
   · change PathShare.bodyCF.slotBound ≤ 3000000000
     exact (by decide : (2000000000 : Nat) ≤ 3000000000)
@@ -33902,9 +34514,9 @@ theorem certificate : Certificate officialLimits layout entry bounds := by
   · exact Schedule29Seventeen244.Flexible.FusedFinal.n15_cost.trans (by norm_num)
   · exact Schedule29Seventeen244.Flexible.FusedFinal.n14_credit
   · exact Schedule29Seventeen244.Flexible.FusedFinal.n15_credit
-  · change (1938 : Wire) ∉ List.range 1617
+  · change (1938 : Wire) ∉ List.range 1616
     simp
-  · change (1939 : Wire) ∉ 1938 :: List.range 1617
+  · change (1939 : Wire) ∉ 1938 :: List.range 1616
     simp
 end
 end ShorECDLP.Entrant.WeightedFirst16Fused28
@@ -33916,7 +34528,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 
-def bounds : Bounds := ⟨1619,259723265,544000000⟩
+def bounds : Bounds := ⟨1618,259723265,544000000⟩
 noncomputable section
 def entry : StraightEntry := WeightedFirst16Fused28.entry
 def layout : DecodeLayout := WeightedFirst16Fused28.layout
