@@ -29449,7 +29449,7 @@ set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySeqFocus false
 
 def charge : Gate → ℝ
-  | .P _ k _ => if 27 < k then 7 / (2:ℝ)^(k+1) else 0
+  | .P _ k _ => if 27 < k then (6283186/1000000:ℝ)/ (2:ℝ)^(k+1) else 0
   | _ => 0
 
 theorem charge_nonneg (g : Gate) : 0 ≤ charge g := by
@@ -29571,10 +29571,10 @@ theorem dropped_loss {n s e} (read : ConstantBit n → Bool) (p : Straight n s e
       expectation read p history psi accept + 2*charge g*normSq psi := by
   cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
   case P dir k t =>
-    have hd : 0 < 7/(2:ℝ)^(k+1) := by positivity
-    have hangle : (phaseAngle dir k/2)^2 ≤ (7/(2:ℝ)^(k+1))^2 := by
-      have hpi := Real.pi_lt_d2
-      have hb : 2*Real.pi/(2:ℝ)^k/2 ≤ 7/(2:ℝ)^(k+1) := by
+    have hd : 0 < (6283186/1000000:ℝ)/(2:ℝ)^(k+1) := by positivity
+    have hangle : (phaseAngle dir k/2)^2 ≤ ((6283186/1000000:ℝ)/(2:ℝ)^(k+1))^2 := by
+      have hpi := Real.pi_lt_d6
+      have hb : 2*Real.pi/(2:ℝ)^k/2 ≤ (6283186/1000000:ℝ)/(2:ℝ)^(k+1) := by
         rw [pow_succ, div_div]
         apply div_le_div_of_nonneg_right _ (by positivity)
         linarith
@@ -29657,9 +29657,9 @@ set_option maxRecDepth 10000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySeqFocus false
 
-theorem charge_bound (k : Nat) (hk : 27 < k) : 7/(2:ℝ)^(k+1) ≤ 1 := by
+theorem charge_bound (k : Nat) (hk : 27 < k) : (6283186/1000000:ℝ)/(2:ℝ)^(k+1) ≤ 1 := by
   have hp : (2:ℝ)^29 ≤ 2^(k+1) := pow_le_pow_right₀ (by norm_num) (by omega)
-  have h29 : (7:ℝ) ≤ 2^29 := by norm_num
+  have h29 : (6283186/1000000:ℝ) ≤ 2^29 := by norm_num
   rw [div_le_one (by positivity)]
   linarith
 
@@ -29702,7 +29702,7 @@ theorem error_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
 
 theorem error_cast {n s e f} (p : Straight n s e) (h : e=f) : errorCost (castFinish h p) = errorCost p := by subst f; rfl
 
-def potential (k : Nat) : ℝ := 7/(2:ℝ)^(max 28 k)
+def potential (k : Nat) : ℝ := (6283186/1000000:ℝ)/(2:ℝ)^(max 28 k)
 
 theorem charge_step (dir : PhaseDir) (w : Wire) (k : Nat) :
     charge (.P dir k w) + potential (k+1) ≤ potential k := by
@@ -29732,7 +29732,7 @@ theorem error_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin 
     have hc := charge_step dir w k
     linarith
 
-def unit : ℝ := 7/(2:ℝ)^28
+def unit : ℝ := (6283186/1000000:ℝ)/(2:ℝ)^28
 
 theorem error_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
     (start : Nat) (prior : List (Fin start)) :
@@ -34690,16 +34690,16 @@ theorem dropped_loss27 {n s e} (read : ConstantBit n → Bool) (p : Straight n s
     have h2 : ¬ 27 < k := by simpa using hg27
     have hk : k = 27 := by omega
     subst hk
-    have hd : 0 < (7:ℝ)/(2)^28 := by positivity
-    have hangle : (phaseAngle dir (27:Nat)/2)^2 ≤ ((7:ℝ)/(2)^28)^2 := by
-      have hpi := Real.pi_lt_d2
-      have hb : 2*Real.pi/(2:ℝ)^27/2 ≤ (7:ℝ)/(2)^28 := by
+    have hd : 0 < (6283186/1000000:ℝ)/(2)^28 := by positivity
+    have hangle : (phaseAngle dir (27:Nat)/2)^2 ≤ ((6283186/1000000:ℝ)/(2)^28)^2 := by
+      have hpi := Real.pi_lt_d6
+      have hb : 2*Real.pi/(2:ℝ)^27/2 ≤ (6283186/1000000:ℝ)/(2)^28 := by
         rw [pow_succ, div_div]
         apply div_le_div_of_nonneg_right _ (by positivity)
         linarith
       have hz : 0 ≤ 2*Real.pi/(2:ℝ)^27/2 := by positivity
       cases dir <;> simp only [phaseAngle, neg_div, neg_sq] <;> nlinarith
-    have hunit : (7:ℝ)/(2)^28 = unit := rfl
+    have hunit : (6283186/1000000:ℝ)/(2)^28 = unit := rfl
     simpa only [hunit] using
       expectation_phase_half_loss read p history psi accept hp dir (27:Nat) t _ hd hangle
 

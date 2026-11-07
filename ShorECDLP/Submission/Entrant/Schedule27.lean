@@ -1,4 +1,5 @@
 import ShorECDLP.Submission.Entrant.Prefix
+import ShorECDLP.Submission.Entrant.TightSupport
 import ShorECDLP.Submission.Entrant.MixedBridge
 
 /-! Mixed-first-load schedule. Physical implementations remain explicit parameters.
@@ -1363,9 +1364,6 @@ theorem strict_score (Q c17 c16 : Nat)
   have ht : 4*(67198+20*c17+7*c16)+10767 ≤ 251189159 := by omega
   exact (Nat.mul_le_mul hQ ht).trans_lt (by norm_num)
 
-theorem support_margin :
-    1623*251189159 = 407680005057 ∧ 420149980414-1623*251189159 = 12469975357 := by norm_num
-
 end
 end ShorECDLP.Entrant.Width16Schedule
 
@@ -1950,8 +1948,8 @@ local notation "normalCredit" =>
     WEXFast.fcodeTP WEXFast.rowCF)
 
 def wide : Window 65536 :=
-  ⟨(WideSigned.Body.logicalBank .w16).reverse.map WideSigned.Fast16.compact,
-    1745940, fun start => relabelStraight WideSigned.Fast16.compact (WideSigned.Signed16.program start)⟩
+  ⟨(WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact,
+    1745940, fun start => relabelStraight TightSupport.compact (WideSigned.Signed16.program start)⟩
 
 def normal : Window 32768 :=
   ⟨streamAddress.reverse,1654036,WEXFast.W15F.compactProgram⟩
@@ -2009,20 +2007,20 @@ theorem credits : implementation.credit17 ≤ 2347064 ∧ implementation.credit1
   exact ⟨WideSigned.Signed16.credit_bound, WEXFast.W15F.fastCount_upper⟩
 
 theorem signed_support (w : Digit) (start : Nat) :
-    straightWires ((signed w).program start) ⊆ List.range 1621 := by
+    straightWires ((signed w).program start) ⊆ List.range 1618 := by
   cases w with
   | left17 j | right17 j =>
     change straightWires (reindexStraight _ (relabelStraight _ (WideSigned.Signed16.program start))) ⊆ _
     rw [straightWires_reindex]
-    exact WideSigned.Signed16.packed_support start
+    exact TightSupport.packed_support start
   | left16 j =>
     change straightWires (reindexStraight _ (WEXFast.W15F.compactProgram start)) ⊆ _
     rw [straightWires_reindex, WEXFast.W15F.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1621))
+    exact (PathShare.relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
   | right16 j =>
     change straightWires (reindexStraight _ (WEXFast.W15F.compactProgram start)) ⊆ _
     rw [straightWires_reindex, WEXFast.W15F.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1621))
+    exact (PathShare.relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
 
 
 theorem signed_wellFormed (w : Digit) (start : Nat) : ((signed w).program start).WellFormed := by
@@ -2298,7 +2296,7 @@ def wideRawModel (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d
     (offsetScalar 17 d.exponent • d.base Q)
 
 def widePackedModel (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :=
-  relabelModel WideSigned.Fast16.compact (wideRawModel Q hQ hn d hw)
+  relabelModel TightSupport.compact (wideRawModel Q hQ hn d hw)
 
 theorem normal_nonzero (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit) (hw : w.width=16)
     (a : Fin 32768) : constantPoint Q (Width16Schedule.signedCoefficients w a.val) ≠ 0 := by
@@ -2354,12 +2352,12 @@ theorem wide_raw_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (h
     exact wide_point Q hQ hn d hw v hv
 
 theorem inverse_pointFrame (P : Point) (s : BasisState) :
-    relabelBasis WideSigned.Fast16.compact.symm (pointWrite P s) =
-      pointWrite P (relabelBasis WideSigned.Fast16.compact.symm s) := by
-  have h := congrArg (relabelBasis WideSigned.Fast16.compact.symm)
-    (WideSigned.Fast16.compact_pointWrite P (relabelBasis WideSigned.Fast16.compact.symm s))
-  have hr : relabelBasis WideSigned.Fast16.compact (relabelBasis WideSigned.Fast16.compact.symm s)=s := by
-    simpa only [Equiv.symm_symm] using relabelBasis_symm WideSigned.Fast16.compact.symm s
+    relabelBasis TightSupport.compact.symm (pointWrite P s) =
+      pointWrite P (relabelBasis TightSupport.compact.symm s) := by
+  have h := congrArg (relabelBasis TightSupport.compact.symm)
+    (TightSupport.compact_pointWrite P (relabelBasis TightSupport.compact.symm s))
+  have hr : relabelBasis TightSupport.compact (relabelBasis TightSupport.compact.symm s)=s := by
+    simpa only [Equiv.symm_symm] using relabelBasis_symm TightSupport.compact.symm s
   simpa only [relabelBasis_symm,hr] using h.symm
 
 theorem signed_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit) :
@@ -2367,12 +2365,12 @@ theorem signed_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit) :
   cases w with
   | left17 j =>
     change PointRule initialRoot (widePackedModel Q hQ hn (.left17 j) rfl)
-    exact relabelModel_pointRule _ _ WideSigned.Fast16.compact_pointWrite
-      WideSigned.Fast16.compact_active (wide_raw_rule Q hQ hn (.left17 j) rfl)
+    exact relabelModel_pointRule _ _ TightSupport.compact_pointWrite
+      TightSupport.compact_active (wide_raw_rule Q hQ hn (.left17 j) rfl)
   | right17 j =>
     change PointRule initialRoot (widePackedModel Q hQ hn (.right17 j) rfl)
-    exact relabelModel_pointRule _ _ WideSigned.Fast16.compact_pointWrite
-      WideSigned.Fast16.compact_active (wide_raw_rule Q hQ hn (.right17 j) rfl)
+    exact relabelModel_pointRule _ _ TightSupport.compact_pointWrite
+      TightSupport.compact_active (wide_raw_rule Q hQ hn (.right17 j) rfl)
   | left16 j =>
     change PointRule initialRoot (localNormalModel Q hQ hn (.left16 j) rfl)
     apply interpret_pointRule
@@ -2413,10 +2411,10 @@ theorem signed_prepared (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit)
       (Quantum.run ((signedModel Q hQ hn w).physical.wires.reverse.map Gate.H) ψ) := by
   cases w with
   | left17 j =>
-    exact relabelModel_prepared _ _ inverse_pointFrame WideSigned.Fast16.compact_active
+    exact relabelModel_prepared _ _ inverse_pointFrame TightSupport.compact_active
       (wide_raw_prepared Q hQ hn (.left17 j) rfl) ψ hψ
   | right17 j =>
-    exact relabelModel_prepared _ _ inverse_pointFrame WideSigned.Fast16.compact_active
+    exact relabelModel_prepared _ _ inverse_pointFrame TightSupport.compact_active
       (wide_raw_prepared Q hQ hn (.right17 j) rfl) ψ hψ
   | left16 j =>
     exact normal_prepared (fun a : Fin 32768 => Width16Schedule.signedCoefficients (.left16 j) a.val)
@@ -2753,9 +2751,9 @@ theorem win_slots (w : Window 1671168) (hw : IsWin w) (start : Nat) :
     omega
   · exact signed_slots d start
 
-theorem bits_range : ∀ v ∈ ScheduleFirst17.bits, v ∈ List.range 1621 := by decide
+theorem bits_range : ∀ v ∈ ScheduleFirst17.bits, v ∈ List.range 1618 := by decide
 
-theorem win_bank_support (w : Window 1671168) (hw : IsWin w) : w.wires ⊆ List.range 1621 := by
+theorem win_bank_support (w : Window 1671168) (hw : IsWin w) : w.wires ⊆ List.range 1618 := by
   rcases hw with rfl|rfl|⟨d,rfl⟩
   · intro v hv
     exact bits_range v (Width16Schedule.headL_sub v (List.mem_reverse.mp hv))
@@ -2765,13 +2763,13 @@ theorem win_bank_support (w : Window 1671168) (hw : IsWin w) : w.wires ⊆ List.
       exact List.mem_append_left _ (List.mem_reverse.mp hv))
   · cases d with
     | left17 j | right17 j =>
-      change (WideSigned.Body.logicalBank .w16).reverse.map WideSigned.Fast16.compact ⊆ _
+      change (WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact ⊆ _
       decide
     | left16 j | right16 j => change streamAddress.reverse ⊆ _; decide
 
 theorem win_support (w : Window 1671168) (hw : IsWin w) (start : Nat)
     (read : ConstantBit 1671168→Bool) (history : Fin start→Bool) :
-    ((w.program start).instantiate read history).wires ⊆ List.range 1621 := by
+    ((w.program start).instantiate read history).wires ⊆ List.range 1618 := by
   rcases hw with rfl|rfl|⟨d,rfl⟩
   · change ((prepareOuterBank Width16Schedule.headRWires
       (Width16Schedule.firstWindow.program start)).instantiate read history).wires ⊆ _
@@ -2850,7 +2848,7 @@ theorem full_slots : rawProgram.gateSlots ≤ 100000000000 := by
   rw [Straight.gateSlots_append,framed_slots,resetProgram_gateSlots,hro]
   omega
 
-theorem reset_range : reset ⊆ List.range 1621 := by
+theorem reset_range : reset ⊆ List.range 1618 := by
   intro w hw
   simp only [reset, resetWires, List.mem_append, List.mem_range, List.mem_singleton,
     List.mem_range'_1] at hw ⊢
@@ -2858,33 +2856,33 @@ theorem reset_range : reset ⊆ List.range 1621 := by
   omega
 
 theorem full_support (read : ConstantBit 1671168→Bool) (history : Fin 0→Bool) :
-    (rawProgram.instantiate read history).wires ⊆ List.range 1621 := by
-  have hA := axis_support ([impl.headA]) (List.range 1621)
+    (rawProgram.instantiate read history).wires ⊆ List.range 1618 := by
+  have hA := axis_support ([impl.headA]) (List.range 1618)
     (fun w hw => by rcases List.mem_singleton.mp hw with rfl; exact win_bank_support _ isWin_headA)
     (fun w hw start r h => by
       rcases List.mem_singleton.mp hw with rfl; exact win_support _ isWin_headA start r h)
     0 List.nil read history
-  have hB (h : Fin (mixS1 impl.headA 0)→Bool) := axis_support ([impl.headB]) (List.range 1621)
+  have hB (h : Fin (mixS1 impl.headA 0)→Bool) := axis_support ([impl.headB]) (List.range 1618)
     (fun w hw => by rcases List.mem_singleton.mp hw with rfl; exact win_bank_support _ isWin_headB)
     (fun w hw start r h' => by
       rcases List.mem_singleton.mp hw with rfl; exact win_support _ isWin_headB start r h')
     (mixS1 impl.headA 0) List.nil read h
-  have hL (h : Fin (mixS2 impl.headA impl.headB 0)→Bool) := axis_support (Width16Schedule.leftBodies impl) (List.range 1621)
+  have hL (h : Fin (mixS2 impl.headA impl.headB 0)→Bool) := axis_support (Width16Schedule.leftBodies impl) (List.range 1618)
     (fun w hw => win_bank_support w (isWin_left w hw))
     (fun w hw start r h' => win_support w (isWin_left w hw) start r h')
     (mixS2 impl.headA impl.headB 0) (mixPriorL impl.headA impl.headB 0) read h
-  have hR (h : Fin (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0)→Bool) := axis_support (Width16Schedule.rightBodies impl) (List.range 1621)
+  have hR (h : Fin (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0)→Bool) := axis_support (Width16Schedule.rightBodies impl) (List.range 1618)
     (fun w hw => win_bank_support w (isWin_right w hw))
     (fun w hw start r h' => win_support w (isWin_right w hw) start r h')
     (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0) (mixPriorR impl.headA impl.headB (Width16Schedule.leftBodies impl) 0) read h
-  apply outer_append_support _ _ read history (List.range 1621) ?_ ?_
+  apply outer_append_support _ _ read history (List.range 1618) ?_ ?_
   · unfold Width16Schedule.program
     refine framed_support _ _ _ _ read history _ (by decide) hA ?_
       (fun h => resetProgram_support _ _ _ _ read h reset_range)
     intro h
     unfold mixTail
-    exact outer_append_support _ _ read h (List.range 1621) (hB h)
-      (fun h' => outer_append_support _ _ read h' (List.range 1621) (hL h') (fun h'' => hR h''))
+    exact outer_append_support _ _ read h (List.range 1618) (hB h)
+      (fun h' => outer_append_support _ _ read h' (List.range 1618) (hL h') (fun h'' => hR h''))
   · intro h
     unfold Width16Schedule.readout
     rw [castFinish_instantiate]
@@ -2898,11 +2896,11 @@ theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n→Fin m)
   | recordGate i v g p ih => exact ⟨hp.1,ih hp.2⟩
   | measure w p ih => exact ⟨hp.1,ih hp.2⟩
 
-theorem source_within : Within (List.range 1621) rawEntry.program := by
+theorem source_within : Within (List.range 1618) rawEntry.program := by
   unfold rawEntry Width16Schedule.sourceEntry Single.fixedEntry
   dsimp only
-  exact within_reindex rawProgram _ (List.range 1621)
-    (within_of_instantiate rawProgram (List.range 1621) full_support)
+  exact within_reindex rawProgram _ (List.range 1618)
+    (within_of_instantiate rawProgram (List.range 1618) full_support)
 
 theorem added_le_weight {n s e} (p : Straight n s e) : 4*added p ≤ weight4 p := by
   induction p with
@@ -3001,7 +2999,7 @@ theorem strong_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d•G) :
     (Width16Schedule.hfirst_concrete Q hQ hn initialRoot initialRoot_input initialRoot_clean)
     (fun w _ => signed_rule Q hQ hn w) (ready_models Q hQ hn)
 
-def rawBounds : Bounds := ⟨1621,700000000000,50000000⟩
+def rawBounds : Bounds := ⟨1618,700000000000,50000000⟩
 
 theorem raw_certificate : Certificate rawLimits rawLayout rawEntry rawBounds where
   gateBudget := by
@@ -3020,8 +3018,8 @@ theorem raw_certificate : Certificate rawLimits rawLayout rawEntry rawBounds whe
   resources := by
     intro Q
     have hs := source_within.instantiate (readConstant rawEntry.coefficients.get Q) Fin.elim0
-    have hq : (rawEntry.instantiate Q).qubitCount ≤ 1621 := by
-      have ht : (rawEntry.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1621).toFinset := by
+    have hq : (rawEntry.instantiate Q).qubitCount ≤ 1618 := by
+      have ht : (rawEntry.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1618).toFinset := by
         intro v hv
         exact List.mem_toFinset.mpr (hs (by simpa only [List.mem_toFinset,List.mem_dedup] using hv))
       have hc := (Finset.card_le_card ht).trans (List.toFinset_card_le _)
@@ -3046,15 +3044,15 @@ def entry : StraightEntry := Width16Schedule.finalEntry implementation reset
 def layout : DecodeLayout :=
   lowerLayout 1938 (trimNEntry rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1623,251189159,544000000⟩
+def bounds : Bounds := ⟨1620,251189159,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (Width16Schedule.finalEntry implementation reset)
-      ⟨1623,4*(67198+20*implementation.credit17+7*implementation.credit16)+10767,544000000⟩ :=
-  Width16Schedule.conditional_certificate implementation reset (List.range 1621)
-    rawBounds 1623 raw_certificate source_within strong_success (by decide) (by decide)
+      ⟨1620,4*(67198+20*implementation.credit17+7*implementation.credit16)+10767,544000000⟩ :=
+  Width16Schedule.conditional_certificate implementation reset (List.range 1618)
+    rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
 theorem tmodel_key : ∀ a b : Nat, a ≤ 2347064 → b ≤ 2255160 → 4*(67198+20*a+7*b)+10767 ≤ 251189159 := by
