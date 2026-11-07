@@ -169,31 +169,31 @@ theorem full_error (impl : Width16Schedule.Implementation) (reset : List Wire) :
   rw [mixPriorR_length] at hR
   rw [axis_width_sum (left_width_relation impl)] at hL
   rw [axis_width_sum (right_width_relation impl)] at hR
-  have hsA : (([impl.headA]).map (fun w => w.wires.length)).sum = 12 := by
+  have hsA : (([impl.headA]).map (fun w => w.wires.length)).sum = 10 := by
     simp [impl.headA_width]
-  have hsB : (([impl.headB]).map (fun w => w.wires.length)).sum = 5 := by
+  have hsB : (([impl.headB]).map (fun w => w.wires.length)).sum = 8 := by
     simp [impl.headB_width]
   rw [hsA, List.length_nil] at hA
   rw [hsB, List.length_nil] at hB
-  have hlw : leftWidthsBody.sum = 249 := by simp [leftWidthsBody, List.replicate]
-  have hrw : rightWidthsBody.sum = 203 := by simp [rightWidthsBody, List.replicate]
+  have hlw : leftWidthsBody.sum = 251 := by simp [leftWidthsBody, List.replicate]
+  have hrw : rightWidthsBody.sum = 200 := by simp [rightWidthsBody, List.replicate]
   rw [hlw] at hL
   rw [hrw] at hR
   have hz (n start : Nat) (ws : List Wire) : residue (resetProgram n start ws) = 0 := by
     induction ws generalizing start with
     | nil => simp [resetProgram,residue]
     | cons w ws ih => simpa [resetProgram,residue_cast,residue] using ih (start+1)
-  have hreset : errorCost (resetProgram 1671168
+  have hreset : errorCost (resetProgram 1769472
       (mixS4 impl.headA impl.headB (leftBodies impl) (rightBodies impl) 0) reset) = 0 :=
     error_zero _ (hz _ _ _)
   have hro : errorCost (Width16Schedule.readout impl reset) = 0 := by
     apply error_zero
     simp only [Width16Schedule.readout,residue_cast,ApproximatePhase34.residue_suffix56]
-  have hacc1 : account 261 0 = account 12 0 + account 249 12 := by
-    have := account_append 12 249 0
+  have hacc1 : account 261 0 = account 10 0 + account 251 10 := by
+    have := account_append 10 251 0
     simpa using this
-  have hacc2 : account 208 0 = account 5 0 + account 203 5 := by
-    have := account_append 5 203 0
+  have hacc2 : account 208 0 = account 8 0 + account 200 8 := by
+    have := account_append 8 200 0
     simpa using this
   simp only [Width16Schedule.fullProgram,error_append,Width16Schedule.program,Single.framed,error_cast,errorCost,charge,zero_add,hreset,hro,mixHead,mixTail]
   linarith [joint_error]
@@ -258,7 +258,7 @@ theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : Stra
 
 theorem source_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 398 (sourceEntry impl reset).program) ≤
-      4*(67198+20*impl.credit17+7*impl.credit16)+10627 := by
+      4*(133758+19*impl.credit17+8*impl.credit16)+10627 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -303,7 +303,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (entryTrim (sourceEntry impl reset)) (Width16Schedule.layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(67198+20*impl.credit17+7*impl.credit16)+10628,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(133758+19*impl.credit17+8*impl.credit16)+10628,544000000⟩ := by
   have trimmed := trim_certificate rawLimits (Width16Schedule.layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (source_error impl reset) strongSuccess
   have hslots := trimN_slots 398 (sourceEntry impl reset).program
@@ -322,7 +322,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     exact recordBudget
   · exact qubitBudget
   · change weight4 (trimN 398 (sourceEntry impl reset).program)+1 ≤
-      4*(67198+20*impl.credit17+7*impl.credit16)+10628
+      4*(133758+19*impl.credit17+8*impl.credit16)+10628
     omega
   · change (sourceEntry impl reset).finalCursor+added (trimN 398 (sourceEntry impl reset).program) ≤ 544000000
     rw [trimN_added]
@@ -351,19 +351,19 @@ def entry : StraightEntry := GeometricPhase.finalEntry implementation reset
 
 def layout : DecodeLayout := lowerLayout 1938 (GeometricPhase.entryTrim rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,251189020,544000000⟩
+def bounds : Bounds := ⟨1620,251060212,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (GeometricPhase.entryTrim (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (GeometricPhase.finalEntry implementation reset)
-      ⟨1620,4*(67198+20*implementation.credit17+7*implementation.credit16)+10628,544000000⟩ :=
+      ⟨1620,4*(133758+19*implementation.credit17+8*implementation.credit16)+10628,544000000⟩ :=
   GeometricPhase.conditional_certificate implementation reset (List.range 1618)
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2347064 → b ≤ 2255160 →
-    4*(67198+20*a+7*b)+10628 ≤ 251189020 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2346810 → b ≤ 2254906 →
+    4*(133758+19*a+8*b)+10628 ≤ 251060212 := by
   intro a b ha hb
   omega
 
