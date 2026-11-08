@@ -2031,13 +2031,13 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   rw [fastCompactProgram,relabelStraight_instantiate]
   exact he
 
-theorem row2_ccx_upper : ccx row2 ≤ 2358342 := by
+theorem row2_ccx_upper : ccx row2 ≤ 2358214 := by
   have h := ccx_relation row2
   have hn := WEX.literalToffolis_normalize (erase row2)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -2046,14 +2046,14 @@ theorem row2_ccx_upper : ccx row2 ≤ 2358342 := by
   omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx row2 ≤ 2358846 := by
+    ccx row2 ≤ 2358718 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := row2_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 15 where
   records := 1758490
-  tBound := 16511922
+  tBound := 16511026
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := fastCompactProgram
   coherent := by
@@ -2191,13 +2191,13 @@ theorem row2_records : records row2 = 1659034 := by
 attribute [local irreducible] program blockProgram clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx Nat.add Nat.mul in
-theorem row2_ccx_upper : ccx row2 ≤ 2259398 := by
+theorem row2_ccx_upper : ccx row2 ≤ 2259270 := by
   have h := ccx_relation row2
   have hn := WEX.literalToffolis_normalize (erase row2)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -2478,14 +2478,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx row2 ≤ 2259902 := by
+    ccx row2 ≤ 2259774 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := WEXUnlookupWidth14.row2_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 14 where
   records := 1659546
-  tBound := 15819314
+  tBound := 15818418
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := fastCompactProgram
   coherent := by
@@ -8128,7 +8128,7 @@ attribute [local irreducible] W15.fastBodyProgram W14.fastBodyProgram
 
 def body2 : Single.WindowBody where
   records := 1758490
-  tBound := 16511922
+  tBound := 16511026
   slotBound := 2000000000
   support := List.range 1619
   reset := resetWires
@@ -8157,7 +8157,7 @@ def body2 : Single.WindowBody where
 
 def narrow15 : ModNarrow body2 15 where
   records := 1758490
-  tBound := 16511922
+  tBound := 16511026
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx row2
   program := W15.compactProgram
   coherent := fun coeffs Q hQ hn _ start history => body2.coherent coeffs Q hQ hn start history
@@ -8180,7 +8180,7 @@ def narrow15 : ModNarrow body2 15 where
 
 def narrow14 : ModNarrow body2 14 where
   records := 1659546
-  tBound := 15819314
+  tBound := 15818418
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXUnlookupWidth14.ccx row2
   program := W14.compactProgram
@@ -10482,13 +10482,13 @@ theorem rowC_records : records2 rowC = 1692440 := by
 attribute [local irreducible] program2 blockProgram2 clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx2 Nat.add Nat.mul in
-theorem rowC_ccx_upper : ccx2 rowC ≤ 2293318 := by
+theorem rowC_ccx_upper : ccx2 rowC ≤ 2293190 := by
   have h := ccx2_relation rowC
   have hn := WEX.literalToffolis_normalize (erase2 rowC)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -10756,14 +10756,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx2 rowC ≤ 2293822 := by
+    ccx2 rowC ≤ 2293694 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := rowC_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 15 where
   records := 1692952
-  tBound := 16056754
+  tBound := 16055858
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx2 rowC
   program := fastCompactProgram
   coherent := by
@@ -11418,13 +11418,13 @@ theorem rowC_records : records2 rowC = 1626264 := by
 attribute [local irreducible] program2 blockProgram2 clearProgram WEX.compile Bridge.translate
   ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
   WEX.literalToffolis WEX.normalizeW ccx2 Nat.add Nat.mul in
-theorem rowC_ccx_upper : ccx2 rowC ≤ 2227142 := by
+theorem rowC_ccx_upper : ccx2 rowC ≤ 2227014 := by
   have h := ccx2_relation rowC
   have hn := WEX.literalToffolis_normalize (erase2 rowC)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis,h0]
@@ -11704,14 +11704,14 @@ theorem fastCompactProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Sec
   exact he
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    ccx2 rowC ≤ 2227646 := by
+    ccx2 rowC ≤ 2227518 := by
   have hs := WEX.fastWindowSign_normalized_counts.1
   have hr := WEXUnlookupWidth14.rowC_ccx_upper
   omega
 
 def fastNarrow : ModNarrow WEXUnlookup.compactBody 14 where
   records := 1626776
-  tBound := 15593522
+  tBound := 15592626
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) + ccx2 rowC
   program := fastCompactProgram
   coherent := by
@@ -13497,7 +13497,7 @@ attribute [local irreducible] W15C.fastBodyProgram W14C.fastBodyProgram
 
 def bodyC : Single.WindowBody where
   records := 1692952
-  tBound := 16056754
+  tBound := 16055858
   slotBound := 2000000000
   support := List.range 1619
   reset := resetWires
@@ -13526,7 +13526,7 @@ def bodyC : Single.WindowBody where
 
 def narrowC15 : ModNarrow bodyC 15 where
   records := 1692952
-  tBound := 16056754
+  tBound := 16055858
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     ccx2 WEXUnlookup.rowC
   program := W15C.compactProgram
@@ -13550,7 +13550,7 @@ def narrowC15 : ModNarrow bodyC 15 where
 
 def narrowC14 : ModNarrow bodyC 14 where
   records := 1626776
-  tBound := 15593522
+  tBound := 15592626
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXUnlookupWidth14.ccx2 WEXUnlookup.rowC
   program := W14C.compactProgram
@@ -20233,10 +20233,10 @@ theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gate
 def compactProgram (start : Nat) : Straight 32768 start (start+1654036) :=
   relabelStraight piH (fastBodyProgram start)
 
-theorem count_arith (s x y : Nat) (h : s + y ≤ 2293822) (hr : x + 38916 = y) : s + x ≤ 2254906 := by omega
+theorem count_arith (s x y : Nat) (h : s + y ≤ 2293694) (hr : x + 38916 = y) : s + x ≤ 2254778 := by omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    fcodeTP rowCF ≤ 2254906 := by
+    fcodeTP rowCF ≤ 2254778 := by
   exact count_arith _ _ _ Width15Corner.fastCount_upper rowCF_tp
 
 end
@@ -20289,7 +20289,7 @@ theorem bodyCF_ledger : bodyCF.support.length = 1616 ∧ bodyCF.reset.length = 8
 /-- The width-15 corner body with the three select-swap sites. -/
 def narrowCF15 : ModNarrow bodyCF 15 where
   records := 1654036
-  tBound := 15784342
+  tBound := 15783446
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXFast.fcodeTP WEXFast.rowCF
   program := WEXFast.W15F.compactProgram
@@ -23888,10 +23888,10 @@ theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gate
 def compactProgram (start : Nat) : Straight 32768 start (start+1608084) :=
   relabelStraight piH (fastBodyProgram start)
 
-theorem count_arith (s x y : Nat) (h : s + y ≤ 2227646) (hr : x + 18692 = y) : s + x ≤ 2208954 := by omega
+theorem count_arith (s x y : Nat) (h : s + y ≤ 2227518) (hr : x + 18692 = y) : s + x ≤ 2208826 := by omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    fcodeTP rowCF ≤ 2208954 :=
+    fcodeTP rowCF ≤ 2208826 :=
   count_arith _ _ _ WEXUnlookupWidth14.Corner.fastCount_upper rowCF_tp
 
 end
@@ -23909,7 +23909,7 @@ attribute [local irreducible] WEXFast14.W14F.fastBodyProgram
 /-- The width-14 corner body with the three select-swap sites. -/
 def narrowCF14 : ModNarrow bodyCF 14 where
   records := 1608084
-  tBound := 15462678
+  tBound := 15461782
   credit := 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
     WEXFast14.fcodeTP WEXFast14.rowCF
   program := WEXFast14.W14F.compactProgram
@@ -28858,8 +28858,8 @@ theorem matched_fused_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow bod
     (hSupport : ledger.support.length ≤ 1618) (hSlot : body.slotBound ≤ 3000000000)
     (hR15 : n15.records ≤ 1608084) (hR16 : n16.records ≤ 1654036)
     (hReset : body.reset.length ≤ 854)
-    (hT15 : n15.tBound ≤ 15462678) (hT16 : n16.tBound ≤ 15784342)
-    (hC15 : n15.credit ≤ 2208954) (hC16 : n16.credit ≤ 2254906)
+    (hT15 : n15.tBound ≤ 15461782) (hT16 : n16.tBound ≤ 15783446)
+    (hC15 : n15.credit ≤ 2208826) (hC16 : n16.credit ≤ 2254778)
     (hq : (1938 : Wire) ∉ ledger.support) (hy : (1939 : Wire) ∉ 1938 :: ledger.support) :
     letI : Programs body := triPrograms n14 n15 n16
     Certificate officialLimits (lowerLayout 1938 entry layout)
@@ -28924,9 +28924,9 @@ theorem n14_records : narrow14.records ≤ 1608084 := by
   exact le_rfl
 theorem n15_records : narrow15.records ≤ 1654036 := by
   exact le_rfl
-theorem n14_cost : narrow14.tBound ≤ 15462678 := by
+theorem n14_cost : narrow14.tBound ≤ 15461782 := by
   exact le_rfl
-theorem n15_cost : narrow15.tBound ≤ 15784342 := by
+theorem n15_cost : narrow15.tBound ≤ 15783446 := by
   exact le_rfl
 
 attribute [local irreducible] narrow13 narrow14 narrow15
@@ -28939,19 +28939,19 @@ local instance resourcesInstance : Single.ProducerResources bodyInstance :=
 local instance coverInstance : SupportCover bodyInstance resourcesInstance := ⟨by intro w hw; exact hw, by change First17.support ⊆ List.range 1616; exact First17.support_range⟩
 local instance programInstance : Programs bodyInstance := triPrograms narrow13 narrow14 narrow15
 
-private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15462678) :
-    c ≤ 2208954 := by omega
-private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15784342) :
-    c ≤ 2254906 := by omega
+private theorem count14_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15461782) :
+    c ≤ 2208826 := by omega
+private theorem count15_bound (t c : Nat) (he : t = 7*c) (hb : t ≤ 15783446) :
+    c ≤ 2254778 := by omega
 
-theorem n14_credit : narrow14.credit ≤ 2208954 := by
+theorem n14_credit : narrow14.credit ≤ 2208826 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow14.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow14.program 0) (narrow14.zero 0) read Fin.elim0
   have hc := narrow14.count_eq 0
   have he' := he.trans (congrArg (fun k : Nat => 7*k) hc)
   exact count14_bound _ _ he' (ht.trans n14_cost)
-theorem n15_credit : narrow15.credit ≤ 2254906 := by
+theorem n15_credit : narrow15.credit ≤ 2254778 := by
   let read : ConstantBit 32768 → Bool := fun _ => false
   have ht := narrow15.tCount 0 read Fin.elim0
   have he := WEXCredit.exact_t (narrow15.program 0) (narrow15.zero 0) read Fin.elim0
@@ -30307,13 +30307,13 @@ attribute [local irreducible] FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (WeightedPhase28.trimEntry Schedule29Seventeen244.Flexible.entry) Schedule29Seventeen244.Flexible.layout
-def bounds : Bounds := ⟨1618,4*(67198+17*2254906+12*2208954)+11026,543906879⟩
+def bounds : Bounds := ⟨1618,4*(67198+17*2254778+12*2208826)+11026,543906879⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
   apply @weighted_matched_certificate bodyInstance resourcesInstance coverInstance
     FusedFinal.narrow13 FusedFinal.narrow14 FusedFinal.narrow15
-    1618 2208954 2254906
+    1618 2208826 2254778
   · change PathShare.bodyCF.support.length + 2 ≤ 1618
     rw [PathShare.bodyCF_ledger.1]
   · change PathShare.bodyCF.slotBound ≤ 3000000000
@@ -35542,14 +35542,14 @@ attribute [local irreducible] Schedule29Seventeen244.Flexible.FusedFinal.narrow1
 
 def entry : StraightEntry := ConditionalCatalyst.fourEntry 1938 1939 (trimNEntry Schedule29Seventeen244.Flexible.entry)
 def layout : DecodeLayout := lowerLayout 1938 (trimNEntry Schedule29Seventeen244.Flexible.entry) Schedule29Seventeen244.Flexible.layout
-def bounds : Bounds := ⟨1618,4*(67198+17*2254906+12*2208954)+10767,544000000⟩
+def bounds : Bounds := ⟨1618,4*(67198+17*2254778+12*2208826)+10767,544000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds := by
   unfold entry layout bounds
   apply @weightedN_matched_certificate bodyInstance resourcesInstance coverInstance
     Schedule29Seventeen244.Flexible.FusedFinal.narrow13 Schedule29Seventeen244.Flexible.FusedFinal.narrow14
     Schedule29Seventeen244.Flexible.FusedFinal.narrow15
-    1618 2208954 2254906
+    1618 2208826 2254778
   · change PathShare.bodyCF.support.length + 2 ≤ 1618
     rw [PathShare.bodyCF_ledger.1]
   · change PathShare.bodyCF.slotBound ≤ 3000000000
@@ -39761,7 +39761,7 @@ theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF +
 
 theorem body_credit_bound :
     2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) +
-      Fast16.fcodeTP code ≤ 2346810 := by
+      Fast16.fcodeTP code ≤ 2346682 := by
   rw [credit_increment]
   have h := WEXFast.W15F.fastCount_upper
   rw [← Nat.add_assoc]
@@ -39959,10 +39959,10 @@ theorem submitted_score : 1618 * 259672423 = 420149980414 := by decide
 theorem width16_schedule_bits : 5 * 17 + 10 * 16 = 245 := by decide
 -- Conditional arithmetic only. The actual final bounds/certificate are required.
 theorem width16_budget :
-    5 * 2346810 + 10 * 2254906 = 34283110 ∧
-    5 * 2254906 + 11 * 2208954 = 35573024 ∧
-    259723265 - 154 - 4 * (35573024 - 34283110) = 254563455 ∧
-    1623 * 254563455 < 1618 * 259672423 := by decide
+    5 * 2346682 + 10 * 2254778 = 34281190 ∧
+    5 * 2254778 + 11 * 2208826 = 35570976 ∧
+    259723265 - 154 - 4 * (35570976 - 34281190) = 254563967 ∧
+    1623 * 254563967 < 1618 * 259672423 := by decide
 end
 end ShorECDLP.Entrant.WideSigned.Fast16
 
@@ -40727,10 +40727,10 @@ theorem wellFormed (start : Nat) : (program start).WellFormed := by
   rw [program, castFinish_wellFormed]
   exact Frame16.wellFormed _ Row16.fixedProgram Row16.fixed_wellFormed start
 
-theorem sign_credit_bound (s t r : Nat) (hs : s = t) (hb : 2 * t + r ≤ 2346810) :
-    2 * s + r ≤ 2346810 := by omega
+theorem sign_credit_bound (s t r : Nat) (hs : s = t) (hb : 2 * t + r ≤ 2346682) :
+    2 * s + r ≤ 2346682 := by omega
 
-theorem credit_bound : signedCredit16 ≤ 2346810 :=
+theorem credit_bound : signedCredit16 ≤ 2346682 :=
   sign_credit_bound Body.signCredit
     (ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram))
     (Fast16.fcodeTP Row16.code) rfl Row16.body_credit_bound

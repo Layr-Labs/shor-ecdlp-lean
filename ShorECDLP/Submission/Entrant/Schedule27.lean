@@ -1361,9 +1361,9 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
 /-- Exact strict-score test after all body, support, semantic and certificate
     premises have been discharged. No Q or cost number is assumed by the proof. -/
 theorem strict_score (Q c17 c16 : Nat)
-    (hQ : Q ≤ 1652) (h17 : c17 ≤ 2346810) (h16 : c16 ≤ 2254906) :
+    (hQ : Q ≤ 1652) (h17 : c17 ≤ 2346682) (h16 : c16 ≤ 2254778) :
     Q * (4*(133758+19*c17+8*c16)+10767) < 420149980414 := by
-  have ht : 4*(133758+19*c17+8*c16)+10767 ≤ 251087783 := by omega
+  have ht : 4*(133758+19*c17+8*c16)+10767 ≤ 251073959 := by omega
   exact (Nat.mul_le_mul hQ ht).trans_lt (by norm_num)
 
 end
@@ -2004,7 +2004,7 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2346810 ∧ implementation.credit16 ≤ 2254906 := by
+theorem credits : implementation.credit17 ≤ 2346682 ∧ implementation.credit16 ≤ 2254778 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
   exact ⟨WideSigned.Signed16.credit_bound, WEXFast.W15F.fastCount_upper⟩
 
@@ -2914,7 +2914,7 @@ theorem added_le_weight {n s e} (p : Straight n s e) : 4*added p ≤ weight4 p :
   | recordGate i b g p ih => simp only [added,weight4]; omega
   | measure w p ih => exact ih
 
-theorem source_credit_bound : added rawEntry.program ≤ 62783001 := by
+theorem source_credit_bound : added rawEntry.program ≤ 62779545 := by
   have h := added_le_weight rawEntry.program
   have hw := Width16Schedule.fullProgram_weight impl reset
   have hc := credits
@@ -3046,7 +3046,7 @@ def entry : StraightEntry := Width16Schedule.finalEntry implementation reset
 def layout : DecodeLayout :=
   lowerLayout 1938 (trimNEntry rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,251087783,544000000⟩
+def bounds : Bounds := ⟨1620,251073959,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (Width16Schedule.sourceEntry implementation reset))
@@ -3057,7 +3057,7 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2346810 → b ≤ 2254906 → 4*(133758+19*a+8*b)+10767 ≤ 251087783 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2346682 → b ≤ 2254778 → 4*(133758+19*a+8*b)+10767 ≤ 251073959 := by
   intro a b ha hb
   omega
 

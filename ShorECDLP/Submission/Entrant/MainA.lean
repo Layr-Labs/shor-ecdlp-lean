@@ -5973,7 +5973,7 @@ theorem narrow_body_t_bound (start : Nat) (read : ConstantBit 32768 → Bool) (h
   have ha := WEX.literalToffolis_normalize (WEX.rowAddCode WEX.probeRows)
   have hc := (WEX.finite23_literal_counts WEX.streamLayout WEX.probeRows).1.trans
     (WEX.tight_finite_literal_counts WEX.streamLayout WEX.streamLayout_widths WEX.streamLayout_nodup WEX.probeRows).1
-  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2158295 := by
+  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2158167 := by
     simp only [WEX.rowAddCode,WEX.literalToffolis_append,WEX.wLiteral,WEX.literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha

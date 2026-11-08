@@ -11869,7 +11869,7 @@ theorem widthFastBodyProgram_tBound (k : Nat) (hk : k ≤ 15) (start : Nat)
   have ha := literalToffolis_normalize (rowAddCode probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (rowAddCode probeRows) = 2158167 := by
     simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
@@ -12207,8 +12207,8 @@ theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normaliz
   have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis, h0]
@@ -12420,8 +12420,8 @@ theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normaliz
   have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis, h0]
@@ -12642,8 +12642,8 @@ theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normaliz
   have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159830 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2158295 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2159702 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2158167 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis, h0]
