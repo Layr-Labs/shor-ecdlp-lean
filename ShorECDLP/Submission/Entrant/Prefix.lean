@@ -24580,7 +24580,7 @@ section
 
 Same argument as `SinAverage`, with sharper constants:
 * per term `sin (πu) ≥ 3.141591·u` for `u ≤ 2⁻²⁰` (`sin_pi_mul_ge_sharp`);
-* separated tail sums `Σ 1/φ² ≤ 1/(R − 1/2)` by telescoping (`sum_inv_sq_le_half`);
+* separated tail sums extracting the first term (`sum_inv_sq_le_first`);
 * two radii, one per direction (`circular_mass_two`), with the far tail cut at `2^40`;
 * left radii `R1, R2 ≥ 16` with `R1 + R2 ≥ 33` (`left_pair`), right radii
   `29 − e, 28 + e` with `|e| ≤ 1/2` (`right_pair`). -/
@@ -24663,6 +24663,8 @@ theorem ampSq_phiL_sharp (N : Nat) (hN : 0 < N) (β : ℝ) (a : Nat)
     (abs_sin_phiL N hN β a hd (hsmall.trans (by norm_num)))
 
 /-- Telescoping with `1/x² ≤ 1/(x − 1/2) − 1/(x + 1/2)`. -/
+def tailBound (R : ℝ) := 1 / R^2 + 1 / (R+1/2)
+
 theorem sum_range_inv_sq_le_half (R : ℝ) (hR : 1/2 < R) (M : ℕ) :
     ∑ k ∈ range M, 1 / (R + k) ^ 2 ≤ 1 / (R - 1/2) - 1 / (R - 1/2 + M) := by
   induction M with
@@ -24681,10 +24683,34 @@ theorem sum_range_inv_sq_le_half (R : ℝ) (hR : 1/2 < R) (M : ℕ) :
       nlinarith
     linarith
 
-theorem sum_inv_sq_le_half (S : Finset ℕ) (φ : ℕ → ℝ) (R : ℝ) (hR : 1/2 < R)
+theorem sum_range_inv_sq_le_first (R : ℝ) (hR : 1/2 < R) (M : ℕ) :
+    ∑ k ∈ range M, 1 / (R + k) ^ 2 ≤ tailBound R := by
+  cases M with
+  | zero => simp only [range_zero, sum_empty]; unfold tailBound; positivity
+  | succ M =>
+    rw [sum_range_succ']
+    have h := sum_range_inv_sq_le_half (R+1) (by linarith) M
+    have hn : 0 ≤ 1 / (R+1-1/2+(M:ℝ)) := by
+      apply one_div_nonneg.mpr
+      have hm : (0:ℝ) ≤ M := Nat.cast_nonneg _
+      linarith
+    have he : (∑ k ∈ range M, 1 / (R + (k+1:ℕ))^2) =
+        ∑ k ∈ range M, 1 / ((R+1)+k)^2 := by
+      apply sum_congr rfl
+      intro k hk
+      push_cast
+      ring_nf
+    rw [he]
+    unfold tailBound
+    have he2 : R+1-1/2 = R+1/2 := by ring
+    rw [he2] at h hn
+    simp only [Nat.cast_zero, add_zero]
+    linarith
+
+theorem sum_inv_sq_le_first (S : Finset ℕ) (φ : ℕ → ℝ) (R : ℝ) (hR : 1/2 < R)
     (hφ : ∀ a ∈ S, R ≤ φ a)
     (hsep : ∀ a ∈ S, ∀ b ∈ S, |φ a - φ b| < 1 → a = b) :
-    ∑ a ∈ S, 1 / (φ a) ^ 2 ≤ 1 / (R - 1/2) := by
+    ∑ a ∈ S, 1 / (φ a) ^ 2 ≤ tailBound R := by
   set g : ℕ → ℕ := fun a => ⌊φ a - R⌋₊ with hg
   have hinj : Set.InjOn g S := by
     intro a ha b hb hab
@@ -24716,7 +24742,7 @@ theorem sum_inv_sq_le_half (S : Finset ℕ) (φ : ℕ → ℝ) (R : ℝ) (hR : 1
       exact Nat.lt_succ_of_le (le_sup ha)
     · intro k _ _
       positivity
-  have h4 := sum_range_inv_sq_le_half R hR (S.sup g + 1)
+  have h4 := sum_range_inv_sq_le_first R hR (S.sup g + 1)
   have h5 : 0 ≤ 1 / (R - 1/2 + ((S.sup g + 1 : ℕ) : ℝ)) := by
     have : (0 : ℝ) ≤ ((S.sup g + 1 : ℕ) : ℝ) := Nat.cast_nonneg _
     exact one_div_nonneg.mpr (by linarith)
@@ -24726,8 +24752,8 @@ theorem directed_tail_sharp (N : Nat) (β : ℝ) (S : Finset Nat) (d : Nat → �
     (hs : 0 ≤ s) (hR : 1/2 < R) (hd : ∀ a ∈ S, R ≤ d a)
     (hsep : ∀ a ∈ S, ∀ b ∈ S, |d a - d b| < 1 → a = b)
     (hpt : ∀ a ∈ S, ampSq N β a ≤ s / ((3141591 / 1000000 : ℝ) ^ 2 * (d a) ^ 2)) :
-    ∑ a ∈ S, ampSq N β a ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R - 1/2)) := by
-  have hi := sum_inv_sq_le_half S d R hR hd hsep
+    ∑ a ∈ S, ampSq N β a ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R) := by
+  have hi := sum_inv_sq_le_first S d R hR hd hsep
   calc
     _ ≤ ∑ a ∈ S, (s / (3141591 / 1000000 : ℝ) ^ 2) * (1 / (d a) ^ 2) := by
       apply Finset.sum_le_sum
@@ -24753,7 +24779,7 @@ theorem far_tail_sharp : 3 / (Real.pi ^ 2 * ((2 : ℝ) ^ 40 - 1)) ≤ (1 : ℝ) 
 theorem circular_mass_two (N : Nat) (hNbig : 2^60 ≤ N) (β : ℝ)
     (hβ0 : 0 ≤ β) (hβ1 : β < 1) (R1 R2 : ℝ) (hR1 : 1 ≤ R1) (hR2 : 1 ≤ R2) :
     1 - Real.sin (Real.pi * N * β) ^ 2 / (3141591 / 1000000 : ℝ) ^ 2 *
-        (1 / (R1 - 1/2) + 1 / (R2 - 1/2)) - 1 / 10^12 ≤
+        (tailBound R1 + tailBound R2) - 1 / 10^12 ≤
       ∑ a ∈ Finset.range N,
         if phiR N ((N : ℝ) * β) a < R1 ∨ phiL N ((N : ℝ) * β) a < R2
         then ampSq N β a else 0 := by
@@ -24772,7 +24798,7 @@ theorem circular_mass_two (N : Nat) (hNbig : 2^60 ≤ N) (β : ℝ)
     rw [div_le_iff₀ hNR]
     have : (1 / 2^20 : ℝ) * 2^60 = 2^40 := by norm_num
     nlinarith
-  have rBound : ∑ a ∈ RS, ampSq N β a ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R1 - 1/2)) := by
+  have rBound : ∑ a ∈ RS, ampSq N β a ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R1) := by
     apply directed_tail_sharp N β RS (phiR N ((N : ℝ) * β)) s R1 hs0 (by linarith)
     · intro a ha
       exact (Finset.mem_filter.mp ha).2.1
@@ -24783,7 +24809,7 @@ theorem circular_mass_two (N : Nat) (hNbig : 2^60 ≤ N) (β : ℝ)
     · intro a ha
       have hd := (Finset.mem_filter.mp ha).2
       exact ampSq_phiR_sharp N hN β a (by linarith [hd.1]) (hsm _ hd.2)
-  have lBound : ∑ a ∈ LS, ampSq N β a ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R2 - 1/2)) := by
+  have lBound : ∑ a ∈ LS, ampSq N β a ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R2) := by
     apply directed_tail_sharp N β LS (phiL N ((N : ℝ) * β)) s R2 hs0 (by linarith)
     · intro a ha
       exact (Finset.mem_filter.mp ha).2.1
@@ -24844,17 +24870,17 @@ theorem circular_mass_two (N : Nat) (hNbig : 2^60 ≤ N) (β : ℝ)
   have badBound : (∑ a ∈ Finset.range N,
       if ¬(phiR N ((N : ℝ) * β) a < R1 ∨ phiL N ((N : ℝ) * β) a < R2)
       then ampSq N β a else 0) ≤
-      s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R1 - 1/2)) +
-        s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R2 - 1/2)) + 1 / 10^12 := by
+      s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R1) +
+        s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R2) + 1 / 10^12 := by
     have h := Finset.sum_le_sum (fun a (_ : a ∈ Finset.range N) => cover a)
     rw [Finset.sum_add_distrib, Finset.sum_add_distrib] at h
     have hRs : (∑ a ∈ Finset.range N,
         if R1 ≤ phiR N ((N : ℝ) * β) a ∧ phiR N ((N : ℝ) * β) a < 2^40
-        then ampSq N β a else 0) ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R1 - 1/2)) := by
+        then ampSq N β a else 0) ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R1) := by
       simpa only [RS, Finset.sum_filter] using rBound
     have hLs : (∑ a ∈ Finset.range N,
         if R2 ≤ phiL N ((N : ℝ) * β) a ∧ phiL N ((N : ℝ) * β) a < 2^40
-        then ampSq N β a else 0) ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R2 - 1/2)) := by
+        then ampSq N β a else 0) ≤ s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R2) := by
       simpa only [LS, Finset.sum_filter] using lBound
     exact h.trans (add_le_add (add_le_add hRs hLs) fBound)
   have htotal : (∑ a ∈ Finset.range N,
@@ -24868,25 +24894,47 @@ theorem circular_mass_two (N : Nat) (hNbig : 2^60 ≤ N) (β : ℝ)
     apply Finset.sum_congr rfl
     intro a ha
     split_ifs <;> ring
-  have he : s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R1 - 1/2) + 1 / (R2 - 1/2)) =
-      s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R1 - 1/2)) +
-        s / (3141591 / 1000000 : ℝ) ^ 2 * (1 / (R2 - 1/2)) := by ring
+  have he : s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R1 + tailBound R2) =
+      s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R1) +
+        s / (3141591 / 1000000 : ℝ) ^ 2 * (tailBound R2) := by ring
   linarith
 
-theorem left_pair (x y : ℝ) (hx : 16 ≤ x) (hy : 16 ≤ y) (hxy : 33 ≤ x + y) :
-    1 / (x - 1/2) + 1 / (y - 1/2) ≤ 128 / 1023 := by
-  have hx' : 0 < x - 1/2 := by linarith
-  have hy' : 0 < y - 1/2 := by linarith
-  rw [div_add_div _ _ hx'.ne' hy'.ne', div_le_div_iff₀ (mul_pos hx' hy') (by norm_num)]
-  nlinarith [mul_nonneg (sub_nonneg.mpr hx) (sub_nonneg.mpr hy)]
+theorem left_pair (x y : ℝ) (hx : 16 ≤ x) (hy : 16 ≤ y) (hxy : 33 ≤ x+y) :
+    tailBound x + tailBound y ≤ (128/1023:ℝ) := by
+  have old (x y : ℝ) (hx : 16 ≤ x) (hy : 16 ≤ y) (hxy : 33 ≤ x+y) :
+      1/(x-1/2)+1/(y-1/2) ≤ (128/1023:ℝ) := by
+    have hx' : 0 < x-1/2 := by linarith
+    have hy' : 0 < y-1/2 := by linarith
+    rw [div_add_div _ _ hx'.ne' hy'.ne', div_le_div_iff₀ (mul_pos hx' hy') (by norm_num)]
+    nlinarith [mul_nonneg (sub_nonneg.mpr hx) (sub_nonneg.mpr hy)]
+  have bound (r : ℝ) (hr : 1/2 < r) : tailBound r ≤ 1/(r-1/2) := by
+    have hr0 : 0 < r := by linarith
+    have hrm : 0 < r-1/2 := by linarith
+    have hrp : 0 < r+1/2 := by linarith
+    unfold tailBound
+    rw [div_add_div _ _ (pow_ne_zero 2 hr0.ne') hrp.ne', div_le_div_iff₀ (mul_pos (sq_pos_of_pos hr0) hrp) hrm]
+    nlinarith
+  linarith [old x y hx hy hxy, bound x (by linarith), bound y (by linarith)]
 
 theorem right_pair (e : ℝ) (he : |e| ≤ 1/2) :
-    1 / ((29 - e) - 1/2) + 1 / ((28 + e) - 1/2) ≤ 56 / 783 := by
-  have h := abs_le.mp he
-  have hx : 0 < (29 - e) - 1/2 := by linarith
-  have hy : 0 < (28 + e) - 1/2 := by linarith
-  rw [div_add_div _ _ hx.ne' hy.ne', div_le_div_iff₀ (mul_pos hx hy) (by norm_num)]
-  nlinarith [mul_nonneg (show (0 : ℝ) ≤ 3/2 - e by linarith) (show (0 : ℝ) ≤ 1/2 + e by linarith)]
+ tailBound (29-e) + tailBound (28+e) ≤ (56/783:ℝ)-7/10000000 := by
+ have h := abs_le.mp he
+ have hx : 0 < 29-e := by linarith
+ have hy : 0 < 28+e := by linarith
+ have hp : (3245/4:ℝ) ≤ (29-e)*(28+e) := by
+  nlinarith [mul_nonneg (show (0:ℝ) ≤ 3/2-e by linarith) (show (0:ℝ) ≤ 1/2+e by linarith)]
+ have hsq : 1/(29-e)^2+1/(28+e)^2 ≤ (6506/4:ℝ)/(3245/4)^2 := by
+  rw [div_add_div _ _ (pow_ne_zero 2 hx.ne') (pow_ne_zero 2 hy.ne'), div_le_div_iff₀ (mul_pos (sq_pos_of_pos hx) (sq_pos_of_pos hy)) (by norm_num)]
+  have hp2 : (3245/4:ℝ)^2 ≤ ((29-e)*(28+e))^2 := by nlinarith [sq_nonneg ((29-e)*(28+e)-3245/4)]
+  nlinarith
+ have hlin : 1/((29-e)+1/2)+1/((28+e)+1/2) ≤ (58/840:ℝ) := by
+  have hx2 : 0 < (29-e)+1/2 := by linarith
+  have hy2 : 0 < (28+e)+1/2 := by linarith
+  rw [div_add_div _ _ hx2.ne' hy2.ne', div_le_div_iff₀ (mul_pos hx2 hy2) (by norm_num)]
+  nlinarith
+ unfold tailBound
+ linarith
+
 
 /-- Nearest-numerator window at half-width `N/(2r) ≥ 16`, with exact integer radii. -/
 theorem window_mass_left_two (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r)
@@ -24936,7 +24984,7 @@ theorem window_mass_left_two (r N n : ℕ) (hn0 : 0 < n) (hnr : n < r)
   rw [hcβ] at hmass
   have hs0 : 0 ≤ Real.sin (Real.pi * N * β) ^ 2 / (3141591 / 1000000 : ℝ) ^ 2 := by positivity
   have hweak : Real.sin (Real.pi * N * β) ^ 2 / (3141591 / 1000000 : ℝ) ^ 2 *
-      (1 / (R1 - 1/2) + 1 / (R2 - 1/2)) ≤
+      (tailBound R1 + tailBound R2) ≤
       Real.sin (Real.pi * N * β) ^ 2 * ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) := by
     calc _ ≤ Real.sin (Real.pi * N * β) ^ 2 / (3141591 / 1000000 : ℝ) ^ 2 * (128 / 1023) :=
           mul_le_mul_of_nonneg_left hpair hs0
@@ -25057,7 +25105,7 @@ noncomputable def rightMass56 (r : Nat) (k : Fin r) : ℝ := by
 
 theorem rightMass56_weighted (r : Nat) (hr : 0 < r) (k : Fin r) :
     1 - Real.sin (Real.pi * ((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) ^ 2 *
-        ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) - 1 / 10^12 ≤ rightMass56 r k := by
+        (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) - 1 / 10^12 ≤ rightMass56 r k := by
   classical
   have hrR : (0 : ℝ) < r := by exact_mod_cast hr
   have hpo := abs_le.mp (peakOffset_abs r k)
@@ -25069,15 +25117,15 @@ theorem rightMass56_weighted (r : Nat) (hr : 0 < r) (k : Fin r) :
       (3141591 / 1000000 : ℝ) ^ 2 := div_nonneg (sq_nonneg _) (by norm_num)
   have hweak : Real.sin (Real.pi * ((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) ^ 2 /
       (3141591 / 1000000 : ℝ) ^ 2 *
-        (1 / ((29 - peakOffset r k) - 1/2) + 1 / ((28 + peakOffset r k) - 1/2)) ≤
+        (tailBound (29 - peakOffset r k) + tailBound (28 + peakOffset r k)) ≤
       Real.sin (Real.pi * ((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) ^ 2 *
-        ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) := by
+        (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) := by
     calc _ ≤ Real.sin (Real.pi * ((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) ^ 2 /
-          (3141591 / 1000000 : ℝ) ^ 2 * (56 / 783) := mul_le_mul_of_nonneg_left hpair hs0
+          (3141591 / 1000000 : ℝ) ^ 2 * ((56 / 783 - 7 / 10000000)) := mul_le_mul_of_nonneg_left hpair hs0
       _ = _ := by ring
   have hfin : 1 - Real.sin (Real.pi * ((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) ^ 2 /
       (3141591 / 1000000 : ℝ) ^ 2 *
-        (1 / ((29 - peakOffset r k) - 1/2) + 1 / ((28 + peakOffset r k) - 1/2)) - 1 / 10^12 ≤
+        (tailBound (29 - peakOffset r k) + tailBound (28 + peakOffset r k)) - 1 / 10^12 ≤
       ∑ b : Fin (2^208),
       if phiR (2^208) (((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) b.val < 29 - peakOffset r k ∨
         phiL (2^208) (((2^208 : Nat) : ℝ) * ((k.val : ℝ) / r)) b.val < 28 + peakOffset r k
@@ -25109,7 +25157,7 @@ theorem averaged_pair_coverage261 (r n d : Nat) (hr : r.Prime)
       rightGood56 r ⟨d * k.val % r, Nat.mod_lt _ hr.pos⟩ b →
       accept a b) :
     (1 - 1 / (r : ℝ)) * (1 - 2 / 10^12) - ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 -
-      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ ∑ a : Fin (2^n), ∑ b : Fin (2^208),
+      (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ ∑ a : Fin (2^n), ∑ b : Fin (2^208),
       if accept a b then asymmetricPairMass r n 208 d (a, b) else 0 := by
   classical
   let A : Fin r → Fin (2^n) → ℝ := fun k a =>
@@ -25126,7 +25174,7 @@ theorem averaged_pair_coverage261 (r n d : Nat) (hr : r.Prime)
   let sR : Fin r → ℝ := fun k =>
     Real.sin (Real.pi * ((2^208 : ℕ) : ℝ) * (((d * k.val % r : ℕ) : ℝ) / r)) ^ 2
   let CL : ℝ := (128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2
-  let CR : ℝ := (56 / 783) / (3141591 / 1000000 : ℝ) ^ 2
+  let CR : ℝ := ((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2
   have hCL : 0 ≤ CL ∧ CL ≤ 1/2 := by constructor <;> norm_num [CL]
   have hCR : 0 ≤ CR ∧ CR ≤ 1/2 := by constructor <;> norm_num [CR]
   have hA : ∀ k a, 0 ≤ A k a := fun _ _ => Complex.normSq_nonneg _
@@ -25258,12 +25306,12 @@ theorem averaged_pair_coverage261 (r n d : Nat) (hr : r.Prime)
 theorem success_budget261 (r : ℝ) (hr : 1000000 ≤ r) :
     (99 : ℝ) / 100 ≤ (1 - 1 / r) * (1 - 2 / 10^12) -
       ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 -
-      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 := by
+      (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) / 2 := by
   have hr0 : 0 < r := by linarith
   have hinv : 1 / r ≤ (1 : ℝ) / 1000000 :=
     one_div_le_one_div_of_le (by norm_num) hr
   have hC : ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 +
-      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ 9963 / 1000000 := by norm_num
+      (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ 9963 / 1000000 := by norm_num
   nlinarith
 
 theorem precision261 : 32 * order ≤ 2^261 := by norm_num [order]
@@ -29089,11 +29137,11 @@ set_option maxRecDepth 10000
 theorem approximate_budget_strong (r : ℝ) (hr : 1000000 ≤ r) :
     (99003 : ℝ) / 100000 ≤ (1 - 1 / r) * (1 - 2 / 10^12) -
       ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 -
-      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 := by
+      (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) / 2 := by
   have hinv : 1 / r ≤ (1 : ℝ) / 1000000 :=
     one_div_le_one_div_of_le (by norm_num) hr
   have hC : ((128 / 1023) / (3141591 / 1000000 : ℝ) ^ 2) / 2 +
-      ((56 / 783) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ 9963 / 1000000 := by norm_num
+      (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ) ^ 2) / 2 ≤ 9963 / 1000000 := by norm_num
   nlinarith
 
 theorem approximate_pair_success_strong (Q : Point) (d : Nat) (_hn : Q≠0) (_hd : Q=d•G) :
@@ -35232,22 +35280,22 @@ open SinAverage261
 open scoped BigOperators
 noncomputable section
 theorem large_order_floor (r : ℝ) (hr : (10 : ℝ)^12 ≤ r) :
-    (99003799 / 100000000 : ℝ) ≤
+    (990038025 /1000000000 : ℝ) ≤
       (1 - 1 / r) * (1 - 2 / 10^12) -
         ((128 / 1023) / (3141591 / 1000000 : ℝ)^2) / 2 -
-        ((56 / 783) / (3141591 / 1000000 : ℝ)^2) / 2 := by
+        (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ)^2) / 2 := by
   have hi : 1 / r ≤ (1 : ℝ) / 10^12 :=
     one_div_le_one_div_of_le (by norm_num) hr
-  have hbase : (99003799 / 100000000 : ℝ) ≤
+  have hbase : (990038025 /1000000000 : ℝ) ≤
       (1 - 1 / 10^12) * (1 - 2 / 10^12) -
         ((128 / 1023) / (3141591 / 1000000 : ℝ)^2) / 2 -
-        ((56 / 783) / (3141591 / 1000000 : ℝ)^2) / 2 := by norm_num
+        (((56 / 783 - 7 / 10000000)) / (3141591 / 1000000 : ℝ)^2) / 2 := by norm_num
   have hpos : (0 : ℝ) < 1 - 2 / 10^12 := by norm_num
   nlinarith
 
 
 theorem improved_pair_success (d : Nat) :
-    (99003799 : ℝ) / 100000000 ≤ ∑ a : Fin (2^261), ∑ b : Fin (2^208),
+    (990038025 : ℝ) /1000000000 ≤ ∑ a : Fin (2^261), ∑ b : Fin (2^208),
       if pairRecovered261 d a.val b.val then
         asymmetricPairMass order 261 208 d (a,b) else 0 := by
   have h := averaged_pair_coverage261 order 261 d order_prime (by decide +kernel) precision261
@@ -35269,7 +35317,7 @@ set_option linter.unusedSimpArgs false
 variable [body : Single.WindowBody] [impl : Programs body] [ledger : Single.ProducerResources body]
 attribute [local irreducible] program fullProgram readout Single.fixedEntry
 theorem improved_program_neighbor (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99003799 : ℝ)/100000000 ≤ Instrument.bornMass
+    (990038025 : ℝ)/1000000000 ≤ Instrument.bornMass
       (((program.instantiate (readConstant coefficientAt Q) Fin.elim0).run).filter
         (fun b => fineEvent (SinAverage261.pairRecovered261 d) b.history)) (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by
@@ -35279,7 +35327,7 @@ theorem improved_program_neighbor (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q =
 
 
 theorem improved_program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99003799/100000000 : ℝ) ≤ Instrument.bornMass ((fullProgram.instantiate (readConstant coefficientAt Q) Fin.elim0).run.filter
+    (990038025/1000000000 : ℝ) ≤ Instrument.bornMass ((fullProgram.instantiate (readConstant coefficientAt Q) Fin.elim0).run.filter
       (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
   apply (improved_program_neighbor Q d hn hd).trans
   unfold fullProgram
@@ -35301,7 +35349,7 @@ theorem improved_program_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = 
 
 
 theorem improved_entry_success (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99003799/100000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+    (990038025/1000000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
       (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
   rw [entry, Single.fixedEntry_instantiate]
   exact improved_program_success Q d hn hd
@@ -35315,7 +35363,7 @@ theorem trimN_certificate (limits : Limits) (layout : DecodeLayout) (entry : Str
     (hs : Within ws entry.program) (herror : errorCost entry.program ≤ 469*unit)
     (hstrong : ∀ (Q : ShorECDLP.Secp256k1.Point) (d : Nat), Q ≠ 0 →
       Q = d • ShorECDLP.Secp256k1.G →
-      (99003799/100000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      (990038025/1000000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)) :
     Certificate limits layout (trimNEntry entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
   gateBudget := (trimN_slots 259 entry.program).trans cert.gateBudget
@@ -35351,7 +35399,7 @@ theorem trimN_certificate (limits : Limits) (layout : DecodeLayout) (entry : Str
     change 99/100 ≤ Instrument.bornMass
       (((trimN 259 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)
-    change 99003799/100000000 ≤ Instrument.bornMass
+    change 990038025/1000000000 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState) at hS
     norm_num [unit] at herror h
@@ -35488,7 +35536,7 @@ theorem weightedN_matched_certificate (n14 : ModNarrow body 13) (n15 : ModNarrow
   have hw := weighted26_source_weight credit
   have herror := weighted_source_error credit
   have hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
-      (99003799/100000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      (990038025/1000000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) := by
     intro Q d hn hd
     exact PhaseTrimHeadroom.improved_entry_success Q d hn hd

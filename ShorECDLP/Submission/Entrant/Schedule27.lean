@@ -1323,7 +1323,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (rawCertificate : Certificate rawLimits (layout impl reset) (sourceEntry impl reset) baseBounds)
     (support : Within ws (sourceEntry impl reset).program)
     (strongSuccess : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q=d•G →
-      (99003799/100000000 : ℝ) ≤ Instrument.bornMass (((sourceEntry impl reset).instantiate Q).run.filter
+      (990038025/1000000000 : ℝ) ≤ Instrument.bornMass (((sourceEntry impl reset).instantiate Q).run.filter
         (fun b => (verifiedCandidate (layout impl reset) Q b.history).isSome)) (ket zeroBasisState))
     (hq : (1938 : Wire) ∉ ws) (hy : (1939 : Wire) ∉ 1938::ws)
     (slotBudget : 4*((sourceEntry impl reset).program.gateSlots+
@@ -2652,10 +2652,10 @@ theorem strong_success (Q : Point) (d : Nat) (hd : Q=d•G)
     (pointRules : ∀ w∈leftDigits++rightDigits,PointRule initialRoot (m.signed w))
     (ready : Ready (m.headA :: m.headB :: ((leftDigits.map m.signed) ++ (rightDigits.map m.signed)))
       (ket initialRoot)) :
-    (99003799/100000000:ℝ) ≤ Instrument.bornMass
+    (990038025/1000000000:ℝ) ≤ Instrument.bornMass
       (((fullProgram impl reset).instantiate (readConstant Width16Schedule.coefficientAt Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate (Width16Schedule.layout impl reset) Q b.history).isSome)) (ket zeroBasisState) := by
-  have hneighbor : (99003799/100000000:ℝ) ≤ Instrument.bornMass
+  have hneighbor : (990038025/1000000000:ℝ) ≤ Instrument.bornMass
       (((Width16Schedule.program impl reset).instantiate (readConstant Width16Schedule.coefficientAt Q) Fin.elim0).run.filter
         (fun b => fineEvent impl (SinAverage261.pairRecovered261 d) b.history)) (ket zeroBasisState) := by
     rw [program_event_mass impl Q hQ m hfirst pointRules ready,idealEventMass_distribution Q d hd]
@@ -2992,7 +2992,7 @@ theorem straight_t_bound {n s e} (p : Straight n s e) (read : ConstantBit n→Bo
     exact max_le (ih _) (ih _)
 
 theorem strong_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d•G) :
-    (99003799/100000000:ℝ) ≤ Instrument.bornMass
+    (990038025/1000000000:ℝ) ≤ Instrument.bornMass
       ((rawEntry.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order•Q=0 := by rw [hd,smul_comm order d,generator_nsmul_eq_zero,nsmul_zero]
@@ -3039,7 +3039,7 @@ theorem raw_certificate : Certificate rawLimits rawLayout rawEntry rawBounds whe
       omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99/100:ℝ)≤99003799/100000000).trans (strong_success Q d hn hd)
+    exact (by norm_num : (99/100:ℝ)≤990038025/1000000000).trans (strong_success Q d hn hd)
 
 def entry : StraightEntry := Width16Schedule.finalEntry implementation reset
 
