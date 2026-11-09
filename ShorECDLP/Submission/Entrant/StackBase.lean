@@ -28978,7 +28978,7 @@ theorem boundary_genericS (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wi
         (fun q hq => hv.rest q (outside q hq))
 
 theorem genericS_counts (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
-    (cx cy : ECDSAAdd.Fp) : ECDSAAdd.toffoliCount (genericS L cx cy) = 2155011 ∧
+    (cx cy : ECDSAAdd.Fp) : ECDSAAdd.toffoliCount (genericS L cx cy) = 2154570 ∧
       ECDSAAdd.measurementCount (genericS L cx cy) = 1503131 := by
   have a k := pointDialogConstantAdd_counts L hw hn L.point.x (Or.inl rfl) k
   have b k := pointDialogConstantAdd_counts L hw hn L.point.y (Or.inr rfl) k
@@ -32308,7 +32308,7 @@ attribute [local irreducible] Arith.genericS Arith.padding ECDSAAdd.Frontier.ari
 
 theorem finiteOneS_counts (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
     (C : Point) (cx cy : Fp) (h₁ : decide (cy ≠ -cy) = true) (h₂ : exceptionBit C = true) :
-    toffoliCount (finiteOneS L C cx cy) = 2157069 ∧
+    toffoliCount (finiteOneS L C cx cy) = 2156628 ∧
       measurementCount (finiteOneS L C cx cy) = 1556899 := by
   have old := ECDSAAdd.ShorPort.finiteS_counts L hw hn C cx cy h₁ h₂
   have new := secondCorners_counts L hw C
@@ -32838,7 +32838,7 @@ theorem finiteOne_literal_counts_of_point {n : Nat} (L : ControlledPointLayout)
     (h₁ : cy ≠ -cy) (h₂ : exceptionBit (.some hc) = true)
     (hD : (.some hc : Point) + .some hc ≠ 0)
     (hDo : ShorECDLP.order • ((.some hc : Point) + .some hc) = 0) :
-    literalToffolis (wFiniteOne L rows) = 2157069 ∧
+    literalToffolis (wFiniteOne L rows) = 2156628 ∧
       literalRecords (wFiniteOne L rows) = 1556899 := by
   let C : Point := .some hc
   let read : CBit n → Bool := fun ref => (fieldValue (toA C) ref.field).testBit ref.bit.val
@@ -32851,7 +32851,7 @@ theorem finiteOne_literal_counts_of_point {n : Nat} (L : ControlledPointLayout)
 
 theorem finiteOne_literal_counts {n : Nat} (L : ControlledPointLayout)
     (hw : L.Widths) (hn : L.wires.Nodup) (rows : Nat → Fin n) :
-    literalToffolis (wFiniteOne L rows) = 2157069 ∧
+    literalToffolis (wFiniteOne L rows) = 2156628 ∧
       literalRecords (wFiniteOne L rows) = 1556899 := by
   let P : Point := Bridge.toB ShorECDLP.Secp256k1.G
   have hP : P ≠ 0 := ShorECDLP.Secp256k1.G_ne_zero
@@ -32875,7 +32875,7 @@ theorem finiteOne_compile_counts {n : Nat} (L : ControlledPointLayout) (hw : L.W
     (hl : LookupLayouts bits paths root (wFiniteOne L rows)) (hbits : bits.length = 15)
     (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     codeRecords bits paths root (wFiniteOne L rows) = 2408841 ∧
-      ((compile bits paths root (wFiniteOne L rows) start).instantiate read history).tCount = 21063077 := by
+      ((compile bits paths root (wFiniteOne L rows) start).instantiate read history).tCount = 21059990 := by
   obtain ⟨ht, hm⟩ := finiteOne_literal_counts L hw hn rows
   constructor
   · rw [codeRecords_eq _ _ _ _ hl, hm, traversals_finiteOne, hbits]
@@ -33875,7 +33875,7 @@ theorem tight_pair_literal_counts {n : Nat} (L : ControlledPointLayout) (t₁ t�
 
 theorem tight_finite_literal_counts {n : Nat} (L : ControlledPointLayout)
     (hw : L.Widths) (hn : L.wires.Nodup) (rows : Nat → Fin n) :
-    literalToffolis (wFiniteTight L rows) = 2157069 ∧ literalRecords (wFiniteTight L rows) = 1556899 := by
+    literalToffolis (wFiniteTight L rows) = 2156628 ∧ literalRecords (wFiniteTight L rows) = 1556899 := by
   have h₁ := tight_pair_literal_counts L L.doubleSelect L.genericSelect (wBit rows .infinity)
     (wFields rows .x) (wBit rows .y) (wBit rows .negY)
   have h₂ := tight_pair_literal_counts L L.infinitySelect L.core.equalNegY (wBit rows .infinity)
@@ -33898,7 +33898,7 @@ theorem tight_finite_compile_counts {n : Nat} (L : ControlledPointLayout) (hw : 
     (hl : LookupLayouts bits paths root (wFiniteTight L rows)) (hbits : bits.length = 15)
     (read : CBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     codeRecords bits paths root (wFiniteTight L rows) = 2277773 ∧
-      ((compile bits paths root (wFiniteTight L rows) start).instantiate read history).tCount = 20145601 := by
+      ((compile bits paths root (wFiniteTight L rows) start).instantiate read history).tCount = 20142514 := by
   obtain ⟨ht, hm⟩ := tight_finite_literal_counts L hw hn rows
   constructor
   · rw [codeRecords_eq _ _ _ _ hl, hm, tight_finite_traversals, hbits]
@@ -35449,7 +35449,7 @@ theorem bodyT_bound :
   have ha := literalToffolis_normalize (rowAddCode probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (rowAddCode probeRows) = 2157069 := by
+  have hrow : literalToffolis (rowAddCode probeRows) = 2156628 := by
     simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
