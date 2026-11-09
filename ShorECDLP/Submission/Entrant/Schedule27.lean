@@ -638,14 +638,14 @@ structure Implementation where
   signed : Digit → Window 1769472
   headA_width : headA.wires.length = 10
   headB_width : headB.wires.length = 8
-  headA_count : headA.count = 133758
+  headA_count : headA.count = 132606
   headB_count : headB.count = 0
   signed_width : ∀ w, (signed w).wires.length = w.width
   signed_count : ∀ w, (signed w).count = count records17 records16 w
   headA_zero : ∀ start, residue (headA.program start) = 0
   headB_zero : ∀ start, residue (headB.program start) = 0
   signed_zero : ∀ w start, residue ((signed w).program start) = 0
-  headA_credit : ∀ start, added (headA.program start) = 133758
+  headA_credit : ∀ start, added (headA.program start) = 132606
   headB_credit : ∀ start, added (headB.program start) = 0
   signed_credit : ∀ w start, added ((signed w).program start) = count credit17 credit16 w
 
@@ -669,7 +669,7 @@ theorem right_metadata (impl : Implementation) :
   simp only [rightBodies, List.map_map, Function.comp_def, impl.signed_count, impl.signed_width]
   simp [rightDigits, List.ofFn_succ, Digit.width, count, rightMetadata, List.replicate]
 
-theorem headA_axisCount (impl : Implementation) : axisCount [impl.headA] = 133768 := by
+theorem headA_axisCount (impl : Implementation) : axisCount [impl.headA] = 132616 := by
   simp [Single.axisCount, impl.headA_count, impl.headA_width]
 
 theorem headB_axisCount (impl : Implementation) : axisCount [impl.headB] = 8 := by
@@ -689,17 +689,17 @@ theorem right_count (impl : Implementation) :
 
 theorem mixS4_value (impl : Implementation) :
     mixS4 impl.headA impl.headB (leftBodies impl) (rightBodies impl) 0 =
-      133758 + 19*impl.records17 + 8*impl.records16 + 469 := by
+      132606 + 19*impl.records17 + 8*impl.records16 + 469 := by
   simp only [mixS4, mixS3, mixS2, mixS1, headA_axisCount, headB_axisCount, left_count, right_count]
   omega
 
 /-- Static positions of the left word: the left head bank, then the left bodies. -/
 def leftPositions (r17 r16 : Nat) : List Nat :=
-  positions [(133758,10)] 0 ++ positions (leftMetadata r17 r16) 133776
+  positions [(132606,10)] 0 ++ positions (leftMetadata r17 r16) 132624
 
 /-- Static positions of the right word: the right head bank, then the right bodies. -/
 def rightPositions (r17 r16 : Nat) : List Nat :=
-  positions [(0,8)] 133768 ++ positions (rightMetadata r17 r16) (133776 + (11*r17 + 4*r16 + 251))
+  positions [(0,8)] 132616 ++ positions (rightMetadata r17 r16) (132624 + (11*r17 + 4*r16 + 251))
 
 theorem left_positions_length (r17 r16 : Nat) : (leftPositions r17 r16).length = 261 := by
   simp only [leftPositions, List.length_append, positions_length]
@@ -716,7 +716,7 @@ def trialPositions (r17 r16 : Nat) : TrialPositions SinAverage261.params261 wher
     simpa only [List.size_toArray, SinAverage261.params261] using right_positions_length r17 r16⟩
 
 theorem left_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r16).left.toList) :
-    i < 134027+11*r17+4*r16 := by
+    i < 132875+11*r17+4*r16 := by
   have hi' : i ∈ leftPositions r17 r16 := by simpa [trialPositions] using hi
   simp only [leftPositions, List.mem_append] at hi'
   rcases hi' with h | h
@@ -728,7 +728,7 @@ theorem left_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r1
     omega
 
 theorem right_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r16).right.toList) :
-    i < 133758+19*r17+8*r16+469 := by
+    i < 132606+19*r17+8*r16+469 := by
   have hi' : i ∈ rightPositions r17 r16 := by simpa [trialPositions] using hi
   simp only [rightPositions, List.mem_append] at hi'
   rcases hi' with h | h
@@ -740,7 +740,7 @@ theorem right_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r
     omega
 
 def cursor (impl : Implementation) (reset : List Wire) : Nat :=
-  133758+19*impl.records17+8*impl.records16+469+reset.length
+  132606+19*impl.records17+8*impl.records16+469+reset.length
 
 def finePositions (impl : Implementation) (reset : List Wire) : List (Fin (cursor impl reset)) :=
   (trialPositions impl.records17 impl.records16).right.toList.attach.map fun i =>
@@ -813,9 +813,9 @@ def rightCostMeta (c17 c16 : Nat) : List (Nat × Nat) :=
   List.replicate 8 (4*c17,17) ++ List.replicate 4 (4*c16,16)
 
 theorem exact_phase_metadata (c17 c16 : Nat) :
-    metadataWeight [(4*133758,10)] 0 + metadataWeight [(0,8)] 0 +
+    metadataWeight [(4*132606,10)] 0 + metadataWeight [(0,8)] 0 +
       metadataWeight (leftCostMeta c17 c16) 10 + metadataWeight (rightCostMeta c17 c16) 8 =
-      4*(133758+19*c17+8*c16)+54991 ∧
+      4*(132606+19*c17+8*c16)+54991 ∧
     WeightedPhase28.metadataDropped [10] 0 + WeightedPhase28.metadataDropped [8] 0 +
       WeightedPhase28.metadataDropped leftWidthsBody 10 +
       WeightedPhase28.metadataDropped rightWidthsBody 8 = 43966 := by
@@ -857,7 +857,7 @@ theorem signed_cost_relation (impl : Implementation) (ws : List Digit) :
 
 theorem headA_cost_relation (impl : Implementation) :
     List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start, weight4 (w.program start) ≤ k.1)
-      ([impl.headA]) ([(4*133758,10)]) :=
+      ([impl.headA]) ([(4*132606,10)]) :=
   .cons ⟨impl.headA_width, fun start => by
     rw [weight4_zero _ (impl.headA_zero start), impl.headA_credit]⟩ .nil
 
@@ -896,7 +896,7 @@ theorem mixPriorR_length (impl : Implementation) (start : Nat) :
 theorem axes_weight (impl : Implementation) (start : Nat) :
     weight4 (mixHead impl.headA start) +
       weight4 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start) ≤
-      4*(133758+19*impl.credit17+8*impl.credit16)+54991 := by
+      4*(132606+19*impl.credit17+8*impl.credit16)+54991 := by
   have hA := weight4_axis ([impl.headA]) _ (headA_cost_relation impl) start List.nil
   have hB := weight4_axis ([impl.headB]) _ (headB_cost_relation impl) (mixS1 impl.headA start) List.nil
   have hL := weight4_axis (leftBodies impl) _ (left_cost_relation impl)
@@ -931,7 +931,7 @@ theorem axes_removed (impl : Implementation) (start : Nat) :
   omega
 
 theorem fullProgram_weight (impl : Implementation) (reset : List Wire) :
-    weight4 (fullProgram impl reset) ≤ 4*(133758+19*impl.credit17+8*impl.credit16)+54991 := by
+    weight4 (fullProgram impl reset) ≤ 4*(132606+19*impl.credit17+8*impl.credit16)+54991 := by
   have h := axes_weight impl 0
   simp only [fullProgram, weight4_append, program, weight4_framed, weight4_reset,
     readout, weight4_cast, weight4_suffix56]
@@ -952,7 +952,7 @@ theorem fullProgram_removed (impl : Implementation) (reset : List Wire) :
 
 theorem fullProgram_trim27_weight (impl : Implementation) (reset : List Wire) :
     weight4 (ApproximatePhase34.trim 27 (fullProgram impl reset)) ≤
-      4*(133758+19*impl.credit17+8*impl.credit16)+11025 := by
+      4*(132606+19*impl.credit17+8*impl.credit16)+11025 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have h := weight4_trim (fullProgram impl reset)
@@ -1097,7 +1097,7 @@ def headLWires : List Wire := SelectSchedule18.bits.drop 8
 /-- Left head bank: measured wires are the twelve high address bits; its program first puts the
     five low address bits in superposition, then runs the one joint 17-wire first load. -/
 def headAG (L R : List Wire) : Window 1769472 :=
-  ⟨L.reverse, 133758, fun start => prepareOuterBank R (firstWindow.program start)⟩
+  ⟨L.reverse, 132606, fun start => prepareOuterBank R (firstWindow.program start)⟩
 
 /-- Right head bank: measured wires are the five low address bits; its program undoes the
     axis preparation, so the bank only measures the Fourier outcome of the loaded register. -/
@@ -1148,8 +1148,8 @@ theorem headB_zero' (start : Nat) : residue (headB.program start) = 0 := by
   rw [ApproximatePhase34.residue_prepare]
   rfl
 
-theorem headA_credit' (start : Nat) : added (headA.program start) = 133758 := by
-  change added (prepareOuterBank headRWires (firstWindow.program start)) = 133758
+theorem headA_credit' (start : Nat) : added (headA.program start) = 132606 := by
+  change added (prepareOuterBank headRWires (firstWindow.program start)) = 132606
   rw [added_prepare]
   unfold firstWindow First18.windowGeneric
   rw [added_reindex, First18.program_added]
@@ -1251,7 +1251,7 @@ theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
 
 theorem fullProgram_trim259_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 259 (fullProgram impl reset)) ≤
-      4*(133758+19*impl.credit17+8*impl.credit16)+10766 := by
+      4*(132606+19*impl.credit17+8*impl.credit16)+10766 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -1268,7 +1268,7 @@ theorem removed27_fixedEntry {n e : Nat} (f : Fin n → PointCoeff) (p : Straigh
 
 theorem source_trim259_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 259 (sourceEntry impl reset).program) ≤
-      4*(133758+19*impl.credit17+8*impl.credit16)+10766 := by
+      4*(132606+19*impl.credit17+8*impl.credit16)+10766 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -1333,7 +1333,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (sourceEntry impl reset)) (layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(133758+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(132606+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
   have trimmed := trimN_certificate rawLimits (layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (source_error impl reset) strongSuccess
   have hslots := trimN_slots 259 (sourceEntry impl reset).program
@@ -1352,7 +1352,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     exact recordBudget
   · exact qubitBudget
   · change weight4 (trimN 259 (sourceEntry impl reset).program)+1 ≤
-      4*(133758+19*impl.credit17+8*impl.credit16)+10767
+      4*(132606+19*impl.credit17+8*impl.credit16)+10767
     omega
   · change (sourceEntry impl reset).finalCursor+added (trimN 259 (sourceEntry impl reset).program) ≤ 544000000
     rw [trimN_added]
@@ -1362,8 +1362,8 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     premises have been discharged. No Q or cost number is assumed by the proof. -/
 theorem strict_score (Q c17 c16 : Nat)
     (hQ : Q ≤ 1652) (h17 : c17 ≤ 2345143) (h16 : c16 ≤ 2253239) :
-    Q * (4*(133758+19*c17+8*c16)+10767) < 420149980414 := by
-  have ht : 4*(133758+19*c17+8*c16)+10767 ≤ 250907747 := by omega
+    Q * (4*(132606+19*c17+8*c16)+10767) < 420149980414 := by
+  have ht : 4*(132606+19*c17+8*c16)+10767 ≤ 250907747 := by omega
   exact (Nat.mul_le_mul hQ ht).trans_lt (by norm_num)
 
 end
@@ -2530,18 +2530,18 @@ theorem event_mass (Q : Point) (hQ : order•Q=0) (m : ModelFrame impl Q)
     pointRules ready 0 Fin.elim0 J hJ accept
   rw [selectedMixed_fixed_filter] at hm
   rw [m.headA_physical, m.headB_physical, model_left impl Q m, model_right impl Q m] at hm
-  have hA : axisPositions [impl.headA] 0 = positions [(133758,10)] 0 := by
+  have hA : axisPositions [impl.headA] 0 = positions [(132606,10)] 0 := by
     simp [Single.axisPositions, impl.headA_count, impl.headA_width]
-  have hB : axisPositions [impl.headB] (mixS1 impl.headA 0) = positions [(0,8)] 133768 := by
+  have hB : axisPositions [impl.headB] (mixS1 impl.headA 0) = positions [(0,8)] 132616 := by
     simp [Single.axisPositions, impl.headB_count, impl.headB_width, mixS1, Width16Schedule.headA_axisCount]
   have hL : axisPositions (Width16Schedule.leftBodies impl) (mixS2 impl.headA impl.headB 0) =
-      positions (Width16Schedule.leftMetadata impl.records17 impl.records16) 133776 := by
+      positions (Width16Schedule.leftMetadata impl.records17 impl.records16) 132624 := by
     rw [Single.axisPositions, Width16Schedule.left_metadata]
     simp [mixS2, mixS1, Width16Schedule.headA_axisCount, Width16Schedule.headB_axisCount]
   have hR : axisPositions (Width16Schedule.rightBodies impl)
       (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0) =
       positions (Width16Schedule.rightMetadata impl.records17 impl.records16)
-        (133776 + (11*impl.records17 + 4*impl.records16 + 251)) := by
+        (132624 + (11*impl.records17 + 4*impl.records16 + 251)) := by
     rw [Single.axisPositions, Width16Schedule.right_metadata]
     simp only [mixS3, mixS2, mixS1, Width16Schedule.headA_axisCount, Width16Schedule.headB_axisCount,
       Width16Schedule.left_count, Nat.zero_add]
@@ -2638,7 +2638,7 @@ theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
   · exact ha
   · intro j hj
     have h := left_position_bound impl.records17 impl.records16 j hj
-    have hh : 134027+11*impl.records17+4*impl.records16 ≤ startCursor impl := by
+    have hh : 132875+11*impl.records17+4*impl.records16 ≤ startCursor impl := by
       unfold startCursor cursor
       omega
     simpa only [List.length_ofFn] using h.trans_le hh
@@ -2831,7 +2831,7 @@ theorem mix_slots_bound :
     impl.headB_count, impl.headB_width] at hA hB
   rw [Width16Schedule.left_metadata] at hL
   rw [Width16Schedule.right_metadata] at hR
-  have hb : metadataSlots 3000000000 ([(133758,10)]) 0 + metadataSlots 3000000000 ([(0,8)]) 0 +
+  have hb : metadataSlots 3000000000 ([(132606,10)]) 0 + metadataSlots 3000000000 ([(0,8)]) 0 +
       metadataSlots 3000000000 (Width16Schedule.leftMetadata impl.records17 impl.records16) 10 +
       metadataSlots 3000000000 (Width16Schedule.rightMetadata impl.records17 impl.records16) 8 ≤
       99998999998 := by
@@ -2933,8 +2933,8 @@ theorem source_counts : rawEntry.finalCursor ≤ 50000000 ∧
   have hs : rawEntry.program.gateSlots ≤ 100000000000 := by
     rw [rawEntry,Width16Schedule.sourceEntry,Single.fixedEntry_slots]
     exact full_slots
-  have hm : rawEntry.finalCursor = 46575175 := by
-    change 133758+19*1745940+8*1654036+469+resetWires.length+34946=46575175
+  have hm : rawEntry.finalCursor = 46574023 := by
+    change 132606+19*1745940+8*1654036+469+resetWires.length+34946=46574023
     decide
   change _ ∧ _ ∧ _ ≤ 4000000000000000
   omega
@@ -3052,12 +3052,12 @@ theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (Width16Schedule.finalEntry implementation reset)
-      ⟨1620,4*(133758+19*implementation.credit17+8*implementation.credit16)+10767,544000000⟩ :=
+      ⟨1620,4*(132606+19*implementation.credit17+8*implementation.credit16)+10767,544000000⟩ :=
   Width16Schedule.conditional_certificate implementation reset (List.range 1618)
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2345143 → b ≤ 2253239 → 4*(133758+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2345143 → b ≤ 2253239 → 4*(132606+19*a+8*b)+10767 ≤ 250907747 := by
   intro a b ha hb
   omega
 

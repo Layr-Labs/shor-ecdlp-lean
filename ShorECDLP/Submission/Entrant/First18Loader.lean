@@ -1,4 +1,5 @@
 import ShorECDLP.Submission.Entrant.Prefix
+import ShorECDLP.Submission.Entrant.Bank9
 
 namespace ShorECDLP.Entrant.SelectSchedule18
 open Quantum Secp256k1 Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration
@@ -30,11 +31,11 @@ def selBits : List Wire := List.range' 856 16 ++ [537]
 def selPaths : List Wire := List.range' 519 17
 /-- The partner register: 513 pool wires that are clean before the first window. -/
 def garb : List Wire := List.range' 872 513
-def high : List Wire := List.range' 862 10 ++ [537]
-def clearPaths : List Wire := List.range' 519 11
+def high : List Wire := List.range' 864 8 ++ [537]
+def clearPaths : List Wire := List.range' 519 9
 def scratch : Wire := 872
-def hot (i : Fin 128) : Wire := 873 + i.val
-def low (i : Fin 7) : Wire := 855 + i.val
+def hot (i : Fin 512) : Wire := 873 + i.val
+def low (i : Fin 9) : Wire := 855 + i.val
 
 def row (a : Nat) : Fin 262144 := ⟨a % 262144, Nat.mod_lt _ (by decide +kernel)⟩
 /-- The address that differs from `a` in bit 0. -/
@@ -69,8 +70,8 @@ theorem point_garb_nodup : (pointLogicalWires ++ garb).Nodup :=
 theorem n855_point : (855 : Wire) ∉ pointLogicalWires := fun h => by have := mem_point h; (try dsimp only [Wire] at *); omega
 theorem n855_garb : (855 : Wire) ∉ garb := fun h => by have := mem_garb h; (try dsimp only [Wire] at *); omega
 
-theorem low_eq : List.ofFn low = List.range' 855 7 := by decide +kernel
-theorem hot_eq : List.ofFn hot = List.range' 873 128 := by decide +kernel
+theorem low_eq : List.ofFn low = List.range' 855 9 := by decide +kernel
+theorem hot_eq : List.ofFn hot = List.range' 873 512 := by decide +kernel
 
 theorem input_clean (s : BasisState) (hs : SelectSchedule18.Input s) (w : Nat)
     (h1 : w ≠ 836) (h2 : w < 855 ∨ 872 ≤ w) (h3 : w ≠ 537) : s w = false := by
@@ -438,16 +439,16 @@ theorem clear_layout : (tableAddressTree high 0 1).Layout 836 clearPaths :=
 theorem high_index : (tableAddressTree high 0 1).indexWires.dedup = high :=
   tableAddressTree_index _ _ _ (by decide +kernel)
 
-theorem clear_nodes : (tableAddressTree high 0 1).internalNodes = 2047 := by
+theorem clear_nodes : (tableAddressTree high 0 1).internalNodes = 511 := by
   have h := tableAddressTree_nodes high 0 1
-  change _ + 1 = 2048 at h
+  change _ + 1 = 512 at h
   (try dsimp only [Wire] at *); omega
 
-theorem clear_leaves : (tableAddressTree high 0 1).leaves = 2048 := by
+theorem clear_leaves : (tableAddressTree high 0 1).leaves = 512 := by
   rw [MeasuredClear.addressTree_leaves] <;> rfl
 
 theorem clear_measurements : MeasuredClear.recordMeasurements
-    (MeasuredClear.recordUnaryOps (tableAddressTree high 0 1) 836 clearPaths) = 2047 := by
+    (MeasuredClear.recordUnaryOps (tableAddressTree high 0 1) 836 clearPaths) = 511 := by
   rw [(MeasuredClear.recordUnary_counts _ _ _ clear_layout 0).1, clear_nodes]
 
 theorem hot_injective : Function.Injective hot := by
@@ -461,11 +462,11 @@ theorem low_ne_hot : ∀ i j, low i ≠ hot j := by
   have := i.isLt
   (try dsimp only [Wire] at *); omega
 
-theorem hot_disjoint : (MeasuredClear.hotBank hot).Disjoint
+theorem hot_disjoint : (MeasuredClear.hotBank9 hot).Disjoint
     (836 :: (tableAddressTree high 0 1).indexWires.dedup ++ clearPaths) := by
   rw [high_index]
   intro w hw hm
-  simp only [MeasuredClear.hotBank, hot_eq, high, clearPaths, List.mem_cons, List.mem_append,
+  simp only [MeasuredClear.hotBank9, hot_eq, high, clearPaths, List.mem_cons, List.mem_append,
     List.mem_range'_1, List.mem_singleton, List.not_mem_nil, or_false] at hw hm
   (try dsimp only [Wire] at *); omega
 
@@ -473,8 +474,8 @@ theorem scratch_not_tree : scratch ∉ 836 :: (tableAddressTree high 0 1).indexW
   rw [high_index]
   decide +kernel
 
-theorem scratch_not_hot : scratch ∉ MeasuredClear.hotBank hot := by
-  rw [MeasuredClear.hotBank, hot_eq]
+theorem scratch_not_hot : scratch ∉ MeasuredClear.hotBank9 hot := by
+  rw [MeasuredClear.hotBank9, hot_eq]
   decide +kernel
 
 theorem tree_not_targets : ∀ w ∈ 836 :: List.ofFn low ++ (tableAddressTree high 0 1).indexWires.dedup ++ clearPaths,
@@ -493,9 +494,10 @@ theorem hot_targets : ∀ i, hot i ∈ clearData.map MeasuredClear.ClearPort.tar
   have := i.isLt
   (try dsimp only [Wire] at *); omega
 
-theorem low_high_bits : [MeasuredClear.lowN low 0, MeasuredClear.lowN low 1, MeasuredClear.lowN low 2,
-    MeasuredClear.lowN low 3, MeasuredClear.lowN low 4, MeasuredClear.lowN low 5,
-    MeasuredClear.lowN low 6] ++ high = SelectSchedule18.bits := by
+theorem low_high_bits : [MeasuredClear.lowN9 low 0, MeasuredClear.lowN9 low 1, MeasuredClear.lowN9 low 2,
+    MeasuredClear.lowN9 low 3, MeasuredClear.lowN9 low 4, MeasuredClear.lowN9 low 5,
+    MeasuredClear.lowN9 low 6, MeasuredClear.lowN9 low 7, MeasuredClear.lowN9 low 8] ++ high =
+      SelectSchedule18.bits := by
   decide +kernel
 
 theorem zip_loaded (read : ConstantBit 262144 → Bool) (a : Nat) (t : BasisState) :
@@ -517,11 +519,11 @@ theorem zip_loaded (read : ConstantBit 262144 → Bool) (a : Nat) (t : BasisStat
     · exact zip_loaded read a t fs ws h'.2 p hp
 
 theorem loaded_clear (read : ConstantBit 262144 → Bool) (s : BasisState) (hs : SelectSchedule18.Input s) :
-    MeasuredClear.LoadedClear clearData read low (tableAddressTree high 0 1) 836 (loaded read s) := by
+    MeasuredClear.LoadedClear9 clearData read low (tableAddressTree high 0 1) 836 (loaded read s) := by
   obtain ⟨tf, -, tg⟩ := loaded_facts read s hs
-  have haddr : 128 * (tableAddressTree high 0 1).routeLabel (loaded read s) +
-      MeasuredClear.hotAddress low (loaded read s) = tableAddressValue SelectSchedule18.bits s := by
-    rw [MeasuredClear.splitAddress_value, low_high_bits]
+  have haddr : 512 * (tableAddressTree high 0 1).routeLabel (loaded read s) +
+      MeasuredClear.hotAddress9 low (loaded read s) = tableAddressValue SelectSchedule18.bits s := by
+    rw [MeasuredClear.splitAddress_value9, low_high_bits]
     apply tableAddressValue_congr
     intro w hw
     have hw' : (855 ≤ w ∧ w < 872) ∨ w = 537 := by
@@ -533,7 +535,7 @@ theorem loaded_clear (read : ConstantBit 262144 → Bool) (s : BasisState) (hs :
   have h836 : loaded read s 836 = true := by
     rw [tf 836 (fun h => by have := mem_point h; (try dsimp only [Wire] at *); omega) (fun h => by have := mem_garb h; (try dsimp only [Wire] at *); omega)]
     exact hs.1
-  unfold MeasuredClear.LoadedClear
+  unfold MeasuredClear.LoadedClear9
   intro p hp
   rw [haddr, h836]
   apply zip_loaded read _ (loaded read s) slots garb _ p hp
@@ -573,24 +575,24 @@ def selProgram (start : Nat) : Straight 262144 start (start + 131071) :=
 def swapProgram (start : Nat) : Straight 262144 start start := literalProgram swapCircuit
 
 theorem clear_finish (start : Nat) : start + clearData.length + (MeasuredClear.recordMeasurements
-    (MeasuredClear.recordUnaryOps (tableAddressTree high 0 1) 836 clearPaths) + 127) = start + 2687 := by
+    (MeasuredClear.recordUnaryOps (tableAddressTree high 0 1) 836 clearPaths) + 511) = start + 1535 := by
   rw [clearData_length, clear_measurements, Nat.add_assoc] <;> rfl
 
-def clearProgram (start : Nat) : Straight 262144 start (start + 2687) :=
+def clearProgram (start : Nat) : Straight 262144 start (start + 1535) :=
   castFinish (clear_finish start)
-    (MeasuredClear.measuredClear clearData low hot (tableAddressTree high 0 1) 836 scratch clearPaths start)
+    (MeasuredClear.measuredClear9 clearData low hot (tableAddressTree high 0 1) 836 scratch clearPaths start)
 
-theorem program_finish (start : Nat) : start + 131071 + 2687 = start + 133758 := by
+theorem program_finish (start : Nat) : start + 131071 + 1535 = start + 132606 := by
   rw [Nat.add_assoc] <;> rfl
 
-def program (start : Nat) : Straight 262144 start (start + 133758) :=
+def program (start : Nat) : Straight 262144 start (start + 132606) :=
   castFinish (program_finish start)
     (((selProgram start).append (swapProgram (start + 131071))).append (clearProgram (start + 131071)))
 
 attribute [irreducible] selProgram swapProgram clearProgram program
 
 def clearSource (read : ConstantBit 262144 → Bool) : AdaptiveCircuit :=
-  (MeasuredClear.measuredClear clearData low hot (tableAddressTree high 0 1) 836 scratch clearPaths 0).instantiate
+  (MeasuredClear.measuredClear9 clearData low hot (tableAddressTree high 0 1) 836 scratch clearPaths 0).instantiate
     read Fin.elim0
 
 def source (read : ConstantBit 262144 → Bool) : AdaptiveCircuit :=
@@ -607,7 +609,7 @@ theorem swap_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : F
 
 theorem clear_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((clearProgram start).instantiate read history).run = (clearSource read).run := by
-  simp only [clearProgram, clearSource, castFinish_instantiate, MeasuredClear.measuredClear_run]
+  simp only [clearProgram, clearSource, castFinish_instantiate, MeasuredClear.measuredClear_run9]
 
 theorem program_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((program start).instantiate read history).run = (source read).run := by
@@ -640,8 +642,8 @@ theorem clear_coherent (read : ConstantBit 262144 → Bool) :
     CoherentlyImplementsOn (clearSource read)
       (Finsupp.lmapDomain ℂ ℂ (clearRegister (clearData.map MeasuredClear.ClearPort.target)))
       (fun s => Clean clearPaths s ∧
-        MeasuredClear.LoadedClear clearData read low (tableAddressTree high 0 1) 836 s) :=
-  MeasuredClear.measuredClear_recycled_coherent clearData read low hot (tableAddressTree high 0 1) 836
+        MeasuredClear.LoadedClear9 clearData read low (tableAddressTree high 0 1) 836 s) :=
+  MeasuredClear.measuredClear_recycled_coherent9 clearData read low hot (tableAddressTree high 0 1) 836
     scratch clearPaths clear_layout hot_injective low_ne_hot hot_disjoint scratch_not_tree scratch_not_hot
     (by rw [clearData_targets]; exact garb_nodup) tree_not_targets hot_targets 0 Fin.elim0
 
@@ -655,7 +657,7 @@ theorem sel_swap_ket (read : ConstantBit 262144 → Bool) (s : BasisState) :
 theorem loaded_supported (read : ConstantBit 262144 → Bool) (s : BasisState)
     (hs : SelectSchedule18.Input s) :
     SupportedOn (fun s => Clean clearPaths s ∧
-        MeasuredClear.LoadedClear clearData read low (tableAddressTree high 0 1) 836 s)
+        MeasuredClear.LoadedClear9 clearData read low (tableAddressTree high 0 1) 836 s)
       (((Quantum.run swapCircuit).comp
         (Finsupp.lmapDomain ℂ ℂ (tableLookupState (selMask read) selBits 836))) (ket s)) := by
   rw [sel_swap_ket]
@@ -725,7 +727,7 @@ theorem swap_wellFormed (start : Nat) : (swapProgram start).WellFormed := by
 theorem clear_wellFormed (start : Nat) : (clearProgram start).WellFormed := by
   rw [clearProgram, castFinish_wellFormed]
   generalize htree : tableAddressTree high 0 1 = tree
-  exact MeasuredClear.measuredClear_wellFormed clearData low hot tree 836 scratch clearPaths
+  exact MeasuredClear.measuredClear_wellFormed9 clearData low hot tree 836 scratch clearPaths
     (by rw [← htree]; exact clear_layout) hot_injective low_ne_hot
     (by rw [← htree]; exact scratch_not_tree) scratch_not_hot start
 
@@ -752,8 +754,8 @@ theorem swap_slots (start : Nat) : (swapProgram start).gateSlots = 3 * 513 := by
     Nat.min_self]
 
 theorem clear_slots (start : Nat) :
-    (clearProgram start).gateSlots = 512 * 513 * 2048 + 10 * 2047 + 1020 := by
-  rw [clearProgram, castFinish_gateSlots, MeasuredClear.measuredClear_slots _ _ _ _ _ _ _ clear_layout,
+    (clearProgram start).gateSlots = 2048 * 513 * 512 + 10 * 511 + 4092 := by
+  rw [clearProgram, castFinish_gateSlots, MeasuredClear.measuredClear_slots9 _ _ _ _ _ _ _ clear_layout,
     clearData_length, clear_leaves, clear_nodes]
 
 theorem program_slots (start : Nat) : (program start).gateSlots ≤ 1000000000 := by
@@ -818,9 +820,9 @@ theorem clear_support (start : Nat) : straightWires (clearProgram start) ⊆ sup
   have hsc : scratch ∈ clearData.map MeasuredClear.ClearPort.target := by
     rw [clearData_targets]
     simp [scratch, garb]
-  apply List.Subset.trans (MeasuredClear.measuredClear_static _ _ _ _ _ _ _ hsc start)
+  apply List.Subset.trans (MeasuredClear.measuredClear_static9 _ _ _ _ _ _ _ hsc start)
   intro w hw
-  rw [MeasuredClear.clearSupport, clearData_targets, high_index, MeasuredClear.hotBank, hot_eq,
+  rw [MeasuredClear.clearSupport9, clearData_targets, high_index, MeasuredClear.hotBank9, hot_eq,
     low_eq] at hw
   simp only [high, clearPaths, garb, List.mem_cons, List.mem_append, List.mem_range'_1,
     List.mem_singleton, List.not_mem_nil, or_false] at hw
@@ -849,7 +851,7 @@ theorem swap_residue (start : Nat) : residue (swapProgram start) = 0 := by
 
 theorem clear_residue (start : Nat) : residue (clearProgram start) = 0 := by
   rw [clearProgram, residue_cast]
-  exact MeasuredClear.measuredClear_residue _ _ _ _ _ _ _ _
+  exact MeasuredClear.measuredClear_residue9 _ _ _ _ _ _ _ _
 
 theorem program_residue (start : Nat) : residue (program start) = 0 := by
   rw [program, residue_cast, residue_append, residue_append, sel_residue, swap_residue, clear_residue] <;> rfl
@@ -864,28 +866,28 @@ theorem sel_added (start : Nat) : added (selProgram start) = 131071 := by
 theorem swap_added (start : Nat) : added (swapProgram start) = 513 := by
   rw [swapProgram, added_literal, swapCircuit, swapWords_ccx, point_length, garb_length, Nat.min_self]
 
-theorem clear_added (start : Nat) : added (clearProgram start) = 2174 := by
+theorem clear_added (start : Nat) : added (clearProgram start) = 1022 := by
   have h := exact_t (clearProgram start) (clear_residue start) (fun _ => false) (fun _ => false)
-  have ht : ((clearProgram start).instantiate (fun _ => false) (fun _ => false)).tCount = 7 * 2174 := by
+  have ht : ((clearProgram start).instantiate (fun _ => false) (fun _ => false)).tCount = 7 * 1022 := by
     rw [clearProgram, castFinish_instantiate,
-      MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ clear_layout, clear_nodes] <;> rfl
+      MeasuredClear.measuredClear_tCount9 _ _ _ _ _ _ _ clear_layout, clear_nodes] <;> rfl
   exact Nat.eq_of_mul_eq_mul_left (by decide +kernel) (h.symm.trans ht)
 
-theorem program_added (start : Nat) : added (program start) = 133758 := by
+theorem program_added (start : Nat) : added (program start) = 132606 := by
   rw [program, added_cast, added_append, added_append, sel_added, swap_added, clear_added] <;> rfl
 
 theorem program_credit (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
-    (history : Fin start → Bool) : added (program start) = 133758 := program_added start
+    (history : Fin start → Bool) : added (program start) = 132606 := program_added start
 
 theorem program_tCount (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
     (history : Fin start → Bool) :
-    ((program start).instantiate (readConstant coeffs Q) history).tCount = 936306 := by
+    ((program start).instantiate (readConstant coeffs Q) history).tCount = 928242 := by
   rw [exact_t _ (program_residue start), program_added] <;> rfl
 
 /-! ### The window -/
 
 def windowGeneric {n : Nat} (rows : Fin 262144 → Fin n) : Single.Window n :=
-  ⟨SelectSchedule18.bits.reverse, 133758, fun start => reindexStraight rows (program start)⟩
+  ⟨SelectSchedule18.bits.reverse, 132606, fun start => reindexStraight rows (program start)⟩
 
 theorem window_law_generic {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (init : Point → Nat → Point)
@@ -931,7 +933,7 @@ theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
 
 theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 936306 := by
+    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 928242 := by
   unfold windowGeneric
   rw [reindexStraight_instantiate,
     readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
@@ -939,7 +941,7 @@ theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 �
 
 theorem window_credit {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    added ((windowGeneric rows).program start) = 133758 := by
+    added ((windowGeneric rows).program start) = 132606 := by
   unfold windowGeneric
   rw [added_reindex]
   exact program_added start
