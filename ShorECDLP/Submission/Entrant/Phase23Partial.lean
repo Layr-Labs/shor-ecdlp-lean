@@ -9,7 +9,7 @@ set_option maxHeartbeats 4000000
 set_option maxRecDepth 10000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySeqFocus false
-theorem dropped_weight23_local (g : Gate) (hg : largePhase 23 g = true) :
+theorem dropped_weight23_local (g : Gate) (hg : largePhase 17 g = true) :
     ConditionalCatalyst.weightedGate g = 1 ∧ ConditionalCatalyst.weightedLiteral g = 1 := by
   cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
   case P dir k t =>
@@ -20,16 +20,16 @@ theorem dropped_weight23_local (g : Gate) (hg : largePhase 23 g = true) :
 def trimN {n s e} (N : Nat) : Straight n s e → Straight n s e
   | .done => .done
   | .gate (.literal g) p =>
-      if largePhase 23 g then trimN N p
-      else if decide (N > 0) && largePhase 22 g then trimN (N - 1) p
+      if largePhase 17 g then trimN N p
+      else if decide (N > 0) && largePhase 16 g then trimN (N - 1) p
       else .gate (.literal g) (trimN N p)
   | .gate (.whenBit r v g) p =>
-      if largePhase 23 g then trimN N p
-      else if decide (N > 0) && largePhase 22 g then trimN (N - 1) p
+      if largePhase 17 g then trimN N p
+      else if decide (N > 0) && largePhase 16 g then trimN (N - 1) p
       else .gate (.whenBit r v g) (trimN N p)
   | .recordGate i v g p =>
-      if largePhase 23 g then trimN N p
-      else if decide (N > 0) && largePhase 22 g then trimN (N - 1) p
+      if largePhase 17 g then trimN N p
+      else if decide (N > 0) && largePhase 16 g then trimN (N - 1) p
       else .recordGate i v g (trimN N p)
   | .measure w p => .measure w (trimN N p)
 
@@ -41,48 +41,48 @@ theorem trimN_added {n s e} (N : Nat) (p : Straight n s e) :
     cases g with
     | literal g =>
       simp only [trimN]
-      by_cases h27 : largePhase 23 g = true
+      by_cases h27 : largePhase 17 g = true
       · cases g <;> simp only [largePhase, Bool.false_eq_true] at h27
         simp only [largePhase, h27, if_true, added]
         exact ih N
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
         · cases g <;> simp only [largePhase, Bool.and_false, Bool.false_eq_true] at hN
           simp only [largePhase] at h27f
           simp only [largePhase, Bool.false_eq_true, h27f, if_false, hN, if_true,
             added, ih (N - 1)]
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
           cases g <;> simp only [largePhase] at h27f hNf <;>
             simp only [largePhase, Bool.false_eq_true, if_false, if_true,
               added, h27f, hNf, ih N]
     | whenBit r v g =>
       simp only [trimN]
-      by_cases h27 : largePhase 23 g = true
+      by_cases h27 : largePhase 17 g = true
       · cases g <;> simp only [largePhase, Bool.false_eq_true] at h27
         simp only [largePhase, h27, if_true, added]
         exact ih N
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
         · cases g <;> simp only [largePhase, Bool.and_false, Bool.false_eq_true] at hN
           simp only [largePhase] at h27f
           simp only [largePhase, Bool.false_eq_true, h27f, if_false, hN, if_true,
             added, ih (N - 1)]
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
           cases g <;> simp only [largePhase] at h27f hNf <;>
             simp only [largePhase, Bool.false_eq_true, if_false, if_true,
               added, h27f, hNf, ih N]
   | recordGate i v g p ih =>
     simp only [trimN]
-    by_cases h27 : largePhase 23 g = true
+    by_cases h27 : largePhase 17 g = true
     · simp only [h27, if_true, added]
       exact ih N
-    · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-      by_cases hN : (decide (N > 0) && largePhase 22 g) = true
+    · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+      by_cases hN : (decide (N > 0) && largePhase 16 g) = true
       · simp only [h27f, if_false, hN, if_true, added]
         exact ih (N - 1)
-      · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+      · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
           Bool.eq_false_iff.mpr hN
         simp only [h27f, if_false, hNf, if_false, added]
         exact ih N
@@ -141,50 +141,50 @@ theorem trimN_t {n s e} (N : Nat) (p : Straight n s e) (read : ConstantBit n →
     simp only [trimN, Straight.instantiate, AdaptiveCircuit.tCount]
     exact max_le_max (ih _ _) (ih _ _)
 
-/-! A k = 23 phase gate still has weight 1 when dropped. -/
-theorem dropped_weight27 (g : ShorECDLP.Gate) (hg : largePhase 22 g = true) :
+/-! A k = 17 phase gate still has weight 1 when dropped. -/
+theorem dropped_weight27 (g : ShorECDLP.Gate) (hg : largePhase 16 g = true) :
     ConditionalCatalyst.weightedGate g = 1 ∧ ConditionalCatalyst.weightedLiteral g = 1 := by
   cases g <;> simp only [largePhase, Bool.false_eq_true] at hg
   case P dir k t =>
-    have h1 : 22 < k := by simpa using hg
+    have h1 : 16 < k := by simpa using hg
     have hk : k ≠ 2 := by omega
     simp [ConditionalCatalyst.weightedGate, ConditionalCatalyst.weightedLiteral,
       ConditionalCatalyst.phaseTwoGate_P, hk, ShorECDLP.tCost]
 
-/-! Loss bound for a dropped k = 23 phase gate (unit charge). -/
+/-! Loss bound for a dropped k = 17 phase gate (unit charge). -/
 
 def trimSpent {n s e} (N : Nat) : Straight n s e → Nat
   | .done => 0
   | .gate (.literal g) p =>
-      if largePhase 23 g then trimSpent N p
-      else if decide (N > 0) && largePhase 22 g then 1 + trimSpent (N - 1) p
+      if largePhase 17 g then trimSpent N p
+      else if decide (N > 0) && largePhase 16 g then 1 + trimSpent (N - 1) p
       else trimSpent N p
   | .gate (.whenBit _ _ g) p =>
-      if largePhase 23 g then trimSpent N p
-      else if decide (N > 0) && largePhase 22 g then 1 + trimSpent (N - 1) p
+      if largePhase 17 g then trimSpent N p
+      else if decide (N > 0) && largePhase 16 g then 1 + trimSpent (N - 1) p
       else trimSpent N p
   | .recordGate _ _ g p =>
-      if largePhase 23 g then trimSpent N p
-      else if decide (N > 0) && largePhase 22 g then 1 + trimSpent (N - 1) p
+      if largePhase 17 g then trimSpent N p
+      else if decide (N > 0) && largePhase 16 g then 1 + trimSpent (N - 1) p
       else trimSpent N p
   | .measure _ p => trimSpent N p
 
 theorem weight4_trimN {n s e} (N : Nat) (p : Straight n s e) :
-    ConditionalCatalyst.weight4 (trimN N p) + removed 23 p + trimSpent N p =
+    ConditionalCatalyst.weight4 (trimN N p) + removed 17 p + trimSpent N p =
       ConditionalCatalyst.weight4 p := by
   induction p generalizing N with
   | done => rfl
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases h27 : largePhase 23 g = true
+      by_cases h27 : largePhase 17 g = true
       · have hw := (dropped_weight23_local g h27).2
         simp only [trimN, trimSpent, h27, if_true, removed, Bool.toNat_true,
           ConditionalCatalyst.weight4, hw]
         (have h1 := ih N; have h2 := ih (N - 1); omega)
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
-        · have hg26 : largePhase 22 g = true := by
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
+        · have hg26 : largePhase 16 g = true := by
             simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
             exact hN.2
           have hw := (dropped_weight27 g hg26).2
@@ -192,21 +192,21 @@ theorem weight4_trimN {n s e} (N : Nat) (p : Straight n s e) :
             if_true, removed, Bool.toNat_false, zero_add,
             ConditionalCatalyst.weight4, hw]
           (have h1 := ih N; have h2 := ih (N - 1); omega)
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
           simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hNf,
             Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
             ConditionalCatalyst.weight4]
           (have h1 := ih N; have h2 := ih (N - 1); omega)
     | whenBit r v g =>
-      by_cases h27 : largePhase 23 g = true
+      by_cases h27 : largePhase 17 g = true
       · have hw := (dropped_weight23_local g h27).1
         simp only [trimN, trimSpent, h27, if_true, removed, Bool.toNat_true,
           ConditionalCatalyst.weight4, hw]
         (have h1 := ih N; have h2 := ih (N - 1); omega)
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
-        · have hg26 : largePhase 22 g = true := by
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
+        · have hg26 : largePhase 16 g = true := by
             simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
             exact hN.2
           have hw := (dropped_weight27 g hg26).1
@@ -214,21 +214,21 @@ theorem weight4_trimN {n s e} (N : Nat) (p : Straight n s e) :
             if_true, removed, Bool.toNat_false, zero_add,
             ConditionalCatalyst.weight4, hw]
           (have h1 := ih N; have h2 := ih (N - 1); omega)
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
           simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hNf,
             Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
             ConditionalCatalyst.weight4]
           (have h1 := ih N; have h2 := ih (N - 1); omega)
   | recordGate i v g p ih =>
-    by_cases h27 : largePhase 23 g = true
+    by_cases h27 : largePhase 17 g = true
     · have hw := (dropped_weight23_local g h27).1
       simp only [trimN, trimSpent, h27, if_true, removed, Bool.toNat_true,
         ConditionalCatalyst.weight4, hw]
       (have h1 := ih N; have h2 := ih (N - 1); omega)
-    · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-      by_cases hN : (decide (N > 0) && largePhase 22 g) = true
-      · have hg26 : largePhase 22 g = true := by
+    · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+      by_cases hN : (decide (N > 0) && largePhase 16 g) = true
+      · have hg26 : largePhase 16 g = true := by
           simp only [Bool.and_eq_true, decide_eq_true_eq] at hN
           exact hN.2
         have hw := (dropped_weight27 g hg26).1
@@ -236,7 +236,7 @@ theorem weight4_trimN {n s e} (N : Nat) (p : Straight n s e) :
           if_true, removed, Bool.toNat_false, zero_add,
           ConditionalCatalyst.weight4, hw]
         (have h1 := ih N; have h2 := ih (N - 1); omega)
-      · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+      · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
           Bool.eq_false_iff.mpr hN
         simp only [trimN, trimSpent, h27, Bool.false_eq_true, if_false, hNf,
           Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
@@ -245,18 +245,18 @@ theorem weight4_trimN {n s e} (N : Nat) (p : Straight n s e) :
   | measure w p ih =>
     simp only [trimN, trimSpent, removed, ConditionalCatalyst.weight4, ih]
 
-/-! === count family: how many k = 23 gates exist (cutoff-22 machinery) === -/
+/-! === count family: how many k = 17 gates exist (cutoff-16 machinery) === -/
 
 def droppedSlots26 : Nat → Nat → Nat
   | 0, _ => 0
-  | width+1, prior => (prior - 21) + droppedSlots26 width (prior + 1)
+  | width+1, prior => (prior - 15) + droppedSlots26 width (prior + 1)
 
 def metadataDropped26 : List Nat → Nat → Nat
   | [], _ => 0
   | width :: ws, prior => droppedSlots26 width prior + metadataDropped26 ws (prior + width)
 
 theorem removed26_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
-    removed 22 (p.append q) = removed 22 p + removed 22 q := by
+    removed 16 (p.append q) = removed 16 p + removed 16 q := by
   induction p with
   | done => simp [Straight.append, removed]
   | gate g p ih => cases g <;> simp [Straight.append, removed, ih, Nat.add_assoc]
@@ -264,10 +264,10 @@ theorem removed26_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
   | measure w p ih => simp_all [Straight.append, removed]
 
 theorem removed26_cast {n s e f} (p : Straight n s e) (h : e = f) :
-    removed 22 (castFinish h p) = removed 22 p := by subst f; rfl
+    removed 16 (castFinish h p) = removed 16 p := by subst f; rfl
 
 theorem removed26_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
-    removed 22 (reindexStraight f p) = removed 22 p := by
+    removed 16 (reindexStraight f p) = removed 16 p := by
   induction p with
   | done => rfl
   | gate g p ih => cases g with
@@ -278,27 +278,27 @@ theorem removed26_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
 
 theorem removed26_feedback {n s e} (dir : ShorECDLP.PhaseDir) (w : ShorECDLP.Wire) (indices : List (Fin s))
     (k : Nat) (p : Straight n s e) :
-    removed 22 (feedbackProgram dir w indices k p) =
-      (indices.length - min indices.length (23 - k)) + removed 22 p := by
+    removed 16 (feedbackProgram dir w indices k p) =
+      (indices.length - min indices.length (17 - k)) + removed 16 p := by
   induction indices generalizing k with
   | nil => simp [feedbackProgram]
   | cons i is ih =>
     simp only [feedbackProgram, removed, largePhase, ih, List.length_cons]
-    by_cases hk : 22 < k
+    by_cases hk : 16 < k
     · simp only [hk, decide_true, Bool.toNat_true]
       omega
     · simp only [hk, decide_false, Bool.toNat_false]
       omega
 
 theorem removed26_prepare {n s e} (ws : List ShorECDLP.Wire) (p : Straight n s e) :
-    removed 22 (prepareOuterBank ws p) = removed 22 p := by
+    removed 16 (prepareOuterBank ws p) = removed 16 p := by
   induction ws with
   | nil => rfl
   | cons w ws ih => simpa [prepareOuterBank, removed, largePhase] using ih
 
 theorem removed_fourier26 (n : Nat) (dir : ShorECDLP.PhaseDir) (ws : List ShorECDLP.Wire)
     (start : Nat) (prior : List (Fin start)) :
-    removed 22 (fourierProgram n dir ws start prior) = droppedSlots26 ws.length prior.length := by
+    removed 16 (fourierProgram n dir ws start prior) = droppedSlots26 ws.length prior.length := by
   induction ws generalizing start with
   | nil => rfl
   | cons w ws ih => simp [fourierProgram, removed26_cast, removed26_feedback,
@@ -306,21 +306,21 @@ theorem removed_fourier26 (n : Nat) (dir : ShorECDLP.PhaseDir) (ws : List ShorEC
 
 theorem weighted26_removed_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
     (r : Straight n k e) (h : e = f) :
-    removed 22 (Single.framed p q r h) = removed 22 p + removed 22 q + removed 22 r := by
+    removed 16 (Single.framed p q r h) = removed 16 p + removed 16 q + removed 16 r := by
   simp [Single.framed, removed, removed26_cast, removed26_append, largePhase, Nat.add_assoc]
 
 theorem weighted26_removed_fixedEntry {n e} (f : Fin n → PointCoeff) (p : Straight n 0 e) :
-    removed 22 (Single.fixedEntry f p).program = removed 22 p := by
+    removed 16 (Single.fixedEntry f p).program = removed 16 p := by
   unfold Single.fixedEntry
   exact removed26_reindex p _
 
 theorem largePhase_mono (g : ShorECDLP.Gate) :
-    (largePhase 23 g).toNat ≤ (largePhase 22 g).toNat := by
+    (largePhase 17 g).toNat ≤ (largePhase 16 g).toNat := by
   cases g with
   | P dir k t =>
     simp only [largePhase]
-    by_cases h : 23 < k
-    · have h26 : 22 < k := by omega
+    by_cases h : 17 < k
+    · have h26 : 16 < k := by omega
       simp [h, h26, Bool.toNat_true]
     · simp [h, Bool.toNat_false, Nat.zero_le]
   | X t => simp only [largePhase, Bool.toNat_false] <;> omega
@@ -328,13 +328,13 @@ theorem largePhase_mono (g : ShorECDLP.Gate) :
   | CX a b => simp only [largePhase, Bool.toNat_false] <;> omega
   | CCX a b c => simp only [largePhase, Bool.toNat_false] <;> omega
 
-theorem largePhase_mono_true (g : ShorECDLP.Gate) (h : largePhase 23 g = true) :
-    largePhase 22 g = true := by
+theorem largePhase_mono_true (g : ShorECDLP.Gate) (h : largePhase 17 g = true) :
+    largePhase 16 g = true := by
   cases g with
   | P dir k t =>
     simp only [largePhase] at h ⊢
-    have h27 : 23 < k := by simpa using h
-    have h26 : 22 < k := by omega
+    have h27 : 17 < k := by simpa using h
+    have h26 : 16 < k := by omega
     simp [h26]
   | X t => simp only [largePhase, Bool.false_eq_true] at h
   | H t => simp only [largePhase, Bool.false_eq_true] at h
@@ -342,7 +342,7 @@ theorem largePhase_mono_true (g : ShorECDLP.Gate) (h : largePhase 23 g = true) :
   | CCX a b c => simp only [largePhase, Bool.false_eq_true] at h
 
 theorem removed27_le_removed26 {n s e} (p : Straight n s e) :
-    removed 23 p ≤ removed 22 p := by
+    removed 17 p ≤ removed 16 p := by
   induction p with
   | done => simp only [removed]; omega
   | gate g p ih =>
@@ -374,7 +374,7 @@ theorem removed_axis_diff [body : Single.WindowBody] [ledger : Single.ProducerRe
     (hw : List.Forall₂ (fun w c => w.wires.length = c) ws widths)
     (start : Nat) (prior : List (Fin start)) :
     metadataDropped26 widths prior.length - AffineLoss.metadataDropped23 widths prior.length ≤
-      removed 22 (Single.axis ws start prior) - removed 23 (Single.axis ws start prior) := by
+      removed 16 (Single.axis ws start prior) - removed 17 (Single.axis ws start prior) := by
   induction ws generalizing widths start with
   | nil =>
     cases hw
@@ -401,21 +401,21 @@ theorem removed_axis_diff [body : Single.WindowBody] [ledger : Single.ProducerRe
       omega
 
 theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
-    trimSpent N p = min N (removed 22 p - removed 23 p) := by
+    trimSpent N p = min N (removed 16 p - removed 17 p) := by
   induction p generalizing N with
   | done => simp only [trimSpent, removed]; omega
   | gate g p ih =>
-    have hm : removed 23 p ≤ removed 22 p := removed27_le_removed26 p
+    have hm : removed 17 p ≤ removed 16 p := removed27_le_removed26 p
     cases g with
     | literal g =>
-      by_cases h27 : largePhase 23 g = true
-      · have h26t : largePhase 22 g = true := largePhase_mono_true g h27
+      by_cases h27 : largePhase 17 g = true
+      · have h26t : largePhase 16 g = true := largePhase_mono_true g h27
         simp only [trimSpent, h27, if_true]
         simp only [removed, h27, h26t, Bool.toNat_true]
         have h1 := ih N; omega
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
-        · have hg26 : largePhase 22 g = true := by
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
+        · have hg26 : largePhase 16 g = true := by
             have h := hN
             simp only [Bool.and_eq_true, decide_eq_true_eq] at h
             exact h.2
@@ -426,9 +426,9 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
           simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hN, if_true]
           simp only [removed, h27f, hg26, Bool.toNat_true, Bool.toNat_false, zero_add]
           have h1 := ih N; have h2 := ih (N - 1); omega
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
-          by_cases h26 : largePhase 22 g = true
+          by_cases h26 : largePhase 16 g = true
           · have hN0 : N = 0 := by
               rcases Nat.eq_zero_or_pos N with h0 | hpos
               · exact h0
@@ -436,19 +436,19 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
             simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
             simp only [removed, h26, h27f, Bool.toNat_true, Bool.toNat_false, zero_add]
             have h1 := ih N; omega
-          · have h26f : largePhase 22 g = false := Bool.eq_false_iff.mpr h26
+          · have h26f : largePhase 16 g = false := Bool.eq_false_iff.mpr h26
             simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
             simp only [removed, h26f, h27f, Bool.toNat_false, zero_add]
             have h1 := ih N; omega
     | whenBit r v g =>
-      by_cases h27 : largePhase 23 g = true
-      · have h26t : largePhase 22 g = true := largePhase_mono_true g h27
+      by_cases h27 : largePhase 17 g = true
+      · have h26t : largePhase 16 g = true := largePhase_mono_true g h27
         simp only [trimSpent, h27, if_true]
         simp only [removed, h27, h26t, Bool.toNat_true]
         have h1 := ih N; omega
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
-        · have hg26 : largePhase 22 g = true := by
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
+        · have hg26 : largePhase 16 g = true := by
             have h := hN
             simp only [Bool.and_eq_true, decide_eq_true_eq] at h
             exact h.2
@@ -459,9 +459,9 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
           simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hN, if_true]
           simp only [removed, h27f, hg26, Bool.toNat_true, Bool.toNat_false, zero_add]
           have h1 := ih N; have h2 := ih (N - 1); omega
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
-          by_cases h26 : largePhase 22 g = true
+          by_cases h26 : largePhase 16 g = true
           · have hN0 : N = 0 := by
               rcases Nat.eq_zero_or_pos N with h0 | hpos
               · exact h0
@@ -469,20 +469,20 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
             simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
             simp only [removed, h26, h27f, Bool.toNat_true, Bool.toNat_false, zero_add]
             have h1 := ih N; omega
-          · have h26f : largePhase 22 g = false := Bool.eq_false_iff.mpr h26
+          · have h26f : largePhase 16 g = false := Bool.eq_false_iff.mpr h26
             simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
             simp only [removed, h26f, h27f, Bool.toNat_false, zero_add]
             have h1 := ih N; omega
   | recordGate i v g p ih =>
-      have hm : removed 23 p ≤ removed 22 p := removed27_le_removed26 p
-      by_cases h27 : largePhase 23 g = true
-      · have h26t : largePhase 22 g = true := largePhase_mono_true g h27
+      have hm : removed 17 p ≤ removed 16 p := removed27_le_removed26 p
+      by_cases h27 : largePhase 17 g = true
+      · have h26t : largePhase 16 g = true := largePhase_mono_true g h27
         simp only [trimSpent, h27, if_true]
         simp only [removed, h27, h26t, Bool.toNat_true]
         have h1 := ih N; omega
-      · have h27f : largePhase 23 g = false := Bool.eq_false_iff.mpr h27
-        by_cases hN : (decide (N > 0) && largePhase 22 g) = true
-        · have hg26 : largePhase 22 g = true := by
+      · have h27f : largePhase 17 g = false := Bool.eq_false_iff.mpr h27
+        by_cases hN : (decide (N > 0) && largePhase 16 g) = true
+        · have hg26 : largePhase 16 g = true := by
             have h := hN
             simp only [Bool.and_eq_true, decide_eq_true_eq] at h
             exact h.2
@@ -493,9 +493,9 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
           simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hN, if_true]
           simp only [removed, h27f, hg26, Bool.toNat_true, Bool.toNat_false, zero_add]
           have h1 := ih N; have h2 := ih (N - 1); omega
-        · have hNf : (decide (N > 0) && largePhase 22 g) = false :=
+        · have hNf : (decide (N > 0) && largePhase 16 g) = false :=
             Bool.eq_false_iff.mpr hN
-          by_cases h26 : largePhase 22 g = true
+          by_cases h26 : largePhase 16 g = true
           · have hN0 : N = 0 := by
               rcases Nat.eq_zero_or_pos N with h0 | hpos
               · exact h0
@@ -503,7 +503,7 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
             simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
             simp only [removed, h26, h27f, Bool.toNat_true, Bool.toNat_false, zero_add]
             have h1 := ih N; omega
-          · have h26f : largePhase 22 g = false := Bool.eq_false_iff.mpr h26
+          · have h26f : largePhase 16 g = false := Bool.eq_false_iff.mpr h26
             simp only [trimSpent, h27f, Bool.false_eq_true, if_false, hNf, if_false]
             simp only [removed, h26f, h27f, Bool.toNat_false, zero_add]
             have h1 := ih N; omega
@@ -514,16 +514,16 @@ theorem trimSpent_eq {n s e} (N : Nat) (p : Straight n s e) :
 def activeCost {n s e} (N : Nat) : Straight n s e → ℝ
   | .done => 0
   | .gate (.literal g) p =>
-      if largePhase 23 g then charge23 g + activeCost N p
-      else if decide (N > 0) && largePhase 22 g then unit23 + activeCost (N-1) p
+      if largePhase 17 g then charge23 g + activeCost N p
+      else if decide (N > 0) && largePhase 16 g then unit23 + activeCost (N-1) p
       else activeCost N p
   | .gate (.whenBit _ _ g) p =>
-      if largePhase 23 g then charge23 g + activeCost N p
-      else if decide (N > 0) && largePhase 22 g then unit23 + activeCost (N-1) p
+      if largePhase 17 g then charge23 g + activeCost N p
+      else if decide (N > 0) && largePhase 16 g then unit23 + activeCost (N-1) p
       else activeCost N p
   | .recordGate _ _ g p =>
-      if largePhase 23 g then charge23 g + activeCost N p
-      else if decide (N > 0) && largePhase 22 g then unit23 + activeCost (N-1) p
+      if largePhase 17 g then charge23 g + activeCost N p
+      else if decide (N > 0) && largePhase 16 g then unit23 + activeCost (N-1) p
       else activeCost N p
   | .measure _ p => activeCost N p
 
@@ -546,11 +546,11 @@ theorem activeCost_bound {n s e} (N : Nat) (p : Straight n s e) :
   | recordGate i v g p ih =>
     have ht := ih N
     have hc := charge23_nonneg g
-    by_cases hg : largePhase 23 g = true
+    by_cases hg : largePhase 17 g = true
     · simp only [activeCost,hg,if_true,cost23]; linarith
-    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 17 g = false := Bool.eq_false_iff.mpr hg
       have hz := charge23_false g hgf
-      by_cases hN : (decide (N>0) && largePhase 22 g) = true
+      by_cases hN : (decide (N>0) && largePhase 16 g) = true
       · have hpos : 0<N := by
           have h := hN
           simp only [Bool.and_eq_true,decide_eq_true_eq] at h
@@ -560,18 +560,18 @@ theorem activeCost_bound {n s e} (N : Nat) (p : Straight n s e) :
         rw [hn] at ht'
         simp only [activeCost,hgf,Bool.false_eq_true,if_false,hN,if_true,cost23,hz,zero_add]
         linarith
-      · have hNf : (decide (N>0) && largePhase 22 g) = false := Bool.eq_false_iff.mpr hN
+      · have hNf : (decide (N>0) && largePhase 16 g) = false := Bool.eq_false_iff.mpr hN
         simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf,cost23,hz,zero_add] using ht
   | gate g p ih =>
     cases g with
     | literal g =>
       have ht := ih N
       have hc := charge23_nonneg g
-      by_cases hg : largePhase 23 g = true
+      by_cases hg : largePhase 17 g = true
       · simp only [activeCost,hg,if_true,cost23]; linarith
-      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 17 g = false := Bool.eq_false_iff.mpr hg
         have hz := charge23_false g hgf
-        by_cases hN : (decide (N>0) && largePhase 22 g) = true
+        by_cases hN : (decide (N>0) && largePhase 16 g) = true
         · have hpos : 0<N := by
             have h := hN
             simp only [Bool.and_eq_true,decide_eq_true_eq] at h
@@ -581,16 +581,16 @@ theorem activeCost_bound {n s e} (N : Nat) (p : Straight n s e) :
           rw [hn] at ht'
           simp only [activeCost,hgf,Bool.false_eq_true,if_false,hN,if_true,cost23,hz,zero_add]
           linarith
-        · have hNf : (decide (N>0) && largePhase 22 g) = false := Bool.eq_false_iff.mpr hN
+        · have hNf : (decide (N>0) && largePhase 16 g) = false := Bool.eq_false_iff.mpr hN
           simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf,cost23,hz,zero_add] using ht
     | whenBit r v g =>
       have ht := ih N
       have hc := charge23_nonneg g
-      by_cases hg : largePhase 23 g = true
+      by_cases hg : largePhase 17 g = true
       · simp only [activeCost,hg,if_true,cost23]; linarith
-      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 17 g = false := Bool.eq_false_iff.mpr hg
         have hz := charge23_false g hgf
-        by_cases hN : (decide (N>0) && largePhase 22 g) = true
+        by_cases hN : (decide (N>0) && largePhase 16 g) = true
         · have hpos : 0<N := by
             have h := hN
             simp only [Bool.and_eq_true,decide_eq_true_eq] at h
@@ -600,37 +600,37 @@ theorem activeCost_bound {n s e} (N : Nat) (p : Straight n s e) :
           rw [hn] at ht'
           simp only [activeCost,hgf,Bool.false_eq_true,if_false,hN,if_true,cost23,hz,zero_add]
           linarith
-        · have hNf : (decide (N>0) && largePhase 22 g) = false := Bool.eq_false_iff.mpr hN
+        · have hNf : (decide (N>0) && largePhase 16 g) = false := Bool.eq_false_iff.mpr hN
           simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf,cost23,hz,zero_add] using ht
 
 theorem band_affine {n s e} (read : ConstantBit n → Bool)
     (p : Straight n s e) (history : Fin s → Bool) (psi : State)
     (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
-    (g : ShorECDLP.Gate) (hg : largePhase 22 g = true) (hf : largePhase 23 g = false) :
+    (g : ShorECDLP.Gate) (hg : largePhase 16 g = true) (hf : largePhase 17 g = false) :
     expectation read p history psi accept ≤
       (1+10*unit23)*expectation read p history (applyGate g psi) accept +
         (unit23/10+unit23^2)*normSq psi := by
   cases g <;> simp only [largePhase,Bool.false_eq_true] at hg hf
   case P dir k t =>
-    have hk : k=23 := by
-      have h1 : 22<k := by simpa using hg
-      have h2 : ¬23<k := by simpa using hf
+    have hk : k=17 := by
+      have h1 : 16<k := by simpa using hg
+      have h2 : ¬17<k := by simpa using hf
       omega
     subst hk
-    have ha : (phaseAngle dir 23/2)^2 ≤ unit23^2 := by
+    have ha : (phaseAngle dir 17/2)^2 ≤ unit23^2 := by
       have hpi := Real.pi_lt_d6
-      have hb : 2*Real.pi/(2:ℝ)^23/2 ≤ unit23 := by norm_num [unit23]; linarith
-      have hz : 0 ≤ 2*Real.pi/(2:ℝ)^23/2 := by positivity
+      have hb : 2*Real.pi/(2:ℝ)^17/2 ≤ unit23 := by norm_num [unit23]; linarith
+      have hz : 0 ≤ 2*Real.pi/(2:ℝ)^17/2 := by positivity
       cases dir <;> simp only [phaseAngle,neg_div,neg_sq] <;> nlinarith
-    exact phase_affine read p history psi accept hp dir 23 t unit23 unit23_pos ha
+    exact phase_affine read p history psi accept hp dir 17 t unit23 unit23_pos ha
 
 theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
     (p : Straight n s e) (N : Nat) (history : Fin s → Bool) (psi : State)
     (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
-    (hb : activeCost N p ≤ 1/5000) :
+    (hb : activeCost N p ≤ 263/20000) :
     expectation read (trimN N p) history psi accept ≤
-      (1+(10021/1000)*activeCost N p)*expectation read p history psi accept +
-        (10021/100000)*activeCost N p*normSq psi := by
+      (1+(288/25)*activeCost N p)*expectation read p history psi accept +
+        (288/2500)*activeCost N p*normSq psi := by
   induction p generalizing N psi with
   | done => simp [trimN,activeCost,expectation]
   | measure w p ih =>
@@ -643,15 +643,15 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
     ring
   | recordGate i v g p ih =>
     have hM := mass_nonneg psi
-    by_cases hg : largePhase 23 g = true
+    by_cases hg : largePhase 17 g = true
     · have ht := activeCost_nonneg N p
       have hd : 0≤charge23 g := charge23_nonneg g
-      have hb' : activeCost N p ≤ 1/5000 := by
+      have hb' : activeCost N p ≤ 263/20000 := by
         simp only [activeCost,hg,if_true] at hb
         linarith
       have hi := ih N history psi accept hp.2 hb'
       have hs := dropped_affine read p history psi accept hp.2 g hg
-      have hb'' : activeCost N p+charge23 g ≤ 1/5000 := by
+      have hb'' : activeCost N p+charge23 g ≤ 263/20000 := by
         simpa only [activeCost,hg,if_true,add_comm] using hb
       simp only [trimN,hg,if_true,expectation]
       by_cases hr : history i=v
@@ -660,17 +660,17 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
       · simp only [hr,if_false,run_nil,LinearMap.id_coe,id_eq]
         have hidle := idle_affine (charge23 g) (expectation read p history psi accept) (normSq psi) hd (expectation_nonneg read p history psi accept) hM
         simpa only [activeCost,hg,if_true,add_comm] using compose_bound _ _ _ _ _ _ ht hd hb'' (expectation_nonneg read p history psi accept) hM hidle hi
-    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
-      by_cases hNb : (decide (N>0) && largePhase 22 g) = true
-      · have hN : 0<N ∧ largePhase 22 g = true := by simpa only [Bool.and_eq_true,decide_eq_true_eq] using hNb
+    · have hgf : largePhase 17 g = false := Bool.eq_false_iff.mpr hg
+      by_cases hNb : (decide (N>0) && largePhase 16 g) = true
+      · have hN : 0<N ∧ largePhase 16 g = true := by simpa only [Bool.and_eq_true,decide_eq_true_eq] using hNb
         have ht := activeCost_nonneg (N-1) p
         have hd : 0≤unit23 := unit23_pos.le
-        have hb' : activeCost (N-1) p ≤ 1/5000 := by
+        have hb' : activeCost (N-1) p ≤ 263/20000 := by
           simp only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true] at hb
           linarith
         have hi := ih (N-1) history psi accept hp.2 hb'
         have hs := band_affine read p history psi accept hp.2 g hN.2 hgf
-        have hb'' : activeCost (N-1) p+unit23 ≤ 1/5000 := by
+        have hb'' : activeCost (N-1) p+unit23 ≤ 263/20000 := by
           simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true,add_comm] using hb
         simp only [trimN,hgf,Bool.false_eq_true,if_false,hNb,if_true,expectation]
         by_cases hr : history i=v
@@ -679,8 +679,8 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
         · simp only [hr,if_false,run_nil,LinearMap.id_coe,id_eq]
           have hidle := idle_affine (unit23) (expectation read p history psi accept) (normSq psi) hd (expectation_nonneg read p history psi accept) hM
           simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true,add_comm] using compose_bound _ _ _ _ _ _ ht hd hb'' (expectation_nonneg read p history psi accept) hM hidle hi
-      · have hNf : (decide (N>0) && largePhase 22 g) = false := Bool.eq_false_iff.mpr hNb
-        have hb' : activeCost N p ≤ 1/5000 := by simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf] using hb
+      · have hNf : (decide (N>0) && largePhase 16 g) = false := Bool.eq_false_iff.mpr hNb
+        have hb' : activeCost N p ≤ 263/20000 := by simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf] using hb
         have hi := ih N history (Quantum.run (if history i=v then [g] else []) psi) accept hp.2 hb'
         have hn : normSq (Quantum.run (if history i=v then [g] else []) psi) = normSq psi := by
           apply normSq_run
@@ -693,34 +693,34 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
     cases g with
     | literal g =>
       have hM := mass_nonneg psi
-      by_cases hg : largePhase 23 g = true
+      by_cases hg : largePhase 17 g = true
       · have ht := activeCost_nonneg N p
         have hd : 0≤charge23 g := charge23_nonneg g
-        have hb' : activeCost N p ≤ 1/5000 := by
+        have hb' : activeCost N p ≤ 263/20000 := by
           simp only [activeCost,hg,if_true] at hb
           linarith
         have hi := ih N history psi accept hp.2 hb'
         have hs := dropped_affine read p history psi accept hp.2 g hg
-        have hb'' : activeCost N p+charge23 g ≤ 1/5000 := by
+        have hb'' : activeCost N p+charge23 g ≤ 263/20000 := by
           simpa only [activeCost,hg,if_true,add_comm] using hb
         simp only [trimN,hg,if_true,expectation,TemplateGate.instantiate,run_singleton]
         simpa only [activeCost,hg,if_true,add_comm] using compose_bound _ _ _ _ _ _ ht hd hb'' (expectation_nonneg read p history (applyGate g psi) accept) hM hs hi
-      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
-        by_cases hNb : (decide (N>0) && largePhase 22 g) = true
-        · have hN : 0<N ∧ largePhase 22 g = true := by simpa only [Bool.and_eq_true,decide_eq_true_eq] using hNb
+      · have hgf : largePhase 17 g = false := Bool.eq_false_iff.mpr hg
+        by_cases hNb : (decide (N>0) && largePhase 16 g) = true
+        · have hN : 0<N ∧ largePhase 16 g = true := by simpa only [Bool.and_eq_true,decide_eq_true_eq] using hNb
           have ht := activeCost_nonneg (N-1) p
           have hd : 0≤unit23 := unit23_pos.le
-          have hb' : activeCost (N-1) p ≤ 1/5000 := by
+          have hb' : activeCost (N-1) p ≤ 263/20000 := by
             simp only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true] at hb
             linarith
           have hi := ih (N-1) history psi accept hp.2 hb'
           have hs := band_affine read p history psi accept hp.2 g hN.2 hgf
-          have hb'' : activeCost (N-1) p+unit23 ≤ 1/5000 := by
+          have hb'' : activeCost (N-1) p+unit23 ≤ 263/20000 := by
             simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true,add_comm] using hb
           simp only [trimN,hgf,Bool.false_eq_true,if_false,hNb,if_true,expectation,TemplateGate.instantiate,run_singleton]
           simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true,add_comm] using compose_bound _ _ _ _ _ _ ht hd hb'' (expectation_nonneg read p history (applyGate g psi) accept) hM hs hi
-        · have hNf : (decide (N>0) && largePhase 22 g) = false := Bool.eq_false_iff.mpr hNb
-          have hb' : activeCost N p ≤ 1/5000 := by simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf] using hb
+        · have hNf : (decide (N>0) && largePhase 16 g) = false := Bool.eq_false_iff.mpr hNb
+          have hb' : activeCost N p ≤ 263/20000 := by simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf] using hb
           have hi := ih N history (Quantum.run [g] psi) accept hp.2 hb'
           have hn : normSq (Quantum.run [g] psi) = normSq psi := by
             apply normSq_run
@@ -729,15 +729,15 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
           simpa only [trimN,activeCost,hgf,Bool.false_eq_true,if_false,hNf,expectation,TemplateGate.instantiate] using hi
     | whenBit r v g =>
       have hM := mass_nonneg psi
-      by_cases hg : largePhase 23 g = true
+      by_cases hg : largePhase 17 g = true
       · have ht := activeCost_nonneg N p
         have hd : 0≤charge23 g := charge23_nonneg g
-        have hb' : activeCost N p ≤ 1/5000 := by
+        have hb' : activeCost N p ≤ 263/20000 := by
           simp only [activeCost,hg,if_true] at hb
           linarith
         have hi := ih N history psi accept hp.2 hb'
         have hs := dropped_affine read p history psi accept hp.2 g hg
-        have hb'' : activeCost N p+charge23 g ≤ 1/5000 := by
+        have hb'' : activeCost N p+charge23 g ≤ 263/20000 := by
           simpa only [activeCost,hg,if_true,add_comm] using hb
         simp only [trimN,hg,if_true,expectation,TemplateGate.instantiate]
         by_cases hr : read r=v
@@ -746,17 +746,17 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
         · simp only [hr,if_false,run_nil,LinearMap.id_coe,id_eq]
           have hidle := idle_affine (charge23 g) (expectation read p history psi accept) (normSq psi) hd (expectation_nonneg read p history psi accept) hM
           simpa only [activeCost,hg,if_true,add_comm] using compose_bound _ _ _ _ _ _ ht hd hb'' (expectation_nonneg read p history psi accept) hM hidle hi
-      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
-        by_cases hNb : (decide (N>0) && largePhase 22 g) = true
-        · have hN : 0<N ∧ largePhase 22 g = true := by simpa only [Bool.and_eq_true,decide_eq_true_eq] using hNb
+      · have hgf : largePhase 17 g = false := Bool.eq_false_iff.mpr hg
+        by_cases hNb : (decide (N>0) && largePhase 16 g) = true
+        · have hN : 0<N ∧ largePhase 16 g = true := by simpa only [Bool.and_eq_true,decide_eq_true_eq] using hNb
           have ht := activeCost_nonneg (N-1) p
           have hd : 0≤unit23 := unit23_pos.le
-          have hb' : activeCost (N-1) p ≤ 1/5000 := by
+          have hb' : activeCost (N-1) p ≤ 263/20000 := by
             simp only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true] at hb
             linarith
           have hi := ih (N-1) history psi accept hp.2 hb'
           have hs := band_affine read p history psi accept hp.2 g hN.2 hgf
-          have hb'' : activeCost (N-1) p+unit23 ≤ 1/5000 := by
+          have hb'' : activeCost (N-1) p+unit23 ≤ 263/20000 := by
             simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true,add_comm] using hb
           simp only [trimN,hgf,Bool.false_eq_true,if_false,hNb,if_true,expectation,TemplateGate.instantiate]
           by_cases hr : read r=v
@@ -765,8 +765,8 @@ theorem trimN_affine {n s e} (read : ConstantBit n → Bool)
           · simp only [hr,if_false,run_nil,LinearMap.id_coe,id_eq]
             have hidle := idle_affine (unit23) (expectation read p history psi accept) (normSq psi) hd (expectation_nonneg read p history psi accept) hM
             simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNb,if_true,add_comm] using compose_bound _ _ _ _ _ _ ht hd hb'' (expectation_nonneg read p history psi accept) hM hidle hi
-        · have hNf : (decide (N>0) && largePhase 22 g) = false := Bool.eq_false_iff.mpr hNb
-          have hb' : activeCost N p ≤ 1/5000 := by simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf] using hb
+        · have hNf : (decide (N>0) && largePhase 16 g) = false := Bool.eq_false_iff.mpr hNb
+          have hb' : activeCost N p ≤ 263/20000 := by simpa only [activeCost,hgf,Bool.false_eq_true,if_false,hNf] using hb
           have hi := ih N history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2 hb'
           have hn : normSq (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) = normSq psi := by
             exact normSq_template read (.whenBit r v g) hp.1 psi
@@ -781,14 +781,14 @@ theorem exact_band_metadata :
     (metadataDropped26 [10] 0 - AffineLoss.metadataDropped23 [10] 0) +
     (metadataDropped26 [8] 0 - AffineLoss.metadataDropped23 [8] 0) +
     (metadataDropped26 leftWidthsBody 10 - AffineLoss.metadataDropped23 leftWidthsBody 10) +
-    (metadataDropped26 rightWidthsBody 8 - AffineLoss.metadataDropped23 rightWidthsBody 8) = 425 := by
+    (metadataDropped26 rightWidthsBody 8 - AffineLoss.metadataDropped23 rightWidthsBody 8) = 437 := by
   decide +kernel
 
 theorem axes_band_count (impl : Implementation) (start : Nat) :
-    425 ≤ (removed 22 (mixHead impl.headA start) +
-      removed 22 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start)) -
-      (removed 23 (mixHead impl.headA start) +
-      removed 23 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start)) := by
+    437 ≤ (removed 16 (mixHead impl.headA start) +
+      removed 16 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start)) -
+      (removed 17 (mixHead impl.headA start) +
+      removed 17 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start)) := by
   have hA := removed_axis_diff ([impl.headA]) ([10]) (headA_width_relation impl) start List.nil
   have hB := removed_axis_diff ([impl.headB]) ([8]) (headB_width_relation impl)
     (mixS1 impl.headA start) List.nil
@@ -812,7 +812,7 @@ theorem axes_band_count (impl : Implementation) (start : Nat) :
   omega
 
 theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
-    425 ≤ removed 22 (fullProgram impl reset) - removed 23 (fullProgram impl reset) := by
+    437 ≤ removed 16 (fullProgram impl reset) - removed 17 (fullProgram impl reset) := by
   have h := axes_band_count impl 0
   have hz := removed27_le_removed26
     (resetProgram 1769472 (mixS4 impl.headA impl.headB (leftBodies impl) (rightBodies impl) 0) reset)
@@ -823,8 +823,8 @@ theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
 
 
 
-theorem source_spent86 (impl : Implementation) (reset : List ShorECDLP.Wire) :
-    trimSpent 86 (sourceEntry impl reset).program = 86 := by
+theorem source_spent115 (impl : Implementation) (reset : List ShorECDLP.Wire) :
+    trimSpent 115 (sourceEntry impl reset).program = 115 := by
   rw [trimSpent_eq]
   have h := fullProgram_band_count impl reset
   unfold sourceEntry
@@ -833,6 +833,6 @@ theorem source_spent86 (impl : Implementation) (reset : List ShorECDLP.Wire) :
 
 #print axioms trimN_affine
 #print axioms activeCost_bound
-#print axioms source_spent86
+#print axioms source_spent115
 end
 end ShorECDLP.Entrant.Phase23Partial

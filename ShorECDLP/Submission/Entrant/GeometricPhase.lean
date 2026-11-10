@@ -126,7 +126,7 @@ theorem error_axis_exact {n} (ws : List (Window n))
     rw [Nat.add_comm w.wires.length prior.length]
 
 theorem budget_floor : ((1653/4:ℝ) + 1211) * ((6283186/1000000:ℝ)/2^28) ≤
-    990038025/1000000000 - 99/100 := by norm_num
+    99263/100000 - 99/100 := by norm_num
 
 
 open Width16Schedule ConditionalCatalyst
@@ -192,7 +192,7 @@ theorem full_error (impl : Width16Schedule.Implementation) (reset : List Wire) :
     error_zero _ (hz _ _ _)
   have hro : errorCost (Width16Schedule.readout impl reset) = 0 := by
     apply error_zero
-    simp only [Width16Schedule.readout,residue_cast,ApproximatePhase34.residue_suffix56]
+    simp only [Width16Schedule.readout,BlendReadout.suffix_residue]
   have hacc1 : account 261 0 = account 10 0 + account 251 10 := by
     have := account_append 10 251 0
     simpa using this
@@ -211,23 +211,23 @@ theorem source_error (impl : Width16Schedule.Implementation) (reset : List Wire)
 def entryTrim (entry : StraightEntry) : StraightEntry where
   coefficients := entry.coefficients
   finalCursor := entry.finalCursor
-  program := Phase23Partial.trimN 86 entry.program
+  program := Phase23Partial.trimN 115 entry.program
 theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
     (bounds : Bounds) (ws : List ShorECDLP.Wire) (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (herror : AffineLoss.cost23 entry.program ≤ (1685/4:ℝ)*AffineLoss.unit23)
+    (hs : Within ws entry.program) (herror : AffineLoss.cost23 entry.program ≤ (433001/1000:ℝ)*AffineLoss.unit23)
     (hstrong : ∀ (Q : ShorECDLP.Secp256k1.Point) (d : Nat), Q ≠ 0 →
       Q = d • ShorECDLP.Secp256k1.G →
-      (990038025/1000000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      (99263/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)) :
     Certificate limits layout (entryTrim entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
-  gateBudget := (Phase23Partial.trimN_slots 86 entry.program).trans cert.gateBudget
+  gateBudget := (Phase23Partial.trimN_slots 115 entry.program).trans cert.gateBudget
   recordBudget := cert.recordBudget
   tableBudget := cert.tableBudget
   candidateBudget := cert.candidateBudget
-  wellFormed := Phase23Partial.trimN_wellFormed 86 entry.program cert.wellFormed
+  wellFormed := Phase23Partial.trimN_wellFormed 115 entry.program cert.wellFormed
   resources := by
     intro Q
-    have hsup := (Phase23Partial.trimN_within 86 entry.program ws hs).instantiate
+    have hsup := (Phase23Partial.trimN_within 115 entry.program ws hs).instantiate
       (readConstant entry.coefficients.get Q) Fin.elim0
     have hc : (((entryTrim entry).instantiate Q).wires.dedup.toFinset).card ≤ ws.length := by
       apply (Finset.card_le_card ?_).trans (List.toFinset_card_le ws)
@@ -239,43 +239,43 @@ theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : Stra
       rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
       exact hc
     refine ⟨hqc, ?_, ?_⟩
-    · exact (Phase23Partial.trimN_t 86 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
+    · exact (Phase23Partial.trimN_t 115 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
           (cert.resources Q).2.1
     · have he := (entryTrim entry).program.measurementCount
         (readConstant entry.coefficients.get Q) Fin.elim0
       simpa only [Nat.add_zero] using he.le
   success := by
     intro Q d hn hd
-    have hc := Phase23Partial.activeCost_nonneg 86 entry.program
-    have he := Phase23Partial.activeCost_bound 86 entry.program
-    have hbound : Phase23Partial.activeCost 86 entry.program ≤ ((1685/4:ℝ)+86)*AffineLoss.unit23 := by
+    have hc := Phase23Partial.activeCost_nonneg 115 entry.program
+    have he := Phase23Partial.activeCost_bound 115 entry.program
+    have hbound : Phase23Partial.activeCost 115 entry.program ≤ ((433001/1000:ℝ)+115)*AffineLoss.unit23 := by
       norm_num only [Nat.cast_ofNat] at he
       linarith
-    have hb : Phase23Partial.activeCost 86 entry.program ≤ 1/5000 := by
+    have hb : Phase23Partial.activeCost 115 entry.program ≤ 263/20000 := by
       norm_num [AffineLoss.unit23] at hbound
       linarith
     let acc : (Fin entry.finalCursor → Bool) → Bool :=
       fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome
-    have h := Phase23Partial.trimN_affine (readConstant entry.coefficients.get Q) entry.program 86 Fin.elim0
+    have h := Phase23Partial.trimN_affine (readConstant entry.coefficients.get Q) entry.program 115 Fin.elim0
       (ket ShorECDLP.zeroBasisState) (fun h => !acc h) cert.wellFormed hb
     have hA := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q) entry.program Fin.elim0
       (ket ShorECDLP.zeroBasisState) acc cert.wellFormed
-    have hB := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q) (Phase23Partial.trimN 86 entry.program) Fin.elim0
-      (ket ShorECDLP.zeroBasisState) acc (Phase23Partial.trimN_wellFormed 86 entry.program cert.wellFormed)
+    have hB := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q) (Phase23Partial.trimN 115 entry.program) Fin.elim0
+      (ket ShorECDLP.zeroBasisState) acc (Phase23Partial.trimN_wellFormed 115 entry.program cert.wellFormed)
     dsimp only [acc] at hA hB h
     rw [expectation_verified,normSq_ket] at hA hB
     rw [normSq_ket] at h
     have hS := hstrong Q d hn hd
-    change 990038025/1000000000 ≤ Instrument.bornMass
+    change 99263/100000 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState) at hS
     have hf : expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket ShorECDLP.zeroBasisState)
-        (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤ 1-990038025/1000000000 := by
+        (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤ 1-99263/100000 := by
       linarith
-    have hm := mul_le_mul_of_nonneg_left hf (show 0 ≤ 1+(10021/1000)*Phase23Partial.activeCost 86 entry.program by positivity)
+    have hm := mul_le_mul_of_nonneg_left hf (show 0 ≤ 1+(288/25)*Phase23Partial.activeCost 115 entry.program by positivity)
     change 99/100 ≤ Instrument.bornMass
-      (((Phase23Partial.trimN 86 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
+      (((Phase23Partial.trimN 115 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)
     norm_num [AffineLoss.unit23] at hbound
     nlinarith
@@ -283,15 +283,15 @@ theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : Stra
 
 
 theorem source_weight (impl : Implementation) (reset : List Wire) :
-    weight4 (Phase23Partial.trimN 86 (sourceEntry impl reset).program) ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+9259 := by
+    weight4 (Phase23Partial.trimN 115 (sourceEntry impl reset).program) ≤
+      4*(132595+19*impl.credit17+8*impl.credit16)+6650 := by
   have hw := fullProgram_weight impl reset
   have hr := AffineLoss.source_removed23 impl reset
   have hew : weight4 (sourceEntry impl reset).program = weight4 (fullProgram impl reset) := by
     unfold sourceEntry
     exact weight4_fixedEntry _ _
-  have h := Phase23Partial.weight4_trimN 86 (sourceEntry impl reset).program
-  rw [hew,Phase23Partial.source_spent86] at h
+  have h := Phase23Partial.weight4_trimN 115 (sourceEntry impl reset).program
+  rw [hew,Phase23Partial.source_spent115] at h
   omega
 
 
@@ -309,7 +309,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (rawCertificate : Certificate rawLimits (Width16Schedule.layout impl reset) (sourceEntry impl reset) baseBounds)
     (support : Within ws (sourceEntry impl reset).program)
     (strongSuccess : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q=d•G →
-      (990038025/1000000000 : ℝ) ≤ Instrument.bornMass (((sourceEntry impl reset).instantiate Q).run.filter
+      (99263/100000 : ℝ) ≤ Instrument.bornMass (((sourceEntry impl reset).instantiate Q).run.filter
         (fun b => (verifiedCandidate (Width16Schedule.layout impl reset) Q b.history).isSome)) (ket zeroBasisState))
     (hq : (1938 : Wire) ∉ ws) (hy : (1939 : Wire) ∉ 1938::ws)
     (slotBudget : 4*((sourceEntry impl reset).program.gateSlots+
@@ -319,28 +319,28 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (entryTrim (sourceEntry impl reset)) (Width16Schedule.layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(132595+19*impl.credit17+8*impl.credit16)+9260,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(132595+19*impl.credit17+8*impl.credit16)+6651,544000000⟩ := by
   have trimmed := trim_certificate rawLimits (Width16Schedule.layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (AffineLoss.source_error impl reset) strongSuccess
-  have hslots := Phase23Partial.trimN_slots 86 (sourceEntry impl reset).program
+  have hslots := Phase23Partial.trimN_slots 115 (sourceEntry impl reset).program
   have hw := source_weight impl reset
   unfold finalEntry
   apply specializeEntry_certificate _ (compiled_coefficients impl reset)
   apply ConditionalCatalyst.four_certificate rawLimits (Width16Schedule.layout impl reset)
     (entryTrim (sourceEntry impl reset)) _ _ 1938 1939 ws
-    trimmed (Phase23Partial.trimN_within 86 (sourceEntry impl reset).program ws support) hq hy
-  · change 4*((Phase23Partial.trimN 86 (sourceEntry impl reset).program).gateSlots+
-      18*added (Phase23Partial.trimN 86 (sourceEntry impl reset).program))+2 ≤ officialLimits.gateSlots
+    trimmed (Phase23Partial.trimN_within 115 (sourceEntry impl reset).program ws support) hq hy
+  · change 4*((Phase23Partial.trimN 115 (sourceEntry impl reset).program).gateSlots+
+      18*added (Phase23Partial.trimN 115 (sourceEntry impl reset).program))+2 ≤ officialLimits.gateSlots
     rw [Phase23Partial.trimN_added]
     omega
-  · change (sourceEntry impl reset).finalCursor+added (Phase23Partial.trimN 86 (sourceEntry impl reset).program) ≤ officialLimits.measurements
+  · change (sourceEntry impl reset).finalCursor+added (Phase23Partial.trimN 115 (sourceEntry impl reset).program) ≤ officialLimits.measurements
     rw [Phase23Partial.trimN_added]
     exact recordBudget
   · exact qubitBudget
-  · change weight4 (Phase23Partial.trimN 86 (sourceEntry impl reset).program)+1 ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+9260
+  · change weight4 (Phase23Partial.trimN 115 (sourceEntry impl reset).program)+1 ≤
+      4*(132595+19*impl.credit17+8*impl.credit16)+6651
     omega
-  · change (sourceEntry impl reset).finalCursor+added (Phase23Partial.trimN 86 (sourceEntry impl reset).program) ≤ 544000000
+  · change (sourceEntry impl reset).finalCursor+added (Phase23Partial.trimN 115 (sourceEntry impl reset).program) ≤ 544000000
     rw [Phase23Partial.trimN_added]
     exact measurementBound
 
@@ -353,7 +353,7 @@ open Quantum Challenge Secp256k1 AndGadget WEXCredit
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
 open Width16Actual
 attribute [local instance] Width16Actual.bodyInstance Width16Actual.resourceInstance
-attribute [local irreducible] Single.axis WideBank8.Signed16.program WEXFast.W15F.compactProgram
+attribute [local irreducible] Single.axis ConstRoot.SeedWide.Concrete.signedProgram WEXFast.W15F.compactProgram
   ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
   AndGadget.lowerEntry AndGadget.lowerLayout
 noncomputable section
@@ -367,19 +367,19 @@ def entry : StraightEntry := GeometricPhase.finalEntry implementation reset
 
 def layout : DecodeLayout := lowerLayout 1938 (GeometricPhase.entryTrim rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,250800236,544000000⟩
+def bounds : Bounds := ⟨1620,250796763,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (GeometricPhase.entryTrim (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (GeometricPhase.finalEntry implementation reset)
-      ⟨1620,4*(132595+19*implementation.credit17+8*implementation.credit16)+9260,544000000⟩ :=
+      ⟨1620,4*(132595+19*implementation.credit17+8*implementation.credit16)+6651,544000000⟩ :=
   GeometricPhase.conditional_certificate implementation reset (List.range 1618)
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253190 →
-    4*(132595+19*a+8*b)+9260 ≤ 250800236 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2344183 → b ≤ 2253182 →
+    4*(132595+19*a+8*b)+6651 ≤ 250796763 := by
   intro a b ha hb
   omega
 

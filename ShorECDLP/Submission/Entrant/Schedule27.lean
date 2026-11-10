@@ -1,3 +1,7 @@
+import ShorECDLP.Submission.Entrant.RootNarrow
+import ShorECDLP.Submission.Entrant.BlendReadout
+import ShorECDLP.Submission.Entrant.SharpCoverage
+import ShorECDLP.Submission.Entrant.RootWindows
 import ShorECDLP.Submission.Entrant.RootPass
 import ShorECDLP.Submission.Entrant.KnownRoot
 import ShorECDLP.Submission.Entrant.Prefix
@@ -757,9 +761,28 @@ theorem finePositions_length (impl : Implementation) (reset : List Wire) :
 def fineBits (impl : Implementation) (reset : List Wire) : Vector (Fin (cursor impl reset)) 208 :=
   Vector.ofFn fun i => (finePositions impl reset)[i.val]'(by rw [finePositions_length]; exact i.isLt)
 
+def coarsePositions (impl : Implementation) (reset : List Wire) : List (Fin (cursor impl reset)) :=
+  (trialPositions impl.records17 impl.records16).left.toList.attach.map fun i =>
+    ⟨i.val,(left_position_bound impl.records17 impl.records16 i.val i.property).trans_le
+      (by unfold cursor; omega)⟩
+
+theorem coarsePositions_length (impl : Implementation) (reset : List Wire) :
+    (coarsePositions impl reset).length = 261 := by
+  simp [coarsePositions, SinAverage261.params261]
+
+def leftBits (impl : Implementation) (reset : List Wire) : Vector (Fin (cursor impl reset)) 261 :=
+  Vector.ofFn fun i => (coarsePositions impl reset)[i.val]'(by rw [coarsePositions_length]; exact i.isLt)
+
+theorem leftBits_vals (impl : Implementation) (reset : List Wire) :
+    (leftBits impl reset).map Fin.val = (trialPositions impl.records17 impl.records16).left := by
+  apply Vector.ext
+  intro i hi
+  simp [leftBits, coarsePositions]
+  rfl
+
 def readout (impl : Implementation) (reset : List Wire) :
-    Straight 1769472 (cursor impl reset) (cursor impl reset+34946) :=
-  castFinish (by omega) (Readout56.suffix56 1769472 (cursor impl reset) 208 (fineBits impl reset))
+    Straight 1769472 (cursor impl reset) (cursor impl reset+77956) :=
+  BlendReadout.suffix 1769472 (cursor impl reset) (leftBits impl reset) (fineBits impl reset)
 
 def program (impl : Implementation) (reset : List Wire) : Straight 1769472 0 (cursor impl reset) :=
   Single.framed (mixHead impl.headA 0)
@@ -768,16 +791,17 @@ def program (impl : Implementation) (reset : List Wire) : Straight 1769472 0 (cu
     (by rw [mixS4_value]; unfold cursor; omega)
 
 def fullProgram (impl : Implementation) (reset : List Wire) :
-    Straight 1769472 0 (cursor impl reset+34946) :=
+    Straight 1769472 0 (cursor impl reset+77956) :=
   (program impl reset).append (readout impl reset)
 
 def positionsFor (r17 r16 : Nat) (ps : Vector Nat 208) : TrialPositions SinAverage261.params261 :=
   { left := (trialPositions r17 r16).left, right := ps }
 
+def blendTrial (impl : Implementation) (reset : List Wire) (i : Fin 56) : TrialPositions SinAverage261.params261 :=
+  ⟨BlendReadout.leftPositions (leftBits impl reset) i, BlendReadout.rightPositions (fineBits impl reset) i⟩
+
 def layout (impl : Implementation) (reset : List Wire) : DecodeLayout :=
-  ⟨.wrappedShift, SinAverage261.params261,
-    (Readout56.rightWords56 (fineBits impl reset)).map (positionsFor impl.records17 impl.records16), by
-      simp only [List.length_map, Readout56.rightWords56_length]; decide⟩
+  ⟨.wrappedShift, SinAverage261.params261, List.ofFn (blendTrial impl reset), by simp⟩
 
 theorem fineBits_vals (impl : Implementation) (reset : List Wire) :
     (fineBits impl reset).map Fin.val = (trialPositions impl.records17 impl.records16).right := by
@@ -788,8 +812,7 @@ theorem fineBits_vals (impl : Implementation) (reset : List Wire) :
 
 theorem readout_wellFormed (impl : Implementation) (reset : List Wire) : (readout impl reset).WellFormed := by
   unfold readout
-  rw [castFinish_wellFormed]
-  exact Readout56.suffix56_wellFormed _ _ _ _
+  exact BlendReadout.suffix_wellFormed _ _ _ _
 
 end
 end ShorECDLP.Entrant.Width16Schedule
@@ -937,7 +960,7 @@ theorem fullProgram_weight (impl : Implementation) (reset : List Wire) :
     weight4 (fullProgram impl reset) ≤ 4*(132595+19*impl.credit17+8*impl.credit16)+54991 := by
   have h := axes_weight impl 0
   simp only [fullProgram, weight4_append, program, weight4_framed, weight4_reset,
-    readout, weight4_cast, weight4_suffix56]
+    readout, BlendReadout.suffix_weight]
   omega
 
 theorem removed27_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
@@ -990,7 +1013,7 @@ theorem fullProgram_error (impl : Implementation) (reset : List Wire) :
     error_zero _ (hz _ _ _)
   have hro : errorCost (readout impl reset) = 0 := by
     apply error_zero
-    simp only [readout, residue_cast, ApproximatePhase34.residue_suffix56]
+    simp only [readout, BlendReadout.suffix_residue]
   simp only [leftWidthsBody, rightWidthsBody, List.sum_append, List.sum_replicate, List.sum_cons,
     List.sum_nil] at hA hB hL hR
   norm_num [smul_eq_mul] at hA hB hL hR
@@ -1326,7 +1349,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (rawCertificate : Certificate rawLimits (layout impl reset) (sourceEntry impl reset) baseBounds)
     (support : Within ws (sourceEntry impl reset).program)
     (strongSuccess : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q=d•G →
-      (990038025/1000000000 : ℝ) ≤ Instrument.bornMass (((sourceEntry impl reset).instantiate Q).run.filter
+      (99263/100000 : ℝ) ≤ Instrument.bornMass (((sourceEntry impl reset).instantiate Q).run.filter
         (fun b => (verifiedCandidate (layout impl reset) Q b.history).isSome)) (ket zeroBasisState))
     (hq : (1938 : Wire) ∉ ws) (hy : (1939 : Wire) ∉ 1938::ws)
     (slotBudget : 4*((sourceEntry impl reset).program.gateSlots+
@@ -1338,7 +1361,8 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
       (lowerLayout 1938 (trimNEntry (sourceEntry impl reset)) (layout impl reset))
       (finalEntry impl reset) ⟨qBound,4*(132595+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
   have trimmed := trimN_certificate rawLimits (layout impl reset) (sourceEntry impl reset) baseBounds ws
-    rawCertificate support (source_error impl reset) strongSuccess
+    rawCertificate support (source_error impl reset) (fun Q d hn hd =>
+      (by norm_num : (990038025/1000000000:ℝ)≤99263/100000).trans (strongSuccess Q d hn hd))
   have hslots := trimN_slots 259 (sourceEntry impl reset).program
   have hw := source_trim259_weight impl reset
   unfold finalEntry
@@ -1364,7 +1388,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
 /-- Exact strict-score test after all body, support, semantic and certificate
     premises have been discharged. No Q or cost number is assumed by the proof. -/
 theorem strict_score (Q c17 c16 : Nat)
-    (hQ : Q ≤ 1652) (h17 : c17 ≤ 2345143) (h16 : c16 ≤ 2253190) :
+    (hQ : Q ≤ 1652) (h17 : c17 ≤ 2345143) (h16 : c16 ≤ 2253182) :
     Q * (4*(132595+19*c17+8*c16)+10767) < 420149980414 := by
   have ht : 4*(132595+19*c17+8*c16)+10767 ≤ 250907747 := by omega
   exact (Nat.mul_le_mul hQ ht).trans_lt (by norm_num)
@@ -1943,21 +1967,21 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 
-attribute [local irreducible] WideBank8.Signed16.program WEXFast.W15F.fastBodyProgram
-  WEXFast.W15F.compactProgram WideBank8.Row16.program PathShare.narrowCF15
+attribute [local irreducible] ConstRoot.SeedWide.Concrete.signedProgram NarrowRoot.SeedNarrow.fastBodyProgram
+  NarrowRoot.SeedNarrow.compactProgram WideBank8.Row16.program NarrowRoot.SeedNarrow.narrowCF15
 
 local notation "wideCredit" =>
-  (2 * WideSigned.Body.signCredit + WideBank8.Fast16.fcodeTP WideBank8.Row16.code)
+  (2 * WideSigned.Body.signCredit + ConstRoot.SeedWide.creditSum WideBank8.Row16.code)
 local notation "normalCredit" =>
   (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    WEXFast.fcodeTP WEXFast.rowCF)
+    NarrowRoot.SeedNarrow.creditSum WEXFast.rowCF)
 
 def wide : Window 65536 :=
   ⟨(WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact,
-    1745044, fun start => relabelStraight TightSupport.compact (WideBank8.Signed16.program start)⟩
+    1745044, fun start => relabelStraight TightSupport.compact (ConstRoot.SeedWide.Concrete.signedProgram start)⟩
 
 def normal : Window 32768 :=
-  ⟨streamAddress.reverse,1654036,WEXFast.W15F.compactProgram⟩
+  ⟨streamAddress.reverse,1654036,NarrowRoot.SeedNarrow.compactProgram⟩
 
 def signed : Digit → Window 1769472 := familyWindows wide normal
 
@@ -1973,30 +1997,30 @@ theorem signed_credit (w : Digit) (start : Nat) :
   cases w with
   | left17 j | right17 j =>
     rw [count]
-    change ProgramCredit (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))) wideCredit
+    change ProgramCredit (reindexStraight _ (relabelStraight _ (ConstRoot.SeedWide.Concrete.signedProgram start))) wideCredit
     constructor
     · rw [WEXCredit.residue_reindex, WEXUnlookup.residue_relabel]
-      exact (WideBank8.Signed16.program_credit start).1
+      exact (ConstRoot.SeedWide.Concrete.signed_credit start).1
     · rw [added_reindex, added_relabel]
-      exact (WideBank8.Signed16.program_credit start).2
+      exact (ConstRoot.SeedWide.Concrete.signed_credit start).2
   | left16 j =>
     rw [count]
     constructor
-    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15F.compactProgram start) from rfl,
+    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (NarrowRoot.SeedNarrow.compactProgram start) from rfl,
         WEXCredit.residue_reindex]
-      exact by rw [WEXFast.W15F.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15F.fastBodyProgram_credit start).1
-    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15F.compactProgram start) from rfl,
+      exact by rw [NarrowRoot.SeedNarrow.compactProgram,WEXUnlookup.residue_relabel]; exact (NarrowRoot.SeedNarrow.fastBodyProgram_credit start).1
+    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (NarrowRoot.SeedNarrow.compactProgram start) from rfl,
         added_reindex]
-      exact by rw [WEXFast.W15F.compactProgram,added_relabel]; exact (WEXFast.W15F.fastBodyProgram_credit start).2
+      exact by rw [NarrowRoot.SeedNarrow.compactProgram,added_relabel]; exact (NarrowRoot.SeedNarrow.fastBodyProgram_credit start).2
   | right16 j =>
     rw [count]
     constructor
-    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15F.compactProgram start) from rfl,
+    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (NarrowRoot.SeedNarrow.compactProgram start) from rfl,
         WEXCredit.residue_reindex]
-      exact by rw [WEXFast.W15F.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15F.fastBodyProgram_credit start).1
-    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15F.compactProgram start) from rfl,
+      exact by rw [NarrowRoot.SeedNarrow.compactProgram,WEXUnlookup.residue_relabel]; exact (NarrowRoot.SeedNarrow.fastBodyProgram_credit start).1
+    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (NarrowRoot.SeedNarrow.compactProgram start) from rfl,
         added_reindex]
-      exact by rw [WEXFast.W15F.compactProgram,added_relabel]; exact (WEXFast.W15F.fastBodyProgram_credit start).2
+      exact by rw [NarrowRoot.SeedNarrow.compactProgram,added_relabel]; exact (NarrowRoot.SeedNarrow.fastBodyProgram_credit start).2
 
 def implementation : Implementation :=
   withHeads 1745044 1654036 wideCredit normalCredit signed signed_width signed_count
@@ -2007,37 +2031,37 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2344191 ∧ implementation.credit16 ≤ 2253190 := by
+theorem credits : implementation.credit17 ≤ 2344183 ∧ implementation.credit16 ≤ 2253182 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
-  exact ⟨WideBank8.Signed16.credit_bound, WEXFast.W15F.fastCount_upper⟩
+  exact ⟨ConstRoot.SeedWide.Concrete.credit_bound, NarrowRoot.SeedNarrow.credit_bound⟩
 
 theorem signed_support (w : Digit) (start : Nat) :
     straightWires ((signed w).program start) ⊆ List.range 1618 := by
   cases w with
   | left17 j | right17 j =>
-    change straightWires (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))) ⊆ _
+    change straightWires (reindexStraight _ (relabelStraight _ (ConstRoot.SeedWide.Concrete.signedProgram start))) ⊆ _
     rw [straightWires_reindex]
-    exact WideBank8.Fast16.Tight.packed_support start
+    exact ConstRoot.SeedWide.Concrete.packed_support start
   | left16 j =>
-    change straightWires (reindexStraight _ (WEXFast.W15F.compactProgram start)) ⊆ _
-    rw [straightWires_reindex, WEXFast.W15F.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
+    change straightWires (reindexStraight _ (NarrowRoot.SeedNarrow.compactProgram start)) ⊆ _
+    rw [straightWires_reindex, NarrowRoot.SeedNarrow.compactProgram]
+    exact (PathShare.relabelH_support _ (NarrowRoot.SeedNarrow.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
   | right16 j =>
-    change straightWires (reindexStraight _ (WEXFast.W15F.compactProgram start)) ⊆ _
-    rw [straightWires_reindex, WEXFast.W15F.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15F.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
+    change straightWires (reindexStraight _ (NarrowRoot.SeedNarrow.compactProgram start)) ⊆ _
+    rw [straightWires_reindex, NarrowRoot.SeedNarrow.compactProgram]
+    exact (PathShare.relabelH_support _ (NarrowRoot.SeedNarrow.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
 
 
 theorem signed_wellFormed (w : Digit) (start : Nat) : ((signed w).program start).WellFormed := by
   cases w with
   | left17 j | right17 j =>
     apply (reindexStraight_wellFormed _ _).mpr
-    exact (relabelStraight_wellFormed _ _).mpr (WideBank8.Signed16.wellFormed start)
+    exact (relabelStraight_wellFormed _ _).mpr (ConstRoot.SeedWide.Concrete.wellFormed start)
   | left16 j | right16 j =>
     apply (reindexStraight_wellFormed _ _).mpr
-    change (WEXFast.W15F.compactProgram start).WellFormed
-    rw [WEXFast.W15F.compactProgram]
-    exact (relabelStraight_wellFormed _ _).mpr (WEXFast.W15F.fastBodyProgram_wellFormed start)
+    change (NarrowRoot.SeedNarrow.compactProgram start).WellFormed
+    rw [NarrowRoot.SeedNarrow.compactProgram]
+    exact (relabelStraight_wellFormed _ _).mpr (NarrowRoot.SeedNarrow.fastBodyProgram_wellFormed start)
 
 end
 end ShorECDLP.Entrant.Width16Actual
@@ -2052,7 +2076,7 @@ set_option Elab.async false
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
-attribute [local irreducible] fourierOutcomes WEXFast.W15F.fastBodyProgram WEXFast.W15F.compactProgram
+attribute [local irreducible] fourierOutcomes NarrowRoot.SeedNarrow.fastBodyProgram NarrowRoot.SeedNarrow.compactProgram
 
 def normalPoint (coeffs : Fin 32768 → PointCoeff) (Q : Point) (v : Nat) : Point :=
   if v < 32768 then -constantPoint Q (coeffs ⟨(32767-v)%32768,Nat.mod_lt _ (by decide)⟩)
@@ -2068,9 +2092,9 @@ def normalModel (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • 
   nodup := by decide
   coherent := by
     intro start history
-    simpa only [normal,WEXFast.W15F.compactProgram] using
+    simpa only [normal,NarrowRoot.SeedNarrow.compactProgram] using
       PathShare.relabelH_coherent _ coeffs Q history
-        (WEXFast.W15F.fastBodyProgram_coherent coeffs Q hQ hn start history)
+        (NarrowRoot.SeedNarrow.fastBodyProgram_coherent coeffs Q hQ hn start history)
 
 theorem normal_correct (coeffs : Fin 32768 → PointCoeff) (Q : Point) (s : BasisState)
     (hs : PathShare.readyH s) (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
@@ -2240,7 +2264,7 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 set_option linter.unnecessarySeqFocus false
-attribute [local irreducible] fourierOutcomes WideBank8.Signed16.program
+attribute [local irreducible] fourierOutcomes ConstRoot.SeedWide.Concrete.signedProgram
 local instance bodyInstance : Single.WindowBody := PathShare.bodyCF
 local instance resourceInstance : Single.ProducerResources bodyInstance :=
   Single.ProducerResources.ofBody PathShare.bodyCF
@@ -2275,7 +2299,7 @@ theorem wide_nonzero (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw
 
 theorem wide_point (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17)
     (v : Nat) (hv : v<131072) :
-    (WideBank8.Signed16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw)).point v =
+    (ConstRoot.SeedWide.Concrete.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw)).point v =
       Width16Schedule.increment (d.base Q) 17 d.exponent v := by
   change (if v<65536 then -constantPoint Q
       (wideCoefficients d (WideSigned.Geometry.rows .w16 (65535-v)))
@@ -2296,7 +2320,7 @@ theorem normal_point (Q : Point) (hQ : order•Q=0) (w : Digit) (hw : w.width=16
 
 def wideRawModel (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :=
   interpretModel
-    (WideBank8.Signed16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw))
+    (ConstRoot.SeedWide.Concrete.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw))
     (Width16Schedule.increment (d.base Q) 17 d.exponent)
     (offsetScalar 17 d.exponent • d.base Q)
 
@@ -2347,7 +2371,7 @@ def models (Q : Point) (hQ : order•Q=0) (hn : Q≠0) : ModelFrame implementati
 theorem wide_raw_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :
     PointRule initialRoot (wideRawModel Q hQ hn d hw) := by
   apply interpret_pointRule
-  · exact WideBank8.Signed16.pointRule (wideCoefficients d) Q hQ
+  · exact ConstRoot.SeedWide.Concrete.pointRule (wideCoefficients d) Q hQ
       (wide_nonzero Q hQ hn d hw) initialRoot initialRoot_input.1 (by
       intro v hv
       have hb := WideSigned.Body.bank_bounds .w16 v hv
@@ -2399,7 +2423,7 @@ theorem wide_raw_prepared (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit
     intro s hs
     obtain ⟨P,hP⟩ := hψ s hs
     exact ⟨P,by rw [pointWrite_overwrite]; exact hP⟩
-  exact WideBank8.Signed16.prepared (wideCoefficients d) Q hQ
+  exact ConstRoot.SeedWide.Concrete.prepared (wideCoefficients d) Q hQ
     (wide_nonzero Q hQ hn d hw) (pointWrite 0 initialRoot)
     (WEX.windowReady_first initialRoot initialRoot_input 0)
     (by
@@ -2604,10 +2628,10 @@ theorem program_clean (read : ConstantBit 1769472→Bool) (b : InstrumentBranch)
   intro s hs
   exact ⟨h s hs 0 ledgerInstance.reset_zero,h s hs 1 ledgerInstance.reset_one⟩
 
-theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈Readout56.rightWords56 (fineBits impl reset))
+theorem verified_of_reads (i : Fin 56)
     (Q : Point) (d : Nat) (hd : Q=d•G) (hist : List Bool) (a b : Nat)
-    (hl : readWord hist (trialPositions impl.records17 impl.records16).left.toList=some a)
-    (hr : readWord hist ps.toList=some b)
+    (hl : readWord hist (BlendReadout.leftPositions (leftBits impl reset) i).toList=some a)
+    (hr : readWord hist (BlendReadout.rightPositions (fineBits impl reset) i).toList=some b)
     (hm : (d:ZMod order)∈fixedCandidates SinAverage261.params261 a b) :
     (verifiedCandidate (Width16Schedule.layout impl reset) Q hist).isSome := by
   classical
@@ -2615,8 +2639,8 @@ theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈Readout56.rightWords
   refine ⟨(d:ZMod order),?_,?_⟩
   · unfold candidates
     apply List.mem_flatMap.mpr
-    refine ⟨positionsFor impl.records17 impl.records16 ps,List.mem_map.mpr ⟨ps,hps,rfl⟩,?_⟩
-    simpa only [decodeTrial,trialCandidates,positionsFor,Width16Schedule.layout,hl,hr,
+    refine ⟨blendTrial impl reset i,List.mem_ofFn.mpr ⟨i,rfl⟩,?_⟩
+    simpa only [decodeTrial,trialCandidates,blendTrial,Width16Schedule.layout,hl,hr,
       fixedCandidates_take,Finset.mem_toList] using hm
   · simp only [decide_eq_true_eq,ZMod.val_natCast]
     rw [hd]
@@ -2625,7 +2649,7 @@ theorem verified_of_reads (ps : Vector Nat 208) (hps : ps∈Readout56.rightWords
 theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
     (read : ConstantBit 1769472→Bool) (history : Fin (startCursor impl)→Bool)
     (ψ : State) (hψ : SupportedOn CleanReadout ψ)
-    (hf : fineEvent impl (SinAverage261.pairRecovered261 d) (List.ofFn history)=true)
+    (hf : fineEvent impl (BlendCoverage.recoveredBlend d) (List.ofFn history)=true)
     (b : InstrumentBranch) (hb : b∈((readout impl reset).instantiate read history).run)
     (hn : b.kraus ψ≠0) :
     (verifiedCandidate (Width16Schedule.layout impl reset) Q (List.ofFn history++b.history)).isSome := by
@@ -2633,18 +2657,13 @@ theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
   rw [fineBits_vals] at hr
   obtain ⟨a,ha,hp⟩ := Rounded.pairAccept_value _ _ _ _ _ hr hf
   obtain ⟨i,hi⟩ := of_decide_eq_true hp
-  obtain ⟨ps,hps,hread⟩ := Readout56.suffix56_reads 1769472 (startCursor impl) (fineBits impl reset)
-    read history ψ hψ b (by simpa only [readout,castFinish_instantiate] using hb) hn
-    ((i.val:ℤ)-28) (by have h:=i.isLt;omega)
-  apply verified_of_reads impl ps hps Q d hd _ a _ _ hread hi
-  rw [NeighborReadout.readWord_append_left]
-  · exact ha
-  · intro j hj
-    have h := left_position_bound impl.records17 impl.records16 j hj
-    have hh : 132875+11*impl.records17+4*impl.records16 ≤ startCursor impl := by
-      unfold startCursor cursor
-      omega
-    simpa only [List.length_ofFn] using h.trans_le hh
+  have hal := NeighborReadout.input_read (leftBits impl reset) history
+  rw [leftBits_vals] at hal
+  have hae : NeighborReadout.inputValue (leftBits impl reset) history=a := Option.some.inj (hal.symm.trans ha)
+  have hs:=BlendReadout.suffix_reads 1769472 (startCursor impl) (leftBits impl reset) (fineBits impl reset)
+    read history ψ hψ b hb hn i
+  rw [hae] at hs
+  exact verified_of_reads impl i Q d hd _ _ _ hs.1 hs.2 hi
 
 theorem strong_success (Q : Point) (d : Nat) (hd : Q=d•G)
     (hQ : order•Q=0) (m : ModelFrame impl Q)
@@ -2655,14 +2674,14 @@ theorem strong_success (Q : Point) (d : Nat) (hd : Q=d•G)
     (pointRules : ∀ w∈leftDigits++rightDigits,PointRule initialRoot (m.signed w))
     (ready : Ready (m.headA :: m.headB :: ((leftDigits.map m.signed) ++ (rightDigits.map m.signed)))
       (ket initialRoot)) :
-    (990038025/1000000000:ℝ) ≤ Instrument.bornMass
+    (99263/100000:ℝ) ≤ Instrument.bornMass
       (((fullProgram impl reset).instantiate (readConstant Width16Schedule.coefficientAt Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate (Width16Schedule.layout impl reset) Q b.history).isSome)) (ket zeroBasisState) := by
-  have hneighbor : (990038025/1000000000:ℝ) ≤ Instrument.bornMass
+  have hneighbor : (99263/100000:ℝ) ≤ Instrument.bornMass
       (((Width16Schedule.program impl reset).instantiate (readConstant Width16Schedule.coefficientAt Q) Fin.elim0).run.filter
-        (fun b => fineEvent impl (SinAverage261.pairRecovered261 d) b.history)) (ket zeroBasisState) := by
+        (fun b => fineEvent impl (BlendCoverage.recoveredBlend d) b.history)) (ket zeroBasisState) := by
     rw [program_event_mass impl Q hQ m hfirst pointRules ready,idealEventMass_distribution Q d hd]
-    exact PhaseTrimHeadroom.improved_pair_success d
+    exact BlendCoverage.recovered_success d
   apply hneighbor.trans
   unfold fullProgram
   rw [Single.append_run_history]
@@ -2696,7 +2715,7 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
-attribute [local irreducible] PathShare.narrowCF15 WideBank8.Signed16.program
+attribute [local irreducible] NarrowRoot.SeedNarrow.narrowCF15 ConstRoot.SeedWide.Concrete.signedProgram
   WideBank8.Row16.program Single.axis resetProgram
 attribute [local instance] bodyInstance resourceInstance
 
@@ -2722,13 +2741,13 @@ theorem isWin_right (w : Window 1769472) (hw : w ∈ (Width16Schedule.rightBodie
 theorem signed_slots (w : Digit) (start : Nat) : ((signed w).program start).gateSlots ≤ 3000000000 := by
   cases w with
   | left17 j | right17 j =>
-    change (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))).gateSlots ≤ _
+    change (reindexStraight _ (relabelStraight _ (ConstRoot.SeedWide.Concrete.signedProgram start))).gateSlots ≤ _
     rw [reindexStraight_gateSlots,relabelStraight_slots]
-    exact (WideBank8.Signed16.slots start).trans (by decide)
+    exact (ConstRoot.SeedWide.Concrete.slots start).trans (by decide)
   | left16 j | right16 j =>
-    change (reindexStraight _ (WEXFast.W15F.compactProgram start)).gateSlots ≤ _
-    rw [reindexStraight_gateSlots, WEXFast.W15F.compactProgram, relabelStraight_slots]
-    exact (WEXFast.W15F.fastBodyProgram_slots_upper start).trans (by decide)
+    change (reindexStraight _ (NarrowRoot.SeedNarrow.compactProgram start)).gateSlots ≤ _
+    rw [reindexStraight_gateSlots, NarrowRoot.SeedNarrow.compactProgram, relabelStraight_slots]
+    exact (NarrowRoot.SeedNarrow.fastBodyProgram_slots_upper start).trans (by decide)
 
 theorem win_wellFormed (w : Window 1769472) (hw : IsWin w) (start : Nat) :
     (w.program start).WellFormed := by
@@ -2845,10 +2864,9 @@ theorem mix_slots_bound :
 
 theorem full_slots : rawProgram.gateSlots ≤ 100000000000 := by
   have hm := mix_slots_bound
-  have hro : (Width16Schedule.readout impl reset).gateSlots = 122311 := by
+  have hro : (Width16Schedule.readout impl reset).gateSlots = 272846 := by
     unfold Width16Schedule.readout
-    rw [castFinish_gateSlots]
-    exact Readout56.suffix56_slots _ _ _ _
+    exact BlendReadout.suffix_slots _ _ _ _
   unfold rawProgram Width16Schedule.fullProgram Width16Schedule.program
   rw [Straight.gateSlots_append,framed_slots,resetProgram_gateSlots,hro]
   omega
@@ -2890,8 +2908,7 @@ theorem full_support (read : ConstantBit 1769472→Bool) (history : Fin 0→Bool
       (fun h' => outer_append_support _ _ read h' (List.range 1618) (hL h') (fun h'' => hR h''))
   · intro h
     unfold Width16Schedule.readout
-    rw [castFinish_instantiate]
-    exact (Readout56.suffix56_support _ _ _ _ read h).trans (by decide)
+    exact (BlendReadout.suffix_support _ _ _ _ read h).trans (by decide)
 
 theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n→Fin m)
     (ws : List Wire) (hp : Within ws p) : Within ws (reindexStraight f p) := by
@@ -2936,8 +2953,8 @@ theorem source_counts : rawEntry.finalCursor ≤ 50000000 ∧
   have hs : rawEntry.program.gateSlots ≤ 100000000000 := by
     rw [rawEntry,Width16Schedule.sourceEntry,Single.fixedEntry_slots]
     exact full_slots
-  have hm : rawEntry.finalCursor = 46556999 := by
-    change 132606+19*1745044+8*1654036+469+resetWires.length+34946=46556999
+  have hm : rawEntry.finalCursor = 46600009 := by
+    change 132606+19*1745044+8*1654036+469+resetWires.length+77956=46600009
     decide
   change _ ∧ _ ∧ _ ≤ 4000000000000000
   omega
@@ -2955,7 +2972,7 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
-attribute [local irreducible] Single.axis WideBank8.Signed16.program WEXFast.W15F.compactProgram
+attribute [local irreducible] Single.axis ConstRoot.SeedWide.Concrete.signedProgram NarrowRoot.SeedNarrow.compactProgram
   ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
   AndGadget.lowerEntry AndGadget.lowerLayout
 attribute [local instance] bodyInstance resourceInstance
@@ -2995,7 +3012,7 @@ theorem straight_t_bound {n s e} (p : Straight n s e) (read : ConstantBit n→Bo
     exact max_le (ih _) (ih _)
 
 theorem strong_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d•G) :
-    (990038025/1000000000:ℝ) ≤ Instrument.bornMass
+    (99263/100000:ℝ) ≤ Instrument.bornMass
       ((rawEntry.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order•Q=0 := by rw [hd,smul_comm order d,generator_nsmul_eq_zero,nsmul_zero]
@@ -3042,7 +3059,7 @@ theorem raw_certificate : Certificate rawLimits rawLayout rawEntry rawBounds whe
       omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99/100:ℝ)≤990038025/1000000000).trans (strong_success Q d hn hd)
+    exact (by norm_num : (99/100:ℝ)≤99263/100000).trans (strong_success Q d hn hd)
 
 def entry : StraightEntry := Width16Schedule.finalEntry implementation reset
 
@@ -3060,7 +3077,7 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253190 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2344183 → b ≤ 2253182 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
   intro a b ha hb
   omega
 
