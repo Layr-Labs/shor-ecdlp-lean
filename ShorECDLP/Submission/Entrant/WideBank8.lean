@@ -1,4 +1,5 @@
 import ShorECDLP.Submission.Entrant.Prefix
+import ShorECDLP.Submission.Entrant.Bank9
 import ShorECDLP.Submission.Entrant.TightSupport
 
 /-! Balanced eight-bit bank for the sixteen-bit clears of the wide (seventeen-bit) window rows.
@@ -6,7 +7,7 @@ import ShorECDLP.Submission.Entrant.TightSupport
 Every masked clear of a wide row is a recycled measured clear over the sixteen address bits
 `855..869, 871`. The shipped bank splits them seven low / nine high, costing
 `(2^7 - 1) + (2^9 - 1) = 638` CCX per clear. This file instantiates the generic split network at
-eight low bits (256 unary wires, 255 cells) with an eight-wire high tree, costing `255 + 255 = 510`.
+eight low bits (256 unary wires, 255 cells) with an eight-wire high tree, costing `254 + 255 = 509` after specializing the known-one first split.
 
 The 256 hot wires are the first 256 cleared targets (`headD + i`), and the phase scratch is the
 ninth wire `14840` of the old clear path bank, which the eight-level tree no longer uses. The
@@ -30,12 +31,22 @@ def hotNat8 (hot : Fin 256 → Wire) (x : Nat) : Wire := if h : x < 256 then hot
 def hotNetwork8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : List SplitCell :=
   hotNetN (lowN8 low) (hotNat8 hot) 8
 
-def hotPrepare8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : Circuit :=
+def slowHotPrepare8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : Circuit :=
   [.X (hot 0)] ++ splitNetwork (hotNetwork8 low hot)
+
+def hotPrepare8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : Circuit :=
+  [.X (hot 0)] ++ seededSplitNetwork (hotNetwork8 low hot)
 
 def hotAddress8 (low : Fin 8 → Wire) (s : BasisState) : Nat := addrN (lowN8 low) s 8
 
 def HotClean8 (hot : Fin 256 → Wire) (s : BasisState) : Prop := ∀ i, s (hot i) = false
+
+theorem hotPrepare_eq8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
+    (s : BasisState) (hs : HotClean8 hot s) :
+    Classical.run (hotPrepare8 low hot) s = Classical.run (slowHotPrepare8 low hot) s := by
+  rw [hotPrepare8,slowHotPrepare8,Classical.run_append,Classical.run_append]
+  apply seededHotNet_run (lowN8 low) (hotNat8 hot) 7
+  simp [hotNat8,Classical.run,Classical.applyGate,upd,hs 0]
 
 theorem hotNetwork_length8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
     (hotNetwork8 low hot).length = 255 := by
@@ -102,7 +113,7 @@ theorem hotPrepare_marker8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
     i.val (by simp)
   have hhot : hotNat8 hot i.val = hot i := by simp [hotNat8, i.isLt]
   rw [hhot] at h
-  rw [hotPrepare8, Classical.run_append, hotNetwork8, h, hotAddress8]
+  rw [hotPrepare_eq8 low hot s hs, slowHotPrepare8, Classical.run_append, hotNetwork8, h, hotAddress8]
   congr 2
   apply addrN_congr
   intro j hj
@@ -114,7 +125,7 @@ theorem hotPrepare_marker8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
 theorem hotPrepare_frame8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
     (s : BasisState) (w : Wire) (hw : ∀ i, w ≠ hot i) :
     Classical.run (hotPrepare8 low hot) s w = s w := by
-  rw [hotPrepare8, Classical.run_append, splitNetwork_frame _ _ _ (by
+  rw [hotPrepare8, Classical.run_append, seededSplitNetwork_frame _ _ _ (by
     intro c hc
     obtain ⟨j, x, y, rfl, _⟩ := mem_hotNetwork8 low hot c hc
     exact ⟨hw x, hw y⟩)]
@@ -180,7 +191,7 @@ theorem phasePorts_targets8 {n base : Nat} (hot : Fin 256 → Wire)
 
 theorem hotPrepare_hp8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
     Classical.HPFree (hotPrepare8 low hot) := by
-  simp [hotPrepare8, splitNetwork_hp]
+  simp [hotPrepare8, seededSplitNetwork_hp]
 
 def fixupFactor8 {n : Nat} (data : List (ClearPort n)) (outcomes : List Bool)
     (read : ConstantBit n → Bool) (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
@@ -226,7 +237,7 @@ theorem fixupSource_coherent8 {n : Nat} (data : List (ClearPort n)) (outcomes : 
     apply supported_smul_state
     apply supportedOn_ket
     exact ⟨Classical.run [.X (hot 0)] s, hotNetwork_ready8 low hot hi hdlow s hvalid.1,
-      by simp [hotPrepare8]⟩)
+      by rw [hotPrepare_eq8 low hot s hvalid.1]; rfl⟩)
   rw [fixupSource8, ← adaptive_seq_assoc]
   apply htotal.congrIdeal
   intro s hvalid
@@ -234,12 +245,12 @@ theorem fixupSource_coherent8 {n : Nat} (data : List (ClearPort n)) (outcomes : 
   rw [run_ket_agrees_classical _ _ (hotPrepare_hp8 low hot), basisIdeal_ket]
   simp only [map_smul, id_eq]
   rw [run_ket_agrees_classical _ _ (inverseNetwork_hp (hotNetwork8 low hot))]
-  rw [hotPrepare8, Classical.run_append,
+  rw [hotPrepare_eq8 low hot s hvalid.1, slowHotPrepare8, Classical.run_append,
     inverseNetwork_correct (hotNetwork8 low hot) (hotNetwork_physical8 low hot hi hdlow) _
       (hotNetwork_ready8 low hot hi hdlow s hvalid.1),
     run_ket_agrees_classical _ _ (by simp), classical_x_twice]
   simp only [basisIdeal_ket, id_eq]
-  rw [fixupFactor8, hotPrepare8, Classical.run_append]
+  rw [fixupFactor8, hotPrepare_eq8 low hot s hvalid.1, slowHotPrepare8, Classical.run_append]
 
 theorem phasePorts_block8 (p : ClearPort n) (m : Bool) (hot : Fin 256 → Wire)
     (read : ConstantBit n → Bool) (row root : Nat) (s : BasisState) (selected : Fin 256)
@@ -384,7 +395,7 @@ theorem fixupSource_wellFormed8 {n : Nat} (data : List (ClearPort n)) (outcomes 
   · refine ⟨?_, trivial⟩
     rw [hotPrepare8, circuitWellFormed_append]
     exact ⟨by simp [CircuitWellFormed, Gate.WellFormed],
-      splitNetwork_wellFormed _ (hotNetwork_physical8 low hot hi hdlow)⟩
+      seededSplitNetwork_wellFormed _ (hotNetwork_physical8 low hot hi hdlow)⟩
   · apply AdaptiveCircuit.WellFormed.seq
     · apply phaseLookupSource_wellFormed _ _ _ _ _ _ _ _ hl hs
       intro p hp he
@@ -394,13 +405,13 @@ theorem fixupSource_wellFormed8 {n : Nat} (data : List (ClearPort n)) (outcomes 
       · exact ⟨by simp [CircuitWellFormed, Gate.WellFormed], trivial⟩
 
 theorem hotPrepare_tCount8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
-    ShorECDLP.tCount (hotPrepare8 low hot) = 1785 := by
-  rw [hotPrepare8, ShorECDLP.tCount_append, splitNetwork_tCount, hotNetwork_length8]
+    ShorECDLP.tCount (hotPrepare8 low hot) = 1778 := by
+  rw [hotPrepare8, ShorECDLP.tCount_append, seededSplitNetwork_tCount, hotNetwork_length8]
   rfl
 
 theorem hotPrepare_length8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
     (hotPrepare8 low hot).length = 511 := by
-  rw [hotPrepare8, List.length_append, splitNetwork_length, hotNetwork_length8]
+  rw [hotPrepare8, List.length_append, seededSplitNetwork_length, hotNetwork_length8]
   rfl
 
 theorem phasePorts_length8 {n base : Nat} (hot : Fin 256 → Wire) (items : List (ClearPort n × Fin base)) :
@@ -418,7 +429,7 @@ theorem fixupProgram_tCount8 {n base : Nat} (data : List (ClearPort n)) (refs : 
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
     (read : ConstantBit n → Bool) (history : Fin base → Bool) :
     ((fixupProgram8 data refs low hot tree root scratch paths).instantiate read history).tCount =
-      7 * tree.internalNodes + 1785 := by
+      7 * tree.internalNodes + 1778 := by
   have hpost (cursor : Nat) (h : Fin cursor → Bool) :
       (((eraseNetwork n (hotNetwork8 low hot) cursor).append
         (literalProgram [.X (hot 0)])).instantiate read h).tCount = 0 := by
@@ -440,7 +451,7 @@ theorem measuredClear_tCount8 {n : Nat} (data : List (ClearPort n))
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
     (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     ((measuredClear8 data low hot tree root scratch paths start).instantiate read history).tCount =
-      7 * (tree.internalNodes + 255) := by
+      7 * (tree.internalNodes + 254) := by
   rw [measuredClear8, castFinish_instantiate, measureThen_tCount _ read (by
     intro cursor refs h
     rw [castFinish_instantiate, fixupProgram_tCount8 data refs low hot tree root scratch paths hl])]
@@ -485,7 +496,7 @@ theorem hotPrepare_within8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) (S : 
     (hl : ∀ i, low i ∈ S) (hh : ∀ i, hot i ∈ S) : circuitWires (hotPrepare8 low hot) ⊆ S := by
   rw [hotPrepare8, circuitWires_append]
   exact List.append_subset.mpr ⟨by simpa [circuitWires, gateWires] using hh 0,
-    splitNetwork_within _ S (hotNetwork_within8 low hot S hl hh)⟩
+    seededSplitNetwork_within _ S (hotNetwork_within8 low hot S hl hh)⟩
 
 theorem fixupProgram_within8 {n base : Nat} (data : List (ClearPort n)) (refs : List (Fin base))
     (low : Fin 8 → Wire) (hot : Fin 256 → Wire) (tree : UnaryActionTree)
@@ -630,7 +641,7 @@ theorem fixupProgram_wellFormed8 {n base} (data : List (ClearPort n)) (refs : Li
   apply straight_append_wellFormed
   · apply literalProgram_wellFormed
     rw [hotPrepare8,circuitWellFormed_append]
-    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],splitNetwork_wellFormed _ hp⟩
+    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],seededSplitNetwork_wellFormed _ hp⟩
   · apply straight_append_wellFormed
     · exact literalProgram_wellFormed _ (hH _)
     · apply straight_append_wellFormed
@@ -970,7 +981,7 @@ theorem clearP_wellFormed {n} (B : Bank) (hB : BankOK B) (site : MaskedSite n) (
 theorem clearP_tCount {n} (read : ConstantBit n → Bool) (B : Bank) (site : MaskedSite n)
     (hl : (tableAddressTree B.high 0 1).Layout site.guard B.hp) (start : Nat) (history : Fin start → Bool) :
     ((clearP B site start).instantiate read history).tCount =
-      7 * ((tableAddressTree B.high 0 1).internalNodes + 255) := by
+      7 * ((tableAddressTree B.high 0 1).internalNodes + 254) := by
   unfold clearP
   exact MeasuredClear.measuredClear_tCount8 _ _ _ _ _ _ _ hl read start history
 
@@ -1113,7 +1124,7 @@ theorem geo_lay2 {n} (B : Bank) (hB : BankOK B) (b : Block2 n) (hg : BlockGeoP2 
 def blockTP2 {n} (B : Bank) : Block2 n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * (2^B.bits.length - 1)
   | .unit u => literalToffolis (normalizeW u.pre) + traversals u.pre * (2^B.bits.length - 1) +
-      ((tableAddressTree B.high 0 1).internalNodes + 255)
+      ((tableAddressTree B.high 0 1).internalNodes + 254)
 
 def codeTP2 {n} (B : Bank) : Code2 n → Nat
   | [] => 0
@@ -2719,7 +2730,7 @@ theorem gclear_coherent (read : ConstantBit n → Bool) (hg : FastGeometry f) (s
   exact hc
 
 theorem gclear_tCount (read : ConstantBit n → Bool) (hg : FastGeometry f) (start : Nat) (history : Fin start → Bool) :
-    ((f.gclearProgram start).instantiate read history).tCount = 3570 := by
+    ((f.gclearProgram start).instantiate read history).tCount = 3563 := by
   rw [gclearProgram, MeasuredClear.measuredClear_tCount8 _ _ _ _ _ _ _ (site_bank_layout f hg), high_nodes]
 
 attribute [local irreducible] WEX.codeRecords lookupMeasurements WEX.portOps tableAddressTree
@@ -3042,7 +3053,7 @@ theorem gclear_coherent (read : ConstantBit n → Bool) (hg : FastGeometry1 f) (
   exact hc
 
 theorem gclear_tCount (read : ConstantBit n → Bool) (hg : FastGeometry1 f) (start : Nat) (history : Fin start → Bool) :
-    ((f.gclearProgram start).instantiate read history).tCount = 3570 := by
+    ((f.gclearProgram start).instantiate read history).tCount = 3563 := by
   rw [gclearProgram, MeasuredClear.measuredClear_tCount8 _ _ _ _ _ _ _ (site_bank_layout f hg), high_nodes]
 
 attribute [local irreducible] WEX.codeRecords lookupMeasurements WEX.portOps tableAddressTree
@@ -3311,8 +3322,8 @@ theorem prefix_layouts (hg : FastGeometry f) :
 
 /-- Toffoli count of the fast block, in units of seven T gates. -/
 def fastTP : Nat :=
-  16383 + ECDSAAdd.toffoliCount f.swapNet + 510 +
-    (literalToffolis (normalizeW f.site.arithmetic) + traversals f.site.arithmetic * 65535) + 510
+  16383 + ECDSAAdd.toffoliCount f.swapNet + 509 +
+    (literalToffolis (normalizeW f.site.arithmetic) + traversals f.site.arithmetic * 65535) + 509
 
 theorem fast_tCount (read : ConstantBit n → Bool) (hg : FastGeometry f) (start : Nat) (history : Fin start → Bool) :
     ((f.fastProgram start).instantiate read history).tCount = 7 * f.fastTP := by
@@ -3327,7 +3338,7 @@ theorem fast_tCount (read : ConstantBit n → Bool) (hg : FastGeometry f) (start
   try ring
 
 theorem fast_tp_relation (hg : FastGeometry f) :
-    f.fastTP + (48642 - ECDSAAdd.toffoliCount f.swapNet) = blockTP2 bank15 (.unit (siteUnit f.site)) := by
+    f.fastTP + (48643 - ECDSAAdd.toffoliCount f.swapNet) = blockTP2 bank15 (.unit (siteUnit f.site)) := by
   have hsw := f.swapNet_toff hg
   have hpl := (facts f hg).2.2.2.1
   have hl : literalToffolis (normalizeW f.site.prefix) = literalToffolis (normalizeW f.site.arithmetic) := by
@@ -3438,8 +3449,8 @@ theorem prefix_layouts (hg : FastGeometry1 f) :
       placed_implies_pair _ _ _ _ (hg.site.placed i (List.mem_append_left _ hi))))
 
 def fastTP : Nat :=
-  32767 + ECDSAAdd.toffoliCount f.swapNet + 510 +
-    (literalToffolis (normalizeW f.site.arithmetic) + traversals f.site.arithmetic * 65535) + 510
+  32767 + ECDSAAdd.toffoliCount f.swapNet + 509 +
+    (literalToffolis (normalizeW f.site.arithmetic) + traversals f.site.arithmetic * 65535) + 509
 
 theorem fast_tCount (read : ConstantBit n → Bool) (hg : FastGeometry1 f) (start : Nat) (history : Fin start → Bool) :
     ((f.fastProgram start).instantiate read history).tCount = 7 * f.fastTP := by
@@ -3454,7 +3465,7 @@ theorem fast_tCount (read : ConstantBit n → Bool) (hg : FastGeometry1 f) (star
   try ring
 
 theorem fast_tp_relation (hg : FastGeometry1 f) :
-    f.fastTP + (32258 - ECDSAAdd.toffoliCount f.swapNet) = blockTP2 bank15 (.unit (siteUnit f.site)) := by
+    f.fastTP + (32259 - ECDSAAdd.toffoliCount f.swapNet) = blockTP2 bank15 (.unit (siteUnit f.site)) := by
   have hsw := f.swapNet_toff hg
   have hpl := (facts f hg).2.2.2.1
   have hl : literalToffolis (normalizeW f.site.prefix) = literalToffolis (normalizeW f.site.arithmetic) := by
@@ -3778,8 +3789,8 @@ def fcodeTP {n} : FCode2 n → Nat
 
 def fblockSave {n} : FBlock2 n → Nat
   | .std _ => 0
-  | .fast f => 48642 - ECDSAAdd.toffoliCount f.swapNet
-  | .fast1 f => 32258 - ECDSAAdd.toffoliCount f.swapNet
+  | .fast f => 48643 - ECDSAAdd.toffoliCount f.swapNet
+  | .fast1 f => 32259 - ECDSAAdd.toffoliCount f.swapNet
 
 def fsave {n} : FCode2 n → Nat
   | [] => 0
@@ -4143,13 +4154,13 @@ theorem lift_normal_metrics {n} (r : Nat → Fin n) (c : WCode 32768) :
 theorem lifted_credit {n} (r : Nat → Fin n) (B : PathShare.Bank) (c : Code2 32768) :
     codeTP2 B (Rows.blocks r c) + masks2 c * (2 ^ B.bits.length - 1) =
       literalToffolis (normalizeW (erase2 c)) + traversals (erase2 c) * (2 ^ B.bits.length - 1) +
-        masks2 c * ((tableAddressTree B.high 0 1).internalNodes + 255) := by
+        masks2 c * ((tableAddressTree B.high 0 1).internalNodes + 254) := by
   induction c with
   | nil => simp [Rows.blocks, codeTP2, masks2, erase2, normalizeW, literalToffolis, traversals]
   | cons b c ih =>
     have hb : blockTP2 B (Rows.block r b) + blockMasks2 b * (2 ^ B.bits.length - 1) =
         literalToffolis (normalizeW b.code) + traversals b.code * (2 ^ B.bits.length - 1) +
-          blockMasks2 b * ((tableAddressTree B.high 0 1).internalNodes + 255) := by
+          blockMasks2 b * ((tableAddressTree B.high 0 1).internalNodes + 254) := by
       cases b with
       | plain p =>
         simp [Rows.block, blockTP2, blockMasks2, Block2.code, lift_normal_metrics, (lift_metrics r p).2.2]
@@ -4187,7 +4198,7 @@ attribute [local irreducible] codeTP2 WEXUnlookup.ccx2 literalToffolis normalize
 theorem credit_change {n} (r : Nat → Fin n) (B : PathShare.Bank) (c : Code2 32768)
     (hb : B.bits.length = 16) (hn : (tableAddressTree B.high 0 1).internalNodes = 255)
     (hm : masks2 c = 5) (ht : traversals (erase2 c) = 9) :
-    codeTP2 B (Rows.blocks r c) = WEXUnlookup.ccx2 c + 131712 := by
+    codeTP2 B (Rows.blocks r c) = WEXUnlookup.ccx2 c + 131707 := by
   have hw := lifted_credit r B c
   have ho := WEXUnlookup.ccx2_relation c
   rw [hb, hn, hm, ht] at hw
@@ -4210,7 +4221,7 @@ attribute [local irreducible] code Fast16.fprog WEXFast.rowCF WEXUnlookup.rowC
   ECDSAAdd.toffoliCount ECDSAAdd.Baselines.normalizeProgram literalToffolis normalizeW
   Fast16.fcodeTP Fast16.fsave WEXFast.fcodeTP WEXUnlookup.ccx2 codeTP2
 
-theorem saving : Fast16.fsave code = 79620 := by
+theorem saving : Fast16.fsave code = 79622 := by
   have hp : (fast WEXFast.tripleF).site.ports.length = 256 := by
     simpa [fast, Rows.site, Rows.ports, WEXFast.tripleF] using WEXFast.tripleSite_length
   have hp1 : (fast1 WEXFast.site2F).site.ports.length = 512 := by
@@ -4239,32 +4250,32 @@ theorem saving : Fast16.fsave code = 79620 := by
 
 
 theorem cost_arith (fresh old wideStd oldStd : Nat)
-    (hnew : fresh + 79620 = wideStd) (hold : old + 38916 = oldStd)
-    (hwide : wideStd = oldStd + 131712) : fresh = old + 91008 := by omega
+    (hnew : fresh + 79622 = wideStd) (hold : old + 38916 = oldStd)
+    (hwide : wideStd = oldStd + 131707) : fresh = old + 91001 := by omega
 
 theorem fast_standard_relation :
-    Fast16.fcodeTP code + 79620 = codeTP2 Fast16.bank15 (Geometry.row .w16) := by
+    Fast16.fcodeTP code + 79622 = codeTP2 Fast16.bank15 (Geometry.row .w16) := by
   have h := Fast16.fcodeTP_relation code geometry
   rw [saving, forget] at h
   exact h
 
 
 theorem wide_standard_relation :
-    codeTP2 Fast16.bank15 (Geometry.row .w16) = WEXUnlookup.ccx2 WEXUnlookup.rowC + 131712 :=
+    codeTP2 Fast16.bank15 (Geometry.row .w16) = WEXUnlookup.ccx2 WEXUnlookup.rowC + 131707 :=
   Counts.credit_change rows Fast16.bank15 WEXUnlookup.rowC rfl Fast16.high_nodes
     WEXUnlookup.rowC_masks WEXUnlookup.rowC_measures.2.1
 
 
-theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF + 91008 := by
+theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF + 91001 := by
   exact cost_arith _ _ _ _ fast_standard_relation WEXFast.W15F.rowCF_tp wide_standard_relation
 
 theorem body_credit_bound :
     2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) +
-      Fast16.fcodeTP code ≤ 2344247 := by
+      Fast16.fcodeTP code ≤ 2344240 := by
   rw [credit_increment]
   have h := WEXFast.W15F.fastCount_upper
   rw [← Nat.add_assoc]
-  exact Nat.add_le_add_right h 91008
+  exact Nat.add_le_add_right h 91001
 
 end
 end ShorECDLP.Entrant.WideBank8.Row16
@@ -5090,10 +5101,10 @@ theorem wellFormed (start : Nat) : (program start).WellFormed := by
   rw [program, castFinish_wellFormed]
   exact Frame16.wellFormed _ Row16.fixedProgram Row16.fixed_wellFormed start
 
-theorem sign_credit_bound (s t r : Nat) (hs : s = t) (hb : 2 * t + r ≤ 2344247) :
-    2 * s + r ≤ 2344247 := by omega
+theorem sign_credit_bound (s t r : Nat) (hs : s = t) (hb : 2 * t + r ≤ 2344240) :
+    2 * s + r ≤ 2344240 := by omega
 
-theorem credit_bound : signedCredit16 ≤ 2344247 :=
+theorem credit_bound : signedCredit16 ≤ 2344240 :=
   sign_credit_bound Body.signCredit
     (ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram))
     (Fast16.fcodeTP Row16.code) rfl Row16.body_credit_bound

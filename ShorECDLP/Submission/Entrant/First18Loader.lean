@@ -866,22 +866,22 @@ theorem sel_added (start : Nat) : added (selProgram start) = 131071 := by
 theorem swap_added (start : Nat) : added (swapProgram start) = 513 := by
   rw [swapProgram, added_literal, swapCircuit, swapWords_ccx, point_length, garb_length, Nat.min_self]
 
-theorem clear_added (start : Nat) : added (clearProgram start) = 1022 := by
+theorem clear_added (start : Nat) : added (clearProgram start) = 1021 := by
   have h := exact_t (clearProgram start) (clear_residue start) (fun _ => false) (fun _ => false)
-  have ht : ((clearProgram start).instantiate (fun _ => false) (fun _ => false)).tCount = 7 * 1022 := by
+  have ht : ((clearProgram start).instantiate (fun _ => false) (fun _ => false)).tCount = 7 * 1021 := by
     rw [clearProgram, castFinish_instantiate,
       MeasuredClear.measuredClear_tCount9 _ _ _ _ _ _ _ clear_layout, clear_nodes] <;> rfl
   exact Nat.eq_of_mul_eq_mul_left (by decide +kernel) (h.symm.trans ht)
 
-theorem program_added (start : Nat) : added (program start) = 132606 := by
+theorem program_added (start : Nat) : added (program start) = 132605 := by
   rw [program, added_cast, added_append, added_append, sel_added, swap_added, clear_added] <;> rfl
 
 theorem program_credit (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
-    (history : Fin start → Bool) : added (program start) = 132606 := program_added start
+    (history : Fin start → Bool) : added (program start) = 132605 := program_added start
 
 theorem program_tCount (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
     (history : Fin start → Bool) :
-    ((program start).instantiate (readConstant coeffs Q) history).tCount = 928242 := by
+    ((program start).instantiate (readConstant coeffs Q) history).tCount = 928235 := by
   rw [exact_t _ (program_residue start), program_added] <;> rfl
 
 /-! ### The window -/
@@ -933,7 +933,7 @@ theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
 
 theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 928242 := by
+    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 928235 := by
   unfold windowGeneric
   rw [reindexStraight_instantiate,
     readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
@@ -941,7 +941,7 @@ theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 �
 
 theorem window_credit {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    added ((windowGeneric rows).program start) = 132606 := by
+    added ((windowGeneric rows).program start) = 132605 := by
   unfold windowGeneric
   rw [added_reindex]
   exact program_added start

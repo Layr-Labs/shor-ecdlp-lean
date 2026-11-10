@@ -1,4 +1,6 @@
 import ShorECDLP.Submission.Entrant.Schedule27
+import ShorECDLP.Submission.Entrant.ComplementLoss
+import ShorECDLP.Submission.Entrant.ExtraPhase
 
 namespace ShorECDLP.Entrant.GeometricPhase
 open Quantum Challenge Secp256k1 AndGadget WEXCredit WeightedPhase28 ApproximatePhase34
@@ -121,7 +123,7 @@ theorem error_axis_exact {n} (ws : List (Window n))
     simp only [bankPrior,nextPrior,List.length_append,List.length_reverse,List.length_ofFn,List.length_map,List.map_cons,List.sum_cons,account_append]
     rw [Nat.add_comm w.wires.length prior.length]
 
-theorem budget_floor : 2 * ((1653/4:ℝ) + 399) * ((6283186/1000000:ℝ)/2^28) ≤
+theorem budget_floor : ((1653/4:ℝ) + 1211) * ((6283186/1000000:ℝ)/2^28) ≤
     990038025/1000000000 - 99/100 := by norm_num
 
 
@@ -207,7 +209,7 @@ theorem source_error (impl : Width16Schedule.Implementation) (reset : List Wire)
 def entryTrim (entry : StraightEntry) : StraightEntry where
   coefficients := entry.coefficients
   finalCursor := entry.finalCursor
-  program := trimN 399 entry.program
+  program := ExtraPhase.drop26 397 (trimN 417 entry.program)
 theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
     (bounds : Bounds) (ws : List ShorECDLP.Wire) (cert : Certificate limits layout entry bounds)
     (hs : Within ws entry.program) (herror : errorCost entry.program ≤ (1653/4:ℝ)*unit)
@@ -216,14 +218,17 @@ theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : Stra
       (990038025/1000000000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)) :
     Certificate limits layout (entryTrim entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
-  gateBudget := (trimN_slots 399 entry.program).trans cert.gateBudget
+  gateBudget := (ExtraPhase.drop26_slots 397 (trimN 417 entry.program)).trans
+    ((trimN_slots 417 entry.program).trans cert.gateBudget)
   recordBudget := cert.recordBudget
   tableBudget := cert.tableBudget
   candidateBudget := cert.candidateBudget
-  wellFormed := trimN_wellFormed 399 entry.program cert.wellFormed
+  wellFormed := ExtraPhase.drop26_wellFormed 397 (trimN 417 entry.program)
+    (trimN_wellFormed 417 entry.program cert.wellFormed)
   resources := by
     intro Q
-    have hsup := (trimN_within 399 entry.program ws hs).instantiate
+    have hsup := (ExtraPhase.drop26_within 397 (trimN 417 entry.program) ws
+      (trimN_within 417 entry.program ws hs)).instantiate
       (readConstant entry.coefficients.get Q) Fin.elim0
     have hc : (((entryTrim entry).instantiate Q).wires.dedup.toFinset).card ≤ ws.length := by
       apply (Finset.card_le_card ?_).trans (List.toFinset_card_le ws)
@@ -235,30 +240,36 @@ theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : Stra
       rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
       exact hc
     refine ⟨hqc, ?_, ?_⟩
-    · exact (trimN_t 399 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
-        (cert.resources Q).2.1
+    · exact (ExtraPhase.drop26_t 397 (trimN 417 entry.program)
+        (readConstant entry.coefficients.get Q) Fin.elim0).trans
+        ((trimN_t 417 entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
+          (cert.resources Q).2.1)
     · have he := (entryTrim entry).program.measurementCount
         (readConstant entry.coefficients.get Q) Fin.elim0
       simpa only [Nat.add_zero] using he.le
   success := by
     intro Q d hn hd
-    have h := trimN_expectation (readConstant entry.coefficients.get Q) entry.program 399 Fin.elim0
+    have h := ComplementLoss.trimN_expectation (readConstant entry.coefficients.get Q) entry.program 417 Fin.elim0
       (ket ShorECDLP.zeroBasisState) (fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome) cert.wellFormed
-    rw [expectation_verified, expectation_verified, normSq_ket] at h
+    have h2 := ExtraPhase.drop26_expectation (readConstant entry.coefficients.get Q)
+      (trimN 417 entry.program) 397 Fin.elim0 (ket ShorECDLP.zeroBasisState)
+      (fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome)
+      (trimN_wellFormed 417 entry.program cert.wellFormed)
+    rw [expectation_verified, expectation_verified, normSq_ket] at h h2
     have hS := hstrong Q d hn hd
     change 99/100 ≤ Instrument.bornMass
-      (((trimN 399 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
+      (((ExtraPhase.drop26 397 (trimN 417 entry.program)).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState)
     change 990038025/1000000000 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket ShorECDLP.zeroBasisState) at hS
-    norm_num [unit] at herror h
+    norm_num [unit] at herror h h2
     nlinarith
 
 
 theorem source_weight (impl : Implementation) (reset : List Wire) :
-    weight4 (trimN 399 (sourceEntry impl reset).program) ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+10626 := by
+    weight4 (ExtraPhase.drop26 397 (trimN 417 (sourceEntry impl reset).program)) ≤
+      4*(132605+19*impl.credit17+8*impl.credit16)+10211 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -271,11 +282,13 @@ theorem source_weight (impl : Implementation) (reset : List Wire) :
     rcases hk with rfl | rfl
     · exact weighted26_removed_fixedEntry _ _
     · exact removed27_fixedEntry _ _
-  have h := weight4_trimN 399 (sourceEntry impl reset).program
-  have hs : trimSpent 399 (sourceEntry impl reset).program = 399 := by
+  have h := weight4_trimN 417 (sourceEntry impl reset).program
+  have hs : trimSpent 417 (sourceEntry impl reset).program = 417 := by
     rw [trimSpent_eq, her 26 (Or.inl rfl), her 27 (Or.inr rfl)]
     omega
   rw [hew,hs,her 27 (Or.inr rfl)] at h
+  have hdrop := ExtraPhase.drop26_weight 397 (trimN 417 (sourceEntry impl reset).program)
+  rw [ExtraPhase.source_spent26 impl reset] at hdrop
   omega
 
 
@@ -303,29 +316,31 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (entryTrim (sourceEntry impl reset)) (Width16Schedule.layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(132606+19*impl.credit17+8*impl.credit16)+10627,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(132605+19*impl.credit17+8*impl.credit16)+10212,544000000⟩ := by
   have trimmed := trim_certificate rawLimits (Width16Schedule.layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (source_error impl reset) strongSuccess
-  have hslots := trimN_slots 399 (sourceEntry impl reset).program
+  have hslots := trimN_slots 417 (sourceEntry impl reset).program
+  have hdropSlots := ExtraPhase.drop26_slots 397 (trimN 417 (sourceEntry impl reset).program)
   have hw := source_weight impl reset
   unfold finalEntry
   apply specializeEntry_certificate _ (compiled_coefficients impl reset)
   apply ConditionalCatalyst.four_certificate rawLimits (Width16Schedule.layout impl reset)
     (entryTrim (sourceEntry impl reset)) _ _ 1938 1939 ws
-    trimmed (trimN_within 399 (sourceEntry impl reset).program ws support) hq hy
-  · change 4*((trimN 399 (sourceEntry impl reset).program).gateSlots+
-      18*added (trimN 399 (sourceEntry impl reset).program))+2 ≤ officialLimits.gateSlots
-    rw [trimN_added]
+    trimmed (ExtraPhase.drop26_within 397 (trimN 417 (sourceEntry impl reset).program) ws
+      (trimN_within 417 (sourceEntry impl reset).program ws support)) hq hy
+  · change 4*((ExtraPhase.drop26 397 (trimN 417 (sourceEntry impl reset).program)).gateSlots+
+      18*added (ExtraPhase.drop26 397 (trimN 417 (sourceEntry impl reset).program)))+2 ≤ officialLimits.gateSlots
+    rw [ExtraPhase.drop26_added,trimN_added]
     omega
-  · change (sourceEntry impl reset).finalCursor+added (trimN 399 (sourceEntry impl reset).program) ≤ officialLimits.measurements
-    rw [trimN_added]
+  · change (sourceEntry impl reset).finalCursor+added (ExtraPhase.drop26 397 (trimN 417 (sourceEntry impl reset).program)) ≤ officialLimits.measurements
+    rw [ExtraPhase.drop26_added,trimN_added]
     exact recordBudget
   · exact qubitBudget
-  · change weight4 (trimN 399 (sourceEntry impl reset).program)+1 ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+10627
+  · change weight4 (ExtraPhase.drop26 397 (trimN 417 (sourceEntry impl reset).program))+1 ≤
+      4*(132605+19*impl.credit17+8*impl.credit16)+10212
     omega
-  · change (sourceEntry impl reset).finalCursor+added (trimN 399 (sourceEntry impl reset).program) ≤ 544000000
-    rw [trimN_added]
+  · change (sourceEntry impl reset).finalCursor+added (ExtraPhase.drop26 397 (trimN 417 (sourceEntry impl reset).program)) ≤ 544000000
+    rw [ExtraPhase.drop26_added,trimN_added]
     exact measurementBound
 
 
@@ -351,19 +366,19 @@ def entry : StraightEntry := GeometricPhase.finalEntry implementation reset
 
 def layout : DecodeLayout := lowerLayout 1938 (GeometricPhase.entryTrim rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,250807471,544000000⟩
+def bounds : Bounds := ⟨1620,250806520,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (GeometricPhase.entryTrim (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (GeometricPhase.finalEntry implementation reset)
-      ⟨1620,4*(132606+19*implementation.credit17+8*implementation.credit16)+10627,544000000⟩ :=
+      ⟨1620,4*(132605+19*implementation.credit17+8*implementation.credit16)+10212,544000000⟩ :=
   GeometricPhase.conditional_certificate implementation reset (List.range 1618)
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2344247 → b ≤ 2253239 →
-    4*(132606+19*a+8*b)+10627 ≤ 250807471 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2344240 → b ≤ 2253239 →
+    4*(132605+19*a+8*b)+10212 ≤ 250806520 := by
   intro a b ha hb
   omega
 
