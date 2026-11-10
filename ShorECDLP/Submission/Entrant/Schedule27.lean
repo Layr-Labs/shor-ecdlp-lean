@@ -2005,7 +2005,7 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2344247 ∧ implementation.credit16 ≤ 2253239 := by
+theorem credits : implementation.credit17 ≤ 2344191 ∧ implementation.credit16 ≤ 2253239 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
   exact ⟨WideBank8.Signed16.credit_bound, WEXFast.W15F.fastCount_upper⟩
 
@@ -3058,7 +3058,7 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2344247 → b ≤ 2253239 → 4*(132606+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253239 → 4*(132606+19*a+8*b)+10767 ≤ 250907747 := by
   intro a b ha hb
   omega
 
