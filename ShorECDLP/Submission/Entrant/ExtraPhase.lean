@@ -497,18 +497,18 @@ theorem removed_axis_diff [body : Single.WindowBody] [ledger : Single.ProducerRe
 variable [body : Single.WindowBody] [ledger : Single.ProducerResources body]
 
 theorem exact_band_metadata :
-    (metadataDropped25 [10] 0 - _root_.metadataDropped26 [10] 0) +
+    (metadataDropped25 [9] 0 - _root_.metadataDropped26 [9] 0) +
     (metadataDropped25 [8] 0 - _root_.metadataDropped26 [8] 0) +
-    (metadataDropped25 leftWidthsBody 10 - _root_.metadataDropped26 leftWidthsBody 10) +
-    (metadataDropped25 rightWidthsBody 8 - _root_.metadataDropped26 rightWidthsBody 8) = 419 := by
+    (metadataDropped25 leftWidthsBody 9 - _root_.metadataDropped26 leftWidthsBody 9) +
+    (metadataDropped25 rightWidthsBody 8 - _root_.metadataDropped26 rightWidthsBody 8) = 418 := by
   decide +kernel
 
 theorem axes_band_count (impl : Implementation) (start : Nat) :
-    419 ≤ (removed 25 (mixHead impl.headA start) +
+    418 ≤ (removed 25 (mixHead impl.headA start) +
       removed 25 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start)) -
       (removed 26 (mixHead impl.headA start) +
       removed 26 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start)) := by
-  have hA := removed_axis_diff ([impl.headA]) ([10]) (headA_width_relation impl) start List.nil
+  have hA := removed_axis_diff ([impl.headA]) ([9]) (headA_width_relation impl) start List.nil
   have hB := removed_axis_diff ([impl.headB]) ([8]) (headB_width_relation impl)
     (mixS1 impl.headA start) List.nil
   have hL := removed_axis_diff (leftBodies impl) leftWidthsBody (left_width_relation impl)
@@ -531,7 +531,7 @@ theorem axes_band_count (impl : Implementation) (start : Nat) :
   omega
 
 theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
-    419 ≤ removed 25 (fullProgram impl reset) - removed 26 (fullProgram impl reset) := by
+    418 ≤ removed 25 (fullProgram impl reset) - removed 26 (fullProgram impl reset) := by
   have h := axes_band_count impl 0
   have hz := removed26_le_removed25
     (resetProgram 1769472 (mixS4 impl.headA impl.headB (leftBodies impl) (rightBodies impl) 0) reset)
@@ -542,7 +542,7 @@ theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
 
 
 theorem source_count26 (impl : Implementation) (reset : List Wire) :
-    419 ≤ count26 (sourceEntry impl reset).program := by
+    418 ≤ count26 (sourceEntry impl reset).program := by
   have hb := fullProgram_band_count impl reset
   have he := count26_removed (sourceEntry impl reset).program
   have h25 : removed 25 (sourceEntry impl reset).program = removed 25 (fullProgram impl reset) := by
