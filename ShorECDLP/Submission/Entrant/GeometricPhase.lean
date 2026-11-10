@@ -284,7 +284,7 @@ theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : Stra
 
 theorem source_weight (impl : Implementation) (reset : List Wire) :
     weight4 (Phase23Partial.trimN 86 (sourceEntry impl reset).program) ≤
-      4*(132596+19*impl.credit17+8*impl.credit16)+9259 := by
+      4*(132595+19*impl.credit17+8*impl.credit16)+9259 := by
   have hw := fullProgram_weight impl reset
   have hr := AffineLoss.source_removed23 impl reset
   have hew : weight4 (sourceEntry impl reset).program = weight4 (fullProgram impl reset) := by
@@ -319,7 +319,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (entryTrim (sourceEntry impl reset)) (Width16Schedule.layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(132596+19*impl.credit17+8*impl.credit16)+9260,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(132595+19*impl.credit17+8*impl.credit16)+9260,544000000⟩ := by
   have trimmed := trim_certificate rawLimits (Width16Schedule.layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (AffineLoss.source_error impl reset) strongSuccess
   have hslots := Phase23Partial.trimN_slots 86 (sourceEntry impl reset).program
@@ -338,7 +338,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     exact recordBudget
   · exact qubitBudget
   · change weight4 (Phase23Partial.trimN 86 (sourceEntry impl reset).program)+1 ≤
-      4*(132596+19*impl.credit17+8*impl.credit16)+9260
+      4*(132595+19*impl.credit17+8*impl.credit16)+9260
     omega
   · change (sourceEntry impl reset).finalCursor+added (Phase23Partial.trimN 86 (sourceEntry impl reset).program) ≤ 544000000
     rw [Phase23Partial.trimN_added]
@@ -367,19 +367,19 @@ def entry : StraightEntry := GeometricPhase.finalEntry implementation reset
 
 def layout : DecodeLayout := lowerLayout 1938 (GeometricPhase.entryTrim rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,250801584,544000000⟩
+def bounds : Bounds := ⟨1620,250800236,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (GeometricPhase.entryTrim (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (GeometricPhase.finalEntry implementation reset)
-      ⟨1620,4*(132596+19*implementation.credit17+8*implementation.credit16)+9260,544000000⟩ :=
+      ⟨1620,4*(132595+19*implementation.credit17+8*implementation.credit16)+9260,544000000⟩ :=
   GeometricPhase.conditional_certificate implementation reset (List.range 1618)
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253232 →
-    4*(132596+19*a+8*b)+9260 ≤ 250801584 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253190 →
+    4*(132595+19*a+8*b)+9260 ≤ 250800236 := by
   intro a b ha hb
   omega
 

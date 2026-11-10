@@ -4211,7 +4211,7 @@ attribute [local irreducible] codeTP2 WEXUnlookup.ccx2 literalToffolis normalize
 theorem credit_change {n} (r : Nat → Fin n) (B : PathShare.Bank) (c : Code2 32768)
     (hb : B.bits.length = 16) (hn : (tableAddressTree B.high 0 1).internalNodes = 255)
     (hm : masks2 c = 5) (ht : traversals (erase2 c) = 9) :
-    codeTP2 B (Rows.blocks r c) = WEXUnlookup.ccx2 c + 131677 := by
+    codeTP2 B (Rows.blocks r c) = WEXUnlookup.ccx2 c + 131707 := by
   have hw := lifted_credit r B c
   have ho := WEXUnlookup.ccx2_relation c
   rw [hb, hn, hm, ht] at hw
@@ -4263,8 +4263,8 @@ theorem saving : Fast16.fsave code = 79636 := by
 
 
 theorem cost_arith (fresh old wideStd oldStd : Nat)
-    (hnew : fresh + 79636 = wideStd) (hold : old + 38918 = oldStd)
-    (hwide : wideStd = oldStd + 131677) : fresh = old + 90959 := by omega
+    (hnew : fresh + 79636 = wideStd) (hold : old + 38930 = oldStd)
+    (hwide : wideStd = oldStd + 131707) : fresh = old + 91001 := by omega
 
 theorem fast_standard_relation :
     Fast16.fcodeTP code + 79636 = codeTP2 Fast16.bank15 (Geometry.row .w16) := by
@@ -4274,12 +4274,12 @@ theorem fast_standard_relation :
 
 
 theorem wide_standard_relation :
-    codeTP2 Fast16.bank15 (Geometry.row .w16) = WEXUnlookup.ccx2 WEXUnlookup.rowC + 131677 :=
+    codeTP2 Fast16.bank15 (Geometry.row .w16) = WEXUnlookup.ccx2 WEXUnlookup.rowC + 131707 :=
   Counts.credit_change rows Fast16.bank15 WEXUnlookup.rowC rfl Fast16.high_nodes
     WEXUnlookup.rowC_masks WEXUnlookup.rowC_measures.2.1
 
 
-theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF + 90959 := by
+theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF + 91001 := by
   exact cost_arith _ _ _ _ fast_standard_relation WEXFast.W15F.rowCF_tp wide_standard_relation
 
 theorem body_credit_bound :
@@ -4288,7 +4288,7 @@ theorem body_credit_bound :
   rw [credit_increment]
   have h := WEXFast.W15F.fastCount_upper
   rw [← Nat.add_assoc]
-  exact Nat.add_le_add_right h 90959
+  exact Nat.add_le_add_right h 91001
 
 end
 end ShorECDLP.Entrant.WideBank8.Row16

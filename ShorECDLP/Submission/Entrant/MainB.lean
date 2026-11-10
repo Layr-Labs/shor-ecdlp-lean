@@ -2604,7 +2604,7 @@ theorem fixupProgram_wellFormed {n base} (data : List (ClearPort n)) (refs : Lis
   apply straight_append_wellFormed
   · apply literalProgram_wellFormed
     rw [hotPrepare,circuitWellFormed_append]
-    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],seededSplitNetwork_wellFormed7 _ hp⟩
+    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],ParityBank7.parityNet_wellFormed 7 (lowN low) (hotNat hot) (hotLayout_of low hot hi hdlow) 7 le_rfl⟩
   · apply straight_append_wellFormed
     · exact literalProgram_wellFormed _ (hH _)
     · apply straight_append_wellFormed
@@ -3239,7 +3239,7 @@ theorem clear_slots_gen {n} (site : MaskedSite n) (H P : List Wire)
     (hl : (tableAddressTree H 0 1).Layout site.guard P) (start : Nat) :
     (MeasuredClear.measuredClear (clearData site.ports) low (clearHot site)
         (tableAddressTree H 0 1) site.guard (scratch site) P start).gateSlots =
-      512 * site.ports.length * 2 ^ H.length + 10 * (tableAddressTree H 0 1).internalNodes + 1020 := by
+      512 * site.ports.length * 2 ^ H.length + 10 * (tableAddressTree H 0 1).internalNodes + 1140 := by
   rw [MeasuredClear.measuredClear_slots _ _ _ _ _ _ _ hl,MeasuredClear.addressTree_leaves]
   simp [clearData]
 
@@ -4002,7 +4002,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 32767
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 32767 + 381
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 32767 + 375
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -4030,11 +4030,11 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 255 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 2667 := by
+    ((clearProgram site start).instantiate read history).tCount = 2625 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem clearProgram_slots {n} (site : MaskedSite n) (hg : SiteGeometry site) (start : Nat) :
-    (clearProgram site start).gateSlots = 131072 * site.ports.length + 3570 := by
+    (clearProgram site start).gateSlots = 131072 * site.ports.length + 3690 := by
   rw [clearProgram,clear_slots_gen site high highPaths (site_high_layout site hg),high_nodes,
     show (2:Nat) ^ high.length = 256 by decide +kernel]
   omega
@@ -4080,7 +4080,7 @@ theorem program_tCount {n} (read : ConstantBit n → Bool) (code : Code n)
 @[simp] theorem erase_cons {n} (b : Block n) (code : Code n) : erase (b::code) = b.code ++ erase code := rfl
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 32386 = literalToffolis (normalizeW b.code) + traversals b.code * 32767 := by
+    blockCCX b + blockMasks b * 32392 = literalToffolis (normalizeW b.code) + traversals b.code * 32767 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -4095,7 +4095,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 32386 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 32767 := by
+    ccx code + masks code * 32392 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 32767 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -4362,7 +4362,7 @@ theorem site_old_clear_slots {n} (site : MaskedSite n) :
   simp [codeSlots,windowBits]
 
 theorem block_slots_relation {n} (b : Block n) (hg : BlockGeometry b) (start : Nat) :
-    (blockProgram b start).gateSlots + blockMasks b * 324100 =
+    (blockProgram b start).gateSlots + blockMasks b * 323980 =
       codeSlots windowBits (normalizeW b.code) + blockLen b * 98304 := by
   cases b with
   | plain code =>
@@ -4383,7 +4383,7 @@ theorem block_slots_relation {n} (b : Block n) (hg : BlockGeometry b) (start : N
     omega
 
 theorem program_slots_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b) (start : Nat) :
-    (program code start).gateSlots + masks code * 324100 =
+    (program code start).gateSlots + masks code * 323980 =
       codeSlots windowBits (normalizeW (erase code)) + lens code * 98304 := by
   induction code generalizing start with
   | nil => simp [program,records,masks,lens,Straight.gateSlots,erase,normalizeW,codeSlots]
@@ -4396,15 +4396,15 @@ theorem program_slots_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGe
 
 theorem slots_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 7) (hl : lens code = 2567) (start : Nat) :
-    (program code start).gateSlots = codeSlots windowBits (normalizeW (erase code)) + 250077668 := by
+    (program code start).gateSlots = codeSlots windowBits (normalizeW (erase code)) + 250078508 := by
   have h := program_slots_relation code hg start
   rw [hm,hl] at h
   omega
 
 theorem row_slots (start : Nat) : (program row start).gateSlots =
-    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250077668 := by
+    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250078508 := by
   exact (slots_credit5 row row_geometry row_masks row_lens start).trans
-    (congrArg (fun c : WCode 32768 => codeSlots windowBits (normalizeW c) + 250077668) erase_row)
+    (congrArg (fun c : WCode 32768 => codeSlots windowBits (normalizeW c) + 250078508) erase_row)
 
 end
 end ShorECDLP.Entrant.WEXUnlookup
@@ -4652,12 +4652,12 @@ attribute [local irreducible] ccx blockCCX masks blockMasks row WEX.traversals
 
 theorem ccx_credit5 {n} (code : Code n) (k : Nat) (hm : masks code = 7)
     (hk : literalToffolis (normalizeW (erase code)) + traversals (erase code)*32767 = k) :
-    ccx code + 226702 = k := by
+    ccx code + 226744 = k := by
   have h := ccx_relation code
   rw [hm] at h
   omega
 
-theorem row_ccx_relation : ccx row + 226702 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15*32767 := by
+theorem row_ccx_relation : ccx row + 226744 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15*32767 := by
   have ht := WEX.clearReferenceRow_traversals
   rw [traversals_normalize] at ht
   apply ccx_credit5 row _ row_masks
@@ -4704,7 +4704,7 @@ theorem addFixed_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (histo
   rw [addFixed,castFinish_instantiate,program_tCount read row row_geometry]
 
 theorem addFixed_slots (start : Nat) : (addFixed start).gateSlots =
-    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250077668 := by
+    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250078508 := by
   rw [addFixed,castFinish_gateSlots,row_slots]
 
 theorem addFixed_wellFormed (start : Nat) : (addFixed start).WellFormed := by
@@ -4808,7 +4808,7 @@ open AndGadget WEXCredit in
 
 theorem bodyProgram_slots (start : Nat) : (bodyProgram start).gateSlots =
     2*Bridge.tmplSlots (literalT (n := 32768) (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)) +
-      codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 62 + 250077668 := by
+      codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 62 + 250078508 := by
   rw [bodyProgram,castFinish_gateSlots]
   simp only [Straight.gateSlots_append,nProgram_slots,addFixed_slots,prefixProgram,suffixProgram,literalProgram_slots]
   have len : (signedAddressCircuit 836 870 windowBits).length = 30 := by decide +kernel
@@ -5065,7 +5065,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 63 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 1323 := by
+    ((clearProgram site start).instantiate read history).tCount = 1281 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
@@ -5132,7 +5132,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 127 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 1771 := by
+    ((clearProgram site start).instantiate read history).tCount = 1729 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
@@ -5140,7 +5140,7 @@ theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
   rw [(MeasuredClear.recordUnary_counts _ _ _ (site_high_layout site hg) 0).1,high_nodes]
 
 theorem clearProgram_slots {n} (site : MaskedSite n) (hg : SiteGeometry site) (start : Nat) :
-    (clearProgram site start).gateSlots ≤ 50530546 := by
+    (clearProgram site start).gateSlots ≤ 50530666 := by
   rw [clearProgram,clear_slots_gen site high highPaths (site_high_layout site hg),high_nodes,
     show (2:Nat) ^ high.length = 128 by decide +kernel]
   have := (kind_facts site hg.kind).2.2.2.2.2.2
@@ -6059,7 +6059,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 8191
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 8191 + 189
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 8191 + 183
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -6120,7 +6120,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 16383
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 16383 + 253
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 16383 + 247
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -6181,7 +6181,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 8002 = literalToffolis (normalizeW b.code) + traversals b.code * 8191 := by
+    blockCCX b + blockMasks b * 8008 = literalToffolis (normalizeW b.code) + traversals b.code * 8191 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -6196,7 +6196,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 8002 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 8191 := by
+    ccx code + masks code * 8008 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 8191 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -6279,7 +6279,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 16130 = literalToffolis (normalizeW b.code) + traversals b.code * 16383 := by
+    blockCCX b + blockMasks b * 16136 = literalToffolis (normalizeW b.code) + traversals b.code * 16383 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -6294,7 +6294,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 16130 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 16383 := by
+    ccx code + masks code * 16136 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 16383 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -6682,7 +6682,7 @@ attribute [local irreducible] bodyProgram
 
 
 
-theorem row_ccx_relation : ccx row + 7 * 8002 =
+theorem row_ccx_relation : ccx row + 7 * 8008 =
     literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15 * 8191 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
@@ -6751,7 +6751,7 @@ attribute [local irreducible] bodyProgram
 
 
 
-theorem row_ccx_relation : ccx row + 7 * 16130 =
+theorem row_ccx_relation : ccx row + 7 * 16136 =
     literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15 * 16383 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
@@ -6848,7 +6848,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   | cons i code ih => cases i <;> simp [codeSlots,ih,Nat.add_assoc]
 
 theorem block_slots_upper {n} (b : Block n) (hg : BlockGeometry b) (start : Nat) :
-    (blockProgram b start).gateSlots ≤ codeSlots bits (normalizeW b.code) + blockMasks b * 50530546 := by
+    (blockProgram b start).gateSlots ≤ codeSlots bits (normalizeW b.code) + blockMasks b * 50530666 := by
   cases b with
   | plain code =>
     have hl := pair_layouts_of_placed bits windowPaths windowRoot (normalizeW code)
@@ -6868,7 +6868,7 @@ theorem block_slots_upper {n} (b : Block n) (hg : BlockGeometry b) (start : Nat)
     omega
 
 theorem program_slots_upper {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b) (start : Nat) :
-    (program code start).gateSlots ≤ codeSlots bits (normalizeW (erase code)) + masks code * 50530546 := by
+    (program code start).gateSlots ≤ codeSlots bits (normalizeW (erase code)) + masks code * 50530666 := by
   induction code generalizing start with
   | nil => simp [program,records,erase,normalizeW,codeSlots,masks,Straight.gateSlots]
   | cons b code ih =>
