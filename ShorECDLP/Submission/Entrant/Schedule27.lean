@@ -1,3 +1,4 @@
+import ShorECDLP.Submission.Entrant.KnownRoot
 import ShorECDLP.Submission.Entrant.Prefix
 import ShorECDLP.Submission.Entrant.TightSupport
 import ShorECDLP.Submission.Entrant.WideBank8
@@ -646,7 +647,7 @@ structure Implementation where
   headA_zero : ∀ start, residue (headA.program start) = 0
   headB_zero : ∀ start, residue (headB.program start) = 0
   signed_zero : ∀ w start, residue ((signed w).program start) = 0
-  headA_credit : ∀ start, added (headA.program start) = 132606
+  headA_credit : ∀ start, added (headA.program start) = 132596
   headB_credit : ∀ start, added (headB.program start) = 0
   signed_credit : ∀ w start, added ((signed w).program start) = count credit17 credit16 w
 
@@ -814,9 +815,9 @@ def rightCostMeta (c17 c16 : Nat) : List (Nat × Nat) :=
   List.replicate 8 (4*c17,17) ++ List.replicate 4 (4*c16,16)
 
 theorem exact_phase_metadata (c17 c16 : Nat) :
-    metadataWeight [(4*132606,10)] 0 + metadataWeight [(0,8)] 0 +
+    metadataWeight [(4*132596,10)] 0 + metadataWeight [(0,8)] 0 +
       metadataWeight (leftCostMeta c17 c16) 10 + metadataWeight (rightCostMeta c17 c16) 8 =
-      4*(132606+19*c17+8*c16)+54991 ∧
+      4*(132596+19*c17+8*c16)+54991 ∧
     WeightedPhase28.metadataDropped [10] 0 + WeightedPhase28.metadataDropped [8] 0 +
       WeightedPhase28.metadataDropped leftWidthsBody 10 +
       WeightedPhase28.metadataDropped rightWidthsBody 8 = 43966 := by
@@ -858,7 +859,7 @@ theorem signed_cost_relation (impl : Implementation) (ws : List Digit) :
 
 theorem headA_cost_relation (impl : Implementation) :
     List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start, weight4 (w.program start) ≤ k.1)
-      ([impl.headA]) ([(4*132606,10)]) :=
+      ([impl.headA]) ([(4*132596,10)]) :=
   .cons ⟨impl.headA_width, fun start => by
     rw [weight4_zero _ (impl.headA_zero start), impl.headA_credit]⟩ .nil
 
@@ -897,7 +898,7 @@ theorem mixPriorR_length (impl : Implementation) (start : Nat) :
 theorem axes_weight (impl : Implementation) (start : Nat) :
     weight4 (mixHead impl.headA start) +
       weight4 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start) ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+54991 := by
+      4*(132596+19*impl.credit17+8*impl.credit16)+54991 := by
   have hA := weight4_axis ([impl.headA]) _ (headA_cost_relation impl) start List.nil
   have hB := weight4_axis ([impl.headB]) _ (headB_cost_relation impl) (mixS1 impl.headA start) List.nil
   have hL := weight4_axis (leftBodies impl) _ (left_cost_relation impl)
@@ -932,7 +933,7 @@ theorem axes_removed (impl : Implementation) (start : Nat) :
   omega
 
 theorem fullProgram_weight (impl : Implementation) (reset : List Wire) :
-    weight4 (fullProgram impl reset) ≤ 4*(132606+19*impl.credit17+8*impl.credit16)+54991 := by
+    weight4 (fullProgram impl reset) ≤ 4*(132596+19*impl.credit17+8*impl.credit16)+54991 := by
   have h := axes_weight impl 0
   simp only [fullProgram, weight4_append, program, weight4_framed, weight4_reset,
     readout, weight4_cast, weight4_suffix56]
@@ -953,7 +954,7 @@ theorem fullProgram_removed (impl : Implementation) (reset : List Wire) :
 
 theorem fullProgram_trim27_weight (impl : Implementation) (reset : List Wire) :
     weight4 (ApproximatePhase34.trim 27 (fullProgram impl reset)) ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+11025 := by
+      4*(132596+19*impl.credit17+8*impl.credit16)+11025 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have h := weight4_trim (fullProgram impl reset)
@@ -1082,11 +1083,11 @@ set_option linter.unusedSectionVars false
 set_option linter.unnecessarySeqFocus false
 attribute [local irreducible] fourierOutcomes
 
-def firstWindow : Window 1769472 := First18.windowGeneric firstRow
+def firstWindow : Window 1769472 := KnownRoot.windowGeneric firstRow
 
 theorem firstWindow_law : WindowLaw ShorECDLP.Entrant.Width16Schedule.coefficientAt firstWindow
     (SelectSchedule18.update initialPoint) SelectSchedule18.Input := by
-  apply First18.window_law_generic
+  apply KnownRoot.window_law_generic
   intro Q hQ a
   rw [coefficientAt_first]
   exact initialCoefficients_point Q hQ a.val
@@ -1141,19 +1142,19 @@ theorem headB_width' : headB.wires.length = 8 := by
 theorem headA_zero' (start : Nat) : residue (headA.program start) = 0 := by
   change residue (prepareOuterBank headRWires (firstWindow.program start)) = 0
   rw [ApproximatePhase34.residue_prepare]
-  unfold firstWindow First18.windowGeneric
-  rw [residue_reindex, First18.program_residue]
+  unfold firstWindow KnownRoot.windowGeneric
+  rw [residue_reindex, KnownRoot.first18_seededProgram_residue]
 
 theorem headB_zero' (start : Nat) : residue (headB.program start) = 0 := by
   change residue (prepareOuterBank headRWires.reverse (Straight.done : Straight 1769472 start start)) = 0
   rw [ApproximatePhase34.residue_prepare]
   rfl
 
-theorem headA_credit' (start : Nat) : added (headA.program start) = 132606 := by
-  change added (prepareOuterBank headRWires (firstWindow.program start)) = 132606
+theorem headA_credit' (start : Nat) : added (headA.program start) = 132596 := by
+  change added (prepareOuterBank headRWires (firstWindow.program start)) = 132596
   rw [added_prepare]
-  unfold firstWindow First18.windowGeneric
-  rw [added_reindex, First18.program_added]
+  unfold firstWindow KnownRoot.windowGeneric
+  rw [added_reindex, KnownRoot.first18_seededProgram_added]
 
 theorem headB_credit' (start : Nat) : added (headB.program start) = 0 := by
   change added (prepareOuterBank headRWires.reverse (Straight.done : Straight 1769472 start start)) = 0
@@ -1252,7 +1253,7 @@ theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
 
 theorem fullProgram_trim259_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 259 (fullProgram impl reset)) ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+10766 := by
+      4*(132596+19*impl.credit17+8*impl.credit16)+10766 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -1269,7 +1270,7 @@ theorem removed27_fixedEntry {n e : Nat} (f : Fin n → PointCoeff) (p : Straigh
 
 theorem source_trim259_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 259 (sourceEntry impl reset).program) ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+10766 := by
+      4*(132596+19*impl.credit17+8*impl.credit16)+10766 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -1334,7 +1335,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (sourceEntry impl reset)) (layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(132606+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(132596+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
   have trimmed := trimN_certificate rawLimits (layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (source_error impl reset) strongSuccess
   have hslots := trimN_slots 259 (sourceEntry impl reset).program
@@ -1353,7 +1354,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     exact recordBudget
   · exact qubitBudget
   · change weight4 (trimN 259 (sourceEntry impl reset).program)+1 ≤
-      4*(132606+19*impl.credit17+8*impl.credit16)+10767
+      4*(132596+19*impl.credit17+8*impl.credit16)+10767
     omega
   · change (sourceEntry impl reset).finalCursor+added (trimN 259 (sourceEntry impl reset).program) ≤ 544000000
     rw [trimN_added]
@@ -1362,9 +1363,9 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
 /-- Exact strict-score test after all body, support, semantic and certificate
     premises have been discharged. No Q or cost number is assumed by the proof. -/
 theorem strict_score (Q c17 c16 : Nat)
-    (hQ : Q ≤ 1652) (h17 : c17 ≤ 2345143) (h16 : c16 ≤ 2253239) :
-    Q * (4*(132606+19*c17+8*c16)+10767) < 420149980414 := by
-  have ht : 4*(132606+19*c17+8*c16)+10767 ≤ 250907747 := by omega
+    (hQ : Q ≤ 1652) (h17 : c17 ≤ 2345143) (h16 : c16 ≤ 2253232) :
+    Q * (4*(132596+19*c17+8*c16)+10767) < 420149980414 := by
+  have ht : 4*(132596+19*c17+8*c16)+10767 ≤ 250907747 := by omega
   exact (Nat.mul_le_mul hQ ht).trans_lt (by norm_num)
 
 end
@@ -2005,7 +2006,7 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2344191 ∧ implementation.credit16 ≤ 2253239 := by
+theorem credits : implementation.credit17 ≤ 2344191 ∧ implementation.credit16 ≤ 2253232 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
   exact ⟨WideBank8.Signed16.credit_bound, WEXFast.W15F.fastCount_upper⟩
 
@@ -2731,7 +2732,7 @@ theorem signed_slots (w : Digit) (start : Nat) : ((signed w).program start).gate
 theorem win_wellFormed (w : Window 1769472) (hw : IsWin w) (start : Nat) :
     (w.program start).WellFormed := by
   rcases hw with rfl|rfl|⟨d,rfl⟩
-  · exact prepareOuterBank_wellFormed _ _ (First18.window_wellFormed Width16Schedule.firstRow start)
+  · exact prepareOuterBank_wellFormed _ _ (KnownRoot.window_wellFormed Width16Schedule.firstRow start)
   · exact prepareOuterBank_wellFormed _ _ trivial
   · exact signed_wellFormed d start
 
@@ -2742,7 +2743,7 @@ theorem win_slots (w : Window 1769472) (hw : IsWin w) (start : Nat) :
       (Width16Schedule.firstWindow.program start)).gateSlots ≤ _
     rw [prepareOuterBank_slots]
     have h : (Width16Schedule.firstWindow.program start).gateSlots ≤ 1000000000 :=
-      First18.window_slots Width16Schedule.firstRow start
+      KnownRoot.window_slots Width16Schedule.firstRow start
     have hl : Width16Schedule.headRWires.length = 8 := Width16Schedule.headR_length
     omega
   · change (prepareOuterBank Width16Schedule.headRWires.reverse
@@ -2780,7 +2781,7 @@ theorem win_support (w : Window 1769472) (hw : IsWin w) (start : Nat)
     · intro v hv
       exact bits_range v (Width16Schedule.headR_sub' v hv)
     · exact (straight_instantiate_support _ read history).trans
-        ((First18.window_support Width16Schedule.firstRow start).trans
+        ((KnownRoot.window_support Width16Schedule.firstRow start).trans
           (First18.support_range.trans (List.range_subset.mpr (by decide))))
   · change ((prepareOuterBank Width16Schedule.headRWires.reverse
       (Straight.done : Straight 1769472 start start)).instantiate read history).wires ⊆ _
@@ -3053,12 +3054,12 @@ theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (Width16Schedule.finalEntry implementation reset)
-      ⟨1620,4*(132606+19*implementation.credit17+8*implementation.credit16)+10767,544000000⟩ :=
+      ⟨1620,4*(132596+19*implementation.credit17+8*implementation.credit16)+10767,544000000⟩ :=
   Width16Schedule.conditional_certificate implementation reset (List.range 1618)
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253239 → 4*(132606+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2344191 → b ≤ 2253232 → 4*(132596+19*a+8*b)+10767 ≤ 250907747 := by
   intro a b ha hb
   omega
 

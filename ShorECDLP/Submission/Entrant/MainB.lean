@@ -2604,7 +2604,7 @@ theorem fixupProgram_wellFormed {n base} (data : List (ClearPort n)) (refs : Lis
   apply straight_append_wellFormed
   · apply literalProgram_wellFormed
     rw [hotPrepare,circuitWellFormed_append]
-    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],splitNetwork_wellFormed _ hp⟩
+    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],seededSplitNetwork_wellFormed7 _ hp⟩
   · apply straight_append_wellFormed
     · exact literalProgram_wellFormed _ (hH _)
     · apply straight_append_wellFormed
@@ -4002,7 +4002,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 32767
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 32767 + 382
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 32767 + 381
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -4030,7 +4030,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 255 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 2674 := by
+    ((clearProgram site start).instantiate read history).tCount = 2667 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem clearProgram_slots {n} (site : MaskedSite n) (hg : SiteGeometry site) (start : Nat) :
@@ -4080,7 +4080,7 @@ theorem program_tCount {n} (read : ConstantBit n → Bool) (code : Code n)
 @[simp] theorem erase_cons {n} (b : Block n) (code : Code n) : erase (b::code) = b.code ++ erase code := rfl
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 32385 = literalToffolis (normalizeW b.code) + traversals b.code * 32767 := by
+    blockCCX b + blockMasks b * 32386 = literalToffolis (normalizeW b.code) + traversals b.code * 32767 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -4095,7 +4095,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 32385 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 32767 := by
+    ccx code + masks code * 32386 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 32767 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -4652,12 +4652,12 @@ attribute [local irreducible] ccx blockCCX masks blockMasks row WEX.traversals
 
 theorem ccx_credit5 {n} (code : Code n) (k : Nat) (hm : masks code = 7)
     (hk : literalToffolis (normalizeW (erase code)) + traversals (erase code)*32767 = k) :
-    ccx code + 226695 = k := by
+    ccx code + 226702 = k := by
   have h := ccx_relation code
   rw [hm] at h
   omega
 
-theorem row_ccx_relation : ccx row + 226695 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15*32767 := by
+theorem row_ccx_relation : ccx row + 226702 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15*32767 := by
   have ht := WEX.clearReferenceRow_traversals
   rw [traversals_normalize] at ht
   apply ccx_credit5 row _ row_masks
@@ -5065,7 +5065,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 63 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 1330 := by
+    ((clearProgram site start).instantiate read history).tCount = 1323 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
@@ -5132,7 +5132,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 127 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 1778 := by
+    ((clearProgram site start).instantiate read history).tCount = 1771 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
@@ -6059,7 +6059,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 8191
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 8191 + 190
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 8191 + 189
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -6120,7 +6120,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 16383
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 16383 + 254
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 16383 + 253
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -6181,7 +6181,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 8001 = literalToffolis (normalizeW b.code) + traversals b.code * 8191 := by
+    blockCCX b + blockMasks b * 8002 = literalToffolis (normalizeW b.code) + traversals b.code * 8191 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -6196,7 +6196,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 8001 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 8191 := by
+    ccx code + masks code * 8002 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 8191 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -6279,7 +6279,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 16129 = literalToffolis (normalizeW b.code) + traversals b.code * 16383 := by
+    blockCCX b + blockMasks b * 16130 = literalToffolis (normalizeW b.code) + traversals b.code * 16383 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -6294,7 +6294,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 16129 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 16383 := by
+    ccx code + masks code * 16130 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 16383 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -6682,7 +6682,7 @@ attribute [local irreducible] bodyProgram
 
 
 
-theorem row_ccx_relation : ccx row + 7 * 8001 =
+theorem row_ccx_relation : ccx row + 7 * 8002 =
     literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15 * 8191 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
@@ -6751,7 +6751,7 @@ attribute [local irreducible] bodyProgram
 
 
 
-theorem row_ccx_relation : ccx row + 7 * 16129 =
+theorem row_ccx_relation : ccx row + 7 * 16130 =
     literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15 * 16383 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr

@@ -9064,12 +9064,67 @@ def hotNat (hot : Fin 128 → Wire) (x : Nat) : Wire := if h : x < 128 then hot 
 def hotNetwork (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : List SplitCell :=
   hotNetN (lowN low) (hotNat hot) 7
 
-def hotPrepare (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : Circuit :=
+def seededSplitNetwork7 : List SplitCell → Circuit
+  | [] => []
+  | c :: cs => [.CX c.bit c.child, .CX c.child c.parent] ++ splitNetwork cs
+
+
+theorem seededSplitNetwork_run7 (c : SplitCell) (cs : List SplitCell) (s : BasisState)
+    (hp : s c.parent = true) :
+    Classical.run (seededSplitNetwork7 (c :: cs)) s =
+      Classical.run (splitNetwork (c :: cs)) s := by
+  simp only [seededSplitNetwork7,splitNetwork,SplitCell.circuit,splitCircuit,Classical.run_append]
+  congr 1
+  funext w
+  simp [Classical.run,Classical.applyGate,upd,hp]
+
+
+theorem hotNetN_first7 (bitsN hotN : Nat → Wire) (j : Nat) :
+    ∃ cs, hotNetN bitsN hotN (j+1) = ⟨bitsN 0,hotN 0,hotN 1⟩ :: cs := by
+  induction j with
+  | zero => exact ⟨[], by simp [hotNetN,hotLevelN]⟩
+  | succ j ih =>
+    obtain ⟨cs,he⟩ := ih
+    exact ⟨cs ++ hotLevelN bitsN hotN (j+1), by rw [hotNetN,he,List.cons_append]⟩
+
+
+theorem seededHotNet_run7 (bitsN hotN : Nat → Wire) (j : Nat) (s : BasisState)
+    (hp : s (hotN 0) = true) :
+    Classical.run (seededSplitNetwork7 (hotNetN bitsN hotN (j+1))) s =
+    Classical.run (splitNetwork (hotNetN bitsN hotN (j+1))) s := by
+  obtain ⟨cs,he⟩ := hotNetN_first7 bitsN hotN j
+  rw [he]
+  exact seededSplitNetwork_run7 _ _ _ hp
+
+
+theorem seededSplitNetwork_frame7 (cs : List SplitCell) (s : BasisState) (w : Wire)
+    (hw : ∀ c ∈ cs, w ≠ c.parent ∧ w ≠ c.child) :
+    Classical.run (seededSplitNetwork7 cs) s w = s w := by
+  cases cs with
+  | nil => rfl
+  | cons c cs =>
+    have hc := hw c (by simp)
+    rw [seededSplitNetwork7,Classical.run_append,
+      splitNetwork_frame cs _ w (fun d hd => hw d (by simp [hd]))]
+    simp [Classical.run,Classical.applyGate,upd,hc.1,hc.2]
+
+
+def slowHotPrepare7 (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : Circuit :=
   [.X (hot 0)] ++ splitNetwork (hotNetwork low hot)
+
+def hotPrepare (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : Circuit :=
+  [.X (hot 0)] ++ seededSplitNetwork7 (hotNetwork low hot)
 
 def hotAddress (low : Fin 7 → Wire) (s : BasisState) : Nat := addrN (lowN low) s 7
 
 def HotClean (hot : Fin 128 → Wire) (s : BasisState) : Prop := ∀ i, s (hot i) = false
+
+theorem hotPrepare_eq7 (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
+    (s : BasisState) (hs : HotClean hot s) :
+    Classical.run (hotPrepare low hot) s = Classical.run (slowHotPrepare7 low hot) s := by
+  rw [hotPrepare,slowHotPrepare7,Classical.run_append,Classical.run_append]
+  apply seededHotNet_run7 (lowN low) (hotNat hot) 6
+  simp [hotNat,Classical.run,Classical.applyGate,upd,hs 0]
 
 theorem hotNetwork_length (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
     (hotNetwork low hot).length = 127 := by
@@ -9142,7 +9197,7 @@ theorem hotPrepare_marker (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
     i.val (by simp)
   have hhot : hotNat hot i.val = hot i := by simp [hotNat, i.isLt]
   rw [hhot] at h
-  rw [hotPrepare, Classical.run_append, hotNetwork, h, hotAddress]
+  rw [hotPrepare_eq7 low hot s hs, slowHotPrepare7, Classical.run_append, hotNetwork, h, hotAddress]
   congr 2
   apply addrN_congr
   intro j hj
@@ -9154,7 +9209,7 @@ theorem hotPrepare_marker (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
 theorem hotPrepare_frame (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
     (s : BasisState) (w : Wire) (hw : ∀ i, w ≠ hot i) :
     Classical.run (hotPrepare low hot) s w = s w := by
-  rw [hotPrepare, Classical.run_append, splitNetwork_frame _ _ _ (by
+  rw [hotPrepare, Classical.run_append, seededSplitNetwork_frame7 _ _ _ (by
     intro c hc
     obtain ⟨j, x, y, rfl, _⟩ := mem_hotNetwork low hot c hc
     exact ⟨hw x, hw y⟩)]
@@ -9841,9 +9896,14 @@ theorem splitNetwork_hp (cs : List SplitCell) : Classical.HPFree (splitNetwork c
   | nil => simp [splitNetwork]
   | cons c cs ih => simp [splitNetwork, SplitCell.circuit, splitCircuit, ih]
 
+theorem seededSplitNetwork_hp7 (cs : List SplitCell) :
+    Classical.HPFree (seededSplitNetwork7 cs) := by
+  cases cs <;> simp [seededSplitNetwork7,splitNetwork_hp]
+
+
 theorem hotPrepare_hp (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
     Classical.HPFree (hotPrepare low hot) := by
-  simp [hotPrepare, splitNetwork_hp]
+  simp [hotPrepare, seededSplitNetwork_hp7]
 
 def fixupFactor {n : Nat} (data : List (ClearPort n)) (outcomes : List Bool)
     (read : ConstantBit n → Bool) (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
@@ -9894,7 +9954,7 @@ theorem fixupSource_coherent {n : Nat} (data : List (ClearPort n)) (outcomes : L
     apply supported_smul_state
     apply supportedOn_ket
     exact ⟨Classical.run [.X (hot 0)] s, hotNetwork_ready low hot hi hdlow s hvalid.1,
-      by simp [hotPrepare]⟩)
+      by rw [hotPrepare_eq7 low hot s hvalid.1]; rfl⟩)
   rw [fixupSource, ← adaptive_seq_assoc]
   apply htotal.congrIdeal
   intro s hvalid
@@ -9902,12 +9962,12 @@ theorem fixupSource_coherent {n : Nat} (data : List (ClearPort n)) (outcomes : L
   rw [run_ket_agrees_classical _ _ (hotPrepare_hp low hot), basisIdeal_ket]
   simp only [map_smul, id_eq]
   rw [run_ket_agrees_classical _ _ (inverseNetwork_hp (hotNetwork low hot))]
-  rw [hotPrepare, Classical.run_append,
+  rw [hotPrepare_eq7 low hot s hvalid.1, slowHotPrepare7, Classical.run_append,
     inverseNetwork_correct (hotNetwork low hot) (hotNetwork_physical low hot hi hdlow) _
       (hotNetwork_ready low hot hi hdlow s hvalid.1),
     run_ket_agrees_classical _ _ (by simp), classical_x_twice]
   simp only [basisIdeal_ket, id_eq]
-  rfl
+  rw [fixupFactor,hotPrepare_eq7 low hot s hvalid.1,slowHotPrepare7,Classical.run_append]
 
 
 @[simp] theorem boolHistory_record (b : Bool) : boolHistory (boolRecord b) = b := by cases b <;> rfl
@@ -10147,6 +10207,17 @@ theorem phaseLookupSource_wellFormed {n base : Nat} (ports : List (RecordPort n 
         (fun he => hs (he ▸ hc)) ht
     · exact ⟨(circuitWellFormed_adjoint _).mpr hH, trivial⟩
 
+theorem seededSplitNetwork_wellFormed7 (cs : List SplitCell)
+    (hp : ∀ c ∈ cs, c.Physical) : CircuitWellFormed (seededSplitNetwork7 cs) := by
+  cases cs with
+  | nil => simp [seededSplitNetwork7,CircuitWellFormed]
+  | cons c cs =>
+    have hc := hp c (by simp)
+    rw [seededSplitNetwork7,circuitWellFormed_append]
+    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed,hc.2.1,Ne.symm hc.2.2],
+      splitNetwork_wellFormed cs (fun d hd => hp d (by simp [hd]))⟩
+
+
 theorem fixupSource_wellFormed {n : Nat} (data : List (ClearPort n)) (outcomes : List Bool)
     (read : ConstantBit n → Bool) (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
     (tree : UnaryActionTree) (root scratch : Wire) (paths : List Wire)
@@ -10158,7 +10229,7 @@ theorem fixupSource_wellFormed {n : Nat} (data : List (ClearPort n)) (outcomes :
   · refine ⟨?_, trivial⟩
     rw [hotPrepare, circuitWellFormed_append]
     exact ⟨by simp [CircuitWellFormed, Gate.WellFormed],
-      splitNetwork_wellFormed _ (hotNetwork_physical low hot hi hdlow)⟩
+      seededSplitNetwork_wellFormed7 _ (hotNetwork_physical low hot hi hdlow)⟩
   · apply AdaptiveCircuit.WellFormed.seq
     · apply phaseLookupSource_wellFormed _ _ _ _ _ _ _ _ hl hs
       intro p hp he
@@ -10212,14 +10283,32 @@ theorem splitNetwork_length (cs : List SplitCell) : (splitNetwork cs).length = 2
     rw [splitNetwork, List.length_append, ih, SplitCell.circuit, splitCircuit_slots, List.length_cons]
     ring
 
+theorem seededSplitNetwork_tCount7 (cs : List SplitCell) :
+    ShorECDLP.tCount (seededSplitNetwork7 cs) = 7 * (cs.length-1) := by
+  cases cs with
+  | nil => rfl
+  | cons c cs =>
+    rw [seededSplitNetwork7,ShorECDLP.tCount_append,splitNetwork_tCount]
+    simp [ShorECDLP.tCount,ShorECDLP.tCost]
+
+
+theorem seededSplitNetwork_length7 (cs : List SplitCell) :
+    (seededSplitNetwork7 cs).length = 2 * cs.length := by
+  cases cs with
+  | nil => rfl
+  | cons c cs =>
+    simp only [seededSplitNetwork7,List.length_append,List.length_cons,List.length_nil,splitNetwork_length]
+    omega
+
+
 theorem hotPrepare_tCount (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
-    ShorECDLP.tCount (hotPrepare low hot) = 889 := by
-  rw [hotPrepare, ShorECDLP.tCount_append, splitNetwork_tCount, hotNetwork_length]
+    ShorECDLP.tCount (hotPrepare low hot) = 882 := by
+  rw [hotPrepare, ShorECDLP.tCount_append, seededSplitNetwork_tCount7, hotNetwork_length]
   rfl
 
 theorem hotPrepare_length (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
     (hotPrepare low hot).length = 255 := by
-  rw [hotPrepare, List.length_append, splitNetwork_length, hotNetwork_length]
+  rw [hotPrepare, List.length_append, seededSplitNetwork_length7, hotNetwork_length]
   rfl
 
 theorem phasePorts_length {n base : Nat} (hot : Fin 128 → Wire) (items : List (ClearPort n × Fin base)) :
@@ -10237,7 +10326,7 @@ theorem fixupProgram_tCount {n base : Nat} (data : List (ClearPort n)) (refs : L
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
     (read : ConstantBit n → Bool) (history : Fin base → Bool) :
     ((fixupProgram data refs low hot tree root scratch paths).instantiate read history).tCount =
-      7 * tree.internalNodes + 889 := by
+      7 * tree.internalNodes + 882 := by
   have hpost (cursor : Nat) (h : Fin cursor → Bool) :
       (((eraseNetwork n (hotNetwork low hot) cursor).append
         (literalProgram [.X (hot 0)])).instantiate read h).tCount = 0 := by
@@ -10270,7 +10359,7 @@ theorem measuredClear_tCount {n : Nat} (data : List (ClearPort n))
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
     (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     ((measuredClear data low hot tree root scratch paths start).instantiate read history).tCount =
-      7 * (tree.internalNodes + 127) := by
+      7 * (tree.internalNodes + 126) := by
   rw [measuredClear, castFinish_instantiate, measureThen_tCount _ read (by
     intro cursor refs h
     rw [castFinish_instantiate, fixupProgram_tCount data refs low hot tree root scratch paths hl])]
@@ -10465,11 +10554,28 @@ theorem hotNetwork_within (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (S : L
   obtain ⟨j, x, y, rfl, _⟩ := mem_hotNetwork low hot c hc
   exact ⟨hl _, hh _, hh _⟩
 
+theorem seededSplitNetwork_within7 (cs : List SplitCell) (S : List Wire)
+    (hp : ∀ c ∈ cs, c.bit ∈ S ∧ c.parent ∈ S ∧ c.child ∈ S) :
+    circuitWires (seededSplitNetwork7 cs) ⊆ S := by
+  cases cs with
+  | nil => simp [seededSplitNetwork7,circuitWires]
+  | cons c cs =>
+    have hc := hp c (by simp)
+    rw [seededSplitNetwork7,circuitWires_append]
+    refine List.append_subset.mpr ⟨?_,splitNetwork_within cs S (fun d hd => hp d (by simp [hd]))⟩
+    intro w hw
+    simp [circuitWires,gateWires] at hw
+    rcases hw with rfl | rfl | rfl
+    · exact hc.1
+    · exact hc.2.2
+    · exact hc.2.1
+
+
 theorem hotPrepare_within (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (S : List Wire)
     (hl : ∀ i, low i ∈ S) (hh : ∀ i, hot i ∈ S) : circuitWires (hotPrepare low hot) ⊆ S := by
   rw [hotPrepare, circuitWires_append]
   exact List.append_subset.mpr ⟨by simpa [circuitWires, gateWires] using hh 0,
-    splitNetwork_within _ S (hotNetwork_within low hot S hl hh)⟩
+    seededSplitNetwork_within7 _ S (hotNetwork_within low hot S hl hh)⟩
 
 theorem hadamards_wires (ws : List Wire) : circuitWires (ws.map Gate.H) = ws := by
   induction ws with

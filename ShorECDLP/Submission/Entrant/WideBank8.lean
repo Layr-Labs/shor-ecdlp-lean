@@ -1,4 +1,6 @@
+import ShorECDLP.Submission.Entrant.ParityBank
 import ShorECDLP.Submission.Entrant.Prefix
+import ShorECDLP.Submission.Entrant.Bank9
 import ShorECDLP.Submission.Entrant.TightSupport
 
 /-! Balanced eight-bit bank for the sixteen-bit clears of the wide (seventeen-bit) window rows.
@@ -6,13 +8,7 @@ import ShorECDLP.Submission.Entrant.TightSupport
 Every masked clear of a wide row is a recycled measured clear over the sixteen address bits
 `855..869, 871`. The shipped bank splits them seven low / nine high, costing
 `(2^7 - 1) + (2^9 - 1) = 638` CCX per clear. This file instantiates the generic split network at
-eight low bits (256 unary wires, 255 cells) with an eight-wire high tree, costing `255 + 255 = 510`.
-
-The bank preparation `hotPrepare8` is the parity-derived network `gNetN`: at level `j` exactly one
-parent marker is live, so the last child equals the address bit XOR the other `2^j - 1` new children
-and needs CNOTs only. The preparation therefore costs `2^8 - 1 - 8 = 247` CCX and each clear
-`247 + 255 = 502`. It produces the same one-hot state as the split network (`hotPrepare_eq8`),
-so the measured erase still runs over the 255 split cells and the record count is unchanged.
+eight low bits (256 unary wires, 255 cells) with an eight-wire high tree, costing `254 + 255 = 502` after specializing the known-one first split.
 
 The 256 hot wires are the first 256 cleared targets (`headD + i`), and the phase scratch is the
 ninth wire `14840` of the old clear path bank, which the eight-level tree no longer uses. The
@@ -27,315 +23,6 @@ noncomputable section
 set_option maxHeartbeats 4000000
 set_option maxRecDepth 20000
 
-/-! Parity-derived last child.  At level `j` exactly one parent marker `hot i` (`i < 2^j`) is live,
-so the AND of the address bit with the last parent equals the bit XOR all the other new
-children.  The last cell therefore needs no Toffoli: the level costs `2^j - 1` instead of `2^j`. -/
-
-def gCellsN (bitsN hotN : Nat → Wire) (j : Nat) : List SplitCell :=
-  (List.range (2^j - 1)).map fun i => ⟨bitsN j, hotN i, hotN (i + 2^j)⟩
-
-def gParityN (hotN : Nat → Wire) (j : Nat) : Circuit :=
-  (List.range (2^j - 1)).map fun i => Gate.CX (hotN (i + 2^j)) (hotN (2^j - 1 + 2^j))
-
-def gLevelN (bitsN hotN : Nat → Wire) (j : Nat) : Circuit :=
-  splitNetwork (gCellsN bitsN hotN j) ++
-    ([.CX (bitsN j) (hotN (2^j - 1 + 2^j))] ++ gParityN hotN j ++
-      [.CX (hotN (2^j - 1 + 2^j)) (hotN (2^j - 1))])
-
-def gNetN (bitsN hotN : Nat → Wire) : Nat → Circuit
-  | 0 => []
-  | j+1 => gNetN bitsN hotN j ++ gLevelN bitsN hotN j
-
-theorem parity_run (hotN : Nat → Wire) (j : Nat) (tgt : Wire) (a : Nat) (bit : Bool) (v : BasisState)
-    (hne : ∀ i, i < 2^j - 1 → hotN (i + 2^j) ≠ tgt)
-    (hv : ∀ i, i < 2^j - 1 → v (hotN (i + 2^j)) = (decide (i = a) && bit)) :
-    ∀ m, m ≤ 2^j - 1 →
-      Classical.run ((List.range m).map fun i => Gate.CX (hotN (i + 2^j)) tgt) v =
-        v[tgt ↦ Bool.xor (v tgt) (decide (a < m) && bit)] := by
-  intro m
-  induction m with
-  | zero =>
-    intro _
-    funext w
-    by_cases hw : w = tgt
-    · rw [hw]; simp
-    · simp [upd, hw]
-  | succ m ih =>
-    intro hm
-    rw [List.range_succ, List.map_append, Classical.run_append, ih (by omega)]
-    have hc : hotN (m + 2^j) ≠ tgt := hne m (by omega)
-    have hvm := hv m (by omega)
-    funext w
-    by_cases hw : w = tgt
-    · rw [hw]
-      simp only [List.map_cons, List.map_nil, Classical.run_cons, Classical.run_nil,
-        Classical.applyGate, upd_same, upd_other _ _ _ hc, hvm]
-      by_cases h1 : a < m
-      · have h2 : a < m + 1 := by omega
-        have h3 : ¬ (m = a) := by omega
-        simp [h1, h2, h3]
-      · by_cases h4 : a = m
-        · subst h4; simp
-        · have h2 : ¬ a < m + 1 := by omega
-          have h3 : ¬ (m = a) := by omega
-          simp [h1, h2, h3]
-    · simp [Classical.applyGate, upd, hw]
-
-theorem gLevel_run (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN)
-    (j : Nat) (hj : j < b) (a : Nat) (ha : a < 2^j) (t : BasisState)
-    (ht : ∀ x, x < 2^b → t (hotN x) = decide (x = a)) :
-    Classical.run (gLevelN bitsN hotN j) t = Classical.run (splitNetwork (hotLevelN bitsN hotN j)) t := by
-  obtain ⟨rv, rf, _⟩ := level_run b bitsN hotN hL j hj a ha t ht
-  have hp1 : 1 ≤ 2^j := Nat.one_le_two_pow
-  have hp2 : 2^(j+1) = 2^j + 2^j := by rw [pow_succ]; omega
-  have hjb : 2^(j+1) ≤ 2^b := Nat.pow_le_pow_right (by decide) hj
-  have hC : 2^j - 1 + 2^j < 2^b := by omega
-  have hLb : 2^j - 1 < 2^b := by omega
-  obtain ⟨pv, pf, _⟩ := level_partial b bitsN hotN hL j hj a ha t ht (2^j - 1) (by omega)
-  have hbit : Classical.run (splitNetwork ((List.range (2^j - 1)).map fun i =>
-      (⟨bitsN j, hotN i, hotN (i + 2^j)⟩ : SplitCell))) t (bitsN j) = t (bitsN j) :=
-    pf _ (fun x hx => hL.disj j x hj hx)
-  generalize hu : Classical.run (splitNetwork ((List.range (2^j - 1)).map fun i =>
-      (⟨bitsN j, hotN i, hotN (i + 2^j)⟩ : SplitCell))) t = u at pv pf hbit
-  have hLC : hotN (2^j - 1) ≠ hotN (2^j - 1 + 2^j) := fun he => by
-    have := hL.inj _ _ hLb hC he; omega
-  have huC : u (hotN (2^j - 1 + 2^j)) = false := by
-    rw [pv _ hC, if_neg (by omega), if_neg (by omega)]
-    exact decide_eq_false (by omega)
-  have huL : u (hotN (2^j - 1)) = decide (2^j - 1 = a) := by
-    rw [pv _ hLb, if_neg (by omega), if_neg (by omega)]
-  generalize hv : u[hotN (2^j - 1 + 2^j) ↦ Bool.xor (u (hotN (2^j - 1 + 2^j))) (u (bitsN j))] = v
-  have hvC : v (hotN (2^j - 1 + 2^j)) = t (bitsN j) := by
-    rw [← hv, upd_same, huC, hbit]; simp
-  have hvL : v (hotN (2^j - 1)) = decide (2^j - 1 = a) := by
-    rw [← hv, upd_other _ _ _ hLC, huL]
-  have hparity := parity_run hotN j (hotN (2^j - 1 + 2^j)) a (t (bitsN j)) v
-    (fun i hi he => by have := hL.inj _ _ (by omega) hC he; omega)
-    (fun i hi => by
-      have hne : hotN (i + 2^j) ≠ hotN (2^j - 1 + 2^j) := fun he => by
-        have := hL.inj _ _ (by omega) hC he; omega
-      rw [← hv, upd_other _ _ _ hne, pv (i + 2^j) (by omega), if_neg (by omega), if_pos (by omega)]
-      simp only [show i + 2^j - 2^j = i by omega]) (2^j - 1) le_rfl
-  have hrun : Classical.run (gLevelN bitsN hotN j) t =
-      (v[hotN (2^j - 1 + 2^j) ↦ Bool.xor (v (hotN (2^j - 1 + 2^j))) (decide (a < 2^j - 1) && t (bitsN j))])
-        [hotN (2^j - 1) ↦ Bool.xor
-          ((v[hotN (2^j - 1 + 2^j) ↦ Bool.xor (v (hotN (2^j - 1 + 2^j)))
-            (decide (a < 2^j - 1) && t (bitsN j))]) (hotN (2^j - 1)))
-          ((v[hotN (2^j - 1 + 2^j) ↦ Bool.xor (v (hotN (2^j - 1 + 2^j)))
-            (decide (a < 2^j - 1) && t (bitsN j))]) (hotN (2^j - 1 + 2^j)))] := by
-    rw [gLevelN, gCellsN, Classical.run_append, hu, Classical.run_append, Classical.run_append,
-      gParityN]
-    rw [show Classical.run [Gate.CX (bitsN j) (hotN (2^j - 1 + 2^j))] u = v by
-      rw [← hv]; rfl]
-    rw [hparity]
-    rfl
-  rw [hrun]
-  funext w
-  by_cases hw : ∃ x, x < 2^b ∧ w = hotN x
-  · obtain ⟨x, hx, rfl⟩ := hw
-    rw [rv x hx]
-    by_cases hxL : x = 2^j - 1
-    · subst hxL
-      rw [upd_same, upd_other _ _ _ hLC, upd_same, hvL, hvC]
-      cases t (bitsN j) <;> by_cases h1 : a < 2^j - 1 <;> simp [h1]
-      · constructor <;> intro <;> omega
-      · rw [decide_eq_true (by omega), decide_eq_false (by omega)]; rfl
-    · have hnL : hotN x ≠ hotN (2^j - 1) := fun he => hxL (hL.inj _ _ hx hLb he)
-      rw [upd_other _ _ _ hnL]
-      by_cases hxC : x = 2^j - 1 + 2^j
-      · subst hxC
-        rw [upd_same, hvC]
-        cases t (bitsN j) <;> by_cases h1 : a < 2^j - 1 <;> simp [h1] <;> omega
-      · have hnC : hotN x ≠ hotN (2^j - 1 + 2^j) := fun he => hxC (hL.inj _ _ hx hC he)
-        rw [upd_other _ _ _ hnC, ← hv, upd_other _ _ _ hnC, pv x hx]
-        cases t (bitsN j)
-        · simp only [Bool.not_false, Bool.and_true, Bool.and_false, Bool.toNat_false, Nat.mul_zero,
-            Nat.add_zero]
-          by_cases h1 : x < 2^j - 1
-          · rw [if_pos h1]
-          · rw [if_neg h1]
-            by_cases h2 : 2^j ≤ x ∧ x < 2^j + (2^j - 1)
-            · rw [if_pos h2, decide_eq_false (show x ≠ a by omega)]
-            · rw [if_neg h2]
-        · simp only [Bool.not_true, Bool.and_true, Bool.and_false, Bool.toNat_true, Nat.mul_one]
-          by_cases h1 : x < 2^j - 1
-          · rw [if_pos h1, decide_eq_false (show x ≠ a + 2^j by omega)]
-          · rw [if_neg h1]
-            by_cases h2 : 2^j ≤ x ∧ x < 2^j + (2^j - 1)
-            · rw [if_pos h2]
-              exact decide_eq_decide.mpr (by omega)
-            · rw [if_neg h2, decide_eq_false (show x ≠ a by omega),
-                decide_eq_false (show x ≠ a + 2^j by omega)]
-  · have hw' : ∀ x, x < 2^b → w ≠ hotN x := fun x hx he => hw ⟨x, hx, he⟩
-    rw [rf w hw', upd_other _ _ _ (hw' _ hLb), upd_other _ _ _ (hw' _ hC), ← hv,
-      upd_other _ _ _ (hw' _ hC), pf w hw']
-
-theorem gNet_run (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN) (t0 : BasisState)
-    (h0 : ∀ x, x < 2^b → t0 (hotN x) = decide (x = 0)) :
-    ∀ J, J ≤ b → Classical.run (gNetN bitsN hotN J) t0 =
-      Classical.run (splitNetwork (hotNetN bitsN hotN J)) t0 := by
-  intro J
-  induction J with
-  | zero => intro _; rfl
-  | succ J ih =>
-    intro hJ
-    obtain ⟨hv, _, _⟩ := net_run b bitsN hotN hL t0 h0 J (by omega)
-    simp only [gNetN, hotNetN, splitNetwork_append, Classical.run_append]
-    rw [ih (by omega)]
-    exact gLevel_run b bitsN hotN hL J (by omega) (addrN bitsN t0 J) (addrN_lt bitsN t0 J) _ hv
-
-/-! Gate inventory of one level. -/
-theorem mem_gLevelN (bitsN hotN : Nat → Wire) (j : Nat) (g : Gate) (hg : g ∈ gLevelN bitsN hotN j) :
-    (∃ i, i < 2^j - 1 ∧ g = .CCX (bitsN j) (hotN i) (hotN (i + 2^j))) ∨
-    (∃ i, i < 2^j - 1 ∧ g = .CX (hotN (i + 2^j)) (hotN i)) ∨
-    g = .CX (bitsN j) (hotN (2^j - 1 + 2^j)) ∨
-    (∃ i, i < 2^j - 1 ∧ g = .CX (hotN (i + 2^j)) (hotN (2^j - 1 + 2^j))) ∨
-    g = .CX (hotN (2^j - 1 + 2^j)) (hotN (2^j - 1)) := by
-  have hnet : ∀ (cs : List SplitCell), g ∈ splitNetwork cs → ∃ c ∈ cs, g = .CCX c.bit c.parent c.child ∨
-      g = .CX c.child c.parent := by
-    intro cs
-    induction cs with
-    | nil => simp [splitNetwork]
-    | cons c cs ih =>
-      intro h
-      simp only [splitNetwork, List.mem_append, SplitCell.circuit, splitCircuit, List.mem_cons,
-        List.not_mem_nil, or_false] at h
-      rcases h with (h | h) | h
-      · exact ⟨c, by simp, Or.inl h⟩
-      · exact ⟨c, by simp, Or.inr h⟩
-      · obtain ⟨d, hd, he⟩ := ih h
-        exact ⟨d, by simp [hd], he⟩
-  simp only [gLevelN, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hg
-  rcases hg with (hg | ((hg | hg) | hg))
-  · obtain ⟨c, hc, he⟩ := hnet _ hg
-    simp only [gCellsN, List.mem_map, List.mem_range] at hc
-    obtain ⟨i, hi, rfl⟩ := hc
-    rcases he with he | he
-    · exact Or.inl ⟨i, hi, he⟩
-    · exact Or.inr (Or.inl ⟨i, hi, he⟩)
-  · exact Or.inr (Or.inr (Or.inl hg))
-  · simp only [gParityN, List.mem_map, List.mem_range] at hg
-    obtain ⟨i, hi, rfl⟩ := hg
-    exact Or.inr (Or.inr (Or.inr (Or.inl ⟨i, hi, rfl⟩)))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr hg)))
-
-theorem mem_gNetN (bitsN hotN : Nat → Wire) (J : Nat) (g : Gate) (hg : g ∈ gNetN bitsN hotN J) :
-    ∃ j, j < J ∧ g ∈ gLevelN bitsN hotN j := by
-  induction J with
-  | zero => simp [gNetN] at hg
-  | succ J ih =>
-    simp only [gNetN, List.mem_append] at hg
-    rcases hg with hg | hg
-    · obtain ⟨j, hj, h⟩ := ih hg
-      exact ⟨j, by omega, h⟩
-    · exact ⟨J, by omega, hg⟩
-
-theorem cxMap_tCount (f : Nat → Wire) (tgt : Wire) (m : Nat) :
-    ShorECDLP.tCount ((List.range m).map fun i => Gate.CX (f i) tgt) = 0 := by
-  induction m with
-  | zero => rfl
-  | succ m ih => rw [List.range_succ, List.map_append, ShorECDLP.tCount_append, ih]; rfl
-
-theorem gLevel_tCount (bitsN hotN : Nat → Wire) (j : Nat) :
-    ShorECDLP.tCount (gLevelN bitsN hotN j) = 7 * (2^j - 1) := by
-  have hpar : ShorECDLP.tCount (gParityN hotN j) = 0 := cxMap_tCount _ _ _
-  rw [gLevelN, ShorECDLP.tCount_append, splitNetwork_tCount, ShorECDLP.tCount_append,
-    ShorECDLP.tCount_append, hpar]
-  simp [gCellsN, tCost]
-
-theorem gLevel_length (bitsN hotN : Nat → Wire) (j : Nat) :
-    (gLevelN bitsN hotN j).length = 3 * (2^j - 1) + 2 := by
-  rw [gLevelN, List.length_append, splitNetwork_length]
-  simp [gCellsN, gParityN]
-  omega
-
-theorem gNet_tCount (bitsN hotN : Nat → Wire) (J : Nat) :
-    ShorECDLP.tCount (gNetN bitsN hotN J) + 7 * J = 7 * (2^J - 1) := by
-  induction J with
-  | zero => rfl
-  | succ J ih =>
-    rw [gNetN, ShorECDLP.tCount_append, gLevel_tCount]
-    have hp1 : 1 ≤ 2^J := Nat.one_le_two_pow
-    have hp2 : 2^(J+1) = 2^J + 2^J := by rw [pow_succ]; omega
-    omega
-
-theorem gNet_length (bitsN hotN : Nat → Wire) (J : Nat) :
-    (gNetN bitsN hotN J).length + J = 3 * (2^J - 1) := by
-  induction J with
-  | zero => rfl
-  | succ J ih =>
-    rw [gNetN, List.length_append, gLevel_length]
-    have hp1 : 1 ≤ 2^J := Nat.one_le_two_pow
-    have hp2 : 2^(J+1) = 2^J + 2^J := by rw [pow_succ]; omega
-    omega
-
-
-theorem run_frame_of (c : Circuit) (w : Wire)
-    (h : ∀ g ∈ c, ∀ s : BasisState, Classical.applyGate g s w = s w) (s : BasisState) :
-    Classical.run c s w = s w := by
-  induction c generalizing s with
-  | nil => rfl
-  | cons g c ih =>
-    rw [Classical.run_cons, ih (fun g' hg' => h g' (List.mem_cons_of_mem _ hg')), h g (by simp)]
-
-theorem gNet_frame (bitsN hotN : Nat → Wire) (J : Nat) (w : Wire)
-    (hw : ∀ x, x < 2^J → w ≠ hotN x) (s : BasisState) :
-    Classical.run (gNetN bitsN hotN J) s w = s w := by
-  apply run_frame_of
-  intro g hg s
-  obtain ⟨j, hj, hg⟩ := mem_gNetN _ _ _ _ hg
-  have hp : 2^(j+1) ≤ 2^J := Nat.pow_le_pow_right (by decide) hj
-  have hp2 : 2^(j+1) = 2^j + 2^j := by rw [pow_succ]; omega
-  have hp1 : 1 ≤ 2^j := Nat.one_le_two_pow
-  rcases mem_gLevelN _ _ _ _ hg with ⟨i, hi, rfl⟩ | ⟨i, hi, rfl⟩ | rfl | ⟨i, hi, rfl⟩ | rfl <;>
-    simp only [Classical.applyGate, upd] <;> rw [if_neg (hw _ (by omega))]
-
-theorem gNet_hp (bitsN hotN : Nat → Wire) (J : Nat) : Classical.HPFree (gNetN bitsN hotN J) := by
-  intro g hg
-  obtain ⟨j, _, hg⟩ := mem_gNetN _ _ _ _ hg
-  rcases mem_gLevelN _ _ _ _ hg with ⟨i, _, rfl⟩ | ⟨i, _, rfl⟩ | rfl | ⟨i, _, rfl⟩ | rfl <;>
-    simp [Classical.IsClassicalGate]
-
-theorem gNet_wellFormed (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN)
-    (J : Nat) (hJ : J ≤ b) : CircuitWellFormed (gNetN bitsN hotN J) := by
-  intro g hg
-  obtain ⟨j, hj, hg⟩ := mem_gNetN _ _ _ _ hg
-  have hp : 2^(j+1) ≤ 2^b := Nat.pow_le_pow_right (by decide) (by omega)
-  have hp2 : 2^(j+1) = 2^j + 2^j := by rw [pow_succ]; omega
-  have hp1 : 1 ≤ 2^j := Nat.one_le_two_pow
-  have hjb : j < b := by omega
-  have hne : ∀ x y, x < 2^b → y < 2^b → x ≠ y → hotN x ≠ hotN y :=
-    fun x y hx hy hxy he => hxy (hL.inj x y hx hy he)
-  rcases mem_gLevelN _ _ _ _ hg with ⟨i, hi, rfl⟩ | ⟨i, hi, rfl⟩ | rfl | ⟨i, hi, rfl⟩ | rfl
-  · exact ⟨hL.disj j i hjb (by omega), hL.disj j _ hjb (by omega), hne _ _ (by omega) (by omega) (by omega)⟩
-  · exact hne _ _ (by omega) (by omega) (by omega)
-  · exact hL.disj j _ hjb (by omega)
-  · exact hne _ _ (by omega) (by omega) (by omega)
-  · exact hne _ _ (by omega) (by omega) (by omega)
-
-theorem gNet_within (bitsN hotN : Nat → Wire) (J : Nat) (S : List Wire)
-    (hb : ∀ j, j < J → bitsN j ∈ S) (hh : ∀ y, y < 2^J → hotN y ∈ S) :
-    circuitWires (gNetN bitsN hotN J) ⊆ S := by
-  intro w hw
-  simp only [circuitWires, List.mem_flatMap] at hw
-  obtain ⟨g, hg, hw⟩ := hw
-  obtain ⟨j, hj, hg⟩ := mem_gNetN _ _ _ _ hg
-  have hp : 2^(j+1) ≤ 2^J := Nat.pow_le_pow_right (by decide) hj
-  have hp2 : 2^(j+1) = 2^j + 2^j := by rw [pow_succ]; omega
-  have hp1 : 1 ≤ 2^j := Nat.one_le_two_pow
-  rcases mem_gLevelN _ _ _ _ hg with ⟨i, hi, rfl⟩ | ⟨i, hi, rfl⟩ | rfl | ⟨i, hi, rfl⟩ | rfl <;>
-    simp only [gateWires, List.mem_cons, List.not_mem_nil, or_false] at hw
-  · rcases hw with rfl | rfl | rfl
-    · exact hb _ hj
-    · exact hh _ (by omega)
-    · exact hh _ (by omega)
-  · rcases hw with rfl | rfl <;> exact hh _ (by omega)
-  · rcases hw with rfl | rfl
-    · exact hb _ hj
-    · exact hh _ (by omega)
-  · rcases hw with rfl | rfl <;> exact hh _ (by omega)
-  · rcases hw with rfl | rfl <;> exact hh _ (by omega)
-
 /-- Nat-indexed views of the eight low address wires and the 256 unary wires. -/
 def lowN8 (low : Fin 8 → Wire) (j : Nat) : Wire := if h : j < 8 then low ⟨j, h⟩ else low 0
 
@@ -345,10 +32,11 @@ def hotNat8 (hot : Fin 256 → Wire) (x : Nat) : Wire := if h : x < 256 then hot
 def hotNetwork8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : List SplitCell :=
   hotNetN (lowN8 low) (hotNat8 hot) 8
 
-/-- The bank preparation uses the parity-derived network (`2^8 - 1 - 8 = 247` CCX); it produces
-the same one-hot state as `splitNetwork (hotNetwork8 low hot)`, whose cells still drive the erase. -/
+def slowHotPrepare8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : Circuit :=
+  [.X (hot 0)] ++ splitNetwork (hotNetwork8 low hot)
+
 def hotPrepare8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) : Circuit :=
-  [.X (hot 0)] ++ gNetN (lowN8 low) (hotNat8 hot) 8
+  [.X (hot 0)] ++ ParityBank.parityNet (lowN8 low) (hotNat8 hot) 8
 
 def hotAddress8 (low : Fin 8 → Wire) (s : BasisState) : Nat := addrN (lowN8 low) s 8
 
@@ -405,20 +93,19 @@ theorem hotStart8 (hot : Fin 256 → Wire) (hi : Function.Injective hot)
   · have hne : hot ⟨x, hx'⟩ ≠ hot 0 := fun he => h0 (congrArg Fin.val (hi he))
     simp [Classical.run, Classical.applyGate, upd, hne, hs ⟨x, hx'⟩, h0]
 
+theorem hotPrepare_eq8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
+    (hi : Function.Injective hot) (hd : ∀ i j,low i≠hot j)
+    (s : BasisState) (hs : HotClean8 hot s) :
+    Classical.run (hotPrepare8 low hot) s=Classical.run (slowHotPrepare8 low hot) s := by
+  rw [hotPrepare8,slowHotPrepare8,Classical.run_append,Classical.run_append,hotNetwork8]
+  exact ParityBank.parityNet_eq 8 (lowN8 low) (hotNat8 hot) (hotLayout_of8 low hot hi hd)
+    _ (hotStart8 hot hi s hs) 8 le_rfl
+
 theorem hotNetwork_ready8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
     (hi : Function.Injective hot) (hd : ∀ i j, low i ≠ hot j)
     (s : BasisState) (hs : HotClean8 hot s) :
     NetworkReady (hotNetwork8 low hot) (Classical.run [.X (hot 0)] s) :=
   (net_run 8 (lowN8 low) (hotNat8 hot) (hotLayout_of8 low hot hi hd) _ (hotStart8 hot hi s hs) 8 le_rfl).2.2
-
-/-- On a clean bank the parity-derived preparation computes exactly the split-network state. -/
-theorem hotPrepare_eq8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
-    (hi : Function.Injective hot) (hd : ∀ i j, low i ≠ hot j)
-    (s : BasisState) (hs : HotClean8 hot s) :
-    Classical.run (hotPrepare8 low hot) s =
-      Classical.run (splitNetwork (hotNetwork8 low hot)) (Classical.run [.X (hot 0)] s) := by
-  rw [hotPrepare8, Classical.run_append, hotNetwork8]
-  exact gNet_run 8 (lowN8 low) (hotNat8 hot) (hotLayout_of8 low hot hi hd) _ (hotStart8 hot hi s hs) 8 le_rfl
 
 theorem hotPrepare_marker8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
     (hi : Function.Injective hot) (hd : ∀ i j, low i ≠ hot j)
@@ -428,7 +115,7 @@ theorem hotPrepare_marker8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
     i.val (by simp)
   have hhot : hotNat8 hot i.val = hot i := by simp [hotNat8, i.isLt]
   rw [hhot] at h
-  rw [hotPrepare_eq8 low hot hi hd s hs, hotNetwork8, h, hotAddress8]
+  rw [hotPrepare_eq8 low hot hi hd s hs, slowHotPrepare8, Classical.run_append, hotNetwork8, h, hotAddress8]
   congr 2
   apply addrN_congr
   intro j hj
@@ -438,14 +125,13 @@ theorem hotPrepare_marker8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
   simp [Classical.run, Classical.applyGate, upd, hne]
 
 theorem hotPrepare_frame8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
-    (s : BasisState) (w : Wire) (hw : ∀ i, w ≠ hot i) :
-    Classical.run (hotPrepare8 low hot) s w = s w := by
-  rw [hotPrepare8, Classical.run_append, gNet_frame _ _ 8 w (by
+    (s : BasisState) (w : Wire) (hw : ∀ i,w≠hot i) :
+    Classical.run (hotPrepare8 low hot) s w=s w := by
+  rw [hotPrepare8,Classical.run_append,ParityBank.parityNet_frame 8 _ _ 8 le_rfl _ w (by
     intro x hx
-    have hx' : x < 256 := by simpa using hx
-    simp only [hotNat8, hx', dite_true]
-    exact hw _)]
-  simp [Classical.run, Classical.applyGate, upd, hw]
+    have hx' : x<256 := by simpa using hx
+    simpa only [hotNat8,hx',dite_true] using hw ⟨x,hx'⟩)]
+  simp [Classical.run,Classical.applyGate,upd,hw]
 
 theorem hotAddress_bound8 (low : Fin 8 → Wire) (s : BasisState) : hotAddress8 low s < 256 := by
   have h := addrN_lt (lowN8 low) s 8
@@ -507,7 +193,7 @@ theorem phasePorts_targets8 {n base : Nat} (hot : Fin 256 → Wire)
 
 theorem hotPrepare_hp8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
     Classical.HPFree (hotPrepare8 low hot) := by
-  simp [hotPrepare8, gNet_hp]
+  simp [hotPrepare8, ParityBank.parityNet_hp]
 
 def fixupFactor8 {n : Nat} (data : List (ClearPort n)) (outcomes : List Bool)
     (read : ConstantBit n → Bool) (low : Fin 8 → Wire) (hot : Fin 256 → Wire)
@@ -561,12 +247,12 @@ theorem fixupSource_coherent8 {n : Nat} (data : List (ClearPort n)) (outcomes : 
   rw [run_ket_agrees_classical _ _ (hotPrepare_hp8 low hot), basisIdeal_ket]
   simp only [map_smul, id_eq]
   rw [run_ket_agrees_classical _ _ (inverseNetwork_hp (hotNetwork8 low hot))]
-  rw [hotPrepare_eq8 low hot hi hdlow s hvalid.1,
+  rw [hotPrepare_eq8 low hot hi hdlow s hvalid.1, slowHotPrepare8, Classical.run_append,
     inverseNetwork_correct (hotNetwork8 low hot) (hotNetwork_physical8 low hot hi hdlow) _
       (hotNetwork_ready8 low hot hi hdlow s hvalid.1),
     run_ket_agrees_classical _ _ (by simp), classical_x_twice]
   simp only [basisIdeal_ket, id_eq]
-  rw [fixupFactor8, hotPrepare_eq8 low hot hi hdlow s hvalid.1]
+  rw [fixupFactor8, hotPrepare_eq8 low hot hi hdlow s hvalid.1, slowHotPrepare8, Classical.run_append]
 
 theorem phasePorts_block8 (p : ClearPort n) (m : Bool) (hot : Fin 256 → Wire)
     (read : ConstantBit n → Bool) (row root : Nat) (s : BasisState) (selected : Fin 256)
@@ -711,7 +397,7 @@ theorem fixupSource_wellFormed8 {n : Nat} (data : List (ClearPort n)) (outcomes 
   · refine ⟨?_, trivial⟩
     rw [hotPrepare8, circuitWellFormed_append]
     exact ⟨by simp [CircuitWellFormed, Gate.WellFormed],
-      gNet_wellFormed 8 _ _ (hotLayout_of8 low hot hi hdlow) 8 le_rfl⟩
+      ParityBank.parityNet_wellFormed 8 (lowN8 low) (hotNat8 hot) (hotLayout_of8 low hot hi hdlow) 8 le_rfl⟩
   · apply AdaptiveCircuit.WellFormed.seq
     · apply phaseLookupSource_wellFormed _ _ _ _ _ _ _ _ hl hs
       intro p hp he
@@ -721,18 +407,19 @@ theorem fixupSource_wellFormed8 {n : Nat} (data : List (ClearPort n)) (outcomes 
       · exact ⟨by simp [CircuitWellFormed, Gate.WellFormed], trivial⟩
 
 theorem hotPrepare_tCount8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
-    ShorECDLP.tCount (hotPrepare8 low hot) = 1729 := by
-  have h := gNet_tCount (lowN8 low) (hotNat8 hot) 8
-  have h0 : ShorECDLP.tCount ([.X (hot 0)] : Circuit) = 0 := rfl
-  rw [hotPrepare8, ShorECDLP.tCount_append, h0]
+    ShorECDLP.tCount (hotPrepare8 low hot)=1729 := by
+  have h := ParityBank.parityNet_tCount (lowN8 low) (hotNat8 hot) 8
+  rw [hotPrepare8,ShorECDLP.tCount_append]
+  change 0+ShorECDLP.tCount (ParityBank.parityNet (lowN8 low) (hotNat8 hot) 8)=1729
   norm_num at h
   omega
 
 theorem hotPrepare_length8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) :
-    (hotPrepare8 low hot).length = 758 := by
-  have h := gNet_length (lowN8 low) (hotNat8 hot) 8
-  rw [hotPrepare8, List.length_append]
-  norm_num at h ⊢
+    (hotPrepare8 low hot).length=758 := by
+  have h := ParityBank.parityNet_length (lowN8 low) (hotNat8 hot) 8
+  rw [hotPrepare8,List.length_append]
+  simp only [List.length_cons,List.length_nil]
+  norm_num at h
   omega
 
 theorem phasePorts_length8 {n base : Nat} (hot : Fin 256 → Wire) (items : List (ClearPort n × Fin base)) :
@@ -817,10 +504,12 @@ theorem hotPrepare_within8 (low : Fin 8 → Wire) (hot : Fin 256 → Wire) (S : 
     (hl : ∀ i, low i ∈ S) (hh : ∀ i, hot i ∈ S) : circuitWires (hotPrepare8 low hot) ⊆ S := by
   rw [hotPrepare8, circuitWires_append]
   exact List.append_subset.mpr ⟨by simpa [circuitWires, gateWires] using hh 0,
-    gNet_within _ _ 8 S (fun j hj => by simp only [lowN8, hj, dite_true]; exact hl _)
-      (fun y hy => by
-        have hy' : y < 256 := by simpa using hy
-        simp only [hotNat8, hy', dite_true]; exact hh _)⟩
+    ParityBank.parityNet_within 8 (lowN8 low) (hotNat8 hot) 8 le_rfl S
+      (by intro j hj; simpa [lowN8,hj] using hl ⟨j,hj⟩)
+      (by
+        intro x hx
+        have hx' : x<256 := by simpa using hx
+        simpa [hotNat8,hx'] using hh ⟨x,hx'⟩)⟩
 
 theorem fixupProgram_within8 {n base : Nat} (data : List (ClearPort n)) (refs : List (Fin base))
     (low : Fin 8 → Wire) (hot : Fin 256 → Wire) (tree : UnaryActionTree)
@@ -965,8 +654,7 @@ theorem fixupProgram_wellFormed8 {n base} (data : List (ClearPort n)) (refs : Li
   apply straight_append_wellFormed
   · apply literalProgram_wellFormed
     rw [hotPrepare8,circuitWellFormed_append]
-    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],
-      gNet_wellFormed 8 _ _ (hotLayout_of8 low hot hi hdlow) 8 le_rfl⟩
+    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],ParityBank.parityNet_wellFormed 8 (lowN8 low) (hotNat8 hot) (hotLayout_of8 low hot hi hdlow) 8 le_rfl⟩
   · apply straight_append_wellFormed
     · exact literalProgram_wellFormed _ (hH _)
     · apply straight_append_wellFormed
@@ -4523,7 +4211,7 @@ attribute [local irreducible] codeTP2 WEXUnlookup.ccx2 literalToffolis normalize
 theorem credit_change {n} (r : Nat → Fin n) (B : PathShare.Bank) (c : Code2 32768)
     (hb : B.bits.length = 16) (hn : (tableAddressTree B.high 0 1).internalNodes = 255)
     (hm : masks2 c = 5) (ht : traversals (erase2 c) = 9) :
-    codeTP2 B (Rows.blocks r c) = WEXUnlookup.ccx2 c + 131672 := by
+    codeTP2 B (Rows.blocks r c) = WEXUnlookup.ccx2 c + 131677 := by
   have hw := lifted_credit r B c
   have ho := WEXUnlookup.ccx2_relation c
   rw [hb, hn, hm, ht] at hw
@@ -4575,8 +4263,8 @@ theorem saving : Fast16.fsave code = 79636 := by
 
 
 theorem cost_arith (fresh old wideStd oldStd : Nat)
-    (hnew : fresh + 79636 = wideStd) (hold : old + 38916 = oldStd)
-    (hwide : wideStd = oldStd + 131672) : fresh = old + 90952 := by omega
+    (hnew : fresh + 79636 = wideStd) (hold : old + 38918 = oldStd)
+    (hwide : wideStd = oldStd + 131677) : fresh = old + 90959 := by omega
 
 theorem fast_standard_relation :
     Fast16.fcodeTP code + 79636 = codeTP2 Fast16.bank15 (Geometry.row .w16) := by
@@ -4586,12 +4274,12 @@ theorem fast_standard_relation :
 
 
 theorem wide_standard_relation :
-    codeTP2 Fast16.bank15 (Geometry.row .w16) = WEXUnlookup.ccx2 WEXUnlookup.rowC + 131672 :=
+    codeTP2 Fast16.bank15 (Geometry.row .w16) = WEXUnlookup.ccx2 WEXUnlookup.rowC + 131677 :=
   Counts.credit_change rows Fast16.bank15 WEXUnlookup.rowC rfl Fast16.high_nodes
     WEXUnlookup.rowC_masks WEXUnlookup.rowC_measures.2.1
 
 
-theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF + 90952 := by
+theorem credit_increment : Fast16.fcodeTP code = WEXFast.fcodeTP WEXFast.rowCF + 90959 := by
   exact cost_arith _ _ _ _ fast_standard_relation WEXFast.W15F.rowCF_tp wide_standard_relation
 
 theorem body_credit_bound :
@@ -4600,7 +4288,7 @@ theorem body_credit_bound :
   rw [credit_increment]
   have h := WEXFast.W15F.fastCount_upper
   rw [← Nat.add_assoc]
-  exact Nat.add_le_add_right h 90952
+  exact Nat.add_le_add_right h 90959
 
 end
 end ShorECDLP.Entrant.WideBank8.Row16
