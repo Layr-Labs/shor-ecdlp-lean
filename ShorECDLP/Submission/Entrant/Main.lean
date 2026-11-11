@@ -5,7 +5,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1620,250699932,544000000⟩
+def bounds : Bounds := ⟨1620,250549476,544000000⟩
 def entry : StraightEntry := GeometricActual.entry
 def layout : DecodeLayout := GeometricActual.layout
 set_option maxRecDepth 30000 in

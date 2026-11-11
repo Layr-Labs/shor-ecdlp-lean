@@ -31,18 +31,6 @@ theorem seededZeroAnd_ket (root bit path : Wire) (s : BasisState)
   simp [computeZeroAnd,seededZeroAnd,Classical.run,Classical.applyGate,upd,hr,hneq]
 
 
-theorem lookup_prefix_congr {n} (root bit path : Wire) (ops : List (LookupOp n))
-    (read : ConstantBit n → Bool) (ideal : State →ₗ[ℂ] State) (Valid : BasisState → Prop)
-    (hneq : root≠bit) (hr : ∀ s,Valid s→s root=true)
-    (hc : CoherentlyImplementsOn (lookupCircuit read (ordinaryOp (computeZeroAnd root bit path)::ops)) ideal Valid) :
-    CoherentlyImplementsOn (lookupCircuit read (ordinaryOp (seededZeroAnd root bit path)::ops)) ideal Valid := by
-  simp only [lookupCircuit,ordinaryOp,literal_gates] at hc ⊢
-  exact unitary_prefix_congr _ _ _ _ _ (fun s hs => seededZeroAnd_ket root bit path s (hr s hs) hneq) hc
-
-theorem lookup_prefix_measurements {n} (root bit path : Wire) (ops : List (LookupOp n)) :
-    lookupMeasurements (ordinaryOp (seededZeroAnd root bit path)::ops) =
-      lookupMeasurements (ordinaryOp (computeZeroAnd root bit path)::ops) := rfl
-
 theorem lookup_prefix_weight {n} (root bit path : Wire) (ops : List (LookupOp n)) (start : Nat) :
     ConditionalCatalyst.weight4 (lookupProgram n (ordinaryOp (seededZeroAnd root bit path)::ops) start)+4 =
       ConditionalCatalyst.weight4 (lookupProgram n (ordinaryOp (computeZeroAnd root bit path)::ops) start) := by
@@ -58,20 +46,6 @@ theorem first18_head : First18.selOps = ordinaryOp (computeZeroAnd 836 856 519):
 
 def first18_seededOps : List (LookupOp 262144) :=
   ordinaryOp (seededZeroAnd 836 856 519)::First18.selOps.tail
-
-theorem first18_seeded_coherent (read : ConstantBit 262144 → Bool) :
-    CoherentlyImplementsOn (lookupCircuit read first18_seededOps)
-      (Finsupp.lmapDomain ℂ ℂ (tableLookupState (First18.selMask read) First18.selBits 836))
-      SelectSchedule18.Input := by
-  have hc := First18.sel_coherent read
-  obtain ⟨cs,ha,hm⟩ := hc
-  have hc : CoherentlyImplementsOn (lookupCircuit read First18.selOps)
-      (Finsupp.lmapDomain ℂ ℂ (tableLookupState (First18.selMask read) First18.selBits 836))
-      SelectSchedule18.Input :=
-    ⟨cs,ha.imp (fun b c hb s hs => hb s (First18.input_selPaths s hs)),hm⟩
-  rw [first18_head] at hc
-  exact lookup_prefix_congr 836 856 519 First18.selOps.tail read _ _ (by decide) (fun s hs => hs.1) hc
-
 
 open WEXCredit
 
@@ -212,10 +186,6 @@ theorem first18_seededProgram_wellFormed (start : Nat) : (first18_seededProgram 
 def windowGeneric {n : Nat} (rows : Fin 262144 → Fin n) : Single.Window n :=
   ⟨SelectSchedule18.bits.reverse,132606,fun start => reindexStraight rows (first18_seededProgram start)⟩
 
-theorem program_tCount (coeffs : Fin 262144 → PointCoeff) (Q : Secp256k1.Point) (start : Nat) (history : Fin start → Bool) :
-    ((first18_seededProgram start).instantiate (readConstant coeffs Q) history).tCount = 928172 := by
-  rw [exact_t _ (first18_seededProgram_residue start),first18_seededProgram_added]
-
 theorem window_law_generic {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (init : Point → Nat → Point)
     (hcoeff : ∀ Q, order • Q = 0 → ∀ a : Fin 262144,
@@ -240,38 +210,6 @@ theorem window_law_generic {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin
   rw [reindexStraight_instantiate,
     readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
   exact hvalid
-
-theorem window_wellFormed {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    ((windowGeneric rows).program start).WellFormed := by
-  unfold windowGeneric
-  exact (reindexStraight_wellFormed rows (first18_seededProgram start)).mpr (first18_seededProgram_wellFormed start)
-
-theorem window_slots {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    ((windowGeneric rows).program start).gateSlots ≤ 1000000000 := by
-  unfold windowGeneric
-  rw [reindexStraight_gateSlots]
-  exact first18_seededProgram_slots start
-
-theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    straightWires ((windowGeneric rows).program start) ⊆ First18.support := by
-  unfold windowGeneric
-  rw [straightWires_reindex]
-  exact first18_seededProgram_support start
-
-theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 928172 := by
-  unfold windowGeneric
-  rw [reindexStraight_instantiate,
-    readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
-  exact program_tCount (fun a => coeffs (rows a)) Q start history
-
-theorem window_credit {n : Nat} (_coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (_Q : Point) (start : Nat) (_history : Fin start → Bool) :
-    added ((windowGeneric rows).program start) = 132596 := by
-  unfold windowGeneric
-  rw [added_reindex]
-  exact first18_seededProgram_added start
 
 #print axioms first18_seededProgram_added
 #print axioms window_law_generic

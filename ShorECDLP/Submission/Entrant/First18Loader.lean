@@ -598,10 +598,6 @@ def clearSource (read : ConstantBit 262144 → Bool) : AdaptiveCircuit :=
 def source (read : ConstantBit 262144 → Bool) : AdaptiveCircuit :=
   ((lookupCircuit read selOps).seq (.unitary swapCircuit .done)).seq (clearSource read)
 
-theorem sel_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : Fin start → Bool) :
-    ((selProgram start).instantiate read history).run = (lookupCircuit read selOps).run := by
-  rw [selProgram, castFinish_instantiate, lookupProgram_run]
-
 theorem swap_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((swapProgram start).instantiate read history).run = (AdaptiveCircuit.unitary swapCircuit .done).run := by
   rw [swapProgram]
@@ -610,14 +606,6 @@ theorem swap_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : F
 theorem clear_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : Fin start → Bool) :
     ((clearProgram start).instantiate read history).run = (clearSource read).run := by
   simp only [clearProgram, clearSource, castFinish_instantiate, MeasuredClear.measuredClear_run9]
-
-theorem program_run (read : ConstantBit 262144 → Bool) (start : Nat) (history : Fin start → Bool) :
-    ((program start).instantiate read history).run = (source read).run := by
-  rw [program, castFinish_instantiate,
-    append_run_fixed _ _ _ _ _ (fun h => clear_run read _ h), AdaptiveCircuit.run_seq,
-    append_run_fixed _ _ _ _ _ (fun h => swap_run read _ h), AdaptiveCircuit.run_seq,
-    sel_run read start history]
-  simp only [source, AdaptiveCircuit.run_seq]
 
 /-! ### Semantics -/
 
@@ -654,24 +642,6 @@ theorem sel_swap_ket (read : ConstantBit 262144 → Bool) (s : BasisState) :
   rw [LinearMap.comp_apply, lmap_ket, run_ket_agrees_classical _ _ swap_hp]
   rfl
 
-theorem loaded_supported (read : ConstantBit 262144 → Bool) (s : BasisState)
-    (hs : SelectSchedule18.Input s) :
-    SupportedOn (fun s => Clean clearPaths s ∧
-        MeasuredClear.LoadedClear9 clearData read low (tableAddressTree high 0 1) 836 s)
-      (((Quantum.run swapCircuit).comp
-        (Finsupp.lmapDomain ℂ ℂ (tableLookupState (selMask read) selBits 836))) (ket s)) := by
-  rw [sel_swap_ket]
-  exact supportedOn_ket _ _ ⟨clear_paths_clean read s hs, loaded_clear read s hs⟩
-
-theorem source_ket (coeffs : Fin 262144 → PointCoeff) (Q : Point) (s : BasisState)
-    (hs : SelectSchedule18.Input s) :
-    ((Finsupp.lmapDomain ℂ ℂ (clearRegister (clearData.map MeasuredClear.ClearPort.target))).comp
-      ((Quantum.run swapCircuit).comp
-        (Finsupp.lmapDomain ℂ ℂ (tableLookupState (selMask (readConstant coeffs Q)) selBits 836)))) (ket s) =
-      Finsupp.lmapDomain ℂ ℂ (fun s => pointWrite (SelectSchedule18.tablePoint coeffs Q
-        (tableAddressValue SelectSchedule18.bits s)) s) (ket s) := by
-  rw [LinearMap.comp_apply, sel_swap_ket, lmap_ket, lmap_ket, clearData_targets, final_state coeffs Q s hs]
-
 theorem source_coherent (coeffs : Fin 262144 → PointCoeff) (Q : Point) :
     CoherentlyImplementsOn (source (readConstant coeffs Q))
       (Finsupp.lmapDomain ℂ ℂ (fun s => pointWrite (SelectSchedule18.tablePoint coeffs Q
@@ -684,15 +654,6 @@ theorem source_coherent (coeffs : Fin 262144 → PointCoeff) (Q : Point) :
   rw [source]
   refine h123.congrIdeal (fun s hs => ?_)
   rw [LinearMap.comp_apply, sel_swap_ket, lmap_ket, lmap_ket, clearData_targets, final_state coeffs Q s hs]
-
-theorem program_coherent (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
-    (history : Fin start → Bool) :
-    CoherentlyImplementsOn ((program start).instantiate (readConstant coeffs Q) history)
-      (Finsupp.lmapDomain ℂ ℂ (fun s => pointWrite (SelectSchedule18.tablePoint coeffs Q
-        (tableAddressValue SelectSchedule18.bits s)) s)) SelectSchedule18.Input := by
-  unfold CoherentlyImplementsOn
-  rw [program_run]
-  exact source_coherent coeffs Q
 
 /-! ### Resources -/
 
@@ -716,10 +677,6 @@ theorem selOps_physical : ∀ op ∈ selOps, op.Physical := by
   · have := mem_point h; (try dsimp only [Wire] at *); omega
   · have := mem_garb h; (try dsimp only [Wire] at *); omega
 
-theorem sel_wellFormed (start : Nat) : (selProgram start).WellFormed := by
-  rw [selProgram, castFinish_wellFormed]
-  exact lookupProgram_wellFormed _ selOps_physical _
-
 theorem swap_wellFormed (start : Nat) : (swapProgram start).WellFormed := by
   rw [swapProgram]
   exact literalProgram_wellFormed _ swap_wf
@@ -730,13 +687,6 @@ theorem clear_wellFormed (start : Nat) : (clearProgram start).WellFormed := by
   exact MeasuredClear.measuredClear_wellFormed9 clearData low hot tree 836 scratch clearPaths
     (by rw [← htree]; exact clear_layout) hot_injective low_ne_hot
     (by rw [← htree]; exact scratch_not_tree) scratch_not_hot start
-
-theorem program_wellFormed (start : Nat) : (program start).WellFormed := by
-  have h := straight_append_wellFormed _ _
-    (straight_append_wellFormed _ _ (sel_wellFormed start) (swap_wellFormed (start + 131071)))
-    (clear_wellFormed (start + 131071))
-  rw [program, castFinish_wellFormed]
-  exact h
 
 theorem selLeaf_length (l : Nat) (q : Wire) : (selLeaf l q).length ≤ 1026 := by
   rw [selLeaf, lookupLeafGates, List.length_map, List.length_append, List.length_zip, List.length_zip,
@@ -828,11 +778,6 @@ theorem clear_support (start : Nat) : straightWires (clearProgram start) ⊆ sup
     List.mem_singleton, List.not_mem_nil, or_false] at hw
   exact mem_support (by (try dsimp only [Wire] at *); omega)
 
-theorem program_support (start : Nat) : straightWires (program start) ⊆ support := by
-  rw [program, straightWires_castFinish, straightWires_append, straightWires_append]
-  exact List.append_subset.mpr ⟨List.append_subset.mpr ⟨sel_support start, swap_support _⟩,
-    clear_support _⟩
-
 theorem sel_residue (start : Nat) : residue (selProgram start) = 0 := by
   rw [selProgram, residue_cast, residue_lookup, selOps]
   apply WEXCredit.residue_unary
@@ -876,75 +821,7 @@ theorem clear_added (start : Nat) : added (clearProgram start) = 1013 := by
 theorem program_added (start : Nat) : added (program start) = 132597 := by
   rw [program, added_cast, added_append, added_append, sel_added, swap_added, clear_added] <;> rfl
 
-theorem program_credit (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
-    (history : Fin start → Bool) : added (program start) = 132597 := program_added start
-
-theorem program_tCount (coeffs : Fin 262144 → PointCoeff) (Q : Point) (start : Nat)
-    (history : Fin start → Bool) :
-    ((program start).instantiate (readConstant coeffs Q) history).tCount = 928179 := by
-  rw [exact_t _ (program_residue start), program_added] <;> rfl
-
 /-! ### The window -/
-
-def windowGeneric {n : Nat} (rows : Fin 262144 → Fin n) : Single.Window n :=
-  ⟨SelectSchedule18.bits.reverse, 132606, fun start => reindexStraight rows (program start)⟩
-
-theorem window_law_generic {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (init : Point → Nat → Point)
-    (hcoeff : ∀ Q, order • Q = 0 → ∀ a : Fin 262144,
-      constantPoint Q (coeffs (rows a)) = init Q a.val) :
-    Single.WindowLaw coeffs (windowGeneric rows) (SelectSchedule18.update init)
-      SelectSchedule18.Input := by
-  intro Q hQ hn start history
-  have hvalid := program_coherent (fun a => coeffs (rows a)) Q start history
-  have hupdate : (fun s => pointWrite
-      (SelectSchedule18.tablePoint (fun a => coeffs (rows a)) Q
-        (tableAddressValue SelectSchedule18.bits s)) s) = SelectSchedule18.update init Q := by
-    funext s
-    unfold SelectSchedule18.tablePoint SelectSchedule18.update
-    have hbound : tableAddressValue SelectSchedule18.bits s < 262144 := by
-      have hb := tableAddressValue_lt SelectSchedule18.bits s
-      have hlen : SelectSchedule18.bits.length = 18 := by decide +kernel
-      simpa only [hlen] using hb
-    simp only [Nat.mod_eq_of_lt hbound]
-    rw [hcoeff Q hQ]
-  rw [hupdate] at hvalid
-  unfold windowGeneric
-  rw [reindexStraight_instantiate,
-    readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
-  exact hvalid
-
-theorem window_wellFormed {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    ((windowGeneric rows).program start).WellFormed := by
-  unfold windowGeneric
-  exact (reindexStraight_wellFormed rows (program start)).mpr (program_wellFormed start)
-
-theorem window_slots {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    ((windowGeneric rows).program start).gateSlots ≤ 1000000000 := by
-  unfold windowGeneric
-  rw [reindexStraight_gateSlots]
-  exact program_slots start
-
-theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
-    straightWires ((windowGeneric rows).program start) ⊆ support := by
-  unfold windowGeneric
-  rw [straightWires_reindex]
-  exact program_support start
-
-theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 928179 := by
-  unfold windowGeneric
-  rw [reindexStraight_instantiate,
-    readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
-  exact program_tCount (fun a => coeffs (rows a)) Q start history
-
-theorem window_credit {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    added ((windowGeneric rows).program start) = 132597 := by
-  unfold windowGeneric
-  rw [added_reindex]
-  exact program_added start
 
 end
 end ShorECDLP.Entrant.First18
@@ -974,48 +851,6 @@ theorem select18_clean (s : BasisState) (hs : FirstWindowInput s)
       omega
   · exact hs.2 537 (by decide +kernel) (by decide +kernel)
 
-theorem select18_assigned_digit (s : BasisState) (input : List Bool)
-    (hi : input.length = SelectSchedule18.bits.length) :
-    tableAddressValue SelectSchedule18.bits (phaseWordState SelectSchedule18.bits input s) = boolWordToNat input := by
-  have he (ws : List Wire) (t : BasisState) :
-      tableAddressValue ws t = boolWordToNat (wireValues ws t) := by
-    induction ws with
-    | nil => rfl
-    | cons w ws ih =>
-      change (t w).toNat + 2 * tableAddressValue ws t =
-        (t w).toNat + 2 * boolWordToNat (wireValues ws t)
-      rw [ih]
-  rw [he,phaseWordState_word _ select18_nodup input hi s]
-
-
-theorem select18_window_point_sum_generic (init : Point → Nat → Point) (Q : Point) (prior output : List Bool)
-    (s : BasisState) (hs : FirstWindowInput s) (hz : Clean streamAddress s) :
-    fourierBranch .inverse SelectSchedule18.bits.reverse prior output
-      (Finsupp.lmapDomain ℂ ℂ (SelectSchedule18.update init Q)
-        (Quantum.run (SelectSchedule18.bits.map Gate.H) (ket s))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 18) •
-        ((fourierOutcomes 18).map (fun input =>
-          fourierBitAmplitude .inverse input.reverse prior output •
-            ket (pointWrite (init Q (boolWordToNat input)) s))).sum := by
-  have hlen : SelectSchedule18.bits.length = 18 := by decide +kernel
-  rw [window_branch_uniform .inverse SelectSchedule18.bits select18_nodup
-    (SelectSchedule18.update init Q) prior output s (select18_clean s hs hz) (by
-      intro input hi
-      have he : SelectSchedule18.bits.map (SelectSchedule18.update init Q (phaseWordState SelectSchedule18.bits input s)) =
-          SelectSchedule18.bits.map (phaseWordState SelectSchedule18.bits input s) := by
-        apply List.map_congr_left
-        intro v hv
-        exact pointWrite_frame _ _ v (select18_not_point v hv)
-      rw [he]
-      exact phaseWordState_word _ select18_nodup input
-        ((fourierOutcomes_mem _ _).mp hi) s), hlen]
-  apply congrArg (fun ψ : State => (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 18) • ψ)
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro input hi
-  unfold SelectSchedule18.update
-  rw [select18_assigned_digit s input (by simpa only [hlen] using (fourierOutcomes_mem _ _).mp hi),
-    clear_assigned_point _ input s (select18_clean s hs hz) select18_not_point]
 end
 end ShorECDLP.Entrant.Single
 

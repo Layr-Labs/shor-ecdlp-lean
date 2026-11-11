@@ -1,4 +1,4 @@
--- Vendored from ECDSAAdd (ecdsa.fail Lean challenge), Apache-2.0, Copyright 2026 Runzhou Tao, Anirudh and ECDSAAdd contributors; 156 source modules at c3f340a (listed in MODULES.txt), concatenated. Changes: module paths, expanded notation, private-name renames.
+-- Vendored from ECDSAAdd (ecdsa.fail Lean challenge), Apache-2.0, Copyright 2026 Runzhou Tao, Anirudh and ECDSAAdd contributors; 156 source modules at c3f340a (listed in MODULES.txt), concatenated. Changes: module paths, expanded notation, private-name renames; declarations unreachable from the ShorECDLP judge roots (no kernel or elaborator reference) removed in the 2026-11-11 dead-code compaction, `-- source:` markers kept.
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part1
 import ShorECDLP.Submission.Entrant.ECDSAAdd.Part2
 import Mathlib.Tactic
@@ -11,44 +11,6 @@ set_option maxRecDepth 5000000
 set_option linter.unusedSimpArgs false
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
-
-def measuredCompleteResult (enabled : Bool) (A B O : Nat) : Nat :=
-  SquareReduction.p-1-measuredCMiddleResult ((if enabled then A+B else 0)^2)
-    (measuredBResult ((if enabled then B else 0)^2) (measuredAResult ((if enabled then A else 0)^2) O))
-
-theorem measuredCompleteResult_lt (enabled : Bool) (A B O : Nat) :
-    measuredCompleteResult enabled A B O<SquareReduction.p := by
-  have hp : 0<SquareReduction.p := by norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c]
-  dsimp [measuredCompleteResult]
-  omega
-
-theorem measuredCompleteResult_exact (enabled : Bool) (A B O : Nat) :
-    measuredCompleteResult enabled A B O=
-      subModValue (if enabled then (A+2^128*B)^2 else 0) O := by
-  let PA := (if enabled then A else 0)^2
-  let PB := (if enabled then B else 0)^2
-  let PC := (if enabled then A+B else 0)^2
-  let OA := measuredAResult PA O
-  let OB := measuredBResult PB OA
-  let OC := measuredCMiddleResult PC OB
-  have ea := measuredAResult_cast PA O
-  have eb := measuredBResult_cast PB OA
-  have ec := measuredCMiddleResult_cast PC OB
-  simp only [measuredOrientationCast,Bool.false_eq_true,if_false,if_true] at ea eb ec
-  have identity := measured_controlled_square_identity enabled A B
-  change (PA : ZMod SquareReduction.p)*2^128-PA+
-    ((PB : ZMod SquareReduction.p)*2^128-SquareReduction.c*PB)-(PC : ZMod SquareReduction.p)*2^128=
-      -((if enabled then (A+2^128*B)^2 else 0 : Nat) : ZMod SquareReduction.p) at identity
-  have ocBound : OC<SquareReduction.p := (measured_results_lt PC OB).2.2
-  have cast : (measuredCompleteResult enabled A B O : ZMod SquareReduction.p)=
-      (subModValue (if enabled then (A+2^128*B)^2 else 0) O : ZMod SquareReduction.p) := by
-    change ((SquareReduction.p-1-OC : Nat) : ZMod SquareReduction.p)=_
-    rw [measuredReflection_zmod OC ocBound,subModValue_cast]
-    linear_combination ea+eb+ec+identity
-  have targetBound : subModValue (if enabled then (A+2^128*B)^2 else 0) O<SquareReduction.p :=
-    Nat.mod_lt _ (by norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c])
-  have value := congrArg ZMod.val cast
-  simpa only [ZMod.val_natCast_of_lt (measuredCompleteResult_lt enabled A B O),ZMod.val_natCast_of_lt targetBound] using value
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -72,99 +34,6 @@ theorem measured_input_out_disjoint (L : CuccaroStreamedSquareWideLayout) (hn : 
   simp only [wires,CuccaroStreamedSquareLayout.wires,List.count_append,List.count_cons,List.count_nil] at h a
   omega
 
-/-- The complete emitted controlled square subtraction, for every 256-bit
-source, canonical output and every measurement record. Every non-output
-wire, including control and all shared scratch, and the phase are restored. -/
-theorem measuredProgram_correct (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (control : Wire) (hn : (control::L.wires).Nodup) (Y O : Nat)
-    (hO : O<SquareReduction.p) (s : State) (records : List Bool)
-    (hy : regValue L.core.y s.basis=Y) (ho : regValue L.core.out s.basis=O)
-    (hp0 : regValue L.core.product s.basis=0) (hs0 : s.basis L.core.sumCarry=false)
-    (hc : L.PairClean s.basis) :
-    (run (L.measuredProgram control) records s).phase=s.phase ∧
-    regValue L.core.out (run (L.measuredProgram control) records s).basis=
-      (O+SquareReduction.p-(if s.basis control then Y^2 else 0)%SquareReduction.p)%SquareReduction.p ∧
-    ∀q,q∉L.core.out → (run (L.measuredProgram control) records s).basis q=s.basis q := by
-  have nd := (List.nodup_cons.mp hn).2
-  have disInput := L.measured_input_out_disjoint nd
-  have disProduct := L.product_out_disjoint nd
-  have ctrlAway : control∉L.core.out := by
-    intro bad
-    exact (List.nodup_cons.mp hn).1 (by simp [wires,CuccaroStreamedSquareLayout.wires,bad])
-  let A := regValue L.core.low s.basis
-  let B := regValue L.core.high s.basis
-  let enabled := s.basis control
-  let PA := (if enabled then A else 0)^2
-  let PB := (if enabled then B else 0)^2
-  let PC := (if enabled then A+B else 0)^2
-  let OA := measuredAResult PA O
-  let OB := measuredBResult PB OA
-  let OC := measuredCMiddleResult PC OB
-  let restA := records.drop (measurementCount (L.measuredBranchA control))
-  let restB := restA.drop (measurementCount (L.measuredBranchB control))
-  let restC := restB.drop (measurementCount (L.measuredBranchC control))
-  let u := run (L.measuredBranchA control) (records.take (measurementCount (L.measuredBranchA control))) s
-  let v := run (L.measuredBranchB control) (restA.take (measurementCount (L.measuredBranchB control))) u
-  let w := run (L.measuredBranchC control) (restB.take (measurementCount (L.measuredBranchC control))) v
-  let out := run L.reflectOutput restC w
-  have lowAway (q : Wire) (hq : q∈L.core.low) : q∉L.core.out :=
-    List.disjoint_left.mp disInput (List.mem_append_left _ (List.mem_of_mem_take hq))
-  have highAway (q : Wire) (hq : q∈L.core.high) : q∉L.core.out :=
-    List.disjoint_left.mp disInput (List.mem_append_left _ (List.mem_of_mem_drop (List.mem_of_mem_take hq)))
-  have sumAway (q : Wire) (hq : q∈L.core.sum) : q∉L.core.out :=
-    List.disjoint_left.mp (L.measured_sum_disjoint nd).2 hq
-  have sumB : regValue L.core.sum s.basis=B := by
-    simp [CuccaroStreamedSquareLayout.sum,regValue_append,regValue,hs0,B]
-  have ab : A<2^128 := by simpa [A,L.core.low_length hw.core] using regValue_lt L.core.low s.basis
-  have bb : B<2^128 := by simpa [B,L.core.high_length hw.core] using regValue_lt L.core.high s.basis
-  have sumBound : A+B<2^129 := by norm_num at ab bb ⊢;omega
-  have ea := L.measuredBranchA_correct hw control hn A O hO s
-    (records.take (measurementCount (L.measuredBranchA control))) rfl ho hp0 hc
-  have cleanU : L.PairClean u.basis :=
-    L.squareFrame_clean nd s.basis u.basis OA ⟨ea.2.1,ea.2.2⟩ hc
-  have productU : regValue L.core.product u.basis=0 :=
-    (regValue_congr _ _ _ (fun q hq => ea.2.2 q (List.disjoint_left.mp disProduct hq))).trans hp0
-  have highU : regValue L.core.high u.basis=B :=
-    regValue_congr _ _ _ (fun q hq => ea.2.2 q (highAway q hq))
-  have ctrlU : u.basis control=enabled := ea.2.2 control ctrlAway
-  have eb := L.measuredBranchB_correct hw control hn B OA (measured_results_lt PA O).1 u
-    (restA.take (measurementCount (L.measuredBranchB control))) highU ea.2.1 productU cleanU
-  rw [ctrlU] at eb
-  have sameV (q : Wire) (hq : q∉L.core.out) : v.basis q=s.basis q :=
-    (eb.2.2 q hq).trans (ea.2.2 q hq)
-  have cleanV : L.PairClean v.basis :=
-    L.squareFrame_clean nd s.basis v.basis OB ⟨eb.2.1,sameV⟩ hc
-  have productV : regValue L.core.product v.basis=0 :=
-    (regValue_congr _ _ _ (fun q hq => sameV q (List.disjoint_left.mp disProduct hq))).trans hp0
-  have lowV : regValue L.core.low v.basis=A := regValue_congr _ _ _ (fun q hq => sameV q (lowAway q hq))
-  have sumV : regValue L.core.sum v.basis=B :=
-    (regValue_congr _ _ _ (fun q hq => sameV q (sumAway q hq))).trans sumB
-  have ctrlV : v.basis control=enabled := sameV control ctrlAway
-  have ec := L.measuredBranchC_correct hw control hn A B OB (measured_results_lt PB OA).2.1 v
-    (restB.take (measurementCount (L.measuredBranchC control))) lowV sumV sumBound eb.2.1 productV cleanV
-  rw [ctrlV] at ec
-  have sameW (q : Wire) (hq : q∉L.core.out) : w.basis q=s.basis q := (ec.2.2 q hq).trans (sameV q hq)
-  have cleanW : L.PairClean w.basis :=
-    L.squareFrame_clean nd s.basis w.basis OC ⟨ec.2.1,sameW⟩ hc
-  have er := L.reflectOutput_correct hw nd OC (measured_results_lt PC OB).2.2 w restC ec.2.1 cleanW
-  have split : A+2^128*B=Y := by
-    have highEq : L.core.high=L.core.y.drop 128 := by simp [CuccaroStreamedSquareLayout.high,hw.core.y]
-    have value := regValue_append (L.core.y.take 128) (L.core.y.drop 128) s.basis
-    rw [List.take_append_drop,hy,List.length_take,hw.core.y] at value
-    simpa only [A,B,CuccaroStreamedSquareLayout.low,highEq,show min 128 256=128 by decide] using value.symm
-  have fullValue : regValue L.core.out out.basis=
-      (O+SquareReduction.p-(if enabled then Y^2 else 0)%SquareReduction.p)%SquareReduction.p := by
-    have exactResult := measuredCompleteResult_exact enabled A B O
-    rw [split] at exactResult
-    exact er.2.1.trans exactResult
-  have final : out.phase=s.phase ∧ regValue L.core.out out.basis=
-      (O+SquareReduction.p-(if enabled then Y^2 else 0)%SquareReduction.p)%SquareReduction.p ∧
-      ∀q,q∉L.core.out → out.basis q=s.basis q := by
-    refine ⟨er.1.trans (ec.1.trans (eb.1.trans ea.1)),fullValue,?_⟩
-    intro q hq
-    exact (er.2.2 q hq).trans (sameW q hq)
-  simpa [measuredProgram,u,v,w,out,restA,restB,restC,enabled,run_append,Nat.add_assoc] using final
-
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
 
@@ -177,210 +46,6 @@ set_option maxHeartbeats 2000000
 
 namespace ECDSAAdd.Arithmetic
 
-theorem xorConstant_unitary (r : List Wire) (k : Nat) :
-    ProperProgram (xorConstant r k) := by
-  induction r generalizing k with
-  | nil => simp [xorConstant,ProperProgram]
-  | cons q r ih =>
-    by_cases h : k%2=1
-    · simp only [xorConstant,h,if_true,properProgram_append]
-      exact ⟨by simp [ProperProgram,ProperGate],ih (k/2)⟩
-    · simpa [xorConstant,h] using ih (k/2)
-
-theorem maskedConstant_unitary (c : Wire) (r : List Wire) (k : Nat)
-    (hc : c∉r) : ProperProgram (maskedConstant c r k) := by
-  induction r generalizing k with
-  | nil => simp [maskedConstant,ProperProgram]
-  | cons q r ih =>
-    have cq : c≠q := fun e => hc (by simp [e])
-    have cr : c∉r := fun h => hc (by simp [h])
-    by_cases h : k%2=1
-    · simp only [maskedConstant,h,if_true,properProgram_append]
-      exact ⟨by simpa [ProperProgram,ProperGate] using cq,ih (k/2) cr⟩
-    · simpa [maskedConstant,h] using ih (k/2) cr
-
-private theorem mod_nd (L : CuccaroModLayout) (hn : L.wires.Nodup)
-    (r : List Wire) (hr : ∀q,r.count q≤L.wires.count q) : r.Nodup := by
-  apply List.nodup_iff_count.mpr
-  intro q
-  exact (hr q).trans (List.nodup_iff_count.mp hn q)
-
-theorem cuccaroMod_unitary (L : CuccaroModLayout) (p : Nat) (hn : L.wires.Nodup) :
-    ProperProgram (cuccaroModAdd L p) ∧ ProperProgram (cuccaroModSub L p) := by
-  have az : (L.cin::L.a++L.z).Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have wz : (L.cin::L.scratch++L.z).Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have wl : (L.cin::L.work++L.low).Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      CuccaroModLayout.z,CuccaroModLayout.scratch,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have aw : (L.cin::L.a++L.scratch).Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have lw : (L.low++L.work).Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      CuccaroModLayout.z,CuccaroModLayout.scratch,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have mask : (L.high::L.work).Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      CuccaroModLayout.z,CuccaroModLayout.scratch,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have flags : [L.workHigh,L.high,L.flag].Nodup := mod_nd L hn _ (by
-    intro q
-    simp only [CuccaroModLayout.wires,CuccaroModLayout.allWork,
-      CuccaroModLayout.z,CuccaroModLayout.scratch,
-      List.count_append,List.count_cons,List.count_nil]
-    omega)
-  have hfh : L.flag≠L.high := by
-    have h := List.nodup_cons.mp (List.nodup_cons.mp flags).2
-    simpa [ne_comm] using h.1
-  have hwh : L.workHigh≠L.high := by
-    have h := List.nodup_cons.mp flags
-    simp only [List.mem_cons,List.not_mem_nil,or_false,not_or] at h
-    exact h.1.1
-  constructor
-  · simp only [cuccaroModAdd,properProgram_append]
-    exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨cuccaroAdd_proper _ _ _ az,
-      xorConstant_unitary _ _⟩,cuccaroSub_proper _ _ _ wz⟩,
-      xorConstant_unitary _ _⟩,maskedConstant_unitary _ _ _
-        (List.nodup_cons.mp mask).1⟩,cuccaroAdd_proper _ _ _ wl⟩,
-      maskedConstant_unitary _ _ _ (List.nodup_cons.mp mask).1⟩,
-      copyRegister_none_proper _ _ lw⟩,cuccaroSub_proper _ _ _ aw⟩,
-      by simpa [ProperProgram,ProperGate] using hwh⟩,
-      cuccaroAdd_proper _ _ _ aw⟩,copyRegister_none_proper _ _ lw⟩
-  · simp only [cuccaroModSub,properProgram_append]
-    exact ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨cuccaroSub_proper _ _ _ az,
-      maskedConstant_unitary _ _ _ (List.nodup_cons.mp mask).1⟩,
-      cuccaroAdd_proper _ _ _ wl⟩,
-      maskedConstant_unitary _ _ _ (List.nodup_cons.mp mask).1⟩,
-      by simpa [ProperProgram,ProperGate] using And.intro hfh.symm hfh⟩,
-      cuccaroAdd_proper _ _ _ az⟩,xorConstant_unitary _ _⟩,
-      cuccaroSub_proper _ _ _ wz⟩,
-      by simpa [ProperProgram,ProperGate] using hfh.symm⟩,
-      cuccaroAdd_proper _ _ _ wz⟩,xorConstant_unitary _ _⟩,
-      cuccaroSub_proper _ _ _ az⟩
-
-theorem cuccaroNormalizedMod_unitary (L : CuccaroNormalizedModLayout)
-    (c p : Nat) (hn : L.wires.Nodup) :
-    ProperProgram (cuccaroNormalizedModAdd L c p) ∧
-    ProperProgram (cuccaroNormalizedModSub L c p) := by
-  have nd : L.normalize.wires.Nodup ∧ L.modular.wires.Nodup := by
-    constructor <;> apply List.nodup_iff_count.mpr <;> intro q
-    all_goals
-      have h := List.nodup_iff_count.mp hn q
-      simp only [CuccaroNormalizedModLayout.wires,CuccaroNormalizedModLayout.normalize,
-        CuccaroNormalizeLayout.wires,CuccaroNormalizeLayout.a,CuccaroNormalizeLayout.scratch,
-        CuccaroNormalizedModLayout.modular,CuccaroModLayout.wires,CuccaroModLayout.z,
-        CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.count_cons,
-        List.count_append,List.count_nil] at h ⊢
-      omega
-  have norm := cuccaroNormalize_proper L.normalize c nd.1
-  have clear := properProgram_reverse _ norm
-  have mods := cuccaroMod_unitary L.modular p nd.2
-  simp only [cuccaroNormalizedModAdd,cuccaroNormalizedModSub,
-    cuccaroNormalizeClear,properProgram_append]
-  exact ⟨⟨⟨norm,mods.1⟩,clear⟩,⟨⟨norm,mods.2⟩,clear⟩⟩
-
-theorem cuccaroMod_wires_subset (L : CuccaroModLayout) (n p : Nat)
-    (hw : L.Widths n) :
-    wires (cuccaroModAdd L p)⊆L.wires.toFinset ∧
-    wires (cuccaroModSub L p)⊆L.wires.toFinset := by
-  have add (a b : List Wire) (h : ∀q,q∈L.cin::a++b → q∈L.wires) :
-      wires (cuccaroAdd a b L.cin)⊆L.wires.toFinset := by
-    intro q hq
-    exact List.mem_toFinset.mpr (h q (List.mem_toFinset.mp
-      (cuccaroAdd_wires_subset a b L.cin hq)))
-  have sub (a b : List Wire) (h : ∀q,q∈L.cin::a++b → q∈L.wires) :
-      wires (cuccaroSub a b L.cin)⊆L.wires.toFinset := by
-    intro q hq
-    exact List.mem_toFinset.mpr (h q (List.mem_toFinset.mp
-      (cuccaroSub_wires_subset a b L.cin hq)))
-  have xor (r : List Wire) (h : ∀q,q∈r → q∈L.wires) :
-      wires (xorConstant r p)⊆L.wires.toFinset := by
-    intro q hq
-    exact List.mem_toFinset.mpr (h q (List.mem_toFinset.mp
-      (xorConstant_wires_subset r p hq)))
-  have mask : wires (maskedConstant L.high L.work p)⊆L.wires.toFinset := by
-    intro q hq
-    have h := maskedConstant_wires_subset L.high L.work p hq
-    simpa only [List.mem_toFinset,CuccaroModLayout.wires,CuccaroModLayout.z,
-      CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.mem_cons,
-      List.mem_append,List.not_mem_nil,or_false] using
-      (show q∈L.wires from by
-        simp only [List.mem_toFinset,List.mem_cons] at h
-        simp only [CuccaroModLayout.wires,CuccaroModLayout.z,
-          CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.mem_cons,
-          List.mem_append,List.not_mem_nil,or_false]
-        tauto)
-  have copy : wires (copyRegister none L.low L.work)⊆L.wires.toFinset := by
-    rw [copyRegister_wires _ _ _ (hw.low.trans hw.work.symm)]
-    split
-    · exact Finset.empty_subset _
-    · intro q hq
-      simp only [List.mem_toFinset,Option.toList_none,List.nil_append,
-        List.mem_append] at hq
-      simp only [List.mem_toFinset,CuccaroModLayout.wires,CuccaroModLayout.z,
-        CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.mem_cons,
-        List.mem_append,List.not_mem_nil,or_false]
-      tauto
-  constructor
-  all_goals
-    simp only [cuccaroModAdd,cuccaroModSub,wires_append,Finset.union_subset_iff]
-    repeat' constructor
-    all_goals first | exact mask | exact copy | apply add | apply sub | apply xor | skip
-    all_goals
-      intro q hq
-      simp only [List.mem_toFinset,CuccaroModLayout.wires,CuccaroModLayout.z,
-        CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.mem_cons,
-        List.mem_append,List.not_mem_nil,or_false,wires,Instr.wires,
-        Finset.mem_union,Finset.mem_insert,Finset.mem_singleton,
-        Finset.notMem_empty,or_false] at hq ⊢
-      tauto
-
-theorem cuccaroNormalizedMod_wires_subset (L : CuccaroNormalizedModLayout)
-    (n c p : Nat) (hw : L.Widths n) :
-    wires (cuccaroNormalizedModAdd L c p)⊆L.wires.toFinset ∧
-    wires (cuccaroNormalizedModSub L c p)⊆L.wires.toFinset := by
-  have norm : wires (cuccaroNormalize L.normalize c)⊆L.wires.toFinset := by
-    intro q hq
-    have h := cuccaroNormalize_wires_subset L.normalize c hq
-    simp only [List.mem_toFinset,CuccaroNormalizedModLayout.normalize,
-      CuccaroNormalizeLayout.wires,CuccaroNormalizeLayout.a,CuccaroNormalizeLayout.scratch,
-      List.mem_cons,List.mem_append,List.not_mem_nil,or_false] at h
-    simp only [List.mem_toFinset,CuccaroNormalizedModLayout.wires,
-      List.mem_cons,List.mem_append,List.not_mem_nil,or_false]
-    tauto
-  have clear : wires (cuccaroNormalizeClear L.normalize c)⊆L.wires.toFinset := by
-    simpa only [cuccaroNormalizeClear,wires_reverse] using norm
-  have mods := cuccaroMod_wires_subset L.modular n p (L.modular_widths n hw)
-  have embed : L.modular.wires.toFinset⊆L.wires.toFinset := by
-    intro q hq
-    simp only [List.mem_toFinset,CuccaroNormalizedModLayout.modular,
-      CuccaroModLayout.wires,CuccaroModLayout.z,CuccaroModLayout.allWork,
-      CuccaroModLayout.scratch,List.mem_cons,List.mem_append,List.not_mem_nil,
-      or_false] at hq
-    simp only [List.mem_toFinset,CuccaroNormalizedModLayout.wires,
-      List.mem_cons,List.mem_append,List.not_mem_nil,or_false]
-    tauto
-  simp only [cuccaroNormalizedModAdd,cuccaroNormalizedModSub,wires_append,
-    Finset.union_subset_iff]
-  exact ⟨⟨⟨norm,mods.1.trans embed⟩,clear⟩,⟨⟨norm,mods.2.trans embed⟩,clear⟩⟩
-
 end ECDSAAdd.Arithmetic
 end
 
@@ -392,159 +57,6 @@ set_option linter.unusedVariables false
 
 namespace ECDSAAdd
 
-/-- Exact gate control with one reusable clean conjunction bit. -/
-def controlInstr (c scratch : Wire) : Instr → Program
-  | .X t => [.CX c t]
-  | .CX a t => [.CCX c a t]
-  | .CCX a b t => [.CCX c a scratch,.CCX scratch b t,.CCX c a scratch]
-  | .measureX _ _ _ => []
-
-def controlUnitary (c scratch : Wire) (p : Program) : Program :=
-  p.flatMap (controlInstr c scratch)
-
-theorem controlInstr_measurementCount (c scratch : Wire) (i : Instr) :
-    measurementCount (controlInstr c scratch i)=0 := by
-  cases i <;> rfl
-
-theorem controlInstr_run (c scratch : Wire) (i : Instr) (hi : ProperGate i)
-    (hc : c∉i.wires) (ht : scratch∉i.wires) (hct : c≠scratch)
-    (s : State) (m : List Bool) (hz : s.basis scratch=false) :
-    run (controlInstr c scratch i) m s=
-      if s.basis c then run [i] m s else s := by
-  cases s with
-  | mk phase bits =>
-    change bits scratch=false at hz
-    cases i with
-    | X t =>
-      cases sc : bits c <;> simp only [controlInstr,run,sc,if_false,if_true]
-      all_goals
-        apply congrArg (State.mk phase)
-        funext q
-        by_cases hq : q=t <;> simp [writeBit,hq]
-    | CX a t =>
-      cases sc : bits c <;>
-        simp only [controlInstr,run,sc,if_false,if_true,Bool.false_and,Bool.true_and]
-      all_goals
-        apply congrArg (State.mk phase)
-        funext q
-        by_cases hq : q=t <;> simp [writeBit,hq]
-    | CCX a b t =>
-      simp only [ProperGate] at hi
-      simp only [Instr.wires,Finset.mem_insert,Finset.mem_singleton,not_or] at hc ht
-      cases sc : bits c <;> simp only [controlInstr,run,sc,if_false,if_true]
-      all_goals
-        apply congrArg (State.mk phase)
-        funext q
-        by_cases hq : q=t
-        · subst q
-          simp [writeBit,ht.1,ht.2.1,ht.2.2,Ne.symm ht.1,Ne.symm ht.2.1,
-            Ne.symm ht.2.2,hct,hi.1,hi.2,hc.2.2,hz,sc]
-        · by_cases hqs : q=scratch
-          · subst q
-            simp [writeBit,ht.1,ht.2.1,ht.2.2,Ne.symm ht.1,Ne.symm ht.2.1,
-              hct,hi.1,hc.2.2,hz,sc]
-          · simp [writeBit,hq,hqs,ht.1,ht.2.1,Ne.symm ht.1,Ne.symm ht.2.1,
-              hct,hi.1,hc.2.2,hz,sc]
-    | measureX t z o => contradiction
-
-theorem controlUnitary_measurementCount (c scratch : Wire) (p : Program) :
-    measurementCount (controlUnitary c scratch p)=0 := by
-  induction p with
-  | nil => rfl
-  | cons i p ih =>
-    simp only [controlUnitary,List.flatMap_cons,measurementCount_append]
-    rw [controlInstr_measurementCount]
-    simpa only [controlUnitary,Nat.zero_add] using ih
-
-theorem controlUnitary_run (c scratch : Wire) (p : Program)
-    (hp : ProperProgram p) (hc : c∉wires p) (ht : scratch∉wires p)
-    (hct : c≠scratch) (s : State) (m : List Bool) (hz : s.basis scratch=false) :
-    run (controlUnitary c scratch p) m s=
-      if s.basis c then run p m s else s := by
-  induction p generalizing s m with
-  | nil => cases s.basis c <;> rfl
-  | cons i p ih =>
-    have hi := hp i (by simp)
-    have hpt : ProperProgram p := by intro j hj; exact hp j (by simp [hj])
-    simp only [wires,Finset.mem_union,not_or] at hc ht
-    have hci : c∉i.wires := hc.1
-    have hcp : c∉wires p := hc.2
-    have hti : scratch∉i.wires := ht.1
-    have htp : scratch∉wires p := ht.2
-    let u := if s.basis c then run [i] m s else s
-    have uControl : u.basis c=s.basis c := by
-      cases sc : s.basis c
-      · simp [u,sc]
-      · simp only [u,sc,if_true]
-        exact (run_preserves_outside [i] m s c (by simpa [wires] using hci)).trans sc
-    have uScratch : u.basis scratch=false := by
-      cases sc : s.basis c
-      · simpa [u,sc] using hz
-      · simp only [u,sc,if_true]
-        exact (run_preserves_outside [i] m s scratch
-          (by simpa [wires] using hti)).trans hz
-    have first := controlInstr_run c scratch i hi hci hti hct s m hz
-    change run (controlInstr c scratch i++controlUnitary c scratch p) m s=_
-    rw [run_append,run_take,controlInstr_measurementCount,List.drop_zero,first]
-    change run (controlUnitary c scratch p) m u=_
-    rw [ih hpt hcp htp u m uScratch,uControl]
-    cases sc : s.basis c
-    · simp [sc,u]
-    · simp only [sc,if_true,u]
-      have im := properGate_measurementCount i hi
-      have exec : run (i::p) m s=run p m (run [i] m s) := by
-        change run ([i]++p) m s=_
-        rw [run_append,run_take,im,List.drop_zero]
-      exact exec.symm
-
-def cnotCount : Program → Nat
-  | [] => 0
-  | .CX _ _::p => 1+cnotCount p
-  | _::p => cnotCount p
-
-@[simp] theorem cnotCount_append (p q : Program) :
-    cnotCount (p++q)=cnotCount p+cnotCount q := by
-  induction p with
-  | nil => simp [cnotCount]
-  | cons i p ih => cases i <;> simp [cnotCount,ih,Nat.add_assoc]
-
-theorem cnotCount_reverse (p : Program) : cnotCount p.reverse=cnotCount p := by
-  induction p with
-  | nil => rfl
-  | cons i p ih => cases i <;> simp [cnotCount,ih,Nat.add_comm]
-
-theorem controlUnitary_toffoliCount (c scratch : Wire) (p : Program) :
-    toffoliCount (controlUnitary c scratch p)=3*toffoliCount p+cnotCount p := by
-  induction p with
-  | nil => rfl
-  | cons i p ih =>
-    simp only [controlUnitary] at ih
-    cases i <;> simp [controlUnitary,controlInstr,toffoliCount_append,
-      toffoliCount,cnotCount,ih] <;> omega
-
-theorem controlInstr_wires_subset (c scratch : Wire) (i : Instr) :
-    wires (controlInstr c scratch i)⊆{c,scratch}∪i.wires := by
-  cases i <;> intro q hq <;>
-    simp only [controlInstr,wires,Instr.wires,Finset.mem_union,Finset.mem_insert,
-      Finset.mem_singleton,Finset.notMem_empty,or_false] at hq ⊢ <;> tauto
-
-theorem controlUnitary_wires_subset (c scratch : Wire) (p : Program) :
-    wires (controlUnitary c scratch p)⊆{c,scratch}∪wires p := by
-  induction p with
-  | nil => simp [controlUnitary,wires]
-  | cons i p ih =>
-    intro q hq
-    simp only [controlUnitary,List.flatMap_cons,wires_append,
-      Finset.mem_union] at hq
-    change q∈{c,scratch}∪(i.wires∪wires p)
-    rcases hq with hq|hq
-    · have h := controlInstr_wires_subset c scratch i hq
-      simp only [Finset.mem_union] at h ⊢
-      tauto
-    · have h := ih hq
-      simp only [Finset.mem_union] at h ⊢
-      tauto
-
 end ECDSAAdd
 end
 
@@ -555,115 +67,6 @@ set_option linter.unusedSimpArgs false
 set_option linter.unusedVariables false
 
 namespace ECDSAAdd
-
-/-- An exact controlled replacement with one shared, restored scratch bit.
-The contract is equality of the complete state, including phase. -/
-structure ExactControl (c scratch : Wire) (original replacement : Program) : Prop where
-  proper : ProperProgram original
-  controlAway : c∉wires original
-  scratchAway : scratch∉wires original
-  measurement : measurementCount replacement=0
-  support : wires replacement⊆{c,scratch}∪wires original
-  execute : ∀ (s : State) (m : List Bool), s.basis scratch=false →
-    run replacement m s=if s.basis c then run original m s else s
-
-theorem ExactControl.direct (c scratch : Wire) (p : Program)
-    (hp : ProperProgram p) (hc : c∉wires p) (hs : scratch∉wires p)
-    (hcs : c≠scratch) : ExactControl c scratch p (controlUnitary c scratch p) :=
-  ⟨hp,hc,hs,controlUnitary_measurementCount _ _ _,
-    controlUnitary_wires_subset _ _ _,controlUnitary_run c scratch p hp hc hs hcs⟩
-
-theorem ExactControl.nil (c scratch : Wire) : ExactControl c scratch [] [] := by
-  refine ⟨by simp [ProperProgram],by simp [wires],by simp [wires],rfl,
-    by simp [wires],?_⟩
-  intro s m hz
-  cases s.basis c <;> rfl
-
-theorem ExactControl.append {c scratch : Wire} {p q p' q' : Program}
-    (hp : ExactControl c scratch p p') (hq : ExactControl c scratch q q') :
-    ExactControl c scratch (p++q) (p'++q') := by
-  refine ⟨(properProgram_append p q).mpr ⟨hp.proper,hq.proper⟩,
-    ?_,?_,?_,?_,?_⟩
-  · simpa only [wires_append,Finset.mem_union,not_or] using
-      And.intro hp.controlAway hq.controlAway
-  · simpa only [wires_append,Finset.mem_union,not_or] using
-      And.intro hp.scratchAway hq.scratchAway
-  · simp only [measurementCount_append,hp.measurement,hq.measurement]
-  · intro w hw
-    simp only [wires_append,Finset.mem_union] at hw ⊢
-    rcases hw with hw|hw
-    · have h := hp.support hw
-      simp only [Finset.mem_union] at h
-      tauto
-    · have h := hq.support hw
-      simp only [Finset.mem_union] at h
-      tauto
-  · intro s m hz
-    let u := if s.basis c then run p m s else s
-    have uc : u.basis c=s.basis c := by
-      cases hc : s.basis c
-      · simp [u,hc]
-      · simp only [u,hc,if_true]
-        exact (run_preserves_outside p m s c hp.controlAway).trans hc
-    have uz : u.basis scratch=false := by
-      cases hc : s.basis c
-      · simpa [u,hc] using hz
-      · simp only [u,hc,if_true]
-        exact (run_preserves_outside p m s scratch hp.scratchAway).trans hz
-    rw [run_append,run_take,hp.measurement,List.drop_zero,hp.execute s m hz]
-    change run q' m u=_
-    rw [hq.execute u m uz,uc]
-    have pm := properProgram_measurementCount p hp.proper
-    cases hc : s.basis c
-    · simp [hc,u]
-    · simp only [hc,if_true,u]
-      rw [run_append,run_take,pm,List.drop_zero]
-
-/-- Leave reversible preparation and cleanup uncontrolled.  Only the middle
-update needs control; the disabled branch is the exact preparation roundtrip. -/
-theorem ExactControl.sandwich {c scratch : Wire} {p q q' : Program}
-    (hp : ProperProgram p) (hc : c∉wires p) (hs : scratch∉wires p)
-    (hq : ExactControl c scratch q q') :
-    ExactControl c scratch (p++q++p.reverse) (p++q'++p.reverse) := by
-  have pr := properProgram_reverse p hp
-  have pm := properProgram_measurementCount p hp
-  have prm : measurementCount p.reverse=0 := by rw [measurementCount_reverse,pm]
-  refine ⟨(properProgram_append _ _).mpr
-    ⟨(properProgram_append _ _).mpr ⟨hp,hq.proper⟩,pr⟩,?_,?_,?_,?_,?_⟩
-  · simpa only [wires_append,wires_reverse,Finset.mem_union,not_or] using
-      And.intro (And.intro hc hq.controlAway) hc
-  · simpa only [wires_append,wires_reverse,Finset.mem_union,not_or] using
-      And.intro (And.intro hs hq.scratchAway) hs
-  · simp [measurementCount_append,pm,prm,hq.measurement]
-  · intro w hw
-    simp only [wires_append,wires_reverse,Finset.mem_union] at hw ⊢
-    rcases hw with (hw|hw)|hw
-    · tauto
-    · have h := hq.support hw
-      simp only [Finset.mem_union] at h
-      tauto
-    · tauto
-  · intro s m hz
-    let u := run p m s
-    have uc : u.basis c=s.basis c := run_preserves_outside p m s c hc
-    have uz : u.basis scratch=false := (run_preserves_outside p m s scratch hs).trans hz
-    have qm := properProgram_measurementCount q hq.proper
-    have pEmpty (st : State) : run p [] st=run p m st := by
-      have h := run_take p m st
-      simpa only [pm,List.take_zero] using h
-    have qEmpty (st : State) : run q [] st=run q m st := by
-      have h := run_take q m st
-      simpa only [qm,List.take_zero] using h
-    have q'Empty (st : State) : run q' [] st=run q' m st := by
-      have h := run_take q' m st
-      simpa only [hq.measurement,List.take_zero] using h
-    simp only [List.append_assoc,run_append,pm,hq.measurement,qm,
-      List.drop_zero,List.take_zero,pEmpty,qEmpty,q'Empty]
-    change run p.reverse m (run q' m u)=_
-    rw [hq.execute u m uz,uc]
-    cases h : s.basis c
-    · exact run_reverse_proper p hp s m m
-    · rfl
 
 end ECDSAAdd
 end
@@ -677,104 +80,6 @@ set_option maxHeartbeats 2000000
 
 namespace ECDSAAdd.Arithmetic
 
-def controlledNormalizedModAdd (control scratch : Wire)
-    (L : CuccaroNormalizedModLayout) (c p : Nat) : Program :=
-  cuccaroNormalize L.normalize c++
-    controlUnitary control scratch (cuccaroModAdd L.modular p)++
-    cuccaroNormalizeClear L.normalize c
-
-def controlledNormalizedModSub (control scratch : Wire)
-    (L : CuccaroNormalizedModLayout) (c p : Nat) : Program :=
-  cuccaroNormalize L.normalize c++
-    controlUnitary control scratch (cuccaroModSub L.modular p)++
-    cuccaroNormalizeClear L.normalize c
-
-private theorem normalized_views_nodup (L : CuccaroNormalizedModLayout)
-    (hn : L.wires.Nodup) : L.normalize.wires.Nodup ∧ L.modular.wires.Nodup := by
-  constructor <;> apply List.nodup_iff_count.mpr <;> intro q
-  all_goals
-    have h := List.nodup_iff_count.mp hn q
-    simp only [CuccaroNormalizedModLayout.wires,CuccaroNormalizedModLayout.normalize,
-      CuccaroNormalizeLayout.wires,CuccaroNormalizeLayout.a,CuccaroNormalizeLayout.scratch,
-      CuccaroNormalizedModLayout.modular,CuccaroModLayout.wires,CuccaroModLayout.z,
-      CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.count_cons,
-      List.count_append,List.count_nil] at h ⊢
-    omega
-
-private theorem normalized_views_away (L : CuccaroNormalizedModLayout)
-    (q : Wire) (hq : q∉L.wires) : q∉L.normalize.wires ∧ q∉L.modular.wires := by
-  constructor <;> intro h <;> apply hq
-  all_goals
-    simp only [CuccaroNormalizedModLayout.wires,CuccaroNormalizedModLayout.normalize,
-      CuccaroNormalizeLayout.wires,CuccaroNormalizeLayout.a,CuccaroNormalizeLayout.scratch,
-      CuccaroNormalizedModLayout.modular,CuccaroModLayout.wires,CuccaroModLayout.z,
-      CuccaroModLayout.allWork,CuccaroModLayout.scratch,List.mem_cons,
-      List.mem_append,List.not_mem_nil,or_false] at h ⊢
-    tauto
-
-theorem controlledNormalizedMod_exact (control scratch : Wire)
-    (L : CuccaroNormalizedModLayout) (n c p : Nat) (hw : L.Widths n)
-    (hn : L.wires.Nodup) (hc : control∉L.wires) (ht : scratch∉L.wires)
-    (hct : control≠scratch) :
-    ExactControl control scratch (cuccaroNormalizedModAdd L c p)
-      (controlledNormalizedModAdd control scratch L c p) ∧
-    ExactControl control scratch (cuccaroNormalizedModSub L c p)
-      (controlledNormalizedModSub control scratch L c p) := by
-  have nd := normalized_views_nodup L hn
-  have ca := normalized_views_away L control hc
-  have ta := normalized_views_away L scratch ht
-  have normProper := cuccaroNormalize_proper L.normalize c nd.1
-  have normSupport := cuccaroNormalize_wires_subset L.normalize c
-  have normC : control∉wires (cuccaroNormalize L.normalize c) := by
-    intro h
-    exact ca.1 (List.mem_toFinset.mp (normSupport h))
-  have normT : scratch∉wires (cuccaroNormalize L.normalize c) := by
-    intro h
-    exact ta.1 (List.mem_toFinset.mp (normSupport h))
-  have modProper := cuccaroMod_unitary L.modular p nd.2
-  have modSupport := cuccaroMod_wires_subset L.modular n p (L.modular_widths n hw)
-  have addC : control∉wires (cuccaroModAdd L.modular p) := by
-    intro h
-    exact ca.2 (List.mem_toFinset.mp (modSupport.1 h))
-  have addT : scratch∉wires (cuccaroModAdd L.modular p) := by
-    intro h
-    exact ta.2 (List.mem_toFinset.mp (modSupport.1 h))
-  have subC : control∉wires (cuccaroModSub L.modular p) := by
-    intro h
-    exact ca.2 (List.mem_toFinset.mp (modSupport.2 h))
-  have subT : scratch∉wires (cuccaroModSub L.modular p) := by
-    intro h
-    exact ta.2 (List.mem_toFinset.mp (modSupport.2 h))
-  have add := ExactControl.direct control scratch (cuccaroModAdd L.modular p)
-    modProper.1 addC addT hct
-  have sub := ExactControl.direct control scratch (cuccaroModSub L.modular p)
-    modProper.2 subC subT hct
-  exact ⟨ExactControl.sandwich normProper normC normT add,
-    ExactControl.sandwich normProper normC normT sub⟩
-
-theorem controlledNormalizedMod_counts (control scratch : Wire)
-    (L : CuccaroNormalizedModLayout) (n c p : Nat) (hw : L.Widths n) :
-    (toffoliCount (controlledNormalizedModAdd control scratch L c p)=
-      2*(4*n-2)+3*(10*n-2)+cnotCount (cuccaroModAdd L.modular p) ∧
-      measurementCount (controlledNormalizedModAdd control scratch L c p)=0) ∧
-    (toffoliCount (controlledNormalizedModSub control scratch L c p)=
-      2*(4*n-2)+3*(12*n-2)+cnotCount (cuccaroModSub L.modular p) ∧
-      measurementCount (controlledNormalizedModSub control scratch L c p)=0) := by
-  have norm := cuccaroNormalize_counts L.normalize n c (L.normalize_widths n hw)
-  have add := cuccaroModAdd_counts L.modular n p (L.modular_widths n hw)
-  have sub := cuccaroModSub_counts L.modular n p (L.modular_widths n hw)
-  simp only [controlledNormalizedModAdd,controlledNormalizedModSub,
-    toffoliCount_append,measurementCount_append,controlUnitary_toffoliCount,
-    controlUnitary_measurementCount,norm.1.1,norm.1.2,norm.2.1,norm.2.2,
-    add.1,sub.1]
-  constructor
-  · constructor
-    · omega
-    · trivial
-  · constructor
-    · omega
-    · trivial
-
 end ECDSAAdd.Arithmetic
 end
 
@@ -785,75 +90,6 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 
 namespace ECDSAAdd.Arithmetic
-
-def constantWeight : Nat → Nat → Nat
-  | 0,_ => 0
-  | n+1,k => (if k%2=1 then 1 else 0)+constantWeight n (k/2)
-
-theorem xorConstant_cnotCount (r : List Wire) (k : Nat) :
-    cnotCount (xorConstant r k)=0 := by
-  induction r generalizing k with
-  | nil => rfl
-  | cons q r ih =>
-    by_cases h : k%2=1 <;> simp [xorConstant,h,cnotCount,ih]
-
-theorem maskedConstant_cnotCount (c : Wire) (r : List Wire) (k : Nat) :
-    cnotCount (maskedConstant c r k)=constantWeight r.length k := by
-  induction r generalizing k with
-  | nil => rfl
-  | cons q r ih =>
-    by_cases h : k%2=1 <;> simp [maskedConstant,constantWeight,h,cnotCount,ih]
-
-theorem notRegister_cnotCount (r : List Wire) : cnotCount (notRegister r)=0 := by
-  induction r with
-  | nil => rfl
-  | cons q r ih =>
-    change cnotCount (Instr.X q::notRegister r)=0
-    exact ih
-
-theorem copyRegister_none_cnotCount (a b : List Wire) (hl : a.length=b.length) :
-    cnotCount (copyRegister none a b)=a.length := by
-  induction a generalizing b with
-  | nil => cases b <;> simp_all [copyRegister,cnotCount]
-  | cons x a ih =>
-    cases b with
-    | nil => simp at hl
-    | cons y b =>
-      have h := ih b (by simpa using hl)
-      simp [copyRegister,copyGate,cnotCount,h,Nat.add_comm]
-
-theorem cuccaroAdd_cnotCount (a b : List Wire) (cin : Wire)
-    (hl : a.length=b.length) :
-    cnotCount (cuccaroAdd a b cin)=if a.length=0 then 0 else 4*a.length-2 := by
-  induction a generalizing b cin with
-  | nil => cases b <;> simp_all [cuccaroAdd,cnotCount]
-  | cons x a ih =>
-    cases a with
-    | nil =>
-      cases b with
-      | nil => simp at hl
-      | cons y b =>
-        have hb : b=[] := List.eq_nil_of_length_eq_zero (by simpa using hl.symm)
-        subst b
-        rfl
-    | cons x' a =>
-      cases b with
-      | nil => simp at hl
-      | cons y b =>
-        cases b with
-        | nil => simp at hl
-        | cons y' b =>
-          have h := ih (y'::b) x (by simpa using hl)
-          simp only [cuccaroAdd,cnotCount_append,cuccaroMaj,cuccaroUma,
-            cnotCount,List.length_cons,h]
-          simp only [Nat.add_eq_zero_iff,Nat.one_ne_zero,and_false,if_false]
-          omega
-
-theorem cuccaroSub_cnotCount (a b : List Wire) (cin : Wire)
-    (hl : a.length=b.length) :
-    cnotCount (cuccaroSub a b cin)=if a.length=0 then 0 else 4*a.length-2 := by
-  simp only [cuccaroSub,cnotCount_append,notRegister_cnotCount,
-    cuccaroAdd_cnotCount a b cin hl,Nat.zero_add,Nat.add_zero]
 
 end ECDSAAdd.Arithmetic
 end
@@ -867,49 +103,6 @@ set_option linter.unusedSimpArgs false
 
 namespace ECDSAAdd.Arithmetic
 
-theorem cuccaroMod_cnotCounts (L : CuccaroModLayout) (n p : Nat)
-    (hw : L.Widths n) (hn : 0<n) :
-    cnotCount (cuccaroModAdd L p)=22*n+7+2*constantWeight n p ∧
-    cnotCount (cuccaroModSub L p)=24*n+11+2*constantWeight n p := by
-  have zl := L.z_length n hw
-  have sl := L.scratch_length n hw
-  have a1 := cuccaroAdd_cnotCount L.a L.z L.cin (hw.a.trans zl.symm)
-  have s1 := cuccaroSub_cnotCount L.scratch L.z L.cin (sl.trans zl.symm)
-  have a2 := cuccaroAdd_cnotCount L.work L.low L.cin (hw.work.trans hw.low.symm)
-  have s2 := cuccaroSub_cnotCount L.a L.scratch L.cin (hw.a.trans sl.symm)
-  have a3 := cuccaroAdd_cnotCount L.a L.scratch L.cin (hw.a.trans sl.symm)
-  have s3 := cuccaroSub_cnotCount L.a L.z L.cin (hw.a.trans zl.symm)
-  have a4 := cuccaroAdd_cnotCount L.scratch L.z L.cin (sl.trans zl.symm)
-  have cp := copyRegister_none_cnotCount L.low L.work (hw.low.trans hw.work.symm)
-  have nz : n≠0 := by omega
-  simp only [hw.a,hw.work,sl,nz,Nat.add_eq_zero_iff,Nat.one_ne_zero,
-    and_false,if_false] at a1 s1 a2 s2 a3 s3 a4
-  simp only [cuccaroModAdd,cuccaroModSub,cnotCount_append,
-    a1,s1,a2,s2,a3,s3,a4,cp,xorConstant_cnotCount,maskedConstant_cnotCount,
-    hw.work,hw.low,cnotCount]
-  constructor <;> omega
-
-/-- Kernel-computed full 256-bit constant weight; no external evaluation or sampled
-carry/borrow window is used. -/
-theorem secp256k1_prime_weight : constantWeight 256 SquareReduction.p=250 := by
-  decide
-
-theorem controlledNormalizedMod_secp256k1_counts (control scratch : Wire)
-    (L : CuccaroNormalizedModLayout) (hw : L.Widths 256) :
-    (toffoliCount (controlledNormalizedModAdd control scratch L
-        SquareReduction.c SquareReduction.p)=15857 ∧
-      measurementCount (controlledNormalizedModAdd control scratch L
-        SquareReduction.c SquareReduction.p)=0) ∧
-    (toffoliCount (controlledNormalizedModSub control scratch L
-        SquareReduction.c SquareReduction.p)=17909 ∧
-      measurementCount (controlledNormalizedModSub control scratch L
-        SquareReduction.c SquareReduction.p)=0) := by
-  have h := controlledNormalizedMod_counts control scratch L 256
-    SquareReduction.c SquareReduction.p hw
-  have cx := cuccaroMod_cnotCounts L.modular 256 SquareReduction.p
-    (L.modular_widths 256 hw) (by omega)
-  simpa only [cx.1,cx.2,secp256k1_prime_weight] using h
-
 end ECDSAAdd.Arithmetic
 end
 
@@ -921,39 +114,6 @@ set_option maxRecDepth 1000000
 
 namespace ECDSAAdd.Arithmetic
 namespace CuccaroStreamedSquareWideLayout
-
-theorem branchB_suffix_pair (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (hnd : L.wires.Nodup) (base : BasisState) (B O : Nat)
-    (hB : regValue L.core.high base=B) (hBb : B<2^128)
-    (hprod : regValue L.core.product base=0)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base (B^2) O)
-      (L.subTimesC (L.core.product.take 256)++L.core.square128Clear L.core.high)
-      (PairFrame L base 0 (subTimesProductValue (B^2) O)) := by
-  have highLen := L.core.high_length hw.core
-  have highCount (q : Wire) : L.core.high.count q≤L.core.y.count q := by
-    have h1 := (List.take_sublist 128 (L.core.y.drop 128)).count_le q
-    have h2 := (List.drop_sublist 128 L.core.y).count_le q
-    simpa [CuccaroStreamedSquareLayout.high] using h1.trans h2
-  have hp : 0<SquareReduction.p := by
-    norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c]
-  let O2 := subTimesProductValue (B^2) O
-  have timesT := L.subTimesC_pair hw hnd base (B^2) O hO hc
-  have clrT := L.square128Clear_pair hw hnd L.core.high highLen highCount base B O2
-    hB hBb hprod (PairClean.corePad L base hc) hc.work hc.cin
-  intro s records hs
-  let s1 := run (L.subTimesC (L.core.product.take 256)) [] s
-  let s2 := run (L.core.square128Clear L.core.high) records s1
-  have e1 := timesT s [] hs
-  have e2 := clrT s1 records e1.2
-  have p256 : (L.core.product.take 256).length=256 := by simp [hw.core.product]
-  have timesm := L.subTimesC_counts hw (L.core.product.take 256) p256
-  have exec : run
-      (L.subTimesC (L.core.product.take 256)++L.core.square128Clear L.core.high)
-      records s=s2 := by
-    simp [s1,s2,run_append,timesm.2]
-  rw [exec]
-  exact ⟨e2.1.trans e1.1,e2.2⟩
 
 end CuccaroStreamedSquareWideLayout
 end ECDSAAdd.Arithmetic
@@ -974,191 +134,6 @@ set_option exponentiation.threshold 512
 namespace ECDSAAdd.Arithmetic
 namespace CuccaroStreamedSquareWideLayout
 
-theorem branchC_pair (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (hnd : L.wires.Nodup) (base : BasisState) (A B O : Nat)
-    (hA : regValue L.core.low base=A) (hB : regValue L.core.sum base=B)
-    (hbound : A+B<2^129) (hprod : regValue L.core.product base=0)
-    (hout : regValue L.core.out base=O) (hO : O<SquareReduction.p)
-    (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.branchC
-      (PairFrame L base 0 (branchCMiddleValue (A+B) O)) := by
-  have disPO := L.product_out_disjoint hnd
-  have disSP : L.core.sum.Disjoint L.core.product := by
-    apply List.disjoint_left.mpr
-    intro q hs hp
-    have h := List.nodup_iff_count.mp hnd q
-    have h1 := List.count_pos_iff.mpr hs
-    have h2 := List.count_pos_iff.mpr hp
-    have hh1 := (List.take_sublist 128 (L.core.y.drop 128)).count_le q
-    have hh2 := (List.drop_sublist 128 L.core.y).count_le q
-    simp only [wires,CuccaroStreamedSquareLayout.wires,
-      CuccaroStreamedSquareLayout.sum,CuccaroStreamedSquareLayout.high,
-      List.count_append,List.count_cons,List.count_nil] at h h1
-    omega
-  have disSO : L.core.sum.Disjoint L.core.out := by
-    apply List.disjoint_left.mpr
-    intro q hs ho
-    have h := List.nodup_iff_count.mp hnd q
-    have h1 := List.count_pos_iff.mpr hs
-    have h2 := List.count_pos_iff.mpr ho
-    have hh1 := (List.take_sublist 128 (L.core.y.drop 128)).count_le q
-    have hh2 := (List.drop_sublist 128 L.core.y).count_le q
-    simp only [wires,CuccaroStreamedSquareLayout.wires,
-      CuccaroStreamedSquareLayout.sum,CuccaroStreamedSquareLayout.high,
-      List.count_append,List.count_cons,List.count_nil] at h h1
-    omega
-  have auxAwaySum (q : Wire)
-      (hq : q∈L.foldPad++L.core.work++[L.core.productHigh,L.core.outHigh,
-        L.core.workHigh,L.core.cin,L.core.normFlag,L.core.modFlag]) :
-      q∉L.core.sum := by
-    intro hs
-    have h := List.nodup_iff_count.mp hnd q
-    have h1 := List.count_pos_iff.mpr hq
-    have h2 := List.count_pos_iff.mpr hs
-    have hh1 := (List.take_sublist 128 (L.core.y.drop 128)).count_le q
-    have hh2 := (List.drop_sublist 128 L.core.y).count_le q
-    simp only [wires,CuccaroStreamedSquareLayout.wires,foldPad,
-      CuccaroStreamedSquareLayout.sum,CuccaroStreamedSquareLayout.high,
-      List.count_append,List.count_cons,List.count_nil] at h h1 h2
-    omega
-  have prepT := L.prepareSum_frame hw hnd base A B hA hB hbound
-    (PairClean.corePad L base hc) hc.cin
-  intro s records hs
-  have sameBasis : s.basis=base := by
-    funext q
-    by_cases hp : q∈L.core.product
-    · exact (regValue_eq_iff L.core.product _ _).mp
-        (hs.product.trans hprod.symm) q hp
-    by_cases ho : q∈L.core.out
-    · exact (regValue_eq_iff L.core.out _ _).mp (hs.out.trans hout.symm) q ho
-    · exact hs.frame q hp ho
-  have prepPre : SquareFrame L.core.sum base B s.basis := by
-    rw [sameBasis]
-    exact ⟨hB,fun _ _ => rfl⟩
-  let s1 := run L.core.prepareSum [] s
-  have e1 := prepT s [] prepPre
-  have prod1 : regValue L.core.product s1.basis=0 := by
-    rw [←hprod]
-    apply regValue_congr
-    intro q hq
-    exact e1.2.2 q (fun hs => List.disjoint_left.mp disSP hs hq)
-  have out1 : regValue L.core.out s1.basis=O := by
-    rw [←hout]
-    apply regValue_congr
-    intro q hq
-    exact e1.2.2 q (fun hs => List.disjoint_left.mp disSO hs hq)
-  have clean1 : PairClean L s1.basis := by
-    have keep (q : Wire)
-        (hq : q∈L.foldPad++L.core.work++[L.core.productHigh,L.core.outHigh,
-          L.core.workHigh,L.core.cin,L.core.normFlag,L.core.modFlag]) :
-        s1.basis q=base q :=
-      e1.2.2 q (auxAwaySum q hq)
-    constructor
-    · rw [←hc.pad]
-      apply regValue_congr
-      intro q hq
-      exact keep q (by simp [hq])
-    · rw [←hc.work]
-      apply regValue_congr
-      intro q hq
-      exact keep q (by simp [hq])
-    · exact (keep _ (by simp)).trans hc.productHigh
-    · exact (keep _ (by simp)).trans hc.outHigh
-    · exact (keep _ (by simp)).trans hc.workHigh
-    · exact (keep _ (by simp)).trans hc.cin
-    · exact (keep _ (by simp)).trans hc.normFlag
-    · exact (keep _ (by simp)).trans hc.modFlag
-  have middleT := L.branchC_middle_pair hw hnd s1.basis (A+B) O e1.2.1
-    prod1 hO clean1
-  have middlePre : PairFrame L s1.basis 0 O s1.basis :=
-    ⟨prod1,out1,fun _ _ _ => rfl⟩
-  let s2 := run (L.core.square129++L.subRotate128 true++L.core.square129Clear) [] s1
-  have e2 := middleT s1 [] middlePre
-  let restoreBase : BasisState := fun q => if q∈L.core.out then s2.basis q else s.basis q
-  have lowRestore : regValue L.core.low restoreBase=A := by
-    rw [←hA]
-    apply regValue_congr
-    intro q hq
-    have away : q∉L.core.out := by
-      intro ho
-      have h := List.nodup_iff_count.mp hnd q
-      have h1 := List.count_pos_iff.mpr (List.mem_of_mem_take hq)
-      have h3 := List.count_pos_iff.mpr ho
-      simp only [wires,CuccaroStreamedSquareLayout.wires,
-        CuccaroStreamedSquareLayout.low,List.count_append,List.count_cons,
-        List.count_nil] at h
-      omega
-    simp [restoreBase,away,sameBasis]
-  have sumRestore : regValue L.core.sum restoreBase=B := by
-    rw [←hB]
-    apply regValue_congr
-    intro q hq
-    simp [restoreBase,List.disjoint_left.mp disSO hq,sameBasis]
-  have padRestore : regValue L.core.pad restoreBase=0 := by
-    rw [←PairClean.corePad L base hc]
-    apply regValue_congr
-    intro q hq
-    have away := (L.pairAuxAway hnd q (by simp [foldPad,hq])).2
-    simp [restoreBase,away,sameBasis]
-  have cinRestore : restoreBase L.core.cin=false := by
-    have away := (L.pairAuxAway hnd L.core.cin (by simp)).2
-    simp [restoreBase,away,sameBasis,hc.cin]
-  have clearPre : SquareFrame L.core.sum restoreBase (A+B) s2.basis := by
-    constructor
-    · calc
-        regValue L.core.sum s2.basis = regValue L.core.sum s1.basis :=
-          regValue_congr _ _ _ (fun q hq => e2.2.frame q
-            (List.disjoint_left.mp disSP hq) (List.disjoint_left.mp disSO hq))
-        _ = A+B := e1.2.1
-    · intro q hq
-      simp only [restoreBase]
-      by_cases ho : q∈L.core.out
-      · simp [ho]
-      rw [if_neg ho]
-      by_cases hp : q∈L.core.product
-      · have z2 := (regValue_zero _ _).mp e2.2.product q hp
-        have z0 := (regValue_zero _ _).mp hs.product q hp
-        exact z2.trans z0.symm
-      · exact (e2.2.frame q hp ho).trans ((e1.2.2 q hq).trans
-          (congrFun sameBasis q).symm)
-  have clearT := L.clearSum_frame hw hnd restoreBase A B lowRestore sumRestore
-    hbound padRestore cinRestore
-  let s3 := run L.core.clearSum records s2
-  have e3 := clearT s2 records clearPre
-  have finalProd : regValue L.core.product s3.basis=0 := by
-    apply (regValue_zero _ _).mpr
-    intro q hq
-    have es := e3.2.2 q (fun hs => List.disjoint_left.mp disSP hs hq)
-    have qo : q∉L.core.out := List.disjoint_left.mp disPO hq
-    simp only [restoreBase,if_neg qo] at es
-    exact es.trans ((regValue_zero _ _).mp hs.product q hq)
-  have finalOut : regValue L.core.out s3.basis=branchCMiddleValue (A+B) O := by
-    rw [←e2.2.out]
-    apply regValue_congr
-    intro q hq
-    have es := e3.2.2 q (fun hs => List.disjoint_left.mp disSO hs hq)
-    simp only [restoreBase,if_pos hq] at es
-    exact es
-  have prepM := L.core.sum_counts hw.core
-  have squareM := L.core.square129_counts hw.core
-  have rotM := L.rotate128_counts hw
-  have middleM : measurementCount
-      (L.core.square129++L.subRotate128 true++L.core.square129Clear)=0 := by
-    simp [measurementCount_append,squareM.1.2,squareM.2.2,rotM.2.2.2]
-  have exec : run L.branchC records s=s3 := by
-    simp [branchC,s1,s2,s3,run_append,prepM.1.2,squareM.1.2,
-      squareM.2.2,rotM.2.2.2]
-  rw [exec]
-  refine ⟨e3.1.trans (e2.1.trans e1.1),finalProd,finalOut,?_⟩
-  intro q hp ho
-  by_cases hsq : q∈L.core.sum
-  · have eqsum := (regValue_eq_iff L.core.sum s3.basis restoreBase).mp
-        (e3.2.1.trans sumRestore.symm) q hsq
-    simpa [restoreBase,ho,sameBasis] using eqsum
-  · have ec := e3.2.2 q hsq
-    simp only [restoreBase,if_neg ho] at ec
-    exact ec.trans (congrFun sameBasis q)
-
 end CuccaroStreamedSquareWideLayout
 end ECDSAAdd.Arithmetic
 end
@@ -1168,75 +143,6 @@ noncomputable section
 
 namespace ECDSAAdd.Arithmetic
 namespace CuccaroStreamedSquareWideLayout
-
-/-- An executable list append hidden behind an irreducible boundary.  This
-prevents Lean's kernel from recursively expanding a million-instruction left
-operand when independently checked circuit specifications are sequenced. -/
-def checkedSeq (a b : Program) : Program := a++b
-
-theorem checkedSeq_eq (a b : Program) : checkedSeq a b=a++b := by rfl
-
-attribute [irreducible] checkedSeq
-
-theorem checkedSeq_correct {P Q R : BasisState → Prop} {a b : Program}
-    (ha : Triple P a Q) (hb : Triple Q b R) :
-    Triple P (checkedSeq a b) R := by
-  rw [checkedSeq_eq]
-  exact ha.seq hb
-
-/-- Kernel-sealed aliases keep the verified branch boundaries intact when the
-full streamed circuit is composed.  Their executable values remain the exact
-gate programs below. -/
-def checkedBranchA (L : CuccaroStreamedSquareWideLayout) : Program :=
-  L.branchA
-
-def checkedBranchBPrefix (L : CuccaroStreamedSquareWideLayout) : Program :=
-  L.core.square128 L.core.high++L.addRotate128 false
-
-def checkedBranchBSuffix (L : CuccaroStreamedSquareWideLayout) : Program :=
-  L.subTimesC (L.core.product.take 256)++L.core.square128Clear L.core.high
-
-def checkedBranchC (L : CuccaroStreamedSquareWideLayout) : Program :=
-  L.branchC
-
-theorem checkedBranchA_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedBranchA=L.branchA := by rfl
-
-theorem checkedBranchBPrefix_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedBranchBPrefix=
-      L.core.square128 L.core.high++L.addRotate128 false := by rfl
-
-theorem checkedBranchBSuffix_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedBranchBSuffix=
-      L.subTimesC (L.core.product.take 256)++
-        L.core.square128Clear L.core.high := by rfl
-
-theorem checkedBranchC_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedBranchC=L.branchC := by rfl
-
-attribute [irreducible] checkedBranchA checkedBranchBPrefix checkedBranchBSuffix checkedBranchC
-
-def checkedFirstHalf (L : CuccaroStreamedSquareWideLayout) : Program :=
-  checkedSeq L.checkedBranchA L.checkedBranchBPrefix
-
-def checkedSecondHalf (L : CuccaroStreamedSquareWideLayout) : Program :=
-  checkedSeq L.checkedBranchBSuffix L.checkedBranchC
-
-theorem checkedFirstHalf_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedFirstHalf=checkedSeq L.checkedBranchA L.checkedBranchBPrefix := by rfl
-
-theorem checkedSecondHalf_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedSecondHalf=checkedSeq L.checkedBranchBSuffix L.checkedBranchC := by rfl
-
-attribute [irreducible] checkedFirstHalf checkedSecondHalf
-
-def checkedProgram (L : CuccaroStreamedSquareWideLayout) : Program :=
-  checkedSeq L.checkedFirstHalf L.checkedSecondHalf
-
-theorem checkedProgram_eq (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedProgram=checkedSeq L.checkedFirstHalf L.checkedSecondHalf := by rfl
-
-attribute [irreducible] checkedProgram
 
 end CuccaroStreamedSquareWideLayout
 end ECDSAAdd.Arithmetic
@@ -1249,16 +155,6 @@ set_option maxRecDepth 5000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 
-theorem checkedBranchA_pair (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (hnd : L.wires.Nodup) (base : BasisState) (A O : Nat)
-    (hA : regValue L.core.low base=A) (hAb : A<2^128)
-    (hprod : regValue L.core.product base=0)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.checkedBranchA
-      (PairFrame L base 0 (branchAValue A O)) := by
-  rw [L.checkedBranchA_eq]
-  exact L.branchA_pair hw hnd base A O hA hAb hprod hO hc
-
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
 
@@ -1268,15 +164,6 @@ noncomputable section
 set_option maxRecDepth 5000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
-
-theorem checkedBranchB_prefix_pair (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hnd : L.wires.Nodup) (base : BasisState) (B O : Nat)
-    (hB : regValue L.core.high base=B)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.checkedBranchBPrefix
-      (PairFrame L base (B^2) (addRotateProductValue (B^2) O false)) := by
-  rw [L.checkedBranchBPrefix_eq]
-  exact L.branchB_prefix_pair hw hnd base B O hB hO hc
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -1288,31 +175,7 @@ set_option maxRecDepth 20000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 
-private theorem branchAValue_lt (A O : Nat) :
-    branchAValue A O<SquareReduction.p := by
-  have hp : 0<SquareReduction.p := by
-    norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c]
-  unfold branchAValue addRotateProductValue addRotate128Value
-  simp only [Bool.false_eq_true,if_false]
-  unfold addCMinusOneValue addModValue subModValue
-  exact Nat.mod_lt _ hp
-
-attribute [local irreducible] branchAValue addRotateProductValue
-
-theorem checkedFirstHalf_pair (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hnd : L.wires.Nodup) (base : BasisState)
-    (A B O : Nat) (hA : regValue L.core.low base=A) (hAb : A<2^128)
-    (hB : regValue L.core.high base=B)
-    (hprod : regValue L.core.product base=0)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.checkedFirstHalf
-      (PairFrame L base (B^2)
-        (addRotateProductValue (B^2) (branchAValue A O) false)) := by
-  have ha := L.checkedBranchA_pair hw hnd base A O hA hAb hprod hO hc
-  have hb := L.checkedBranchB_prefix_pair hw hnd base B (branchAValue A O) hB
-    (branchAValue_lt A O) hc
-  rw [L.checkedFirstHalf_eq]
-  exact checkedSeq_correct ha hb
+attribute [local irreducible] addRotateProductValue
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -1323,16 +186,6 @@ noncomputable section
 set_option maxRecDepth 5000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
-
-theorem checkedBranchB_suffix_pair (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hnd : L.wires.Nodup) (base : BasisState) (B O : Nat)
-    (hB : regValue L.core.high base=B) (hBb : B<2^128)
-    (hprod : regValue L.core.product base=0)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base (B^2) O) L.checkedBranchBSuffix
-      (PairFrame L base 0 (subTimesProductValue (B^2) O)) := by
-  rw [L.checkedBranchBSuffix_eq]
-  exact L.branchB_suffix_pair hw hnd base B O hB hBb hprod hO hc
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -1345,60 +198,6 @@ set_option maxRecDepth 5000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 
-/-- Rebase the cross-term branch on the state produced by the two leaf
-branches, then transport its frame back to the original stage entry state. -/
-theorem checkedBranchC_pair_rebased (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hnd : L.wires.Nodup) (base : BasisState) (A B O : Nat)
-    (hA : regValue L.core.low base=A) (hB : regValue L.core.sum base=B)
-    (hbound : A+B<2^129) (hO : O<SquareReduction.p)
-    (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.checkedBranchC
-      (PairFrame L base 0 (branchCMiddleValue (A+B) O)) := by
-  rw [L.checkedBranchC_eq]
-  have lowAway (q : Wire) (hq : q∈L.core.low) :
-      q∉L.core.product ∧ q∉L.core.out := by
-    constructor <;> intro hm
-    all_goals
-      have h := List.nodup_iff_count.mp hnd q
-      have h1 := List.count_pos_iff.mpr (List.mem_of_mem_take hq)
-      have h2 := List.count_pos_iff.mpr hm
-      simp only [wires,CuccaroStreamedSquareLayout.wires,
-        List.count_append,List.count_cons,List.count_nil] at h
-      omega
-  have sumAway (q : Wire) (hq : q∈L.core.sum) :
-      q∉L.core.product ∧ q∉L.core.out := by
-    constructor <;> intro hm
-    all_goals
-      have h := List.nodup_iff_count.mp hnd q
-      have h1 := List.count_pos_iff.mpr hq
-      have h2 := List.count_pos_iff.mpr hm
-      have hh1 := (List.take_sublist 128 (L.core.y.drop 128)).count_le q
-      have hh2 := (List.drop_sublist 128 L.core.y).count_le q
-      simp only [wires,CuccaroStreamedSquareLayout.wires,
-        CuccaroStreamedSquareLayout.sum,CuccaroStreamedSquareLayout.high,
-        List.count_append,List.count_cons,List.count_nil] at h h1
-      omega
-  intro s records hs
-  have hAs : regValue L.core.low s.basis=A := by
-    rw [←hA]
-    apply regValue_congr
-    intro q hq
-    exact hs.frame q (lowAway q hq).1 (lowAway q hq).2
-  have hBs : regValue L.core.sum s.basis=B := by
-    rw [←hB]
-    apply regValue_congr
-    intro q hq
-    exact hs.frame q (sumAway q hq).1 (sumAway q hq).2
-  have cleanS := PairFrame.clean L hnd base 0 O s.basis hs hc
-  have ct := L.branchC_pair hw hnd s.basis A B O hAs hBs hbound
-    hs.product hs.out hO cleanS
-  have preS : PairFrame L s.basis 0 O s.basis :=
-    ⟨hs.product,hs.out,fun _ _ _ => rfl⟩
-  obtain ⟨phase,out⟩ := ct s records preS
-  refine ⟨phase,out.product,out.out,?_⟩
-  intro q hp ho
-  exact (out.frame q hp ho).trans (hs.frame q hp ho)
-
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
 
@@ -1408,24 +207,6 @@ noncomputable section
 set_option maxRecDepth 5000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
-
-theorem checkedSecondHalf_pair (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hnd : L.wires.Nodup) (base : BasisState)
-    (A B O : Nat) (hA : regValue L.core.low base=A)
-    (hHigh : regValue L.core.high base=B)
-    (hSum : regValue L.core.sum base=B) (hBb : B<2^128)
-    (hprod : regValue L.core.product base=0) (hsum : A+B<2^129)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base (B^2) O) L.checkedSecondHalf
-      (PairFrame L base 0
-        (branchCMiddleValue (A+B) (subTimesProductValue (B^2) O))) := by
-  have hp : 0<SquareReduction.p := by
-    norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c]
-  have hb := L.checkedBranchB_suffix_pair hw hnd base B O hHigh hBb hprod hO hc
-  have hc' := L.checkedBranchC_pair_rebased hw hnd base A B
-    (subTimesProductValue (B^2) O) hA hSum hsum (Nat.mod_lt _ hp) hc
-  rw [L.checkedSecondHalf_eq]
-  exact checkedSeq_correct hb hc'
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -1439,45 +220,8 @@ set_option maxRecDepth 5000000
 namespace ECDSAAdd.Arithmetic
 namespace CuccaroStreamedSquareWideLayout
 
-private theorem addRotateProductValue_lt (P O : Nat) :
-    addRotateProductValue P O false<SquareReduction.p := by
-  have hp : 0<SquareReduction.p := by
-    norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c]
-  unfold addRotateProductValue addRotate128Value
-  simp only [Bool.false_eq_true,if_false]
-  unfold addCMinusOneValue addModValue subModValue
-  exact Nat.mod_lt _ hp
-
-attribute [local irreducible] branchAValue addRotateProductValue
+attribute [local irreducible] addRotateProductValue
   subTimesProductValue branchCMiddleValue
-
-/-- The three independently verified streamed branches compose without
-expanding their gate streams.  Keeping the value expression abstract here is
-intentional: the following arithmetic lemma identifies it with subtraction of
-the full 256-bit square modulo `p`. -/
-theorem program_pair_raw (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (hnd : L.wires.Nodup) (base : BasisState) (A B O : Nat)
-    (hA : regValue L.core.low base=A) (hAb : A<2^128)
-    (hB : regValue L.core.high base=B) (hBb : B<2^128)
-    (hsumCarry : base L.core.sumCarry=false)
-    (hprod : regValue L.core.product base=0)
-    (hO : O<SquareReduction.p)
-    (hsum : A+B<2^129) (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.checkedProgram
-      (PairFrame L base 0
-        (branchCMiddleValue (A+B)
-          (subTimesProductValue (B^2)
-            (addRotateProductValue (B^2) (branchAValue A O) false)))) := by
-  have first := L.checkedFirstHalf_pair hw hnd base A B O hA hAb hB hprod hO hc
-  have hsumValue : regValue L.core.sum base=B := by
-    rw [CuccaroStreamedSquareLayout.sum,regValue_append,hB]
-    change B+2^L.core.high.length*(if base L.core.sumCarry then 1 else 0)=B
-    simp [hsumCarry]
-  have second := L.checkedSecondHalf_pair hw hnd base A B
-    (addRotateProductValue (B^2) (branchAValue A O) false) hA hB hsumValue hBb
-    hprod hsum (addRotateProductValue_lt (B^2) (branchAValue A O)) hc
-  rw [L.checkedProgram_eq]
-  exact checkedSeq_correct first second
 
 end CuccaroStreamedSquareWideLayout
 end ECDSAAdd.Arithmetic
@@ -1490,72 +234,6 @@ set_option maxRecDepth 5000000
 set_option maxHeartbeats 2000000
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
-
-theorem checkedProgram_original (L : CuccaroStreamedSquareWideLayout) :
-    L.checkedProgram=L.program := by
-  rw [L.checkedProgram_eq,L.checkedFirstHalf_eq,L.checkedSecondHalf_eq,
-    checkedSeq_eq,checkedSeq_eq,checkedSeq_eq,L.checkedBranchA_eq,
-    L.checkedBranchBPrefix_eq,L.checkedBranchBSuffix_eq,L.checkedBranchC_eq]
-  simp only [program,branchB,List.append_assoc]
-
-theorem program_square_pair (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (hnd : L.wires.Nodup) (base : BasisState) (A B O : Nat)
-    (hA : regValue L.core.low base=A) (hAb : A<2^128)
-    (hB : regValue L.core.high base=B) (hBb : B<2^128)
-    (hsumCarry : base L.core.sumCarry=false)
-    (hprod : regValue L.core.product base=0)
-    (hO : O<SquareReduction.p) (hc : PairClean L base) :
-    Triple (PairFrame L base 0 O) L.program
-      (PairFrame L base 0
-        ((O+SquareReduction.p-((A+2^128*B)^2)%SquareReduction.p)%SquareReduction.p)) := by
-  have hsum : A+B<2^129 := by
-    norm_num [Nat.pow_succ] at hAb hBb ⊢
-    omega
-  have raw := L.program_pair_raw hw hnd base A B O hA hAb hB hBb hsumCarry
-    hprod hO hsum hc
-  have result := streamedSquareValue_exact A B O hAb hBb
-  change branchCMiddleValue (A+B)
-      (subTimesProductValue (B^2)
-        (addRotateProductValue (B^2) (branchAValue A O) false))=_ at result
-  rw [result,L.checkedProgram_original] at raw
-  exact raw
-
-/-- Exact square subtraction on every 256-bit source and canonical output.
-The source, all workspace bits, every outside wire and the phase are restored. -/
-theorem program_square_correct (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hnd : L.wires.Nodup) (Y O : Nat)
-    (hO : O<SquareReduction.p) (s : State) (records : List Bool)
-    (hy : regValue L.core.y s.basis=Y) (ho : regValue L.core.out s.basis=O)
-    (hprod : regValue L.core.product s.basis=0)
-    (hsumCarry : s.basis L.core.sumCarry=false) (hc : PairClean L s.basis) :
-    (run L.program records s).phase=s.phase ∧
-    regValue L.core.out (run L.program records s).basis=
-      (O+SquareReduction.p-(Y^2)%SquareReduction.p)%SquareReduction.p ∧
-    ∀q,q∉L.core.out → (run L.program records s).basis q=s.basis q := by
-  let A := regValue L.core.low s.basis
-  let B := regValue L.core.high s.basis
-  have hab : A<2^128 := by
-    simpa only [A,L.core.low_length hw.core] using regValue_lt L.core.low s.basis
-  have hbb : B<2^128 := by
-    simpa only [B,L.core.high_length hw.core] using regValue_lt L.core.high s.basis
-  have split : A+2^128*B=Y := by
-    have hb : L.core.high=L.core.y.drop 128 := by
-      simp [CuccaroStreamedSquareLayout.high,hw.core.y]
-    have h := regValue_append (L.core.y.take 128) (L.core.y.drop 128) s.basis
-    rw [List.take_append_drop,hy,List.length_take,hw.core.y] at h
-    simpa only [A,B,CuccaroStreamedSquareLayout.low,hb,
-      show min 128 256=128 by decide] using h.symm
-  have pre : PairFrame L s.basis 0 O s.basis :=
-    ⟨hprod,ho,fun _ _ _ => rfl⟩
-  have h := L.program_square_pair hw hnd s.basis A B O rfl hab rfl hbb
-    hsumCarry hprod hO hc s records pre
-  rw [split] at h
-  refine ⟨h.1,h.2.out,?_⟩
-  intro q hqo
-  by_cases hqp : q∈L.core.product
-  · exact ((regValue_zero _ _).mp h.2.product q hqp).trans
-      ((regValue_zero _ _).mp hprod q hqp).symm
-  · exact h.2.frame q hqp hqo
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -1572,165 +250,9 @@ namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 def Certified (L : CuccaroStreamedSquareWideLayout) (p : Program) : Prop :=
   ProperProgram p ∧ ECDSAAdd.wires p⊆L.wires.toFinset
 
-theorem Certified.append {L : CuccaroStreamedSquareWideLayout} {a b : Program}
-    (ha : L.Certified a) (hb : L.Certified b) : L.Certified (a++b) := by
-  exact ⟨properProgram_append a b |>.mpr ⟨ha.1,hb.1⟩,
-    by simpa only [wires_append,Finset.union_subset_iff] using And.intro ha.2 hb.2⟩
-
 theorem Certified.reverse {L : CuccaroStreamedSquareWideLayout} {a : Program}
     (ha : L.Certified a) : L.Certified a.reverse := by
   exact ⟨properProgram_reverse a ha.1,by simpa only [wires_reverse] using ha.2⟩
-
-theorem source_certified (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) (src : List Wire) (hv : L.SourceView src) :
-    L.Certified (L.addSource src) ∧ L.Certified (L.subSource src) := by
-  have nd := L.source_nodup hn src hv
-  have proper := cuccaroNormalizedMod_unitary (L.source src)
-    SquareReduction.c SquareReduction.p nd
-  have support := cuccaroNormalizedMod_wires_subset (L.source src) 256
-    SquareReduction.c SquareReduction.p (L.source_widths hw src hv.length)
-  have srcMem (q : Wire) (hq : q∈src) : q∈L.core.product ∨ q∈L.foldPad := by
-    by_contra h
-    simp only [not_or] at h
-    have hs := hv.count_le q
-    have hc := List.count_pos_iff.mpr hq
-    rw [List.count_eq_zero.mpr h.1,List.count_eq_zero.mpr h.2] at hs
-    omega
-  have embed : (L.source src).wires.toFinset⊆L.wires.toFinset := by
-    intro q hq
-    simp only [source,CuccaroNormalizedModLayout.wires,List.mem_toFinset,
-      List.mem_append,List.mem_cons,List.not_mem_nil,or_false] at hq
-    simp only [wires,CuccaroStreamedSquareLayout.wires,List.mem_toFinset,
-      List.mem_append,List.mem_cons,List.not_mem_nil,or_false]
-    have hs : q∈src → q∈L.core.product ∨ q∈L.core.pad ∨ q∈L.overflowPad := by
-      intro h
-      have m := srcMem q h
-      simpa only [foldPad,List.mem_append,or_assoc] using m
-    tauto
-  exact ⟨⟨proper.1,support.1.trans embed⟩,⟨proper.2,support.2.trans embed⟩⟩
-
-theorem producer_certified (L : CuccaroStreamedSquareWideLayout)
-    (hn : L.wires.Nodup) (src dst mask : List Wire) (n : Nat)
-    (hsrc : ∀q,src.count q≤(L.core.y++[L.core.sumCarry]).count q)
-    (hdst : ∀q,dst.count q≤L.core.product.count q)
-    (hmask : ∀q,mask.count q≤L.core.work.count q)
-    (hs : src.length=n) (hd : dst.length=2*n)
-    (hm : n≤mask.length) (hp : 1≤L.core.pad.length) (hn2 : 2≤n) :
-    L.Certified (cuccaroSignedTriangularSquare src dst L.core.pad mask [] L.core.cin) ∧
-    L.Certified (cuccaroSignedTriangularSquareClear src dst L.core.pad mask [] L.core.cin) := by
-  have nd : (L.core.cin::src++dst++L.core.pad++mask++[]).Nodup := by
-    apply List.nodup_iff_count.mpr
-    intro q
-    have h := List.nodup_iff_count.mp hn q
-    have h1 := hsrc q
-    have h2 := hdst q
-    have h3 := hmask q
-    simp only [wires,CuccaroStreamedSquareLayout.wires,List.count_append,
-      List.count_cons,List.count_nil] at h h1 ⊢
-    omega
-  have proper := cuccaroSignedTriangularSquare_proper L.core.cin
-    src dst L.core.pad mask [] nd
-  have supp := cuccaroSignedTriangularSquare_wires_subset L.core.cin
-    src dst L.core.pad mask [] (by omega) (by omega) hp (by omega)
-  have embed : (L.core.cin::src++dst++L.core.pad++mask++[]).toFinset⊆L.wires.toFinset := by
-    intro q hq
-    have pos := List.count_pos_iff.mpr (List.mem_toFinset.mp hq)
-    have h1 := hsrc q
-    have h2 := hdst q
-    have h3 := hmask q
-    apply List.mem_toFinset.mpr
-    apply List.count_pos_iff.mp
-    simp only [wires,CuccaroStreamedSquareLayout.wires,List.count_append,
-      List.count_cons,List.count_nil] at pos h1 ⊢
-    omega
-  exact ⟨⟨proper,supp.1.trans embed⟩,
-    ⟨properProgram_reverse _ proper,supp.2.trans embed⟩⟩
-
-theorem square128_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) (src : List Wire)
-    (hs : src.length=128) (hsrc : ∀q,src.count q≤L.core.y.count q) :
-    L.Certified (L.core.square128 src) ∧ L.Certified (L.core.square128Clear src) := by
-  apply L.producer_certified hn src (L.core.product.take 256) (L.core.work.take 128) 128
-    (by intro q; have h:=hsrc q; simp only [List.count_append]; omega)
-    (by intro q; exact (List.take_sublist 256 L.core.product).count_le q)
-    (by intro q; exact (List.take_sublist 128 L.core.work).count_le q) hs
-    (by simp [hw.core.product]) (by simp [hw.core.work])
-    (by rw [hw.core.pad]; omega) (by omega)
-
-theorem square129_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) :
-    L.Certified L.core.square129 ∧ L.Certified L.core.square129Clear := by
-  apply L.producer_certified hn L.core.sum L.core.product (L.core.work.take 129) 129
-    (by
-      intro q
-      have h1 := (List.take_sublist 128 (L.core.y.drop 128)).count_le q
-      have h2 := (List.drop_sublist 128 L.core.y).count_le q
-      simp only [CuccaroStreamedSquareLayout.sum,CuccaroStreamedSquareLayout.high,
-        List.count_append] at h1 ⊢
-      omega)
-    (by intro q; exact le_rfl)
-    (by intro q; exact (List.take_sublist 129 L.core.work).count_le q)
-    (L.core.sum_length hw.core) (by rw [hw.core.product])
-    (by simp [hw.core.work]) (by rw [hw.core.pad]; omega) (by omega)
-
-theorem cMinusOne_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) (src : List Wire)
-    (hsrc : ∀q,src.count q≤L.core.product.count q)
-    (hs2 : 2≤src.length) (hs : src.length+32≤256) :
-    L.Certified (L.addCMinusOne src) ∧ L.Certified (L.subCMinusOne src) := by
-  have s4 := L.source_certified hw hn (L.shifted src 4)
-    (L.shifted_view hw src hsrc 4 hs2 (by omega))
-  have s6 := L.source_certified hw hn (L.shifted src 6)
-    (L.shifted_view hw src hsrc 6 hs2 (by omega))
-  have s10 := L.source_certified hw hn (L.shifted src 10)
-    (L.shifted_view hw src hsrc 10 hs2 (by omega))
-  have s32 := L.source_certified hw hn (L.shifted src 32)
-    (L.shifted_view hw src hsrc 32 hs2 hs)
-  exact ⟨((s4.1.append s6.2).append s10.1).append s32.1,
-    ((s4.2.append s6.1).append s10.2).append s32.2⟩
-
-theorem rotate128_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) (overhang : Bool) :
-    L.Certified (L.addRotate128 overhang) ∧ L.Certified (L.subRotate128 overhang) := by
-  have rot := L.source_certified hw hn L.rotated128 (L.rotated128_view hw)
-  have terms := L.cMinusOne_certified hw hn (L.core.product.drop 128)
-    (L.productDrop_count 128) (by simp [hw.core.product]) (by simp [hw.core.product])
-  have tail := L.source_certified hw hn (L.shifted (L.core.product.drop 256) 128)
-    (L.shiftedProductDrop_view hw 256 128 (by simp [hw.core.product])
-      (by simp [hw.core.product]))
-  have nil : L.Certified [] := by simp [Certified,ProperProgram,ECDSAAdd.wires]
-  cases overhang
-  · exact ⟨(rot.1.append terms.1).append nil,(rot.2.append terms.2).append nil⟩
-  · exact ⟨(rot.1.append terms.1).append tail.1,(rot.2.append terms.2).append tail.2⟩
-
-theorem shiftFull_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) (j : Nat)
-    (hj2 : 2≤j) (hj : j≤224) :
-    L.Certified (L.addShiftFull (L.core.product.take 256) j) ∧
-    L.Certified (L.subShiftFull (L.core.product.take 256) j) := by
-  have rot := L.source_certified hw hn (rotateFull (L.core.product.take 256) j)
-    (L.rotateFull_view hw j (by omega))
-  have len : ((L.core.product.take 256).drop (256-j)).length=j := by
-    simp [hw.core.product]
-    omega
-  have terms := L.cMinusOne_certified hw hn
-    ((L.core.product.take 256).drop (256-j)) (L.productTakeDrop_count (256-j))
-    (by rw [len]; exact hj2) (by rw [len]; omega)
-  have jnz : j≠0 := by omega
-  simpa only [addShiftFull,subShiftFull,jnz,if_false] using
-    And.intro (rot.1.append terms.1) (rot.2.append terms.2)
-
-theorem timesC_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) :
-    L.Certified (L.subTimesC (L.core.product.take 256)) := by
-  have base := L.source_certified hw hn (L.core.product.take 256)
-    (L.productTake256_view hw)
-  have s4 := L.shiftFull_certified hw hn 4 (by omega) (by omega)
-  have s6 := L.shiftFull_certified hw hn 6 (by omega) (by omega)
-  have s10 := L.shiftFull_certified hw hn 10 (by omega) (by omega)
-  have s32 := L.shiftFull_certified hw hn 32 (by omega) (by omega)
-  simpa only [subTimesC,subShiftFull,if_true] using
-    (((base.2.append s4.2).append s6.1).append s10.2).append s32.2
 
 theorem sum_certified (L : CuccaroStreamedSquareWideLayout)
     (hw : L.Widths) (hn : L.wires.Nodup) :
@@ -1764,38 +286,6 @@ theorem sum_certified (L : CuccaroStreamedSquareWideLayout)
       (lt_of_lt_of_le (List.count_pos_iff.mpr mem) (bounds q)))
   exact ⟨producer,producer.reverse⟩
 
-theorem program_certified (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) : L.Certified L.program := by
-  have low := L.square128_certified hw hn L.core.low (L.core.low_length hw.core)
-    (by intro q; exact (List.take_sublist 128 L.core.y).count_le q)
-  have high := L.square128_certified hw hn L.core.high (L.core.high_length hw.core)
-    (by
-      intro q
-      exact ((List.take_sublist 128 (L.core.y.drop 128)).count_le q).trans
-        ((List.drop_sublist 128 L.core.y).count_le q))
-  have sum := L.square129_certified hw hn
-  have prepare := L.sum_certified hw hn
-  have rotate0 := L.rotate128_certified hw hn false
-  have rotate1 := L.rotate128_certified hw hn true
-  have sub := L.source_certified hw hn (L.core.product.take 256)
-    (L.productTake256_view hw)
-  have times := L.timesC_certified hw hn
-  have a : L.Certified L.branchA :=
-    (((low.1.append sub.2).append rotate0.1).append low.2)
-  have b : L.Certified L.branchB :=
-    (high.1.append rotate0.1).append (times.append high.2)
-  have c : L.Certified L.branchC :=
-    (prepare.1.append ((sum.1.append rotate1.2).append sum.2)).append prepare.2
-  exact (a.append b).append c
-
-theorem program_static_support (L : CuccaroStreamedSquareWideLayout)
-    (hw : L.Widths) (hn : L.wires.Nodup) : qubitCount L.program≤1287 := by
-  have h := L.program_certified hw hn
-  rw [qubitCount]
-  calc
-    _ ≤ L.wires.toFinset.card := Finset.card_le_card h.2
-    _ = 1287 := by rw [List.toFinset_card_of_nodup hn,L.wires_length hw]
-
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
 
@@ -1810,224 +300,9 @@ set_option linter.unusedSectionVars false
 
 namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 
-def controlledAddSource (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (src : List Wire) : Program :=
-  controlledNormalizedModAdd c scratch (L.source src) SquareReduction.c SquareReduction.p
-
-def controlledSubSource (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (src : List Wire) : Program :=
-  controlledNormalizedModSub c scratch (L.source src) SquareReduction.c SquareReduction.p
-
-def controlledAddCMinusOne (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (src : List Wire) : Program :=
-  L.controlledAddSource c scratch (L.shifted src 4)++
-  L.controlledSubSource c scratch (L.shifted src 6)++
-  L.controlledAddSource c scratch (L.shifted src 10)++
-  L.controlledAddSource c scratch (L.shifted src 32)
-
-def controlledSubCMinusOne (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (src : List Wire) : Program :=
-  L.controlledSubSource c scratch (L.shifted src 4)++
-  L.controlledAddSource c scratch (L.shifted src 6)++
-  L.controlledSubSource c scratch (L.shifted src 10)++
-  L.controlledSubSource c scratch (L.shifted src 32)
-
-def controlledAddRotate128 (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (overhang : Bool) : Program :=
-  L.controlledAddSource c scratch L.rotated128++
-  L.controlledAddCMinusOne c scratch (L.core.product.drop 128)++
-  if overhang then L.controlledAddSource c scratch
-    (L.shifted (L.core.product.drop 256) 128) else []
-
-def controlledSubRotate128 (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (overhang : Bool) : Program :=
-  L.controlledSubSource c scratch L.rotated128++
-  L.controlledSubCMinusOne c scratch (L.core.product.drop 128)++
-  if overhang then L.controlledSubSource c scratch
-    (L.shifted (L.core.product.drop 256) 128) else []
-
-def controlledAddShiftFull (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (j : Nat) : Program :=
-  if j=0 then L.controlledAddSource c scratch (L.core.product.take 256)
-  else L.controlledAddSource c scratch (rotateFull (L.core.product.take 256) j)++
-    L.controlledAddCMinusOne c scratch ((L.core.product.take 256).drop (256-j))
-
-def controlledSubShiftFull (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire)
-    (j : Nat) : Program :=
-  if j=0 then L.controlledSubSource c scratch (L.core.product.take 256)
-  else L.controlledSubSource c scratch (rotateFull (L.core.product.take 256) j)++
-    L.controlledSubCMinusOne c scratch ((L.core.product.take 256).drop (256-j))
-
-def controlledTimesC (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire) : Program :=
-  L.controlledSubShiftFull c scratch 0++L.controlledSubShiftFull c scratch 4++
-  L.controlledAddShiftFull c scratch 6++L.controlledSubShiftFull c scratch 10++
-  L.controlledSubShiftFull c scratch 32
-
-def controlledBranchA (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire) : Program :=
-  L.core.square128 L.core.low++
-    (L.controlledSubSource c scratch (L.core.product.take 256)++
-      L.controlledAddRotate128 c scratch false)++L.core.square128Clear L.core.low
-
-def controlledBranchB (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire) : Program :=
-  L.core.square128 L.core.high++
-    (L.controlledAddRotate128 c scratch false++L.controlledTimesC c scratch)++
-    L.core.square128Clear L.core.high
-
-def controlledBranchC (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire) : Program :=
-  (L.core.prepareSum++L.core.square129)++L.controlledSubRotate128 c scratch true++
-    (L.core.square129Clear++L.core.clearSum)
-
-/-- Compute and uncompute each square unconditionally.  Normalize each source
-unconditionally too; only its canonical modular output update is controlled. -/
-def controlledProgram (L : CuccaroStreamedSquareWideLayout) (c scratch : Wire) : Program :=
-  L.controlledBranchA c scratch++L.controlledBranchB c scratch++L.controlledBranchC c scratch
-
-theorem source_layout_subset (L : CuccaroStreamedSquareWideLayout)
-    (src : List Wire) (hv : L.SourceView src) : (L.source src).wires⊆L.wires := by
-  intro q hq
-  have srcMem (hq : q∈src) : q∈L.core.product ∨ q∈L.foldPad := by
-    by_contra h
-    simp only [not_or] at h
-    have hs := hv.count_le q
-    have hc := List.count_pos_iff.mpr hq
-    rw [List.count_eq_zero.mpr h.1,List.count_eq_zero.mpr h.2] at hs
-    omega
-  simp only [source,CuccaroNormalizedModLayout.wires,List.mem_append,
-    List.mem_cons,List.not_mem_nil,or_false] at hq
-  simp only [wires,CuccaroStreamedSquareLayout.wires,List.mem_append,
-    List.mem_cons,List.not_mem_nil,or_false]
-  have hs : q∈src → q∈L.core.product ∨ q∈L.core.pad ∨ q∈L.overflowPad := by
-    intro h
-    simpa only [foldPad,List.mem_append,or_assoc] using srcMem h
-  tauto
-
 variable (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths) (hn : L.wires.Nodup)
     (c scratch : Wire) (hc : c∉L.wires) (ht : scratch∉L.wires) (hct : c≠scratch)
 include hw hn hc ht hct
-
-theorem controlledSource_exact (src : List Wire) (hv : L.SourceView src) :
-    ExactControl c scratch (L.addSource src) (L.controlledAddSource c scratch src) ∧
-    ExactControl c scratch (L.subSource src) (L.controlledSubSource c scratch src) := by
-  have embed := L.source_layout_subset src hv
-  exact controlledNormalizedMod_exact c scratch (L.source src) 256
-    SquareReduction.c SquareReduction.p (L.source_widths hw src hv.length)
-    (L.source_nodup hn src hv) (fun h => hc (embed h)) (fun h => ht (embed h)) hct
-
-theorem controlledCMinusOne_exact (src : List Wire)
-    (hsrc : ∀q,src.count q≤L.core.product.count q)
-    (hs2 : 2≤src.length) (hs : src.length+32≤256) :
-    ExactControl c scratch (L.addCMinusOne src) (L.controlledAddCMinusOne c scratch src) ∧
-    ExactControl c scratch (L.subCMinusOne src) (L.controlledSubCMinusOne c scratch src) := by
-  have s4 := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.shifted_view hw src hsrc 4 hs2 (by omega))
-  have s6 := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.shifted_view hw src hsrc 6 hs2 (by omega))
-  have s10 := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.shifted_view hw src hsrc 10 hs2 (by omega))
-  have s32 := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.shifted_view hw src hsrc 32 hs2 hs)
-  exact ⟨((s4.1.append s6.2).append s10.1).append s32.1,
-    ((s4.2.append s6.1).append s10.2).append s32.2⟩
-
-theorem controlledRotate128_exact (overhang : Bool) :
-    ExactControl c scratch (L.addRotate128 overhang) (L.controlledAddRotate128 c scratch overhang) ∧
-    ExactControl c scratch (L.subRotate128 overhang) (L.controlledSubRotate128 c scratch overhang) := by
-  have rot := L.controlledSource_exact hw hn c scratch hc ht hct _ (L.rotated128_view hw)
-  have terms := L.controlledCMinusOne_exact hw hn c scratch hc ht hct
-    (L.core.product.drop 128) (L.productDrop_count 128)
-    (by simp [hw.core.product]) (by simp [hw.core.product])
-  have tail := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.shiftedProductDrop_view hw 256 128 (by simp [hw.core.product])
-      (by simp [hw.core.product]))
-  cases overhang
-  · exact ⟨(rot.1.append terms.1).append (ExactControl.nil c scratch),
-      (rot.2.append terms.2).append (ExactControl.nil c scratch)⟩
-  · exact ⟨(rot.1.append terms.1).append tail.1,
-      (rot.2.append terms.2).append tail.2⟩
-
-theorem controlledShiftFull_exact (j : Nat) (hj2 : 2≤j) (hj : j≤224) :
-    ExactControl c scratch (L.addShiftFull (L.core.product.take 256) j)
-      (L.controlledAddShiftFull c scratch j) ∧
-    ExactControl c scratch (L.subShiftFull (L.core.product.take 256) j)
-      (L.controlledSubShiftFull c scratch j) := by
-  have rot := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.rotateFull_view hw j (by omega))
-  have len : ((L.core.product.take 256).drop (256-j)).length=j := by
-    simp [hw.core.product]
-    omega
-  have terms := L.controlledCMinusOne_exact hw hn c scratch hc ht hct
-    ((L.core.product.take 256).drop (256-j)) (L.productTakeDrop_count (256-j))
-    (by rw [len]; exact hj2) (by rw [len]; omega)
-  have jnz : j≠0 := by omega
-  simpa only [addShiftFull,subShiftFull,controlledAddShiftFull,controlledSubShiftFull,
-    jnz,if_false] using And.intro (rot.1.append terms.1) (rot.2.append terms.2)
-
-theorem controlledTimesC_exact :
-    ExactControl c scratch (L.subTimesC (L.core.product.take 256))
-      (L.controlledTimesC c scratch) := by
-  have base := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.productTake256_view hw)
-  have s4 := L.controlledShiftFull_exact hw hn c scratch hc ht hct 4 (by omega) (by omega)
-  have s6 := L.controlledShiftFull_exact hw hn c scratch hc ht hct 6 (by omega) (by omega)
-  have s10 := L.controlledShiftFull_exact hw hn c scratch hc ht hct 10 (by omega) (by omega)
-  have s32 := L.controlledShiftFull_exact hw hn c scratch hc ht hct 32 (by omega) (by omega)
-  simpa only [subTimesC,controlledTimesC,subShiftFull,controlledSubShiftFull,if_true] using
-    (((base.2.append s4.2).append s6.1).append s10.2).append s32.2
-
-private theorem certified_away (p : Program) (hp : L.Certified p) :
-    c∉ECDSAAdd.wires p ∧ scratch∉ECDSAAdd.wires p := by
-  exact ⟨fun h => hc (List.mem_toFinset.mp (hp.2 h)),
-    fun h => ht (List.mem_toFinset.mp (hp.2 h))⟩
-
-theorem controlledBranchA_exact :
-    ExactControl c scratch L.branchA (L.controlledBranchA c scratch) := by
-  have prod := L.square128_certified hw hn L.core.low (L.core.low_length hw.core)
-    (by intro q; exact (List.take_sublist 128 L.core.y).count_le q)
-  have away := L.certified_away hw hn c scratch hc ht hct _ prod.1
-  have sub := L.controlledSource_exact hw hn c scratch hc ht hct _
-    (L.productTake256_view hw)
-  have rot := L.controlledRotate128_exact hw hn c scratch hc ht hct false
-  have inner := sub.2.append rot.1
-  have result := ExactControl.sandwich prod.1.1 away.1 away.2 inner
-  have clearEq : L.core.square128Clear L.core.low=
-      (L.core.square128 L.core.low).reverse := rfl
-  simpa only [branchA,controlledBranchA,clearEq,List.append_assoc] using result
-
-theorem controlledBranchB_exact :
-    ExactControl c scratch L.branchB (L.controlledBranchB c scratch) := by
-  have prod := L.square128_certified hw hn L.core.high (L.core.high_length hw.core)
-    (by
-      intro q
-      exact ((List.take_sublist 128 (L.core.y.drop 128)).count_le q).trans
-        ((List.drop_sublist 128 L.core.y).count_le q))
-  have away := L.certified_away hw hn c scratch hc ht hct _ prod.1
-  have rot := L.controlledRotate128_exact hw hn c scratch hc ht hct false
-  have times := L.controlledTimesC_exact hw hn c scratch hc ht hct
-  have result := ExactControl.sandwich prod.1.1 away.1 away.2 (rot.1.append times)
-  have clearEq : L.core.square128Clear L.core.high=
-      (L.core.square128 L.core.high).reverse := rfl
-  simpa only [branchB,controlledBranchB,clearEq,List.append_assoc] using result
-
-theorem controlledBranchC_exact :
-    ExactControl c scratch L.branchC (L.controlledBranchC c scratch) := by
-  have prep := L.sum_certified hw hn
-  have sq := L.square129_certified hw hn
-  have producer := prep.1.append sq.1
-  have away := L.certified_away hw hn c scratch hc ht hct _ producer
-  have rot := L.controlledRotate128_exact hw hn c scratch hc ht hct true
-  have result := ExactControl.sandwich producer.1 away.1 away.2 rot.2
-  have clearEq : L.core.square129Clear=(L.core.square129).reverse := rfl
-  simpa only [branchC,controlledBranchC,clearEq,CuccaroStreamedSquareLayout.clearSum,
-    List.reverse_append,List.append_assoc] using result
-
-/-- Whole-state equality with the previous all-gates-controlled square, using
-the same reusable scratch wire and no additional qubit sites. -/
-theorem controlledProgram_exact :
-    ExactControl c scratch L.program (L.controlledProgram c scratch) := by
-  have a := L.controlledBranchA_exact hw hn c scratch hc ht hct
-  have b := L.controlledBranchB_exact hw hn c scratch hc ht hct
-  have z := L.controlledBranchC_exact hw hn c scratch hc ht hct
-  exact (a.append b).append z
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
@@ -2046,88 +321,6 @@ namespace ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 variable (L : CuccaroStreamedSquareWideLayout) (hw : L.Widths) (c scratch : Wire)
 include hw
 
-theorem controlledSource_counts (src : List Wire) (hs : src.length=256) :
-    (toffoliCount (L.controlledAddSource c scratch src)=15857 ∧
-      measurementCount (L.controlledAddSource c scratch src)=0) ∧
-    (toffoliCount (L.controlledSubSource c scratch src)=17909 ∧
-      measurementCount (L.controlledSubSource c scratch src)=0) :=
-  controlledNormalizedMod_secp256k1_counts c scratch (L.source src)
-    (L.source_widths hw src hs)
-
-theorem controlledCMinusOne_counts (src : List Wire)
-    (hs2 : 2≤src.length) (hs : src.length+32≤256) :
-    (toffoliCount (L.controlledAddCMinusOne c scratch src)=65480 ∧
-      measurementCount (L.controlledAddCMinusOne c scratch src)=0) ∧
-    (toffoliCount (L.controlledSubCMinusOne c scratch src)=69584 ∧
-      measurementCount (L.controlledSubCMinusOne c scratch src)=0) := by
-  have s4 := L.controlledSource_counts hw c scratch _
-    (L.shifted_length hw src 4 hs2 (by omega))
-  have s6 := L.controlledSource_counts hw c scratch _
-    (L.shifted_length hw src 6 hs2 (by omega))
-  have s10 := L.controlledSource_counts hw c scratch _
-    (L.shifted_length hw src 10 hs2 (by omega))
-  have s32 := L.controlledSource_counts hw c scratch _ (L.shifted_length hw src 32 hs2 hs)
-  simp [controlledAddCMinusOne,controlledSubCMinusOne,toffoliCount_append,
-    measurementCount_append,s4,s6,s10,s32]
-
-theorem controlledRotate128_counts :
-    (toffoliCount (L.controlledAddRotate128 c scratch false)=81337 ∧
-      measurementCount (L.controlledAddRotate128 c scratch false)=0) ∧
-    (toffoliCount (L.controlledSubRotate128 c scratch false)=87493 ∧
-      measurementCount (L.controlledSubRotate128 c scratch false)=0) ∧
-    (toffoliCount (L.controlledSubRotate128 c scratch true)=105402 ∧
-      measurementCount (L.controlledSubRotate128 c scratch true)=0) := by
-  have rot := L.controlledSource_counts hw c scratch _ (L.rotated128_view hw).length
-  have terms := L.controlledCMinusOne_counts hw c scratch (L.core.product.drop 128)
-    (by simp [hw.core.product]) (by simp [hw.core.product])
-  have tail := L.controlledSource_counts hw c scratch _
-    (L.shifted_length hw (L.core.product.drop 256) 128 (by simp [hw.core.product])
-      (by simp [hw.core.product]))
-  simp [controlledAddRotate128,controlledSubRotate128,toffoliCount_append,
-    measurementCount_append,rot,terms,tail,toffoliCount,measurementCount]
-
-theorem controlledShiftFull_counts (j : Nat) (hj2 : 2≤j) (hj : j≤224) :
-    (toffoliCount (L.controlledAddShiftFull c scratch j)=81337 ∧
-      measurementCount (L.controlledAddShiftFull c scratch j)=0) ∧
-    (toffoliCount (L.controlledSubShiftFull c scratch j)=87493 ∧
-      measurementCount (L.controlledSubShiftFull c scratch j)=0) := by
-  have rot := L.controlledSource_counts hw c scratch _ (L.rotateFull_view hw j (by omega)).length
-  have len : ((L.core.product.take 256).drop (256-j)).length=j := by
-    simp [hw.core.product]
-    omega
-  have terms := L.controlledCMinusOne_counts hw c scratch
-    ((L.core.product.take 256).drop (256-j))
-    (by rw [len]; exact hj2) (by rw [len]; omega)
-  have jnz : j≠0 := by omega
-  simp [controlledAddShiftFull,controlledSubShiftFull,jnz,toffoliCount_append,
-    measurementCount_append,rot,terms]
-
-theorem controlledTimesC_counts :
-    toffoliCount (L.controlledTimesC c scratch)=361725 ∧
-    measurementCount (L.controlledTimesC c scratch)=0 := by
-  have base := L.controlledSource_counts hw c scratch _ (L.productTake256_view hw).length
-  have s4 := L.controlledShiftFull_counts hw c scratch 4 (by omega) (by omega)
-  have s6 := L.controlledShiftFull_counts hw c scratch 6 (by omega) (by omega)
-  have s10 := L.controlledShiftFull_counts hw c scratch 10 (by omega) (by omega)
-  have s32 := L.controlledShiftFull_counts hw c scratch 32 (by omega) (by omega)
-  have zeroEq : L.controlledSubShiftFull c scratch 0=
-      L.controlledSubSource c scratch (L.core.product.take 256) := rfl
-  simp [controlledTimesC,zeroEq,toffoliCount_append,
-    measurementCount_append,base,s4,s6,s10,s32]
-
-theorem controlledProgram_counts :
-    toffoliCount (L.controlledProgram c scratch)=749338 ∧
-      measurementCount (L.controlledProgram c scratch)=0 := by
-  have lo := L.core.square128_counts hw.core L.core.low (L.core.low_length hw.core)
-  have hi := L.core.square128_counts hw.core L.core.high (L.core.high_length hw.core)
-  have sq := L.core.square129_counts hw.core
-  have prep := L.core.sum_counts hw.core
-  have base := L.controlledSource_counts hw c scratch _ (L.productTake256_view hw).length
-  have rot := L.controlledRotate128_counts hw c scratch
-  have times := L.controlledTimesC_counts hw c scratch
-  simp [controlledProgram,controlledBranchA,controlledBranchB,controlledBranchC,
-    toffoliCount_append,measurementCount_append,lo,hi,sq,prep,base,rot,times]
-
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
 
@@ -2141,9 +334,6 @@ set_option linter.unusedVariables false
 
 namespace ECDSAAdd.Arithmetic
 open ControlledPointLayout Secp256k1
-
-def pointStreamedSquare (L : ControlledPointLayout) : Program :=
-  L.dialogStreamedSquareWide.controlledProgram L.core.generic (L.core.poolWire 775)
 
 theorem ControlledPointLayout.streamedSquare_wires_eq (L : ControlledPointLayout)
     (hw : L.Widths) :
@@ -2176,162 +366,6 @@ theorem ControlledPointLayout.streamedSquare_control_nodup
   simp only [dialogUsedWires,PointAddLayout.pointWires,inPlaceFlags,List.count_cons,
     List.count_append,List.count_nil] at h he ⊢
   omega
-
-theorem pointStreamedSquare_exact_control (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) :
-    ExactControl L.core.generic (L.core.poolWire 775) L.dialogStreamedSquareWide.program
-      (pointStreamedSquare L) := by
-  have nd := L.streamedSquare_control_nodup hw hn
-  have n0 := List.nodup_cons.mp nd
-  have n1 := List.nodup_cons.mp n0.2
-  exact L.dialogStreamedSquareWide.controlledProgram_exact
-    (L.dialogStreamedSquareWide_widths hw) (L.dialogStreamedSquareWide_nodup hw hn)
-    L.core.generic (L.core.poolWire 775)
-    (fun h => n0.1 (List.mem_cons_of_mem _ h)) n1.1
-    (fun h => n0.1 (by simp [h]))
-
-theorem pointStreamedSquare_correct (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) (X Y : Nat) (B : Bool) (hX : X<p)
-    (s : State) (m : List Bool) (hb : s.basis L.core.generic=B)
-    (hx : regValue L.point.x s.basis=X) (hy : regValue L.point.y s.basis=Y)
-    (hc : regValue L.dialogPool s.basis=0) :
-    (run (pointStreamedSquare L) m s).phase=s.phase ∧
-    regValue L.point.x (run (pointStreamedSquare L) m s).basis=
-      (X+p-(if B then Y*Y else 0)%p)%p ∧
-    ∀q,q∉L.point.x → (run (pointStreamedSquare L) m s).basis q=s.basis q := by
-  let K := L.dialogStreamedSquareWide
-  have hwK := L.dialogStreamedSquareWide_widths hw
-  have ndK := L.dialogStreamedSquareWide_nodup hw hn
-  have support := K.program_certified hwK ndK
-  have nd := L.streamedSquare_control_nodup hw hn
-  have n0 := List.nodup_cons.mp nd
-  have n1 := List.nodup_cons.mp n0.2
-  have controlAway : L.core.generic∉wires K.program := by
-    intro h
-    exact n0.1 (List.mem_cons_of_mem _ (List.mem_toFinset.mp (support.2 h)))
-  have scratchAway : L.core.poolWire 775∉wires K.program := by
-    intro h
-    exact n1.1 (List.mem_toFinset.mp (support.2 h))
-  have scratchIn : L.core.poolWire 775∈L.dialogPool := by
-    have h : L.core.poolWire 775∈L.dialogPool.take 775++[L.core.poolWire 775] := by simp
-    rw [L.dialogBit_prefix hw 775 (by omega)] at h
-    exact List.mem_of_mem_take h
-  have scratchZero : s.basis (L.core.poolWire 775)=false :=
-    (regValue_zero _ _).mp hc _ scratchIn
-  have auxZero (q : Wire)
-      (hq : q∈K.core.product++K.core.pad++K.core.work++
-        [K.core.productHigh,K.core.outHigh,K.core.workHigh,K.core.cin,
-          K.core.normFlag,K.core.modFlag,K.core.sumCarry]++K.overflowPad) :
-      s.basis q=false := by
-    change q∈L.dialogStreamedSquareWide.core.product++
-      L.dialogStreamedSquareWide.core.pad++L.dialogStreamedSquareWide.core.work++
-      [L.dialogStreamedSquareWide.core.productHigh,L.dialogStreamedSquareWide.core.outHigh,
-        L.dialogStreamedSquareWide.core.workHigh,L.dialogStreamedSquareWide.core.cin,
-        L.dialogStreamedSquareWide.core.normFlag,L.dialogStreamedSquareWide.core.modFlag,
-        L.dialogStreamedSquareWide.core.sumCarry]++L.dialogStreamedSquareWide.overflowPad at hq
-    rw [L.dialogStreamedSquareWide_pool hw] at hq
-    exact (regValue_zero _ _).mp hc q (List.mem_of_mem_take hq)
-  have prod0 : regValue K.core.product s.basis=0 := by
-    apply (regValue_zero _ _).mpr
-    intro q hq
-    exact auxZero q (by simp [hq])
-  have clean : K.PairClean s.basis := by
-    constructor
-    · apply (regValue_zero _ _).mpr
-      intro q hq
-      simp only [CuccaroStreamedSquareWideLayout.foldPad,List.mem_append] at hq
-      exact auxZero q (by simp; tauto)
-    · apply (regValue_zero _ _).mpr
-      intro q hq
-      exact auxZero q (by simp [hq])
-    all_goals exact auxZero _ (by simp)
-  have sum0 : s.basis K.core.sumCarry=false := auxZero _ (by simp)
-  have hp : SquareReduction.p=p := by
-    norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c,p]
-  have kernel := K.program_square_correct hwK ndK Y X (by simpa only [hp] using hX)
-    s m hy hx prod0 sum0 clean
-  have guard := (pointStreamedSquare_exact_control L hw hn).execute s m scratchZero
-  change run (pointStreamedSquare L) m s=_ at guard
-  rw [guard,hb]
-  cases B
-  · simp [hx,Nat.mod_eq_of_lt hX]
-  · simpa only [if_true,hp,pow_two] using kernel
-
-def pointStreamedSquareCost (_L : ControlledPointLayout) : Nat := 749338
-
-theorem pointStreamedSquare_counts (L : ControlledPointLayout) (hw : L.Widths) :
-    toffoliCount (pointStreamedSquare L)=pointStreamedSquareCost L ∧
-    measurementCount (pointStreamedSquare L)=0 :=
-  L.dialogStreamedSquareWide.controlledProgram_counts
-    (L.dialogStreamedSquareWide_widths hw) L.core.generic (L.core.poolWire 775)
-
-theorem pointStreamedSquare_support (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) :
-    wires (pointStreamedSquare L)⊆
-      (L.core.generic::L.point.y++L.point.x++L.dialogPool.take 776).toFinset := by
-  have supp := (L.dialogStreamedSquareWide.program_certified
-    (L.dialogStreamedSquareWide_widths hw) (L.dialogStreamedSquareWide_nodup hw hn)).2
-  have embed : L.dialogStreamedSquareWide.wires.toFinset⊆
-      (L.point.y++L.point.x++L.dialogPool.take 776).toFinset := by
-    rw [L.streamedSquare_wires_eq hw]
-    intro q hq
-    simp only [List.mem_toFinset,List.mem_append] at hq ⊢
-    have small : L.dialogPool.take 775⊆L.dialogPool.take 776 := by
-      intro v hv
-      have e : (L.dialogPool.take 776).take 775=L.dialogPool.take 775 := by
-        rw [List.take_take,Nat.min_eq_left (by omega)]
-      rw [←e] at hv
-      exact List.mem_of_mem_take hv
-    tauto
-  have scratch : L.core.poolWire 775∈L.dialogPool.take 776 := by
-    have h : L.core.poolWire 775∈L.dialogPool.take 775++[L.core.poolWire 775] := by simp
-    simpa only [L.dialogBit_prefix hw 775 (by omega)] using h
-  intro q hq
-  have h := (pointStreamedSquare_exact_control L hw hn).support hq
-  simp only [Finset.mem_union,Finset.mem_insert,Finset.mem_singleton] at h
-  rcases h with (rfl|rfl)|h
-  · simp
-  · simp [scratch]
-  · have h' := embed (supp h)
-    simp only [List.mem_toFinset,List.mem_cons,List.mem_append] at h' ⊢
-    tauto
-
-def ControlledPointLayout.streamedSquareStageSites (L : ControlledPointLayout) : List Wire :=
-  PointAddLayout.pointWires L.point++[L.control]++L.inPlaceFlags++L.dialogPool.take 776
-
-theorem pointStreamedSquare_stage_support (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) :
-    wires (pointStreamedSquare L)⊆L.streamedSquareStageSites.toFinset := by
-  intro q hq
-  have h := pointStreamedSquare_support L hw hn hq
-  simp only [List.mem_toFinset,List.mem_cons,List.mem_append,List.not_mem_nil,or_false] at h
-  simp only [List.mem_toFinset,streamedSquareStageSites,PointAddLayout.pointWires,
-    inPlaceFlags,List.mem_cons,List.mem_append,List.not_mem_nil,or_false]
-  tauto
-
-theorem pointStreamedSquare_stage_sites (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) :
-    L.streamedSquareStageSites.Nodup ∧ L.streamedSquareStageSites.length=1297 ∧
-      qubitCount (pointStreamedSquare L)≤1297 := by
-  have nd : L.streamedSquareStageSites.Nodup := by
-    apply List.nodup_iff_count.mpr
-    intro q
-    have h := List.nodup_iff_count.mp (L.dialogUsed_nodup hn) q
-    have ht := (List.take_sublist 776 L.dialogPool).count_le q
-    simp only [streamedSquareStageSites,dialogUsedWires,List.count_append] at h ⊢
-    omega
-  have len : L.streamedSquareStageSites.length=1297 := by
-    simp only [streamedSquareStageSites,PointAddLayout.pointWires,inPlaceFlags,
-      List.length_cons,List.length_append,List.length_nil,List.length_take,
-      show L.point.x.length=256 from hw.inputX,
-      show L.point.y.length=256 from hw.inputY,L.dialogPool_length hw]
-    norm_num
-  refine ⟨nd,len,?_⟩
-  rw [qubitCount]
-  calc
-    _ ≤ L.streamedSquareStageSites.toFinset.card :=
-      Finset.card_le_card (pointStreamedSquare_stage_support L hw hn)
-    _ = 1297 := by rw [List.toFinset_card_of_nodup nd,len]
 
 end ECDSAAdd.Arithmetic
 end
@@ -2649,85 +683,6 @@ theorem pointMeasuredSquareCandidate_support (L : ControlledPointLayout) (hw : L
     tauto
   exact support.trans embed
 
-/-- The resident point/control/classification registers and all workspace
-fit in 1,297 distinct allocated sites, giving a safe peak-live ceiling. -/
-theorem pointMeasuredSquareCandidate_stage_support (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) :
-    wires (pointMeasuredSquareCandidate L)⊆L.streamedSquareStageSites.toFinset := by
-  intro q hq
-  have h := pointMeasuredSquareCandidate_support L hw hn hq
-  simp only [List.mem_toFinset,List.mem_cons,List.mem_append] at h
-  simp only [ControlledPointLayout.streamedSquareStageSites,PointAddLayout.pointWires,
-    ControlledPointLayout.inPlaceFlags,List.mem_toFinset,List.mem_append,List.mem_cons,
-    List.not_mem_nil,or_false]
-  tauto
-
-theorem pointMeasuredSquareCandidate_stage_sites (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) :
-    L.streamedSquareStageSites.Nodup ∧ L.streamedSquareStageSites.length=1297 ∧
-      qubitCount (pointMeasuredSquareCandidate L)≤1297 := by
-  have sites := pointStreamedSquare_stage_sites L hw hn
-  refine ⟨sites.1,sites.2.1,?_⟩
-  rw [qubitCount]
-  calc
-    _ ≤ L.streamedSquareStageSites.toFinset.card :=
-      Finset.card_le_card (pointMeasuredSquareCandidate_stage_support L hw hn)
-    _ = 1297 := by rw [List.toFinset_card_of_nodup sites.1,sites.2.1]
-
-theorem pointMeasuredSquareCandidate_correct (L : ControlledPointLayout) (hw : L.Widths)
-    (hn : L.wires.Nodup) (X Y : Nat) (B : Bool) (hX : X<p)
-    (s : State) (m : List Bool) (hb : s.basis L.core.generic=B)
-    (hx : regValue L.point.x s.basis=X) (hy : regValue L.point.y s.basis=Y)
-    (hc : regValue L.dialogPool s.basis=0) :
-    (run (pointMeasuredSquareCandidate L) m s).phase=s.phase ∧
-    regValue L.point.x (run (pointMeasuredSquareCandidate L) m s).basis=
-      (X+p-(if B then Y*Y else 0)%p)%p ∧
-    ∀q,q∉L.point.x → (run (pointMeasuredSquareCandidate L) m s).basis q=s.basis q := by
-  let K := L.dialogStreamedSquareWide
-  have hwK := L.dialogStreamedSquareWide_widths hw
-  have ndK := L.dialogStreamedSquareWide_nodup hw hn
-  have controlND : (L.core.generic::K.wires).Nodup := by
-    change (L.core.generic::L.dialogStreamedSquareWide.wires).Nodup
-    have nd := L.streamedSquare_control_nodup hw hn
-    apply List.nodup_iff_count.mpr
-    intro q
-    have h := List.nodup_iff_count.mp nd q
-    simp only [List.count_cons] at h ⊢
-    omega
-  have auxZero (q : Wire)
-      (hq : q∈K.core.product++K.core.pad++K.core.work++
-        [K.core.productHigh,K.core.outHigh,K.core.workHigh,K.core.cin,
-          K.core.normFlag,K.core.modFlag,K.core.sumCarry]++K.overflowPad) :
-      s.basis q=false := by
-    change q∈L.dialogStreamedSquareWide.core.product++
-      L.dialogStreamedSquareWide.core.pad++L.dialogStreamedSquareWide.core.work++
-      [L.dialogStreamedSquareWide.core.productHigh,L.dialogStreamedSquareWide.core.outHigh,
-        L.dialogStreamedSquareWide.core.workHigh,L.dialogStreamedSquareWide.core.cin,
-        L.dialogStreamedSquareWide.core.normFlag,L.dialogStreamedSquareWide.core.modFlag,
-        L.dialogStreamedSquareWide.core.sumCarry]++L.dialogStreamedSquareWide.overflowPad at hq
-    rw [L.dialogStreamedSquareWide_pool hw] at hq
-    exact (regValue_zero _ _).mp hc q (List.mem_of_mem_take hq)
-  have prod0 : regValue K.core.product s.basis=0 := by
-    apply (regValue_zero _ _).mpr
-    intro q hq
-    exact auxZero q (by simp [hq])
-  have clean : K.PairClean s.basis := by
-    constructor
-    · apply (regValue_zero _ _).mpr
-      intro q hq
-      simp only [CuccaroStreamedSquareWideLayout.foldPad,List.mem_append] at hq
-      exact auxZero q (by simp; tauto)
-    · apply (regValue_zero _ _).mpr
-      intro q hq
-      exact auxZero q (by simp [hq])
-    all_goals exact auxZero _ (by simp)
-  have sum0 : s.basis K.core.sumCarry=false := auxZero _ (by simp)
-  have hp : SquareReduction.p=p := by
-    norm_num [SquareReduction.p,SquareReduction.B,SquareReduction.c,p]
-  have kernel := K.measuredProgram_correct hwK L.core.generic controlND Y X
-    (by simpa only [hp] using hX) s m hy hx prod0 sum0 clean
-  simpa only [pointMeasuredSquareCandidate,hb,hp,pow_two] using kernel
-
 end ECDSAAdd.Arithmetic
 end
 
@@ -2986,9 +941,6 @@ theorem measured_support (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wir
         ⟨indexPermutation i,by simp [List.mem_range'_1]; omega,rfl⟩))
     · exact List.mem_append_left _ (List.mem_append_right _ (List.mem_map.mpr
         ⟨indexPermutation i,by simp [List.mem_range'_1]; omega,rfl⟩))
-
-theorem sharedPool_length (L : ControlledPointLayout) : (sharedPool L).length=1378 := by
-  simp only [sharedPool,List.length_append,wireBlock_length]
 
 /-- Computable finite lookup, with length as the not-found sentinel. -/
 def searchIndex (q : Wire) : List Wire → Nat
@@ -3671,9 +1623,6 @@ theorem pi_outside (j q : Nat) (hj : j < 170) (hq : ¬zeroRegion q) : pi j q=q :
   have ns : q ≠ H 169 := by intro e; subst q; apply hq; right; unfold holeRegion H; omega
   rw [pi_apply,swap_outside _ _ _ nw nh,swap_outside _ _ _ nh ns,pi0_outside q hq]
 
-theorem pi0_injective : Function.Injective pi0 := pi0.injective
-theorem pi_injective (j : Nat) : Function.Injective (pi j) := (pi j).injective
-
 theorem pi_selected_not_omitted (j : Nat) (hj : j < 170) : ¬omitted (pi j (W j)) := by
   rw [pi_selected j hj]
   unfold omitted spare
@@ -3696,86 +1645,6 @@ set_option maxHeartbeats 1000000
 namespace ECDSAAdd.Arithmetic
 attribute [local irreducible] run compressedEncodePrefix compressedHistoryEncode
 
-/-- Every group actually packed in a prefix has a proved-zero fourth site.
-The proof uses codec legality and instruction disjointness, never sampled bits. -/
-theorem compressedPrefix_zero_slots (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (s : State) (legal : ∀ j, j+3 ≤ 512 →
-      (s.basis (compressedHistoryMap w j 0) && s.basis (compressedHistoryMap w j 1))=false ∧
-      (s.basis (compressedHistoryMap w j 2) && s.basis (compressedHistoryMap w j 3))=false ∧
-      (s.basis (compressedHistoryMap w j 4) && s.basis (compressedHistoryMap w j 5))=false)
-    (n : Nat) (hn512 : n ≤ 512) (m : List Bool)
-    (start : Nat) (hmod : start%3=0) (hbound : start+4 ≤ n) :
-    (run (compressedEncodePrefix w n) m s).basis (w (1028+start+1))=false := by
-  induction n generalizing m start with
-  | zero => omega
-  | succ n ih =>
-    have hi : n < 512 := by omega
-    cases due : compressedPackDue n
-    · have before : start+4 ≤ n := by
-        by_contra h
-        have e : n=start+3 := by omega
-        have yes : compressedPackDue n=true := by
-          simp [compressedPackDue,e,hmod]
-        rw [yes] at due
-        contradiction
-      have old := ih (by omega) (m.take (measurementCount (compressedEncodePrefix w n)))
-        start hmod before
-      simp only [compressedEncodePrefix,run_append,compressedPackAfter,due,
-        Bool.false_eq_true,if_false]
-      simpa only [run] using old
-    · have ndue := compressedPackDue_true n due
-      let before := run (compressedEncodePrefix w n)
-        (m.take (measurementCount (compressedEncodePrefix w n))) s
-      rw [compressedEncodePrefix,run_append]
-      simp only [compressedPackAfter,due,if_true]
-      change (run (compressedHistoryEncode w (n-3))
-        (m.drop (measurementCount (compressedEncodePrefix w n))) before).basis _=false
-      by_cases same : start=n-3
-      · have reads (j : Fin 6) : before.basis (compressedHistoryMap w (n-3) j)=
-            s.basis (compressedHistoryMap w (n-3) j) :=
-          compressedPrefix_raw_next w hn hlo n hi due s _ j
-        have domain := legal (n-3) (by omega)
-        have actualLegal :
-            (before.basis (compressedHistoryMap w (n-3) 0) && before.basis (compressedHistoryMap w (n-3) 1))=false ∧
-            (before.basis (compressedHistoryMap w (n-3) 2) && before.basis (compressedHistoryMap w (n-3) 3))=false ∧
-            (before.basis (compressedHistoryMap w (n-3) 4) && before.basis (compressedHistoryMap w (n-3) 5))=false := by
-          rw [reads 0,reads 1,reads 2,reads 3,reads 4,reads 5]
-          exact domain
-        have codec := TranscriptCodec3.placement_correct (compressedHistoryMap w (n-3))
-          (compressedHistoryMap_injective w hn (n-3) (by omega))
-          (compressedHistoryMap_above w (n-3) (by omega) hlo) before
-          (m.drop (measurementCount (compressedEncodePrefix w n))) actualLegal
-        simpa only [same,compressedHistoryEncode,compressedHistoryMap,compressedHistoryId,
-          Nat.reduceMod,Nat.reduceDiv,Nat.reduceEqDiff,if_false] using codec.2.1
-      · have sep : start+3 ≤ n-3 := by omega
-        have old := ih (by omega) (m.take (measurementCount (compressedEncodePrefix w n)))
-          start hmod (by omega)
-        have disjoint := compressedHistory_windows_disjoint w hn hlo start (n-3)
-          (by omega) (by omega) sep
-        have site : w (1028+start+1)∈wires (compressedHistoryEncode w start) := by
-          simpa only [compressedHistoryMap,compressedHistoryId,Nat.reduceMod,Nat.reduceDiv,
-            Nat.reduceEqDiff,if_false] using compressedHistory_site_mem w hn hlo start (by omega) 3
-        have keep := run_preserves_outside (compressedHistoryEncode w (n-3))
-          (m.drop (measurementCount (compressedEncodePrefix w n))) before (w (1028+start+1))
-          (fun h => Finset.disjoint_left.mp disjoint site h)
-        exact keep.trans old
-
-/-- The complete compact integer caller supplies legality for all170 groups. -/
-theorem compressedCompactStage_512_zero_slots (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (hp0 : 0 < p) (hpo : p%2=1) (s : State)
-    (h : CompressedCompactStage w x p 512 s.basis)
-    (j : Nat) (hj : j < 170) : s.basis (w (1029+3*j))=false := by
-  obtain ⟨raw,hraw,bits⟩ := h
-  have legal (start : Nat) (hs : start+3 ≤ 512) :=
-    compressedCompactHistory_legal w hn x p 512 start hp0 hpo hs (by decide) raw.basis hraw
-  have zero := compressedPrefix_zero_slots w hn hlo raw legal 512 (by decide) []
-    (3*j) (by omega) (by omega)
-  rw [bits]
-  have index : 1028+3*j+1=1029+3*j := by omega
-  simpa only [index] using zero
-
 end ECDSAAdd.Arithmetic
 end
 
@@ -3785,113 +1654,6 @@ noncomputable section
 set_option maxRecDepth 8192
 set_option maxHeartbeats 1000000
 namespace ECDSAAdd.Arithmetic.CompressedAllocation
-
-private theorem region_W (q : Nat) (h : workRegion q) :
-    ∃j, j < 170 ∧ q=W j := by
-  refine ⟨q-515,?_,?_⟩
-  · unfold workRegion at h; omega
-  · unfold workRegion at h; unfold W; omega
-
-private theorem region_H (q : Nat) (h : holeRegion q) :
-    ∃j, j < 170 ∧ q=H j := by
-  refine ⟨(q-1029)/3,?_,?_⟩
-  · unfold holeRegion at h; omega
-  · unfold holeRegion at h; unfold H; omega
-
-/-- The accepted compressed integer assertion supplies every hole zero;
-the actual existing caller field-work invariant supplies every work zero.
-There is no additional assumed all-zero allocation-bank oracle. -/
-theorem caller_zero_boundary (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
-    (hlo : CompressedHistoryAbove w) (x p : Nat) (hp0 : 0 < p) (hpo : p%2=1)
-    (s : State) (hstage : CompressedCompactStage w x p 512 s.basis)
-    (hw : regValue (skywalkSharedField w).work s.basis=0) :
-    ∀q,zeroRegion q → (pullState w s).basis q=false := by
-  intro q hq
-  rcases hq with hq|hq
-  · obtain ⟨j,hj,rfl⟩ := region_W q hq
-    exact OffsetCleanupBorrowedCaller.maskBit_zero w s.basis hw (W j)
-      (by unfold W; omega) (by unfold W; omega)
-  · obtain ⟨j,hj,rfl⟩ := region_H q hq
-    have zero := compressedCompactStage_512_zero_slots w hn hlo x p hp0 hpo s hstage j hj
-    change s.basis (w (H j))=false
-    have index : H j=1029+3*j := by unfold H; omega
-    rw [index]
-    exact zero
-
-private theorem perm_preserves_region (e : Equiv.Perm Nat)
-    (fix : ∀q,¬zeroRegion q → e q=q) (q : Nat) (hq : zeroRegion q) : zeroRegion (e q) := by
-  by_contra bad
-  have eq : e q=q := e.injective (fix (e q) bad)
-  exact bad (eq.symm ▸ hq)
-
-/-- Arbitrary phase and all live data are preserved: the entire placement
-permutation acts only on sites supplied zero by the boundary certificate. -/
-theorem pull_zero_permutation (e : Equiv.Perm Nat) (s : State)
-    (fix : ∀q,¬zeroRegion q → e q=q)
-    (hz : ∀q,zeroRegion q → s.basis q=false) : pullState e s=s := by
-  apply State.extensionality
-  · rfl
-  · funext q
-    by_cases hq : zeroRegion q
-    · exact (hz (e q) (perm_preserves_region e fix q hq)).trans (hz q hq).symm
-    · change s.basis (e q)=s.basis q
-      rw [fix q hq]
-
-theorem pi0_boundary (s : State) (hz : ∀q,zeroRegion q → s.basis q=false) :
-    pullState pi0 s=s := pull_zero_permutation pi0 s pi0_outside hz
-
-theorem pi_boundary (j : Nat) (hj : j < 170) (s : State)
-    (hz : ∀q,zeroRegion q → s.basis q=false) : pullState (pi j) s=s :=
-  pull_zero_permutation (pi j) s (pi_outside j · hj ·) hz
-
-private theorem encode_other_zero_role (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
-    (hlo : CompressedHistoryAbove w) (j : Nat) (hj : j < 170) (q : Nat)
-    (hq : zeroRegion q) (hne : q ≠ H j) (s : State) (m : List Bool) :
-    (run (compressedHistoryEncode w (3*j)) m s).basis (w q)=s.basis (w q) := by
-  apply run_preserves_outside
-  intro touch
-  obtain ⟨index,eq⟩ := compressedHistory_gate_mem w hn hlo (3*j) (by omega)
-    _ (Or.inl rfl) (w q) touch
-  have qb : q < 1798 := by unfold zeroRegion workRegion holeRegion at hq; omega
-  have same := skywalkPool_index_inj w hn q (compressedHistoryId (3*j) index)
-    qb (compressedHistoryId_bound _ (by omega) index) eq
-  have ix := index.isLt
-  unfold zeroRegion workRegion holeRegion at hq
-  unfold H at hne
-  unfold compressedHistoryId at same
-  split_ifs at same <;> omega
-
-/-- The measured current encoder re-establishes all zero allocation roles.
-Other packed holes and clean field work are transported by actual support;
-only the current hole zero is supplied anew by the codec correctness proof. -/
-theorem reencode_zero_boundary (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
-    (hlo : CompressedHistoryAbove w) (j : Nat) (hj : j < 170) (s : State) (m : List Bool)
-    (hw : regValue (skywalkSharedField w).work s.basis=0)
-    (other : ∀k, k < 170 → k ≠ j → s.basis (w (H k))=false)
-    (legal : (s.basis (compressedHistoryMap w (3*j) 0) && s.basis (compressedHistoryMap w (3*j) 1))=false ∧
-      (s.basis (compressedHistoryMap w (3*j) 2) && s.basis (compressedHistoryMap w (3*j) 3))=false ∧
-      (s.basis (compressedHistoryMap w (3*j) 4) && s.basis (compressedHistoryMap w (3*j) 5))=false) :
-    ∀q,zeroRegion q →
-      (run (compressedHistoryEncode w (3*j)) m s).basis (w q)=false := by
-  have codec := TranscriptCodec3.placement_correct (compressedHistoryMap w (3*j))
-    (compressedHistoryMap_injective w hn (3*j) (by omega))
-    (compressedHistoryMap_above w (3*j) (by omega) hlo) s m legal
-  intro q hq
-  by_cases current : q=H j
-  · subst q
-    have hz := codec.2.1
-    change (run (compressedHistoryEncode w (3*j)) m s).basis (w (1028+3*j+1))=false at hz
-    have index : H j=1028+3*j+1 := rfl
-    rw [index]
-    exact hz
-  · have keep := encode_other_zero_role w hn hlo j hj q hq current s m
-    rw [keep]
-    rcases hq with hq|hq
-    · obtain ⟨k,hk,rfl⟩ := region_W q hq
-      exact OffsetCleanupBorrowedCaller.maskBit_zero w s.basis hw (W k)
-        (by unfold W; omega) (by unfold W; omega)
-    · obtain ⟨k,hk,rfl⟩ := region_H q hq
-      exact other k hk (by intro same; subst k; exact current rfl)
 
 end ECDSAAdd.Arithmetic.CompressedAllocation
 end
@@ -3957,20 +1719,6 @@ theorem offset_support (L : BalancedCleanupOffset.Layout) (hw : L.Widths) :
     simp [wires,Instr.wires,Finset.subset_iff,member]
   simp only [BalancedCleanupOffset.program,wires_append,wires_reverse,Finset.union_subset_iff]
   exact ⟨⟨⟨⟨⟨⟨sg,vw⟩,c⟩,ch⟩,c⟩,vw⟩,sg⟩
-
-private theorem slim_support_sub (L : BalancedCleanupOffset.Layout) (hw : L.Widths) :
-    wires (BalancedCleanupOffsetSlim.program L)⊆wires (BalancedCleanupOffset.program L) := by
-  have width := BalancedCleanup.widths L.toCircuit.toLayout hw.1
-  have carry : L.carry.length=256 := hw.1.2.2
-  have offset : L.offsetCarry.length=256 := hw.2
-  have subset := BalancedCleanupOffsetSlim.chain_support (BalancedCleanupOffset.offsetBits L)
-    L.y L.r L.offsetCarry L.carry L.one L.cout L.parity
-    (by simp [BalancedCleanupOffset.offsetBits,width.2.1])
-    (by omega) (by omega) (by omega)
-  rw [BalancedCleanupOffset.program_sandwich]
-  simp only [BalancedCleanupOffsetSlim.program,wires_append,wires_reverse]
-  exact Finset.union_subset_union
-    (Finset.union_subset_union (Finset.Subset.refl _) subset) (Finset.Subset.refl _)
 
 private theorem head_member (r : List Wire) (h : 0 < r.length) : r.headD 0∈r := by
   cases r <;> simp_all
@@ -4135,91 +1883,6 @@ def codecGroupBackward {α : Type} (w : Nat → Wire) (cell : α → Program)
   | [a,b] => cell b ++ cell a
   | [a] => cell a
   | [] => []
-
-/-- Counts belong to these emitted packet programs. They do not assert a
-complete compressed arithmetic caller or any reduced physical allocation. -/
-theorem codecGroups_counts {α : Type} {cost : Nat} (w : Nat → Wire) (cell : α → Program)
-    (hc : ∀ a, toffoliCount (cell a)=cost ∧ measurementCount (cell a)=1025)
-    (start : Nat) (ls : List α) :
-    toffoliCount (codecGroupForward w cell start ls)=cost*ls.length+7*(ls.length/3) ∧
-    measurementCount (codecGroupForward w cell start ls)=1025*ls.length+ls.length/3 ∧
-    toffoliCount (codecGroupBackward w cell start ls)=cost*ls.length+7*(ls.length/3) ∧
-    measurementCount (codecGroupBackward w cell start ls)=1025*ls.length+ls.length/3 := by
-  suffices aux : ∀ n start (ls : List α), ls.length=n →
-      toffoliCount (codecGroupForward w cell start ls)=cost*ls.length+7*(ls.length/3) ∧
-      measurementCount (codecGroupForward w cell start ls)=1025*ls.length+ls.length/3 ∧
-      toffoliCount (codecGroupBackward w cell start ls)=cost*ls.length+7*(ls.length/3) ∧
-      measurementCount (codecGroupBackward w cell start ls)=1025*ls.length+ls.length/3 by
-    exact aux ls.length start ls rfl
-  intro n
-  induction n using Nat.strong_induction_on with
-  | h n ih =>
-    intro start ls hlen
-    cases ls with
-    | nil => simp [codecGroupForward,codecGroupBackward,toffoliCount,measurementCount]
-    | cons a rest =>
-      cases rest with
-      | nil =>
-        simp only [codecGroupForward,codecGroupBackward,(hc a).1,(hc a).2,List.length_cons,
-          List.length_nil]
-        norm_num
-      | cons b rest =>
-        cases rest with
-        | nil =>
-          simp only [codecGroupForward,codecGroupBackward,toffoliCount_append,
-            measurementCount_append,(hc a).1,(hc a).2,(hc b).1,(hc b).2,
-            List.length_cons,List.length_nil]
-          norm_num
-          omega
-        | cons c tail =>
-          have ht : tail.length < n := by simp only [List.length_cons] at hlen; omega
-          have next := ih tail.length ht (start+3) tail rfl
-          have codec := compressedHistory_counts w start
-          simp only [codecGroupForward,codecGroupBackward,toffoliCount_append,
-            measurementCount_append,codec.1,codec.2.1,codec.2.2.1,codec.2.2.2,
-            (hc a).1,(hc a).2,(hc b).1,(hc b).2,(hc c).1,(hc c).2,
-            next.1,next.2.1,next.2.2.1,next.2.2.2,List.length_cons]
-          simp only [Nat.mul_succ]
-          and_intros <;> omega
-
-theorem codecGroups_512_counts {α : Type} {cost : Nat} (w : Nat → Wire) (cell : α → Program)
-    (hc : ∀ a, toffoliCount (cell a)=cost ∧ measurementCount (cell a)=1025)
-    (ls : List α) (hl : ls.length=512) :
-    toffoliCount (codecGroupForward w cell 0 ls)=cost*512+1190 ∧
-    measurementCount (codecGroupForward w cell 0 ls)=524970 ∧
-    toffoliCount (codecGroupBackward w cell 0 ls)=cost*512+1190 ∧
-    measurementCount (codecGroupBackward w cell 0 ls)=524970 := by
-  have h := codecGroups_counts w cell hc 0 ls
-  simpa only [hl,Nat.reduceMul,Nat.reduceDiv,Nat.reduceAdd] using h
-
-/-- Actual mixed-control forward field cells wrapped in three-letter codecs.
-Boundary conversions and integer/control wrappers remain separate. -/
-def compressedFieldForwardGroups (w : Nat → Wire) (b sign effS : Wire) : Program :=
-  codecGroupForward w (fun l : MixedTranscriptLetter =>
-    OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign effS l.2.1 l.2.2) 0
-    (mixedTranscriptTape w)
-
-/-- Actual independently measured inverse field cells, not reversed MX gates. -/
-def compressedFieldBackwardGroups (w : Nat → Wire) (b sign effS : Wire) : Program :=
-  codecGroupBackward w (fun l : MixedTranscriptLetter =>
-    OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign effS l.2.1 l.2.2) 0
-    (mixedTranscriptTape w)
-
-theorem compressedFieldGroups_counts (w : Nat → Wire) (b sign effS : Wire)
-    (hsw : (effS::(balancedSharedPorts w sign).r++(balancedSharedPorts w sign).y).Nodup) :
-    toffoliCount (compressedFieldForwardGroups w b sign effS)=656550 ∧
-    measurementCount (compressedFieldForwardGroups w b sign effS)=524970 ∧
-    toffoliCount (compressedFieldBackwardGroups w b sign effS)=657062 ∧
-    measurementCount (compressedFieldBackwardGroups w b sign effS)=524970 := by
-  have fw := codecGroups_512_counts w
-    (fun l : MixedTranscriptLetter => OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign effS l.2.1 l.2.2)
-    (fun l => OffsetBorrowedCanonical.cell_counts w b l.1.1 l.1.2 sign effS l.2.1 l.2.2 hsw)
-    (mixedTranscriptTape w) (mixedTranscriptTape_length w)
-  have rv := codecGroups_512_counts w
-    (fun l : MixedTranscriptLetter => OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign effS l.2.1 l.2.2)
-    (fun l => OffsetBorrowedInverseCanonical.cell_counts w b l.1.1 l.1.2 sign effS l.2.1 l.2.2 hsw)
-    (mixedTranscriptTape w) (mixedTranscriptTape_length w)
-  exact ⟨fw.1,fw.2.1,rv.2.2.1,rv.2.2.2⟩
 
 end ECDSAAdd.Arithmetic
 end
@@ -4412,37 +2075,6 @@ theorem inventory_safe (j q : Nat) (hj : j < 170) (h : q∈groupInventory j) :
     omega
   · exact packet_safe j q hj h
 
-/-- The certificate uses the accepted actual instruction-derived cell
-support, rather than an assumed semantic frame or declared-list oracle. -/
-theorem current_cells_avoid_omitted (j : Nat) (hj : j < 170)
-    (g swap : Nat) (hg : g∈packetSites j) (hs : swap∈packetSites j) (ig is : Bool) :
-    (∀q∈wires (renameProgram (pi j)
-      (OffsetBorrowedCanonical.cell id 2400 g swap 2409 2410 ig is)),¬omitted q) ∧
-    (∀q∈wires (renameProgram (pi j)
-      (OffsetBorrowedInverseCanonical.cell id 2400 g swap 2409 2410 ig is)),¬omitted q) := by
-  have actual := CompressedFieldSupport.cells_active id 2400 g swap 2409 2410 ig is
-    (groupInventory j).toFinset
-    (by intro q hq; simp only [groupInventory,List.mem_toFinset,List.mem_append];
-        exact Or.inl (Or.inl (List.mem_toFinset.mp hq)))
-    (by simp [groupInventory]) (by simp [groupInventory,hg])
-    (by simp [groupInventory,hs]) (by simp [groupInventory])
-  constructor
-  · intro q hq
-    rw [renameProgram_support] at hq
-    obtain ⟨old,hold,rfl⟩ := Finset.mem_image.mp hq
-    exact inventory_safe j old hj (List.mem_toFinset.mp (actual.1 hold))
-  · intro q hq
-    rw [renameProgram_support] at hq
-    obtain ⟨old,hold,rfl⟩ := Finset.mem_image.mp hq
-    exact inventory_safe j old hj (List.mem_toFinset.mp (actual.2 hold))
-
-theorem current_work_record_disjoint (j k : Nat) (hj : j < 170) (hk : k < 170)
-    (q : Nat) (h : q∈packetSites j) : pi j (W k) ≠ pi j q := by
-  apply (pi j).injective.ne
-  simp only [packetSites,List.mem_cons,List.not_mem_nil,or_false] at h
-  unfold W H at *
-  omega
-
 end ECDSAAdd.Arithmetic.CompressedAllocation
 end
 
@@ -4450,58 +2082,6 @@ end
 noncomputable section
 
 namespace ECDSAAdd.Arithmetic.CompressedAllocation
-
-private theorem inverse_outside (e : Equiv.Perm Nat)
-    (fix : ∀ q, ¬zeroRegion q → e q=q) (q : Nat) (hq : ¬zeroRegion q) :
-    e.symm q=q := by
-  calc
-    e.symm q = e.symm (e q) := by rw [fix q hq]
-    _ = q := e.symm_apply_apply q
-
-/-- Switch two public placements only at a proved-zero allocation boundary.
-The logical State, including phase and every live coordinate, is identical.
-No swap instruction or measurement is inserted into the actual circuit. -/
-theorem switch_zero_placements (old next : Equiv.Perm Nat) (actual logical : State)
-    (oldFix : ∀ q, ¬zeroRegion q → old q=q)
-    (nextFix : ∀ q, ¬zeroRegion q → next q=q)
-    (hmap : pullState old actual=logical)
-    (hz : ∀ q, zeroRegion q → logical.basis q=false) :
-    pullState next actual=logical := by
-  have original : pullState old.symm logical=actual := by
-    rw [←hmap]
-    apply State.extensionality
-    · rfl
-    · funext q
-      simp only [pullState,old.apply_symm_apply]
-  let delta := next.trans old.symm
-  have fix : ∀ q, ¬zeroRegion q → delta q=q := by
-    intro q hq
-    change old.symm (next q)=q
-    rw [nextFix q hq,inverse_outside old oldFix q hq]
-  have same := pull_zero_permutation delta logical fix hz
-  rw [←original]
-  change pullState delta logical=logical
-  exact same
-
-/-- The next renamed block executes the same logical instructions and every
-measurement correction under its new injective placement. -/
-theorem run_switch_zero_placements (old next : Equiv.Perm Nat)
-    (actual logical : State) (program : Program) (m : List Bool)
-    (oldFix : ∀ q, ¬zeroRegion q → old q=q)
-    (nextFix : ∀ q, ¬zeroRegion q → next q=q)
-    (hmap : pullState old actual=logical)
-    (hz : ∀ q, zeroRegion q → logical.basis q=false) :
-    pullState next (run (renameProgram next program) m actual)=run program m logical := by
-  rw [run_rename next next.injective,
-    switch_zero_placements old next actual logical oldFix nextFix hmap hz]
-
-theorem run_switch_packet_placements (a j : Nat) (ha : a < 170) (hj : j < 170)
-    (actual logical : State) (program : Program) (m : List Bool)
-    (hmap : pullState (pi a) actual=logical)
-    (hz : ∀ q, zeroRegion q → logical.basis q=false) :
-    pullState (pi j) (run (renameProgram (pi j) program) m actual)=run program m logical :=
-  run_switch_zero_placements (pi a) (pi j) actual logical program m
-    (fun q hq => pi_outside a q ha hq) (fun q hq => pi_outside j q hj hq) hmap hz
 
 end ECDSAAdd.Arithmetic.CompressedAllocation
 end
@@ -4514,108 +2094,8 @@ set_option maxHeartbeats 400000
 
 namespace ECDSAAdd.Arithmetic
 
-/-- A ghost raw state supplies the old exact integer invariant. Encoding is
-an actual circuit program; the assertion equates the complete caller basis.
-Incoming phase is unrestricted and is preserved separately by the Triple. -/
-def CompressedIntegerStage (w : Nat → Wire) (x p i : Nat) (bits : BasisState) : Prop :=
-  ∃ raw : State,
-    SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) i raw.basis ∧
-    bits=(run (compressedEncodePrefix w i) [] raw).basis
-
-attribute [local irreducible] run compressedEncodePrefix compressedSkywalkLoop
+attribute [local irreducible] run compressedEncodePrefix
 attribute [local irreducible] narrowSkywalkScheduledTick compressedHistoryEncode
-
-private theorem xor_neutral (a b : Bool) (h : (a ^^ b)=false) : a=b := by
-  cases a <;> cases b <;> simp_all
-
-theorem compressedIntegerStage_zero (w : Nat → Wire) (x p : Nat) (s : State)
-    (h : SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 0 s.basis) :
-    CompressedIntegerStage w x p 0 s.basis := by
-  refine ⟨s,h,?_⟩
-  simp only [compressedEncodePrefix,run]
-
-theorem compressedIntegerStage_step (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p i : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2=1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p) (hi : i < 512) :
-    Triple (CompressedIntegerStage w x p i)
-      (narrowSkywalkScheduledTick w i ++ compressedPackAfter w i)
-      (CompressedIntegerStage w x p (i+1)) := by
-  intro s m hs
-  obtain ⟨raw,hraw,hbits⟩ := hs
-  let tick := narrowSkywalkScheduledTick w i
-  let mt := m.take (measurementCount tick)
-  let me := m.drop (measurementCount tick)
-  let actual := run tick mt s
-  let next := run tick [] raw
-  have step := narrowSkywalkRoutedStage_step w hn x p i hp0 hx0 hpo hp hx hc hi
-  have hnxt := step raw [] hraw
-  have hmt := step raw mt hraw
-  have hd := (compressedPrefix_disjoint_tick w hn hlo i i (Nat.le_refl i) hi).1
-  have read : ∀ q∈wires tick,s.basis q=raw.basis q := by
-    intro q hq
-    rw [hbits]
-    apply run_preserves_outside
-    exact fun he => Finset.disjoint_left.mp hd he hq
-  have hl := run_local_increment tick s raw mt read
-  have hphase : actual.phase=s.phase := by
-    apply xor_neutral
-    have hh := hl.1
-    rw [hmt.1] at hh
-    simpa only [Bool.xor_self] using hh
-  have hcomm := run_disjoint_commute (compressedEncodePrefix w i) tick hd [] [] raw
-  have hb0 := run_basis_records tick s (run (compressedEncodePrefix w i) [] raw) mt [] hbits
-  have hb : actual.basis=(run (compressedEncodePrefix w i) [] next).basis :=
-    hb0.trans (congrArg State.basis hcomm.symm)
-  have hpackphase : (run (compressedPackAfter w i) me actual).phase=actual.phase := by
-    cases he : compressedPackDue i
-    · simp only [compressedPackAfter,he,Bool.false_eq_true,if_false,run]
-    · have h3 := compressedPackDue_true i he
-      have same (j : Fin 6) : actual.basis (compressedHistoryMap w (i-3) j)=
-          next.basis (compressedHistoryMap w (i-3) j) := by
-        rw [hb]
-        exact compressedPrefix_raw_next w hn hlo i hi he next [] j
-      have legal := compressedHistoryStage_legal w x p (i+1) (i-3) hp0 hpo (by omega) next.basis hnxt.2
-      have actualLegal :
-          (actual.basis (compressedHistoryMap w (i-3) 0) && actual.basis (compressedHistoryMap w (i-3) 1))=false ∧
-          (actual.basis (compressedHistoryMap w (i-3) 2) && actual.basis (compressedHistoryMap w (i-3) 3))=false ∧
-          (actual.basis (compressedHistoryMap w (i-3) 4) && actual.basis (compressedHistoryMap w (i-3) 5))=false := by
-        rw [same 0,same 1,same 2,same 3,same 4,same 5]
-        exact legal
-      have cp := TranscriptCodec3.placement_correct (compressedHistoryMap w (i-3))
-        (compressedHistoryMap_injective w hn (i-3) (by omega))
-        (compressedHistoryMap_above w (i-3) (by omega) hlo) actual me actualLegal
-      simpa only [compressedPackAfter,he,if_true,compressedHistoryEncode] using cp.1
-  have hpackbits := run_basis_records (compressedPackAfter w i) actual
-    (run (compressedEncodePrefix w i) [] next) me [] hb
-  have hbnext : (run (compressedPackAfter w i) me actual).basis=
-      (run (compressedEncodePrefix w (i+1)) [] next).basis := by
-    rw [compressedEncodePrefix,run_append]
-    simp only [List.take_nil,List.drop_nil]
-    exact hpackbits
-  rw [run_append]
-  exact ⟨hpackphase.trans hphase,⟨next,hnxt.2,hbnext⟩⟩
-
-/-- Complete forward composition for arbitrary records, including phase.
-This theorem retains the exact original divisor and all 512 integer steps. -/
-theorem compressedSkywalkLoop_spec (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p i n : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2=1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p) (hi : i+n ≤ 512) :
-    Triple (CompressedIntegerStage w x p i) (compressedSkywalkLoop w i n)
-      (CompressedIntegerStage w x p (i+n)) := by
-  induction n generalizing i with
-  | zero =>
-    rw [compressedSkywalkLoop,Nat.add_zero]
-    intro s m h
-    simpa only [run] using And.intro (rfl : s.phase=s.phase) h
-  | succ n ih =>
-    have hstep := compressedIntegerStage_step w hn hlo x p i hp0 hx0 hpo hp hx hc (by omega)
-    have htail := ih (i+1) (by omega)
-    have hall := hstep.seq htail
-    have hindex : i+(n+1)=(i+1)+n := by omega
-    rw [compressedSkywalkLoop,hindex]
-    simpa only [List.append_assoc] using hall
 
 end ECDSAAdd.Arithmetic
 end
@@ -4629,7 +2109,7 @@ set_option maxHeartbeats 400000
 namespace ECDSAAdd.Arithmetic
 
 attribute [local irreducible] run compressedDecodePrefix compressedEncodePrefix
-attribute [local irreducible] compressedSkywalkUnloop narrowSkywalkRoutedUnloop
+attribute [local irreducible] narrowSkywalkRoutedUnloop
 
 theorem run_no_measurement_phase (p : Program) (hm : measurementCount p=0)
     (s : State) (m : List Bool) : (run p m s).phase=s.phase := by
@@ -4649,45 +2129,6 @@ theorem run_no_measurement_phase (p : Program) (hm : measurementCount p=0)
     | measureX q c0 c1 =>
       simp only [measurementCount] at hm
       omega
-
-/-- Decoding the model recovers the full raw caller basis, including any
-outside coordinate update. The decoder itself preserves incoming phase. -/
-theorem compressedIntegerStage_decoded (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p n : Nat) (hp0 : 0 < p) (hpo : p%2=1) (hn512 : n ≤ 512)
-    (s : State) (h : CompressedIntegerStage w x p n s.basis) :
-    (run (compressedDecodePrefix w n) [] s).phase=s.phase ∧
-    SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) n
-      (run (compressedDecodePrefix w n) [] s).basis := by
-  obtain ⟨raw,hraw,hbasis⟩ := h
-  have hi := compressedDecodePrefix_inverse w hn hlo x p n n hp0 hpo
-    (Nat.le_refl n) hn512 raw [] [] hraw
-  have hb := run_basis_records (compressedDecodePrefix w n) s
-    (run (compressedEncodePrefix w n) [] raw) [] [] hbasis
-  have he : (run (compressedDecodePrefix w n) [] s).basis=raw.basis :=
-    hb.trans (congrArg State.basis hi)
-  refine ⟨run_no_measurement_phase _ (compressedDecodePrefix_measurements w n) s [],?_⟩
-  rw [he]
-  exact hraw
-
-/-- Full 512-step reverse restoration after an external numerator update.
-All integer-pool sites return to the initial seed; the current phase is kept. -/
-theorem compressedSkywalkUnloop_restore_pool (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2=1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p)
-    (initial s : State) (m : List Bool)
-    (hinit : SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 0 initial.basis)
-    (hfinal : CompressedIntegerStage w x p 512 s.basis) :
-    (run (compressedSkywalkUnloop w 0 512) m s).phase=s.phase ∧
-    ∀ q∈skywalkPoolWires w,(run (compressedSkywalkUnloop w 0 512) m s).basis q=initial.basis q := by
-  have hd := compressedIntegerStage_decoded w hn hlo x p 512 hp0 hpo (Nat.le_refl _) s hfinal
-  have hr := narrowSkywalkRoutedUnloop_restore_pool w hn x p hp0 hx0 hpo hp hx hc
-    initial (run (compressedDecodePrefix w 512) [] s) m hinit hd.2
-  rw [compressedSkywalkUnloop_normalize w hn hlo 0 512 (by omega),compressedDecodeRange_zero,run_append,
-    compressedDecodePrefix_measurements]
-  simp only [List.take_zero,List.drop_zero]
-  exact ⟨hr.1.trans hd.1,hr.2⟩
 
 end ECDSAAdd.Arithmetic
 end
@@ -4807,39 +2248,6 @@ theorem compressedPrefix_history_support (w : Nat → Wire)
     simpa only [compressedEncodePrefix,wires_append,Finset.union_subset_iff] using
       And.intro old now
 
-/-- The170 reusable mask positions are actual compact terminal tail zeros. -/
-theorem compactTerminal_mask_zero (w : Nat → Wire) (r : SkywalkRails.State)
-    (s : BasisState) (h : CompactSkywalkStage w r 512 s) (j : Nat) (hj : j < 170) :
-    s (w (515+j))=false := by
-  have clean := h.2.1
-  have released : (compactSkywalkSignPoolA w 512).released=wireBlock w 514 256 := by
-    change (wireBlock w 512 258).drop 2=wireBlock w 514 256
-    rw [←wireBlock_append w 512 2 256]
-    simp [wireBlock_length]
-  apply clean
-  rw [released]
-  exact block_mem w 514 256 (515+j) (by omega) (by omega)
-
-/-- History packing preserves every terminal mask zero, for all records. -/
-theorem compressedCompactStage_512_mask_zero (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (s : State) (h : CompressedCompactStage w x p 512 s.basis)
-    (j : Nat) (hj : j < 170) : s.basis (w (515+j))=false := by
-  obtain ⟨raw,hraw,bits⟩ := h
-  have zero := compactTerminal_mask_zero w _ raw.basis hraw j hj
-  have support := compressedPrefix_history_support w hn hlo 512 (by decide)
-  have away : w (515+j)∉wires (compressedEncodePrefix w 512) := by
-    intro hq
-    have hhist := List.mem_toFinset.mp (support hq)
-    rcases List.mem_append.mp hhist with hq|hq
-    all_goals
-      obtain ⟨k,hk,he⟩ := List.mem_map.mp hq
-      simp only [List.mem_range'_1] at hk
-      have eq := skywalkPool_index_inj w hn k (515+j) (by omega) (by omega) he
-      omega
-  rw [bits]
-  exact (run_preserves_outside _ [] raw _ away).trans zero
-
 end ECDSAAdd.Arithmetic
 end
 
@@ -4887,97 +2295,6 @@ theorem compressedCompactReverse_frame (w : Nat → Wire)
   apply run_preserves_outside
   intro h
   exact hq (List.mem_toFinset.mp (compressedCompactReverse_support w hn hlo i n hsteps h))
-
-/-- The terminal compact predicate determines the physical integer pool.
-The reference emitter and its inverse here are both genuinely compact. -/
-private theorem terminal_restore (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
-    (x p : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2 = 1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p)
-    (initial s : State) (m : List Bool)
-    (hinit : SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 0 initial.basis)
-    (hfinal : CompactSkywalkStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 512 s.basis) :
-    (run (compactSkywalkReverse w 0 512) m s).phase = s.phase ∧
-    ∀ q ∈ skywalkPoolWires w,(run (compactSkywalkReverse w 0 512) m s).basis q = initial.basis q := by
-  let start : State := ⟨s.phase,initial.basis⟩
-  have forward := compactSkywalkForward_512 w hn x p hp0 hx0 hpo hp hx hc start [] hinit
-  have own := (compactSkywalkStage_terminal w hn x p hp0 hx0 hpo hp hx hc s.basis hfinal).2
-  have reference := (compactSkywalkStage_terminal w hn x p hp0 hx0 hpo hp hx hc _ forward.2).2
-  have inverse := compactSkywalkReverse_512_roundtrip w hn x p hp0 hx0 hpo hp hx hc start [] m hinit
-  have bits : ∀ q ∈ (skywalkPoolWires w).toFinset,
-      s.basis q = (run (compactSkywalkForward w 0 512) [] start).basis q := by
-    intro q hq
-    exact skywalkIntegerStage_agrees w _ 512 (by decide) _ _ own reference q (List.mem_toFinset.mp hq)
-  have agrees := pool_run_agrees (compactSkywalkReverse w 0 512) (skywalkPoolWires w).toFinset
-    (compactSkywalkReverse_support w hn 0 512 (by decide)) m s
-    (run (compactSkywalkForward w 0 512) [] start) forward.1.symm bits
-  rw [inverse] at agrees
-  refine ⟨agrees.1,?_⟩
-  intro q hq
-  exact agrees.2 q (List.mem_toFinset.mpr hq)
-
-/-- Complete512 compact-plus-codec restoration from the encoded terminal
-pool. Outsiders may already contain arbitrary coexisting field updates. -/
-theorem compressedCompactReverse_restore_pool (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2 = 1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p)
-    (initial s : State) (m : List Bool)
-    (hinit : SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 0 initial.basis)
-    (hfinal : CompressedCompactStage w x p 512 s.basis) :
-    (run (compressedCompactReverse w 0 512) m s).phase = s.phase ∧
-    ∀ q ∈ skywalkPoolWires w,(run (compressedCompactReverse w 0 512) m s).basis q = initial.basis q := by
-  have decoded := compressedCompactStage_decoded w hn hlo x p 512 hp0 hpo (by decide) s hfinal
-  have restored := terminal_restore w hn x p hp0 hx0 hpo hp hx hc
-    initial (run (compressedDecodePrefix w 512) [] s) m hinit decoded.2
-  rw [compressedCompactReverse_normalize w hn hlo 0 512 (by decide),compressedDecodeRange_zero,
-    run_append,compressedDecodePrefix_measurements]
-  simp only [List.take_zero,List.drop_zero]
-  exact ⟨restored.1.trans decoded.1,restored.2⟩
-
-/-- Forward and inverse records are independent, and the full physical
-caller State returns, including arbitrary incoming phase and every outsider. -/
-theorem compressedCompactReverse_512_roundtrip (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2 = 1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p)
-    (s : State) (mForward mReverse : List Bool)
-    (hin : SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 0 s.basis) :
-    run (compressedCompactReverse w 0 512) mReverse
-      (run (compressedCompactForward w 0 512) mForward s) = s := by
-  have forward := compressedCompactForward_512_spec w hn hlo x p hp0 hx0 hpo hp hx hc s mForward hin
-  have reverse := compressedCompactReverse_restore_pool w hn hlo x p hp0 hx0 hpo hp hx hc
-    s (run (compressedCompactForward w 0 512) mForward s) mReverse hin forward.2
-  apply State.extensionality
-  · exact reverse.1.trans forward.1
-  · funext q
-    by_cases hq : q ∈ skywalkPoolWires w
-    · exact reverse.2 q hq
-    · exact (compressedCompactReverse_frame w hn hlo 0 512 (by decide) _ mReverse q hq).trans
-        (compressedCompactForward_frame w hn hlo 0 512 (by decide) s mForward q hq)
-
-/-- A field operation need only retain the actual encoded integer pool and
-phase. The emitted compact reverse restores it and keeps all field outsiders. -/
-theorem compressedCompactReverse_restore_after_outside (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (hp0 : 0 < p) (hx0 : 0 < x) (hpo : p%2 = 1)
-    (hp : p < 2^256) (hx : x < p) (hc : x.Coprime p)
-    (s field : State) (mForward mReverse : List Bool)
-    (hin : SkywalkIntegerStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 0 s.basis)
-    (hphase : field.phase = (run (compressedCompactForward w 0 512) mForward s).phase)
-    (hpool : ∀ q ∈ skywalkPoolWires w,
-      field.basis q = (run (compressedCompactForward w 0 512) mForward s).basis q) :
-    (run (compressedCompactReverse w 0 512) mReverse field).phase = s.phase ∧
-    (∀ q ∈ skywalkPoolWires w,(run (compressedCompactReverse w 0 512) mReverse field).basis q = s.basis q) ∧
-    (∀ q,q ∉ skywalkPoolWires w → (run (compressedCompactReverse w 0 512) mReverse field).basis q = field.basis q) := by
-  have inverse := compressedCompactReverse_512_roundtrip w hn hlo x p hp0 hx0 hpo hp hx hc s mForward mReverse hin
-  have agrees := pool_run_agrees (compressedCompactReverse w 0 512) (skywalkPoolWires w).toFinset
-    (compressedCompactReverse_support w hn hlo 0 512 (by decide)) mReverse field
-    (run (compressedCompactForward w 0 512) mForward s) hphase
-    (fun q hq => hpool q (List.mem_toFinset.mp hq))
-  rw [inverse] at agrees
-  refine ⟨agrees.1,?_,?_⟩
-  · intro q hq; exact agrees.2 q (List.mem_toFinset.mpr hq)
-  · intro q hq; exact compressedCompactReverse_frame w hn hlo 0 512 (by decide) field mReverse q hq
 
 /-- Actual reverse component prices; no whole-point allocation claim. -/
 theorem compressedCompactReverse_counts (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
@@ -5316,16 +2633,6 @@ theorem allGroupEncode_phase (w : Nat → Wire)
     rw [allGroupEncode,run_append]
     simpa only [compressedHistoryEncode,before] using codec.1.trans first
 
-theorem allGroupEncode_records (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (n : Nat) (bound : 3*n ≤ 512) (s : State) (m k : List Bool)
-    (legal : RawGroupLegal w n s.basis) :
-    run (allGroupEncode w n) m s = run (allGroupEncode w n) k s := by
-  apply State.extensionality
-  · exact (allGroupEncode_phase w hn hlo n bound s m legal).trans
-      (allGroupEncode_phase w hn hlo n bound s k legal).symm
-  · exact run_basis_records _ s s m k rfl
-
 end ECDSAAdd.Arithmetic.CompressedFieldSupport
 end
 
@@ -5578,56 +2885,6 @@ def IndexedLetters (w : Nat → Wire) : Nat → List MixedTranscriptLetter → P
   | _,[] => True
   | i,l::ls => l.1=(w i,w (1028+i)) ∧ IndexedLetters w (i+1) ls
 
-theorem indexed_zip (w : Nat → Wire) (n i : Nat) (cs : List (Bool×Bool)) :
-    IndexedLetters w i (((List.range n).map (fun k => (w (i+k),w (1028+i+k)))).zip cs) := by
-  induction n generalizing i cs with
-  | zero => simp [IndexedLetters]
-  | succ n ih =>
-    cases cs with
-    | nil => simp [IndexedLetters]
-    | cons c cs =>
-      rw [List.range_succ_eq_map,List.map_cons,List.zip_cons_cons]
-      change (w (i+0),w (1028+i+0))=(w i,w (1028+i)) ∧ _
-      refine ⟨by simp,?_⟩
-      simpa only [List.map_map,Function.comp_def,Nat.succ_eq_add_one,
-        Nat.add_assoc,Nat.add_comm,Nat.add_left_comm] using ih (i+1) cs
-
-theorem mixedTape_indexed (w : Nat → Wire) : IndexedLetters w 0 (mixedTranscriptTape w) := by
-  simpa only [mixedTranscriptTape,skywalkSharedTape,Nat.zero_add] using
-    indexed_zip w 512 0 mixedTranscriptUnitTrace
-
-theorem indexed_three_tail (w : Nat → Wire) (i : Nat) (a c d : MixedTranscriptLetter)
-    (tail : List MixedTranscriptLetter) (h : IndexedLetters w i (a::c::d::tail)) :
-    IndexedLetters w (i+3) tail := by
-  have next := h.2.2.2
-  simpa only [Nat.add_assoc] using next
-
-theorem indexed_packet_controls (w : Nat → Wire) (j : Nat) (hj : j < 170)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (a c d : MixedTranscriptLetter) (tail : List MixedTranscriptLetter)
-    (h : IndexedLetters w (3*j) (a::c::d::tail)) :
-    ∀ l ∈ [a,c,d],l.1.1 ∈ wires (compressedHistoryEncode w (3*j)) ∧
-      l.1.2 ∈ wires (compressedHistoryEncode w (3*j)) := by
-  have site (k : Fin 6) := compressedHistory_site_mem w hn hlo (3*j) (by omega) k
-  have ha := h.1
-  have hc := h.2.1
-  have hd := h.2.2.1
-  intro l hl
-  simp only [List.mem_cons,List.not_mem_nil,or_false] at hl
-  rcases hl with rfl|rfl|rfl
-  · rw [ha]
-    constructor
-    · simpa [compressedHistoryMap,compressedHistoryId] using site 0
-    · simpa [compressedHistoryMap,compressedHistoryId] using site 1
-  · rw [hc]
-    constructor
-    · simpa [compressedHistoryMap,compressedHistoryId] using site 2
-    · simpa [compressedHistoryMap,compressedHistoryId] using site 3
-  · rw [hd]
-    constructor
-    · simpa [compressedHistoryMap,compressedHistoryId,Nat.add_assoc] using site 4
-    · simpa [compressedHistoryMap,compressedHistoryId,Nat.add_assoc] using site 5
-
 theorem packet_active_support (w : Nat → Wire) (b sign eff : Wire) (start : Nat)
     (ls : List MixedTranscriptLetter)
     (h : ∀ l ∈ ls,l.1.1 ∈ wires (compressedHistoryEncode w start) ∧
@@ -5789,155 +3046,6 @@ namespace ECDSAAdd.Arithmetic.CompressedFieldSupport
 open Secp256k1 BalancedField OffsetBorrowedCanonical
 attribute [local irreducible] run
 
-private theorem short_programs (w : Nat → Wire) (b sign eff : Wire) (i : Nat)
-    (ls : List MixedTranscriptLetter) (h : ls.length ≤ 2) :
-    codecGroupForward w (fun l : MixedTranscriptLetter =>
-      OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) i ls =
-      directionalReplay false w b sign eff ls ∧
-    codecGroupBackward w (fun l : MixedTranscriptLetter =>
-      OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) i ls =
-      directionalReplay true w b sign eff ls := by
-  cases ls with
-  | nil => simp [codecGroupForward,codecGroupBackward,directionalReplay,
-      OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay]
-  | cons a ls =>
-    cases ls with
-    | nil => simp [codecGroupForward,codecGroupBackward,directionalReplay,
-        OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay]
-    | cons c ls =>
-      cases ls with
-      | nil => simp [codecGroupForward,codecGroupBackward,directionalReplay,
-          OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay]
-      | cons d tail =>
-        simp at h
-        omega
-
-private theorem split_programs {α : Type} (w : Nat → Wire) (cell : α → Program)
-    (i : Nat) (a c d : α) (tail : List α) :
-    codecGroupForward w cell i (a::c::d::tail) =
-      codecGroupForward w cell i [a,c,d]++codecGroupForward w cell (i+3) tail ∧
-    codecGroupBackward w cell i (a::c::d::tail) =
-      codecGroupBackward w cell (i+3) tail++codecGroupBackward w cell i [a,c,d] := by
-  simp only [codecGroupForward,codecGroupBackward,List.append_nil,List.nil_append,List.append_assoc]
-  constructor <;> trivial
-
-/-- Full emitted packet recursion. The two raw final letters are retained;
-all170 integer codec groups remain represented by the same fixed encoding. -/
-theorem grouped_encoded_replays (w : Nat → Wire) (b sign eff : Wire)
-    (hn : (skywalkSharedWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (ho : ∀ q ∈ [b,sign,eff],q ∉ skywalkSharedWires w)
-    (hp : ∀ q ∈ [b,sign,eff],q ∉ skywalkPoolWires w)
-    (base : BasisState) (hg0 : base sign = false) (he0 : base eff = false)
-    (env : Env w base) (legal : RawGroupLegal w 170 base)
-    (n j : Nat) (remaining : j+n=170) (ls : List MixedTranscriptLetter)
-    (length : ls.length=3*n+2) (aligned : IndexedLetters w (3*j) ls)
-    (hf : MixedTranscriptReplayLayout w b sign eff ls) :
-    (∀ (X Y : Fp) (s : State) (m : List Bool), EncodedFieldFrame w sign base X Y s →
-      let out := run (codecGroupForward w (fun l : MixedTranscriptLetter =>
-        OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) ls) m s
-      out.phase=s.phase ∧ EncodedFieldFrame w sign base
-        (skywalkPayloadReplay (mixedTranscriptControls base b ls) (X,Y)).1
-        (skywalkPayloadReplay (mixedTranscriptControls base b ls) (X,Y)).2 out) ∧
-    (∀ (X Y : Fp) (s : State) (m : List Bool), EncodedFieldFrame w sign base X Y s →
-      let out := run (codecGroupBackward w (fun l : MixedTranscriptLetter =>
-        OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) ls) m s
-      out.phase=s.phase ∧ EncodedFieldFrame w sign base
-        (skywalkPayloadReplayInverse (mixedTranscriptControls base b ls) (X,Y)).1
-        (skywalkPayloadReplayInverse (mixedTranscriptControls base b ls) (X,Y)).2 out) := by
-  induction n generalizing j ls with
-  | zero =>
-    have ji : j=170 := by omega
-    have len : ls.length=2 := by simpa using length
-    have programs := short_programs w b sign eff (3*j) ls (by omega)
-    constructor
-    · intro X Y s m input
-      rw [programs.1]
-      simpa only [directionalPayload,Bool.false_eq_true,if_false] using
-        encoded_tail_replay false w b sign eff hn hlo ho hp (3*j) ls (by omega)
-          (by omega) aligned hf base hg0 he0 env legal X Y s m input
-    · intro X Y s m input
-      rw [programs.2]
-      simpa only [directionalPayload,if_true] using
-        encoded_tail_replay true w b sign eff hn hlo ho hp (3*j) ls (by omega)
-          (by omega) aligned hf base hg0 he0 env legal X Y s m input
-  | succ n ih =>
-    cases ls with
-    | nil => simp at length
-    | cons a rest =>
-      cases rest with
-      | nil => simp at length
-      | cons c rest =>
-        cases rest with
-        | nil => simp at length
-        | cons d tail =>
-          have jj : j < 170 := by omega
-          have next : IndexedLetters w (3*(j+1)) tail := by
-            simpa only [Nat.mul_add,Nat.mul_one] using indexed_three_tail w (3*j) a c d tail aligned
-          have lenTail : tail.length=3*n+2 := by simp only [List.length_cons] at length; omega
-          have hfTail : MixedTranscriptReplayLayout w b sign eff tail := fun q hq => hf q (by simp [hq])
-          have hfPacket : MixedTranscriptReplayLayout w b sign eff [a,c,d] := by
-            intro q hq
-            exact hf q (by simpa only [List.mem_cons,List.not_mem_nil,or_false] using
-              (show q=a ∨ q=c ∨ q=d ∨ q∈tail from by simp only [List.mem_cons,List.not_mem_nil,or_false] at hq ⊢; tauto))
-          have controls := indexed_packet_controls w j jj (skywalkShared_integer_nodup w hn) hlo a c d tail aligned
-          have support := packet_active_support w b sign eff (3*j) [a,c,d] controls
-          have tailSpec := ih (j+1) (by omega) tail lenTail next hfTail
-          have fwSplit := (split_programs w (fun l : MixedTranscriptLetter =>
-            OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) a c d tail).1
-          have rvSplit := (split_programs w (fun l : MixedTranscriptLetter =>
-            OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) a c d tail).2
-          constructor
-          · intro X Y s m input
-            let packet := codecGroupForward w (fun l : MixedTranscriptLetter =>
-              OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) [a,c,d]
-            let t := run packet (m.take (measurementCount packet)) s
-            let Q := skywalkPayloadReplay (mixedTranscriptControls base b [a,c,d]) (X,Y)
-            have first := encoded_forward_packet_step w b sign eff hn hlo j jj a c d hfPacket ho hp
-              base hg0 he0 env legal X Y (by simpa only [rawForwardPacket] using support.1)
-              s (m.take (measurementCount packet)) input
-            have rest := tailSpec.1 Q.1 Q.2 t (m.drop (measurementCount packet)) first.2
-            rw [fwSplit,run_append]
-            change (run _ _ t).phase=s.phase ∧ _
-            refine ⟨rest.1.trans first.1,?_⟩
-            simpa only [mixedTranscriptControls,List.map_cons,skywalkPayloadReplay,Q] using rest.2
-          · intro X Y s m input
-            let later := codecGroupBackward w (fun l : MixedTranscriptLetter =>
-              OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j+3) tail
-            let t := run later (m.take (measurementCount later)) s
-            let Q := skywalkPayloadReplayInverse (mixedTranscriptControls base b tail) (X,Y)
-            have rest := tailSpec.2 X Y s (m.take (measurementCount later)) input
-            have first := encoded_backward_packet_step w b sign eff hn hlo j jj a c d hfPacket ho hp
-              base hg0 he0 env legal Q.1 Q.2 (by simpa only [rawBackwardPacket] using support.2)
-              t (m.drop (measurementCount later)) rest.2
-            rw [rvSplit,run_append]
-            change (run _ _ t).phase=s.phase ∧ _
-            refine ⟨first.1.trans rest.1,?_⟩
-            simpa only [mixedTranscriptControls,List.map_cons,skywalkPayloadReplayInverse,Q] using first.2
-
-/-- Explicit actual512 forward and inverse field emissions, for all records.
-No physical qubit allocation or whole-point resource claim is made here. -/
-theorem compressedFieldGroups_512_frame (w : Nat → Wire) (b sign eff : Wire)
-    (hn : (skywalkSharedWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (ho : ∀ q ∈ [b,sign,eff],q ∉ skywalkSharedWires w)
-    (hp : ∀ q ∈ [b,sign,eff],q ∉ skywalkPoolWires w)
-    (hf : MixedTranscriptReplayLayout w b sign eff (mixedTranscriptTape w))
-    (base : BasisState) (hg0 : base sign=false) (he0 : base eff=false)
-    (env : Env w base) (legal : RawGroupLegal w 170 base)
-    (X Y : Fp) (s : State) (m : List Bool) (input : EncodedFieldFrame w sign base X Y s) :
-    ((run (compressedFieldForwardGroups w b sign eff) m s).phase=s.phase ∧
-      EncodedFieldFrame w sign base
-        (skywalkPayloadReplay (mixedTranscriptControls base b (mixedTranscriptTape w)) (X,Y)).1
-        (skywalkPayloadReplay (mixedTranscriptControls base b (mixedTranscriptTape w)) (X,Y)).2
-        (run (compressedFieldForwardGroups w b sign eff) m s)) ∧
-    ((run (compressedFieldBackwardGroups w b sign eff) m s).phase=s.phase ∧
-      EncodedFieldFrame w sign base
-        (skywalkPayloadReplayInverse (mixedTranscriptControls base b (mixedTranscriptTape w)) (X,Y)).1
-        (skywalkPayloadReplayInverse (mixedTranscriptControls base b (mixedTranscriptTape w)) (X,Y)).2
-        (run (compressedFieldBackwardGroups w b sign eff) m s)) := by
-  have all := grouped_encoded_replays w b sign eff hn hlo ho hp base hg0 he0 env legal 170 0
-    (by decide) (mixedTranscriptTape w) (by rw [mixedTranscriptTape_length]) (mixedTape_indexed w) hf
-  exact ⟨all.1 X Y s m input,all.2 X Y s m input⟩
-
 end ECDSAAdd.Arithmetic.CompressedFieldSupport
 end
 
@@ -6047,19 +3155,6 @@ theorem encoded_zero_region (w : Nat → Wire) (sign : Wire)
     rw [encoded,j]
     exact allGroupEncode_holes_zero w (skywalkShared_integer_nodup w hn) hlo 170 (by decide) raw [] _ bound
 
-/-- Switching placements at an encoded packet boundary is justified by
-that invariant itself; phase and every live field coordinate are preserved. -/
-theorem run_switch_encoded_boundary (w : Nat → Wire) (sign : Wire)
-    (hn : (skywalkSharedWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (base : BasisState) (env : Env w base) (X Y : Fp) (s actual : State)
-    (frame : EncodedFieldFrame w sign base X Y s)
-    (a j : Nat) (ha : a < 170) (hj : j < 170) (program : Program) (m : List Bool)
-    (map : pullState (pi a) actual = pullState w s) :
-    pullState (pi j) (run (renameProgram (pi j) program) m actual) =
-      run program m (pullState w s) :=
-  run_switch_packet_placements a j ha hj actual (pullState w s) program m map
-    (encoded_zero_region w sign hn hlo base env X Y s frame)
-
 end ECDSAAdd.Arithmetic.CompressedFieldSupport
 end
 
@@ -6145,23 +3240,6 @@ theorem full_encoder_clear_commute (w : Nat → Wire)
     run (allGroupEncode w 170) m (run (skywalkArithmeticClear w) n s)=
       run (skywalkArithmeticClear w) n (run (allGroupEncode w 170) m s) :=
   run_disjoint_commute _ _ (full_encoder_clear_disjoint w hn hlo) m n s
-
-/-- The actual clear therefore retains a legal ghost encoding relation.
-This bridge asserts no field Env before caller work and ports are prepared. -/
-theorem compressed_terminal_clear_encoding (w : Nat → Wire)
-    (hn : (skywalkPoolWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (x p : Nat) (hp0 : 0 < p) (hpo : p%2=1) (s : State)
-    (stage : CompressedCompactStage w x p 512 s.basis) (m : List Bool) :
-    ∃ raw : State,
-      CompactSkywalkStage w (SkywalkRails.encode false false (x:Int) (p:Int)) 512 raw.basis ∧
-      RawGroupLegal w 170 raw.basis ∧ raw.phase=s.phase ∧
-      run (skywalkArithmeticClear w) m s=
-        run (allGroupEncode w 170) [] (run (skywalkArithmeticClear w) m raw) := by
-  obtain ⟨raw,compact,legal,phase,encoded⟩ :=
-    compressed_terminal_encoded_state w hn hlo x p hp0 hpo s stage
-  refine ⟨raw,compact,legal,phase,?_⟩
-  rw [encoded]
-  exact (full_encoder_clear_commute w hn hlo raw [] m).symm
 
 end ECDSAAdd.Arithmetic.CompressedFieldSupport
 end
@@ -6304,15 +3382,6 @@ theorem indices_nodup : indices.Nodup := by
     (by intro q h; simp only [List.mem_append,List.mem_range'_1] at h; omega)
   exact c
 
-theorem slots_nodup : slots.Nodup := by
-  apply List.Nodup.map_on
-  · intro a _ b _ h
-    change a+16=b+16 at h
-    exact Nat.add_right_cancel h
-  · exact indices_nodup
-
-theorem slots_length : slots.length=1899 := by simp [slots,indices]
-
 theorem mem_indices (q : Nat) : q∈indices ↔ live q ∧ ¬omitted q := by
   simp only [indices,List.mem_append,List.mem_range'_1]
   unfold live omitted
@@ -6344,9 +3413,6 @@ theorem packet_live (j q : Nat) (hj : j < 170) (h : q∈packetSites j) : live q 
   unfold live
   unfold H at h
   omega
-
-theorem placed_field_mem (j q : Nat) (hj : j < 170) (h : fieldSite q) :
-    placed j q∈slots.toFinset := slot_mem _ (pi_live j q hj (field_live q h)) (field_safe j q hj h)
 
 theorem allPlaced_field_mem (q : Nat) (h : fieldSite q) : allPlaced q∈slots.toFinset :=
   slot_mem _ (pi0_live q (field_live q h)) (field_pi0_safe q h)
@@ -6500,16 +3566,6 @@ private theorem pool_bit (L : ControlledPointLayout) (hw : L.Widths)
   rw [←L.core.pool_prefix hw 2613 (by omega)]
   exact List.mem_map.mpr ⟨i,by simp [List.mem_range'_1]; omega,rfl⟩
 
-private theorem pool_away_x (L : ControlledPointLayout) (hn : L.wires.Nodup)
-    (q : Wire) (hq : q∈L.dialogPool) : q∉L.point.x := by
-  have nd := L.dialogUsed_nodup hn
-  have dis := (List.nodup_append'.mp nd).2.2
-  intro hx
-  have res : q∈residents L := by
-    simp only [residents,PointAddLayout.pointWires,List.mem_append,List.mem_cons]
-    tauto
-  exact List.disjoint_left.mp dis res hq
-
 /-- Only declared pool wires move. Their zero basis bits make the complete
 State invariant under the public permutation, including incoming phase. -/
 theorem zero_pool_boundary (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
@@ -6538,77 +3594,12 @@ theorem zero_pool_boundary (L : ControlledPointLayout) (hw : L.Widths) (hn : L.w
           (clean _ (pool_bit L hw i hi)).symm
       · rw [outside_fixed L.core.poolWire inj q left right]
 
-private theorem pull_injective (e : Equiv.Perm Wire) : Function.Injective (pullState e) := by
-  intro s t eq
-  apply State.extensionality
-  · have ph := congrArg (fun u : State => u.phase) eq
-    exact ph
-  · funext q
-    have bit := congrArg (fun u : State => u.basis (e.symm q)) eq
-    simpa only [pullState,e.apply_symm_apply] using bit
-
-/-- Exact complete-State equivalence for the actual computable emission.
-All original square inputs, independent records, and the full pool contract
-are retained; the permutation is confined to clean declared sites. -/
-theorem state_eq (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
-    (X Y : Nat) (B : Bool) (hX : X < p) (s : State) (m : List Bool)
-    (hb : s.basis L.core.generic=B) (hx : regValue L.point.x s.basis=X)
-    (hy : regValue L.point.y s.basis=Y) (hc : regValue L.dialogPool s.basis=0) :
-    run (computableProgram L) m s=run (pointMeasuredSquareCandidate L) m s := by
-  let e := poolPermutation L.core.poolWire (layout_bounded_injective L hw hn)
-  have old := pointMeasuredSquareCandidate_correct L hw hn X Y B hX s m hb hx hy hc
-  have cleanIn : ∀q∈L.dialogPool,s.basis q=false := (regValue_zero _ _).mp hc
-  have cleanOut : ∀q∈L.dialogPool,(run (pointMeasuredSquareCandidate L) m s).basis q=false := by
-    intro q hq
-    exact (old.2.2 q (pool_away_x L hn q hq)).trans (cleanIn q hq)
-  have input := zero_pool_boundary L hw hn s cleanIn
-  have output := zero_pool_boundary L hw hn (run (pointMeasuredSquareCandidate L) m s) cleanOut
-  rw [computableProgram_eq L hw hn,program]
-  apply pull_injective e
-  have semantic := run_rename e e.injective (pointMeasuredSquareCandidate L) m s
-  rw [input] at semantic
-  exact semantic.trans output.symm
-
-/-- Existing phase, numeric, clean-work, and every outsider guarantees are
-inherited as properties of the actual computable renamed square. -/
-theorem correct (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
-    (X Y : Nat) (B : Bool) (hX : X < p) (s : State) (m : List Bool)
-    (hb : s.basis L.core.generic=B) (hx : regValue L.point.x s.basis=X)
-    (hy : regValue L.point.y s.basis=Y) (hc : regValue L.dialogPool s.basis=0) :
-    (run (computableProgram L) m s).phase=s.phase ∧
-    regValue L.point.x (run (computableProgram L) m s).basis=
-      (X+p-(if B then Y*Y else 0)%p)%p ∧
-    ∀q,q∉L.point.x → (run (computableProgram L) m s).basis q=s.basis q := by
-  rw [state_eq L hw hn X Y B hX s m hb hx hy hc]
-  exact pointMeasuredSquareCandidate_correct L hw hn X Y B hX s m hb hx hy hc
-
 theorem counts (L : ControlledPointLayout) (hw : L.Widths) :
     toffoliCount (computableProgram L)=99902 ∧ measurementCount (computableProgram L)=99382 := by
   rw [computableProgram]
   have renamed := renameProgram_counts (labelFn L.core.poolWire) (pointMeasuredSquareCandidate L)
   have old := pointMeasuredSquareCandidate_counts L hw
   exact ⟨renamed.1.trans old.1,renamed.2.trans old.2⟩
-
-theorem residents_length (L : ControlledPointLayout) (hw : L.Widths) : (residents L).length=521 := by
-  simp only [residents,PointAddLayout.pointWires,inPlaceFlags,List.length_append,List.length_cons,
-    List.length_nil,show L.point.x.length=256 from hw.inputX,
-    show L.point.y.length=256 from hw.inputY]
-
-/-- The actual square fits the shared candidate inventory. Cardinality is
-bounded by the1899 explicit sites; no whole-point allocation claim is made. -/
-theorem shared_support_sites (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup) :
-    (residents L++sharedPool L).length=1899 ∧
-    wires (computableProgram L)⊆(residents L++sharedPool L).toFinset ∧
-    qubitCount (computableProgram L) ≤ 1899 := by
-  have length : (residents L++sharedPool L).length=1899 := by
-    rw [List.length_append,residents_length L hw,sharedPool_length]
-  have support := computable_support L hw hn
-  refine ⟨length,support,?_⟩
-  change (wires (computableProgram L)).card ≤ 1899
-  calc
-    _ ≤ (residents L++sharedPool L).toFinset.card := Finset.card_le_card support
-    _ ≤ (residents L++sharedPool L).length := List.toFinset_card_le _
-    _ = 1899 := length
 
 end ECDSAAdd.Arithmetic.CompressedPointSquare
 end
@@ -6640,15 +3631,6 @@ theorem pointWireFn_base (L : ControlledPointLayout) (i : Nat) :
 theorem pointIndexWire_shared (L : ControlledPointLayout) (i : Nat) (hi : i < 2314) :
     pointIndexWire L i = L.skywalkDirectMap i := by
   simp only [pointIndexWire,if_pos hi]
-
-theorem pointIndexWire_metadata (L : ControlledPointLayout) :
-    pointIndexWire L 2400=L.core.generic ∧ pointIndexWire L 2401=L.point.finite ∧
-    pointIndexWire L 2402=L.control ∧ pointIndexWire L 2403=L.infinitySelect ∧
-    pointIndexWire L 2404=L.doubleSelect ∧ pointIndexWire L 2405=L.genericSelect ∧
-    pointIndexWire L 2406=L.core.equalX ∧ pointIndexWire L 2407=L.core.equalNegY ∧
-    pointIndexWire L 2408=L.core.double ∧ pointIndexWire L 2409=L.skywalkDirectSelectorG ∧
-    pointIndexWire L 2410=L.skywalkDirectSelectorS ∧ pointIndexWire L 2411=L.skywalkDirectZero := by
-  simp [pointIndexWire,pointMeta]
 
 private theorem inventory_map (L : ControlledPointLayout) :
     pointIndexSites.map (pointIndexWire L)=skywalkSharedWires L.skywalkDirectMap++pointMeta L := by
@@ -6877,11 +3859,6 @@ theorem pointWireFn_slots_image (L : ControlledPointLayout) (hw : L.Widths) :
   rw [same]
   exact pointIndexWire_inventory L hw i hi
 
-theorem pointInventory_length (L : ControlledPointLayout) (hw : L.Widths) :
-    (CompressedPointSquare.residents L++CompressedPointSquare.sharedPool L).length=1899 := by
-  simp [CompressedPointSquare.residents,CompressedPointSquare.sharedPool_length,
-    PointAddLayout.pointWires,inPlaceFlags,point,hw.inputX,hw.inputY]
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -6903,9 +3880,6 @@ def mapCircuit (f : Wire → Wire) (L : BalancedCircuit.Layout) : BalancedCircui
 def mapOffset (f : Wire → Wire) (L : BalancedCleanupOffset.Layout) : BalancedCleanupOffset.Layout :=
   {toCircuit:=mapCircuit f L.toCircuit,offsetCarry:=L.offsetCarry.map f}
 
-theorem low_map (f : Wire → Wire) (L : BalancedCleanup.Layout) :
-    (mapCleanup f L).low=L.low.map f := by
-  simp [mapCleanup,BalancedCleanup.Layout.low]
 theorem r_map (f : Wire → Wire) (L : BalancedCleanup.Layout) :
     (mapCleanup f L).r=L.r.map f := by
   simp [mapCleanup,BalancedCleanup.Layout.r,BalancedCleanup.Layout.low]
@@ -7141,34 +4115,6 @@ set_option maxHeartbeats 1000000
 namespace ECDSAAdd.Arithmetic.FieldRename
 attribute [local irreducible] mappedMajority mappedSum mappedEraseCarry majority eraseCarry
 
-theorem offset_chain_natural (f : Wire → Wire) (bits : List MappedBit)
-    (xs ys cs ds : List Wire) (cinC cinB target : Wire) :
-    renameProgram f (BalancedCleanupOffset.chain bits xs ys cs ds cinC cinB target) =
-      BalancedCleanupOffset.chain (bits.map (mapBit f)) (xs.map f) (ys.map f)
-        (cs.map f) (ds.map f) (f cinC) (f cinB) (f target) := by
-  induction bits generalizing xs ys cs ds cinC cinB with
-  | nil =>
-    cases xs <;> cases ys <;> cases cs <;> cases ds <;>
-      simp only [BalancedCleanupOffset.chain,List.map_nil,List.map_cons,renameProgram,List.map_nil]
-    exact flipBelow_natural f none cinB target
-  | cons b bits ih =>
-    cases xs with
-    | nil => simp [BalancedCleanupOffset.chain,renameProgram]
-    | cons a xs =>
-      cases ys with
-      | nil => simp [BalancedCleanupOffset.chain,renameProgram]
-      | cons y ys =>
-        cases cs with
-        | nil => simp [BalancedCleanupOffset.chain,renameProgram]
-        | cons c cs =>
-          cases ds with
-          | nil => simp [BalancedCleanupOffset.chain,renameProgram]
-          | cons d ds =>
-            simp only [BalancedCleanupOffset.chain,List.map_cons,rename_append,
-              mappedMajority_natural,mappedSum_natural,majority_natural,eraseCarry_natural,
-              mappedEraseCarry_natural,ih]
-            rfl
-
 theorem prepareSign_natural (f : Wire → Wire) (L : BalancedCleanup.Layout) :
     renameProgram f (BalancedCleanup.prepareSign L)=BalancedCleanup.prepareSign (mapCleanup f L) := by
   simp only [BalancedCleanup.prepareSign,rename_append,signComplement_natural]
@@ -7178,14 +4124,6 @@ theorem prepareSign_natural (f : Wire → Wire) (L : BalancedCleanup.Layout) :
 theorem offset_view_natural (f : Wire → Wire) (L : BalancedCleanupOffset.Layout) :
     renameProgram f (BalancedCleanupOffset.view L)=BalancedCleanupOffset.view (mapOffset f L) := by
   simp only [BalancedCleanupOffset.view,rename_append,rotateLeft_natural,signComplement_natural]
-  simp only [mapOffset,mapCircuit,mapCleanup,BalancedCleanup.Layout.r,
-    BalancedCleanup.Layout.low,BalancedCleanup.Layout.y,List.map_cons,List.map_append]
-  rfl
-
-theorem offset_program_natural (f : Wire → Wire) (L : BalancedCleanupOffset.Layout) :
-    renameProgram f (BalancedCleanupOffset.program L)=BalancedCleanupOffset.program (mapOffset f L) := by
-  simp only [BalancedCleanupOffset.program,rename_append,rename_reverse,prepareSign_natural,
-    offset_view_natural,offset_chain_natural,offsetBits_map]
   simp only [mapOffset,mapCircuit,mapCleanup,BalancedCleanup.Layout.r,
     BalancedCleanup.Layout.low,BalancedCleanup.Layout.y,List.map_cons,List.map_append]
   rfl
@@ -7458,23 +4396,6 @@ private theorem slim_front_natural (f : Wire → Wire) (L : Layout) :
   rfl
 
 attribute [local irreducible] BalancedCleanupOffsetSlim.chain
-
-/-- Naturality of the actual 511-T/M cleanup, including the singleton leaf.
-No injectivity premise is needed for this syntactic relabeling identity. -/
-theorem slim_offset_program_natural (f : Wire → Wire) (L : Layout) (hw : L.Widths) :
-    renameProgram f (BalancedCleanupOffsetSlim.program L) =
-      BalancedCleanupOffsetSlim.program (mapOffset f L) := by
-  have widths := BalancedCleanup.widths L.toCircuit.toLayout hw.1
-  have cy : L.carry.length=256 := hw.1.2.2
-  have co : L.offsetCarry.length=256 := hw.2
-  have cn := slim_offset_chain_natural f (offsetBits L) L.y L.r L.offsetCarry L.carry
-    L.one L.cout L.parity (by simp [offsetBits,widths.2.1]) (by omega)
-    (by omega) (by omega)
-  simp only [BalancedCleanupOffsetSlim.program,rename_append,rename_reverse,
-    slim_front_natural,cn,offsetBits_map]
-  simp only [mapOffset,mapCircuit,mapCleanup,BalancedCleanup.Layout.r,
-    BalancedCleanup.Layout.low,BalancedCleanup.Layout.y,List.map_cons,List.map_append]
-  rfl
 
 end ECDSAAdd.Arithmetic.FieldRename
 end
@@ -7833,38 +4754,6 @@ theorem converters_support (canonical : Bool) :
       · exact convert_site false old (List.mem_toFinset.mp (source.2 h))
   exact allPlaced_field_mem old site
 
-theorem unary_support (divide : Bool) :
-    wires (renameProgram allPlaced (if divide then dblInPlace (borrowedSkywalkUnary id) p
-      else halfInPlace (borrowedSkywalkUnary id) p))⊆slots.toFinset := by
-  have u := modUnary_wires (borrowedSkywalkUnary id) 256 p (borrowedSkywalkUnary_widths id) (by omega)
-  intro q hq
-  rw [renameProgram_support] at hq
-  obtain ⟨old,hraw,rfl⟩ := Finset.mem_image.mp hq
-  have member : old∈((borrowedSkywalkUnary id).z++(borrowedSkywalkUnary id).core.work++
-      [(borrowedSkywalkUnary id).flag]).toFinset := by
-    cases divide
-    · simp only [Bool.false_eq_true,if_false] at hraw
-      rw [u.2] at hraw
-      exact hraw
-    · simp only [if_true] at hraw
-      rw [u.1] at hraw
-      exact List.mem_toFinset.mpr (List.mem_append_left _ (List.mem_toFinset.mp hraw))
-  have site : fieldSite old := by
-    change old∈((wireBlock id 2056 256++[id 2312])++
-      (wireBlock id 512 257++wireBlock id 1540 256++[id 1797])++[id 769]).toFinset at member
-    simp only [List.mem_toFinset,wireBlock,List.map_id,List.mem_append,List.mem_cons,List.not_mem_nil,
-      List.mem_range'_1,or_false] at member
-    dsimp only [id] at member
-    simp only [or_assoc] at member
-    rcases member with h|rfl|h|h|rfl|rfl
-    · exact Or.inr (Or.inr (Or.inr (Or.inl (by omega))))
-    · norm_num [fieldSite]
-    · exact Or.inl (by omega)
-    · exact Or.inr (Or.inr (Or.inl (by omega)))
-    · norm_num [fieldSite]
-    · norm_num [fieldSite]
-  exact allPlaced_field_mem old site
-
 theorem copy_support : wires (renameProgram allPlaced
     (copyRegister none (skywalkSharedField id).z (skywalkSharedField id).a))⊆slots.toFinset := by
   have zword : (skywalkSharedField id).z=wireBlock id 2056 257 := skywalkShared_field_z id
@@ -7889,16 +4778,6 @@ def fieldSegment (divide : Bool) : Program :=
   renameProgram allPlaced (converterPair true)++
   (if divide then renameProgram allPlaced (copyRegister none (skywalkSharedField id).z (skywalkSharedField id).a)
    else renameProgram allPlaced (halfInPlace (borrowedSkywalkUnary id) p))
-
-theorem fieldSegment_support (divide : Bool) : wires (fieldSegment divide)⊆slots.toFinset := by
-  have unary := unary_support divide
-  have a := converters_support false
-  have b := converters_support true
-  have r := mappedReplay_support divide
-  cases divide <;> simp only [fieldSegment,Bool.false_eq_true,if_false,if_true,
-    wires_append,Finset.union_subset_iff,and_assoc]
-  · exact ⟨copy_support,a,r,b,unary⟩
-  · exact ⟨unary,a,r,b,copy_support⟩
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -8021,121 +4900,6 @@ def forward (w : Nat → Wire) (b g swap flag : Wire) (ig is : Bool) : Program :
   transcriptSelectWindow b swap flag is
     (swapRegisters flag (balancedSharedPorts w flag).r (balancedSharedPorts w flag).y)
 
-/-- Swap selection is retired before selecting the inverse field control.
-This uses the independently measured inverse kernel, never reversed MX. -/
-def inverse (w : Nat → Wire) (b g swap flag : Wire) (ig is : Bool) : Program :=
-  transcriptSelectWindow b swap flag is
-    (swapRegisters flag (balancedSharedPorts w flag).r (balancedSharedPorts w flag).y) ++
-  transcriptSelectWindow b g flag ig
-    ([.X flag]++OffsetBorrowedInverse.program w flag++[.X flag])
-
-def sites (w : Nat → Wire) (b g swap flag : Wire) : List Wire :=
-  [b,g,swap]++CompressedFieldSupport.sharedSites w flag
-
-theorem counts (w : Nat → Wire) (b g swap flag : Wire) (ig is : Bool)
-    (hn : (flag::(balancedSharedPorts w flag).r++
-      (balancedSharedPorts w flag).y).Nodup) :
-    toffoliCount (forward w b g swap flag ig is)=1280 ∧
-    measurementCount (forward w b g swap flag ig is)=1025 ∧
-    toffoliCount (inverse w b g swap flag ig is)=1281 ∧
-    measurementCount (inverse w b g swap flag ig is)=1025 := by
-  have width := BalancedCleanup.widths (balancedSharedPorts w flag).toLayout
-    (balancedSharedPorts_widths w flag)
-  have sw := swapRegisters_resources flag _ _ (width.2.1.trans width.2.2.1.symm) hn
-  have fw := OffsetBorrowedField.counts w flag
-  have iv := OffsetBorrowedInverse.counts w flag
-  have fsel := transcriptSelectWindow_counts b g flag ig
-    ([.X flag]++OffsetBorrowedField.program w flag++[.X flag])
-  have isel := transcriptSelectWindow_counts b g flag ig
-    ([.X flag]++OffsetBorrowedInverse.program w flag++[.X flag])
-  have ssel := transcriptSelectWindow_counts b swap flag is
-    (swapRegisters flag (balancedSharedPorts w flag).r (balancedSharedPorts w flag).y)
-  simp only [forward,inverse,toffoliCount_append,measurementCount_append,
-    fsel.1,fsel.2,isel.1,isel.2,ssel.1,ssel.2,
-    fw.1,fw.2,iv.1,iv.2,sw.1,sw.2.1,width.2.1]
-  norm_num [toffoliCount,measurementCount]
-
-theorem forward_counts (w : Nat → Wire) (b g swap flag : Wire) (ig is : Bool)
-    (hn : (flag::(balancedSharedPorts w flag).r++(balancedSharedPorts w flag).y).Nodup) :
-    toffoliCount (forward w b g swap flag ig is)=1280 ∧
-    measurementCount (forward w b g swap flag ig is)=1025 := by
-  have h := counts w b g swap flag ig is hn
-  exact ⟨h.1,h.2.1⟩
-
-theorem inverse_counts (w : Nat → Wire) (b g swap flag : Wire) (ig is : Bool)
-    (hn : (flag::(balancedSharedPorts w flag).r++(balancedSharedPorts w flag).y).Nodup) :
-    toffoliCount (inverse w b g swap flag ig is)=1281 ∧
-    measurementCount (inverse w b g swap flag ig is)=1025 := by
-  have h := counts w b g swap flag ig is hn
-  exact ⟨h.2.2.1,h.2.2.2⟩
-
-private theorem window_support (b src flag : Wire) (constant : Bool)
-    (body : Program) (W : Finset Wire) (hb : b∈W) (hs : src∈W)
-    (hf : flag∈W) (hbody : wires body⊆W) :
-    wires (transcriptSelectWindow b src flag constant body)⊆W := by
-  have select : wires (transcriptSelectCompute b src flag constant)⊆W ∧
-      wires (transcriptSelectExpose flag constant)⊆W ∧
-      wires (transcriptSelectErase b src flag constant)⊆W := by
-    cases constant <;>
-      simp [transcriptSelectCompute,transcriptSelectExpose,transcriptSelectErase,
-        wires,Instr.wires,correctionWires,Finset.subset_iff,hb,hs,hf]
-  simp only [transcriptSelectWindow,wires_append,Finset.union_subset_iff,and_assoc]
-  exact ⟨select.1,select.2.1,hbody,select.2.1,select.2.2⟩
-
-private theorem swap_layout_support (L : BalancedCircuit.Layout)
-    (hw : L.r.length=L.y.length) :
-    wires (swapRegisters L.sign L.r L.y)⊆L.wires.toFinset := by
-  intro q hq
-  have member := (swapRegisters_wires L.sign L.r L.y hw) hq
-  simp only [BalancedCircuit.Layout.wires,BalancedCleanup.Layout.wires,
-    BalancedCleanup.Layout.r,BalancedCleanup.Layout.low,BalancedCleanup.Layout.y,
-    List.mem_toFinset,List.mem_cons,List.mem_append,List.not_mem_nil,or_false] at member ⊢
-  tauto
-
-/-- Only one effective-control site occurs in either actual instruction list.
-All measured Z/CZ correction support is included. -/
-theorem support (w : Nat → Wire) (b g swap flag : Wire) (ig is : Bool) :
-    wires (forward w b g swap flag ig is)⊆(sites w b g swap flag).toFinset ∧
-    wires (inverse w b g swap flag ig is)⊆(sites w b g swap flag).toFinset := by
-  let L := balancedSharedPorts w flag
-  let W := (sites w b g swap flag).toFinset
-  have own : L.wires.toFinset⊆W := by
-    intro q hq
-    simp only [W,sites,CompressedFieldSupport.sharedSites,List.mem_toFinset,
-      List.mem_append] at ⊢
-    exact Or.inr (Or.inl (Or.inr (List.mem_toFinset.mp hq)))
-  have kernelOwn : (CompressedFieldSupport.sharedSites w flag).toFinset⊆W := by
-    intro q hq
-    simp only [W,sites,List.mem_toFinset,List.mem_append]
-    exact Or.inr (List.mem_toFinset.mp hq)
-  have controls : b∈W ∧ g∈W ∧ swap∈W ∧ flag∈W := by
-    simp [W,sites,CompressedFieldSupport.sharedSites]
-  have kernels := CompressedFieldSupport.kernels_support w flag
-  have flagSupport : wires [.X flag]⊆W := by
-    simp [wires,Instr.wires,Finset.subset_iff,controls.2.2.2]
-  have fw : wires ([.X flag]++OffsetBorrowedField.program w flag++[.X flag])⊆W := by
-    simp only [wires_append,Finset.union_subset_iff]
-    exact ⟨⟨flagSupport,kernels.1.trans kernelOwn⟩,flagSupport⟩
-  have iv : wires ([.X flag]++OffsetBorrowedInverse.program w flag++[.X flag])⊆W := by
-    simp only [wires_append,Finset.union_subset_iff]
-    exact ⟨⟨flagSupport,kernels.2.trans kernelOwn⟩,flagSupport⟩
-  have width := BalancedCleanup.widths L.toLayout (balancedSharedPorts_widths w flag)
-  have sw : wires (swapRegisters flag L.r L.y)⊆W :=
-    (swap_layout_support L (width.2.1.trans width.2.2.1.symm)).trans own
-  have fwin := window_support b g flag ig _ W controls.1 controls.2.1 controls.2.2.2 fw
-  have iwin := window_support b g flag ig _ W controls.1 controls.2.1 controls.2.2.2 iv
-  have swin := window_support b swap flag is _ W controls.1 controls.2.2.1 controls.2.2.2 sw
-  simp only [forward,inverse,wires_append,Finset.union_subset_iff]
-  exact ⟨⟨fwin,swin⟩,⟨swin,iwin⟩⟩
-
-theorem omitted_effS_away (w : Nat → Wire) (b g swap flag oldEffS : Wire)
-    (ig is : Bool) (ha : oldEffS∉sites w b g swap flag) :
-    oldEffS∉wires (forward w b g swap flag ig is) ∧
-    oldEffS∉wires (inverse w b g swap flag ig is) := by
-  have h := support w b g swap flag ig is
-  exact ⟨fun hm => ha (List.mem_toFinset.mp (h.1 hm)),
-    fun hm => ha (List.mem_toFinset.mp (h.2 hm))⟩
-
 end ECDSAAdd.Arithmetic.OffsetBorrowedSerialized
 end
 
@@ -8194,144 +4958,6 @@ theorem half_eq (w : Nat → Wire) (sign : Wire) (hn : (skywalkSharedWires w).No
   rw [eu,run_append,run_take]
   exact zero_records [.X sign] (by simp only [measurementCount]) _ _ _
 
-private theorem swap_pair (r y : List Wire) (c : Wire) (hlen : r.length=y.length)
-    (hn : (c::r++y).Nodup) (base : BasisState) (A B : Nat) :
-    Triple (PairFrame r y base A B) (swapRegisters c r y)
-      (PairFrame r y base (if base c then B else A) (if base c then A else B)) := by
-  intro s m h
-  have v := swapRegisters_correct c r y hlen hn s m
-  have ca : c∉r ∧ c∉y := by
-    have d := (List.nodup_cons.mp hn).1
-    exact ⟨fun hm => d (List.mem_append_left _ hm),fun hm => d (List.mem_append_right _ hm)⟩
-  have same := h.2.2 c ca.1 ca.2
-  refine ⟨v.1,?_,?_,fun q qr qy => (v.2.1 q qr qy).trans (h.2.2 q qr qy)⟩
-  · rw [v.2.2.1,same,h.1,h.2.1]
-  · rw [v.2.2.2,same,h.1,h.2.1]
-
-
-private theorem field_frame (divide : Bool) (w : Nat → Wire) (sign : Wire)
-    (hn : (skywalkSharedWires w).Nodup) (ho : sign∉skywalkSharedWires w)
-    (base : BasisState) (he : Env w base) (X Y : Fp) :
-    Triple (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-      (centerWord X) (centerWord Y))
-      ([.X sign]++(if divide then OffsetBorrowedField.program w sign
-        else OffsetBorrowedInverse.program w sign)++[.X sign])
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-        (centerWord (if divide then (X+(if base sign then Y else -Y))/2
-          else 2*X+(if base sign then -Y else Y))) (centerWord Y)) := by
-  have own : sign∉balancedSharedIds.map w := fun h =>
-    ho (balancedSharedLayout_mapSubset w balancedSharedIds balancedSharedIds_bound h)
-  have nd := balancedSharedPorts_nodup w sign hn own
-  have clean := balancedSharedPorts_clean w sign base he.1 he.2.1
-  cases divide
-  · have old := balancedTranscriptDouble_frame (balancedSharedPorts w sign)
-      (balancedSharedPorts_widths w sign) nd base clean X Y
-    intro s m h
-    simp only [Bool.false_eq_true,if_false]
-    rw [← OffsetBorrowedInverseCanonical.double,
-      OffsetBorrowedInverseCanonical.double_eq w sign hn ho base he X Y s m h]
-    exact old s m h
-  · have old := balancedTranscriptHalf_frame (balancedSharedPorts w sign)
-      (balancedSharedPorts_widths w sign) nd base clean X Y
-    intro s m h
-    simp only [if_true]
-    rw [half_eq w sign hn ho base he X Y s m h]
-    exact old s m h
-
-private theorem field_window (divide : Bool) (w : Nat → Wire) (b src sign : Wire)
-    (constant : Bool) (hn : (skywalkSharedWires w).Nodup)
-    (ho : sign∉skywalkSharedWires w) (nd : [b,src,sign].Nodup)
-    (hb : b∉(balancedSharedPorts w sign).r ∧ b∉(balancedSharedPorts w sign).y)
-    (hs : src∉(balancedSharedPorts w sign).r ∧ src∉(balancedSharedPorts w sign).y)
-    (hf : sign∉(balancedSharedPorts w sign).r ∧ sign∉(balancedSharedPorts w sign).y)
-    (base : BasisState) (hz : base sign=false) (he : Env w base) (X Y : Fp) :
-    Triple (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-      (centerWord X) (centerWord Y))
-      (transcriptSelectWindow b src sign constant ([.X sign]++
-        (if divide then OffsetBorrowedField.program w sign else OffsetBorrowedInverse.program w sign)++[.X sign]))
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-        (centerWord (if divide then (X+(if mixedTranscriptBit base b src constant then Y else -Y))/2
-          else 2*X+(if mixedTranscriptBit base b src constant then -Y else Y))) (centerWord Y)) := by
-  have f := field_frame divide w sign hn ho (mixedTranscriptBase base b src sign constant)
-    (env_write w sign ho base _ he) X Y
-  simp only [mixedTranscriptBase,writeBit,Function.update_self] at f
-  exact transcriptSelectWindow_pairFrame b src sign constant _ _ nd hb hs hf base hz _ _ _ _ _ f
-
-private theorem swap_window (w : Nat → Wire) (b src sign : Wire) (constant : Bool)
-    (nd : [b,src,sign].Nodup)
-    (hb : b∉(balancedSharedPorts w sign).r ∧ b∉(balancedSharedPorts w sign).y)
-    (hs : src∉(balancedSharedPorts w sign).r ∧ src∉(balancedSharedPorts w sign).y)
-    (hf : sign∉(balancedSharedPorts w sign).r ∧ sign∉(balancedSharedPorts w sign).y)
-    (sw : (sign::(balancedSharedPorts w sign).r++(balancedSharedPorts w sign).y).Nodup)
-    (base : BasisState) (hz : base sign=false) (X Y : Fp) :
-    Triple (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-      (centerWord X) (centerWord Y))
-      (transcriptSelectWindow b src sign constant
-        (swapRegisters sign (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y))
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-        (centerWord (if mixedTranscriptBit base b src constant then Y else X))
-        (centerWord (if mixedTranscriptBit base b src constant then X else Y))) := by
-  have len := BalancedCleanup.widths (balancedSharedPorts w sign).toLayout (balancedSharedPorts_widths w sign)
-  have f := swap_pair _ _ sign (len.2.1.trans len.2.2.1.symm) sw
-    (mixedTranscriptBase base b src sign constant) (centerWord X) (centerWord Y)
-  simp only [mixedTranscriptBase,writeBit,Function.update_self] at f
-  have f' : Triple
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y
-        (mixedTranscriptBase base b src sign constant) (centerWord X) (centerWord Y))
-      (swapRegisters sign (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y)
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y
-      (mixedTranscriptBase base b src sign constant)
-      (centerWord (if mixedTranscriptBit base b src constant then Y else X))
-      (centerWord (if mixedTranscriptBit base b src constant then X else Y))) := by
-    cases hbit : mixedTranscriptBit base b src constant <;>
-      simpa only [mixedTranscriptBase,writeBit,hbit,if_true,if_false,Bool.false_eq_true] using f
-  exact transcriptSelectWindow_pairFrame b src sign constant _ _ nd hb hs hf base hz _ _ _ _ _ f'
-
-theorem cell_frame (divide : Bool) (w : Nat → Wire) (b g swap sign effS : Wire) (ig is : Bool)
-    (hn : (skywalkSharedWires w).Nodup)
-    (hl : BalancedTranscriptLayout (balancedSharedPorts w sign) b g swap effS)
-    (ho : sign∉skywalkSharedWires w) (base : BasisState) (hz : base sign=false)
-    (he : Env w base) (X Y : Fp) :
-    Triple (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-      (centerWord X) (centerWord Y))
-      (if divide then forward w b g swap sign ig is else inverse w b g swap sign ig is)
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-        (centerWord (if divide then skywalkPayloadCell (mixedTranscriptBit base b g ig)
-          (mixedTranscriptBit base b swap is) (X,Y) else skywalkPayloadUncell
-          (mixedTranscriptBit base b g ig) (mixedTranscriptBit base b swap is) (X,Y)).1)
-        (centerWord (if divide then skywalkPayloadCell (mixedTranscriptBit base b g ig)
-          (mixedTranscriptBit base b swap is) (X,Y) else skywalkPayloadUncell
-          (mixedTranscriptBit base b g ig) (mixedTranscriptBit base b swap is) (X,Y)).2)) := by
-  have flags := hl.controls
-  simp only [balancedSharedPorts,List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
-    not_or,not_false_eq_true,and_true] at flags
-  have sg : [b,g,sign].Nodup := by simp [List.nodup_cons]; tauto
-  have ss : [b,swap,sign].Nodup := by simp [List.nodup_cons]; tauto
-  have ba := hl.outside b (by simp)
-  have ga := hl.outside g (by simp)
-  have sa := hl.outside swap (by simp)
-  have fa := hl.outside sign (by simp [balancedSharedPorts])
-  have sw : (sign::(balancedSharedPorts w sign).r++(balancedSharedPorts w sign).y).Nodup :=
-    List.nodup_cons.mpr ⟨by
-      intro h
-      rcases List.mem_append.mp h with h|h
-      · exact fa.1 h
-      · exact fa.2 h,
-      balancedSharedLayout_pairND w sign hn⟩
-  cases divide
-  · let A := if mixedTranscriptBit base b swap is then Y else X
-    let B := if mixedTranscriptBit base b swap is then X else Y
-    have first := swap_window w b swap sign is ss ba sa fa sw base hz X Y
-    have last := field_window false w b g sign ig hn ho sg ba ga fa base hz he A B
-    have result := first.seq last
-    cases hswap : mixedTranscriptBit base b swap is <;>
-      simpa only [inverse,skywalkPayloadUncell,A,B,hswap,if_true,if_false,Bool.false_eq_true] using result
-  · let H := (X+(if mixedTranscriptBit base b g ig then Y else -Y))/2
-    have first := field_window true w b g sign ig hn ho sg ba ga fa base hz he X Y
-    have last := swap_window w b swap sign is ss ba sa fa sw base hz H Y
-    have result := first.seq last
-    cases hswap : mixedTranscriptBit base b swap is <;>
-      simpa only [forward,skywalkPayloadCell,H,hswap,if_true,if_false,Bool.false_eq_true] using result
 end ECDSAAdd.Arithmetic.OffsetBorrowedSerialized
 end
 
@@ -8399,38 +5025,6 @@ namespace ECDSAAdd.Arithmetic.EndpointSwapTrim
 open Secp256k1 BalancedField OffsetBorrowedCanonical
 attribute [local irreducible] run OffsetBorrowedField.program OffsetBorrowedInverse.program
   BalancedCircuit.program BalancedInverse.program
-
-private theorem swap_equal_pair (r y : List Wire) (c : Wire) (hlen : r.length=y.length)
-    (hn : (c::r++y).Nodup) (base : BasisState) (X : Nat) :
-    Triple (PairFrame r y base X X) (swapRegisters c r y) (PairFrame r y base X X) := by
-  intro s m h
-  have v := swapRegisters_correct c r y hlen hn s m
-  refine ⟨v.1,?_,?_,fun q qr qy => (v.2.1 q qr qy).trans (h.2.2 q qr qy)⟩
-  · simpa only [h.1,h.2.1,ite_self] using v.2.2.1
-  · simpa only [h.1,h.2.1,ite_self] using v.2.2.2
-
-/-- The complete actual measured S window is identity on equal words,
-including both control polarities and every outcome. Its flag must start0. -/
-theorem swap_window_state (r y : List Wire) (b src flag : Wire) (constant : Bool)
-    (hlen : r.length=y.length) (hn : (flag::r++y).Nodup)
-    (nd : [b,src,flag].Nodup) (hb : b∉r ∧ b∉y) (hs : src∉r ∧ src∉y)
-    (s : State) (m : List Bool) (hz : s.basis flag=false)
-    (heq : regValue r s.basis=regValue y s.basis) :
-    run (transcriptSelectWindow b src flag constant (swapRegisters flag r y)) m s=s := by
-  have hf : flag∉r ∧ flag∉y := by
-    have away := (List.nodup_cons.mp hn).1
-    exact ⟨fun h => away (List.mem_append_left _ h),
-      fun h => away (List.mem_append_right _ h)⟩
-  let X := regValue r s.basis
-  have input : PairFrame r y s.basis X X s.basis := ⟨rfl,heq.symm,fun _ _ _ => rfl⟩
-  have body := swap_equal_pair r y flag hlen hn
-    (mixedTranscriptBase s.basis b src flag constant) X
-  have window := transcriptSelectWindow_pairFrame b src flag constant r y
-    nd hb hs hf s.basis hz X X X X (swapRegisters flag r y) body
-  have out := window s m input
-  apply State.extensionality
-  · exact out.1
-  · exact PairFrame.unique r y s.basis X X _ _ out.2 input
 
 private theorem kernel_frame (divide : Bool) (w : Nat → Wire) (sign : Wire)
     (hn : (skywalkSharedWires w).Nodup) (ho : sign∉skywalkSharedWires w)
@@ -8506,25 +5100,6 @@ theorem forward_dup_of_payload_equal (G S : Bool) (X Y : Fp)
     have eq : Y=(X+(if G then Y else -Y))/2 := by
       simpa only [skywalkPayloadCell,if_true] using h
     exact eq.symm
-
-theorem forward_support_subset (w : Nat → Wire) (b g swap sign : Wire) (ig is : Bool) :
-    wires (forward w b g sign ig)⊆
-      wires (OffsetBorrowedSerialized.forward w b g swap sign ig is) := by
-  change wires (forward w b g sign ig)⊆
-    wires (forward w b g sign ig ++ transcriptSelectWindow b swap sign is
-      (swapRegisters sign (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y))
-  rw [wires_append]
-  exact Finset.subset_union_left
-
-theorem inverse_support_subset (w : Nat → Wire) (b g swap sign : Wire) (ig is : Bool) :
-    wires (inverse w b g sign ig)⊆
-      wires (OffsetBorrowedSerialized.inverse w b g swap sign ig is) := by
-  change wires (inverse w b g sign ig)⊆
-    wires (transcriptSelectWindow b swap sign is
-      (swapRegisters sign (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y) ++
-        inverse w b g sign ig)
-  rw [wires_append]
-  exact Finset.subset_union_right
 
 /-- Forward duplication is required at the swap boundary, not at the input.
 The accepted final replay postcondition supplies this equality. G may be either
@@ -8649,15 +5224,6 @@ theorem mappedGroups_counts (divide : Bool) (j n : Nat) :
       toffoliCount_append,measurementCount_append,head.1,head.2,rest.1,rest.2]
     all_goals constructor <;> omega
 
-theorem mappedReplay_counts (divide : Bool) :
-    toffoliCount (mappedReplay divide)=(if divide then 656550 else 657062) ∧ measurementCount (mappedReplay divide)=524970 := by
-  have groups := mappedGroups_counts divide 0 170
-  have a := logicalCell_counts divide 510
-  have b := logicalCell_counts divide 511
-  cases divide <;> simp only [mappedReplay,Bool.false_eq_true,if_false,if_true,
-    toffoliCount_append,measurementCount_append,renameT,renameM,groups.1,groups.2,a.1,a.2,b.1,b.2]
-  all_goals norm_num
-
 theorem converterPair_counts (canonical : Bool) :
     toffoliCount (converterPair canonical)=1530 ∧ measurementCount (converterPair canonical)=1530 := by
   have target := BalancedConvert.counts (balancedSharedTargetConvert id) (balancedSharedTargetConvert_widths id)
@@ -8665,29 +5231,6 @@ theorem converterPair_counts (canonical : Bool) :
   cases canonical <;> simp only [converterPair,Bool.false_eq_true,if_false,if_true,
     toffoliCount_append,measurementCount_append,target.1,target.2.1,target.2.2.1,target.2.2.2,
     source.1,source.2.1,source.2.2.1,source.2.2.2]
-  all_goals norm_num
-
-private theorem endpointCopy_counts :
-    toffoliCount (copyRegister none (skywalkSharedField id).z (skywalkSharedField id).a)=0 ∧
-    measurementCount (copyRegister none (skywalkSharedField id).z (skywalkSharedField id).a)=0 := by
-  have len : (skywalkSharedField id).z.length=(skywalkSharedField id).a.length := by
-    rw [skywalkShared_field_z]
-    change (wireBlock id 2056 257).length=(wireBlock id 770 257).length
-    simp [wireBlock]
-  have copy := copyRegister_counts none (skywalkSharedField id).z (skywalkSharedField id).a len
-  simpa only [Option.isSome_none,Bool.false_eq_true,if_false] using copy
-
-theorem fieldSegment_counts (divide : Bool) :
-    toffoliCount (fieldSegment divide)=(if divide then 660121 else 660634) ∧
-    measurementCount (fieldSegment divide)=(if divide then 528541 else 528542) := by
-  have unary := modUnary_counts (borrowedSkywalkUnary id) 256 p (borrowedSkywalkUnary_widths id) (by omega)
-  have center := converterPair_counts false
-  have canonical := converterPair_counts true
-  have replay := mappedReplay_counts divide
-  cases divide <;> simp only [fieldSegment,Bool.false_eq_true,if_false,if_true,
-    toffoliCount_append,measurementCount_append,renameT,renameM,endpointCopy_counts.1,
-    endpointCopy_counts.2,unary.1,unary.2.1,unary.2.2.1,unary.2.2.2,
-    center.1,center.2,canonical.1,canonical.2,replay.1,replay.2]
   all_goals norm_num
 
 end ECDSAAdd.Arithmetic.MappedCompressed
@@ -8761,10 +5304,6 @@ def baseGroups (divide : Bool) (j : Nat) : Nat → Program
   | n+1 => if divide then baseGroup divide j++baseGroups divide (j+1) n
     else baseGroups divide (j+1) n++baseGroup divide j
 
-def baseTail (divide : Bool) : Program :=
-  if divide then renameProgram base (logicalCell divide 510)++renameProgram base (logicalCell divide 511)
-  else renameProgram base (logicalCell divide 511)++renameProgram base (logicalCell divide 510)
-
 theorem baseGroup_counts (divide : Bool) (j : Nat) :
     toffoliCount (baseGroup divide j)=(if divide then 3847 else 3850) ∧ measurementCount (baseGroup divide j)=3076 := by
   have codec := compressedHistory_counts base (3*j)
@@ -8775,38 +5314,6 @@ theorem baseGroup_counts (divide : Bool) (j : Nat) :
     toffoliCount_append,measurementCount_append,baseRenameT,baseRenameM,
     a.1,a.2,b.1,b.2,c.1,c.2,codec.1,codec.2.1,codec.2.2.1,codec.2.2.2]
   all_goals norm_num
-
-theorem baseGroups_counts (divide : Bool) (j n : Nat) :
-    toffoliCount (baseGroups divide j n)=(if divide then 3847 else 3850)*n ∧
-    measurementCount (baseGroups divide j n)=3076*n := by
-  induction n generalizing j with
-  | zero => simp [baseGroups,toffoliCount,measurementCount]
-  | succ n ih =>
-    have head := baseGroup_counts divide j
-    have rest := ih (j+1)
-    cases divide <;> simp only [baseGroups,Bool.false_eq_true,if_false,if_true,
-      toffoliCount_append,measurementCount_append,head.1,head.2,rest.1,rest.2]
-    all_goals constructor <;> omega
-
-theorem baseGroup_counts_eq (divide : Bool) (j : Nat) (hj : j < 170) :
-    toffoliCount (baseGroup divide j)=toffoliCount (mappedGroup divide j) ∧
-    measurementCount (baseGroup divide j)=measurementCount (mappedGroup divide j) := by
-  rw [mappedGroup_eq_rename divide j hj]
-  have counts := renameProgram_counts (shifted (CompressedAllocation.pi j)) (baseGroup divide j)
-  exact ⟨counts.1.symm,counts.2.symm⟩
-
-theorem baseGroups_counts_eq (divide : Bool) (j n : Nat) (h : j+n ≤ 170) :
-    toffoliCount (baseGroups divide j n)=toffoliCount (mappedGroups divide j n) ∧
-    measurementCount (baseGroups divide j n)=measurementCount (mappedGroups divide j n) := by
-  induction n generalizing j with
-  | zero => simp only [baseGroups,mappedGroups]
-            constructor <;> trivial
-  | succ n ih =>
-    have head := baseGroup_counts_eq divide j (by omega)
-    have rest := ih (j+1) (by omega)
-    cases divide <;> simp only [baseGroups,mappedGroups,Bool.false_eq_true,if_false,if_true,
-      toffoliCount_append,measurementCount_append,head.1,head.2,rest.1,rest.2]
-    all_goals constructor <;> trivial
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -8946,110 +5453,16 @@ theorem indexedLetters_full : indexedLetters 0 512=mixedTranscriptTape base := b
   have h := enumerate_getD (mixedTranscriptTape base) ((0,0),(false,false))
   simpa only [mixedTranscriptTape_length,indexedLetters,tapeLetter,Nat.zero_add] using h
 
-private theorem indexedLetters_zero (start : Nat) : indexedLetters start 0=[] := rfl
-
-private theorem indexedLetters_step (start n : Nat) :
-    indexedLetters start (n+1)=tapeLetter start::indexedLetters (start+1) n := by
-  simp only [indexedLetters,List.range_succ_eq_map,List.map_cons,List.map_map,Function.comp_def]
-  simp only [Nat.add_zero,Nat.succ_eq_add_one,Nat.add_assoc,Nat.add_comm,Nat.add_left_comm]
-
-private theorem indexedLetters_three (start n : Nat) :
-    indexedLetters start (n+3)=tapeLetter start::tapeLetter (start+1)::tapeLetter (start+2)::
-      indexedLetters (start+3) n := by
-  rw [show n+3=(n+2)+1 by omega,indexedLetters_step,
-    show n+2=(n+1)+1 by omega,indexedLetters_step,indexedLetters_step]
-
 def referenceCell (divide : Bool) (l : MixedTranscriptLetter) : Program :=
   if divide then OffsetBorrowedCanonical.cell base (base 2400) l.1.1 l.1.2
     (base 2409) (base 2410) l.2.1 l.2.2
   else OffsetBorrowedInverseCanonical.cell base (base 2400) l.1.1 l.1.2
     (base 2409) (base 2410) l.2.1 l.2.2
 
-def referenceGroups (divide : Bool) (start : Nat) (ls : List MixedTranscriptLetter) : Program :=
-  if divide then codecGroupForward base (referenceCell divide) start ls
-  else codecGroupBackward base (referenceCell divide) start ls
-
 theorem referenceCell_letter (divide : Bool) (i : Nat) (hi : i < 512) :
     referenceCell divide (tapeLetter i)=renameProgram base (logicalCell divide i) := by
   rw [tapeLetter,mixedTape_base_getD i hi,base_cell_eq]
   cases divide <;> rfl
-
-private theorem reference_cons3 (divide : Bool) (start : Nat)
-    (a c d : MixedTranscriptLetter) (tail : List MixedTranscriptLetter) :
-    referenceGroups divide start (a::c::d::tail)=
-      if divide then referenceGroups divide start [a,c,d]++referenceGroups divide (start+3) tail
-      else referenceGroups divide (start+3) tail++referenceGroups divide start [a,c,d] := by
-  cases divide <;> simp only [referenceGroups,Bool.false_eq_true,if_false,if_true,
-    codecGroupForward,codecGroupBackward,List.append_nil,List.nil_append,List.append_assoc]
-
-theorem baseGroup_eq_reference (divide : Bool) (j : Nat) (hj : j < 170) :
-    baseGroup divide j=referenceGroups divide (3*j) (packetLetters j) := by
-  have packet := baseGroup_eq_packet divide j hj
-  cases divide <;> simpa only [referenceGroups,referenceCell,Bool.false_eq_true,if_false,if_true] using packet
-
-private theorem reference_packet_append (divide : Bool) (j : Nat) (hj : j < 170)
-    (tail : List MixedTranscriptLetter) :
-    referenceGroups divide (3*j) (packetLetters j++tail)=
-      if divide then baseGroup divide j++referenceGroups divide (3*j+3) tail
-      else referenceGroups divide (3*j+3) tail++baseGroup divide j := by
-  have h := reference_cons3 divide (3*j) (tapeLetter (3*j))
-    (tapeLetter (3*j+1)) (tapeLetter (3*j+2)) tail
-  change referenceGroups divide (3*j) (packetLetters j++tail)=
-    (if divide then referenceGroups divide (3*j) (packetLetters j)++referenceGroups divide (3*j+3) tail
-     else referenceGroups divide (3*j+3) tail++referenceGroups divide (3*j) (packetLetters j)) at h
-  rw [←baseGroup_eq_reference divide j hj] at h
-  exact h
-
-theorem baseTail_eq_reference (divide : Bool) :
-    baseTail divide=referenceGroups divide 510 (indexedLetters 510 2) := by
-  have a := referenceCell_letter divide 510 (by omega)
-  have b := referenceCell_letter divide 511 (by omega)
-  have letters : indexedLetters 510 2=[tapeLetter 510,tapeLetter 511] := by
-    rw [show 2=1+1 by rfl,indexedLetters_step,show 1=0+1 by rfl,indexedLetters_step,indexedLetters_zero]
-  rw [letters]
-  cases divide <;> simp only [baseTail,referenceGroups,Bool.false_eq_true,if_false,if_true,
-    codecGroupForward,codecGroupBackward,a,b]
-
-/-- Structural recursion over all170 packets and the two raw terminal letters.
-The tape is reconstructed from its actual getD values, with no body oracle. -/
-theorem baseGroups_tail_eq_reference (divide : Bool) (j n : Nat) (h : j+n=170) :
-    (if divide then baseGroups divide j n++baseTail divide
-     else baseTail divide++baseGroups divide j n)=
-      referenceGroups divide (3*j) (indexedLetters (3*j) (3*n+2)) := by
-  induction n generalizing j with
-  | zero =>
-    have hj : j=170 := by omega
-    subst j
-    simpa only [baseGroups,Nat.mul_zero,Nat.zero_add,Nat.reduceMul,
-      List.nil_append,List.append_nil,ite_self] using baseTail_eq_reference divide
-  | succ n ih =>
-    have rest := ih (j+1) (by omega)
-    have split : indexedLetters (3*j) (3*(n+1)+2)=
-        packetLetters j++indexedLetters (3*(j+1)) (3*n+2) := by
-      rw [show 3*(n+1)+2=(3*n+2)+3 by omega,indexedLetters_three]
-      simp only [packetLetters,tapeLetter,List.cons_append,List.nil_append]
-      rw [show 3*j+3=3*(j+1) by omega]
-    rw [split,reference_packet_append divide j (by omega),
-      show 3*j+3=3*(j+1) by omega]
-    cases divide <;> simp only [baseGroups,Bool.false_eq_true,if_false,if_true] at rest ⊢
-    · rw [←rest]
-      simp only [List.append_assoc]
-    · rw [←rest]
-      simp only [List.append_assoc]
-
-theorem base_forward_replay_identity :
-    baseGroups true 0 170++baseTail true=
-      compressedFieldForwardGroups base (base 2400) (base 2409) (base 2410) := by
-  have h := baseGroups_tail_eq_reference true 0 170 (by omega)
-  simpa only [if_true,Nat.mul_zero,Nat.zero_add,Nat.reduceMul,Nat.reduceAdd,indexedLetters_full,
-    referenceGroups,referenceCell,compressedFieldForwardGroups] using h
-
-theorem base_backward_replay_identity :
-    baseTail false++baseGroups false 0 170=
-      compressedFieldBackwardGroups base (base 2400) (base 2409) (base 2410) := by
-  have h := baseGroups_tail_eq_reference false 0 170 (by omega)
-  simpa only [Bool.false_eq_true,if_false,Nat.mul_zero,Nat.zero_add,Nat.reduceMul,Nat.reduceAdd,
-    indexedLetters_full,referenceGroups,referenceCell,compressedFieldBackwardGroups] using h
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -9153,23 +5566,12 @@ theorem terminates_2n_sub_one (p x n : Nat) (hp0 : 0<p) (_hx0 : 0<x)
   rw [hu,Nat.gcd_zero_left] at hg
   exact ⟨hu,hg⟩
 
-theorem terminates_canonical_sub_one (p x n : Nat) (hp0 : 0<p) (hx0 : 0<x)
-    (hpodd : p%2=1) (hp : p<2^n) (hx : x<p) (hc : p.Coprime x) :
-    (step^[2*n-1] (init x p)).u=0 ∧ (step^[2*n-1] (init x p)).v=1 :=
-  terminates_2n_sub_one p x n hp0 hx0 hpodd hp (hx.trans hp) hc.symm
-
 /-- Complete256-bit canonical range: the state before round512 is terminal. -/
 theorem terminates_511 (p x : Nat) (hp0 : 0<p) (hx0 : 0<x)
     (hpodd : p%2=1) (hp : p<2^256) (hx : x<p) (hc : x.Coprime p) :
     (step^[511] (init x p)).u=0 ∧ (step^[511] (init x p)).v=1 := by
   simpa only [Nat.reduceMul,Nat.reduceSub] using
     (terminates_2n_sub_one p x 256 hp0 hx0 hpodd hp (hx.trans hp) hc)
-
-/-- Padding beyond the improved horizon changes no logical state. -/
-theorem terminal_padding (p x n j : Nat) (hp0 : 0<p) (hx0 : 0<x)
-    (hpodd : p%2=1) (hp : p<2^n) (hx : x<2^n) (hc : x.Coprime p) :
-    step^[j] (step^[2*n-1] (init x p))=step^[2*n-1] (init x p) :=
-  iter_fixed_of_u_zero _ j (terminates_2n_sub_one p x n hp0 hx0 hpodd hp hx hc).1
 
 end ECDSAAdd.SkywalkNat
 end
@@ -9266,18 +5668,6 @@ private theorem map_getD_read {α β : Type} (read : α → β) (rs : List α)
     cases i with
     | zero => rfl
     | succ i => exact ih i
-
-/-- Generic physical-record bridge. Instantiate α=Wire×Wire and read with
-the caller's two basis reads. This stays below arithmetic/kernel imports. -/
-theorem record_index511_controls {α : Type} (rs : List α) (read : α → Bool×Bool)
-    (default : α) (x : Nat) (hx0 : 0<x) (hx : x<ECDSAAdd.p)
-    (hr : rs.map read=trace 512 (encode false false (x : Int) (ECDSAAdd.p : Int))) :
-    read (rs.getD 511 default)=(true,false) := by
-  have h : (rs.map read).getD 511 (read default)=(true,false) := by
-    rw [hr]
-    exact trace512_last x hx0 hx _
-  rw [map_getD_read] at h
-  exact h
 
 private theorem selected_zip_map {α : Type} (rs : List α) (cs : List (Bool×Bool))
     (read : α → Bool×Bool) (enabled : Bool) (hlen : rs.length=cs.length) :
@@ -9496,14 +5886,6 @@ theorem cell_counts (divide : Bool) :
   · exact h.2.2
   · exact ⟨h.1,h.2.1⟩
 
-theorem cell_saving (divide : Bool) :
-    toffoliCount (logicalCell divide 510)=toffoliCount (cell divide)+257 ∧
-    measurementCount (logicalCell divide 510)=measurementCount (cell divide)+1 := by
-  have old := logicalCell_counts divide 510
-  have fresh := cell_counts divide
-  rw [old.1,old.2,fresh.1,fresh.2]
-  cases divide <;> norm_num
-
 def penultimatePayload (origin : BasisState) (Y : Fp) : Fp×Fp :=
   skywalkPayloadReplay (mixedTranscriptControls origin (base 2400) (indexedLetters 0 510)) (2*Y,0)
 
@@ -9634,96 +6016,6 @@ def tailLetters : List MixedTranscriptLetter :=
   [(mixedTranscriptTape base).getD 510 ((0,0),(false,false)),
    (mixedTranscriptTape base).getD 511 ((0,0),(false,false))]
 
-/-- The actual two raw residual cells, in ascending forward order and
-independently measured descending inverse order. -/
-def tailProgram (divide : Bool) : Program :=
-  if divide then renameProgram allPlaced (logicalCell divide 510)++
-      renameProgram allPlaced (logicalCell divide 511)
-  else renameProgram allPlaced (logicalCell divide 511)++
-      renameProgram allPlaced (logicalCell divide 510)
-
-theorem tailLetters_indexed : IndexedLetters base 510 tailLetters := by
-  rw [tailLetters,mixedTape_base_getD 510 (by decide),mixedTape_base_getD 511 (by decide)]
-  simp [IndexedLetters]
-
-/-- Keep the tape indices symbolic while the kernel checks the replay identity. -/
-private theorem two_cells_eq_replay (divide : Bool) (i j : Nat)
-    (hi : i < 512) (hj : j < 512) :
-    (if divide then renameProgram base (logicalCell divide i) ++
-        renameProgram base (logicalCell divide j)
-      else renameProgram base (logicalCell divide j) ++
-        renameProgram base (logicalCell divide i)) =
-    directionalReplay (!divide) base (base 2400) (base 2409) (base 2410)
-      [(mixedTranscriptTape base).getD i ((0,0),(false,false)),
-       (mixedTranscriptTape base).getD j ((0,0),(false,false))] := by
-  have a := mixedTape_base_getD i hi
-  have b := mixedTape_base_getD j hj
-  cases divide <;> simp only [a,b,base_cell_eq,directionalReplay,
-    OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay,
-    Bool.not_false,Bool.not_true,Bool.false_eq_true,if_false,if_true,
-    List.append_nil,List.nil_append]
-
-theorem baseTail_eq_replay (divide : Bool) :
-    baseTail divide=directionalReplay (!divide) base (base 2400) (base 2409) (base 2410) tailLetters := by
-  exact two_cells_eq_replay divide 510 511 (by decide) (by decide)
-
-private theorem shifted_all_cell (divide : Bool) (i : Nat) :
-    renameProgram (shifted pi0) (renameProgram base (logicalCell divide i))=
-      renameProgram allPlaced (logicalCell divide i) := by
-  rw [renameProgram_comp]
-  have eq : shifted pi0 ∘ base=allPlaced := by
-    funext q
-    exact shifted_base pi0 q
-  rw [eq]
-
-theorem tailProgram_eq_rename (divide : Bool) :
-    tailProgram divide=renameProgram (shifted pi0) (baseTail divide) := by
-  cases divide <;> simp only [tailProgram,baseTail,Bool.false_eq_true,if_false,if_true,
-    FieldRename.rename_append,shifted_all_cell]
-
-theorem tailProgram_run (divide : Bool) (s : State) (m : List Bool) :
-    pullState (shifted pi0) (run (tailProgram divide) m s)=
-      run (baseTail divide) m (pullState (shifted pi0) s) := by
-  rw [tailProgram_eq_rename]
-  exact run_rename _ (shifted pi0).injective _ m s
-
-/-- Complete-State transport follows from the same derived clean boundary
-as the packet placement, while all170 earlier groups remain encoded. -/
-theorem tailProgram_state_eq (divide : Bool) (s : State) (m : List Bool)
-    (hin : ∀q,zeroRegion q → s.basis (base q)=false)
-    (hout : ∀q,zeroRegion q → (run (baseTail divide) m s).basis (base q)=false) :
-    run (tailProgram divide) m s=run (baseTail divide) m s := by
-  have input := shifted_zero_boundary pi0 pi0_outside s hin
-  have output := shifted_zero_boundary pi0 pi0_outside (run (baseTail divide) m s) hout
-  apply pullState_perm_injective (shifted pi0)
-  rw [tailProgram_run,input,output]
-
-/-- Both last raw letters implement their exact original field update for
-every independent measurement record, retaining the complete encoded frame. -/
-theorem tailProgram_encoded_step (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) tailLetters)
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    let out := run (tailProgram divide) m s
-    out.phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) tailLetters) (X,Y)).1
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) tailLetters) (X,Y)).2 out := by
-  have reference := encoded_tail_replay (!divide) base (base 2400) (base 2409) (base 2410)
-    hn hlo ho hp 510 tailLetters (by omega) (by simp [tailLetters]) tailLetters_indexed
-    hf origin hg0 hs0 env legal X Y s m input
-  rw [←baseTail_eq_replay divide] at reference
-  have cleanIn := encoded_zero_region base (base 2409) hn hlo origin env X Y s input
-  have cleanOut := encoded_zero_region base (base 2409) hn hlo origin env _ _
-    (run (baseTail divide) m s) reference.2
-  have same := tailProgram_state_eq divide s m cleanIn cleanOut
-  change (run (tailProgram divide) m s).phase=s.phase ∧ _
-  rw [same]
-  exact reference
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -9780,21 +6072,6 @@ theorem packet_layouts (b sign eff : Wire)
     ∀j,j < 170 → MixedTranscriptReplayLayout base b sign eff (packetLetters j) := by
   intro j hj
   exact layout_of_subset base b sign eff _ _ (packetLetters_subset j hj) hf
-
-theorem tailLetters_subset : ∀l∈tailLetters,l∈mixedTranscriptTape base := by
-  intro l hl
-  simp only [tailLetters,List.mem_cons,List.not_mem_nil,or_false] at hl
-  rcases hl with rfl|rfl
-  all_goals
-    apply getD_member_MappedCompressedEncodedFrameLayout
-    rw [mixedTranscriptTape_length]
-    decide
-
-/-- The last two raw cells need no separately assumed field layout. -/
-theorem tail_layout (b sign eff : Wire)
-    (hf : MixedTranscriptReplayLayout base b sign eff (mixedTranscriptTape base)) :
-    MixedTranscriptReplayLayout base b sign eff tailLetters :=
-  layout_of_subset base b sign eff _ _ tailLetters_subset hf
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -10056,15 +6333,6 @@ noncomputable section
 namespace ECDSAAdd
 attribute [local irreducible] run measurementCount
 
-/-- Exact measured composition with prefixes partitioned by actual counts. -/
-theorem run_append_agreement (p r q v : Program) (s : State) (m : List Bool)
-    (counts : measurementCount r=measurementCount p)
-    (first : run p (m.take (measurementCount p)) s=run r (m.take (measurementCount p)) s)
-    (second : run q (m.drop (measurementCount p)) (run p (m.take (measurementCount p)) s)=
-      run v (m.drop (measurementCount p)) (run p (m.take (measurementCount p)) s)) :
-    run (p++q) m s=run (r++v) m s := by
-  rw [run_append,run_append,counts,←first]
-  exact second
 end ECDSAAdd
 end
 
@@ -10074,83 +6342,8 @@ set_option maxRecDepth 8192
 set_option maxHeartbeats 1500000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 BalancedField OffsetBorrowedCanonical CompressedFieldSupport CompressedAllocation
-attribute [local irreducible] run mappedGroups baseGroups tailProgram baseTail measurementCount
+attribute [local irreducible] run mappedGroups baseGroups measurementCount
   mixedTranscriptTape mixedTranscriptUnitTrace packetLetters tailLetters
-
-theorem mappedReplay_join (divide : Bool) : mappedReplay divide=
-    (if divide then mappedGroups divide 0 170++tailProgram divide
-     else tailProgram divide++mappedGroups divide 0 170) := by
-  cases divide <;> simp only [mappedReplay,tailProgram,Bool.false_eq_true,if_false,if_true,List.append_assoc]
-
-private theorem tail_complete (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) tailLetters)
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    run (tailProgram divide) m s=run (baseTail divide) m s ∧
-    (run (tailProgram divide) m s).phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) tailLetters) (X,Y)).1
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) tailLetters) (X,Y)).2
-      (run (tailProgram divide) m s) := by
-  have out := tailProgram_encoded_step divide hn hlo ho hp hf origin hg0 hs0 env legal X Y s m input
-  have zeroIn := encoded_zero_region base (base 2409) hn hlo origin env X Y s input
-  have zeroOut := encoded_zero_region base (base 2409) hn hlo origin env _ _
-    (run (tailProgram divide) m s) out.2
-  have pin := shifted_zero_boundary pi0 pi0_outside s zeroIn
-  have pout := shifted_zero_boundary pi0 pi0_outside (run (tailProgram divide) m s) zeroOut
-  have eq := tailProgram_run divide s m
-  rw [pin,pout] at eq
-  exact ⟨eq,out⟩
-
-/-- Every actual mapped cell, including the residual raw pair, agrees as a
-complete State with the original exact full encoded reference replay. -/
-theorem mappedReplay_reference (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : ∀k,k < 170 → MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (packetLetters k))
-    (ht : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) tailLetters)
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    run (mappedReplay divide) m s=run
-      (if divide then compressedFieldForwardGroups base (base 2400) (base 2409) (base 2410)
-       else compressedFieldBackwardGroups base (base 2400) (base 2409) (base 2410)) m s := by
-  cases divide
-  · let first := tailProgram false
-    let t := run first (m.take (measurementCount first)) s
-    have tail := tail_complete false hn hlo ho hp ht origin hg0 hs0 env legal X Y
-      s (m.take (measurementCount first)) input
-    simp only [Bool.not_false] at tail
-    generalize hQ : directionalPayload true (mixedTranscriptControls origin (base 2400) tailLetters) (X,Y)=Q at tail
-    have groups := mappedGroups_frame false 0 170 (by decide) hn hlo ho hp hf origin hg0 hs0 env legal
-      Q.1 Q.2 t (m.drop (measurementCount first)) tail.2.2
-    have countEq : measurementCount (baseTail false)=measurementCount first := by
-      change measurementCount (baseTail false)=measurementCount (tailProgram false)
-      rw [tailProgram_eq_rename]
-      exact (renameProgram_counts (shifted pi0) (baseTail false)).2.symm
-    rw [mappedReplay_join]
-    simp only [Bool.false_eq_true,if_false]
-    rw [←base_backward_replay_identity]
-    exact run_append_agreement first (baseTail false) (mappedGroups false 0 170)
-      (baseGroups false 0 170) s m countEq tail.1 groups.1
-  · let first := mappedGroups true 0 170
-    let t := run first (m.take (measurementCount first)) s
-    have groups := mappedGroups_frame true 0 170 (by decide) hn hlo ho hp hf origin hg0 hs0 env legal
-      X Y s (m.take (measurementCount first)) input
-    generalize hQ : groupsPayload true origin 0 170 (X,Y)=Q at groups
-    have tail := tail_complete true hn hlo ho hp ht origin hg0 hs0 env legal Q.1 Q.2
-      t (m.drop (measurementCount first)) groups.2.2
-    have countEq : measurementCount (baseGroups true 0 170)=measurementCount first :=
-      (baseGroups_counts true 0 170).2.trans (mappedGroups_counts true 0 170).2.symm
-    rw [mappedReplay_join]
-    simp only [if_true]
-    rw [←base_forward_replay_identity]
-    exact run_append_agreement first (baseGroups true 0 170) (tailProgram true)
-      (baseTail true) s m countEq groups.1 tail.1
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -10162,126 +6355,6 @@ set_option maxHeartbeats 2000000
 namespace ECDSAAdd.Arithmetic.CompressedFieldSupport
 open Secp256k1 BalancedField OffsetBorrowedCanonical
 attribute [local irreducible] run
-private theorem short_programs_TerminalMappedReplayCore (w : Nat → Wire) (b sign eff : Wire) (i : Nat)
-    (ls : List MixedTranscriptLetter) (h : ls.length ≤ 2) :
-    codecGroupForward w (fun l : MixedTranscriptLetter =>
-      OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) i ls =
-      directionalReplay false w b sign eff ls ∧
-    codecGroupBackward w (fun l : MixedTranscriptLetter =>
-      OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) i ls =
-      directionalReplay true w b sign eff ls := by
-  cases ls with
-  | nil => simp [codecGroupForward,codecGroupBackward,directionalReplay,
-      OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay]
-  | cons a ls =>
-    cases ls with
-    | nil => simp [codecGroupForward,codecGroupBackward,directionalReplay,
-        OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay]
-    | cons c ls =>
-      cases ls with
-      | nil => simp [codecGroupForward,codecGroupBackward,directionalReplay,
-          OffsetBorrowedCanonical.replay,OffsetBorrowedInverseCanonical.replay]
-      | cons d tail => simp at h; omega
-private theorem split_programs_TerminalMappedReplayCore {α : Type} (w : Nat → Wire) (cell : α → Program)
-    (i : Nat) (a c d : α) (tail : List α) :
-    codecGroupForward w cell i (a::c::d::tail) =
-      codecGroupForward w cell i [a,c,d]++codecGroupForward w cell (i+3) tail ∧
-    codecGroupBackward w cell i (a::c::d::tail) =
-      codecGroupBackward w cell (i+3) tail++codecGroupBackward w cell i [a,c,d] := by
-  simp only [codecGroupForward,codecGroupBackward,List.append_nil,List.nil_append,List.append_assoc]
-  constructor <;> trivial
-/-- Existing packet proof, with its universally framed raw tail instantiated
-at one residual letter instead of two. No arithmetic primitive is changed. -/
-theorem trim_grouped_encoded_replays (w : Nat → Wire) (b sign eff : Wire)
-    (hn : (skywalkSharedWires w).Nodup) (hlo : CompressedHistoryAbove w)
-    (ho : ∀ q ∈ [b,sign,eff],q ∉ skywalkSharedWires w)
-    (hp : ∀ q ∈ [b,sign,eff],q ∉ skywalkPoolWires w)
-    (base : BasisState) (hg0 : base sign = false) (he0 : base eff = false)
-    (env : Env w base) (legal : RawGroupLegal w 170 base)
-    (n j : Nat) (remaining : j+n=170) (ls : List MixedTranscriptLetter)
-    (length : ls.length=3*n+1) (aligned : IndexedLetters w (3*j) ls)
-    (hf : MixedTranscriptReplayLayout w b sign eff ls) :
-    (∀ (X Y : Fp) (s : State) (m : List Bool), EncodedFieldFrame w sign base X Y s →
-      let out := run (codecGroupForward w (fun l : MixedTranscriptLetter =>
-        OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) ls) m s
-      out.phase=s.phase ∧ EncodedFieldFrame w sign base
-        (skywalkPayloadReplay (mixedTranscriptControls base b ls) (X,Y)).1
-        (skywalkPayloadReplay (mixedTranscriptControls base b ls) (X,Y)).2 out) ∧
-    (∀ (X Y : Fp) (s : State) (m : List Bool), EncodedFieldFrame w sign base X Y s →
-      let out := run (codecGroupBackward w (fun l : MixedTranscriptLetter =>
-        OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) ls) m s
-      out.phase=s.phase ∧ EncodedFieldFrame w sign base
-        (skywalkPayloadReplayInverse (mixedTranscriptControls base b ls) (X,Y)).1
-        (skywalkPayloadReplayInverse (mixedTranscriptControls base b ls) (X,Y)).2 out) := by
-  induction n generalizing j ls with
-  | zero =>
-    have ji : j=170 := by omega
-    have len : ls.length=1 := by simpa using length
-    have programs := short_programs_TerminalMappedReplayCore w b sign eff (3*j) ls (by omega)
-    constructor
-    · intro X Y s m input
-      rw [programs.1]
-      simpa only [directionalPayload,Bool.false_eq_true,if_false] using
-        encoded_tail_replay false w b sign eff hn hlo ho hp (3*j) ls (by omega)
-          (by omega) aligned hf base hg0 he0 env legal X Y s m input
-    · intro X Y s m input
-      rw [programs.2]
-      simpa only [directionalPayload,if_true] using
-        encoded_tail_replay true w b sign eff hn hlo ho hp (3*j) ls (by omega)
-          (by omega) aligned hf base hg0 he0 env legal X Y s m input
-  | succ n ih =>
-    cases ls with
-    | nil => simp at length
-    | cons a rest =>
-      cases rest with
-      | nil => simp at length
-      | cons c rest =>
-        cases rest with
-        | nil => simp at length
-        | cons d tail =>
-          have jj : j < 170 := by omega
-          have next : IndexedLetters w (3*(j+1)) tail := by
-            simpa only [Nat.mul_add,Nat.mul_one] using indexed_three_tail w (3*j) a c d tail aligned
-          have lenTail : tail.length=3*n+1 := by simp only [List.length_cons] at length; omega
-          have hfTail : MixedTranscriptReplayLayout w b sign eff tail := fun q hq => hf q (by simp [hq])
-          have hfPacket : MixedTranscriptReplayLayout w b sign eff [a,c,d] := by
-            intro q hq
-            exact hf q (by simpa only [List.mem_cons,List.not_mem_nil,or_false] using
-              (show q=a ∨ q=c ∨ q=d ∨ q∈tail from by simp only [List.mem_cons,List.not_mem_nil,or_false] at hq ⊢; tauto))
-          have controls := indexed_packet_controls w j jj (skywalkShared_integer_nodup w hn) hlo a c d tail aligned
-          have support := packet_active_support w b sign eff (3*j) [a,c,d] controls
-          have tailSpec := ih (j+1) (by omega) tail lenTail next hfTail
-          have fwSplit := (split_programs_TerminalMappedReplayCore w (fun l : MixedTranscriptLetter =>
-            OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) a c d tail).1
-          have rvSplit := (split_programs_TerminalMappedReplayCore w (fun l : MixedTranscriptLetter =>
-            OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) a c d tail).2
-          constructor
-          · intro X Y s m input
-            let packet := codecGroupForward w (fun l : MixedTranscriptLetter =>
-              OffsetBorrowedCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j) [a,c,d]
-            let t := run packet (m.take (measurementCount packet)) s
-            let Q := skywalkPayloadReplay (mixedTranscriptControls base b [a,c,d]) (X,Y)
-            have first := encoded_forward_packet_step w b sign eff hn hlo j jj a c d hfPacket ho hp
-              base hg0 he0 env legal X Y (by simpa only [rawForwardPacket] using support.1)
-              s (m.take (measurementCount packet)) input
-            have rest := tailSpec.1 Q.1 Q.2 t (m.drop (measurementCount packet)) first.2
-            rw [fwSplit,run_append]
-            change (run _ _ t).phase=s.phase ∧ _
-            refine ⟨rest.1.trans first.1,?_⟩
-            simpa only [mixedTranscriptControls,List.map_cons,skywalkPayloadReplay,Q] using rest.2
-          · intro X Y s m input
-            let later := codecGroupBackward w (fun l : MixedTranscriptLetter =>
-              OffsetBorrowedInverseCanonical.cell w b l.1.1 l.1.2 sign eff l.2.1 l.2.2) (3*j+3) tail
-            let t := run later (m.take (measurementCount later)) s
-            let Q := skywalkPayloadReplayInverse (mixedTranscriptControls base b tail) (X,Y)
-            have rest := tailSpec.2 X Y s (m.take (measurementCount later)) input
-            have first := encoded_backward_packet_step w b sign eff hn hlo j jj a c d hfPacket ho hp
-              base hg0 he0 env legal Q.1 Q.2 (by simpa only [rawBackwardPacket] using support.2)
-              t (m.drop (measurementCount later)) rest.2
-            rw [rvSplit,run_append]
-            change (run _ _ t).phase=s.phase ∧ _
-            refine ⟨first.1.trans rest.1,?_⟩
-            simpa only [mixedTranscriptControls,List.map_cons,skywalkPayloadReplayInverse,Q] using first.2
 
 end ECDSAAdd.Arithmetic.CompressedFieldSupport
 end
@@ -10293,41 +6366,6 @@ set_option maxRecDepth 8192
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open CompressedAllocation
 attribute [local irreducible] wires toffoliCount measurementCount logicalCell mappedGroups
-
-/-- Only the field replay is trimmed. Integer recording and its170 codecs
-remain unchanged; the single raw residual field letter is logical510. -/
-def trimReplay (divide : Bool) : Program :=
-  if divide then mappedGroups divide 0 170 ++ renameProgram allPlaced (logicalCell divide 510)
-  else renameProgram allPlaced (logicalCell divide 510) ++ mappedGroups divide 0 170
-
-theorem trimReplay_join (divide : Bool) :
-    mappedReplay divide = if divide then trimReplay divide ++ renameProgram allPlaced (logicalCell divide 511)
-      else renameProgram allPlaced (logicalCell divide 511) ++ trimReplay divide := by
-  cases divide <;> simp only [mappedReplay,trimReplay,Bool.false_eq_true,if_false,if_true,List.append_assoc]
-
-theorem trimReplay_support (divide : Bool) : wires (trimReplay divide) ⊆ slots.toFinset := by
-  have full := mappedReplay_support divide
-  cases divide <;> simp only [mappedReplay,trimReplay,Bool.false_eq_true,if_false,if_true,
-    wires_append,Finset.union_subset_iff,and_assoc] at full ⊢
-  · exact ⟨full.2.1,full.2.2⟩
-  · exact ⟨full.1,full.2.1⟩
-
-theorem trimReplay_counts (divide : Bool) :
-    toffoliCount (trimReplay divide)=(if divide then 655270 else 655781) ∧ measurementCount (trimReplay divide)=523945 := by
-  have groups := mappedGroups_counts divide 0 170
-  have cell := logicalCell_counts divide 510
-  have counts := renameProgram_counts allPlaced (logicalCell divide 510)
-  cases divide <;> simp only [trimReplay,Bool.false_eq_true,if_false,if_true,
-    toffoliCount_append,measurementCount_append,counts.1,counts.2,
-    groups.1,groups.2,cell.1,cell.2]
-  all_goals norm_num
-
-theorem trimReplay_count_saving (divide : Bool) :
-    toffoliCount (mappedReplay divide)=toffoliCount (trimReplay divide)+(if divide then 1280 else 1281) ∧
-    measurementCount (mappedReplay divide)=measurementCount (trimReplay divide)+1025 := by
-  rw [(mappedReplay_counts divide).1,(mappedReplay_counts divide).2,
-    (trimReplay_counts divide).1,(trimReplay_counts divide).2]
-  cases divide <;> norm_num
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -10341,69 +6379,6 @@ namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 BalancedField OffsetBorrowedCanonical CompressedFieldSupport CompressedAllocation
 attribute [local irreducible] run logicalCell mappedGroups baseGroups measurementCount
   mixedTranscriptTape mixedTranscriptUnitTrace packetLetters tapeLetter
-
-def baseTrimReplay (divide : Bool) : Program :=
-  if divide then baseGroups divide 0 170++renameProgram base (logicalCell divide 510)
-  else renameProgram base (logicalCell divide 510)++baseGroups divide 0 170
-
-private theorem reference_packet (divide : Bool) (j : Nat) (hj : j<170)
-    (tail : List MixedTranscriptLetter) :
-    referenceGroups divide (3*j) (packetLetters j++tail)=
-      if divide then baseGroup divide j++referenceGroups divide (3*j+3) tail
-      else referenceGroups divide (3*j+3) tail++baseGroup divide j := by
-  rw [baseGroup_eq_reference divide j hj]
-  cases divide <;> simp only [packetLetters,referenceGroups,Bool.false_eq_true,if_false,if_true,
-    List.cons_append,List.nil_append,codecGroupForward,codecGroupBackward,
-    List.append_nil,List.append_assoc]
-
-private theorem baseTrim_reference (divide : Bool) (j n : Nat) (h : j+n=170) :
-    (if divide then baseGroups divide j n++renameProgram base (logicalCell divide 510)
-     else renameProgram base (logicalCell divide 510)++baseGroups divide j n)=
-      referenceGroups divide (3*j) (indexedLetters (3*j) (3*n+1)) := by
-  induction n generalizing j with
-  | zero =>
-    have hj : j=170 := by omega
-    subst j
-    have cell := referenceCell_letter divide 510 (by decide)
-    have letters : indexedLetters 510 1=[tapeLetter 510] := by rfl
-    cases divide <;> simp only [baseGroups,Nat.mul_zero,Nat.zero_add,Nat.reduceMul,
-      List.nil_append,List.append_nil,Bool.false_eq_true,if_false,if_true,letters,
-      referenceGroups,codecGroupForward,codecGroupBackward,cell]
-  | succ n ih =>
-    have rest := ih (j+1) (by omega)
-    have packet : indexedLetters (3*j) 3=packetLetters j := by
-      simp [indexedLetters,packetLetters,tapeLetter,List.range_succ_eq_map]
-    have split : indexedLetters (3*j) (3*(n+1)+1)=
-        packetLetters j++indexedLetters (3*(j+1)) (3*n+1) := by
-      rw [show 3*(n+1)+1=3+(3*n+1) by omega,indexedLetters_append,packet]
-      rw [show 3*j+3=3*(j+1) by omega]
-    rw [split,reference_packet divide j (by omega),show 3*j+3=3*(j+1) by omega]
-    cases divide <;> simp only [baseGroups,Bool.false_eq_true,if_false,if_true] at rest ⊢
-    all_goals rw [←rest]; simp only [List.append_assoc]
-
-theorem baseTrimReplay_reference (divide : Bool) :
-    baseTrimReplay divide=referenceGroups divide 0 trimLetters := by
-  simpa only [baseTrimReplay,Nat.mul_zero,Nat.zero_add,Nat.reduceMul,Nat.reduceAdd,trimLetters]
-    using baseTrim_reference divide 0 170 (by decide)
-
-private theorem indexed_prefix (w : Nat → Wire) (ls tail : List MixedTranscriptLetter)
-    (i : Nat) (h : IndexedLetters w i (ls++tail)) : IndexedLetters w i ls := by
-  induction ls generalizing i with
-  | nil => trivial
-  | cons l ls ih => exact ⟨h.1,ih (i+1) h.2⟩
-
-theorem trimLetters_indexed : IndexedLetters base 0 trimLetters := by
-  have h := mixedTape_indexed base
-  rw [←trimLetters_last] at h
-  exact indexed_prefix base trimLetters [tapeLetter 511] 0 h
-
-theorem trimLetters_layout
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base)) :
-    MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) trimLetters := by
-  intro l hl
-  apply hf
-  rw [←trimLetters_last]
-  exact List.mem_append_left _ hl
 
 /-- Raw residual510 has its original scalar and complete encoded frame under
 all independent records. The allocation switch follows derived zero regions. -/
@@ -10452,41 +6427,6 @@ theorem trimCell_step (divide : Bool)
     apply pullState_perm_injective (shifted pi0)
     rw [rename,run_rename _ (shifted pi0).injective,pin,pout]
   exact ⟨eq,by rw [eq]; exact ref⟩
-
-theorem trimReplay_reference (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    run (trimReplay divide) m s=run (baseTrimReplay divide) m s := by
-  cases divide
-  · let first := renameProgram allPlaced (logicalCell false 510)
-    let t := run first (m.take (measurementCount first)) s
-    have tail := trimCell_step false hn hlo ho hp hf origin hg0 hs0 env legal X Y
-      s (m.take (measurementCount first)) input
-    generalize hQ : directionalPayload (!false)
-      (mixedTranscriptControls origin (base 2400) [tapeLetter 510]) (X,Y)=Q at tail
-    have groups := mappedGroups_frame false 0 170 (by decide) hn hlo ho hp (packet_layouts _ _ _ hf)
-      origin hg0 hs0 env legal Q.1 Q.2 t (m.drop (measurementCount first)) tail.2.2
-    have counts : measurementCount (renameProgram base (logicalCell false 510))=measurementCount first :=
-      (renameProgram_counts base _).2.trans (renameProgram_counts allPlaced _).2.symm
-    simpa only [trimReplay,baseTrimReplay,Bool.false_eq_true,if_false] using
-      run_append_agreement first _ (mappedGroups false 0 170) (baseGroups false 0 170)
-        s m counts tail.1 groups.1
-  · let first := mappedGroups true 0 170
-    let t := run first (m.take (measurementCount first)) s
-    have groups := mappedGroups_frame true 0 170 (by decide) hn hlo ho hp (packet_layouts _ _ _ hf)
-      origin hg0 hs0 env legal X Y s (m.take (measurementCount first)) input
-    generalize hQ : groupsPayload true origin 0 170 (X,Y)=Q at groups
-    have tail := trimCell_step true hn hlo ho hp hf origin hg0 hs0 env legal Q.1 Q.2
-      t (m.drop (measurementCount first)) groups.2.2
-    have counts : measurementCount (baseGroups true 0 170)=measurementCount first :=
-      (baseGroups_counts true 0 170).2.trans (mappedGroups_counts true 0 170).2.symm
-    simpa only [trimReplay,baseTrimReplay,if_true] using
-      run_append_agreement first (baseGroups true 0 170) _ _ s m counts groups.1 tail.1
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -10711,142 +6651,10 @@ def mapConvert (f : Wire → Wire) (L : BalancedConvert.Layout) : BalancedConver
   {low:=L.low.map f,msb:=f L.msb,carry:=L.carry.map f,
    cin:=f L.cin,one:=f L.one,flag:=f L.flag}
 
-theorem convert_word_map (f : Wire → Wire) (L : BalancedConvert.Layout) :
-    (mapConvert f L).word=L.word.map f := by
-  simp [mapConvert,BalancedConvert.Layout.word]
-
-theorem convert_correction_map (f : Wire → Wire) (L : BalancedConvert.Layout) :
-    (BalancedConvert.correction L).map (mapBit f)=BalancedConvert.correction (mapConvert f L) := by
-  simp only [BalancedConvert.correction,List.map_map]
-  apply List.map_congr_left
-  intro i _
-  by_cases h : BalancedCircuit.sparseF.testBit i <;> simp [mapBit,mapConvert,h]
-
-theorem literalConstSum_natural (f : Wire → Wire) (bit : Bool) (x cin : Wire) :
-    renameProgram f (literalConstSum bit x cin)=literalConstSum bit (f x) (f cin) := by
-  cases bit <;> rfl
-
-theorem literalConstStep_natural (f : Wire → Wire) (bit : Bool) (x cin cout : Wire) :
-    renameProgram f (literalConstStep bit x cin cout)=literalConstStep bit (f x) (f cin) (f cout) := by
-  cases bit <;> rfl
-
-theorem literalConstErase_natural (f : Wire → Wire) (bit : Bool) (x cin cout one : Wire) :
-    renameProgram f (literalConstErase bit x cin cout one)=
-      literalConstErase bit (f x) (f cin) (f cout) (f one) := by
-  cases bit <;> rfl
-
-theorem literalConstAdd_natural (f : Wire → Wire) (xs cs : List Wire) (cin one : Wire) (k : Nat) :
-    renameProgram f (literalConstAdd xs cs cin one k)=
-      literalConstAdd (xs.map f) (cs.map f) (f cin) (f one) k := by
-  induction xs generalizing cs cin k with
-  | nil => simp [literalConstAdd,renameProgram]
-  | cons x xs ih =>
-    cases xs with
-    | nil => simpa only [literalConstAdd,List.map_cons,List.map_nil] using
-        literalConstSum_natural f (decide (k%2=1)) x cin
-    | cons y ys =>
-      cases cs with
-      | nil => simp [literalConstAdd,renameProgram]
-      | cons c cs =>
-        simp only [literalConstAdd,List.map_cons,rename_append,literalConstStep_natural,
-          literalConstErase_natural,ih]
-
-theorem xorConstant_natural (f : Wire → Wire) (xs : List Wire) (k : Nat) :
-    renameProgram f (xorConstant xs k)=xorConstant (xs.map f) k := by
-  induction xs generalizing k with
-  | nil => rfl
-  | cons x xs ih =>
-    by_cases h : k%2=1
-    · simp only [xorConstant,if_pos h,List.map_cons,rename_append,ih]
-      rfl
-    · simp only [xorConstant,if_neg h,List.map_cons,rename_append,ih]
-      rfl
-
-theorem compareChain_natural (f : Wire → Wire) (control : Option Wire)
-    (xs ys cs : List Wire) (cin target : Wire) :
-    renameProgram f (compareChain control xs ys cs cin target)=
-      compareChain (control.map f) (xs.map f) (ys.map f) (cs.map f) (f cin) (f target) := by
-  induction xs generalizing ys cs cin with
-  | nil =>
-    cases ys <;> cases cs <;> simp only [compareChain,List.map_nil,List.map_cons,renameProgram,List.map_nil]
-    exact flipBelow_natural f control cin target
-  | cons x xs ih =>
-    cases ys with
-    | nil => simp [compareChain,renameProgram]
-    | cons y ys =>
-      cases cs with
-      | nil => simp [compareChain,renameProgram]
-      | cons c cs => simp only [compareChain,List.map_cons,rename_append,majority_natural,eraseCarry_natural,ih]
-
-theorem compareLt_natural (f : Wire → Wire) (control : Option Wire)
-    (xs ys cs : List Wire) (cin target : Wire) :
-    renameProgram f (compareLt control xs ys cs cin target)=
-      compareLt (control.map f) (xs.map f) (ys.map f) (cs.map f) (f cin) (f target) := by
-  simp only [compareLt,rename_append,notRegister_natural,compareChain_natural,List.map_cons]
-
-theorem compareLtConst_natural (f : Wire → Wire) (control : Option Wire)
-    (xs constant cs : List Wire) (cin target : Wire) (k : Nat) :
-    renameProgram f (compareLtConst control xs constant cs cin target k)=
-      compareLtConst (control.map f) (xs.map f) (constant.map f) (cs.map f) (f cin) (f target) k := by
-  simp only [compareLtConst,rename_append,xorConstant_natural,compareLt_natural]
-
-theorem convert_predicate_natural (f : Wire → Wire) (L : BalancedConvert.Layout) :
-    renameProgram f (BalancedConvert.predicate L)=BalancedConvert.predicate (mapConvert f L) := by
-  simp only [BalancedConvert.predicate,rename_append,literalConstAdd_natural,convert_word_map]
-  rfl
-
-theorem convert_center_natural (f : Wire → Wire) (L : BalancedConvert.Layout) :
-    renameProgram f (BalancedConvert.center L)=BalancedConvert.center (mapConvert f L) := by
-  simp only [BalancedConvert.center,rename_append,convert_predicate_natural,mappedAdd_natural,
-    convert_word_map,convert_correction_map]
-  rfl
-
-theorem convert_canonical_natural (f : Wire → Wire) (L : BalancedConvert.Layout) :
-    renameProgram f (BalancedConvert.canonical L)=BalancedConvert.canonical (mapConvert f L) := by
-  simp only [BalancedConvert.canonical,rename_append,convert_predicate_natural,mappedSub_natural,
-    convert_word_map,convert_correction_map]
-  rfl
-
-theorem sharedTargetConvert_map (f w : Wire → Wire) :
-    mapConvert f (balancedSharedTargetConvert w)=balancedSharedTargetConvert (f ∘ w) := by
-  simp only [mapConvert,balancedSharedTargetConvert,wireBlock_map,Function.comp_def]
-
-theorem sharedSourceConvert_map (f w : Wire → Wire) :
-    mapConvert f (balancedSharedSourceConvert w)=balancedSharedSourceConvert (f ∘ w) := by
-  simp only [mapConvert,balancedSharedSourceConvert,wireBlock_map,Function.comp_def]
-
 end ECDSAAdd.Arithmetic.FieldRename
 
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open FieldRename
-
-def converterPairAt (w : Nat → Wire) (canonical : Bool) : Program :=
-  if canonical then BalancedConvert.canonical (balancedSharedTargetConvert w)++
-    BalancedConvert.canonical (balancedSharedSourceConvert w)
-  else BalancedConvert.center (balancedSharedTargetConvert w)++
-    BalancedConvert.center (balancedSharedSourceConvert w)
-
-theorem converterPair_natural (f : Wire → Wire) (canonical : Bool) :
-    renameProgram f (converterPair canonical)=converterPairAt f canonical := by
-  cases canonical <;> simp only [converterPair,converterPairAt,Bool.false_eq_true,if_false,if_true,
-    rename_append,convert_center_natural,convert_canonical_natural,
-    sharedTargetConvert_map,sharedSourceConvert_map,Function.comp_id]
-
-theorem base_converterPair_natural (canonical : Bool) :
-    renameProgram base (converterPair canonical)=converterPairAt base canonical :=
-  converterPair_natural base canonical
-
-/-- The all-packed converter uses the same injective public pi0 placement
-as the rest of the field boundary. This is exact program structure, including
-every measurement correction; a zero-boundary state bridge is separate. -/
-theorem allPlaced_converterPair_natural (canonical : Bool) :
-    renameProgram allPlaced (converterPair canonical)=
-      renameProgram (shifted CompressedAllocation.pi0) (converterPairAt base canonical) := by
-  rw [←base_converterPair_natural,renameProgram_comp]
-  have placement : shifted CompressedAllocation.pi0 ∘ base=allPlaced := by
-    funext q
-    exact shifted_base _ _
-  rw [placement]
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -10862,189 +6670,9 @@ open Secp256k1 BalancedField OffsetBorrowedCanonical
 attribute [local irreducible] run dblInPlace halfInPlace OffsetBorrowedCanonical.cell
 attribute [local irreducible] transcriptSelectWindow swapRegisters
 
-private theorem fp_bound (X : Fp) : X.val<2^256 := by
-  letI : NeZero p := ⟨p_prime.ne_zero⟩
-  exact (ZMod.val_lt X).trans (by norm_num [p])
-private theorem word_bound (X : Fp) : centerWord X<2^256 := encodeWord_bound _ _
-private theorem halve_double (X : Fp) : (2*X)/2=X := by
-  have h : (2 : Fp)≠0 := by decide
-  exact mul_div_cancel_left₀ X h
-
-def centers (w : Nat → Wire) : Program := MappedCompressed.converterPairAt w false
-def canonicals (w : Nat → Wire) : Program := MappedCompressed.converterPairAt w true
 def selectedSwap (w : Nat → Wire) (b swap sign effS : Wire) (is : Bool) : Program :=
   transcriptSelectWindow b swap effS is
     (swapRegisters effS (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y)
-def oldEntry (w : Nat → Wire) (b g swap sign effS : Wire) (ig is : Bool) : Program :=
-  dblInPlace (borrowedSkywalkUnary w) p++centers w++
-    OffsetBorrowedCanonical.cell w b g swap sign effS ig is
-def newEntry (w : Nat → Wire) (b swap sign effS : Wire) (is : Bool) : Program :=
-  centers w++selectedSwap w b swap sign effS is
-
-private theorem wide_lift (w : Nat → Wire) (hn : (skywalkSharedWires w).Nodup)
-    (base : BasisState) (br : base (w 2312)=false) (by0 : base (w 1026)=false)
-    (I J O P : Nat) (hi : I<2^256) (hj : J<2^256) (code : Program)
-    (proof : Triple (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base I J) code
-      (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base O P)) :
-    Triple (PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base I J) code
-      (PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base O P) := by
-  intro s m input
-  rw [balancedSharedDivision_z,balancedSharedDivision_a] at input
-  have narrow := balancedPair_narrow _ _ _ _ base s.basis I J
-    (by simpa only [wireBlock_length] using hi) (by simpa only [wireBlock_length] using hj) input br by0
-  have output := proof s m narrow
-  have away := balancedSharedDivision_high_outside w hn
-  have wide := balancedPair_widen _ _ _ _ base _ O P output.2 away.1 away.2 br by0
-  rw [←balancedSharedDivision_z,←balancedSharedDivision_a] at wide
-  exact ⟨output.1,wide⟩
-
-private theorem boundary_frame (canonical : Bool) (w : Nat → Wire) (sign : Wire)
-    (hn : (skywalkSharedWires w).Nodup) (base : BasisState)
-    (hw : regValue (skywalkSharedField w).work base=0) (hu : regValue (skywalkSharedUnused w) base=0)
-    (br : base (w 2312)=false) (by0 : base (w 1026)=false) (X Y : Fp) :
-    Triple (PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base
-      (if canonical then centerWord X else X.val) (if canonical then centerWord Y else Y.val))
-      (MappedCompressed.converterPairAt w canonical)
-      (PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base
-        (if canonical then X.val else centerWord X) (if canonical then Y.val else centerWord Y)) := by
-  let L := balancedSharedPorts w sign
-  let D := balancedSharedBoundary w sign hn
-  have clean := balancedSharedBoundary_clean w sign base hw hu
-  cases canonical
-  · have frame := balancedTranscriptCenterPair_frame L D base clean.1 clean.2 X Y
-    have low : Triple (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base X.val Y.val)
-        (MappedCompressed.converterPairAt w false)
-        (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base (centerWord X) (centerWord Y)) := by
-      simpa only [L,D,balancedSharedPorts_r,balancedSharedPorts_y,balancedTranscriptCenterPair,
-        balancedSharedBoundary,MappedCompressed.converterPairAt,Bool.false_eq_true,if_false] using frame
-    exact wide_lift w hn base br by0 _ _ _ _ (fp_bound X) (fp_bound Y) _ low
-  · have frame := balancedTranscriptCanonicalPair_frame L D base clean.1 clean.2 X Y
-    have low : Triple (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base (centerWord X) (centerWord Y))
-        (MappedCompressed.converterPairAt w true)
-        (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base X.val Y.val) := by
-      simpa only [L,D,balancedSharedPorts_r,balancedSharedPorts_y,balancedTranscriptCanonicalPair,
-        balancedSharedBoundary,MappedCompressed.converterPairAt,if_true] using frame
-    exact wide_lift w hn base br by0 _ _ _ _ (word_bound X) (word_bound Y) _ low
-
-private theorem swap_pair (r y : List Wire) (flag : Wire) (len : r.length=y.length)
-    (nd : (flag::r++y).Nodup) (base : BasisState) (X Y : Nat) :
-    Triple (PairFrame r y base X Y) (swapRegisters flag r y)
-      (PairFrame r y base (if base flag then Y else X) (if base flag then X else Y)) := by
-  intro s m input
-  have out := swapRegisters_correct flag r y len nd s m
-  have away := (List.nodup_cons.mp nd).1
-  have same := input.2.2 flag (fun h => away (List.mem_append_left _ h))
-    (fun h => away (List.mem_append_right _ h))
-  refine ⟨out.1,?_,?_,fun q qr qy => (out.2.1 q qr qy).trans (input.2.2 q qr qy)⟩
-  · rw [out.2.2.1,same,input.1,input.2.1]
-  · rw [out.2.2.2,same,input.1,input.2.1]
-
-private theorem swap_window_frame (w : Nat → Wire) (b g swap sign effS : Wire) (is : Bool)
-    (hl : BalancedTranscriptLayout (balancedSharedPorts w sign) b g swap effS)
-    (base : BasisState) (hs0 : base effS=false) (X Y : Fp) :
-    Triple (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base (centerWord X) (centerWord Y))
-      (selectedSwap w b swap sign effS is)
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y base
-        (centerWord (if mixedTranscriptBit base b swap is then Y else X))
-        (centerWord (if mixedTranscriptBit base b swap is then X else Y))) := by
-  have controls := hl.controls
-  simp only [balancedSharedPorts,List.nodup_cons,List.mem_cons,List.not_mem_nil,List.nodup_nil,
-    not_or,not_false_eq_true,and_true] at controls
-  have nd : [b,swap,effS].Nodup := by simp [List.nodup_cons]; tauto
-  have width := BalancedCleanup.widths (balancedSharedPorts w sign).toLayout (balancedSharedPorts_widths w sign)
-  have body := swap_pair _ _ effS (width.2.1.trans width.2.2.1.symm) hl.swapND
-    (mixedTranscriptBase base b swap effS is) (centerWord X) (centerWord Y)
-  simp only [mixedTranscriptBase,writeBit,Function.update_self] at body
-  have body' : Triple (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y
-      (mixedTranscriptBase base b swap effS is) (centerWord X) (centerWord Y))
-      (swapRegisters effS (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y)
-      (PairFrame (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y
-        (mixedTranscriptBase base b swap effS is)
-        (centerWord (if mixedTranscriptBit base b swap is then Y else X))
-        (centerWord (if mixedTranscriptBit base b swap is then X else Y))) := by
-    cases bit : mixedTranscriptBit base b swap is <;>
-      simpa only [mixedTranscriptBase,writeBit,bit,if_true,if_false,Bool.false_eq_true] using body
-  exact transcriptSelectWindow_pairFrame b swap effS is _ _ nd (hl.outside b (by simp))
-    (hl.outside swap (by simp)) (hl.outside effS (by simp)) base hs0 _ _ _ _ _ body'
-
-theorem entry_frames (w : Nat → Wire) (b g swap sign effS : Wire) (ig is : Bool)
-    (hn : (skywalkSharedWires w).Nodup)
-    (hl : BalancedTranscriptLayout (balancedSharedPorts w sign) b g swap effS)
-    (ho : sign∉skywalkSharedWires w) (hoS : effS∉skywalkSharedWires w)
-    (base : BasisState) (hg0 : base sign=false) (hs0 : base effS=false)
-    (hw : regValue (skywalkSharedField w).work base=0) (hu : regValue (skywalkSharedUnused w) base=0)
-    (he : Env w base) (br : base (w 2312)=false) (by0 : base (w 1026)=false) (Y : Fp) :
-    let post := PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base
-      (centerWord (if mixedTranscriptBit base b swap is then 0 else Y))
-      (centerWord (if mixedTranscriptBit base b swap is then Y else 0))
-    Triple (PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base Y.val 0)
-      (oldEntry w b g swap sign effS ig is) post ∧
-    Triple (PairFrame (skywalkSharedField w).z (skywalkSharedField w).a base Y.val 0)
-      (newEntry w b swap sign effS is) post := by
-  have doubled := borrowedSkywalkUnary_double_frame w hn base hw hu Y 0
-  have oldCenter := boundary_frame false w sign hn base hw hu br by0 (2*Y) 0
-  have newCenter := boundary_frame false w sign hn base hw hu br by0 Y 0
-  have cell := OffsetBorrowedCanonical.cell_frame w b g swap sign effS ig is hn hl ho hoS base hg0 hs0 he (2*Y) 0
-  have lowCell : Triple (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base (centerWord (2*Y)) (centerWord 0))
-      (OffsetBorrowedCanonical.cell w b g swap sign effS ig is)
-      (PairFrame (wireBlock w 2056 256) (wireBlock w 770 256) base
-        (centerWord (if mixedTranscriptBit base b swap is then 0 else Y))
-        (centerWord (if mixedTranscriptBit base b swap is then Y else 0))) := by
-    cases bit : mixedTranscriptBit base b swap is <;>
-      simpa only [balancedSharedPorts_r,balancedSharedPorts_y,skywalkPayloadCell,neg_zero,ite_self,
-        add_zero,halve_double,bit,if_false,if_true,Bool.false_eq_true] using cell
-  have wideCell := wide_lift w hn base br by0 _ _ _ _ (word_bound (2*Y)) (word_bound 0) _ lowCell
-  have sw := swap_window_frame w b g swap sign effS is hl base hs0 Y 0
-  have lowSwap := sw
-  rw [balancedSharedPorts_r,balancedSharedPorts_y] at lowSwap
-  have wideSwap := wide_lift w hn base br by0 _ _ _ _ (word_bound Y) (word_bound 0) _ lowSwap
-  constructor
-  · simpa only [oldEntry,ZMod.val_zero] using (doubled.seq oldCenter).seq wideCell
-  · simpa only [newEntry,centers,ZMod.val_zero] using newCenter.seq wideSwap
-
-/-- The extension zeros are derived from the actual canonical words. No
-even-Y premise or extra caller-base semantic condition is introduced. -/
-theorem entry_state_eq (w : Nat → Wire) (b g swap sign effS : Wire) (ig is : Bool)
-    (hn : (skywalkSharedWires w).Nodup)
-    (hl : BalancedTranscriptLayout (balancedSharedPorts w sign) b g swap effS)
-    (ho : sign∉skywalkSharedWires w) (hoS : effS∉skywalkSharedWires w)
-    (Y : Fp) (s : State) (mOld mNew : List Bool)
-    (hg0 : s.basis sign=false) (hs0 : s.basis effS=false)
-    (hw : regValue (skywalkSharedField w).work s.basis=0) (hu : regValue (skywalkSharedUnused w) s.basis=0)
-    (hR : regValue (skywalkSharedField w).z s.basis=Y.val)
-    (hY : regValue (skywalkSharedField w).a s.basis=0) :
-    run (oldEntry w b g swap sign effS ig is) mOld s=run (newEntry w b swap sign effS is) mNew s := by
-  have r := hR
-  have y := hY
-  rw [balancedSharedDivision_z] at r
-  rw [balancedSharedDivision_a] at y
-  have br := (balancedCanonical_high_zero _ _ s.basis Y.val
-    (by simpa only [wireBlock_length] using fp_bound Y) r).2
-  have by0 := (balancedCanonical_high_zero _ _ s.basis 0 (by simp [wireBlock_length]) y).2
-  have env := env_of_canonical_source w hn s.basis 0 (by simpa using hY) hw hu
-  have frames := entry_frames w b g swap sign effS ig is hn hl ho hoS s.basis hg0 hs0 hw hu env br by0 Y
-  exact PairFrame.program_eq _ _ s.basis _ _ _ _ _ _ frames.1 frames.2 s mOld mNew
-    ⟨hR,hY,fun _ _ _ => rfl⟩
-
-theorem counts (w : Nat → Wire) (b g swap sign effS : Wire) (ig is : Bool)
-    (hn : (effS::(balancedSharedPorts w sign).r++(balancedSharedPorts w sign).y).Nodup) :
-    toffoliCount (oldEntry w b g swap sign effS ig is)=3321 ∧
-    measurementCount (oldEntry w b g swap sign effS ig is)=3066 ∧
-    toffoliCount (newEntry w b swap sign effS is)=1787 ∧
-    measurementCount (newEntry w b swap sign effS is)=1531 := by
-  have unary := modUnary_counts (borrowedSkywalkUnary w) 256 p (borrowedSkywalkUnary_widths w) (by omega)
-  have target := BalancedConvert.counts (balancedSharedTargetConvert w) (balancedSharedTargetConvert_widths w)
-  have source := BalancedConvert.counts (balancedSharedSourceConvert w) (balancedSharedSourceConvert_widths w)
-  have cell := OffsetBorrowedCanonical.cell_counts w b g swap sign effS ig is hn
-  have width := BalancedCleanup.widths (balancedSharedPorts w sign).toLayout (balancedSharedPorts_widths w sign)
-  have sw := swapRegisters_resources effS _ _ (width.2.1.trans width.2.2.1.symm) hn
-  have selection := transcriptSelectWindow_counts b swap effS is
-    (swapRegisters effS (balancedSharedPorts w sign).r (balancedSharedPorts w sign).y)
-  simp only [oldEntry,newEntry,centers,MappedCompressed.converterPairAt,Bool.false_eq_true,if_false,
-    selectedSwap,toffoliCount_append,measurementCount_append,unary.1,unary.2.1,
-    target.1,target.2.1,source.1,source.2.1,cell.1,cell.2,selection.1,selection.2,
-    sw.1,sw.2.1,width.2.1]
-  norm_num
 
 end ECDSAAdd.Arithmetic.EntryFieldSeedCancellation
 end
@@ -11060,7 +6688,6 @@ open Secp256k1 MappedCompressed CompressedAllocation
 attribute [local irreducible] wires logicalCell compressedHistoryEncode compressedHistoryDecode
 attribute [local irreducible] dblInPlace halfInPlace copyRegister
 attribute [local irreducible] toffoliCount measurementCount
-private theorem emptyW : wires ([] : Program)=∅ := by simp [wires]
 private theorem emptyT : toffoliCount ([] : Program)=0 := by simp [toffoliCount]
 private theorem emptyM : measurementCount ([] : Program)=0 := by simp [measurementCount]
 
@@ -11157,16 +6784,6 @@ theorem replay_support_sub (divide : Bool) : wires (replay divide) ⊆ wires (ma
   · exact Finset.union_subset_union sub (Finset.union_subset_union (Finset.Subset.refl _)
       (Finset.union_subset_union (Finset.Subset.refl _) (Finset.Subset.refl _)))
 
-theorem fieldSegment_support (divide : Bool) :
-    wires (fieldSegment divide) ⊆ slots.toFinset := by
-  have rp := (replay_support_sub divide).trans (mappedReplay_support divide)
-  have a := converters_support false
-  have b := converters_support true
-  cases divide <;> simp only [fieldSegment,Bool.false_eq_true,if_false,if_true,
-    wires_append,emptyW,Finset.empty_union,Finset.union_empty,Finset.union_subset_iff,and_assoc]
-  · exact ⟨copy_support,a,rp,b⟩
-  · exact ⟨a,rp,b,copy_support⟩
-
 private theorem swap_nd :
     (2410::(balancedSharedPorts id 2409).r++(balancedSharedPorts id 2409).y).Nodup := by
   rw [balancedSharedPorts_r,balancedSharedPorts_y]
@@ -11247,52 +6864,6 @@ set_option maxHeartbeats 1000000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open CompressedAllocation FieldRename
 
-private def converterSite (q : Nat) : Prop :=
-  (770 ≤ q ∧ q ≤ 1027) ∨ (1540 ≤ q ∧ q ≤ 1797) ∨ (2056 ≤ q ∧ q ≤ 2311)
-
-private theorem site_fixed (q : Nat) (h : converterSite q) : allPlaced q=base q := by
-  change pi0 q+16=q+16
-  rw [pi0_outside q]
-  unfold converterSite zeroRegion workRegion holeRegion at *
-  omega
-
-private theorem block_fixed (start len : Nat)
-    (hs : ∀q,start ≤ q → q < start+len → converterSite q) :
-    wireBlock allPlaced start len=wireBlock base start len := by
-  unfold wireBlock
-  apply List.map_congr_left
-  intro q hq
-  have bound := List.mem_range'_1.mp hq
-  exact site_fixed q (hs q bound.1 bound.2)
-
-theorem target_conversion_placement :
-    balancedSharedTargetConvert allPlaced=balancedSharedTargetConvert base := by
-  have low := block_fixed 2056 255 (by intro q lo hi; unfold converterSite; omega)
-  have carry := block_fixed 1540 255 (by intro q lo hi; unfold converterSite; omega)
-  simp only [balancedSharedTargetConvert,low,carry,
-    site_fixed 2311 (by unfold converterSite; omega),
-    site_fixed 1797 (by unfold converterSite; omega),
-    site_fixed 1027 (by unfold converterSite; omega),
-    site_fixed 1796 (by unfold converterSite; omega)]
-
-theorem source_conversion_placement :
-    balancedSharedSourceConvert allPlaced=balancedSharedSourceConvert base := by
-  have low := block_fixed 770 255 (by intro q lo hi; unfold converterSite; omega)
-  have carry := block_fixed 1540 255 (by intro q lo hi; unfold converterSite; omega)
-  simp only [balancedSharedSourceConvert,low,carry,
-    site_fixed 1025 (by unfold converterSite; omega),
-    site_fixed 1797 (by unfold converterSite; omega),
-    site_fixed 1027 (by unfold converterSite; omega),
-    site_fixed 1796 (by unfold converterSite; omega)]
-
-/-- Boundary converters never borrow the omitted work positions or encoded
-holes. The actual placement is therefore identical as a complete program. -/
-theorem converterPair_placement (canonical : Bool) :
-    renameProgram allPlaced (converterPair canonical)=converterPairAt base canonical := by
-  rw [converterPair_natural]
-  cases canonical <;> simp only [converterPairAt,Bool.false_eq_true,if_false,if_true,
-    target_conversion_placement,source_conversion_placement]
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -11302,64 +6873,7 @@ set_option maxRecDepth 8192
 set_option maxHeartbeats 1000000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open CompressedFieldSupport
-attribute [local irreducible] run wires converterPairAt allGroupEncode
-
-private def conversionIds : List Nat := [1797,1027,1796,2311,1025]++
-  List.range' 2056 255++List.range' 770 255++List.range' 1540 255
-
-private theorem declared_conversion_support (target : Bool) :
-    (if target then balancedSharedTargetConvert base else balancedSharedSourceConvert base).wires.toFinset ⊆
-      (conversionIds.map base).toFinset := by
-  intro q hq
-  cases target <;>
-    simp only [Bool.false_eq_true,if_false,if_true,balancedSharedTargetConvert,balancedSharedSourceConvert,
-      BalancedConvert.Layout.wires,conversionIds,wireBlock,List.map_append,List.map_cons,List.map_nil,
-      List.mem_toFinset,List.mem_append,List.mem_cons,List.not_mem_nil,or_false] at hq ⊢ <;> tauto
-
-private theorem conversion_support (canonical : Bool) :
-    wires (converterPairAt base canonical) ⊆ (conversionIds.map base).toFinset := by
-  have t := BalancedConvert.support (balancedSharedTargetConvert base)
-  have u := BalancedConvert.support (balancedSharedSourceConvert base)
-  have dt := declared_conversion_support true
-  have ds := declared_conversion_support false
-  cases canonical <;> simp only [converterPairAt,Bool.false_eq_true,if_false,if_true,
-    wires_append,Finset.union_subset_iff]
-  · exact ⟨t.1.trans dt,u.1.trans ds⟩
-  · exact ⟨t.2.trans dt,u.2.trans ds⟩
-
-/-- The full history encoder and actual converters have disjoint support,
-including every outcome-dependent correction site. -/
-theorem encoder_conversion_disjoint (canonical : Bool) :
-    Disjoint (wires (allGroupEncode base 170)) (wires (converterPairAt base canonical)) := by
-  have hist := compressedPrefix_history_support base base_pool_nodup base_above 512 (by decide)
-  rw [encode_prefix_512] at hist
-  apply Finset.disjoint_left.mpr
-  intro q hq hc
-  have history := List.mem_toFinset.mp (hist hq)
-  have converted := List.mem_toFinset.mp (conversion_support canonical hc)
-  obtain ⟨j,hj,rfl⟩ := List.mem_map.mp converted
-  simp only [List.mem_append,wireBlock] at history
-  rcases history with history|history
-  all_goals
-    obtain ⟨i,hi,eq⟩ := List.mem_map.mp history
-    have same := base_injective eq
-    subst i
-    simp only [List.mem_range'_1] at hi
-    simp only [conversionIds,List.mem_append,List.mem_cons,List.not_mem_nil,List.mem_range'_1,or_false] at hj
-    omega
-
-/-- Conversion transports the entire encoded caller State, with arbitrary
-independent encoder and conversion records and arbitrary incoming phase. -/
-theorem encoder_conversion_commute (canonical : Bool) (s : State) (m n : List Bool) :
-    run (converterPairAt base canonical) n (run (allGroupEncode base 170) m s)=
-      run (allGroupEncode base 170) m (run (converterPairAt base canonical) n s) :=
-  (run_disjoint_commute _ _ (encoder_conversion_disjoint canonical) m n s).symm
-
-theorem mapped_converter_encoding (canonical : Bool) (s : State) (m n : List Bool) :
-    run (renameProgram allPlaced (converterPair canonical)) n (run (allGroupEncode base 170) m s)=
-      run (allGroupEncode base 170) m (run (converterPairAt base canonical) n s) := by
-  rw [converterPair_placement]
-  exact encoder_conversion_commute canonical s m n
+attribute [local irreducible] run wires allGroupEncode
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -11379,152 +6893,6 @@ def EncodedCanonicalFrame (origin : BasisState) (X Y : Fp) (s : State) : Prop :=
     PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X.val Y.val raw.basis ∧
     s=run (allGroupEncode base 170) [] raw
 
-theorem canonical_pair_work_zero (hn : (skywalkSharedWires base).Nodup)
-    (origin current : BasisState) (X Y : Nat)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (frame : PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X Y current) :
-    regValue (skywalkSharedField base).work current=0 := by
-  have full := skywalkShared_field_nodup base hn
-  change ((skywalkSharedField base).a++(skywalkSharedField base).z++
-    (skywalkSharedField base).work).Nodup at full
-  have dis := (List.nodup_append'.mp full).2.2
-  apply (regValue_zero _ _).mpr
-  intro q hq
-  have az : q∉(skywalkSharedField base).a ∧ q∉(skywalkSharedField base).z := by
-    constructor
-    · intro h; exact List.disjoint_left.mp dis (List.mem_append_left _ h) hq
-    · intro h; exact List.disjoint_left.mp dis (List.mem_append_right _ h) hq
-  exact (frame.2.2 q az.2 az.1).trans ((regValue_zero _ _).mp hw q hq)
-
-theorem encoded_canonical_work_zero (hn : (skywalkSharedWires base).Nodup)
-    (hlo : CompressedHistoryAbove base) (origin : BasisState)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (X Y : Fp) (s : State) (frame : EncodedCanonicalFrame origin X Y s)
-    (j : Nat) (hj : j < 170) : s.basis (base (W j))=false := by
-  obtain ⟨raw,_,rawFrame,encoded⟩ := frame
-  have rawWork := canonical_pair_work_zero hn origin raw.basis _ _ hw rawFrame
-  have zero := OffsetCleanupBorrowedCaller.maskBit_zero base raw.basis rawWork (W j)
-    (by unfold W; omega) (by unfold W; omega)
-  have pool := skywalkShared_integer_nodup base hn
-  have hist := compressedPrefix_history_support base pool hlo 512 (by decide)
-  rw [encode_prefix_512] at hist
-  have away : base (W j)∉wires (allGroupEncode base 170) := by
-    intro used
-    have mem := List.mem_toFinset.mp (hist used)
-    rcases List.mem_append.mp mem with mem|mem
-    all_goals
-      obtain ⟨k,hk,eq⟩ := List.mem_map.mp mem
-      simp only [List.mem_range'_1] at hk
-      have same := skywalkPool_index_inj base pool k (W j) (by omega) (by unfold W; omega) eq
-      unfold W at same
-      omega
-  rw [encoded]
-  exact (run_preserves_outside (allGroupEncode base 170) [] raw _ away).trans zero
-
-/-- Allocation work and codec holes are derived from the full canonical
-frame and existing caller cleanliness, without an additional zero bank. -/
-theorem encoded_canonical_zero_region (hn : (skywalkSharedWires base).Nodup)
-    (hlo : CompressedHistoryAbove base) (origin : BasisState)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (_hu : regValue (skywalkSharedUnused base) origin=0)
-    (X Y : Fp) (s : State) (frame : EncodedCanonicalFrame origin X Y s) :
-    ∀q,zeroRegion q → s.basis (base q)=false := by
-  intro q hq
-  rcases hq with work|hole
-  · have index : q=W (q-515) := by unfold workRegion W at *; omega
-    have bound : q-515 < 170 := by unfold workRegion at work; omega
-    rw [index]
-    exact encoded_canonical_work_zero hn hlo origin hw X Y s frame _ bound
-  · have index : q=H ((q-1029)/3) := by unfold holeRegion H at *; omega
-    have bound : (q-1029)/3 < 170 := by unfold holeRegion at hole; omega
-    obtain ⟨raw,_,_,encoded⟩ := frame
-    rw [encoded,index]
-    exact allGroupEncode_holes_zero base (skywalkShared_integer_nodup base hn) hlo
-      170 (by decide) raw [] _ bound
-
-private theorem port_split (sign : Wire) :
-    (skywalkSharedField base).z=(balancedSharedPorts base sign).r++[base 2312] ∧
-    (skywalkSharedField base).a=(balancedSharedPorts base sign).y++[base 1026] := by
-  rw [skywalkShared_field_z,balancedSharedPorts_r,balancedSharedPorts_y]
-  constructor
-  · have split := wireBlock_append base 2056 256 1
-    simpa only [show wireBlock base 2312 1=[base 2312] from rfl,Nat.reduceAdd] using split.symm
-  · have split := wireBlock_append base 770 256 1
-    simpa only [show wireBlock base 1026 1=[base 1026] from rfl,Nat.reduceAdd] using split.symm
-
-private theorem value_bound (X : Fp) : X.val < 2^256 := by
-  letI : NeZero p := ⟨p_prime.ne_zero⟩
-  exact (ZMod.val_lt X).trans (by norm_num [p])
-
-private theorem xor_neutral (a b : Bool) (h : (a ^^ b)=false) : a=b := by
-  cases a <;> cases b <;> simp_all
-
-private theorem conversion_transport (canonical : Bool) (s raw : State) (m : List Bool)
-    (encoded : s=run (allGroupEncode base 170) [] raw)
-    (phase : (run (converterPairAt base canonical) m raw).phase=raw.phase) :
-    (run (converterPairAt base canonical) m s).phase=s.phase ∧
-    run (converterPairAt base canonical) m s=
-      run (allGroupEncode base 170) [] (run (converterPairAt base canonical) m raw) := by
-  have dis := encoder_conversion_disjoint canonical
-  have read : ∀q∈wires (converterPairAt base canonical),s.basis q=raw.basis q := by
-    intro q hq
-    rw [encoded]
-    exact run_preserves_outside _ [] raw q (fun he => Finset.disjoint_left.mp dis he hq)
-  have increment := (run_local_increment (converterPairAt base canonical) s raw m read).1
-  rw [phase,Bool.xor_self] at increment
-  refine ⟨xor_neutral _ _ increment,?_⟩
-  rw [encoded]
-  exact encoder_conversion_commute canonical raw [] m
-
-/-- Actual converter entry, retaining the same caller origin. Its high-zero
-facts come from canonical origin ports, not from a low-word assertion. -/
-theorem encoded_center_pair (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (X Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin X Y s) :
-    (run (converterPairAt base false) m s).phase=s.phase ∧
-    EncodedFieldFrame base (base 2409) origin X Y (run (converterPairAt base false) m s) := by
-  obtain ⟨raw,phase,frame,encoded⟩ := input
-  let L := balancedSharedPorts base (base 2409)
-  let D := balancedSharedBoundary base (base 2409) hn
-  have split := port_split (base 2409)
-  rw [split.1,split.2] at frame
-  have narrow := balancedPair_narrow L.r L.y (base 2312) (base 1026) origin raw.basis
-    X.val Y.val (by simpa only [L,balancedSharedPorts_r,wireBlock_length] using value_bound X)
-    (by simpa only [L,balancedSharedPorts_y,wireBlock_length] using value_bound Y) frame hr hy
-  have clean := balancedSharedBoundary_clean base (base 2409) origin hw hu
-  have result := balancedTranscriptCenterPair_frame L D origin clean.1 clean.2 X Y raw m narrow
-  change (run (converterPairAt base false) m raw).phase=raw.phase ∧ _ at result
-  have actual := conversion_transport false s raw m encoded result.1
-  refine ⟨actual.1,run (converterPairAt base false) m raw,
-    result.1.trans (phase.trans actual.1.symm),result.2,actual.2⟩
-
-/-- Actual converter exit widens back to both original257-bit ports. -/
-theorem encoded_canonical_pair (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (X Y : Fp) (s : State) (m : List Bool)
-    (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    (run (converterPairAt base true) m s).phase=s.phase ∧
-    EncodedCanonicalFrame origin X Y (run (converterPairAt base true) m s) := by
-  obtain ⟨raw,phase,frame,encoded⟩ := input
-  let L := balancedSharedPorts base (base 2409)
-  let D := balancedSharedBoundary base (base 2409) hn
-  have clean := balancedSharedBoundary_clean base (base 2409) origin hw hu
-  have result := balancedTranscriptCanonicalPair_frame L D origin clean.1 clean.2 X Y raw m frame
-  change (run (converterPairAt base true) m raw).phase=raw.phase ∧ _ at result
-  have outside := balancedSharedDivision_high_outside base hn
-  have wide := balancedPair_widen L.r L.y (base 2312) (base 1026) origin _ X.val Y.val
-    result.2 (by simpa only [L,balancedSharedPorts_r,balancedSharedPorts_y] using outside.1)
-    (by simpa only [L,balancedSharedPorts_r,balancedSharedPorts_y] using outside.2) hr hy
-  have split := port_split (base 2409)
-  rw [←split.1,←split.2] at wide
-  have actual := conversion_transport true s raw m encoded result.1
-  refine ⟨actual.1,run (converterPairAt base true) m raw,
-    result.1.trans (phase.trans actual.1.symm),wide,actual.2⟩
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -11539,69 +6907,6 @@ attribute [local irreducible] run wires copyRegister allGroupEncode
 def copyPairAt (w : Nat → Wire) : Program :=
   copyRegister none (skywalkSharedField w).z (skywalkSharedField w).a
 
-theorem copyPair_natural (f : Nat → Wire) :
-    renameProgram f (copyPairAt id)=copyPairAt f := by
-  simp only [copyPairAt,copyRegister_natural,skywalkShared_field_z,wireBlock_map,
-    Option.map_none,Function.comp_id]
-  rfl
-
-private theorem block_fixed_MappedCompressedCopyEndpoint (start len : Nat)
-    (hs : ∀q,start ≤ q → q < start+len → ¬zeroRegion q) :
-    wireBlock allPlaced start len=wireBlock base start len := by
-  unfold wireBlock
-  apply List.map_congr_left
-  intro q hq
-  have range := List.mem_range'_1.mp hq
-  change pi0 q+16=q+16
-  rw [pi0_outside q (hs q range.1 range.2)]
-
-/-- Both full257-bit copy words lie outside every reassigned role. -/
-theorem copyPair_placement : renameProgram allPlaced (copyPairAt id)=copyPairAt base := by
-  rw [copyPair_natural]
-  have z := block_fixed_MappedCompressedCopyEndpoint 2056 257
-    (by intro q lo hi; unfold zeroRegion workRegion holeRegion; omega)
-  have a := block_fixed_MappedCompressedCopyEndpoint 770 257
-    (by intro q lo hi; unfold zeroRegion workRegion holeRegion; omega)
-  simp only [copyPairAt,skywalkShared_field_z]
-  change copyRegister none (wireBlock allPlaced 2056 257) (wireBlock allPlaced 770 257)=
-    copyRegister none (wireBlock base 2056 257) (wireBlock base 770 257)
-  rw [z,a]
-
-theorem copyPair_frame (hn : (skywalkSharedWires base).Nodup) (origin : BasisState) (X Y : Nat) :
-    Triple (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X Y)
-      (copyPairAt base)
-      (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X (Y^^^X)) := by
-  have widths := skywalkShared_field_widths base
-  have length : (skywalkSharedField base).z.length=(skywalkSharedField base).a.length := by
-    simp [ModInPlaceLayout.z,ModAddCoreLayout.z,widths.core.low,widths.core.a]
-  have nd := skywalkShared_field_nodup base hn
-  have pair : ((skywalkSharedField base).z++(skywalkSharedField base).a).Nodup := by
-    apply List.nodup_iff_count.mpr
-    intro q
-    have full := List.nodup_iff_count.mp nd q
-    simp only [ModInPlaceLayout.wires,List.count_append] at full ⊢
-    omega
-  have dis := (List.nodup_append'.mp pair).2.2
-  intro s m input
-  obtain ⟨phase,keep,value⟩ := copyRegister_correct none (skywalkSharedField base).z
-    (skywalkSharedField base).a length pair (by simp) s m
-  refine ⟨phase,PairFrame.update_dst _ _ origin s.basis _ X Y _ dis input keep ?_⟩
-  simpa only [copyValue,input.1,input.2.1] using value
-
-/-- Exact retained endpoint operations: populate a clean source, or erase
-the equal source after division. Incoming phase and every outsider restore. -/
-theorem copyPair_fill (hn : (skywalkSharedWires base).Nodup) (origin : BasisState) (X : Fp) :
-    Triple (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X.val 0)
-      (copyPairAt base)
-      (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X.val X.val) := by
-  simpa only [Nat.zero_xor] using copyPair_frame hn origin X.val 0
-
-theorem copyPair_clear (hn : (skywalkSharedWires base).Nodup) (origin : BasisState) (X : Fp) :
-    Triple (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X.val X.val)
-      (copyPairAt base)
-      (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin X.val 0) := by
-  simpa only [Nat.xor_self] using copyPair_frame hn origin X.val X.val
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -11613,100 +6918,12 @@ set_option maxHeartbeats 1200000
 set_option linter.unusedSimpArgs false
 namespace ECDSAAdd.Arithmetic.FieldRename
 attribute [local irreducible] addInPlace subInPlace compareLt compareLtConst
-attribute [local irreducible] maskedConstant xorConstant maskedAddConst maskedSubConst
-
-def mapModUnary (f : Wire → Wire) (U : ModUnaryLayout) : ModUnaryLayout :=
-  {low:=U.low.map f,high:=f U.high,constant:=U.constant.map f,
-   carry:=U.carry.map f,cin:=f U.cin,mask:=U.mask.map f,flag:=f U.flag}
-
-theorem modUnary_z_map (f : Wire → Wire) (U : ModUnaryLayout) :
-    (mapModUnary f U).z=U.z.map f := by
-  simp [mapModUnary,ModUnaryLayout.z]
-
-/-- Both the nonempty head and the fallback high wire are relabeled. -/
-theorem modUnary_bit_map (f : Wire → Wire) (U : ModUnaryLayout) :
-    (mapModUnary f U).bit=f U.bit := by
-  cases h : U.low <;> simp [ModUnaryLayout.bit,mapModUnary,h]
-
-theorem take_natural (f : Wire → Wire) (r : List Wire) (n : Nat) :
-    (r.take n).map f=(r.map f).take n := by
-  induction n generalizing r with
-  | zero => simp
-  | succ n ih => cases r <;> simp [ih]
-
-theorem maskedConstant_natural (f : Wire → Wire) (control : Wire) (r : List Wire) (k : Nat) :
-    renameProgram f (maskedConstant control r k)=maskedConstant (f control) (r.map f) k := by
-  induction r generalizing k with
-  | nil => simp [maskedConstant,renameProgram]
-  | cons x xs ih =>
-    by_cases h : k%2=1
-    · simp only [maskedConstant,if_pos h,List.map_cons,rename_append,ih]
-      rfl
-    · simp only [maskedConstant,if_neg h,List.map_cons,rename_append,ih]
-      rfl
-
-theorem maskedAddConst_natural (f : Wire → Wire) (control : Wire)
-    (constant target carry : List Wire) (cin : Wire) (k : Nat) :
-    renameProgram f (maskedAddConst control constant target carry cin k)=
-      maskedAddConst (f control) (constant.map f) (target.map f) (carry.map f) (f cin) k := by
-  simp only [maskedAddConst,rename_append,maskedConstant_natural,addInPlace_natural]
-
-theorem maskedSubConst_natural (f : Wire → Wire) (control : Wire)
-    (constant target carry : List Wire) (cin : Wire) (k : Nat) :
-    renameProgram f (maskedSubConst control constant target carry cin k)=
-      maskedSubConst (f control) (constant.map f) (target.map f) (carry.map f) (f cin) k := by
-  simp only [maskedSubConst,rename_append,maskedConstant_natural,subInPlace_natural]
-
-theorem dblInPlace_natural (f : Wire → Wire) (U : ModUnaryLayout) (p : Nat) :
-    renameProgram f (dblInPlace U p)=dblInPlace (mapModUnary f U) p := by
-  simp only [dblInPlace,rename_append,rotateLeft_natural,xorConstant_natural,
-    subInPlace_natural,maskedAddConst_natural,modUnary_z_map,modUnary_bit_map]
-  simp only [mapModUnary,List.length_map,take_natural]
-  rfl
-
-theorem halfInPlace_natural (f : Wire → Wire) (U : ModUnaryLayout) (p : Nat) :
-    renameProgram f (halfInPlace U p)=halfInPlace (mapModUnary f U) p := by
-  simp only [halfInPlace,rename_append,maskedAddConst_natural,rotateRight_natural,
-    compareLtConst_natural,modUnary_z_map,modUnary_bit_map,Option.map_none]
-  simp only [mapModUnary,List.length_map,take_natural]
-  rfl
-
-theorem borrowedUnary_map (f w : Wire → Wire) :
-    mapModUnary f (borrowedSkywalkUnary w)=borrowedSkywalkUnary (f ∘ w) := by
-  simp only [mapModUnary,borrowedSkywalkUnary,wireBlock_map,Function.comp_def]
-
-theorem borrowed_dbl_natural (f : Wire → Wire) (p : Nat) :
-    renameProgram f (dblInPlace (borrowedSkywalkUnary id) p)=dblInPlace (borrowedSkywalkUnary f) p := by
-  rw [dblInPlace_natural,borrowedUnary_map,Function.comp_id]
-
-theorem borrowed_half_natural (f : Wire → Wire) (p : Nat) :
-    renameProgram f (halfInPlace (borrowedSkywalkUnary id) p)=halfInPlace (borrowedSkywalkUnary f) p := by
-  rw [halfInPlace_natural,borrowedUnary_map,Function.comp_id]
+attribute [local irreducible] maskedConstant xorConstant maskedAddConst
 
 end ECDSAAdd.Arithmetic.FieldRename
 
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open FieldRename Secp256k1
-
-/-- Public all-packed placement maps every gate and correction of each
-endpoint, with the modulus and all classical constant bits preserved. -/
-theorem allPlaced_dbl_natural :
-    renameProgram allPlaced (dblInPlace (borrowedSkywalkUnary id) p)=
-      renameProgram (shifted CompressedAllocation.pi0) (dblInPlace (borrowedSkywalkUnary base) p) := by
-  rw [←borrowed_dbl_natural base,renameProgram_comp]
-  have placement : shifted CompressedAllocation.pi0 ∘ base=allPlaced := by
-    funext q
-    exact shifted_base _ _
-  rw [placement]
-
-theorem allPlaced_half_natural :
-    renameProgram allPlaced (halfInPlace (borrowedSkywalkUnary id) p)=
-      renameProgram (shifted CompressedAllocation.pi0) (halfInPlace (borrowedSkywalkUnary base) p) := by
-  rw [←borrowed_half_natural base,renameProgram_comp]
-  have placement : shifted CompressedAllocation.pi0 ∘ base=allPlaced := by
-    funext q
-    exact shifted_base _ _
-  rw [placement]
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -11721,110 +6938,6 @@ namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 CompressedFieldSupport
 attribute [local irreducible] run wires allGroupEncode dblInPlace halfInPlace copyRegister
 
-private def endpointRegion (q : Nat) : Prop :=
-  (512 ≤ q ∧ q ≤ 1027) ∨ (1540 ≤ q ∧ q ≤ 1797) ∨ (2056 ≤ q ∧ q ≤ 2312)
-
-private def unaryIds : List Nat := List.range' 2056 256++[2312]++
-  List.range' 512 257++List.range' 1540 256++[1797,769]
-private def copyIds : List Nat := List.range' 2056 257++List.range' 770 257
-
-private theorem unary_region (q : Nat) (h : q∈unaryIds) : endpointRegion q := by
-  simp only [unaryIds,List.mem_append,List.mem_cons,List.not_mem_nil,List.mem_range'_1,
-    or_false,or_assoc] at h
-  rcases h with h|rfl|h|h|rfl|rfl
-  · exact Or.inr (Or.inr (by omega))
-  · norm_num [endpointRegion]
-  · exact Or.inl (by omega)
-  · exact Or.inr (Or.inl (by omega))
-  · norm_num [endpointRegion]
-  · norm_num [endpointRegion]
-
-private theorem copy_region (q : Nat) (h : q∈copyIds) : endpointRegion q := by
-  simp only [copyIds,List.mem_append,List.mem_range'_1] at h
-  rcases h with h|h
-  · exact Or.inr (Or.inr (by omega))
-  · exact Or.inl (by omega)
-
-private theorem endpoint_unary_history_support (divide : Bool) :
-    wires (if divide then dblInPlace (borrowedSkywalkUnary base) p
-      else halfInPlace (borrowedSkywalkUnary base) p)⊆(unaryIds.map base).toFinset := by
-  have counts := modUnary_wires (borrowedSkywalkUnary base) 256 p
-    (borrowedSkywalkUnary_widths base) (by omega)
-  have view : ((borrowedSkywalkUnary base).z++(borrowedSkywalkUnary base).core.work++
-      [(borrowedSkywalkUnary base).flag])=unaryIds.map base := by
-    change (wireBlock base 2056 256++[base 2312])++
-      (wireBlock base 512 257++wireBlock base 1540 256++[base 1797])++[base 769]=_
-    simp [unaryIds,wireBlock,List.map_append,List.append_assoc]
-  intro q hq
-  rw [←view]
-  cases divide
-  · simp only [Bool.false_eq_true,if_false] at hq
-    rw [counts.2] at hq
-    exact hq
-  · simp only [if_true] at hq
-    rw [counts.1] at hq
-    exact List.mem_toFinset.mpr (List.mem_append_left _ (List.mem_toFinset.mp hq))
-
-private theorem endpoint_copy_history_support : wires (copyPairAt base)⊆(copyIds.map base).toFinset := by
-  have support := copyRegister_wires_subset none (skywalkSharedField base).z (skywalkSharedField base).a
-  have view : (none : Option Wire).toList++(skywalkSharedField base).z++
-      (skywalkSharedField base).a=copyIds.map base := by
-    rw [skywalkShared_field_z]
-    change []++wireBlock base 2056 257++wireBlock base 770 257=_
-    simp [copyIds,wireBlock,List.map_append]
-  intro q hq
-  change q∈wires (copyRegister none (skywalkSharedField base).z (skywalkSharedField base).a) at hq
-  have h := support hq
-  rw [view] at h
-  exact h
-
-/-- Actual instruction support, including encoder and endpoint corrections.
-Every endpoint site is outside both complete512-bit history rails. -/
-private theorem encoder_away (P : Program) (ids : List Nat)
-    (support : wires P⊆(ids.map base).toFinset)
-    (outside : ∀q∈ids,endpointRegion q) :
-    Disjoint (wires (allGroupEncode base 170)) (wires P) := by
-  have hist := compressedPrefix_history_support base base_pool_nodup base_above 512 (by decide)
-  rw [encode_prefix_512] at hist
-  apply Finset.disjoint_left.mpr
-  intro q he hp
-  have history := List.mem_toFinset.mp (hist he)
-  obtain ⟨j,hj,rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp (support hp))
-  have region := outside j hj
-  simp only [List.mem_append,wireBlock] at history
-  rcases history with history|history
-  all_goals
-    obtain ⟨i,hi,equal⟩ := List.mem_map.mp history
-    have same := base_injective equal
-    subst i
-    simp only [List.mem_range'_1] at hi
-    rcases region with region|region|region <;> omega
-
-theorem encoder_unary_disjoint (divide : Bool) :
-    Disjoint (wires (allGroupEncode base 170))
-      (wires (if divide then dblInPlace (borrowedSkywalkUnary base) p
-        else halfInPlace (borrowedSkywalkUnary base) p)) :=
-  encoder_away _ unaryIds (endpoint_unary_history_support divide) unary_region
-
-theorem encoder_copy_disjoint :
-    Disjoint (wires (allGroupEncode base 170)) (wires (copyPairAt base)) :=
-  encoder_away _ copyIds endpoint_copy_history_support copy_region
-
-/-- Complete State equality holds for arbitrary independent measurement
-record lists and arbitrary incoming phase. -/
-theorem encoder_unary_commute (divide : Bool) (s : State) (m n : List Bool) :
-    run (if divide then dblInPlace (borrowedSkywalkUnary base) p
-      else halfInPlace (borrowedSkywalkUnary base) p) n (run (allGroupEncode base 170) m s)=
-    run (allGroupEncode base 170) m
-      (run (if divide then dblInPlace (borrowedSkywalkUnary base) p
-        else halfInPlace (borrowedSkywalkUnary base) p) n s) :=
-  (run_disjoint_commute _ _ (encoder_unary_disjoint divide) m n s).symm
-
-theorem encoder_copy_commute (s : State) (m n : List Bool) :
-    run (copyPairAt base) n (run (allGroupEncode base 170) m s)=
-      run (allGroupEncode base 170) m (run (copyPairAt base) n s) :=
-  (run_disjoint_commute _ _ encoder_copy_disjoint m n s).symm
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -11835,131 +6948,6 @@ set_option maxHeartbeats 1000000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 CompressedAllocation CompressedFieldSupport
 attribute [local irreducible] run wires allGroupEncode dblInPlace halfInPlace copyRegister
-
-private theorem xor_neutral_MappedCompressedEncodedEndpoints (a b : Bool) (h : (a ^^ b)=false) : a=b := by
-  cases a <;> cases b <;> simp_all
-
-private theorem encoded_endpoint (P : Program)
-    (dis : Disjoint (wires (allGroupEncode base 170)) (wires P))
-    (origin : BasisState) (X Y A B : Fp)
-    (correct : Triple (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a
-        origin X.val Y.val) P
-      (PairFrame (skywalkSharedField base).z (skywalkSharedField base).a origin A.val B.val))
-    (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin X Y s) :
-    (run P m s).phase=s.phase ∧ EncodedCanonicalFrame origin A B (run P m s) := by
-  obtain ⟨raw,phase,frame,encoded⟩ := input
-  have result := correct raw m frame
-  have read : ∀q∈wires P,s.basis q=raw.basis q := by
-    intro q hq
-    rw [encoded]
-    exact run_preserves_outside _ [] raw q (fun he => Finset.disjoint_left.mp dis he hq)
-  have increment := (run_local_increment P s raw m read).1
-  rw [result.1,Bool.xor_self] at increment
-  have actualPhase := xor_neutral_MappedCompressedEncodedEndpoints _ _ increment
-  have actual : run P m s=run (allGroupEncode base 170) [] (run P m raw) := by
-    rw [encoded]
-    exact (run_disjoint_commute _ _ dis [] m raw).symm
-  exact ⟨actualPhase,run P m raw,result.1.trans (phase.trans actualPhase.symm),result.2,actual⟩
-
-/-- Actual base unary emission preserves the entire encoded canonical
-frame for all field inputs and independent measurement records. -/
-theorem encoded_unary_step (divide : Bool) (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin X Y s) :
-    let P := if divide then dblInPlace (borrowedSkywalkUnary base) p
-      else halfInPlace (borrowedSkywalkUnary base) p
-    (run P m s).phase=s.phase ∧
-      EncodedCanonicalFrame origin (if divide then 2*X else X/2) Y (run P m s) := by
-  cases divide
-  · exact encoded_endpoint _ (encoder_unary_disjoint false) origin X Y (X/2) Y
-      (borrowedSkywalkUnary_half_frame base hn origin hw hu X Y) s m input
-  · exact encoded_endpoint _ (encoder_unary_disjoint true) origin X Y (2*X) Y
-      (borrowedSkywalkUnary_double_frame base hn origin hw hu X Y) s m input
-
-private theorem placed_endpoint_state_eq (P : Program) (s : State) (m : List Bool)
-    (hin : ∀q,zeroRegion q → s.basis (base q)=false)
-    (hout : ∀q,zeroRegion q → (run P m s).basis (base q)=false) :
-    run (renameProgram (shifted pi0) P) m s=run P m s := by
-  have input := shifted_zero_boundary pi0 pi0_outside s hin
-  have output := shifted_zero_boundary pi0 pi0_outside (run P m s) hout
-  have same := run_rename (shifted pi0) (shifted pi0).injective P m s
-  rw [input] at same
-  apply pullState_perm_injective (shifted pi0)
-  exact same.trans output.symm
-
-theorem mapped_unary_state_eq (divide : Bool) (hn : (skywalkSharedWires base).Nodup)
-    (hlo : CompressedHistoryAbove base) (origin : BasisState)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin X Y s) :
-    run (renameProgram allPlaced (if divide then dblInPlace (borrowedSkywalkUnary id) p
-        else halfInPlace (borrowedSkywalkUnary id) p)) m s=
-      run (if divide then dblInPlace (borrowedSkywalkUnary base) p
-        else halfInPlace (borrowedSkywalkUnary base) p) m s := by
-  let P := if divide then dblInPlace (borrowedSkywalkUnary base) p
-    else halfInPlace (borrowedSkywalkUnary base) p
-  have reference := encoded_unary_step divide hn origin hw hu X Y s m input
-  have cleanIn := encoded_canonical_zero_region hn hlo origin hw hu X Y s input
-  have cleanOut := encoded_canonical_zero_region hn hlo origin hw hu _ Y (run P m s) reference.2
-  have same := placed_endpoint_state_eq P s m cleanIn cleanOut
-  cases divide
-  · simp only [Bool.false_eq_true,if_false]
-    rw [allPlaced_half_natural]
-    exact same
-  · simp only [if_true]
-    rw [allPlaced_dbl_natural]
-    exact same
-
-/-- Physical low-width unary endpoint, with both placement boundaries
-derived from the encoded frame instead of a new clean-bank premise. -/
-theorem mapped_unary_step (divide : Bool) (hn : (skywalkSharedWires base).Nodup)
-    (hlo : CompressedHistoryAbove base) (origin : BasisState)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin X Y s) :
-    let P := renameProgram allPlaced (if divide then dblInPlace (borrowedSkywalkUnary id) p
-      else halfInPlace (borrowedSkywalkUnary id) p)
-    (run P m s).phase=s.phase ∧
-      EncodedCanonicalFrame origin (if divide then 2*X else X/2) Y (run P m s) := by
-  have same := mapped_unary_state_eq divide hn hlo origin hw hu X Y s m input
-  dsimp only
-  rw [same]
-  exact encoded_unary_step divide hn origin hw hu X Y s m input
-
-/-- Populate the original full source port, preserving all encoded history. -/
-theorem encoded_copy_fill (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (X : Fp) (s : State) (m : List Bool)
-    (input : EncodedCanonicalFrame origin X 0 s) :
-    (run (copyPairAt base) m s).phase=s.phase ∧
-      EncodedCanonicalFrame origin X X (run (copyPairAt base) m s) := by
-  apply encoded_endpoint _ encoder_copy_disjoint origin X 0 X X _ s m input
-  simpa only [ZMod.val_zero] using copyPair_fill hn origin X
-
-/-- The equal retained source port is cleared by the actual XOR copy. -/
-theorem encoded_copy_clear (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (X : Fp) (s : State) (m : List Bool)
-    (input : EncodedCanonicalFrame origin X X s) :
-    (run (copyPairAt base) m s).phase=s.phase ∧
-      EncodedCanonicalFrame origin X 0 (run (copyPairAt base) m s) := by
-  apply encoded_endpoint _ encoder_copy_disjoint origin X X X 0 _ s m input
-  simpa only [ZMod.val_zero] using copyPair_clear hn origin X
-
-theorem mapped_copy_fill (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (X : Fp) (s : State) (m : List Bool)
-    (input : EncodedCanonicalFrame origin X 0 s) :
-    (run (renameProgram allPlaced (copyPairAt id)) m s).phase=s.phase ∧
-      EncodedCanonicalFrame origin X X (run (renameProgram allPlaced (copyPairAt id)) m s) := by
-  rw [copyPair_placement]
-  exact encoded_copy_fill hn origin X s m input
-
-theorem mapped_copy_clear (hn : (skywalkSharedWires base).Nodup)
-    (origin : BasisState) (X : Fp) (s : State) (m : List Bool)
-    (input : EncodedCanonicalFrame origin X X s) :
-    (run (renameProgram allPlaced (copyPairAt id)) m s).phase=s.phase ∧
-      EncodedCanonicalFrame origin X 0 (run (renameProgram allPlaced (copyPairAt id)) m s) := by
-  rw [copyPair_placement]
-  exact encoded_copy_clear hn origin X s m input
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -12012,52 +7000,6 @@ theorem firstGroup_state_eq (divide : Bool) (s : State) (m : List Bool)
   apply pullState_perm_injective (shifted (pi 0))
   rw [firstGroup_run,input,output]
 
-/-- Encoding does not weaken the complete outside-register frame. Equal
-payloads and physical phases identify one complete encoded State. -/
-theorem encoded_field_unique (origin : BasisState) (X Y : Fp) (s t : State)
-    (hs : EncodedFieldFrame base (base 2409) origin X Y s)
-    (ht : EncodedFieldFrame base (base 2409) origin X Y t)
-    (phase : s.phase=t.phase) : s=t := by
-  obtain ⟨a,ha,fa,ea⟩ := hs
-  obtain ⟨b,hb,fb,eb⟩ := ht
-  have raw : a=b := by
-    apply State.extensionality
-    · exact ha.trans (phase.trans hb.symm)
-    · exact PairFrame.unique _ _ origin _ _ _ _ fa fb
-  rw [ea,eb,raw]
-
-theorem encoded_canonical_unique (origin : BasisState) (X Y : Fp) (s t : State)
-    (hs : EncodedCanonicalFrame origin X Y s)
-    (ht : EncodedCanonicalFrame origin X Y t)
-    (phase : s.phase=t.phase) : s=t := by
-  obtain ⟨a,ha,fa,ea⟩ := hs
-  obtain ⟨b,hb,fb,eb⟩ := ht
-  have raw : a=b := by
-    apply State.extensionality
-    · exact ha.trans (phase.trans hb.symm)
-    · exact PairFrame.unique _ _ origin _ _ _ _ fa fb
-  rw [ea,eb,raw]
-
-/-- The accepted leaf cancellation can be followed by actual remaining
-cell instructions and the full encoder with one common suffix stream.
-This statement makes no claim that the seed commutes with a decoder. -/
-theorem raw_entry_suffix_eq (w : Nat → Wire) (b g swap sign effS : Wire) (ig is : Bool)
-    (hn : (skywalkSharedWires w).Nodup)
-    (hl : BalancedTranscriptLayout (balancedSharedPorts w sign) b g swap effS)
-    (ho : sign∉skywalkSharedWires w) (hoS : effS∉skywalkSharedWires w)
-    (Y : Fp) (s : State) (mOld mNew mSuffix : List Bool) (suffix : Program)
-    (hg0 : s.basis sign=false) (hs0 : s.basis effS=false)
-    (hw : regValue (skywalkSharedField w).work s.basis=0)
-    (hu : regValue (skywalkSharedUnused w) s.basis=0)
-    (hR : regValue (skywalkSharedField w).z s.basis=Y.val)
-    (hY : regValue (skywalkSharedField w).a s.basis=0) :
-    run (allGroupEncode w 170) []
-      (run suffix mSuffix (run (EntryFieldSeedCancellation.oldEntry w b g swap sign effS ig is) mOld s))=
-    run (allGroupEncode w 170) []
-      (run suffix mSuffix (run (EntryFieldSeedCancellation.newEntry w b swap sign effS is) mNew s)) := by
-  rw [EntryFieldSeedCancellation.entry_state_eq w b g swap sign effS ig is hn hl ho hoS
-    Y s mOld mNew hg0 hs0 hw hu hR hY]
-
 end ECDSAAdd.Arithmetic.EntryMappedFieldSegmentTrim
 end
 
@@ -12107,33 +7049,8 @@ set_option maxRecDepth 8192
 set_option maxHeartbeats 1500000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 BalancedField OffsetBorrowedCanonical CompressedFieldSupport
-attribute [local irreducible] run mappedReplay compressedFieldForwardGroups compressedFieldBackwardGroups
+attribute [local irreducible] run mappedReplay
   mixedTranscriptTape mixedTranscriptUnitTrace directionalPayload
-
-/-- The entire actual512-cell mapped forward or inverse circuit realizes
-the original field replay, with exact incoming phase and encoded workspace.
-Packet and residual layouts are derived from the original full tape. -/
-theorem mappedReplay_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    let out := run (mappedReplay divide) m s
-    out.phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)).1
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)).2 out := by
-  have eq := mappedReplay_reference divide hn hlo ho hp
-    (packet_layouts _ _ _ hf) (tail_layout _ _ _ hf) origin hg0 hs0 env legal X Y s m input
-  have spec := compressedFieldGroups_512_frame base (base 2400) (base 2409) (base 2410)
-    hn hlo ho hp hf origin hg0 hs0 env legal X Y s m input
-  cases divide
-  · rw [eq]
-    simpa only [Bool.false_eq_true,if_false,Bool.not_false,directionalPayload,if_true] using spec.2
-  · rw [eq]
-    simpa only [if_true,Bool.not_true,directionalPayload,Bool.false_eq_true,if_false] using spec.1
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -12145,108 +7062,8 @@ set_option maxRecDepth 8192
 set_option maxHeartbeats 1500000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 BalancedField OffsetBorrowedCanonical CompressedFieldSupport
-attribute [local irreducible] run trimReplay baseTrimReplay mappedReplay mixedTranscriptTape
+attribute [local irreducible] run mappedReplay mixedTranscriptTape
   mixedTranscriptUnitTrace directionalPayload indexedLetters trimLetters
-
-/-- The511 actual field cells retain the full fixed170-group encoding,
-including phase and every work/control/source-frame bit. -/
-theorem trimReplay_frame (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin) (X Y : Fp)
-    (s : State) (m : List Bool) (input : EncodedFieldFrame base (base 2409) origin X Y s) :
-    let out := run (trimReplay divide) m s
-    out.phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) trimLetters) (X,Y)).1
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) trimLetters) (X,Y)).2 out := by
-  have eq := trimReplay_reference divide hn hlo ho hp hf origin hg0 hs0 env legal X Y s m input
-  have len : trimLetters.length=3*170+1 := by
-    simp only [trimLetters,indexedLetters,List.length_map,List.length_range]
-  have ref := trim_grouped_encoded_replays base (base 2400) (base 2409) (base 2410)
-    hn hlo ho hp origin hg0 hs0 env legal 170 0 (by decide) trimLetters len trimLetters_indexed
-    (trimLetters_layout hf)
-  rw [eq,baseTrimReplay_reference]
-  cases divide
-  · simpa only [referenceGroups,referenceCell,Bool.false_eq_true,if_false,Bool.not_false,
-      directionalPayload,if_true] using ref.2 X Y s m input
-  · simpa only [referenceGroups,referenceCell,if_true,Bool.not_true,directionalPayload,
-      Bool.false_eq_true,if_false] using ref.1 X Y s m input
-
-private theorem encoded_unique (origin : BasisState) (X Y : Fp) (s t : State)
-    (phase : s.phase=t.phase)
-    (hs : EncodedFieldFrame base (base 2409) origin X Y s)
-    (ht : EncodedFieldFrame base (base 2409) origin X Y t) : s=t := by
-  obtain ⟨a,pa,fa,ea⟩ := hs
-  obtain ⟨b,pb,fb,eb⟩ := ht
-  have raw : a=b := by
-    apply State.extensionality
-    · exact pa.trans (phase.trans pb.symm)
-    · exact PairFrame.unique _ _ origin _ _ a.basis b.basis fa fb
-  rw [ea,eb,raw]
-
-def trimInput (divide : Bool) (Y : Fp) : Fp×Fp := if divide then (2*Y,0) else (Y,Y)
-def trimOutput (divide : Bool) (origin : BasisState) (x : Nat) (Y : Fp) : Fp×Fp :=
-  if divide then
-    (if origin (base 2400) then Y/(x : Fp) else Y,
-     if origin (base 2400) then Y/(x : Fp) else Y)
-  else (2*(if origin (base 2400) then Y*(x : Fp) else Y),0)
-
-/-- The public specialization uses the original canonical nonzero divisor
-and actual512 signed-trace premise. No new terminal-state input is required. -/
-theorem trimReplay_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (x : Nat) (Y : Fp) (hx0 : 0<x) (hx : x<p)
-    (hr : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (p : Int)))
-    (s : State) (m : List Bool)
-    (input : EncodedFieldFrame base (base 2409) origin (trimInput divide Y).1 (trimInput divide Y).2 s) :
-    let out := run (trimReplay divide) m s
-    out.phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin
-      (trimOutput divide origin x Y).1 (trimOutput divide origin x Y).2 out := by
-  have frame := trimReplay_frame divide hn hlo ho hp hf origin hg0 hs0 env legal
-    (trimInput divide Y).1 (trimInput divide Y).2 s m input
-  cases divide
-  · simpa only [trimInput,trimOutput,Bool.false_eq_true,if_false,Bool.not_false,
-      directionalPayload,if_true,trimLetters_product origin x Y hx0 hx hr] using frame
-  · simpa only [trimInput,trimOutput,if_true,Bool.not_true,directionalPayload,
-      Bool.false_eq_true,if_false,trimLetters_quotient origin x Y hx0 hx hr] using frame
-
-/-- Independent records for the new511-cell and legacy512-cell programs
-produce exactly the same complete State on the actual caller trajectory. -/
-theorem trimReplay_old_eq (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (x : Nat) (Y : Fp) (hx0 : 0<x) (hx : x<p)
-    (hr : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (p : Int)))
-    (s : State) (m k : List Bool)
-    (input : EncodedFieldFrame base (base 2409) origin (trimInput divide Y).1 (trimInput divide Y).2 s) :
-    run (trimReplay divide) m s=run (mappedReplay divide) k s := by
-  have a := trimReplay_spec divide hn hlo ho hp hf origin hg0 hs0 env legal x Y hx0 hx hr s m input
-  have b := mappedReplay_spec divide hn hlo ho hp hf origin hg0 hs0 env legal
-    (trimInput divide Y).1 (trimInput divide Y).2 s k input
-  have old : (run (mappedReplay divide) k s).phase=s.phase ∧
-      EncodedFieldFrame base (base 2409) origin
-        (trimOutput divide origin x Y).1 (trimOutput divide origin x Y).2
-        (run (mappedReplay divide) k s) := by
-    cases divide
-    · simpa only [trimInput,trimOutput,Bool.false_eq_true,if_false,Bool.not_false,
-        directionalPayload,if_true,mixedTranscriptTape_product base origin (base 2400) x Y hx0 hx hr] using b
-    · simpa only [trimInput,trimOutput,if_true,Bool.not_true,directionalPayload,
-        Bool.false_eq_true,if_false,mixedTranscriptTape_quotient base origin (base 2400) x Y hx0 hx hr] using b
-  exact encoded_unique origin _ _ _ _ (a.1.trans old.1.symm) a.2 old.2
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -12651,7 +7468,7 @@ set_option maxRecDepth 8192
 set_option maxHeartbeats 1500000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 BalancedField OffsetBorrowedCanonical CompressedFieldSupport
-attribute [local irreducible] run mappedReplay converterPairAt directionalPayload
+attribute [local irreducible] run mappedReplay directionalPayload
   mixedTranscriptTape mixedTranscriptUnitTrace
 
 /-- The actual middle three blocks of fieldSegment, with both boundary
@@ -12659,44 +7476,6 @@ conversions retained and all history groups encoded at each outer boundary. -/
 def canonicalMappedReplay (divide : Bool) : Program :=
   renameProgram allPlaced (converterPair false)++
     (mappedReplay divide++renameProgram allPlaced (converterPair true))
-
-theorem canonicalMappedReplay_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (X Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin X Y s) :
-    let out := run (canonicalMappedReplay divide) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)).1
-      (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)).2 out := by
-  let P : State → State → Prop := fun initial out =>
-    EncodedCanonicalFrame origin X Y initial → out.phase=initial.phase ∧
-      EncodedCanonicalFrame origin
-        (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)).1
-        (directionalPayload (!divide) (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)).2 out
-  have all := run_three_states
-    (renameProgram allPlaced (converterPair false)) (mappedReplay divide)
-    (renameProgram allPlaced (converterPair true)) P
-    (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      rw [converterPair_placement] at h1 h3
-      have first := encoded_center_pair hn origin hw hu hr hy X Y initial m1 hin
-      rw [h1] at first
-      have middle := mappedReplay_spec divide hn hlo ho hp hf origin hg0 hs0 env legal X Y s1 m2 first.2
-      rw [h2] at middle
-      change s3.phase=initial.phase ∧ _
-      generalize hQ : directionalPayload (!divide)
-        (mixedTranscriptControls origin (base 2400) (mixedTranscriptTape base)) (X,Y)=Q at middle ⊢
-      have last := encoded_canonical_pair hn origin hw hu hr hy Q.1 Q.2 s2 m3 middle.2
-      rw [h3] at last
-      exact ⟨last.1.trans (middle.1.trans first.1),last.2⟩) s m
-  exact all input
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -12713,74 +7492,9 @@ attribute [local irreducible] run fieldSegment canonicalMappedReplay mappedRepla
 def fieldPrefix (divide : Bool) : Program := if divide then
   renameProgram allPlaced (dblInPlace (borrowedSkywalkUnary id) p)
   else renameProgram allPlaced (copyPairAt id)
-def fieldSuffix (divide : Bool) : Program := if divide then
-  renameProgram allPlaced (copyPairAt id)
-  else renameProgram allPlaced (halfInPlace (borrowedSkywalkUnary id) p)
-
-theorem fieldSegment_join (divide : Bool) :
-    fieldSegment divide=fieldPrefix divide++(canonicalMappedReplay divide++fieldSuffix divide) := by
-  cases divide <;> simp only [fieldSegment,fieldPrefix,fieldSuffix,copyPairAt,canonicalMappedReplay,
-    Bool.false_eq_true,if_false,if_true,List.append_assoc]
 
 def fieldResult (divide : Bool) (origin : BasisState) (x : Nat) (Y : Fp) : Fp :=
   if origin (base 2400) then (if divide then Y/(x : Fp) else Y*(x : Fp)) else Y
-
-/-- Complete actual mapped field segment: both retained endpoints and both
-conversions surround the full512 field replay. All records preserve phase,
-the encoded transcript, and the clean original source port. -/
-theorem fieldSegment_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (fieldSegment divide) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult divide origin x Y) 0 out := by
-  let P : State → State → Prop := fun initial out => EncodedCanonicalFrame origin Y 0 initial →
-    out.phase=initial.phase ∧ EncodedCanonicalFrame origin (fieldResult divide origin x Y) 0 out
-  have all := run_three_states (fieldPrefix divide) (canonicalMappedReplay divide) (fieldSuffix divide) P
-    (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      cases divide
-      · simp only [fieldPrefix,fieldSuffix,Bool.false_eq_true,if_false] at h1 h3
-        have first := mapped_copy_fill hn origin Y initial m1 hin
-        rw [h1] at first
-        have middle := canonicalMappedReplay_spec false hn hlo ho hp hf origin hg0 hs0 env legal
-          hw hu hr hy Y Y s1 m2 first.2
-        rw [h2] at middle
-        simp only [Bool.not_false,directionalPayload,if_true] at middle
-        rw [mixedTranscriptTape_product base origin (base 2400) x Y hx0 hx trace] at middle
-        let Z := if origin (base 2400) then Y*(x:Fp) else Y
-        have last := mapped_unary_step false hn hlo origin hw hu (2*Z) 0 s2 m3 middle.2
-        simp only [Bool.false_eq_true,if_false] at last
-        rw [h3] at last
-        have two : (2:Fp)≠0 := by decide
-        have halve : (2*Z)/2=Z := by rw [mul_comm 2 Z,mul_div_cancel_right₀ Z two]
-        rw [halve] at last
-        exact ⟨last.1.trans (middle.1.trans first.1),by simpa only [fieldResult,Bool.false_eq_true,if_false,Z] using last.2⟩
-      · simp only [fieldPrefix,fieldSuffix,if_true] at h1 h3
-        have first := mapped_unary_step true hn hlo origin hw hu Y 0 initial m1 hin
-        simp only [if_true] at first
-        rw [h1] at first
-        have middle := canonicalMappedReplay_spec true hn hlo ho hp hf origin hg0 hs0 env legal
-          hw hu hr hy (2*Y) 0 s1 m2 first.2
-        rw [h2] at middle
-        simp only [Bool.not_true,directionalPayload,Bool.false_eq_true,if_false] at middle
-        rw [mixedTranscriptTape_quotient base origin (base 2400) x Y hx0 hx trace] at middle
-        let Z := if origin (base 2400) then Y/(x:Fp) else Y
-        have last := mapped_copy_clear hn origin Z s2 m3 middle.2
-        rw [h3] at last
-        exact ⟨last.1.trans (middle.1.trans first.1),by simpa only [fieldResult,if_true,Z] using last.2⟩) s m
-  rw [fieldSegment_join]
-  exact all input
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -12915,115 +7629,7 @@ theorem firstGroup_forward_step
   exact transport_encoded_EntryMappedFieldSegmentTrimForward (baseFirstGroup true) (firstGroup true) hn hlo origin env Y 0 _ _
     s m input ref (firstGroup_state_eq true s m)
 
-private def oldPrefix : Program := fieldPrefix true ++
-  renameProgram allPlaced (converterPair false) ++ mappedGroup true 0
-private def newPrefix : Program := renameProgram allPlaced (converterPair false) ++ firstGroup true
-private def commonSuffix : Program := mappedGroups true 1 169 ++ tailProgram true ++
-  renameProgram allPlaced (converterPair true) ++ renameProgram allPlaced (copyPairAt id)
-
-/-- Independent record streams identify one full encoded packet output.
-The unary endpoint is evaluated on its encoded input before any decoder. -/
-theorem forward_prefix_state_eq
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (packetLetters 0))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (Y : Fp) (s : State) (mOld mNew : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    run oldPrefix mOld s=run newPrefix mNew s := by
-  let Q := skywalkPayloadReplay (mixedTranscriptControls origin (base 2400) (packetLetters 0)) (2*Y,0)
-  let P : State → State → Prop := fun initial out => EncodedCanonicalFrame origin Y 0 initial →
-    out.phase=initial.phase ∧ EncodedFieldFrame base (base 2409) origin Q.1 Q.2 out
-  have old := run_three_states (fieldPrefix true) (renameProgram allPlaced (converterPair false))
-    (mappedGroup true 0) P (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      have a := mapped_unary_step true hn hlo origin hw hu Y 0 initial m1 hin
-      simp only [fieldPrefix,if_true] at h1
-      simp only [if_true] at a
-      rw [h1] at a
-      have b := encoded_center_pair hn origin hw hu hr hy (2*Y) 0 s1 m2 a.2
-      rw [converterPair_placement false] at h2
-      rw [h2] at b
-      have c := mappedGroup_encoded_step true 0 (by decide) hn hlo ho hp hf origin hg0 hs0
-        env legal (2*Y) 0 s2 m3 b.2
-      rw [h3] at c
-      exact ⟨c.1.trans (b.1.trans a.1),by simpa only [directionalPayload,Bool.not_true,
-        Bool.false_eq_true,if_false,Q] using c.2⟩) s mOld input
-  have oldShape : oldPrefix=fieldPrefix true ++
-      (renameProgram allPlaced (converterPair false)++mappedGroup true 0) := by
-    simp only [oldPrefix,List.append_assoc]
-  rw [←oldShape] at old
-  let center := renameProgram allPlaced (converterPair false)
-  let t := run center (mNew.take (measurementCount center)) s
-  have first := encoded_center_pair hn origin hw hu hr hy Y 0 s
-    (mNew.take (measurementCount center)) input
-  have first' : t.phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin Y 0 t := by
-    simpa only [t,center,converterPair_placement] using first
-  have last := firstGroup_forward_step hn hlo ho hp hf origin hg0 hs0 env legal Y t
-    (mNew.drop (measurementCount center)) first'.2
-  have current : (run newPrefix mNew s).phase=s.phase ∧
-      EncodedFieldFrame base (base 2409) origin Q.1 Q.2 (run newPrefix mNew s) := by
-    simp only [newPrefix,run_append]
-    exact ⟨last.1.trans first'.1,last.2⟩
-  exact encoded_field_unique origin Q.1 Q.2 _ _ old.2 current.2 (old.1.trans current.1.symm)
-
-private theorem forward_groups_succ (j n : Nat) :
-    mappedGroups true j (n+1)=mappedGroup true j++mappedGroups true (j+1) n := by
-  simp only [mappedGroups,if_true]
-
-private theorem old_forward_join : MappedCompressed.fieldSegment true=oldPrefix++commonSuffix := by
-  have groups : mappedGroups true 0 170=mappedGroup true 0++mappedGroups true 1 169 :=
-    forward_groups_succ 0 169
-  simp only [MappedCompressed.fieldSegment,oldPrefix,commonSuffix,fieldPrefix,copyPairAt,
-    if_true,MappedCompressed.mappedReplay,groups,tailProgram,List.append_assoc]
-private theorem new_forward_join : fieldSegment true=newPrefix++commonSuffix := by
-  simp only [fieldSegment,newPrefix,commonSuffix,replay,copyPairAt,if_true,tailProgram,
-    List.nil_append,List.append_assoc]
-
 -- Keep programs symbolic so kernel conversion does not evaluate concrete gate lists.
-private theorem replace_prefix (P Q R : Program) (s : State) (m : List Bool)
-    (same : ∀ a b, run P a s = run Q b s) :
-    run (P ++ R) (List.replicate (measurementCount P) false ++
-      m.drop (measurementCount Q)) s = run (Q ++ R) m s := by
-  rw [run_append,run_append,same _ (m.take (measurementCount Q))]
-  simp only [List.drop_append,List.length_replicate,Nat.sub_self,List.drop_zero,
-    List.drop_replicate,List.replicate_zero,List.nil_append]
-
-/-- Full actual forward field wrapper. The fixed170 packet encoding, raw
-510/511 tail and complete caller State are retained for all independent MX
-records. The old endpoint is replaced only at the closed first-packet boundary. -/
-theorem fieldTrimSegment_forward_spec
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (fieldSegment true) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult true origin x Y) 0 out := by
-  let suffixRecords := m.drop (measurementCount newPrefix)
-  let records := List.replicate (measurementCount oldPrefix) false ++ suffixRecords
-  have old := MappedCompressed.fieldSegment_spec true hn hlo ho hp hf origin hg0 hs0 env legal
-    hw hu hr hy x hx0 hx trace Y s records input
-  have actualStateEq : run (MappedCompressed.fieldSegment true) records s=run (fieldSegment true) m s := by
-    rw [old_forward_join,new_forward_join]
-    exact replace_prefix oldPrefix newPrefix commonSuffix s m (fun a b =>
-      forward_prefix_state_eq hn hlo ho hp
-        (packet_layouts (base 2400) (base 2409) (base 2410) hf 0 (by decide))
-        origin hg0 hs0 env legal hw hu hr hy Y s a b input)
-  rw [actualStateEq] at old
-  exact old
 
 end ECDSAAdd.Arithmetic.EntryMappedFieldSegmentTrim
 end
@@ -13034,112 +7640,8 @@ set_option maxRecDepth 8192
 set_option maxHeartbeats 1500000
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 BalancedField OffsetBorrowedCanonical CompressedFieldSupport
-attribute [local irreducible] run trimReplay converterPairAt directionalPayload
+attribute [local irreducible] run directionalPayload
   mixedTranscriptTape mixedTranscriptUnitTrace
-/-- The actual middle three blocks of fieldSegment, with both boundary
-conversions retained and all history groups encoded at each outer boundary. -/
-def canonicalTrimReplay (divide : Bool) : Program :=
-  renameProgram allPlaced (converterPair false)++
-    (trimReplay divide++renameProgram allPlaced (converterPair true))
-
-theorem canonicalTrimReplay_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (Y : Fp) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int))) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin (trimInput divide Y).1 (trimInput divide Y).2 s) :
-    let out := run (canonicalTrimReplay divide) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin
-      (trimOutput divide origin x Y).1
-      (trimOutput divide origin x Y).2 out := by
-  let P : State → State → Prop := fun initial out =>
-    EncodedCanonicalFrame origin (trimInput divide Y).1 (trimInput divide Y).2 initial → out.phase=initial.phase ∧
-      EncodedCanonicalFrame origin
-        (trimOutput divide origin x Y).1
-        (trimOutput divide origin x Y).2 out
-  have all := run_three_states
-    (renameProgram allPlaced (converterPair false)) (trimReplay divide)
-    (renameProgram allPlaced (converterPair true)) P
-    (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      rw [converterPair_placement] at h1 h3
-      have first := encoded_center_pair hn origin hw hu hr hy (trimInput divide Y).1 (trimInput divide Y).2 initial m1 hin
-      rw [h1] at first
-      have middle := trimReplay_spec divide hn hlo ho hp hf origin hg0 hs0 env legal x Y hx0 hx trace s1 m2 first.2
-      rw [h2] at middle
-      change s3.phase=initial.phase ∧ _
-      generalize hQ : trimOutput divide origin x Y=Q at middle ⊢
-      have last := encoded_canonical_pair hn origin hw hu hr hy Q.1 Q.2 s2 m3 middle.2
-      rw [h3] at last
-      exact ⟨last.1.trans (middle.1.trans first.1),last.2⟩) s m
-  exact all input
-
-
-/-- Actual retained outer endpoints and conversions, with only the proven
-terminal field cell omitted. Native integer recording still has512 rounds. -/
-def fieldTrimSegment (divide : Bool) : Program :=
-  fieldPrefix divide++(canonicalTrimReplay divide++fieldSuffix divide)
-
-/-- Complete actual mapped field segment: both retained endpoints and both
-conversions surround the511 field replay; native recording stays512. All records preserve phase,
-the encoded transcript, and the clean original source port. -/
-theorem fieldTrimSegment_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (fieldTrimSegment divide) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult divide origin x Y) 0 out := by
-  let P : State → State → Prop := fun initial out => EncodedCanonicalFrame origin Y 0 initial →
-    out.phase=initial.phase ∧ EncodedCanonicalFrame origin (fieldResult divide origin x Y) 0 out
-  have all := run_three_states (fieldPrefix divide) (canonicalTrimReplay divide) (fieldSuffix divide) P
-    (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      cases divide
-      · simp only [fieldPrefix,fieldSuffix,Bool.false_eq_true,if_false] at h1 h3
-        have first := mapped_copy_fill hn origin Y initial m1 hin
-        rw [h1] at first
-        have middle := canonicalTrimReplay_spec false hn hlo ho hp hf origin hg0 hs0 env legal
-          hw hu hr hy x Y hx0 hx trace s1 m2 first.2
-        rw [h2] at middle
-        simp only [trimOutput,Bool.false_eq_true,if_false] at middle
-        let Z := if origin (base 2400) then Y*(x:Fp) else Y
-        have last := mapped_unary_step false hn hlo origin hw hu (2*Z) 0 s2 m3 middle.2
-        simp only [Bool.false_eq_true,if_false] at last
-        rw [h3] at last
-        have two : (2:Fp)≠0 := by decide
-        have halve : (2*Z)/2=Z := by rw [mul_comm 2 Z,mul_div_cancel_right₀ Z two]
-        rw [halve] at last
-        exact ⟨last.1.trans (middle.1.trans first.1),by simpa only [fieldResult,Bool.false_eq_true,if_false,Z] using last.2⟩
-      · simp only [fieldPrefix,fieldSuffix,if_true] at h1 h3
-        have first := mapped_unary_step true hn hlo origin hw hu Y 0 initial m1 hin
-        simp only [if_true] at first
-        rw [h1] at first
-        have middle := canonicalTrimReplay_spec true hn hlo ho hp hf origin hg0 hs0 env legal
-          hw hu hr hy x Y hx0 hx trace s1 m2 first.2
-        rw [h2] at middle
-        simp only [trimOutput,if_true] at middle
-        let Z := if origin (base 2400) then Y/(x:Fp) else Y
-        have last := mapped_copy_clear hn origin Z s2 m3 middle.2
-        rw [h3] at last
-        exact ⟨last.1.trans (middle.1.trans first.1),by simpa only [fieldResult,if_true,Z] using last.2⟩) s m
-  exact all input
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -13214,63 +7716,8 @@ theorem terminalFieldSegment_counts (divide : Bool) :
 
 private def oldTerminalPrefix : Program := fieldPrefix true ++
   renameProgram allPlaced (converterPair false) ++ mappedGroup true 0
-private def newTerminalPrefix : Program := renameProgram allPlaced (converterPair false) ++ firstGroup true
-private def terminalSuffix : Program := mappedGroups true 1 169 ++
-  renameProgram allPlaced (logicalCell true 510) ++
-  renameProgram allPlaced (converterPair true) ++ renameProgram allPlaced (copyPairAt id)
-
-private theorem forward_groups_succ_EntryMappedFieldSegmentTrimTerminal (j n : Nat) :
-    mappedGroups true j (n+1)=mappedGroup true j++mappedGroups true (j+1) n := by
-  simp only [mappedGroups,if_true]
-
-private theorem oldTerminal_join : MappedCompressed.fieldTrimSegment true=oldTerminalPrefix++terminalSuffix := by
-  have groups : mappedGroups true 0 170=mappedGroup true 0++mappedGroups true 1 169 :=
-    forward_groups_succ_EntryMappedFieldSegmentTrimTerminal 0 169
-  simp only [MappedCompressed.fieldTrimSegment,canonicalTrimReplay,trimReplay,oldTerminalPrefix,
-    terminalSuffix,fieldPrefix,fieldSuffix,groups,if_true,List.append_assoc]
-private theorem newTerminal_join : terminalFieldSegment true=newTerminalPrefix++terminalSuffix := by
-  simp only [terminalFieldSegment,terminalReplay,newTerminalPrefix,terminalSuffix,copyPairAt,
-    if_true,List.nil_append,List.append_assoc]
 
 -- Keep programs symbolic so kernel conversion does not evaluate concrete gate lists.
-private theorem replace_prefix_EntryMappedFieldSegmentTrimTerminal (P Q R : Program) (s : State) (m : List Bool)
-    (same : ∀ a b, run P a s = run Q b s) :
-    run (P ++ R) (List.replicate (measurementCount P) false ++
-      m.drop (measurementCount Q)) s = run (Q ++ R) m s := by
-  rw [run_append,run_append,same _ (m.take (measurementCount Q))]
-  simp only [List.drop_append,List.length_replicate,Nat.sub_self,List.drop_zero,
-    List.drop_replicate,List.replicate_zero,List.nil_append]
-
-/-- Closed forward entry cancellation on the current511-cell wrapper.
-Terminal omission is inherited from its accepted512-trace derivation,
-without adding any terminal-source, activation or measurement premise. -/
-theorem terminalFieldTrimSegment_forward_spec
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (terminalFieldSegment true) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult true origin x Y) 0 out := by
-  let suffixRecords := m.drop (measurementCount newTerminalPrefix)
-  let records := List.replicate (measurementCount oldTerminalPrefix) false ++ suffixRecords
-  have old := MappedCompressed.fieldTrimSegment_spec true hn hlo ho hp hf origin hg0 hs0 env legal
-    hw hu hr hy x hx0 hx trace Y s records input
-  have actualStateEq : run (MappedCompressed.fieldTrimSegment true) records s=run (terminalFieldSegment true) m s := by
-    rw [oldTerminal_join,newTerminal_join]
-    exact replace_prefix_EntryMappedFieldSegmentTrimTerminal oldTerminalPrefix newTerminalPrefix terminalSuffix s m (fun a b =>
-      forward_prefix_state_eq hn hlo ho hp (packet_layouts _ _ _ hf 0 (by decide))
-        origin hg0 hs0 env legal hw hu hr hy Y s a b input)
-  rw [actualStateEq] at old
-  exact old
 
 end ECDSAAdd.Arithmetic.EntryMappedFieldSegmentTrim
 end
@@ -13281,32 +7728,7 @@ noncomputable section
 set_option maxRecDepth 8192
 namespace ECDSAAdd.Arithmetic.MappedCompressed
 open CompressedAllocation
-attribute [local irreducible] wires toffoliCount measurementCount mappedReplay trimReplay
-
-theorem fieldTrimSegment_support (divide : Bool) :
-    wires (fieldTrimSegment divide) ⊆ slots.toFinset := by
-  have full := fieldSegment_support divide
-  rw [fieldSegment_join] at full
-  simp only [fieldTrimSegment,canonicalTrimReplay,canonicalMappedReplay,wires_append,
-    Finset.union_subset_iff,and_assoc] at full ⊢
-  exact ⟨full.1,full.2.1,trimReplay_support divide,full.2.2.2.1,full.2.2.2.2⟩
-
-theorem fieldTrimSegment_saving (divide : Bool) :
-    toffoliCount (fieldSegment divide)=toffoliCount (fieldTrimSegment divide)+(if divide then 1280 else 1281) ∧
-    measurementCount (fieldSegment divide)=measurementCount (fieldTrimSegment divide)+1025 := by
-  have saving := trimReplay_count_saving divide
-  rw [fieldSegment_join]
-  simp only [fieldTrimSegment,canonicalTrimReplay,canonicalMappedReplay,toffoliCount_append,
-    measurementCount_append]
-  constructor <;> omega
-
-theorem fieldTrimSegment_counts (divide : Bool) :
-    toffoliCount (fieldTrimSegment divide)=(if divide then 658841 else 659353) ∧
-    measurementCount (fieldTrimSegment divide)=(if divide then 527516 else 527517) := by
-  have old := fieldSegment_counts divide
-  have saving := fieldTrimSegment_saving divide
-  cases divide <;> simp only [Bool.false_eq_true,if_false,if_true] at old saving ⊢
-  all_goals constructor <;> omega
+attribute [local irreducible] wires toffoliCount measurementCount mappedReplay
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -13376,83 +7798,6 @@ theorem terminalReplay_inverse_spec
   rw [←shape] at all
   exact all
 
-private def inverseEntryPrefix : Program := renameProgram allPlaced (copyPairAt id)++
-  renameProgram allPlaced (converterPair false)
-
-private theorem inverseEntryPrefix_step
-    (hn : (skywalkSharedWires base).Nodup) (origin : BasisState)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    (run inverseEntryPrefix m s).phase=s.phase ∧
-      EncodedFieldFrame base (base 2409) origin Y Y (run inverseEntryPrefix m s) := by
-  let copy := renameProgram allPlaced (copyPairAt id)
-  let t := run copy (m.take (measurementCount copy)) s
-  have first := mapped_copy_fill hn origin Y s (m.take (measurementCount copy)) input
-  have second := encoded_center_pair hn origin hw hu hr hy Y Y t
-    (m.drop (measurementCount copy)) first.2
-  simp only [inverseEntryPrefix,run_append,converterPair_placement]
-  exact ⟨second.1.trans first.1,second.2⟩
-
-private theorem inverse_entry_join : terminalFieldSegment false=inverseEntryPrefix++
-    (terminalReplay false++renameProgram allPlaced (converterPair true)) := by
-  simp only [terminalFieldSegment,inverseEntryPrefix,copyPairAt,Bool.false_eq_true,if_false,
-    List.append_nil,List.append_assoc]
-
-/-- Full actual inverse field wrapper under the unchanged public contract.
-Both original high bits, workspace, transcript, activation control and phase
-are restored for every independent measurement stream. The terminal511 cell
-remains omitted, and the final inverse arithmetic/unseed pair is cancelled. -/
-theorem terminalFieldTrimSegment_inverse_spec
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (terminalFieldSegment false) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult false origin x Y) 0 out := by
-  let Z := if origin (base 2400) then Y*(x:Fp) else Y
-  let P : State → State → Prop := fun initial out => EncodedCanonicalFrame origin Y 0 initial →
-    out.phase=initial.phase ∧ EncodedCanonicalFrame origin Z 0 out
-  have all := run_three_states inverseEntryPrefix (terminalReplay false)
-    (renameProgram allPlaced (converterPair true)) P (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      have first := inverseEntryPrefix_step hn origin hw hu hr hy Y initial m1 hin
-      rw [h1] at first
-      have middle := terminalReplay_inverse_spec hn hlo ho hp hf origin hg0 hs0 env legal
-        x Y hx0 hx trace s1 m2 first.2
-      rw [h2] at middle
-      have last := encoded_canonical_pair hn origin hw hu hr hy Z 0 s2 m3 middle.2
-      rw [converterPair_placement true] at h3
-      rw [h3] at last
-      exact ⟨last.1.trans (middle.1.trans first.1),last.2⟩) s m input
-  rw [inverse_entry_join]
-  simpa only [fieldResult,Bool.false_eq_true,if_false,Z] using all
-
-theorem inverse_entry_resources : toffoliCount (terminalFieldSegment false)=657817 ∧
-    measurementCount (terminalFieldSegment false)=525981 := terminalFieldSegment_counts false
-
-theorem inverse_entry_support : wires (terminalFieldSegment false) ⊆ slots.toFinset :=
-  terminalFieldSegment_support false
-
-/-- Entry/unseed savings relative to the already terminal-trim production
-wrapper; the previously integrated1281-T terminal saving is not recounted. -/
-theorem inverse_entry_saving :
-    toffoliCount (MappedCompressed.fieldTrimSegment false)=toffoliCount (terminalFieldSegment false)+1536 ∧
-    measurementCount (MappedCompressed.fieldTrimSegment false)=measurementCount (terminalFieldSegment false)+1536 := by
-  have old := MappedCompressed.fieldTrimSegment_counts false
-  rw [old.1,old.2,inverse_entry_resources.1,inverse_entry_resources.2]
-  norm_num
-
 end ECDSAAdd.Arithmetic.EntryMappedFieldSegmentTrim
 end
 
@@ -13503,16 +7848,6 @@ theorem fieldSegment_counts (divide : Bool) :
   cases divide <;> simp only [Bool.false_eq_true,if_false,if_true] at old oldReplay fresh ⊢
   all_goals constructor <;> omega
 
-theorem saving (divide : Bool) :
-    toffoliCount (EntryMappedFieldSegmentTrim.terminalFieldSegment divide)=
-      toffoliCount (fieldSegment divide)+257 ∧
-    measurementCount (EntryMappedFieldSegmentTrim.terminalFieldSegment divide)=
-      measurementCount (fieldSegment divide)+1 := by
-  rw [(EntryMappedFieldSegmentTrim.terminalFieldSegment_counts divide).1,
-    (EntryMappedFieldSegmentTrim.terminalFieldSegment_counts divide).2,
-    (fieldSegment_counts divide).1,(fieldSegment_counts divide).2]
-  cases divide <;> norm_num
-
 end ECDSAAdd.Arithmetic.PenultimateMapped
 end
 
@@ -13550,36 +7885,6 @@ noncomputable section
 
 namespace ECDSAAdd
 attribute [local irreducible] run measurementCount
-
-/-- Compose an already established local State equality without reducing the
-programs. The record splits are the ordinary operational splits of run_append. -/
-theorem append_context_eq (P Q R : Program) (s : State) (m n : List Bool)
-    (localEq :
-      run Q (m.drop (measurementCount P)) (run P (m.take (measurementCount P)) s)=
-      run R (n.drop (measurementCount P)) (run P (n.take (measurementCount P)) s)) :
-    run (P++Q) m s=run (P++R) n s :=
-  (run_append P Q m s).trans (localEq.trans (run_append P R n s).symm)
-
-/-- A shared suffix observes equal head States on independent record lists.
-No field or input hypothesis is introduced by this generic context lemma. -/
-theorem suffix_context_eq (P Q S : Program) (s : State) (m n : List Bool)
-    (headEq : run P (m.take (measurementCount P)) s=
-      run Q (n.take (measurementCount Q)) s)
-    (tailEq : m.drop (measurementCount P)=n.drop (measurementCount Q)) :
-    run (P++S) m s=run (Q++S) n s := by
-  have stateEq := congrArg (fun t : State => run S (m.drop (measurementCount P)) t) headEq
-  have recordsEq := congrArg (fun k : List Bool =>
-    run S k (run Q (n.take (measurementCount Q)) s)) tailEq
-  exact (run_append P S m s).trans
-    (stateEq.trans (recordsEq.trans (run_append Q S n s).symm))
-
-/-- Keep program-shape conversion inside a generic theorem rather than asking
-the caller's elaborator to unfold two concrete measured gate lists. -/
-theorem program_shape_context_eq (P Q P' Q' : Program) (s : State) (m n : List Bool)
-    (hp : P=P') (hq : Q=Q') (states : run P' m s=run Q' n s) :
-    run P m s=run Q n s :=
-  (congrArg (fun p : Program => run p m s) hp).trans
-    (states.trans (congrArg (fun q : Program => run q n s) hq).symm)
 
 end ECDSAAdd
 end
@@ -13666,238 +7971,13 @@ theorem forward_groups_payload (j n : Nat) (origin : BasisState) (Q : Fp×Fp) :
     rw [groups_succ,len,indexedLetters_append]
     simp only [mixedTranscriptControls,List.map_append,replay_append,ih,start,←packet_indexed]
 
-private theorem first_rest_payload (origin : BasisState) (Y : Fp) :
-    groupsPayload true origin 1 169
-      (skywalkPayloadReplay (mixedTranscriptControls origin (base 2400) (packetLetters 0)) (2*Y,0))=
-      PenultimateSwapIdentity.penultimatePayload origin Y := by
-  have start : groupsPayload true origin 0 170 (2*Y,0)=
-      groupsPayload true origin 1 169
-        (skywalkPayloadReplay (mixedTranscriptControls origin (base 2400) (packetLetters 0)) (2*Y,0)) :=
-    groups_succ origin 0 169 (2*Y,0)
-  have generic : groupsPayload true origin 0 170 (2*Y,0)=
-      skywalkPayloadReplay (mixedTranscriptControls origin (base 2400)
-        (indexedLetters (3*0) (3*170))) (2*Y,0) :=
-    forward_groups_payload 0 170 origin (2*Y,0)
-  have zero : 3*0=0 := by decide
-  have length : 3*170=510 := by decide
-  have lettersEq : indexedLetters (3*0) (3*170)=indexedLetters 0 510 :=
-    congrArg₂ indexedLetters zero length
-  have lifted : skywalkPayloadReplay (mixedTranscriptControls origin (base 2400)
-      (indexedLetters (3*0) (3*170))) (2*Y,0)=
-        skywalkPayloadReplay (mixedTranscriptControls origin (base 2400)
-          (indexedLetters 0 510)) (2*Y,0) :=
-    congrArg (fun ls : List MixedTranscriptLetter =>
-      skywalkPayloadReplay (mixedTranscriptControls origin (base 2400) ls) (2*Y,0)) lettersEq
-  have fold : skywalkPayloadReplay (mixedTranscriptControls origin (base 2400)
-      (indexedLetters 0 510)) (2*Y,0)=PenultimateSwapIdentity.penultimatePayload origin Y := by
-    unfold PenultimateSwapIdentity.penultimatePayload
-    rfl
-  exact start.symm.trans (generic.trans (lifted.trans fold))
-
-
 private def rawPrefix : Program := renameProgram allPlaced (converterPair false) ++
   (EntryMappedFieldSegmentTrim.firstGroup true ++ mappedGroups true 1 169)
-private def headPrefix : Program := sealedProgram rawPrefix
-private def oldHead : Program := sealedProgram (headPrefix ++ renameProgram allPlaced (logicalCell true 510))
-private def newHead : Program := sealedProgram (headPrefix ++ renameProgram allPlaced (PenultimateSwapIdentity.cell true))
-private def commonTail : Program := renameProgram allPlaced (converterPair true) ++
-  renameProgram allPlaced (copyPairAt id)
-attribute [local irreducible] rawPrefix headPrefix oldHead newHead commonTail
-
-private theorem headPrefix_eq : headPrefix=rawPrefix := by
-  unfold headPrefix
-  exact sealedProgram_eq _
-private theorem oldHead_eq : oldHead=headPrefix++renameProgram allPlaced (logicalCell true 510) := by
-  unfold oldHead
-  exact sealedProgram_eq _
-private theorem newHead_eq : newHead=headPrefix++renameProgram allPlaced (PenultimateSwapIdentity.cell true) := by
-  unfold newHead
-  exact sealedProgram_eq _
-
-/-- The actual entry-cancelled first packet and169 native packets expose the
-same penultimate payload as the original510-letter mathematical prefix. -/
-private theorem headPrefix_step
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let A := PenultimateSwapIdentity.penultimatePayload origin Y
-    (run headPrefix m s).phase=s.phase ∧
-      EncodedFieldFrame base (base 2409) origin A.1 A.2 (run headPrefix m s) := by
-  let A := PenultimateSwapIdentity.penultimatePayload origin Y
-  let Q := skywalkPayloadReplay (mixedTranscriptControls origin (base 2400) (packetLetters 0)) (2*Y,0)
-  let P : State → State → Prop := fun initial out => EncodedCanonicalFrame origin Y 0 initial →
-    out.phase=initial.phase ∧ EncodedFieldFrame base (base 2409) origin A.1 A.2 out
-  have all := run_three_states (renameProgram allPlaced (converterPair false))
-    (EntryMappedFieldSegmentTrim.firstGroup true) (mappedGroups true 1 169) P (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      have a := encoded_center_pair hn origin hw hu hr hy Y 0 initial m1 hin
-      rw [converterPair_placement false] at h1
-      rw [h1] at a
-      have b := EntryMappedFieldSegmentTrim.firstGroup_forward_step hn hlo ho hp
-        (packet_layouts (base 2400) (base 2409) (base 2410) hf 0 (by decide))
-        origin hg0 hs0 env legal Y s1 m2 a.2
-      rw [h2] at b
-      have frame2 : EncodedFieldFrame base (base 2409) origin Q.1 Q.2 s2 := b.2
-      have cAll := mappedGroups_frame true 1 169 (by decide) hn hlo ho hp
-        (packet_layouts (base 2400) (base 2409) (base 2410) hf)
-        origin hg0 hs0 env legal Q.1 Q.2 s2 m3 frame2
-      have cPhase : (run (mappedGroups true 1 169) m3 s2).phase=s2.phase := cAll.2.1
-      have cFrame : EncodedFieldFrame base (base 2409) origin
-          (groupsPayload true origin 1 169 (Q.1,Q.2)).1
-          (groupsPayload true origin 1 169 (Q.1,Q.2)).2
-          (run (mappedGroups true 1 169) m3 s2) := cAll.2.2
-      rw [h3] at cPhase cFrame
-      have payload : groupsPayload true origin 1 169 (Q.1,Q.2)=A := by
-        change groupsPayload true origin 1 169 Q=A
-        exact first_rest_payload origin Y
-      rw [payload] at cFrame
-      exact ⟨cPhase.trans (b.1.trans a.1),cFrame⟩) s m input
-  have rawResult : (run rawPrefix m s).phase=s.phase ∧
-      EncodedFieldFrame base (base 2409) origin A.1 A.2 (run rawPrefix m s) := by
-    simpa only [rawPrefix] using all
-  have eval : run headPrefix m s=run rawPrefix m s := by
-    unfold headPrefix
-    exact sealedProgram_run rawPrefix m s
-  exact Eq.mp (congrArg (fun out : State => out.phase=s.phase ∧
-    EncodedFieldFrame base (base 2409) origin A.1 A.2 out) eval.symm) rawResult
-
+attribute [local irreducible] rawPrefix
 
 /- Head States agree when their internal prefix records coincide; local cell
 records remain independent. This record condition is proved by construction in
 the public wrapper and adds no public input or outcome restriction. -/
-private theorem head_state_eq
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (mOld mNew : List Bool)
-    (hprefix : mOld.take (measurementCount headPrefix)=mNew.take (measurementCount headPrefix))
-    (input : EncodedCanonicalFrame origin Y 0 s) :
-    run oldHead mOld s=run newHead mNew s := by
-  let A := PenultimateSwapIdentity.penultimatePayload origin Y
-  let newState := run headPrefix (mNew.take (measurementCount headPrefix)) s
-  have newFrame : newState.phase=s.phase ∧ EncodedFieldFrame base (base 2409) origin A.1 A.2 newState :=
-    headPrefix_step hn hlo ho hp hf origin hg0 hs0 env legal hw hu hr hy Y s _ input
-  have last := PenultimateMappedCellProof.forward_cell_eq hn hlo ho hp hf
-    origin hg0 hs0 env legal A.1 A.2 newState
-    (mNew.drop (measurementCount headPrefix)) (mOld.drop (measurementCount headPrefix))
-    newFrame.2 (PenultimateSwapIdentity.penultimate_half_dup origin x Y hx0 hx trace)
-  have prefixStates := congrArg (fun rs : List Bool => run headPrefix rs s) hprefix
-  have transport := congrArg (fun t : State =>
-    run (renameProgram allPlaced (logicalCell true 510)) (mOld.drop (measurementCount headPrefix)) t) prefixStates
-  have context := append_context_eq headPrefix
-    (renameProgram allPlaced (logicalCell true 510))
-    (renameProgram allPlaced (PenultimateSwapIdentity.cell true)) s mOld mNew (transport.trans last.symm)
-  have oldShape : oldHead=headPrefix++renameProgram allPlaced (logicalCell true 510) := oldHead_eq
-  have newShape : newHead=headPrefix++renameProgram allPlaced (PenultimateSwapIdentity.cell true) := newHead_eq
-  exact program_shape_context_eq oldHead newHead
-    (headPrefix++renameProgram allPlaced (logicalCell true 510))
-    (headPrefix++renameProgram allPlaced (PenultimateSwapIdentity.cell true))
-    s mOld mNew oldShape newShape context
-
-
-private theorem old_join : EntryMappedFieldSegmentTrim.terminalFieldSegment true=oldHead++commonTail := by
-  have raw : EntryMappedFieldSegmentTrim.terminalFieldSegment true=
-      (rawPrefix++renameProgram allPlaced (logicalCell true 510))++commonTail := by
-    simp only [EntryMappedFieldSegmentTrim.terminalFieldSegment,EntryMappedFieldSegmentTrim.terminalReplay,
-      rawPrefix,commonTail,copyPairAt,if_true,List.nil_append,List.append_assoc]
-  have shape := oldHead_eq.trans (congrArg (fun q : Program =>
-    q++renameProgram allPlaced (logicalCell true 510)) headPrefix_eq)
-  exact raw.trans (congrArg (fun q : Program => q++commonTail) shape).symm
-
-private theorem new_join : fieldSegment true=newHead++commonTail := by
-  have raw : fieldSegment true=
-      (rawPrefix++renameProgram allPlaced (PenultimateSwapIdentity.cell true))++commonTail := by
-    simp only [fieldSegment,replay,rawPrefix,commonTail,copyPairAt,if_true,List.nil_append,List.append_assoc]
-  have shape := newHead_eq.trans (congrArg (fun q : Program =>
-    q++renameProgram allPlaced (PenultimateSwapIdentity.cell true)) headPrefix_eq)
-  exact raw.trans (congrArg (fun q : Program => q++commonTail) shape).symm
-
-
-private theorem splice_records (n a b : Nat) (m : List Bool) :
-    let padded := m++List.replicate (n+b) false
-    let records := padded.take n++(List.replicate a false++padded.drop (n+b))
-    records.take n=padded.take n ∧ records.drop (n+a)=padded.drop (n+b) := by
-  let padded := m++List.replicate (n+b) false
-  have bound : n≤padded.length := by simp only [padded,List.length_append,List.length_replicate]; omega
-  have len : (padded.take n).length=n := List.length_take_of_le bound
-  constructor
-  · change ((padded.take n)++(List.replicate a false++padded.drop (n+b))).take n=padded.take n
-    rw [List.take_append_of_le_length len.symm.le,List.take_take,Nat.min_self]
-  · have gone : (padded.take n).drop (n+a)=[] := List.drop_eq_nil_of_le (by rw [len]; omega)
-    have sub : n+a-n=a := by omega
-    change ((padded.take n)++(List.replicate a false++padded.drop (n+b))).drop (n+a)=padded.drop (n+b)
-    rw [List.drop_append,len,gone,sub,List.nil_append]
-    rw [List.drop_append,List.length_replicate,List.drop_replicate,Nat.sub_self,
-      List.replicate_zero,List.nil_append,List.drop_zero]
-
-/-- Only raw510's S window is removed. The original complete point-input,
-trace, activation, workspace and encoding contract is retained. Every fresh
-MX outcome and arbitrary incoming phase are covered by State equality. -/
-theorem fieldSegment_forward_spec
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (fieldSegment true) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult true origin x Y) 0 out := by
-  let p := measurementCount headPrefix
-  let a := measurementCount (renameProgram allPlaced (logicalCell true 510))
-  let b := measurementCount (renameProgram allPlaced (PenultimateSwapIdentity.cell true))
-  have oldCount : measurementCount oldHead=p+a :=
-    (congrArg measurementCount oldHead_eq).trans (measurementCount_append _ _)
-  have newCount : measurementCount newHead=p+b :=
-    (congrArg measurementCount newHead_eq).trans (measurementCount_append _ _)
-  let padded := m++List.replicate (p+b) false
-  let records := padded.take p++(List.replicate a false++padded.drop (p+b))
-  have splice := splice_records p a b m
-  have prefixRecords : records.take p=padded.take p := splice.1
-  have tailRecords : records.drop (measurementCount oldHead)=padded.drop (measurementCount newHead) := by
-    simpa only [oldCount,newCount] using splice.2
-  have oldBound : p≤measurementCount oldHead := by rw [oldCount]; omega
-  have newBound : p≤measurementCount newHead := by rw [newCount]; omega
-  have prefixTakes : (records.take (measurementCount oldHead)).take p=
-      (padded.take (measurementCount newHead)).take p := by
-    simpa only [List.take_take,Nat.min_eq_left oldBound,Nat.min_eq_left newBound] using prefixRecords
-  have headEq := head_state_eq hn hlo ho hp hf origin hg0 hs0 env legal hw hu hr hy
-    x hx0 hx trace Y s (records.take (measurementCount oldHead))
-    (padded.take (measurementCount newHead)) prefixTakes input
-  have context := suffix_context_eq oldHead newHead commonTail s records padded headEq tailRecords
-  have programEq : run (EntryMappedFieldSegmentTrim.terminalFieldSegment true) records s=
-      run (fieldSegment true) padded s :=
-    (congrArg (fun q : Program => run q records s) old_join).trans
-      (context.trans (congrArg (fun q : Program => run q padded s) new_join).symm)
-  have padEq : run (fieldSegment true) padded s=run (fieldSegment true) m s :=
-    run_pad_false (fieldSegment true) m (p+b) s
-  have actualStateEq := programEq.trans padEq
-  have old := EntryMappedFieldSegmentTrim.terminalFieldTrimSegment_forward_spec
-    hn hlo ho hp hf origin hg0 hs0 env legal hw hu hr hy x hx0 hx trace Y s records input
-  exact Eq.mp (congrArg (fun out : State =>
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult true origin x Y) 0 out) actualStateEq) old
 
 end ECDSAAdd.Arithmetic.PenultimateMapped
 end
@@ -13963,68 +8043,6 @@ theorem replay_inverse_spec
         origin hg0 hs0 env legal Y s b a input).symm)).symm
   rw [←stateEq] at old
   exact old
-
-private def inversePrefix : Program := renameProgram allPlaced (copyPairAt id) ++
-  renameProgram allPlaced (converterPair false)
-
-private theorem inversePrefix_spec
-    (hn : (skywalkSharedWires base).Nodup) (origin : BasisState)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    (run inversePrefix m s).phase=s.phase ∧
-      EncodedFieldFrame base (base 2409) origin Y Y (run inversePrefix m s) := by
-  let copy := renameProgram allPlaced (copyPairAt id)
-  let t := run copy (m.take (measurementCount copy)) s
-  have first := mapped_copy_fill hn origin Y s (m.take (measurementCount copy)) input
-  have second := encoded_center_pair hn origin hw hu hr hy Y Y t
-    (m.drop (measurementCount copy)) first.2
-  simp only [inversePrefix,run_append,converterPair_placement]
-  exact ⟨second.1.trans first.1,second.2⟩
-
-private theorem fieldSegment_inverse_join : fieldSegment false=inversePrefix++
-    (replay false++renameProgram allPlaced (converterPair true)) := by
-  simp only [fieldSegment,inversePrefix,copyPairAt,Bool.false_eq_true,if_false,
-    List.append_nil,List.append_assoc]
-
-/-- Original full field contract, with no additional endpoint or measurement
-assumption. The duplicate inverse head is derived from the emitted copy and
-conversion prefix. All work, source, controls, transcript and phase retain
- the accepted encoded canonical frame. -/
-theorem fieldSegment_inverse_spec
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : OffsetBorrowedCanonical.Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (fieldSegment false) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult false origin x Y) 0 out := by
-  let Z := if origin (base 2400) then Y*(x:Fp) else Y
-  let P : State → State → Prop := fun initial out => EncodedCanonicalFrame origin Y 0 initial →
-    out.phase=initial.phase ∧ EncodedCanonicalFrame origin Z 0 out
-  have all := run_three_states inversePrefix (replay false)
-    (renameProgram allPlaced (converterPair true)) P (by
-      intro initial s1 s2 s3 m1 m2 m3 h1 h2 h3 hin
-      have first := inversePrefix_spec hn origin hw hu hr hy Y initial m1 hin
-      rw [h1] at first
-      have middle := replay_inverse_spec hn hlo ho hp hf origin hg0 hs0 env legal
-        x Y hx0 hx trace s1 m2 first.2
-      rw [h2] at middle
-      have last := encoded_canonical_pair hn origin hw hu hr hy Z 0 s2 m3 middle.2
-      rw [converterPair_placement true] at h3
-      rw [h3] at last
-      exact ⟨last.1.trans (middle.1.trans first.1),last.2⟩) s m input
-  rw [fieldSegment_inverse_join]
-  simpa only [fieldResult,Bool.false_eq_true,if_false,Z] using all
 
 end ECDSAAdd.Arithmetic.PenultimateMapped
 end
@@ -14103,32 +8121,6 @@ theorem selectedFieldSegment_counts (divide : Bool) :
     toffoliCount (selectedFieldSegment divide)=(if divide then 657050 else 657560) ∧
     measurementCount (selectedFieldSegment divide)=525980 :=
   PenultimateMapped.fieldSegment_counts divide
-
-/-- Same hypotheses and conclusion as the current complete field contract.
-Every record stream and incoming phase remains quantified. -/
-theorem selectedFieldSegment_spec (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkSharedWires base)
-    (hp : ∀ q ∈ [base 2400,base 2409,base 2410],q ∉ skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (x : Nat) (hx0 : 0<x) (hx : x<p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    let out := run (selectedFieldSegment divide) m s
-    out.phase=s.phase ∧ EncodedCanonicalFrame origin (fieldResult divide origin x Y) 0 out := by
-  cases divide
-  · simpa only [selectedFieldSegment, Bool.false_eq_true, if_false] using
-      PenultimateMapped.fieldSegment_inverse_spec hn hlo ho hp hf origin hg0 hs0 env legal
-        hw hu hr hy x hx0 hx trace Y s m input
-  · simpa only [selectedFieldSegment, if_true] using
-      PenultimateMapped.fieldSegment_forward_spec
-        hn hlo ho hp hf origin hg0 hs0 env legal hw hu hr hy x hx0 hx trace Y s m input
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -14213,15 +8205,6 @@ theorem forward_counts (w : Nat → Wire) :
   have r := rotate_counts (wireBlock w 770 258)
   simp [forward,toffoliCount_append,measurementCount_append,h.1,h.2,k.1,k.2,
     c.1,c.2,r.1,r.2.1,toffoliCount,measurementCount]
-
-theorem inverse_counts (w : Nat → Wire) :
-    toffoliCount (inverse w)=508 ∧ measurementCount (inverse w)=508 := by
-  have h := hAdd_counts w true
-  have k := kAdd_counts w true
-  have c := lowCopy_counts w
-  have r := rotate_counts (wireBlock w 770 258)
-  simp [inverse,toffoliCount_append,measurementCount_append,h.1,h.2,k.1,k.2,
-    c.1,c.2,r.2.2.1,r.2.2.2,toffoliCount,measurementCount]
 
 end ECDSAAdd.Arithmetic.NativeFirstDirect
 end
@@ -14489,14 +8472,6 @@ theorem prefix_support (w : Nat → Wire) :
     · simp [wires,Instr.wires] at hq
       rcases hq with rfl|rfl|rfl <;> assumption
 
-theorem prefix_qubitBound (w : Nat → Wire) :
-    qubitCount (forward w)≤773 ∧ qubitCount (inverse w)≤773 := by
-  have h := prefix_support w
-  have hc := List.toFinset_card_le (prefixSites w)
-  have hl : (prefixSites w).length=773 := by simp [prefixSites,wireBlock_length]
-  rw [hl] at hc
-  exact ⟨(Finset.card_le_card h.1).trans hc,(Finset.card_le_card h.2).trans hc⟩
-
 theorem prefix_pool_subset (w : Nat → Wire) :
     prefixSites w ⊆ skywalkPoolWires w := by
   intro q hq
@@ -14686,11 +8661,6 @@ theorem xorBit_correct (b : MappedBit) (target : Wire)
         cases hb : s.basis target <;> cases hx : s.basis a <;>
           simp [writeBit,MappedBit.value,hw,hf,ne,hb,hx]
       · simp [writeBit,hq]
-
-private theorem write_twice (s : BasisState) (q : Wire) (a b : Bool) :
-    writeBit (writeBit s q a) q b=writeBit s q b := by
-  funext w
-  by_cases h : w=q <;> simp [writeBit,h]
 
 theorem prepare_correct (b d : MappedBit) (y c : Wire)
     (hy : y≠c) (hb : ∀q∈b.wire,q≠c) (hd : ∀q∈d.wire,q≠c)
@@ -14900,23 +8870,6 @@ theorem program_eq_mappedAdd (bits sums : List MappedBit) (ys carry : List Wire)
                 simp only [List.append_assoc,run_append,run_take,pc.2,oc.2.1,
                   nc.2,mc.2,List.take_zero,List.drop_zero]
                 rw [pre,old,tail]
-
-theorem program_correct (bits sums : List MappedBit) (ys carry : List Wire)
-    (cin : Wire) (hn : (cin::(ys++carry)).Nodup)
-    (ha : ∀q∈mappedWires bits,q∉cin::(ys++carry))
-    (hw : ∀q∈mappedWires sums,q∉cin::(ys++carry))
-    (hl : bits.length=ys.length) (hs : sums.length=ys.length)
-    (hc : carry.length+1=ys.length) (s : State) (m : List Bool)
-    (hclean : ∀q∈carry,s.basis q=false)
-    (sumKnown : mappedValue sums s.basis=
-      (mappedValue bits s.basis+regValue ys s.basis+(s.basis cin).toNat)%2^ys.length) :
-    (run (program bits ys sums carry cin) m s).phase=s.phase ∧
-    (∀q,q∉ys → (run (program bits ys sums carry cin) m s).basis q=s.basis q) ∧
-    regValue ys (run (program bits ys sums carry cin) m s).basis=mappedValue sums s.basis := by
-  have ready := ready_of_value bits sums ys (s.basis cin) s.basis hl hs sumKnown
-  rw [program_eq_mappedAdd bits sums ys carry cin hn ha hw hl hs hc s m hclean ready]
-  have old := mappedAdd_correct bits ys carry cin hn ha hl hc s m hclean
-  exact ⟨old.1,old.2.1,old.2.2.trans sumKnown.symm⟩
 
 theorem xorBit_support (b : MappedBit) (target : Wire) :
     wires (xorBit b target)⊆(b.wire.toList++[target]).toFinset := by
@@ -15138,15 +9091,6 @@ theorem kAdd_run (w : Nat → Wire) (inverse : Bool) (s : State) (m : List Bool)
   rw [kAdd,run_append]
   simp only [run,kTail]
 
-theorem kAdd_phase (w : Nat → Wire) (inverse : Bool) (s : State) (m : List Bool)
-    (hn : (w 770::(wireBlock w 771 257++wireBlock w 1540 256)).Nodup)
-    (hs : ∀q∈mappedWires (kBits w inverse),
-      q∉w 770::(wireBlock w 771 257++wireBlock w 1540 256))
-    (hc : ∀q∈wireBlock w 1540 256,s.basis q=false) :
-    (run (kAdd w inverse) m s).phase=s.phase := by
-  rw [kAdd_run]
-  exact (kTail_spec w inverse s _ hn hs hc).1
-
 end ECDSAAdd.Arithmetic.NativeFirstDirect
 end
 
@@ -15290,46 +9234,6 @@ theorem kAdd_cancel (w : Nat → Wire) (s : State) (mF mI : List Bool)
     have bound := regValue_lt (w 770::wireBlock w 771 257) s.basis
     simpa only [List.length_cons,wireBlock_length] using bound
   · intro q hq; exact (i.2.1 q hq).trans (f.2.1 q hq)
-private theorem copy_cancel (src dst : List Wire) (hl : src.length=dst.length)
-    (hn : (src++dst).Nodup) (s : State) (m n : List Bool) :
-    run (copyRegister none src dst) n (run (copyRegister none src dst) m s)=s := by
-  have f := copyRegister_correct none src dst hl hn (by simp) s m
-  have i := copyRegister_correct none src dst hl hn (by simp)
-    (run (copyRegister none src dst) m s) n
-  have srcKeep := regValue_congr src (run (copyRegister none src dst) m s).basis s.basis
-    (fun q hq => f.2.1 q (List.disjoint_left.mp (List.nodup_append'.mp hn).2.2 hq))
-  apply state_of_value_frame dst s _ (i.1.trans f.1)
-  · rw [i.2.2,f.2.2]
-    simp only [copyValue]
-    rw [srcKeep,Nat.xor_assoc,Nat.xor_self,Nat.xor_zero]
-  · intro q hq; exact (i.2.1 q hq).trans (f.2.1 q hq)
-
-private theorem rotate_reverse (r : List Wire) :
-    (rotateRight r).reverse=rotateLeft r := by
-  induction r with
-  | nil => rfl
-  | cons a r ih =>
-    cases r with
-    | nil => rfl
-    | cons b r =>
-      rw [rotateRight,rotateLeft,List.reverse_append,ih]
-      rfl
-private theorem rotate_proper (r : List Wire) (hn : r.Nodup) :
-    ProperProgram (rotateRight r) := by
-  induction r with
-  | nil => simp [rotateRight,ProperProgram]
-  | cons a r ih =>
-    cases r with
-    | nil => simp [rotateRight,ProperProgram]
-    | cons b r =>
-      have nd := List.nodup_cons.mp hn
-      have ne : a≠b := fun h => nd.1 (by simp [h])
-      exact (properProgram_append _ _).mpr
-        ⟨by simp [swapBits,ProperProgram,ProperGate,ne,Ne.symm ne],ih nd.2⟩
-private theorem rotate_cancel (r : List Wire) (hn : r.Nodup) (s : State) (m n : List Bool) :
-    run (rotateLeft r) n (run (rotateRight r) m s)=s := by
-  rw [←rotate_reverse]
-  exact run_reverse_proper _ (rotate_proper r hn) s m n
 
 def inverseFront (w : Nat → Wire) : Program :=
   [.CX (w 770) (w 1028),.CX (w 1028) (w 0),.X (w 0)]++lowCopy w
@@ -15340,91 +9244,6 @@ def inverseMiddle (w : Nat → Wire) : Program :=
 def inverseUnmiddle (w : Nat → Wire) : Program :=
   rotateLeft (wireBlock w 770 258)++[.CX (w 1028) (w 770)]
 
-private theorem front_cancel (w : Nat → Wire) (s : State) (m n : List Bool)
-    (hn : (wireBlock w 771 255++wireBlock w 1 255).Nodup)
-    (h0 : w 770≠w 1028) (h1 : w 1028≠w 0) :
-    run (inverseBack w) n (run (inverseFront w) m s)=s := by
-  let P : Program := [.CX (w 770) (w 1028),.CX (w 1028) (w 0),.X (w 0)]
-  have hp : ProperProgram P := by simp [P,ProperProgram,ProperGate,h0,h1]
-  have c := copy_cancel (wireBlock w 771 255) (wireBlock w 1 255)
-    (by simp [wireBlock_length]) hn (run P m s) m n
-  have hm : measurementCount P=0 := properProgram_measurementCount P hp
-  have cm := (lowCopy_counts w).2
-  change run (lowCopy w++P.reverse) n (run (P++lowCopy w) m s)=s
-  rw [run_append,run_take,run_append,run_take,hm,cm,List.drop_zero]
-  simp only [List.drop_zero]
-  rw [show run (lowCopy w) n (run (lowCopy w) m (run P m s))=run P m s from c]
-  exact run_reverse_proper P hp s m n
-
-private theorem middle_cancel (w : Nat → Wire) (s : State) (m n : List Bool)
-    (hn : (wireBlock w 770 258).Nodup) (hne : w 1028≠w 770) :
-    run (inverseUnmiddle w) n (run (inverseMiddle w) m s)=s := by
-  rw [inverseUnmiddle,inverseMiddle,run_append,run_take,run_append,run_take,
-    (rotate_counts (wireBlock w 770 258)).2.2.2,
-    show measurementCount [.CX (w 1028) (w 770)]=0 from rfl,List.drop_zero]
-  rw [rotate_cancel _ hn]
-  exact properGate_involution (.CX (w 1028) (w 770)) hne s m n
-
-/-- The layout conditions concern only physical roles. No forward result or
-measurement outcome is assumed in this inverse theorem. -/
-theorem inverse_forward (w : Nat → Wire) (s : State) (mF mI : List Bool)
-    (hnH : (w 1797::(wireBlock w 4 253++wireBlock w 1540 252)).Nodup)
-    (hnK : (w 770::(wireBlock w 771 257++wireBlock w 1540 256)).Nodup)
-    (hsH : ∀i q,q∈mappedWires (hBits w i) →
-      q∉w 1797::(wireBlock w 4 253++wireBlock w 1540 252))
-    (hsK : ∀i q,q∈mappedWires (kBits w i) →
-      q∉w 770::(wireBlock w 771 257++wireBlock w 1540 256))
-    (hflag : w 1028∉wireBlock w 4 253)
-    (kflag : w 1028∉w 770::wireBlock w 771 257)
-    (copyND : (wireBlock w 771 255++wireBlock w 1 255).Nodup)
-    (rotateND : (wireBlock w 770 258).Nodup)
-    (ne0 : w 770≠w 1028) (ne1 : w 1028≠w 0)
-    (carryAway : ∀q∈wireBlock w 1540 256,
-      q∉wires (inverseFront w) ∧ q∉wireBlock w 4 253 ∧ q∉wires (inverseMiddle w))
-    (carrySubset : ∀q∈wireBlock w 1540 252,q∈wireBlock w 1540 256)
-    (cinAway : w 1797∉wires (inverseFront w))
-    (hc : ∀q∈wireBlock w 1540 256,s.basis q=false)
-    (cin : s.basis (w 1797)=false) :
-    run (inverse w) mI (run (forward w) mF s)=s := by
-  let u := run (inverseFront w) mF s
-  let v := run (hAdd w false) mF u
-  let z := run (inverseMiddle w) (mF.drop 252) v
-  have uc : ∀q∈wireBlock w 1540 256,u.basis q=false := by
-    intro q hq; exact (run_preserves_outside _ mF s q (carryAway q hq).1).trans (hc q hq)
-  have ui : u.basis (w 1797)=false :=
-    (run_preserves_outside _ mF s _ cinAway).trans cin
-  have ha := hAdd_spec w false u mF hnH (hsH false)
-    (fun q hq => uc q (carrySubset q hq))
-  have vc : ∀q∈wireBlock w 1540 256,v.basis q=false := by
-    intro q hq; exact (ha.2.1 q (carryAway q hq).2.1).trans (uc q hq)
-  have zc : ∀q∈wireBlock w 1540 256,z.basis q=false := by
-    intro q hq; exact (run_preserves_outside _ _ v q (carryAway q hq).2.2).trans (vc q hq)
-  have kc := kAdd_cancel w z (mF.drop 252) mI hnK hsK kflag zc
-  have hh := hAdd_cancel w u mF (mI.drop 256) hnH hsH hflag
-    (fun q hq => uc q (carrySubset q hq)) ui
-  have fm : measurementCount (inverseFront w)=0 := by
-    simp [inverseFront,measurementCount_append,measurementCount,(lowCopy_counts w).2]
-  have mm : measurementCount (inverseMiddle w)=0 := by
-    simp [inverseMiddle,measurementCount_append,measurementCount,(rotate_counts _).2.1]
-  have um : measurementCount (inverseUnmiddle w)=0 := by
-    simp [inverseUnmiddle,measurementCount_append,measurementCount,(rotate_counts _).2.2.2]
-  have fr : forward w=inverseFront w++(hAdd w false++(inverseMiddle w++kAdd w false)) := by
-    simp only [forward,inverseFront,inverseMiddle,List.append_assoc]
-  have ir : inverse w=kAdd w true++(inverseUnmiddle w++(hAdd w true++inverseBack w)) := by
-    simp only [inverse,inverseBack,inverseUnmiddle,List.append_assoc]
-  have fRun : run (forward w) mF s=run (kAdd w false) (mF.drop 252) z := by
-    rw [fr,run_append,run_take,fm,List.drop_zero]
-    rw [run_append,run_take,(hAdd_counts w false).2]
-    rw [run_append,run_take,mm,List.drop_zero]
-  have iRun (t : State) : run (inverse w) mI t=
-      run (inverseBack w) ((mI.drop 256).drop 252)
-        (run (hAdd w true) (mI.drop 256)
-          (run (inverseUnmiddle w) (mI.drop 256) (run (kAdd w true) mI t))) := by
-    rw [ir,run_append,run_take,(kAdd_counts w true).2]
-    rw [run_append,run_take,um,List.drop_zero]
-    rw [run_append,run_take,(hAdd_counts w true).2]
-  rw [iRun,fRun,kc,middle_cancel w v _ _ rotateND (Ne.symm ne0),hh]
-  exact front_cancel w s _ _ copyND ne0 ne1
 end ECDSAAdd.Arithmetic.NativeFirstDirect
 end
 
@@ -15435,107 +9254,6 @@ set_option maxHeartbeats 1000000
 set_option linter.unusedSimpArgs false
 namespace ECDSAAdd.Arithmetic.NativeFirstDirect
 attribute [local irreducible] run mappedAdd hAdd kAdd kTail forward inverse
-
-private theorem copy_away (w : Nat → Wire) (q : Wire)
-    (hs : q∉wireBlock w 771 255) (hd : q∉wireBlock w 1 255) :
-    q∉wires (lowCopy w) := by
-  rw [lowCopy,copyRegister_wires none (wireBlock w 771 255) (wireBlock w 1 255)
-    (by simp [wireBlock_length])]
-  split_ifs
-  · simp
-  · simpa only [Option.toList_none,List.nil_append,List.mem_toFinset,
-      List.mem_append,not_or] using And.intro hs hd
-
-private theorem front_away (w : Nat → Wire) (q : Wire)
-    (h0 : q≠w 0) (hb : q≠w 770) (he : q≠w 1028)
-    (hs : q∉wireBlock w 771 255) (hd : q∉wireBlock w 1 255) :
-    q∉wires (inverseFront w) := by
-  have flags : q∉wires [.CX (w 770) (w 1028),.CX (w 1028) (w 0),.X (w 0)] := by
-    simp [wires,Instr.wires,h0,hb,he]
-  rw [inverseFront,wires_append,Finset.mem_union,not_or]
-  exact ⟨flags,copy_away w q hs hd⟩
-
-private theorem middle_away (w : Nat → Wire) (q : Wire)
-    (hb : q≠w 770) (he : q≠w 1028) (hr : q∉wireBlock w 770 258) :
-    q∉wires (inverseMiddle w) := by
-  have first : q∉wires [.CX (w 1028) (w 770)] := by
-    simp [wires,Instr.wires,hb,he]
-  have rot : q∉wires (rotateRight (wireBlock w 770 258)) := by
-    rw [(rotate_wires (wireBlock w 770 258)).1]
-    split_ifs
-    · simp
-    · simpa only [List.mem_toFinset] using hr
-  rw [inverseMiddle,wires_append,Finset.mem_union,not_or]
-  exact ⟨first,rot⟩
-
-/-- Existing seed readiness suffices. The stronger primitive needs no bound
-on x and no extension-zero assumption; all original data and spectators return. -/
-theorem inverse_forward_ready (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
-    (x : Nat) (s : State) (mF mI : List Bool)
-    (ready : LiteralSkywalkSeedValues (literalSkywalkPoolSeed w) 0 x s.basis) :
-    run (inverse w) mI (run (forward w) mF s)=s := by
-  have bank : regValue (wireBlock w 1540 257) s.basis=0 := ready.carry
-  have clean : ∀q∈wireBlock w 1540 256,s.basis q=false := by
-    intro q hq
-    exact (regValue_zero _ _).mp bank q (block_subset w 1540 256 257 (by omega) q hq)
-  have cin : s.basis (w 1797)=false := ready.cin
-  refine inverse_forward w s mF mI (h_inputs_nd w hn) (k_inputs_nd w hn)
-    (fun i => h_sources_fresh w hn i) (fun i => k_sources_fresh w hn i)
-    (block_not_mem w hn 1028 4 253 (by omega) (by omega) (by omega))
-    ?_ (copy_inputs_nd w hn) (block_nodup w hn 770 258 (by omega))
-    (index_ne w hn 770 1028 (by omega) (by omega) (by omega))
-    (index_ne w hn 1028 0 (by omega) (by omega) (by omega))
-    ?_ (block_subset w 1540 252 256 (by omega)) ?_ clean cin
-  · simp only [List.mem_cons,not_or]
-    exact ⟨index_ne w hn 1028 770 (by omega) (by omega) (by omega),
-      block_not_mem w hn 1028 771 257 (by omega) (by omega) (by omega)⟩
-  · intro q hq
-    obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hq
-    simp only [List.mem_range'_1] at hj
-    have h0 := index_ne w hn j 0 (by omega) (by omega) (by omega)
-    have hb := index_ne w hn j 770 (by omega) (by omega) (by omega)
-    have he := index_ne w hn j 1028 (by omega) (by omega) (by omega)
-    exact ⟨front_away w (w j) h0 hb he
-        (block_not_mem w hn j 771 255 (by omega) (by omega) (by omega))
-        (block_not_mem w hn j 1 255 (by omega) (by omega) (by omega)),
-      block_not_mem w hn j 4 253 (by omega) (by omega) (by omega),
-      middle_away w (w j) hb he
-        (block_not_mem w hn j 770 258 (by omega) (by omega) (by omega))⟩
-  · exact front_away w (w 1797)
-      (index_ne w hn 1797 0 (by omega) (by omega) (by omega))
-      (index_ne w hn 1797 770 (by omega) (by omega) (by omega))
-      (index_ne w hn 1797 1028 (by omega) (by omega) (by omega))
-      (block_not_mem w hn 1797 771 255 (by omega) (by omega) (by omega))
-      (block_not_mem w hn 1797 1 255 (by omega) (by omega) (by omega))
-
-/-- Numerical post equality must also include phase and the outside frame.
-The G bit is already included in the complete A word. -/
-theorem prefix_post_unique (w : Nat → Wire) (s t : State)
-    (phase : s.phase=t.phase)
-    (a : regValue (wireBlock w 0 258) s.basis=regValue (wireBlock w 0 258) t.basis)
-    (b : regValue (wireBlock w 770 258) s.basis=regValue (wireBlock w 770 258) t.basis)
-    (e : s.basis (w 1028)=t.basis (w 1028))
-    (outside : ∀q,q∉wireBlock w 0 258++wireBlock w 770 258++[w 1028] →
-      s.basis q=t.basis q) : s=t := by
-  apply congrArg₂ State.mk phase
-  funext q
-  by_cases ha : q∈wireBlock w 0 258
-  · exact (regValue_eq_iff _ _ _).mp a q ha
-  by_cases hb : q∈wireBlock w 770 258
-  · exact (regValue_eq_iff _ _ _).mp b q hb
-  by_cases he : q=w 1028
-  · subst q; exact e
-  exact outside q (by simp [ha,hb,he])
-
-/-- The caller may replace the actual forward output by any complete State
-proved equal to it, with independently chosen inverse outcomes. No extra
-original-x register or an erasure oracle appears in this interface. -/
-theorem inverse_forward_transport (w : Nat → Wire) (hn : (skywalkPoolWires w).Nodup)
-    (x : Nat) (s t : State) (mF mI : List Bool)
-    (ready : LiteralSkywalkSeedValues (literalSkywalkPoolSeed w) 0 x s.basis)
-    (post : t=run (forward w) mF s) : run (inverse w) mI t=s := by
-  rw [post]
-  exact inverse_forward_ready w hn x s mF mI ready
 
 end ECDSAAdd.Arithmetic.NativeFirstDirect
 end
@@ -15767,21 +9485,6 @@ theorem integer_support (i n : Nat) (h : i+n ≤ 512) :
       Finset.union_subset_iff,and_assoc]
     exact ⟨tick.1,codec.1,rest.1,rest.2,codec.2,tick.2⟩
 
-theorem seed_support :
-    wires (literalSkywalkSeed (literalSkywalkPoolSeed base) p)⊆slots.toFinset ∧
-    wires (literalSkywalkUnseed (literalSkywalkPoolSeed base) p)⊆slots.toFinset := by
-  have support := literalSkywalkSeed_support (literalSkywalkPoolSeed base) 258 p
-    (literalSkywalkPoolSeed_widths base)
-  have lift : (literalSkywalkPoolSeed base).usedWires.toFinset⊆slots.toFinset := by
-    intro q hq
-    simp only [List.mem_toFinset,literalSkywalkPoolSeed,LiteralSkywalkSeedLayout.usedWires,
-      List.mem_cons,List.mem_append,wireBlock,List.mem_map,List.mem_range'_1] at hq
-    rcases hq with rfl|rfl|((h|h)|h)
-    · exact base_integer_mem 1028 (by omega)
-    · exact base_integer_mem 1797 (by omega)
-    all_goals obtain ⟨old,ho,rfl⟩ := h; exact base_integer_mem old (by omega)
-  exact ⟨support.1.trans lift,support.2.trans lift⟩
-
 theorem clear_support : wires (skywalkArithmeticClear base)⊆slots.toFinset := by
   rw [skywalkArithmeticClear,skywalkTerminalClear_wires]
   intro q hq
@@ -15843,8 +9546,6 @@ theorem controlled_support (divide : Bool) : wires (controlled divide)⊆slots.t
 an instruction does not touch one of the selector sites. -/
 def resident : List Wire := wireBlock base 770 256++wireBlock base 2056 256++wireBlock base 2400 9
 
-theorem resident_length : resident.length=521 := by simp [resident,wireBlock]
-
 theorem resident_support : resident.toFinset⊆slots.toFinset := by
   intro q hq
   simp only [resident,List.mem_toFinset,List.mem_append,wireBlock,List.mem_map,List.mem_range'_1] at hq
@@ -15854,15 +9555,6 @@ theorem resident_support : resident.toFinset⊆slots.toFinset := by
     apply slot_mem
     · unfold live; omega
     · unfold omitted; omega
-
-theorem total_site_bound (divide : Bool) :
-    (wires (controlled divide)∪resident.toFinset).card ≤ 1899 := by
-  have sub : wires (controlled divide)∪resident.toFinset⊆slots.toFinset :=
-    Finset.union_subset (controlled_support divide) resident_support
-  have card := Finset.card_le_card sub
-  have exactCard : slots.toFinset.card=1899 := by
-    rw [List.toFinset_card_of_nodup slots_nodup,slots_length]
-  exact exactCard ▸ card
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
@@ -15957,31 +9649,6 @@ theorem encodedCanonical_pool_basis (hn : (skywalkSharedWires base).Nodup)
   exact encoded_field_pool_basis base hn (allGroupEncode base 170) support origin ha
     X.val raw s narrow encoded
 
-/-- The actual complete field segment keeps its incoming encoded pool and
-phase; neither conclusion assumes a global tape-phase oracle. -/
-theorem fieldSegment_pool_frame (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkSharedWires base)
-    (hp : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (ha : regValue (skywalkSharedField base).a origin=0)
-    (x : Nat) (hx0 : 0 < x) (hx : x < p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    (run (fieldSegment divide) m s).phase=s.phase ∧
-      ∀q∈skywalkPoolWires base,(run (fieldSegment divide) m s).basis q=s.basis q := by
-  have result := fieldSegment_spec divide hn hlo ho hp hf origin hg0 hs0 env legal
-    hw hu hr hy x hx0 hx trace Y s m input
-  have before := encodedCanonical_pool_basis hn hlo origin ha Y s input
-  have after := encodedCanonical_pool_basis hn hlo origin ha _ (run (fieldSegment divide) m s) result.2
-  exact ⟨result.1,fun q hq => (after q hq).trans (before q hq).symm⟩
-
 private theorem clear_pool_support :
     wires (skywalkArithmeticClear base)⊆(skywalkPoolWires base).toFinset := by
   rw [skywalkArithmeticClear,skywalkTerminalClear_wires]
@@ -16009,45 +9676,6 @@ theorem clear_after_pool_update (hn : (skywalkSharedWires base).Nodup)
   rw [twice] at agrees
   exact ⟨agrees.1,fun q hq => agrees.2 q (List.mem_toFinset.mpr hq)⟩
 
-/-- Actual forward, clear, field, clear and compact reverse composition.
-All original512 rounds and every independent record list are retained. -/
-theorem fieldSegment_reverse_pool (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkSharedWires base)
-    (hp : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (ha : regValue (skywalkSharedField base).a origin=0)
-    (x : Nat) (hx0 : 0 < x) (hx : x < p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (initial : State) (mForward mFirst mField mLast mReverse : List Bool)
-    (hin : SkywalkIntegerStage base (SkywalkRails.encode false false (x:Int) (p:Int)) 0 initial.basis)
-    (input : EncodedCanonicalFrame origin Y 0
-      (run (skywalkArithmeticClear base) mFirst (run (compressedCompactForward base 0 512) mForward initial))) :
-    let recorded := run (compressedCompactForward base 0 512) mForward initial
-    let prepared := run (skywalkArithmeticClear base) mFirst recorded
-    let field := run (fieldSegment divide) mField prepared
-    let restored := run (skywalkArithmeticClear base) mLast field
-    (run (compressedCompactReverse base 0 512) mReverse restored).phase=initial.phase ∧
-      (∀q∈skywalkPoolWires base,(run (compressedCompactReverse base 0 512) mReverse restored).basis q=initial.basis q) ∧
-      (∀q,q∉skywalkPoolWires base →
-        (run (compressedCompactReverse base 0 512) mReverse restored).basis q=restored.basis q) := by
-  let recorded := run (compressedCompactForward base 0 512) mForward initial
-  let prepared := run (skywalkArithmeticClear base) mFirst recorded
-  let field := run (fieldSegment divide) mField prepared
-  let restored := run (skywalkArithmeticClear base) mLast field
-  have keeps := fieldSegment_pool_frame divide hn hlo ho hp hf origin hg0 hs0 env legal
-    hw hu hr hy ha x hx0 hx trace Y prepared mField input
-  have recovered := clear_after_pool_update hn recorded field mFirst mLast keeps.1 keeps.2
-  exact compressedCompactReverse_restore_after_outside base (skywalkShared_integer_nodup base hn)
-    hlo x p (by norm_num [p]) hx0 (by norm_num [p]) (by norm_num [p]) hx
-    (arith_coprime x hx0 hx) initial restored mForward mReverse hin recovered.1 recovered.2
-
 end ECDSAAdd.Arithmetic.MappedCompressed
 end
 
@@ -16059,65 +9687,6 @@ namespace ECDSAAdd.Arithmetic.MappedCompressed
 open Secp256k1 DirectSkywalk OffsetBorrowedCanonical CompressedFieldSupport
 attribute [local irreducible] run selectedFieldSegment skywalkArithmeticClear
   compressedCompactForward compressedCompactReverse
-theorem selectedFieldSegment_pool_frame (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkSharedWires base)
-    (hp : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (ha : regValue (skywalkSharedField base).a origin=0)
-    (x : Nat) (hx0 : 0 < x) (hx : x < p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (s : State) (m : List Bool) (input : EncodedCanonicalFrame origin Y 0 s) :
-    (run (selectedFieldSegment divide) m s).phase=s.phase ∧
-      ∀q∈skywalkPoolWires base,(run (selectedFieldSegment divide) m s).basis q=s.basis q := by
-  have result := selectedFieldSegment_spec divide hn hlo ho hp hf origin hg0 hs0 env legal
-    hw hu hr hy x hx0 hx trace Y s m input
-  have before := encodedCanonical_pool_basis hn hlo origin ha Y s input
-  have after := encodedCanonical_pool_basis hn hlo origin ha _ (run (selectedFieldSegment divide) m s) result.2
-  exact ⟨result.1,fun q hq => (after q hq).trans (before q hq).symm⟩
-
-theorem selectedFieldSegment_reverse_pool (divide : Bool)
-    (hn : (skywalkSharedWires base).Nodup) (hlo : CompressedHistoryAbove base)
-    (ho : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkSharedWires base)
-    (hp : ∀q∈[base 2400,base 2409,base 2410],q∉skywalkPoolWires base)
-    (hf : MixedTranscriptReplayLayout base (base 2400) (base 2409) (base 2410) (mixedTranscriptTape base))
-    (origin : BasisState) (hg0 : origin (base 2409)=false) (hs0 : origin (base 2410)=false)
-    (env : Env base origin) (legal : RawGroupLegal base 170 origin)
-    (hw : regValue (skywalkSharedField base).work origin=0)
-    (hu : regValue (skywalkSharedUnused base) origin=0)
-    (hr : origin (base 2312)=false) (hy : origin (base 1026)=false)
-    (ha : regValue (skywalkSharedField base).a origin=0)
-    (x : Nat) (hx0 : 0 < x) (hx : x < p)
-    (trace : skywalkTapeControls origin (skywalkSharedTape base)=
-      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x:Int) (p:Int)))
-    (Y : Fp) (initial : State) (mForward mFirst mField mLast mReverse : List Bool)
-    (hin : SkywalkIntegerStage base (SkywalkRails.encode false false (x:Int) (p:Int)) 0 initial.basis)
-    (input : EncodedCanonicalFrame origin Y 0
-      (run (skywalkArithmeticClear base) mFirst (run (compressedCompactForward base 0 512) mForward initial))) :
-    let recorded := run (compressedCompactForward base 0 512) mForward initial
-    let prepared := run (skywalkArithmeticClear base) mFirst recorded
-    let field := run (selectedFieldSegment divide) mField prepared
-    let restored := run (skywalkArithmeticClear base) mLast field
-    (run (compressedCompactReverse base 0 512) mReverse restored).phase=initial.phase ∧
-      (∀q∈skywalkPoolWires base,(run (compressedCompactReverse base 0 512) mReverse restored).basis q=initial.basis q) ∧
-      (∀q,q∉skywalkPoolWires base →
-        (run (compressedCompactReverse base 0 512) mReverse restored).basis q=restored.basis q) := by
-  let recorded := run (compressedCompactForward base 0 512) mForward initial
-  let prepared := run (skywalkArithmeticClear base) mFirst recorded
-  let field := run (selectedFieldSegment divide) mField prepared
-  let restored := run (skywalkArithmeticClear base) mLast field
-  have keeps := selectedFieldSegment_pool_frame divide hn hlo ho hp hf origin hg0 hs0 env legal
-    hw hu hr hy ha x hx0 hx trace Y prepared mField input
-  have recovered := clear_after_pool_update hn recorded field mFirst mLast keeps.1 keeps.2
-  exact compressedCompactReverse_restore_after_outside base (skywalkShared_integer_nodup base hn)
-    hlo x p (by norm_num [p]) hx0 (by norm_num [p]) (by norm_num [p]) hx
-    (arith_coprime x hx0 hx) initial restored mForward mReverse hin recovered.1 recovered.2
 
 end ECDSAAdd.Arithmetic.MappedCompressed
 end

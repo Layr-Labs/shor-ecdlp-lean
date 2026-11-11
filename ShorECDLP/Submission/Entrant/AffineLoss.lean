@@ -69,13 +69,6 @@ def cost23 {n s e} : Straight n s e → ℝ
 theorem charge23_nonneg (g : Gate) : 0 ≤ charge23 g := by
   cases g <;> simp only [charge23] <;> positivity
 
-theorem cost23_nonneg {n s e} (p : Straight n s e) : 0 ≤ cost23 p := by
-  induction p with
-  | done => rfl
-  | gate g p ih => cases g <;> exact add_nonneg (charge23_nonneg _) ih
-  | recordGate i v g p ih => exact add_nonneg (charge23_nonneg _) ih
-  | measure w p ih => exact ih
-
 theorem charge23_false (g : Gate) (h : largePhase 23 g = false) : charge23 g = 0 := by
   cases g <;> simp_all [largePhase,charge23]
 
@@ -129,98 +122,6 @@ theorem idle_affine (d E M : ℝ) (hd : 0≤d) (hE : 0≤E) (hM : 0≤M) :
     E ≤ (1+10*d)*E+(d/10+d^2)*M := by
   nlinarith [mul_nonneg hd hE,mul_nonneg (show 0≤d/10+d^2 by positivity) hM]
 
-theorem trim23_expectation {n s e} (read : ConstantBit n → Bool)
-    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
-    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
-    (hb : cost23 p ≤ 1/5000) :
-    expectation read (trim 23 p) history psi accept ≤
-      (1+(10021/1000)*cost23 p)*expectation read p history psi accept +
-        (10021/100000)*cost23 p*normSq psi := by
-  induction p generalizing psi with
-  | done => simp [trim,cost23,expectation]
-  | measure w p ih =>
-    have h0 := ih (Fin.lastCases false history) (xResetKraus w false psi) accept hp hb
-    have h1 := ih (Fin.lastCases true history) (xResetKraus w true psi) accept hp hb
-    have hm := normSq_xResetKraus_false_add_true w psi
-    simp only [trim,cost23,expectation]
-    apply (add_le_add h0 h1).trans_eq
-    rw [← hm]
-    ring
-  | recordGate i v g p ih =>
-    by_cases hg : largePhase 23 g = true
-    · have hc := charge23_nonneg g
-      have ht := cost23_nonneg p
-      have hb' : cost23 p ≤ 1/5000 := by simpa only [cost23] using (show charge23 g+cost23 p ≤ 1/5000 from hb) |> fun h => by linarith
-      have hi := ih history psi accept hp.2 hb'
-      have hs := dropped_affine read p history psi accept hp.2 g hg
-      have hE := expectation_nonneg read p history (applyGate g psi) accept
-      have hM := mass_nonneg psi
-      have hidle := idle_affine (charge23 g) (expectation read p history psi accept) (normSq psi) hc (expectation_nonneg read p history psi accept) hM
-      simp only [trim,hg,if_true,cost23,expectation]
-      by_cases hr : history i=v
-      · simp only [hr,if_true,run_singleton]
-        simpa only [add_comm] using compose_bound (cost23 p) (charge23 g) _ _ _ _ ht hc (show cost23 p+charge23 g ≤ 1/5000 by simpa only [cost23,add_comm] using hb) hE hM hs hi
-      · simp only [hr,if_false,run_nil,LinearMap.id_coe,id_eq]
-        simpa only [add_comm] using compose_bound (cost23 p) (charge23 g) _ _ _ _ ht hc (show cost23 p+charge23 g ≤ 1/5000 by simpa only [cost23,add_comm] using hb) (expectation_nonneg read p history psi accept) hM hidle hi
-    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
-      have hz := charge23_false g hgf
-      have hb' : cost23 p ≤ 1/5000 := by simpa only [cost23,hz,zero_add] using hb
-      have hi := ih history (Quantum.run (if history i=v then [g] else []) psi) accept hp.2 hb'
-      have hn : normSq (Quantum.run (if history i=v then [g] else []) psi) = normSq psi := by
-        apply normSq_run
-        split_ifs
-        · simpa [CircuitWellFormed] using hp.1
-        · simp [CircuitWellFormed]
-      rw [hn] at hi
-      simpa only [trim,hgf,Bool.false_eq_true,if_false,cost23,hz,zero_add,expectation] using hi
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      by_cases hg : largePhase 23 g = true
-      · have hc := charge23_nonneg g
-        have ht := cost23_nonneg p
-        have hb' : cost23 p ≤ 1/5000 := by simpa only [cost23] using (show charge23 g+cost23 p ≤ 1/5000 from hb) |> fun h => by linarith
-        have hi := ih history psi accept hp.2 hb'
-        have hs := dropped_affine read p history psi accept hp.2 g hg
-        have hE := expectation_nonneg read p history (applyGate g psi) accept
-        have hM := mass_nonneg psi
-        simp only [trim,hg,if_true,cost23,expectation, TemplateGate.instantiate,run_singleton]
-        simpa only [add_comm] using compose_bound (cost23 p) (charge23 g) _ _ _ _ ht hc (show cost23 p+charge23 g ≤ 1/5000 by simpa only [cost23,add_comm] using hb) hE hM hs hi
-      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
-        have hz := charge23_false g hgf
-        have hb' : cost23 p ≤ 1/5000 := by simpa only [cost23,hz,zero_add] using hb
-        have hi := ih history (Quantum.run [g] psi) accept hp.2 hb'
-        have hn : normSq (Quantum.run [g] psi) = normSq psi := by
-          apply normSq_run
-          simpa [CircuitWellFormed] using hp.1
-        rw [hn] at hi
-        simpa only [trim,hgf,Bool.false_eq_true,if_false,cost23,hz,zero_add,expectation, TemplateGate.instantiate] using hi
-    | whenBit r v g =>
-      by_cases hg : largePhase 23 g = true
-      · have hc := charge23_nonneg g
-        have ht := cost23_nonneg p
-        have hb' : cost23 p ≤ 1/5000 := by simpa only [cost23] using (show charge23 g+cost23 p ≤ 1/5000 from hb) |> fun h => by linarith
-        have hi := ih history psi accept hp.2 hb'
-        have hs := dropped_affine read p history psi accept hp.2 g hg
-        have hE := expectation_nonneg read p history (applyGate g psi) accept
-        have hM := mass_nonneg psi
-        have hidle := idle_affine (charge23 g) (expectation read p history psi accept) (normSq psi) hc (expectation_nonneg read p history psi accept) hM
-        simp only [trim,hg,if_true,cost23,expectation,TemplateGate.instantiate]
-        by_cases hr : read r=v
-        · simp only [hr,if_true,run_singleton]
-          simpa only [add_comm] using compose_bound (cost23 p) (charge23 g) _ _ _ _ ht hc (show cost23 p+charge23 g ≤ 1/5000 by simpa only [cost23,add_comm] using hb) hE hM hs hi
-        · simp only [hr,if_false,run_nil,LinearMap.id_coe,id_eq]
-          simpa only [add_comm] using compose_bound (cost23 p) (charge23 g) _ _ _ _ ht hc (show cost23 p+charge23 g ≤ 1/5000 by simpa only [cost23,add_comm] using hb) (expectation_nonneg read p history psi accept) hM hidle hi
-      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
-        have hz := charge23_false g hgf
-        have hb' : cost23 p ≤ 1/5000 := by simpa only [cost23,hz,zero_add] using hb
-        have hi := ih history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2 hb'
-        have hn : normSq (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) = normSq psi :=
-          normSq_template read (.whenBit r v g) hp.1 psi
-        rw [hn] at hi
-        simpa only [trim,hgf,Bool.false_eq_true,if_false,cost23,hz,zero_add,expectation, TemplateGate.instantiate] using hi
-
-
 open Secp256k1 Single Single.Distribution
 set_option linter.unnecessarySeqFocus false
 
@@ -268,7 +169,6 @@ theorem error_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
   | gate g p ih => cases g <;> simp_all [reindexStraight,reindexGate,cost23]
   | recordGate => simp_all [reindexStraight,cost23]
   | measure => simp_all [reindexStraight,cost23]
-theorem sharp_unit : unit23 = (6283186/1000000:ℝ)/2^24 := rfl
 theorem charge_balance (dir : PhaseDir) (w : Wire) (k : Nat) :
     charge23 (.P dir k w) + potential23 (k+1) = potential23 k := by
   by_cases hk : 23 < k
@@ -609,35 +509,6 @@ theorem weight4_trim23 {n s e} (p : Straight n s e) :
       simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
       omega
   | measure w p ih => exact ih
-
-theorem trim_t23 {n s e} (p : Straight n s e) (read : ConstantBit n → Bool)
-    (history : Fin s → Bool) :
-    ((trim 23 p).instantiate read history).tCount ≤ (p.instantiate read history).tCount := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g <;> simp only [trim] <;> split_ifs <;>
-      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
-      (have h := ih history; omega)
-  | recordGate i v g p ih =>
-    simp only [trim]; split_ifs <;>
-      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
-      (have h := ih history; omega)
-  | measure w p ih =>
-    simp only [trim, Straight.instantiate, AdaptiveCircuit.tCount]
-    exact max_le_max (ih _) (ih _)
-
-theorem trim_added23 {n s e} (p : Straight n s e) : added (trim 23 p) = added p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g => cases g <;> simp [trim, largePhase, added, ih] <;> split_ifs <;> simp_all [added]
-    | whenBit r v g => simp only [trim]; split_ifs <;> simpa only [added] using ih
-  | recordGate i v g p ih => simp only [trim]; split_ifs <;> simpa only [added] using ih
-  | measure w p ih => exact ih
-
-
 
 #print axioms source_removed23
 #print axioms weight4_trim23

@@ -304,55 +304,12 @@ def hit (root : Wire) : Gate → Nat
   | .CCX a b _ => if a=root ∨ b=root then 1 else 0
   | _ => 0
 
-theorem seed_literal_weight (root : Wire) (g : Gate) :
-    ConditionalCatalyst.weightedLiteral (seed root g)+4*hit root g=ConditionalCatalyst.weightedLiteral g := by
-  cases g <;> simp only [seed,hit]
-  all_goals first | rfl | skip
-  split <;> split <;> simp_all [ConditionalCatalyst.weightedLiteral,ConditionalCatalyst.weightedGate,
-    ShorECDLP.tCost,ConditionalCatalyst.phaseTwoGate]
-
-theorem seed_conditional_weight (root : Wire) (g : Gate) :
-    ConditionalCatalyst.weightedGate (seed root g)+7*hit root g=ConditionalCatalyst.weightedGate g := by
-  cases g <;> simp only [seed,hit]
-  all_goals first | rfl | skip
-  split <;> split <;> simp_all [ConditionalCatalyst.weightedGate,
-    ShorECDLP.tCost,ConditionalCatalyst.phaseTwoGate]
-
 def literalHits {n s e} (root : Wire) : Straight n s e → Nat
   | .done => 0
   | .gate (.literal g) p => hit root g+literalHits root p
   | .gate (.whenBit _ _ _) p => literalHits root p
   | .recordGate _ _ _ p => literalHits root p
   | .measure _ p => literalHits root p
-
-def conditionalHits {n s e} (root : Wire) : Straight n s e → Nat
-  | .done => 0
-  | .gate (.literal _) p => conditionalHits root p
-  | .gate (.whenBit _ _ g) p => hit root g+conditionalHits root p
-  | .recordGate _ _ g p => hit root g+conditionalHits root p
-  | .measure _ p => conditionalHits root p
-
-theorem seedProgram_weight {n s e} (root : Wire) (p : Straight n s e) :
-    ConditionalCatalyst.weight4 (seedProgram root p)+4*literalHits root p+7*conditionalHits root p=
-      ConditionalCatalyst.weight4 p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      have h := seed_literal_weight root g
-      simp only [seedProgram,seedTemplate,ConditionalCatalyst.weight4,literalHits,conditionalHits]
-      omega
-    | whenBit i v g =>
-      have h := seed_conditional_weight root g
-      simp only [seedProgram,seedTemplate,ConditionalCatalyst.weight4,literalHits,conditionalHits]
-      omega
-  | recordGate i v g p ih =>
-    have h := seed_conditional_weight root g
-    simp only [seedProgram,ConditionalCatalyst.weight4,literalHits,conditionalHits]
-    omega
-  | measure w p ih => exact ih
-
 
 theorem seed_wires (root : Wire) (g : Gate) : gateWires (seed root g) ⊆ gateWires g := by
   cases g <;> simp only [seed] <;> try exact List.Subset.refl _
@@ -747,16 +704,6 @@ theorem seedProgram_residue_le {n s e} (root : Wire) (p : Straight n s e) :
   | recordGate i v g p ih => exact Nat.add_le_add (seed_tCost_le root g) ih
   | measure w p ih => exact ih
 
-theorem seedProgram_credit {n s e} (root : Wire) (p : Straight n s e) (credit : Nat)
-    (h : ProgramCredit p credit) : ProgramCredit (seedProgram root p) (credit-literalHits root p) := by
-  constructor
-  · have hh := seedProgram_residue_le root p
-    rw [h.1] at hh
-    exact Nat.eq_zero_of_le_zero hh
-  · have hh := seedProgram_added root p
-    rw [h.2] at hh
-    omega
-
 theorem safe_of_not_mem (root : Wire) (g : Gate) (h : root∉gateWires g) : safe root g := by
   cases g <;> simp_all [gateWires,safe] <;> aesop
 
@@ -1110,10 +1057,6 @@ theorem first18_rootProgram_wellFormed (start : Nat) : (first18_rootProgram star
 def windowGeneric {n : Nat} (rows : Fin 262144 → Fin n) : Single.Window n :=
   ⟨SelectSchedule18.bits.reverse,132606,fun start => reindexStraight rows (first18_rootProgram start)⟩
 
-theorem program_tCount (coeffs : Fin 262144 → PointCoeff) (Q : Secp256k1.Point) (start : Nat) (history : Fin start → Bool) :
-    ((first18_rootProgram start).instantiate (readConstant coeffs Q) history).tCount = 928165 := by
-  rw [exact_t _ (first18_rootProgram_residue start),first18_rootProgram_added]
-
 theorem window_law_generic {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (init : Point → Nat → Point)
     (hcoeff : ∀ Q, order • Q = 0 → ∀ a : Fin 262144,
@@ -1155,22 +1098,6 @@ theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
   unfold windowGeneric
   rw [straightWires_reindex]
   exact first18_rootProgram_support start
-
-theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (Q : Point) (start : Nat) (history : Fin start → Bool) :
-    (((windowGeneric rows).program start).instantiate (readConstant coeffs Q) history).tCount = 928165 := by
-  unfold windowGeneric
-  rw [reindexStraight_instantiate,
-    readConstant_reindex rows (fun a => coeffs (rows a)) coeffs Q (fun _ => rfl)]
-  exact program_tCount (fun a => coeffs (rows a)) Q start history
-
-theorem window_credit {n : Nat} (_coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
-    (_Q : Point) (start : Nat) (_history : Fin start → Bool) :
-    added ((windowGeneric rows).program start) = 132595 := by
-  unfold windowGeneric
-  rw [added_reindex]
-  exact first18_rootProgram_added start
-
 
 #print axioms first18_rootProgram_coherent
 #print axioms first18_rootProgram_added

@@ -39,59 +39,6 @@ theorem inputWords_cons_sum {M : Type} [AddCommMonoid M] (w : Nat) (ws : List Na
         ((inputWords ws).map (fun rest => g (input :: rest))).sum)).sum := by
   simp only [inputWords, List.map_flatMap, flat_sum, List.map_map, Function.comp_def]
 
-theorem mixed_branch_state
-    (step : DigitWindow → List Bool → List Bool → State →ₗ[ℂ] State)
-    (root : BasisState) (dwL dwR : DigitWindow) (bL bR : List Bool)
-    (lbp rbp : List (DigitWindow × List Bool))
-    (hstep : ∀ w ∈ lbp ++ rbp, ∀ prior P,
-      step w.1 prior w.2 (ket (pointWrite P root)) =
-        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ w.1.width) •
-          ((fourierOutcomes w.1.width).map (fun input =>
-            fourierBitAmplitude .inverse input.reverse prior w.2 •
-              ket (pointWrite (P + w.1.point (boolWordToNat input)) root))).sum)
-    (J : State)
-    (hJ : J = (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (dwL.width + dwR.width)) •
-        ((fourierOutcomes dwL.width).map (fun inL =>
-          ((fourierOutcomes dwR.width).map (fun inR =>
-            (fourierBitAmplitude .inverse inL.reverse List.nil bL *
-              fourierBitAmplitude .inverse inR.reverse List.nil bR) •
-              ket (pointWrite (dwL.point (boolWordToNat inL) + dwR.point (boolWordToNat inR)) root))).sum)).sum) :
-    axisBranch step rbp (bR.reverse ++ List.nil) (axisBranch step lbp (bL.reverse ++ List.nil) J) =
-      twoInputState root ((dwL, bL) :: lbp) ((dwR, bR) :: rbp) 0 := by
-  classical
-  subst hJ
-  have hL : ∀ P, axisBranch step lbp (bL.reverse ++ List.nil) (ket (pointWrite P root)) =
-      pointKernel root lbp (bL.reverse ++ List.nil) P := fun P =>
-    axisBranch_point step root lbp (fun w hw => hstep w (List.mem_append_left _ hw)) _ P
-  have hR : ∀ P, axisBranch step rbp (bR.reverse ++ List.nil) (ket (pointWrite P root)) =
-      pointKernel root rbp (bR.reverse ++ List.nil) P := fun P =>
-    axisBranch_point step root rbp (fun w hw => hstep w (List.mem_append_right _ hw)) _ P
-  simp only [map_smul, map_list_sum, List.map_map, Function.comp_def, hL, hR, pointKernel_inputs]
-  unfold twoInputState
-  simp only [pathWidths, List.map_cons, inputWords_cons_sum, inputWeight, pathEnd]
-  simp only [List.smul_sum, List.map_map, Function.comp_def, smul_smul]
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro a ha
-  conv_rhs => rw [list_sum_swap]
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro b hb
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro x hx
-  apply congrArg List.sum
-  apply List.map_congr_left
-  intro y hy
-  have hp : pathEnd lbp x (dwL.point (boolWordToNat a) + dwR.point (boolWordToNat b)) =
-      pathEnd lbp x (0 + dwL.point (boolWordToNat a)) + dwR.point (boolWordToNat b) := by
-    rw [zero_add]
-    exact pathEnd_translate lbp x _ _
-  rw [hp, pow_add]
-  congr 1
-  ring
-
-
 /-- The mixed order of operations, stated on model branches: after the joint first section the
 left bodies run on the left head records and the right bodies on the right head records. -/
 theorem mixed_modelBranch_state {n : Nat} {read : ConstantBit n → Bool}
