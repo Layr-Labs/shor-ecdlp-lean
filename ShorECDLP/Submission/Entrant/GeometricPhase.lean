@@ -353,7 +353,7 @@ open Quantum Challenge Secp256k1 AndGadget WEXCredit
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
 open Width16Actual
 attribute [local instance] Width16Actual.bodyInstance Width16Actual.resourceInstance
-attribute [local irreducible] Single.axis WideBank8.Signed16.program WEXFast.W15G.compactProgram
+attribute [local irreducible] Single.axis WideBank8.Signed17.program WEXFast.W15H.compactProgram
   ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
   AndGadget.lowerEntry AndGadget.lowerLayout
 noncomputable section
@@ -367,7 +367,7 @@ def entry : StraightEntry := GeometricPhase.finalEntry implementation reset
 
 def layout : DecodeLayout := lowerLayout 1938 (GeometricPhase.entryTrim rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,250699932,544000000⟩
+def bounds : Bounds := ⟨1620,250549476,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (GeometricPhase.entryTrim (Width16Schedule.sourceEntry implementation reset))
@@ -378,8 +378,8 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2343187 → b ≤ 2252440 →
-    4*(132595+19*a+8*b)+9260 ≤ 250699932 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2341681 → b ≤ 2251315 →
+    4*(132595+19*a+8*b)+9260 ≤ 250549476 := by
   intro a b ha hb
   omega
 

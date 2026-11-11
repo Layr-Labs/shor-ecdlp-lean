@@ -1943,21 +1943,21 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 
-attribute [local irreducible] WideBank8.Signed16.program WEXFast.W15G.fastBodyProgram
-  WEXFast.W15G.compactProgram WideBank8.Row16.program PathShare.narrowCF15
+attribute [local irreducible] WideBank8.Signed17.program WEXFast.W15H.fastBodyProgram
+  WEXFast.W15H.compactProgram WideBank8.Row17.program PathShare.narrowCF15
 
 local notation "wideCredit" =>
-  (2 * WideSigned.Body.signCredit + WideBank8.Fast16.fcodeTP WideBank8.Row16.code)
+  (2 * WideSigned.Body.signCredit + WideBank8.Fast16.dcodeTP WideBank8.Row17.code)
 local notation "normalCredit" =>
   (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    WEXFast.gcodeTP WEXFast.rowCF)
+    WEXFast.dcodeTP WEXFast.W15H.code)
 
 def wide : Window 65536 :=
   ⟨(WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact,
-    1744024, fun start => relabelStraight TightSupport.compact (WideBank8.Signed16.program start)⟩
+    1742494, fun start => relabelStraight TightSupport.compact (WideBank8.Signed17.program start)⟩
 
 def normal : Window 32768 :=
-  ⟨streamAddress.reverse,1653272,WEXFast.W15G.compactProgram⟩
+  ⟨streamAddress.reverse,1652126,WEXFast.W15H.compactProgram⟩
 
 def signed : Digit → Window 1769472 := familyWindows wide normal
 
@@ -1965,7 +1965,7 @@ def signed : Digit → Window 1769472 := familyWindows wide normal
 theorem signed_width (w : Digit) : (signed w).wires.length = w.width :=
   family_widths wide normal (by simp only [wide,List.length_map,List.length_reverse]; decide) (by decide) w
 
-theorem signed_count (w : Digit) : (signed w).count = count 1744024 1653272 w :=
+theorem signed_count (w : Digit) : (signed w).count = count 1742494 1652126 w :=
   family_counts wide normal w
 
 theorem signed_credit (w : Digit) (start : Nat) :
@@ -1973,33 +1973,33 @@ theorem signed_credit (w : Digit) (start : Nat) :
   cases w with
   | left17 j | right17 j =>
     rw [count]
-    change ProgramCredit (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))) wideCredit
+    change ProgramCredit (reindexStraight _ (relabelStraight _ (WideBank8.Signed17.program start))) wideCredit
     constructor
     · rw [WEXCredit.residue_reindex, WEXUnlookup.residue_relabel]
-      exact (WideBank8.Signed16.program_credit start).1
+      exact (WideBank8.Signed17.program_credit start).1
     · rw [added_reindex, added_relabel]
-      exact (WideBank8.Signed16.program_credit start).2
+      exact (WideBank8.Signed17.program_credit start).2
   | left16 j =>
     rw [count]
     constructor
-    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15H.compactProgram start) from rfl,
         WEXCredit.residue_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).1
-    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+      exact by rw [WEXFast.W15H.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15H.fastBodyProgram_credit start).1
+    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15H.compactProgram start) from rfl,
         added_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,added_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).2
+      exact by rw [WEXFast.W15H.compactProgram,added_relabel]; exact (WEXFast.W15H.fastBodyProgram_credit start).2
   | right16 j =>
     rw [count]
     constructor
-    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15H.compactProgram start) from rfl,
         WEXCredit.residue_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).1
-    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+      exact by rw [WEXFast.W15H.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15H.fastBodyProgram_credit start).1
+    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15H.compactProgram start) from rfl,
         added_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,added_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).2
+      exact by rw [WEXFast.W15H.compactProgram,added_relabel]; exact (WEXFast.W15H.fastBodyProgram_credit start).2
 
 def implementation : Implementation :=
-  withHeads 1744024 1653272 wideCredit normalCredit signed signed_width signed_count
+  withHeads 1742494 1652126 wideCredit normalCredit signed signed_width signed_count
     (fun w start => (signed_credit w start).1) (fun w start => (signed_credit w start).2)
 
 
@@ -2007,37 +2007,37 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2343187 ∧ implementation.credit16 ≤ 2252440 := by
+theorem credits : implementation.credit17 ≤ 2341681 ∧ implementation.credit16 ≤ 2251315 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
-  exact ⟨WideBank8.Signed16.credit_bound, WEXFast.W15G.fastCount_upper⟩
+  exact ⟨WideBank8.Signed17.credit_bound, WEXFast.W15H.fastCount_upper⟩
 
 theorem signed_support (w : Digit) (start : Nat) :
     straightWires ((signed w).program start) ⊆ List.range 1618 := by
   cases w with
   | left17 j | right17 j =>
-    change straightWires (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))) ⊆ _
+    change straightWires (reindexStraight _ (relabelStraight _ (WideBank8.Signed17.program start))) ⊆ _
     rw [straightWires_reindex]
-    exact WideBank8.Fast16.Tight.packed_support start
+    exact WideBank8.Signed17.packed_support start
   | left16 j =>
-    change straightWires (reindexStraight _ (WEXFast.W15G.compactProgram start)) ⊆ _
-    rw [straightWires_reindex, WEXFast.W15G.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15G.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
+    change straightWires (reindexStraight _ (WEXFast.W15H.compactProgram start)) ⊆ _
+    rw [straightWires_reindex, WEXFast.W15H.compactProgram]
+    exact (PathShare.relabelH_support _ (WEXFast.W15H.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
   | right16 j =>
-    change straightWires (reindexStraight _ (WEXFast.W15G.compactProgram start)) ⊆ _
-    rw [straightWires_reindex, WEXFast.W15G.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15G.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
+    change straightWires (reindexStraight _ (WEXFast.W15H.compactProgram start)) ⊆ _
+    rw [straightWires_reindex, WEXFast.W15H.compactProgram]
+    exact (PathShare.relabelH_support _ (WEXFast.W15H.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
 
 
 theorem signed_wellFormed (w : Digit) (start : Nat) : ((signed w).program start).WellFormed := by
   cases w with
   | left17 j | right17 j =>
     apply (reindexStraight_wellFormed _ _).mpr
-    exact (relabelStraight_wellFormed _ _).mpr (WideBank8.Signed16.wellFormed start)
+    exact (relabelStraight_wellFormed _ _).mpr (WideBank8.Signed17.wellFormed start)
   | left16 j | right16 j =>
     apply (reindexStraight_wellFormed _ _).mpr
-    change (WEXFast.W15G.compactProgram start).WellFormed
-    rw [WEXFast.W15G.compactProgram]
-    exact (relabelStraight_wellFormed _ _).mpr (WEXFast.W15G.fastBodyProgram_wellFormed start)
+    change (WEXFast.W15H.compactProgram start).WellFormed
+    rw [WEXFast.W15H.compactProgram]
+    exact (relabelStraight_wellFormed _ _).mpr (WEXFast.W15H.fastBodyProgram_wellFormed start)
 
 end
 end ShorECDLP.Entrant.Width16Actual
@@ -2052,7 +2052,7 @@ set_option Elab.async false
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
-attribute [local irreducible] fourierOutcomes WEXFast.W15G.fastBodyProgram WEXFast.W15G.compactProgram
+attribute [local irreducible] fourierOutcomes WEXFast.W15H.fastBodyProgram WEXFast.W15H.compactProgram
 
 def normalPoint (coeffs : Fin 32768 → PointCoeff) (Q : Point) (v : Nat) : Point :=
   if v < 32768 then -constantPoint Q (coeffs ⟨(32767-v)%32768,Nat.mod_lt _ (by decide)⟩)
@@ -2068,9 +2068,9 @@ def normalModel (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • 
   nodup := by decide
   coherent := by
     intro start history
-    simpa only [normal,WEXFast.W15G.compactProgram] using
+    simpa only [normal,WEXFast.W15H.compactProgram] using
       PathShare.relabelH_coherent _ coeffs Q history
-        (WEXFast.W15G.fastBodyProgram_coherent coeffs Q hQ hn start history)
+        (WEXFast.W15H.fastBodyProgram_coherent coeffs Q hQ hn start history)
 
 theorem normal_correct (coeffs : Fin 32768 → PointCoeff) (Q : Point) (s : BasisState)
     (hs : PathShare.readyH s) (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
@@ -2240,7 +2240,7 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 set_option linter.unnecessarySeqFocus false
-attribute [local irreducible] fourierOutcomes WideBank8.Signed16.program
+attribute [local irreducible] fourierOutcomes WideBank8.Signed17.program
 local instance bodyInstance : Single.WindowBody := PathShare.bodyCF
 local instance resourceInstance : Single.ProducerResources bodyInstance :=
   Single.ProducerResources.ofBody PathShare.bodyCF
@@ -2275,7 +2275,7 @@ theorem wide_nonzero (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw
 
 theorem wide_point (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17)
     (v : Nat) (hv : v<131072) :
-    (WideBank8.Signed16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw)).point v =
+    (WideBank8.Signed17.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw)).point v =
       Width16Schedule.increment (d.base Q) 17 d.exponent v := by
   change (if v<65536 then -constantPoint Q
       (wideCoefficients d (WideSigned.Geometry.rows .w16 (65535-v)))
@@ -2296,7 +2296,7 @@ theorem normal_point (Q : Point) (hQ : order•Q=0) (w : Digit) (hw : w.width=16
 
 def wideRawModel (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :=
   interpretModel
-    (WideBank8.Signed16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw))
+    (WideBank8.Signed17.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw))
     (Width16Schedule.increment (d.base Q) 17 d.exponent)
     (offsetScalar 17 d.exponent • d.base Q)
 
@@ -2347,7 +2347,7 @@ def models (Q : Point) (hQ : order•Q=0) (hn : Q≠0) : ModelFrame implementati
 theorem wide_raw_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :
     PointRule initialRoot (wideRawModel Q hQ hn d hw) := by
   apply interpret_pointRule
-  · exact WideBank8.Signed16.pointRule (wideCoefficients d) Q hQ
+  · exact WideBank8.Signed17.pointRule (wideCoefficients d) Q hQ
       (wide_nonzero Q hQ hn d hw) initialRoot initialRoot_input.1 (by
       intro v hv
       have hb := WideSigned.Body.bank_bounds .w16 v hv
@@ -2399,7 +2399,7 @@ theorem wide_raw_prepared (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit
     intro s hs
     obtain ⟨P,hP⟩ := hψ s hs
     exact ⟨P,by rw [pointWrite_overwrite]; exact hP⟩
-  exact WideBank8.Signed16.prepared (wideCoefficients d) Q hQ
+  exact WideBank8.Signed17.prepared (wideCoefficients d) Q hQ
     (wide_nonzero Q hQ hn d hw) (pointWrite 0 initialRoot)
     (WEX.windowReady_first initialRoot initialRoot_input 0)
     (by
@@ -2696,8 +2696,8 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
-attribute [local irreducible] PathShare.narrowCF15 WideBank8.Signed16.program
-  WideBank8.Row16.program Single.axis resetProgram
+attribute [local irreducible] PathShare.narrowCF15 WideBank8.Signed17.program
+  WideBank8.Row17.program Single.axis resetProgram
 attribute [local instance] bodyInstance resourceInstance
 
 def reset : List Wire := resetWires
@@ -2722,13 +2722,13 @@ theorem isWin_right (w : Window 1769472) (hw : w ∈ (Width16Schedule.rightBodie
 theorem signed_slots (w : Digit) (start : Nat) : ((signed w).program start).gateSlots ≤ 3000000000 := by
   cases w with
   | left17 j | right17 j =>
-    change (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))).gateSlots ≤ _
+    change (reindexStraight _ (relabelStraight _ (WideBank8.Signed17.program start))).gateSlots ≤ _
     rw [reindexStraight_gateSlots,relabelStraight_slots]
-    exact (WideBank8.Signed16.slots start).trans (by decide)
+    exact (WideBank8.Signed17.slots start).trans (by decide)
   | left16 j | right16 j =>
-    change (reindexStraight _ (WEXFast.W15G.compactProgram start)).gateSlots ≤ _
-    rw [reindexStraight_gateSlots, WEXFast.W15G.compactProgram, relabelStraight_slots]
-    exact (WEXFast.W15G.fastBodyProgram_slots_upper start).trans (by decide)
+    change (reindexStraight _ (WEXFast.W15H.compactProgram start)).gateSlots ≤ _
+    rw [reindexStraight_gateSlots, WEXFast.W15H.compactProgram, relabelStraight_slots]
+    exact (WEXFast.W15H.fastBodyProgram_slots_upper start).trans (by decide)
 
 theorem win_wellFormed (w : Window 1769472) (hw : IsWin w) (start : Nat) :
     (w.program start).WellFormed := by
@@ -2936,8 +2936,8 @@ theorem source_counts : rawEntry.finalCursor ≤ 50000000 ∧
   have hs : rawEntry.program.gateSlots ≤ 100000000000 := by
     rw [rawEntry,Width16Schedule.sourceEntry,Single.fixedEntry_slots]
     exact full_slots
-  have hm : rawEntry.finalCursor = 46531507 := by
-    change 132606+19*1744024+8*1653272+469+resetWires.length+34946=46531507
+  have hm : rawEntry.finalCursor = 46493269 := by
+    change 132606+19*1742494+8*1652126+469+resetWires.length+34946=46493269
     decide
   change _ ∧ _ ∧ _ ≤ 4000000000000000
   omega
@@ -2955,7 +2955,7 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
-attribute [local irreducible] Single.axis WideBank8.Signed16.program WEXFast.W15G.compactProgram
+attribute [local irreducible] Single.axis WideBank8.Signed17.program WEXFast.W15H.compactProgram
   ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
   AndGadget.lowerEntry AndGadget.lowerLayout
 attribute [local instance] bodyInstance resourceInstance
@@ -3060,7 +3060,7 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2343187 → b ≤ 2252440 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2341681 → b ≤ 2251315 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
   intro a b ha hb
   omega
 
