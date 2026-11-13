@@ -823,8 +823,8 @@ theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
 
 
 
-theorem source_spent86 (impl : Implementation) (reset : List ShorECDLP.Wire) :
-    trimSpent 86 (sourceEntry impl reset).program = 86 := by
+theorem source_spent112 (impl : Implementation) (reset : List ShorECDLP.Wire) :
+    trimSpent 112 (sourceEntry impl reset).program = 112 := by
   rw [trimSpent_eq]
   have h := fullProgram_band_count impl reset
   unfold sourceEntry
@@ -833,6 +833,6 @@ theorem source_spent86 (impl : Implementation) (reset : List ShorECDLP.Wire) :
 
 #print axioms trimN_affine
 #print axioms activeCost_bound
-#print axioms source_spent86
+#print axioms source_spent112
 end
 end ShorECDLP.Entrant.Phase23Partial
