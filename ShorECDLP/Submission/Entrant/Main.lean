@@ -1,6 +1,9 @@
 import ShorECDLP.Submission.Entrant.GeometricPhase
 
 -- Entrant/Main.lean
+-- Verification control: contents identical to the current record submission.
+-- This exists only to test whether the CI benchmark step can build this entrant tree
+-- at all; it declares no new bound and cannot improve the score.
 section
 namespace ShorECDLP.Entrant
 open Challenge
