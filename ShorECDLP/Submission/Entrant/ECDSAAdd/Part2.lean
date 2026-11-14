@@ -48294,7 +48294,12 @@ theorem measuredBranchC_correct (L : CuccaroStreamedSquareWideLayout) (hw : L.Wi
     · have same := cleared.2.2 q sumSite
       simpa [restoreBase,hq] using same
   have prepM := (L.core.sum_counts hw.core).1.2
-  simpa [measuredBranchC,middle,u,v,out,run_append,prepM] using final
+  have hrun : run (L.measuredBranchC control) records s = out := by
+    change run (L.core.prepareSum ++ (middle ++ L.core.clearSum)) records s = out
+    rw [run_append, prepM, List.take_zero, List.drop_zero, run_append]
+    rfl
+  rw [hrun]
+  exact final
 
 end ECDSAAdd.Arithmetic.CuccaroStreamedSquareWideLayout
 end
