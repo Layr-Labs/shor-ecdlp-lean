@@ -367,7 +367,7 @@ def entry : StraightEntry := GeometricPhase.finalEntry implementation reset
 
 def layout : DecodeLayout := lowerLayout 1938 (GeometricPhase.entryTrim rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,250699932,544000000⟩
+def bounds : Bounds := ⟨1620,250661780,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (GeometricPhase.entryTrim (Width16Schedule.sourceEntry implementation reset))
@@ -378,8 +378,8 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2343187 → b ≤ 2252440 →
-    4*(132595+19*a+8*b)+9260 ≤ 250699932 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2342685 → b ≤ 2252440 →
+    4*(132595+19*a+8*b)+9260 ≤ 250661780 := by
   intro a b ha hb
   omega
 
