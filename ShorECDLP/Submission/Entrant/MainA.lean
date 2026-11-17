@@ -1958,6 +1958,11 @@ open Challenge
 noncomputable section
 set_option maxRecDepth 10000
 
+local instance bodyInstance : Single.WindowBody := Single.eeaBody
+local instance resourcesInstance : Single.ProducerResources bodyInstance := Single.eeaResources
+
+
+
 end
 end ShorECDLP.Entrant.EEARegression
 
@@ -5973,7 +5978,7 @@ theorem narrow_body_t_bound (start : Nat) (read : ConstantBit 32768 → Bool) (h
   have ha := WEX.literalToffolis_normalize (WEX.rowAddCode WEX.probeRows)
   have hc := (WEX.finite23_literal_counts WEX.streamLayout WEX.probeRows).1.trans
     (WEX.tight_finite_literal_counts WEX.streamLayout WEX.streamLayout_widths WEX.streamLayout_nodup WEX.probeRows).1
-  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2156628 := by
+  have hrow : WEX.literalToffolis (WEX.rowAddCode WEX.probeRows) = 2161857 := by
     simp only [WEX.rowAddCode,WEX.literalToffolis_append,WEX.wLiteral,WEX.literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
@@ -7288,6 +7293,8 @@ set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 attribute [local irreducible] program
 
+theorem support_in_reset : support ⊆ resetWires := by decide +kernel
+
 theorem window_wellFormed {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
     ((window rows).program start).WellFormed := by
   unfold window
@@ -7298,6 +7305,12 @@ theorem window_slots {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
   unfold window
   rw [reindexStraight_gateSlots]
   exact program_slots start
+
+theorem window_support {n : Nat} (rows : Fin 262144 → Fin n) (start : Nat) :
+    straightWires ((window rows).program start) ⊆ resetWires := by
+  unfold window
+  rw [straightWires_reindex]
+  exact (program_support start).trans support_in_reset
 
 theorem window_t {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 262144 → Fin n)
     (Q : Point) (start : Nat) (history : Fin start → Bool) :
@@ -9056,416 +9069,6 @@ theorem splitNetwork_frame (cs : List SplitCell) (s : BasisState) (w : Wire)
     exact splitState_frame c.bit c.parent c.child s w (hw c (by simp)).1 (hw c (by simp)).2
 
 
-theorem splitNetwork_hp (cs : List SplitCell) : Classical.HPFree (splitNetwork cs) := by
-  induction cs with
-  | nil => simp [splitNetwork]
-  | cons c cs ih => simp [splitNetwork, SplitCell.circuit, splitCircuit, ih]
-
-
-theorem splitNetwork_wellFormed (cs : List SplitCell) (hp : ∀ c ∈ cs, c.Physical) :
-    CircuitWellFormed (splitNetwork cs) := by
-  induction cs with
-  | nil => simp [splitNetwork, CircuitWellFormed]
-  | cons c cs ih =>
-    have hc := hp c (by simp)
-    simp only [splitNetwork, circuitWellFormed_append]
-    exact ⟨by simp [SplitCell.circuit, splitCircuit, CircuitWellFormed, Gate.WellFormed, hc.1, hc.2.1, hc.2.2,
-      Ne.symm hc.2.2], ih (fun d hd => hp d (by simp [hd]))⟩
-
-
-theorem splitNetwork_tCount (cs : List SplitCell) : ShorECDLP.tCount (splitNetwork cs) = 7 * cs.length := by
-  induction cs with
-  | nil => rfl
-  | cons c cs ih =>
-    rw [splitNetwork, ShorECDLP.tCount_append, ih, SplitCell.circuit, splitCircuit_tCount, List.length_cons]
-    ring
-
-
-theorem splitNetwork_length (cs : List SplitCell) : (splitNetwork cs).length = 2 * cs.length := by
-  induction cs with
-  | nil => rfl
-  | cons c cs ih =>
-    rw [splitNetwork, List.length_append, ih, SplitCell.circuit, splitCircuit_slots, List.length_cons]
-    ring
-
-
-theorem circuitWires_append (xs ys : Circuit) :
-    circuitWires (xs ++ ys) = circuitWires xs ++ circuitWires ys := by simp [circuitWires]
-
-
-
-
-
-
-
-theorem splitNetwork_within (cs : List SplitCell) (S : List Wire)
-    (hp : ∀ c ∈ cs, c.bit ∈ S ∧ c.parent ∈ S ∧ c.child ∈ S) : circuitWires (splitNetwork cs) ⊆ S := by
-  induction cs with
-  | nil => simp [splitNetwork, circuitWires]
-  | cons c cs ih =>
-    have hc := hp c (by simp)
-    rw [splitNetwork, circuitWires_append]
-    apply List.append_subset.mpr
-    refine ⟨?_, ih (fun d hd => hp d (by simp [hd]))⟩
-    intro w hw
-    simp [SplitCell.circuit, splitCircuit, circuitWires, gateWires] at hw
-    aesop
-
-/-! Parity-derived one-hot preparation, following the construction described in public Yukon submission 614eec20-ddf3-45e9-9fc1-e733b9dc098e. The proof below derives each level from the inherited level_partial invariant. -/
-namespace ParityBank7
-open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration MeasuredClear
-noncomputable section
-set_option maxHeartbeats 2000000
-set_option maxRecDepth 10000
-set_option linter.unusedSimpArgs false
-
-def xorScan (hotN : Nat → Wire) (offset : Nat) (target : Wire) : Nat → Circuit
-  | 0 => []
-  | m+1 => xorScan hotN offset target m ++ [.CX (hotN (m+offset)) target]
-
-theorem xorScan_frame (hotN : Nat → Wire) (offset : Nat) (target w : Wire) (m : Nat)
-    (s : BasisState) (hw : w≠target) :
-    Classical.run (xorScan hotN offset target m) s w=s w := by
-  induction m with
-  | zero => rfl
-  | succ m ih =>
-    rw [xorScan,Classical.run_append]
-    simpa [Classical.run,Classical.applyGate,upd,hw] using ih
-
-theorem cx_target (c t : Wire) (s : BasisState) :
-    Classical.run [.CX c t] s t=Bool.xor (s t) (s c) := by
-  simp [Classical.run,Classical.applyGate,upd]
-
-theorem xorScan_value (hotN : Nat → Wire) (offset : Nat) (target : Wire)
-    (m a : Nat) (b : Bool) (s : BasisState)
-    (hd : ∀ i,i<m → hotN (i+offset)≠target)
-    (hv : ∀ i,i<m → s (hotN (i+offset))=(decide (i=a) && b)) :
-    Classical.run (xorScan hotN offset target m) s target =
-      Bool.xor (s target) (decide (a<m) && b) := by
-  induction m with
-  | zero => simp [xorScan,Classical.run]
-  | succ m ih =>
-    have hi := ih (fun i h => hd i (by omega)) (fun i h => hv i (by omega))
-    have hc := xorScan_frame hotN offset target (hotN (m+offset)) m s (hd m (by omega))
-    rw [xorScan,Classical.run_append]
-    rw [cx_target,hi,hc,hv m (by omega)]
-    by_cases ha : a<m
-    · have hm : m≠a := by omega
-      have ha' : a<m+1 := by omega
-      simp [ha,hm,ha']
-    · by_cases hm : m=a
-      · have ha' : a<m+1 := by omega
-        simp [ha,hm,ha']
-      · have ha' : ¬a<m+1 := by omega
-        simp [ha,hm,ha']
-
-theorem xorScan_tCount (hotN : Nat → Wire) (offset : Nat) (target : Wire) (m : Nat) :
-    ShorECDLP.tCount (xorScan hotN offset target m)=0 := by
-  induction m with
-  | zero => rfl
-  | succ m ih =>
-    rw [xorScan,ShorECDLP.tCount_append,ih]
-    simp [ShorECDLP.tCount,ShorECDLP.tCost]
-
-theorem xorScan_length (hotN : Nat → Wire) (offset : Nat) (target : Wire) (m : Nat) :
-    (xorScan hotN offset target m).length=m := by
-  induction m with
-  | zero => rfl
-  | succ m ih => simp [xorScan,ih]
-
-
-def prefixCells (bitsN hotN : Nat → Wire) (j : Nat) : List SplitCell :=
-  (List.range (2^j-1)).map fun i => ⟨bitsN j,hotN i,hotN (i+2^j)⟩
-
-def parityLevel (bitsN hotN : Nat → Wire) (j : Nat) : Circuit :=
-  splitNetwork (prefixCells bitsN hotN j) ++
-    [.CX (bitsN j) (hotN ((2^j-1)+2^j))] ++
-    xorScan hotN (2^j) (hotN ((2^j-1)+2^j)) (2^j-1) ++
-    [.CX (hotN ((2^j-1)+2^j)) (hotN (2^j-1))]
-
-theorem old_level_last (bitsN hotN : Nat → Wire) (j : Nat) :
-    splitNetwork (hotLevelN bitsN hotN j) = splitNetwork (prefixCells bitsN hotN j) ++
-      [Gate.CCX (bitsN j) (hotN (2^j-1)) (hotN ((2^j-1)+2^j)),
-       Gate.CX (hotN ((2^j-1)+2^j)) (hotN (2^j-1))] := by
-  have hp : 0<(2:Nat)^j := by positivity
-  have he : 2^j=(2^j-1)+1 := by omega
-  unfold hotLevelN
-  conv_lhs => rw [he,List.range_succ,List.map_append,splitNetwork_append]
-  simp only [List.map_cons,List.map_nil,splitNetwork,List.append_nil,←he]
-  rfl
-
-theorem parityLevel_eq (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN)
-    (j : Nat) (hj : j<b) (a : Nat) (ha : a<2^j) (t : BasisState)
-    (ht : ∀ x,x<2^b → t (hotN x)=decide (x=a)) :
-    Classical.run (parityLevel bitsN hotN j) t = Classical.run (splitNetwork (hotLevelN bitsN hotN j)) t := by
-  have hp : 0<(2:Nat)^j := by positivity
-  let m := 2^j-1
-  have hm : m<2^j := by dsimp [m]; omega
-  have hm' : m+1=2^j := by dsimp [m]; omega
-  have hmb : m<2^b := by have := pow_level_lt hj m hm; omega
-  have hcb : m+2^j<2^b := pow_level_lt hj m hm
-  let target := hotN (m+2^j)
-  let parent := hotN m
-  let bit := bitsN j
-  let u := Classical.run (splitNetwork (prefixCells bitsN hotN j)) t
-  let v := Classical.run [.CX bit target] u
-  let q := Classical.run (xorScan hotN (2^j) target m) v
-  let z := Classical.run [.CCX bit parent target] u
-  have hpart := level_partial b bitsN hotN hL j hj a ha t ht m (by omega)
-  change (∀ x,x<2^b → u (hotN x)=_) ∧ _ at hpart
-  have hubit : u bit=t bit := hpart.2.1 bit (fun x hx => hL.disj j x hj hx)
-  have huparent : u parent=decide (m=a) := by
-    have h := hpart.1 m hmb
-    simpa only [if_neg (show ¬m<m by omega),if_neg (show ¬(2^j≤m ∧ m<2^j+m) by omega)] using h
-  have hutarget : u target=false := by
-    have h := hpart.1 (m+2^j) hcb
-    have h0 : ¬m+2^j<m := by omega
-    have h1 : ¬(2^j≤m+2^j ∧ m+2^j<2^j+m) := by omega
-    have h2 : ¬m+2^j=a := by omega
-    simpa only [if_neg h0,if_neg h1,decide_eq_false h2] using h
-  have hparentne : parent≠target := by
-    intro he
-    have h := hL.inj m (m+2^j) hmb hcb he
-    omega
-  have hctrl (i : Nat) (hi : i<m) : hotN (i+2^j)≠target := by
-    intro he
-    have hib := pow_level_lt hj i (by omega : i<2^j)
-    have h := hL.inj (i+2^j) (m+2^j) hib hcb he
-    omega
-  have hchildren (i : Nat) (hi : i<m) : v (hotN (i+2^j))=(decide (i=a) && t bit) := by
-    have hib := pow_level_lt hj i (by omega : i<2^j)
-    have h := hpart.1 (i+2^j) hib
-    have h0 : ¬i+2^j<m := by omega
-    have h1 : 2^j ≤ i+2^j ∧ i+2^j<2^j+m := by omega
-    have hsub : i+2^j-2^j=i := by omega
-    rw [if_neg h0,if_pos h1,hsub] at h
-    have he : v (hotN (i+2^j))=u (hotN (i+2^j)) := by
-      simp [v,Classical.run,Classical.applyGate,upd,hctrl i hi]
-    exact he.trans h
-  have hvtarget : v target=t bit := by
-    change Classical.run [.CX bit target] u target=t bit
-    simp [cx_target,hubit,hutarget]
-  have hqtarget : q target=(t bit && decide (m=a)) := by
-    have h := xorScan_value hotN (2^j) target m a (t bit) v hctrl hchildren
-    change q target=_ at h
-    rw [hvtarget] at h
-    rw [h]
-    by_cases he : m=a
-    · have hnot : ¬a<m := by omega
-      simp [he,hnot]
-    · have hlt : a<m := by omega
-      simp [he,hlt]
-  have hqz : q=z := by
-    funext w
-    by_cases hw : w=target
-    · subst w
-      rw [hqtarget]
-      have hz : z target=Bool.xor (u target) (u bit && u parent) := by
-        simp [z,Classical.run,Classical.applyGate,upd]
-      rw [hz,hutarget,hubit,huparent]
-      simp
-    · have hq : q w=v w := xorScan_frame hotN (2^j) target w m v hw
-      rw [hq]
-      simp [v,z,Classical.run,Classical.applyGate,upd,hw]
-  have hn : Classical.run (parityLevel bitsN hotN j) t=Classical.run [.CX target parent] q := by
-    simp only [parityLevel,Classical.run_append]
-    rfl
-  have ho : Classical.run (splitNetwork (hotLevelN bitsN hotN j)) t=Classical.run [.CX target parent] z := by
-    rw [old_level_last,Classical.run_append]
-    rfl
-  rw [hn,ho,hqz]
-
-
-def parityNet (bitsN hotN : Nat → Wire) : Nat → Circuit
-  | 0 => []
-  | J+1 => parityNet bitsN hotN J ++ parityLevel bitsN hotN J
-
-theorem parityNet_eq (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN)
-    (t : BasisState) (ht : ∀ x,x<2^b → t (hotN x)=decide (x=0)) :
-    ∀ J,J≤b → Classical.run (parityNet bitsN hotN J) t=Classical.run (splitNetwork (hotNetN bitsN hotN J)) t := by
-  intro J
-  induction J with
-  | zero => intro _; rfl
-  | succ J ih =>
-    intro hJ
-    have hi := ih (by omega)
-    rw [parityNet,Classical.run_append,hi,hotNetN,splitNetwork_append,Classical.run_append]
-    exact parityLevel_eq b bitsN hotN hL J (by omega) (addrN bitsN t J) (addrN_lt bitsN t J)
-      _ (net_run b bitsN hotN hL t ht J (by omega)).1
-
-theorem parityLevel_tCount (bitsN hotN : Nat → Wire) (j : Nat) :
-    ShorECDLP.tCount (parityLevel bitsN hotN j)=7*(2^j-1) := by
-  simp only [parityLevel,ShorECDLP.tCount_append,splitNetwork_tCount,prefixCells,
-    List.length_map,List.length_range,xorScan_tCount]
-  simp [ShorECDLP.tCount,ShorECDLP.tCost]
-
-theorem parityLevel_length (bitsN hotN : Nat → Wire) (j : Nat) :
-    (parityLevel bitsN hotN j).length=3*(2^j-1)+2 := by
-  simp only [parityLevel,List.length_append,splitNetwork_length,prefixCells,
-    List.length_map,List.length_range,xorScan_length,List.length_cons,List.length_nil]
-  omega
-
-theorem parityNet_tCount (bitsN hotN : Nat → Wire) (J : Nat) :
-    ShorECDLP.tCount (parityNet bitsN hotN J)+7*J+7=7*2^J := by
-  induction J with
-  | zero => rfl
-  | succ J ih =>
-    rw [parityNet,ShorECDLP.tCount_append,parityLevel_tCount,pow_succ]
-    have hp : 0<(2:Nat)^J := by positivity
-    omega
-
-theorem parityNet_length (bitsN hotN : Nat → Wire) (J : Nat) :
-    (parityNet bitsN hotN J).length+J+3=3*2^J := by
-  induction J with
-  | zero => rfl
-  | succ J ih =>
-    rw [parityNet,List.length_append,parityLevel_length,pow_succ]
-    have hp : 0<(2:Nat)^J := by positivity
-    omega
-
-theorem xorScan_hp (hotN : Nat → Wire) (offset : Nat) (target : Wire) (m : Nat) :
-    Classical.HPFree (xorScan hotN offset target m) := by
-  induction m with
-  | zero => simp [xorScan]
-  | succ m ih => simp [xorScan,ih]
-
-theorem parityLevel_hp (bitsN hotN : Nat → Wire) (j : Nat) : Classical.HPFree (parityLevel bitsN hotN j) := by
-  simp [parityLevel,splitNetwork_hp,xorScan_hp]
-
-theorem parityNet_hp (bitsN hotN : Nat → Wire) (J : Nat) : Classical.HPFree (parityNet bitsN hotN J) := by
-  induction J with
-  | zero => simp [parityNet]
-  | succ J ih => simp [parityNet,ih,parityLevel_hp]
-
-theorem cx_frame (c target w : Wire) (s : BasisState) (hw : w≠target) :
-    Classical.run [.CX c target] s w=s w := by
-  simp [Classical.run,Classical.applyGate,upd,hw]
-
-theorem parityLevel_frame (b : Nat) (bitsN hotN : Nat → Wire) (j : Nat) (hj : j<b)
-    (s : BasisState) (w : Wire) (hw : ∀ x,x<2^b → w≠hotN x) :
-    Classical.run (parityLevel bitsN hotN j) s w=s w := by
-  have hp : 0<(2:Nat)^j := by positivity
-  have hm : 2^j-1<2^j := by omega
-  have hchild := pow_level_lt hj (2^j-1) hm
-  have hparent : 2^j-1<2^b := by omega
-  simp only [parityLevel,Classical.run_append]
-  rw [cx_frame _ _ _ _ (hw _ hparent),xorScan_frame _ _ _ _ _ _ (hw _ hchild),cx_frame _ _ _ _ (hw _ hchild)]
-  apply splitNetwork_frame
-  intro c hc
-  simp only [prefixCells,List.mem_map,List.mem_range] at hc
-  obtain ⟨i,hi,rfl⟩ := hc
-  have hic := pow_level_lt hj i (by omega : i<2^j)
-  have hip : i<2^b := by omega
-  exact ⟨hw i hip,hw (i+2^j) hic⟩
-
-theorem parityNet_frame (b : Nat) (bitsN hotN : Nat → Wire) (J : Nat) (hJ : J≤b)
-    (s : BasisState) (w : Wire) (hw : ∀ x,x<2^b → w≠hotN x) :
-    Classical.run (parityNet bitsN hotN J) s w=s w := by
-  induction J with
-  | zero => rfl
-  | succ J ih =>
-    rw [parityNet,Classical.run_append,parityLevel_frame b bitsN hotN J (by omega) _ w hw]
-    exact ih (by omega)
-
-
-theorem xorScan_wellFormed (hotN : Nat → Wire) (offset : Nat) (target : Wire) (m : Nat)
-    (hd : ∀ i,i<m → hotN (i+offset)≠target) : CircuitWellFormed (xorScan hotN offset target m) := by
-  induction m with
-  | zero => simp [xorScan,CircuitWellFormed]
-  | succ m ih =>
-    rw [xorScan,circuitWellFormed_append]
-    exact ⟨ih (fun i hi => hd i (by omega)),by simp [CircuitWellFormed,Gate.WellFormed,hd m (by omega)]⟩
-
-theorem parityLevel_wellFormed (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN)
-    (j : Nat) (hj : j<b) : CircuitWellFormed (parityLevel bitsN hotN j) := by
-  have hp : 0<(2:Nat)^j := by positivity
-  let m := 2^j-1
-  have hm : m<2^j := by dsimp [m]; omega
-  have hchild := pow_level_lt hj m hm
-  have hparent : m<2^b := by omega
-  have hprefix : ∀ c∈prefixCells bitsN hotN j,c.Physical := by
-    intro c hc
-    simp only [prefixCells,List.mem_map,List.mem_range] at hc
-    obtain ⟨i,hi,rfl⟩ := hc
-    have hic := pow_level_lt hj i (by omega : i<2^j)
-    have hip : i<2^b := by omega
-    exact ⟨hL.disj j i hj hip,hL.disj j (i+2^j) hj hic,fun he => by
-      have h := hL.inj i (i+2^j) hip hic he
-      omega⟩
-  have hpc : hotN m≠hotN (m+2^j) := by
-    intro he
-    have h := hL.inj m (m+2^j) hparent hchild he
-    omega
-  have hxor : ∀ i,i<m → hotN (i+2^j)≠hotN (m+2^j) := by
-    intro i hi he
-    have hic := pow_level_lt hj i (by omega : i<2^j)
-    have h := hL.inj (i+2^j) (m+2^j) hic hchild he
-    omega
-  simp only [parityLevel,circuitWellFormed_append]
-  exact ⟨⟨⟨splitNetwork_wellFormed _ hprefix,
-    by simpa [CircuitWellFormed,Gate.WellFormed] using hL.disj j (m+2^j) hj hchild⟩,
-    xorScan_wellFormed hotN (2^j) (hotN (m+2^j)) m hxor⟩,
-    by simpa [CircuitWellFormed,Gate.WellFormed] using Ne.symm hpc⟩
-
-theorem parityNet_wellFormed (b : Nat) (bitsN hotN : Nat → Wire) (hL : HotLayout b bitsN hotN)
-    (J : Nat) (hJ : J≤b) : CircuitWellFormed (parityNet bitsN hotN J) := by
-  induction J with
-  | zero => simp [parityNet,CircuitWellFormed]
-  | succ J ih =>
-    rw [parityNet,circuitWellFormed_append]
-    exact ⟨ih (by omega),parityLevel_wellFormed b bitsN hotN hL J (by omega)⟩
-
-theorem cx_within (c target : Wire) (S : List Wire) (hc : c∈S) (ht : target∈S) :
-    circuitWires [.CX c target] ⊆ S := by
-  intro w hw
-  simp [circuitWires,gateWires] at hw
-  rcases hw with rfl | rfl
-  · exact hc
-  · exact ht
-
-theorem xorScan_within (hotN : Nat → Wire) (offset : Nat) (target : Wire) (m : Nat) (S : List Wire)
-    (hc : ∀ i,i<m → hotN (i+offset)∈S) (ht : target∈S) :
-    circuitWires (xorScan hotN offset target m) ⊆ S := by
-  induction m with
-  | zero => simp [xorScan,circuitWires]
-  | succ m ih =>
-    rw [xorScan,circuitWires_append]
-    exact List.append_subset.mpr ⟨ih (fun i hi => hc i (by omega)),cx_within _ _ S (hc m (by omega)) ht⟩
-
-theorem parityLevel_within (b : Nat) (bitsN hotN : Nat → Wire) (j : Nat) (hj : j<b) (S : List Wire)
-    (hb : ∀ i,i<b → bitsN i∈S) (hh : ∀ x,x<2^b → hotN x∈S) :
-    circuitWires (parityLevel bitsN hotN j) ⊆ S := by
-  have hp : 0<(2:Nat)^j := by positivity
-  let m := 2^j-1
-  have hm : m<2^j := by dsimp [m]; omega
-  have hchild := pow_level_lt hj m hm
-  have hparent : m<2^b := by omega
-  have hprefix : circuitWires (splitNetwork (prefixCells bitsN hotN j)) ⊆ S := by
-    apply splitNetwork_within
-    intro c hc
-    simp only [prefixCells,List.mem_map,List.mem_range] at hc
-    obtain ⟨i,hi,rfl⟩ := hc
-    have hic := pow_level_lt hj i (by omega : i<2^j)
-    have hip : i<2^b := by omega
-    exact ⟨hb j hj,hh i hip,hh (i+2^j) hic⟩
-  simp only [parityLevel,circuitWires_append,List.append_subset]
-  exact ⟨⟨⟨hprefix,cx_within _ _ S (hb j hj) (hh _ hchild)⟩,
-    xorScan_within hotN (2^j) (hotN (m+2^j)) m S
-      (fun i hi => hh _ (pow_level_lt hj i (by omega))) (hh _ hchild)⟩,
-    cx_within _ _ S (hh _ hchild) (hh _ hparent)⟩
-
-theorem parityNet_within (b : Nat) (bitsN hotN : Nat → Wire) (J : Nat) (hJ : J≤b) (S : List Wire)
-    (hb : ∀ i,i<b → bitsN i∈S) (hh : ∀ x,x<2^b → hotN x∈S) :
-    circuitWires (parityNet bitsN hotN J) ⊆ S := by
-  induction J with
-  | zero => simp [parityNet,circuitWires]
-  | succ J ih =>
-    rw [parityNet,circuitWires_append]
-    exact List.append_subset.mpr ⟨ih (by omega),parityLevel_within b bitsN hotN J (by omega) S hb hh⟩
-
-end
-end ParityBank7
-
 /-- Nat-indexed views of the seven low address wires and the 128 unary wires. -/
 def lowN (low : Fin 7 → Wire) (j : Nat) : Wire := if h : j < 7 then low ⟨j, h⟩ else low 0
 def hotNat (hot : Fin 128 → Wire) (x : Nat) : Wire := if h : x < 128 then hot ⟨x, h⟩ else hot 0
@@ -9474,56 +9077,8 @@ def hotNat (hot : Fin 128 → Wire) (x : Nat) : Wire := if h : x < 128 then hot 
 def hotNetwork (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : List SplitCell :=
   hotNetN (lowN low) (hotNat hot) 7
 
-def seededSplitNetwork7 : List SplitCell → Circuit
-  | [] => []
-  | c :: cs => [.CX c.bit c.child, .CX c.child c.parent] ++ splitNetwork cs
-
-
-theorem seededSplitNetwork_run7 (c : SplitCell) (cs : List SplitCell) (s : BasisState)
-    (hp : s c.parent = true) :
-    Classical.run (seededSplitNetwork7 (c :: cs)) s =
-      Classical.run (splitNetwork (c :: cs)) s := by
-  simp only [seededSplitNetwork7,splitNetwork,SplitCell.circuit,splitCircuit,Classical.run_append]
-  congr 1
-  funext w
-  simp [Classical.run,Classical.applyGate,upd,hp]
-
-
-theorem hotNetN_first7 (bitsN hotN : Nat → Wire) (j : Nat) :
-    ∃ cs, hotNetN bitsN hotN (j+1) = ⟨bitsN 0,hotN 0,hotN 1⟩ :: cs := by
-  induction j with
-  | zero => exact ⟨[], by simp [hotNetN,hotLevelN]⟩
-  | succ j ih =>
-    obtain ⟨cs,he⟩ := ih
-    exact ⟨cs ++ hotLevelN bitsN hotN (j+1), by rw [hotNetN,he,List.cons_append]⟩
-
-
-theorem seededHotNet_run7 (bitsN hotN : Nat → Wire) (j : Nat) (s : BasisState)
-    (hp : s (hotN 0) = true) :
-    Classical.run (seededSplitNetwork7 (hotNetN bitsN hotN (j+1))) s =
-    Classical.run (splitNetwork (hotNetN bitsN hotN (j+1))) s := by
-  obtain ⟨cs,he⟩ := hotNetN_first7 bitsN hotN j
-  rw [he]
-  exact seededSplitNetwork_run7 _ _ _ hp
-
-
-theorem seededSplitNetwork_frame7 (cs : List SplitCell) (s : BasisState) (w : Wire)
-    (hw : ∀ c ∈ cs, w ≠ c.parent ∧ w ≠ c.child) :
-    Classical.run (seededSplitNetwork7 cs) s w = s w := by
-  cases cs with
-  | nil => rfl
-  | cons c cs =>
-    have hc := hw c (by simp)
-    rw [seededSplitNetwork7,Classical.run_append,
-      splitNetwork_frame cs _ w (fun d hd => hw d (by simp [hd]))]
-    simp [Classical.run,Classical.applyGate,upd,hc.1,hc.2]
-
-
-def slowHotPrepare7 (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : Circuit :=
-  [.X (hot 0)] ++ splitNetwork (hotNetwork low hot)
-
 def hotPrepare (low : Fin 7 → Wire) (hot : Fin 128 → Wire) : Circuit :=
-  [.X (hot 0)] ++ ParityBank7.parityNet (lowN low) (hotNat hot) 7
+  [.X (hot 0)] ++ splitNetwork (hotNetwork low hot)
 
 def hotAddress (low : Fin 7 → Wire) (s : BasisState) : Nat := addrN (lowN low) s 7
 
@@ -9586,14 +9141,6 @@ theorem addrN_congr (bitsN : Nat → Wire) (s t : BasisState) :
   | J+1, h => by
     simp only [addrN, addrN_congr bitsN s t J (fun j hj => h j (by omega)), h J (by omega)]
 
-theorem hotPrepare_eq7 (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
-    (hi : Function.Injective hot) (hd : ∀ i j,low i≠hot j)
-    (s : BasisState) (hs : HotClean hot s) :
-    Classical.run (hotPrepare low hot) s=Classical.run (slowHotPrepare7 low hot) s := by
-  rw [hotPrepare,slowHotPrepare7,Classical.run_append,Classical.run_append,hotNetwork]
-  exact ParityBank7.parityNet_eq 7 (lowN low) (hotNat hot) (hotLayout_of low hot hi hd)
-    _ (hotStart hot hi s hs) 7 le_rfl
-
 theorem hotNetwork_ready (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
     (hi : Function.Injective hot) (hd : ∀ i j, low i ≠ hot j)
     (s : BasisState) (hs : HotClean hot s) :
@@ -9608,7 +9155,7 @@ theorem hotPrepare_marker (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
     i.val (by simp)
   have hhot : hotNat hot i.val = hot i := by simp [hotNat, i.isLt]
   rw [hhot] at h
-  rw [hotPrepare_eq7 low hot hi hd s hs, slowHotPrepare7, Classical.run_append, hotNetwork, h, hotAddress]
+  rw [hotPrepare, Classical.run_append, hotNetwork, h, hotAddress]
   congr 2
   apply addrN_congr
   intro j hj
@@ -9618,13 +9165,13 @@ theorem hotPrepare_marker (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
   simp [Classical.run, Classical.applyGate, upd, hne]
 
 theorem hotPrepare_frame (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
-    (s : BasisState) (w : Wire) (hw : ∀ i,w≠hot i) :
-    Classical.run (hotPrepare low hot) s w=s w := by
-  rw [hotPrepare,Classical.run_append,ParityBank7.parityNet_frame 7 _ _ 7 le_rfl _ w (by
-    intro x hx
-    have hx' : x<128 := by simpa using hx
-    simpa only [hotNat,hx',dite_true] using hw ⟨x,hx'⟩)]
-  simp [Classical.run,Classical.applyGate,upd,hw]
+    (s : BasisState) (w : Wire) (hw : ∀ i, w ≠ hot i) :
+    Classical.run (hotPrepare low hot) s w = s w := by
+  rw [hotPrepare, Classical.run_append, splitNetwork_frame _ _ _ (by
+    intro c hc
+    obtain ⟨j, x, y, rfl, _⟩ := mem_hotNetwork low hot c hc
+    exact ⟨hw x, hw y⟩)]
+  simp [Classical.run, Classical.applyGate, upd, hw]
 
 theorem hotAddress_bound (low : Fin 7 → Wire) (s : BasisState) : hotAddress low s < 128 := by
   have h := addrN_lt (lowN low) s 7
@@ -10302,14 +9849,14 @@ theorem phasePorts_targets {n base : Nat} (hot : Fin 128 → Wire)
   obtain ⟨i, rfl⟩ := List.mem_ofFn.mp hi
   exact List.mem_ofFn.mpr ⟨i, rfl⟩
 
-theorem seededSplitNetwork_hp7 (cs : List SplitCell) :
-    Classical.HPFree (seededSplitNetwork7 cs) := by
-  cases cs <;> simp [seededSplitNetwork7,splitNetwork_hp]
-
+theorem splitNetwork_hp (cs : List SplitCell) : Classical.HPFree (splitNetwork cs) := by
+  induction cs with
+  | nil => simp [splitNetwork]
+  | cons c cs ih => simp [splitNetwork, SplitCell.circuit, splitCircuit, ih]
 
 theorem hotPrepare_hp (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
     Classical.HPFree (hotPrepare low hot) := by
-  simp [hotPrepare, ParityBank7.parityNet_hp]
+  simp [hotPrepare, splitNetwork_hp]
 
 def fixupFactor {n : Nat} (data : List (ClearPort n)) (outcomes : List Bool)
     (read : ConstantBit n → Bool) (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
@@ -10360,7 +9907,7 @@ theorem fixupSource_coherent {n : Nat} (data : List (ClearPort n)) (outcomes : L
     apply supported_smul_state
     apply supportedOn_ket
     exact ⟨Classical.run [.X (hot 0)] s, hotNetwork_ready low hot hi hdlow s hvalid.1,
-      by rw [hotPrepare_eq7 low hot hi hdlow s hvalid.1]; rfl⟩)
+      by simp [hotPrepare]⟩)
   rw [fixupSource, ← adaptive_seq_assoc]
   apply htotal.congrIdeal
   intro s hvalid
@@ -10368,12 +9915,12 @@ theorem fixupSource_coherent {n : Nat} (data : List (ClearPort n)) (outcomes : L
   rw [run_ket_agrees_classical _ _ (hotPrepare_hp low hot), basisIdeal_ket]
   simp only [map_smul, id_eq]
   rw [run_ket_agrees_classical _ _ (inverseNetwork_hp (hotNetwork low hot))]
-  rw [hotPrepare_eq7 low hot hi hdlow s hvalid.1, slowHotPrepare7, Classical.run_append,
+  rw [hotPrepare, Classical.run_append,
     inverseNetwork_correct (hotNetwork low hot) (hotNetwork_physical low hot hi hdlow) _
       (hotNetwork_ready low hot hi hdlow s hvalid.1),
     run_ket_agrees_classical _ _ (by simp), classical_x_twice]
   simp only [basisIdeal_ket, id_eq]
-  rw [fixupFactor,hotPrepare_eq7 low hot hi hdlow s hvalid.1,slowHotPrepare7,Classical.run_append]
+  rfl
 
 
 @[simp] theorem boolHistory_record (b : Bool) : boolHistory (boolRecord b) = b := by cases b <;> rfl
@@ -10560,6 +10107,16 @@ theorem measuredClear_run {n : Nat} (data : List (ClearPort n))
   rfl
 
 
+theorem splitNetwork_wellFormed (cs : List SplitCell) (hp : ∀ c ∈ cs, c.Physical) :
+    CircuitWellFormed (splitNetwork cs) := by
+  induction cs with
+  | nil => simp [splitNetwork, CircuitWellFormed]
+  | cons c cs ih =>
+    have hc := hp c (by simp)
+    simp only [splitNetwork, circuitWellFormed_append]
+    exact ⟨by simp [SplitCell.circuit, splitCircuit, CircuitWellFormed, Gate.WellFormed, hc.1, hc.2.1, hc.2.2,
+      Ne.symm hc.2.2], ih (fun d hd => hp d (by simp [hd]))⟩
+
 theorem eraseNetworkSource_wellFormed (cs : List SplitCell) (hp : ∀ c ∈ cs, c.Physical) :
     (eraseNetworkSource cs).WellFormed := by
   induction cs with
@@ -10603,17 +10160,6 @@ theorem phaseLookupSource_wellFormed {n base : Nat} (ports : List (RecordPort n 
         (fun he => hs (he ▸ hc)) ht
     · exact ⟨(circuitWellFormed_adjoint _).mpr hH, trivial⟩
 
-theorem seededSplitNetwork_wellFormed7 (cs : List SplitCell)
-    (hp : ∀ c ∈ cs, c.Physical) : CircuitWellFormed (seededSplitNetwork7 cs) := by
-  cases cs with
-  | nil => simp [seededSplitNetwork7,CircuitWellFormed]
-  | cons c cs =>
-    have hc := hp c (by simp)
-    rw [seededSplitNetwork7,circuitWellFormed_append]
-    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed,hc.2.1,Ne.symm hc.2.2],
-      splitNetwork_wellFormed cs (fun d hd => hp d (by simp [hd]))⟩
-
-
 theorem fixupSource_wellFormed {n : Nat} (data : List (ClearPort n)) (outcomes : List Bool)
     (read : ConstantBit n → Bool) (low : Fin 7 → Wire) (hot : Fin 128 → Wire)
     (tree : UnaryActionTree) (root scratch : Wire) (paths : List Wire)
@@ -10625,7 +10171,7 @@ theorem fixupSource_wellFormed {n : Nat} (data : List (ClearPort n)) (outcomes :
   · refine ⟨?_, trivial⟩
     rw [hotPrepare, circuitWellFormed_append]
     exact ⟨by simp [CircuitWellFormed, Gate.WellFormed],
-      ParityBank7.parityNet_wellFormed 7 (lowN low) (hotNat hot) (hotLayout_of low hot hi hdlow) 7 le_rfl⟩
+      splitNetwork_wellFormed _ (hotNetwork_physical low hot hi hdlow)⟩
   · apply AdaptiveCircuit.WellFormed.seq
     · apply phaseLookupSource_wellFormed _ _ _ _ _ _ _ _ hl hs
       intro p hp he
@@ -10665,39 +10211,29 @@ theorem eraseNetwork_slots (n : Nat) (cs : List SplitCell) (start : Nat) :
 theorem hadamards_tCount (ws : List Wire) : ShorECDLP.tCount (ws.map Gate.H) = 0 := by
   simp [ShorECDLP.tCount, List.map_map, Function.comp_def, ShorECDLP.tCost]
 
-theorem seededSplitNetwork_tCount7 (cs : List SplitCell) :
-    ShorECDLP.tCount (seededSplitNetwork7 cs) = 7 * (cs.length-1) := by
-  cases cs with
+theorem splitNetwork_tCount (cs : List SplitCell) : ShorECDLP.tCount (splitNetwork cs) = 7 * cs.length := by
+  induction cs with
   | nil => rfl
-  | cons c cs =>
-    rw [seededSplitNetwork7,ShorECDLP.tCount_append,splitNetwork_tCount]
-    simp [ShorECDLP.tCount,ShorECDLP.tCost]
+  | cons c cs ih =>
+    rw [splitNetwork, ShorECDLP.tCount_append, ih, SplitCell.circuit, splitCircuit_tCount, List.length_cons]
+    ring
 
-
-theorem seededSplitNetwork_length7 (cs : List SplitCell) :
-    (seededSplitNetwork7 cs).length = 2 * cs.length := by
-  cases cs with
+theorem splitNetwork_length (cs : List SplitCell) : (splitNetwork cs).length = 2 * cs.length := by
+  induction cs with
   | nil => rfl
-  | cons c cs =>
-    simp only [seededSplitNetwork7,List.length_append,List.length_cons,List.length_nil,splitNetwork_length]
-    omega
-
+  | cons c cs ih =>
+    rw [splitNetwork, List.length_append, ih, SplitCell.circuit, splitCircuit_slots, List.length_cons]
+    ring
 
 theorem hotPrepare_tCount (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
-    ShorECDLP.tCount (hotPrepare low hot)=840 := by
-  have h := ParityBank7.parityNet_tCount (lowN low) (hotNat hot) 7
-  rw [hotPrepare,ShorECDLP.tCount_append]
-  change 0+ShorECDLP.tCount (ParityBank7.parityNet (lowN low) (hotNat hot) 7)=840
-  norm_num at h
-  omega
+    ShorECDLP.tCount (hotPrepare low hot) = 889 := by
+  rw [hotPrepare, ShorECDLP.tCount_append, splitNetwork_tCount, hotNetwork_length]
+  rfl
 
 theorem hotPrepare_length (low : Fin 7 → Wire) (hot : Fin 128 → Wire) :
-    (hotPrepare low hot).length=375 := by
-  have h := ParityBank7.parityNet_length (lowN low) (hotNat hot) 7
-  rw [hotPrepare,List.length_append]
-  simp only [List.length_cons,List.length_nil]
-  norm_num at h
-  omega
+    (hotPrepare low hot).length = 255 := by
+  rw [hotPrepare, List.length_append, splitNetwork_length, hotNetwork_length]
+  rfl
 
 theorem phasePorts_length {n base : Nat} (hot : Fin 128 → Wire) (items : List (ClearPort n × Fin base)) :
     (phasePorts hot items).length = 128 * items.length := by
@@ -10714,7 +10250,7 @@ theorem fixupProgram_tCount {n base : Nat} (data : List (ClearPort n)) (refs : L
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
     (read : ConstantBit n → Bool) (history : Fin base → Bool) :
     ((fixupProgram data refs low hot tree root scratch paths).instantiate read history).tCount =
-      7 * tree.internalNodes + 840 := by
+      7 * tree.internalNodes + 889 := by
   have hpost (cursor : Nat) (h : Fin cursor → Bool) :
       (((eraseNetwork n (hotNetwork low hot) cursor).append
         (literalProgram [.X (hot 0)])).instantiate read h).tCount = 0 := by
@@ -10747,7 +10283,7 @@ theorem measuredClear_tCount {n : Nat} (data : List (ClearPort n))
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths)
     (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
     ((measuredClear data low hot tree root scratch paths start).instantiate read history).tCount =
-      7 * (tree.internalNodes + 120) := by
+      7 * (tree.internalNodes + 127) := by
   rw [measuredClear, castFinish_instantiate, measureThen_tCount _ read (by
     intro cursor refs h
     rw [castFinish_instantiate, fixupProgram_tCount data refs low hot tree root scratch paths hl])]
@@ -10758,7 +10294,7 @@ theorem fixupProgram_slots {n base : Nat} (data : List (ClearPort n)) (refs : Li
     (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (tree : UnaryActionTree)
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths) :
     (fixupProgram data refs low hot tree root scratch paths).gateSlots =
-      512 * min data.length refs.length * tree.leaves + 10 * tree.internalNodes + 1140 := by
+      512 * min data.length refs.length * tree.leaves + 10 * tree.internalNodes + 1020 := by
   simp only [fixupProgram, Straight.gateSlots_append, literalProgram_slots, castFinish_gateSlots]
   rw [recordLookup_slots, (recordUnary_counts tree root paths hl _).2.2, eraseNetwork_slots]
   simp only [phasePorts_length, List.length_zip, hotPrepare_length, hotBank,
@@ -10783,11 +10319,19 @@ theorem measuredClear_slots {n : Nat} (data : List (ClearPort n))
     (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (tree : UnaryActionTree)
     (root scratch : Wire) (paths : List Wire) (hl : tree.Layout root paths) (start : Nat) :
     (measuredClear data low hot tree root scratch paths start).gateSlots =
-      512 * data.length * tree.leaves + 10 * tree.internalNodes + 1140 := by
+      512 * data.length * tree.leaves + 10 * tree.internalNodes + 1020 := by
   rw [measuredClear, castFinish_gateSlots, measureThen_slots _
-    (fun k => 512 * min data.length k * tree.leaves + 10 * tree.internalNodes + 1140)
+    (fun k => 512 * min data.length k * tree.leaves + 10 * tree.internalNodes + 1020)
     (by intro cursor refs; rw [castFinish_gateSlots, fixupProgram_slots data refs low hot tree root scratch paths hl])]
   simp
+
+
+theorem circuitWires_append (xs ys : Circuit) :
+    circuitWires (xs ++ ys) = circuitWires xs ++ circuitWires ys := by simp [circuitWires]
+
+
+
+
 
 
 theorem static_append {n a b c : Nat} (p : Straight n a b) (q : Straight n b c) :
@@ -10914,6 +10458,19 @@ theorem static_within_append {n a b c : Nat} {p : Straight n a b} {q : Straight 
     (hp : NaiveChallenge.straightWires p ⊆ S) (hq : NaiveChallenge.straightWires q ⊆ S) :
     NaiveChallenge.straightWires (p.append q) ⊆ S := by rw [static_append]; exact List.append_subset.mpr ⟨hp, hq⟩
 
+theorem splitNetwork_within (cs : List SplitCell) (S : List Wire)
+    (hp : ∀ c ∈ cs, c.bit ∈ S ∧ c.parent ∈ S ∧ c.child ∈ S) : circuitWires (splitNetwork cs) ⊆ S := by
+  induction cs with
+  | nil => simp [splitNetwork, circuitWires]
+  | cons c cs ih =>
+    have hc := hp c (by simp)
+    rw [splitNetwork, circuitWires_append]
+    apply List.append_subset.mpr
+    refine ⟨?_, ih (fun d hd => hp d (by simp [hd]))⟩
+    intro w hw
+    simp [SplitCell.circuit, splitCircuit, circuitWires, gateWires] at hw
+    aesop
+
 theorem hotNetwork_within (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (S : List Wire)
     (hl : ∀ i, low i ∈ S) (hh : ∀ i, hot i ∈ S) :
     ∀ c ∈ hotNetwork low hot, c.bit ∈ S ∧ c.parent ∈ S ∧ c.child ∈ S := by
@@ -10921,33 +10478,11 @@ theorem hotNetwork_within (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (S : L
   obtain ⟨j, x, y, rfl, _⟩ := mem_hotNetwork low hot c hc
   exact ⟨hl _, hh _, hh _⟩
 
-theorem seededSplitNetwork_within7 (cs : List SplitCell) (S : List Wire)
-    (hp : ∀ c ∈ cs, c.bit ∈ S ∧ c.parent ∈ S ∧ c.child ∈ S) :
-    circuitWires (seededSplitNetwork7 cs) ⊆ S := by
-  cases cs with
-  | nil => simp [seededSplitNetwork7,circuitWires]
-  | cons c cs =>
-    have hc := hp c (by simp)
-    rw [seededSplitNetwork7,circuitWires_append]
-    refine List.append_subset.mpr ⟨?_,splitNetwork_within cs S (fun d hd => hp d (by simp [hd]))⟩
-    intro w hw
-    simp [circuitWires,gateWires] at hw
-    rcases hw with rfl | rfl | rfl
-    · exact hc.1
-    · exact hc.2.2
-    · exact hc.2.1
-
-
 theorem hotPrepare_within (low : Fin 7 → Wire) (hot : Fin 128 → Wire) (S : List Wire)
     (hl : ∀ i, low i ∈ S) (hh : ∀ i, hot i ∈ S) : circuitWires (hotPrepare low hot) ⊆ S := by
   rw [hotPrepare, circuitWires_append]
   exact List.append_subset.mpr ⟨by simpa [circuitWires, gateWires] using hh 0,
-    ParityBank7.parityNet_within 7 (lowN low) (hotNat hot) 7 le_rfl S
-      (by intro j hj; simpa [lowN,hj] using hl ⟨j,hj⟩)
-      (by
-        intro x hx
-        have hx' : x<128 := by simpa using hx
-        simpa [hotNat,hx'] using hh ⟨x,hx'⟩)⟩
+    splitNetwork_within _ S (hotNetwork_within low hot S hl hh)⟩
 
 theorem hadamards_wires (ws : List Wire) : circuitWires (ws.map Gate.H) = ws := by
   induction ws with
@@ -11540,7 +11075,7 @@ def suffixCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n 
     (wFields rows .doubleX) (wBit rows .doubleY) ++
   wLiteral (zeroFlag L.point.finite L.control L.genericSelect) ++
   wLiteral ([.CX L.control L.core.equalX]) ++ wLiteral ([.CX L.control L.core.double]) ++
-  wLiteral (Arith.padding (L.core.poolWire 0) 51716)
+  wLiteral (Arith.padding (L.core.poolWire 0) 49864)
 
 def fusedPrefixCode {n} (L : ControlledPointLayout) (rows : Nat → Fin n) : WCode n :=
   wLiteral ([.CX L.control L.core.double]) ++ wLiteral ([.CX L.control L.core.equalX]) ++
@@ -12211,77 +11746,24 @@ def scrOldCompare (rows : Nat → Fin 32768) : WCode 32768 :=
 theorem scrPairWires_length : scrPairWires.length = 258 := by simp [scrPairWires]
 theorem scrShortWires_length : scrShortWires.length = 258 := by simp [scrShortWires]
 
-theorem poolWire_eq (i : Nat) (hi : i < 5699) : streamLayout.core.poolWire i = 14115 + i := by
-  rw [deltaPoolWire_eq]
-  change ((List.range' 4115 5699).map streamWire).getD i 0 = 14115 + i
-  rw [List.getD_eq_getElem _ _ (by simp; omega)]
-  simp only [List.getElem_map, List.getElem_range']
-  unfold streamWire
-  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
-  omega
-
-theorem map_poolWire (s n : Nat) (h : s + n ≤ 5699) :
-    (List.range' s n).map streamLayout.core.poolWire = List.range' (14115 + s) n := by
-  apply List.ext_getElem
-  · simp
-  · intro i h1 h2
-    have hi : i < n := by simpa using h1
-    rw [List.getElem_map, List.getElem_range', List.getElem_range', poolWire_eq _ (by omega)]
-    exact (Nat.add_assoc _ _ _).symm
-
-/-! Explicit scratch-word ranges (pool position `i` is wire `14115 + i`). The checks below use them
-instead of `decide` over `poolWire`-computed lists, which made the kernel re-walk the 5,699-wire pool
-for every comparison (about 290 s of replay). -/
-
-theorem scrPairWires_explicit : scrPairWires = 14373 :: List.range' 14374 256 ++ [14883] := by
-  simp only [scrPairWires, map_poolWire _ _ (by norm_num : 259 + 256 ≤ 5699),
-    poolWire_eq _ (by norm_num : 258 < 5699), poolWire_eq _ (by norm_num : 768 < 5699)]
-
-theorem scrShortWires_explicit : scrShortWires = 14884 :: List.range' 14885 256 ++ [15141] := by
-  simp only [scrShortWires, map_poolWire _ _ (by norm_num : 770 + 256 ≤ 5699),
-    poolWire_eq _ (by norm_num : 769 < 5699), poolWire_eq _ (by norm_num : 1026 < 5699)]
-
-theorem scrWires_range : ∀ a ∈ scrWires, 14373 ≤ a ∧ a < 15142 := by
-  intro a ha
-  rw [scrWires, scrPairWires_explicit, scrShortWires_explicit] at ha
-  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at ha
-  dsimp only [Wire] at *
-  omega
-
-/-- Disjointness from the scratch words by one pass over the other list. -/
-theorem scr_not_of_far (L : List Wire) (h : (L.all fun b => decide (b < 14373 ∨ 15142 ≤ b)) = true) :
-    ∀ a ∈ scrWires, a ∉ L := by
-  intro a ha hm
-  have h1 := List.all_eq_true.mp h a hm
-  have h2 := scrWires_range a ha
-  simp only [decide_eq_true_eq] at h1
-  dsimp only [Wire] at *
-  omega
-
 theorem scr_all_not (S L : List Wire) (h : (S.all fun a => !L.contains a) = true) : ∀ a ∈ S, a ∉ L := by
   intro a ha hl
   have := List.all_eq_true.mp h a ha
   simp [hl] at this
 
-theorem scrWires_nodup : scrWires.Nodup := by
-  rw [scrWires, scrPairWires_explicit, scrShortWires_explicit]
-  simp only [List.nodup_append, List.nodup_cons, List.mem_append, List.mem_cons,
-    List.mem_range'_1, List.not_mem_nil, List.nodup_nil, List.cons_append, false_or, or_false, List.append_assoc]
-  repeat' (first | exact List.nodup_range' | (intro _) | constructor)
-  all_goals (try dsimp only [Wire] at *)
-  all_goals first | contradiction | omega
+theorem scrWires_nodup : scrWires.Nodup := by decide +kernel
 theorem scrWires_pair_targets : ∀ a ∈ scrWires, a ∉ scrPairTargets :=
-  scr_not_of_far _ (by decide +kernel)
+  scr_all_not _ _ (by decide +kernel)
 theorem scrWires_short_targets : ∀ a ∈ scrWires, a ∉ scrShortTargets :=
-  scr_not_of_far _ (by decide +kernel)
+  scr_all_not _ _ (by decide +kernel)
 theorem scrWires_y : ∀ a ∈ scrWires, a ∉ [yLow streamLayout] :=
-  scr_not_of_far _ (by decide +kernel)
+  scr_all_not _ _ (by decide +kernel)
 theorem scrWires_p1 : ∀ a ∈ scrWires, a ∉ (streamLayout.control :: [yLow streamLayout,
     streamLayout.infinitySelect, streamLayout.core.equalNegY] ++ (pairPorts streamLayout).flatMap ZeroBit.wires) :=
-  scr_not_of_far _ (by decide +kernel)
+  scr_all_not _ _ (by decide +kernel)
 theorem scrWires_p2 : ∀ a ∈ scrWires, a ∉ (streamLayout.core.double :: streamLayout.doubleSelect ::
     (zeroPorts (shortSrc streamLayout) (streamLayout.dialogPool.take 258)).flatMap ZeroBit.wires) :=
-  scr_not_of_far _ (by decide +kernel)
+  scr_all_not _ _ (by decide +kernel)
 
 attribute [local irreducible] streamLayout
 
@@ -12626,41 +12108,10 @@ theorem scrCorners_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
   simp only [List.append_assoc]
 
 
-theorem scrCheck_of (S : List Wire)
-    (hS : ∀ w ∈ S, (fixedPort w ∨ oldWork w) ∧ w ∈ streamLayout.dialogUsedWires) :
-    (S.all fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true :=
-  List.all_eq_true.mpr fun w hw => by simpa using hS w hw
-
-theorem dialogPool_used (w : Wire) (h : w ∈ streamLayout.dialogPool) : w ∈ streamLayout.dialogUsedWires := by
-  unfold ControlledPointLayout.dialogUsedWires
-  exact List.mem_append_right _ h
-
-theorem scrPairTargets_check : (scrPairTargets.all fun w => decide (fixedPort w ∨ oldWork w) &&
-    streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
-theorem scrShortTargets_check : (scrShortTargets.all fun w => decide (fixedPort w ∨ oldWork w) &&
-    streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
-
 theorem scrCheck_pair : (scrPairWires ++ scrPairTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
-  rw [List.all_append, Bool.and_eq_true]
-  refine ⟨scrCheck_of _ fun w h => ⟨Or.inr ?_, dialogPool_used w (scrWires_pool w (List.mem_append_left _ h))⟩,
-    scrPairTargets_check⟩
-  rw [scrPairWires_explicit] at h
-  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at h
-  unfold oldWork
-  dsimp only [Wire] at *
-  omega
-
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
 theorem scrCheck_short : (scrShortWires ++ scrShortTargets).all
-    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by
-  rw [List.all_append, Bool.and_eq_true]
-  refine ⟨scrCheck_of _ fun w h => ⟨Or.inr ?_, dialogPool_used w (scrWires_pool w (List.mem_append_right _ h))⟩,
-    scrShortTargets_check⟩
-  rw [scrShortWires_explicit] at h
-  simp only [List.mem_append, List.mem_cons, List.mem_range'_1, List.not_mem_nil, or_false] at h
-  unfold oldWork
-  dsimp only [Wire] at *
-  omega
+    (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true := by decide +kernel
 
 theorem scrCx_facts (S T : List Wire)
     (hc : (S ++ T).all (fun w => decide (fixedPort w ∨ oldWork w) && streamLayout.dialogUsedWires.contains w) = true)
@@ -12828,28 +12279,15 @@ theorem scrCompare_lookup_cases (rows : Nat → Fin 32768) (c : Option Wire) (po
     exact Or.inl (Or.inl (Or.inr hm))
   tauto
 
-theorem windowRoot_nodup_check : decide (lookupRoot windowRoot none :: windowBits ++ windowPaths).Nodup = true := by
-  decide +kernel
-
 theorem scrPorts_geometry (rows : Nat → Fin 32768) :
     lookupPlacedOK windowBits windowPaths windowRoot (.lookup none (scrPorts rows)) = true := by
   change geometryOK windowBits windowPaths windowRoot none (portTargets (scrPorts rows)) = true
   rw [scrPorts_targets]
-  unfold geometryOK
-  rw [Bool.and_eq_true, Bool.and_eq_true]
-  refine ⟨⟨windowRoot_nodup_check, decide_eq_true scrWires_nodup⟩, List.all_eq_true.mpr fun w hw => ?_⟩
-  have hw' : w < 14373 := by
-    simp only [lookupRoot, Option.getD_none, windowRoot, windowBits, windowPaths, List.mem_cons,
-      List.mem_append, List.mem_range'_1] at hw
-    dsimp only [Wire] at *
-    omega
-  have hn : w ∉ scrWires := fun hm => by have := scrWires_range w hm; dsimp only [Wire] at *; omega
-  simpa [List.contains_iff_mem] using hn
+  decide +kernel
 
 theorem scrPorts_sourceOK (rows : Nat → Fin 32768) :
     sourceLookupOK (.lookup none (scrPorts rows)) = true := by
   simp only [sourceLookupOK, Option.toList_none, List.all_nil, Bool.true_and, scrPorts_targets]
-  rw [scrWires, scrPairWires_explicit, scrShortWires_explicit]
   decide +kernel
 
 
@@ -12873,13 +12311,13 @@ def portSuffixCode (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51716)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
 
 theorem portSuffix_shape (rows : Nat → Fin 32768) :
     let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51716)
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
     portSuffixCode rows = (scrCorners rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOutCompare rows ++ Z ∧
     WEXUnlookup.suffixCode streamLayout rows =
       (wCornersOne streamLayout rows ++ wLiteral (pointDialogGenericFlag streamLayout)) ++ scrOldCompare rows ++ Z := by
@@ -13049,7 +12487,7 @@ theorem portRow_shape (rows : Nat → Fin 32768) :
     let Z : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
       wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51716)
+      wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
     let X : WCode 32768 := wLiteral ([.X 838])
     let H : WCode 32768 := WEXUnlookup.fusedPrefixCode streamLayout rows ++ wGeneric streamLayout rows
     portFinite rows = H ++ scrCorners rows ++ F ++ scrOutCompare rows ++ Z ∧
@@ -13780,7 +13218,7 @@ theorem portPrefix_shape (rows : Nat → Fin 32768) :
   simp only [WEXUnlookup.prefixCode, scrInOld, List.append_assoc]
 
 theorem scrInHead_avoid (a : Wire) (ha : a ∈ scrWires) : a ∉ ECDSAAdd.wires scrInHead := by
-  have h := scr_not_of_far ([streamLayout.control, streamLayout.core.double, streamLayout.core.equalX,
+  have h := scr_all_not scrWires ([streamLayout.control, streamLayout.core.double, streamLayout.core.equalX,
     streamLayout.point.finite, streamLayout.infinitySelect] : List Wire) (by decide +kernel) a ha
   intro hq
   apply h
@@ -14299,6 +13737,24 @@ theorem indexed_split {n : Nat} (ws : List Wire) (refs : Nat → Nat → Constan
       indexedPorts ws refs v := by
   cases ws <;> rfl
 
+theorem poolWire_eq (i : Nat) (hi : i < 5699) : streamLayout.core.poolWire i = 14115 + i := by
+  rw [deltaPoolWire_eq]
+  change ((List.range' 4115 5699).map streamWire).getD i 0 = 14115 + i
+  rw [List.getD_eq_getElem _ _ (by simp; omega)]
+  simp only [List.getElem_map, List.getElem_range']
+  unfold streamWire
+  rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+  omega
+
+theorem map_poolWire (s n : Nat) (h : s + n ≤ 5699) :
+    (List.range' s n).map streamLayout.core.poolWire = List.range' (14115 + s) n := by
+  apply List.ext_getElem
+  · simp
+  · intro i h1 h2
+    have hi : i < n := by simpa using h1
+    rw [List.getElem_map, List.getElem_range', List.getElem_range', poolWire_eq _ (by omega)]
+    exact (Nat.add_assoc _ _ _).symm
+
 /-- The explicit wire numbers of the widened output scratch (pool position `i` is wire `14115 + i`). -/
 theorem scrAll_eq_explicit : scrWires ++ (List.range' 1284 255).map streamLayout.core.poolWire =
     (14373 :: List.range' 14374 256 ++ [14883]) ++ (14884 :: List.range' 14885 256 ++ [15141]) ++
@@ -14468,7 +13924,7 @@ def portSuffixCodeD (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51716)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
 
 
 
@@ -14737,7 +14193,7 @@ theorem portSuffixD_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin
         portBits read (scrDExtraBits rows) a) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51716))) := by
+          Arith.padding (streamLayout.core.poolWire 0) 49864))) := by
   simp only [portSuffixCodeD, scrDMiddle, specialize_append, Tmpl.instantiate_append, scr_lookup_inst, specialize_literal,
     Tmpl.instantiate_lit, scr_chain_inst, scrDPorts_targets, scrDPorts_bits, List.append_assoc]
 
@@ -14770,7 +14226,7 @@ theorem portSuffixD_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
           (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) address)))))) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51716))))
+          Arith.padding (streamLayout.core.poolWire 0) 49864))))
     (thirdCorners streamLayout C) (secondCorners streamLayout C) (thirdCorners_records _ _)
     (thirdCorners_run streamLayout streamLayout_widths streamLayout_nodup C) m s
   have r2 := run_replace_inside (secondCorners streamLayout C ++ (pointDialogGenericFlag streamLayout ++
@@ -14779,7 +14235,7 @@ theorem portSuffixD_run (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 
           (scrP2 ++ xBits scrShortTargets (portBits read (scrShortBits rows) address)) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 51716))))
+          Arith.padding (streamLayout.core.poolWire 0) 49864))))
     (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .y)) address) ++ [.X (yLow streamLayout)])
     (xBits scrPairTargets (portBits read (scrPairBits rows (wBit rows .negY)) address))
     (by simp [xBits_records, measurementCount])
@@ -14944,7 +14400,7 @@ def sfxB (rows : Nat → Fin 32768) : WCode 32768 :=
 def sfxZ : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51716)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
 def sfxF : WCode 32768 := wLiteral (pointDialogGenericFlag streamLayout)
 def sfxL (rows : Nat → Fin 32768) : WCode 32768 := [.lookup none (scrDPorts rows)]
 def sfxL' (rows : Nat → Fin 32768) : WCode 32768 := [.lookup none (scrPorts rows)]
@@ -15871,1093 +15327,3 @@ end ShorECDLP.Entrant.WEX
 
 
 end
-
-namespace ShorECDLP.Entrant.ConditionalCatalyst
-open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
-noncomputable section
-set_option maxHeartbeats 2000000
-set_option maxRecDepth 5000
-set_option linter.unusedSimpArgs false
-set_option linter.unnecessarySeqFocus false
-
-def inverseKick (t q : Wire) : Circuit := Circuit.adjoint (Catalyst.kick t q)
-
-theorem kick_wellFormed (t q : Wire) (ht : t ≠ q) : CircuitWellFormed (Catalyst.kick t q) :=
-  Catalyst.replacement_wellFormed q (.P .forward 2 t)
-    (by simpa [gateWires, ne_comm] using ht) (by trivial)
-
-theorem gate_frame (q : Wire) (g : Gate) (hq : q ∉ gateWires g)
-    (psi : State) (hp : SupportedOn (fun s => s q = false) psi) :
-    SupportedOn (fun s => s q = false) (applyGate g psi) := by
-  have h := AdaptiveCircuit.branch_frame (.unitary [g] .done) q false
-    (by simpa [AdaptiveCircuit.wires, circuitWires] using hq)
-    ⟨[], Quantum.run [g]⟩ (by simp only [AdaptiveCircuit.run, List.map_singleton, List.mem_singleton]; rfl) psi hp
-  simpa only [Quantum.run_singleton] using h
-
-theorem inverseKick_supported (t q : Wire) (ht : t ≠ q) (psi : State)
-    (hp : SupportedOn (fun s => s q = false) psi) :
-    Quantum.run (inverseKick t q) (Quantum.run (Catalyst.prepare q) psi) =
-      Quantum.run (Catalyst.prepare q) (applyGate (.P .inverse 2 t) psi) := by
-  have hq : q ∉ gateWires (.P .inverse 2 t) := by simpa [gateWires, ne_comm] using ht
-  have h := Catalyst.kick_supported t q ht (applyGate (.P .inverse 2 t) psi)
-    (gate_frame q _ hq psi hp)
-  have hc : applyGate (.P .forward 2 t) (applyGate (.P .inverse 2 t) psi) = psi :=
-    applyGate_applyGate_adjoint (.P .forward 2 t) (by trivial) psi
-  rw [hc] at h
-  have hi := congrArg (Quantum.run (inverseKick t q)) h
-  have cancel (phi : State) : Quantum.run (inverseKick t q) (Quantum.run (Catalyst.kick t q) phi) = phi :=
-    run_adjoint_run _ (kick_wellFormed t q ht) phi
-  rw [cancel] at hi
-  exact hi.symm
-
-def replacement (q : Wire) : Gate → Circuit
-  | .P .forward 2 t => Catalyst.kick t q
-  | .P .inverse 2 t => inverseKick t q
-  | g => [g]
-
-theorem replacement_correct (q : Wire) (g : Gate) (hq : q ∉ gateWires g)
-    (psi : State) (hp : SupportedOn (fun s => s q = false) psi) :
-    Quantum.run (replacement q g) (Quantum.run (Catalyst.prepare q) psi) =
-      Quantum.run (Catalyst.prepare q) (applyGate g psi) := by
-  unfold replacement
-  split
-  · rename_i t
-    exact Catalyst.kick_supported t q (by simpa [gateWires, ne_comm] using hq) psi hp
-  · rename_i t
-    exact inverseKick_supported t q (by simpa [gateWires, ne_comm] using hq) psi hp
-  · simpa only [Quantum.run_singleton] using Catalyst.prepare_gate q g hq psi
-
-def phaseTwoGate : Gate → Nat
-  | .P _ 2 _ => 1
-  | _ => 0
-
-theorem phaseTwoGate_le (g : Gate) : phaseTwoGate g ≤ tCost g := by
-  unfold phaseTwoGate
-  split <;> simp_all [tCost]
-
-def weightedGate (g : Gate) : Nat := tCost g - phaseTwoGate g
-
-theorem weightedGate_identity (g : Gate) : weightedGate g + phaseTwoGate g = tCost g :=
-  Nat.sub_add_cancel (phaseTwoGate_le g)
-
-def weightedLiteral : Gate → Nat
-  | .CCX _ _ _ => 4
-  | g => weightedGate g
-
-def weight4 {n s e : Nat} : Straight n s e → Nat
-  | .done => 0
-  | .gate (.literal g) p => weightedLiteral g + weight4 p
-  | .gate (.whenBit _ _ g) p => weightedGate g + weight4 p
-  | .recordGate _ _ g p => weightedGate g + weight4 p
-  | .measure _ p => weight4 p
-
-def phaseTwos {n s e : Nat} : Straight n s e → Nat
-  | .done => 0
-  | .gate (.literal g) p => phaseTwoGate g + phaseTwos p
-  | .gate (.whenBit _ _ g) p => phaseTwoGate g + phaseTwos p
-  | .recordGate _ _ g p => phaseTwoGate g + phaseTwos p
-  | .measure _ p => phaseTwos p
-
-def literalCCX : Gate → Nat
-  | .CCX _ _ _ => 1
-  | _ => 0
-
-theorem literal_account (g : Gate) : weightedLiteral g + phaseTwoGate g =
-    4 * literalCCX g + primitivePhaseCost g := by
-  cases g with
-  | X t => rfl
-  | H t => rfl
-  | CX a b => rfl
-  | CCX a b t => rfl
-  | P d k t => simpa [weightedLiteral, literalCCX, primitivePhaseCost, tCost] using weightedGate_identity (.P d k t)
-
-theorem weight4_identity {n s e : Nat} (p : Straight n s e) :
-    weight4 p + phaseTwos p = 4 * added p + residue p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      have hg := literal_account g
-      cases g <;> simp only [weight4, phaseTwos, added, residue, literalCCX] at * <;> omega
-    | whenBit r v g =>
-      have hg := weightedGate_identity g
-      simp only [weight4, phaseTwos, added, residue]
-      omega
-  | recordGate i v g p ih =>
-    have hg := weightedGate_identity g
-    simp only [weight4, phaseTwos, added, residue]
-    omega
-  | measure w p ih => exact ih
-theorem phaseTwoGate_P (d : PhaseDir) (k : Nat) (t : Wire) :
-    phaseTwoGate (.P d k t) = if k = 2 then 1 else 0 := by
-  unfold phaseTwoGate
-  split <;> split_ifs <;> simp_all
-
-theorem phaseTwoGate_le_primitive (g : Gate) : phaseTwoGate g ≤ primitivePhaseCost g := by
-  unfold phaseTwoGate
-  split <;> simp_all [primitivePhaseCost]
-
-theorem phaseTwos_le_residue {n s e : Nat} (p : Straight n s e) : phaseTwos p ≤ residue p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      have hg := phaseTwoGate_le_primitive g
-      simp only [phaseTwos, residue]
-      omega
-    | whenBit r v g =>
-      have hg := phaseTwoGate_le g
-      simp only [phaseTwos, residue]
-      omega
-  | recordGate i v g p ih =>
-    have hg := phaseTwoGate_le g
-    simp only [phaseTwos, residue]
-    omega
-  | measure w p ih => exact ih
-
-theorem weight4_zero {n s e : Nat} (p : Straight n s e) (hz : residue p = 0) :
-    weight4 p = 4 * added p := by
-  have h := weight4_identity p
-  have hp := phaseTwos_le_residue p
-  omega
-
-theorem replacement_t (q : Wire) (g : Gate) : ShorECDLP.tCount (replacement q g) = weightedGate g := by
-  cases g with
-  | X t => rfl
-  | H t => rfl
-  | CX a b => rfl
-  | CCX a b t => rfl
-  | P d k t =>
-    by_cases hk : k = 2
-    · subst k
-      cases d <;> simp [replacement, inverseKick, Catalyst.kick, controlledZ,
-        Circuit.adjoint, ShorECDLP.tCount, tCost, weightedGate, phaseTwoGate]
-    · unfold replacement
-      split <;> simp_all [weightedGate, phaseTwoGate_P, ShorECDLP.tCount, tCost]
-
-@[simp] theorem phaseTwos_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
-    phaseTwos (p.append q) = phaseTwos p + phaseTwos q := by
-  induction p with
-  | done => simp [Straight.append, phaseTwos]
-  | gate g p ih => cases g <;> simp [Straight.append, phaseTwos, ih, Nat.add_assoc]
-  | recordGate => simp_all [Straight.append, phaseTwos, Nat.add_assoc]
-  | measure => simp_all [Straight.append, phaseTwos]
-
-@[simp] theorem weight4_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
-    weight4 (p.append q) = weight4 p + weight4 q := by
-  induction p with
-  | done => simp [Straight.append, weight4]
-  | gate g p ih => cases g <;> simp [Straight.append, weight4, ih, Nat.add_assoc]
-  | recordGate => simp_all [Straight.append, weight4, Nat.add_assoc]
-  | measure => simp_all [Straight.append, weight4]
-def whenLiterals {n s e : Nat} (r : ConstantBit n) (v : Bool) : Circuit → Straight n s e → Straight n s e
-  | [], p => p
-  | g :: gs, p => .gate (.whenBit r v g) (whenLiterals r v gs p)
-
-def recordLiterals {n s e : Nat} (i : Fin s) (v : Bool) : Circuit → Straight n s e → Straight n s e
-  | [], p => p
-  | g :: gs, p => .recordGate i v g (recordLiterals i v gs p)
-
-theorem expectation_whenLiterals {n s e : Nat} (read : ConstantBit n → Bool)
-    (r : ConstantBit n) (v : Bool) (gs : Circuit) (p : Straight n s e)
-    (history : Fin s → Bool) (psi : State) (accept : (Fin e → Bool) → Bool) :
-    expectation read (whenLiterals r v gs p) history psi accept =
-      if read r = v then expectation read p history (Quantum.run gs psi) accept
-      else expectation read p history psi accept := by
-  induction gs generalizing psi with
-  | nil => simp [whenLiterals, Quantum.run_nil]
-  | cons g gs ih =>
-    by_cases h : read r = v
-    · simp [whenLiterals, expectation, TemplateGate.instantiate, h, ih, Quantum.run_cons]
-    · simp [whenLiterals, expectation, TemplateGate.instantiate, h, ih]
-
-theorem expectation_recordLiterals {n s e : Nat} (read : ConstantBit n → Bool)
-    (i : Fin s) (v : Bool) (gs : Circuit) (p : Straight n s e)
-    (history : Fin s → Bool) (psi : State) (accept : (Fin e → Bool) → Bool) :
-    expectation read (recordLiterals i v gs p) history psi accept =
-      if history i = v then expectation read p history (Quantum.run gs psi) accept
-      else expectation read p history psi accept := by
-  induction gs generalizing psi with
-  | nil => simp [recordLiterals, Quantum.run_nil]
-  | cons g gs ih =>
-    by_cases h : history i = v
-    · simp [recordLiterals, expectation, h, ih, Quantum.run_cons]
-    · simp [recordLiterals, expectation, h, ih]
-
-def compile {n s e : Nat} (q : Wire) : Straight n s e → Straight n s e
-  | .done => .done
-  | .gate (.literal g) next => literals (replacement q g) (compile q next)
-  | .gate (.whenBit r v g) next => whenLiterals r v (replacement q g) (compile q next)
-  | .recordGate i v g next => recordLiterals i v (replacement q g) (compile q next)
-  | .measure w next => .measure w (compile q next)
-
-theorem reset_frame (q w : Wire) (hq : q ≠ w) (outcome : Bool)
-    (psi : State) (hp : SupportedOn (fun s => s q = false) psi) :
-    SupportedOn (fun s => s q = false) (xResetKraus w outcome psi) := by
-  apply AdaptiveCircuit.branch_frame (.xMeasureReset w .done .done) q false
-    (by simpa [AdaptiveCircuit.wires] using hq)
-    ⟨[outcome], xResetKraus w outcome⟩ ?_ psi hp
-  cases outcome <;>
-    simp only [AdaptiveCircuit.run, List.map_singleton, List.mem_append, List.mem_singleton]
-  · exact Or.inl rfl
-  · exact Or.inr rfl
-
-theorem compile_expectation {n s e : Nat} (q : Wire) (p : Straight n s e)
-    (read : ConstantBit n → Bool) (history : Fin s → Bool) (psi : State)
-    (accept : (Fin e → Bool) → Bool) (hf : Fresh q p)
-    (hp : SupportedOn (fun s => s q = false) psi) :
-    expectation read (compile q p) history (Quantum.run (Catalyst.prepare q) psi) accept =
-      expectation read p history psi accept := by
-  induction p generalizing psi with
-  | done =>
-    simp only [compile, expectation, normSq_run (Catalyst.prepare q)
-      (by simp [Catalyst.prepare, CircuitWellFormed, Gate.WellFormed])]
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      simp only [compile, expectation_literals, replacement_correct q g hf.1 psi hp,
-        expectation, TemplateGate.instantiate, Quantum.run_singleton]
-      exact ih history _ accept hf.2 (gate_frame q g hf.1 psi hp)
-    | whenBit r v g =>
-      simp only [compile, expectation_whenLiterals, expectation, TemplateGate.instantiate]
-      by_cases h : read r = v
-      · simp only [h, if_pos, Quantum.run_singleton, replacement_correct q g hf.1 psi hp]
-        exact ih history _ accept hf.2 (gate_frame q g hf.1 psi hp)
-      · simpa only [h, if_neg, Quantum.run_nil, LinearMap.id_coe, id_eq] using ih history psi accept hf.2 hp
-  | recordGate i v g p ih =>
-    simp only [compile, expectation_recordLiterals, expectation]
-    by_cases h : history i = v
-    · simp only [h, if_pos, Quantum.run_singleton, replacement_correct q g hf.1 psi hp]
-      exact ih history _ accept hf.2 (gate_frame q g hf.1 psi hp)
-    · simpa only [h, if_neg, Quantum.run_nil, LinearMap.id_coe, id_eq] using ih history psi accept hf.2 hp
-  | measure w p ih =>
-    simp only [compile, expectation, Catalyst.prepare_reset q w hf.1]
-    rw [ih _ _ accept hf.2 (reset_frame q w hf.1 false psi hp),
-      ih _ _ accept hf.2 (reset_frame q w hf.1 true psi hp)]
-
-def weight7 {n s e : Nat} : Straight n s e → Nat
-  | .done => 0
-  | .gate (.literal g) p => weightedGate g + weight7 p
-  | .gate (.whenBit _ _ g) p => weightedGate g + weight7 p
-  | .recordGate _ _ g p => weightedGate g + weight7 p
-  | .measure _ p => weight7 p
-
-theorem weight7_literals {n s e} (gs : Circuit) (p : Straight n s e) :
-    weight7 (literals gs p) = (gs.map weightedGate).sum + weight7 p := by
-  induction gs with
-  | nil => simp [literals]
-  | cons g gs ih => simpa [literals, weight7, Nat.add_assoc] using congrArg (weightedGate g + ·) ih
-
-theorem weight7_toffoliPrefix {n s e} (a b t q : Wire) (p : Straight n (s+1) e) :
-    weight7 (toffoliPrefix a b t q p) = 4 + weight7 p := by
-  simp [toffoliPrefix, weight7_literals, andCompute, parityPhase, xorPhase,
-    weight7, weightedGate, phaseTwoGate, tCost]
-
-theorem weight7_lower {n s e} (q : Wire) (p : Straight n s e) (start : Nat)
-    (records : Fin s → Fin start) : weight7 (lower q p start records).program = weight4 p := by
-  induction p generalizing start with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g => cases g <;> simp [lower, weight4, weight7, weightedLiteral, weight7_toffoliPrefix, ih]
-    | whenBit => simp [lower, weight4, weight7, ih]
-  | recordGate => simp_all [lower, weight4, weight7]
-  | measure => simp_all [lower, weight4, weight7]
-
-theorem whenLiterals_t {n s e} (read : ConstantBit n → Bool) (r : ConstantBit n)
-    (v : Bool) (gs : Circuit) (p : Straight n s e) (history : Fin s → Bool) :
-    ((whenLiterals r v gs p).instantiate read history).tCount ≤
-      ShorECDLP.tCount gs + (p.instantiate read history).tCount := by
-  induction gs with
-  | nil => simp [whenLiterals, ShorECDLP.tCount]
-  | cons g gs ih =>
-    simp only [whenLiterals, Straight.instantiate, TemplateGate.instantiate, AdaptiveCircuit.tCount]
-    split_ifs <;> simp_all [ShorECDLP.tCount, Nat.add_assoc] <;> omega
-
-theorem recordLiterals_t {n s e} (read : ConstantBit n → Bool) (i : Fin s)
-    (v : Bool) (gs : Circuit) (p : Straight n s e) (history : Fin s → Bool) :
-    ((recordLiterals i v gs p).instantiate read history).tCount ≤
-      ShorECDLP.tCount gs + (p.instantiate read history).tCount := by
-  induction gs with
-  | nil => simp [recordLiterals, ShorECDLP.tCount]
-  | cons g gs ih =>
-    simp only [recordLiterals, Straight.instantiate, AdaptiveCircuit.tCount]
-    split_ifs <;> simp_all [ShorECDLP.tCount, Nat.add_assoc] <;> omega
-
-theorem compile_t {n s e} (q : Wire) (p : Straight n s e)
-    (read : ConstantBit n → Bool) (history : Fin s → Bool) :
-    ((compile q p).instantiate read history).tCount ≤ weight7 p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      simp only [compile, Catalyst.literals_t, replacement_t, weight7]
-      exact Nat.add_le_add_left (ih history) _
-    | whenBit r v g =>
-      exact (whenLiterals_t read r v (replacement q g) (compile q p) history).trans
-        (by rw [replacement_t]; exact Nat.add_le_add_left (ih history) _)
-  | recordGate i v g p ih =>
-    exact (recordLiterals_t read i v (replacement q g) (compile q p) history).trans
-      (by rw [replacement_t]; exact Nat.add_le_add_left (ih history) _)
-  | measure w p ih =>
-    simp only [compile, Straight.instantiate, AdaptiveCircuit.tCount, weight7]
-    exact max_le (ih _) (ih _)
-
-theorem replacement_wellFormed (q : Wire) (g : Gate) (hq : q ∉ gateWires g)
-    (hg : Gate.WellFormed g) : CircuitWellFormed (replacement q g) := by
-  unfold replacement
-  split
-  · exact kick_wellFormed _ _ (by simpa [gateWires, ne_comm] using hq)
-  · rename_i t
-    have ht : t ≠ q := by simpa [gateWires, ne_comm] using hq
-    simp [inverseKick, Catalyst.kick, controlledZ, Circuit.adjoint,
-      CircuitWellFormed, Gate.WellFormed, ht, ne_comm]
-  · simpa [CircuitWellFormed] using hg
-
-theorem whenLiterals_wellFormed {n s e} (r : ConstantBit n) (v : Bool)
-    (gs : Circuit) (p : Straight n s e) (hg : CircuitWellFormed gs)
-    (hp : p.WellFormed) : (whenLiterals r v gs p).WellFormed := by
-  induction gs with
-  | nil => exact hp
-  | cons g gs ih => exact ⟨hg g (by simp), ih (by intro a ha; exact hg a (by simp [ha]))⟩
-
-theorem recordLiterals_wellFormed {n s e} (i : Fin s) (v : Bool)
-    (gs : Circuit) (p : Straight n s e) (hg : CircuitWellFormed gs)
-    (hp : p.WellFormed) : (recordLiterals i v gs p).WellFormed := by
-  induction gs with
-  | nil => exact hp
-  | cons g gs ih => exact ⟨hg g (by simp), ih (by intro a ha; exact hg a (by simp [ha]))⟩
-
-theorem compile_wellFormed {n s e} (q : Wire) (p : Straight n s e)
-    (hf : Fresh q p) (hp : p.WellFormed) : (compile q p).WellFormed := by
-  induction p with
-  | done => trivial
-  | gate g p ih =>
-    cases g with
-    | literal g => exact Catalyst.literals_wellFormed _ _ (replacement_wellFormed q g hf.1 hp.1) (ih hf.2 hp.2)
-    | whenBit r v g => exact whenLiterals_wellFormed r v _ _ (replacement_wellFormed q g hf.1 hp.1) (ih hf.2 hp.2)
-  | recordGate i v g p ih => exact recordLiterals_wellFormed i v _ _ (replacement_wellFormed q g hf.1 hp.1) (ih hf.2 hp.2)
-  | measure w p ih => exact ih hf.2 hp
-
-theorem replacement_wires (q : Wire) (g : Gate) :
-    circuitWires (replacement q g) ⊆ q :: gateWires g := by
-  unfold replacement
-  split
-  · simp [Catalyst.kick, controlledZ, circuitWires, gateWires, List.subset_def]
-  · simp [inverseKick, Catalyst.kick, controlledZ, Circuit.adjoint,
-      circuitWires, gateWires, List.subset_def]
-  · simp [circuitWires]
-
-theorem whenLiterals_within {n s e} (ws : List Wire) (r : ConstantBit n) (v : Bool)
-    (gs : Circuit) (p : Straight n s e) (hg : circuitWires gs ⊆ ws)
-    (hp : Within ws p) : Within ws (whenLiterals r v gs p) := by
-  induction gs with
-  | nil => exact hp
-  | cons g gs ih =>
-    have h : gateWires g ⊆ ws ∧ circuitWires gs ⊆ ws := by simpa [circuitWires] using hg
-    exact ⟨h.1, ih h.2⟩
-
-theorem recordLiterals_within {n s e} (ws : List Wire) (i : Fin s) (v : Bool)
-    (gs : Circuit) (p : Straight n s e) (hg : circuitWires gs ⊆ ws)
-    (hp : Within ws p) : Within ws (recordLiterals i v gs p) := by
-  induction gs with
-  | nil => exact hp
-  | cons g gs ih =>
-    have h : gateWires g ⊆ ws ∧ circuitWires gs ⊆ ws := by simpa [circuitWires] using hg
-    exact ⟨h.1, ih h.2⟩
-
-theorem compile_within {n s e} (q : Wire) (p : Straight n s e) (ws : List Wire)
-    (hp : Within ws p) : Within (q::ws) (compile q p) := by
-  induction p with
-  | done => trivial
-  | gate g p ih =>
-    cases g with
-    | literal g => exact Catalyst.literals_within _ _ _ ((replacement_wires q g).trans (List.cons_subset_cons q hp.1)) (ih hp.2)
-    | whenBit r v g => exact whenLiterals_within _ r v _ _ ((replacement_wires q g).trans (List.cons_subset_cons q hp.1)) (ih hp.2)
-  | recordGate i v g p ih => exact recordLiterals_within _ i v _ _ ((replacement_wires q g).trans (List.cons_subset_cons q hp.1)) (ih hp.2)
-  | measure w p ih => exact ⟨List.mem_cons_of_mem q hp.1, ih hp.2⟩
-
-theorem replacement_length (q : Wire) (g : Gate) :
-    (replacement q g).length = 1 + 3 * phaseTwoGate g := by
-  cases g with
-  | X t => rfl
-  | H t => rfl
-  | CX a b => rfl
-  | CCX a b t => rfl
-  | P d k t =>
-    by_cases hk : k = 2
-    · subst k; cases d <;> rfl
-    · unfold replacement
-      split <;> simp_all [phaseTwoGate_P]
-
-theorem whenLiterals_slots {n s e} (r : ConstantBit n) (v : Bool) (gs : Circuit)
-    (p : Straight n s e) : (whenLiterals r v gs p).gateSlots = gs.length + p.gateSlots := by
-  induction gs <;> simp_all [whenLiterals, Straight.gateSlots] <;> omega
-
-theorem recordLiterals_slots {n s e} (i : Fin s) (v : Bool) (gs : Circuit)
-    (p : Straight n s e) : (recordLiterals i v gs p).gateSlots = gs.length + p.gateSlots := by
-  induction gs <;> simp_all [recordLiterals, Straight.gateSlots] <;> omega
-
-theorem compile_slots {n s e} (q : Wire) (p : Straight n s e) :
-    (compile q p).gateSlots = p.gateSlots + 3 * phaseTwos p := by
-  induction p with
-  | done => rfl
-  | gate g p ih => cases g <;> simp [compile, phaseTwos, literals_slots,
-      whenLiterals_slots, replacement_length, Straight.gateSlots, ih] <;> omega
-  | recordGate => simp_all [compile, phaseTwos, recordLiterals_slots,
-      replacement_length, Straight.gateSlots]; omega
-  | measure => exact (by apply_assumption)
-
-def compileEntry (q : Wire) (entry : StraightEntry) : StraightEntry where
-  coefficients := entry.coefficients
-  finalCursor := entry.finalCursor
-  program := literals (Catalyst.prepare q) (compile q entry.program)
-
-theorem compile_verified {n e} (q : Wire) (p : Straight n 0 e)
-    (read : ConstantBit n → Bool) (layout : DecodeLayout) (Q : Secp256k1.Point)
-    (psi : State) (hf : Fresh q p) (hp : SupportedOn (fun s => s q = false) psi) :
-    Instrument.bornMass (((literals (Catalyst.prepare q) (compile q p)).instantiate read Fin.elim0).run.filter
-      (fun b => (verifiedCandidate layout Q b.history).isSome)) psi =
-    Instrument.bornMass ((p.instantiate read Fin.elim0).run.filter
-      (fun b => (verifiedCandidate layout Q b.history).isSome)) psi := by
-  rw [← expectation_verified, ← expectation_verified, expectation_literals]
-  exact compile_expectation q p read Fin.elim0 psi _ hf hp
-
-theorem compileEntry_within (q : Wire) (entry : StraightEntry) (ws : List Wire)
-    (hp : Within ws entry.program) : Within (q::ws) (compileEntry q entry).program := by
-  apply Catalyst.literals_within
-  · simp [Catalyst.prepare, circuitWires, gateWires, List.subset_def]
-  · exact compile_within q entry.program ws hp
-
-theorem compile_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
-    (bounds newBounds : Bounds) (q : Wire) (ws : List Wire)
-    (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (hq : q ∉ ws)
-    (hslots : entry.program.gateSlots + 3 * phaseTwos entry.program + 2 ≤ limits.gateSlots)
-    (hqubits : ws.length + 1 ≤ newBounds.qubits)
-    (ht : weight7 entry.program + 1 ≤ newBounds.tModel)
-    (hm : entry.finalCursor ≤ newBounds.measurements) :
-    Certificate limits layout (compileEntry q entry) newBounds where
-  gateBudget := by simpa [compileEntry, literals_slots, compile_slots, Catalyst.prepare,
-    Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hslots
-  recordBudget := cert.recordBudget
-  tableBudget := cert.tableBudget
-  candidateBudget := cert.candidateBudget
-  wellFormed := Catalyst.literals_wellFormed _ _
-    (by simp [Catalyst.prepare, CircuitWellFormed, Gate.WellFormed])
-    (compile_wellFormed q entry.program (hs.fresh q hq) cert.wellFormed)
-  resources := by
-    intro Q
-    have hsup := (compileEntry_within q entry ws hs).instantiate
-      (readConstant entry.coefficients.get Q) Fin.elim0
-    have hc : (((compileEntry q entry).instantiate Q).wires.dedup.toFinset).card ≤ (q :: ws).length := by
-      apply (Finset.card_le_card ?_).trans (List.toFinset_card_le (q :: ws))
-      intro w hw
-      apply List.mem_toFinset.mpr
-      apply hsup
-      simpa only [List.mem_toFinset, List.mem_dedup] using hw
-    have hqc : ((compileEntry q entry).instantiate Q).qubitCount ≤ newBounds.qubits := by
-      rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
-      exact hc.trans hqubits
-    have htc := compile_t q entry.program (readConstant entry.coefficients.get Q) Fin.elim0
-    have hmc := (compileEntry q entry).program.measurementCount
-      (readConstant entry.coefficients.get Q) Fin.elim0
-    refine ⟨hqc, ?_, ?_⟩
-    · change ((literals (Catalyst.prepare q) (compile q entry.program)).instantiate
-        (readConstant entry.coefficients.get Q) Fin.elim0).tCount ≤ newBounds.tModel
-      rw [Catalyst.literals_t]
-      change 1 + ((compile q entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).tCount ≤ newBounds.tModel
-      omega
-    · change ((compileEntry q entry).program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).measurementCount ≤ newBounds.measurements
-      have he : ((compileEntry q entry).program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).measurementCount = entry.finalCursor := by
-        simpa only [Nat.add_zero] using hmc
-      exact he.le.trans hm
-  success := by
-    intro Q d hn hd
-    change 99 / 100 ≤ Instrument.bornMass
-      (((literals (Catalyst.prepare q) (compile q entry.program)).instantiate
-        (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
-    rw [compile_verified q entry.program _ layout Q _ (hs.fresh q hq)
-      (supportedOn_ket _ _ rfl)]
-    exact cert.success Q d hn hd
-
-theorem phaseTwos_le_slots {n s e} (p : Straight n s e) : phaseTwos p ≤ p.gateSlots := by
-  have gate_le (g : Gate) : phaseTwoGate g ≤ 1 := by
-    unfold phaseTwoGate; split <;> omega
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g => have h := gate_le g; simp only [phaseTwos, Straight.gateSlots]; omega
-    | whenBit r v g => have h := gate_le g; simp only [phaseTwos, Straight.gateSlots]; omega
-  | recordGate i v g p ih => have h := gate_le g; simp only [phaseTwos, Straight.gateSlots]; omega
-  | measure => exact (by apply_assumption)
-
-def fourEntry (q y : Wire) (entry : StraightEntry) : StraightEntry :=
-  compileEntry y (lowerEntry q entry)
-
-theorem four_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
-    (bounds newBounds : Bounds) (q y : Wire) (ws : List Wire)
-    (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (hq : q ∉ ws) (hy : y ∉ q :: ws)
-    (hslots : 4 * (entry.program.gateSlots + 18 * added entry.program) + 2 ≤ limits.gateSlots)
-    (hrecords : entry.finalCursor + added entry.program ≤ limits.measurements)
-    (hqubits : ws.length + 2 ≤ newBounds.qubits)
-    (ht : weight4 entry.program + 1 ≤ newBounds.tModel)
-    (hm : entry.finalCursor + added entry.program ≤ newBounds.measurements) :
-    Certificate limits (lowerLayout q entry layout) (fourEntry q y entry) newBounds := by
-  let middle : Bounds := ⟨ws.length+1, bounds.tModel, entry.finalCursor + added entry.program⟩
-  have mid : Certificate limits (lowerLayout q entry layout) (lowerEntry q entry) middle :=
-    lower_certificate limits layout entry bounds middle q ws cert hs hq
-      (by omega) hrecords (by rfl) (by dsimp [middle]; omega) (by rfl)
-  apply compile_certificate limits (lowerLayout q entry layout) (lowerEntry q entry)
-    middle newBounds y (q::ws) mid (lower_within q entry.program ws hs 0 Fin.elim0) hy
-  · have hp := phaseTwos_le_slots (lower q entry.program 0 Fin.elim0).program
-    rw [lower_slots] at hp
-    simp only [lowerEntry, lower_slots]
-    omega
-  · simpa using hqubits
-  · simpa only [lowerEntry, weight7_lower] using ht
-  · have hf := lower_finish q entry.program 0 Fin.elim0
-    change (lower q entry.program 0 Fin.elim0).finish ≤ newBounds.measurements
-    omega
-end
-end ShorECDLP.Entrant.ConditionalCatalyst
-
-namespace ShorECDLP.Entrant.ConditionalCatalyst
-open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
-noncomputable section
-set_option maxHeartbeats 2000000
-set_option maxRecDepth 5000
-set_option linter.unusedSimpArgs false
-set_option linter.unnecessarySeqFocus false
-
-theorem weight4_cast {n s e f} (p : Straight n s e) (h : e=f) :
-    weight4 (castFinish h p) = weight4 p := by subst f; rfl
-
-def feedbackWeight (len k : Nat) : Nat := len - if k ≤ 2 then min len (3-k) else 0
-
-theorem weight4_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
-    (k : Nat) (hk : 2 ≤ k) (p : Straight n s e) :
-    weight4 (feedbackProgram dir w indices k p) = feedbackWeight indices.length k + weight4 p := by
-  induction indices generalizing k with
-  | nil => simp [feedbackProgram, feedbackWeight]
-  | cons i is ih =>
-    simp only [feedbackProgram, weight4, weightedGate, tCost, phaseTwoGate_P]
-    rw [ih (k+1) (by omega)]
-    simp only [List.length_cons, feedbackWeight]
-    by_cases hk2 : k=2
-    · subst k; simp
-    · have hgt : ¬ k ≤ 2 := by omega
-      have hgt' : ¬ k+1 ≤ 2 := by omega
-      simp [hk2, hgt, hgt']
-      omega
-
-def fourierWeight : Nat → Nat → Nat
-  | 0, _ => 0
-  | width+1, prior => (prior-1) + fourierWeight width (prior+1)
-
-theorem weight4_fourier (n : Nat) (dir : PhaseDir) (ws : List Wire)
-    (start : Nat) (prior : List (Fin start)) :
-    weight4 (fourierProgram n dir ws start prior) = fourierWeight ws.length prior.length := by
-  induction ws generalizing start with
-  | nil => rfl
-  | cons w ws ih =>
-    simp only [fourierProgram, weight4_cast, weight4_feedback dir w prior 2 (by omega),
-      weight4, ih, List.length_cons, List.length_map, fourierWeight]
-    simp [feedbackWeight]
-    omega
-
-theorem weight4_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
-    weight4 (prepareOuterBank ws p) = weight4 p := by
-  induction ws with
-  | nil => rfl
-  | cons w ws ih => simpa [prepareOuterBank, weight4, weightedLiteral, weightedGate, phaseTwoGate, tCost] using ih
-
-def metadataWeight : List (Nat × Nat) → Nat → Nat
-  | [], _ => 0
-  | (cost,width)::ws,prior => cost + fourierWeight width prior + metadataWeight ws (prior+width)
-
-theorem weight4_axis [body : Single.WindowBody] [ledger : Single.ProducerResources body] {n} (ws : List (Single.Window n)) (costs : List (Nat × Nat))
-    (hw : List.Forall₂ (fun w c => w.wires.length = c.2 ∧ ∀ start,
-      weight4 (w.program start) ≤ c.1) ws costs) (start : Nat) (prior : List (Fin start)) :
-    weight4 (Single.axis ws start prior) ≤ metadataWeight costs prior.length := by
-  induction ws generalizing costs start with
-  | nil => cases hw; rfl
-  | cons w ws ih =>
-    cases hw with
-    | cons head tail =>
-      rename_i c costs
-      simp only [Single.axis, weight4_cast, weight4_append, weight4_prepare, weight4_fourier,
-        bankPrior_length]
-      have ht := ih costs tail (start+w.count+w.wires.length) (Single.nextPrior w.count w.wires.length prior)
-      rw [Single.nextPrior_length] at ht
-      have hh := head.2 start
-      simp only [metadataWeight]
-      rw [head.1] at *
-      omega
-end
-end ShorECDLP.Entrant.ConditionalCatalyst
-
-namespace ShorECDLP.Entrant.ApproximatePhase34
-open Quantum Challenge AndGadget Paper2607_13816 Paper2607_13816.ChallengeMigration
-open scoped BigOperators
-noncomputable section
-set_option maxHeartbeats 1000000
-set_option maxRecDepth 5000
-set_option linter.unusedSimpArgs false
-set_option linter.unnecessarySeqFocus false
-
-theorem mass_sum (psi : State) : normSq psi = ∑ s ∈ psi.support, Complex.normSq (psi s) := by
-  classical
-  have he : Quantum.inner psi psi = ((∑ s ∈ psi.support, Complex.normSq (psi s) : ℝ) : ℂ) := by
-    unfold Quantum.inner
-    change (∑ s ∈ psi.support, (starRingEnd ℂ) (psi s) * psi s) = _
-    push_cast
-    apply Finset.sum_congr rfl
-    intro s _
-    exact Complex.normSq_eq_conj_mul_self.symm
-  rw [normSq, he]
-  simp
-
-theorem mass_on (psi : State) (S : Finset BasisState) (h : psi.support ⊆ S) :
-    normSq psi = ∑ s ∈ S, Complex.normSq (psi s) := by
-  classical
-  rw [mass_sum]
-  apply Finset.sum_subset h
-  intro s _ hs
-  have hz : psi s = 0 := by simpa only [Finsupp.mem_support_iff, not_not] using hs
-  simp [hz]
-
-theorem mass_nonneg (psi : State) : 0 ≤ normSq psi := by
-  rw [mass_sum]
-  exact Finset.sum_nonneg (fun _ _ => Complex.normSq_nonneg _)
-
-theorem normSq_interference_weighted (psi phi : State) (eps : ℝ) (heps : 0 ≤ eps) :
-    (eps-eps^2)*normSq psi - normSq phi ≤ eps*normSq (psi+phi) := by
-  classical
-  let S := psi.support ∪ phi.support
-  have ha : (psi+phi).support ⊆ S := Finsupp.support_add
-  rw [mass_on psi S Finset.subset_union_left, mass_on phi S Finset.subset_union_right,
-    mass_on (psi+phi) S ha]
-  simp only [Finset.mul_sum, ← Finset.sum_sub_distrib]
-  apply Finset.sum_le_sum
-  intro s _
-  simp only [Finsupp.add_apply, Complex.normSq_apply, Complex.add_re, Complex.add_im]
-  nlinarith [sq_nonneg (eps*(psi s).re+(phi s).re),
-    sq_nonneg (eps*(psi s).im+(phi s).im),
-    mul_nonneg heps (sq_nonneg (phi s).re), mul_nonneg heps (sq_nonneg (phi s).im)]
-
-theorem expectation_interference_weighted {n s e} (read : ConstantBit n → Bool)
-    (p : Straight n s e) (history : Fin s → Bool) (psi phi : State)
-    (accept : (Fin e → Bool) → Bool) (eps : ℝ) (heps : 0 ≤ eps) :
-    (eps-eps^2)*expectation read p history psi accept - expectation read p history phi accept ≤
-      eps*expectation read p history (psi+phi) accept := by
-  induction p generalizing psi phi with
-  | done =>
-    simp only [expectation]
-    split_ifs
-    · exact normSq_interference_weighted psi phi eps heps
-    · simp
-  | gate g p ih =>
-    simpa only [expectation, map_add] using (ih history
-      (Quantum.run (g.instantiate read) psi) (Quantum.run (g.instantiate read) phi) accept)
-  | recordGate i v g p ih =>
-    simpa only [expectation, map_add] using (ih history
-      (Quantum.run (if history i=v then [g] else []) psi)
-      (Quantum.run (if history i=v then [g] else []) phi) accept)
-  | measure w p ih =>
-    have h0 := ih (Fin.lastCases false history) (xResetKraus w false psi) (xResetKraus w false phi) accept
-    have h1 := ih (Fin.lastCases true history) (xResetKraus w true psi) (xResetKraus w true phi) accept
-    simp only [expectation, map_add]
-    linarith
-
-theorem expectation_le_mass {n s e} (read : ConstantBit n → Bool)
-    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
-    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed) :
-    expectation read p history psi accept ≤ normSq psi := by
-  rw [expectation_selectedMass, selectedMass_filter]
-  exact (Instrument.bornMass_filter_le _ _ _).trans
-    (AdaptiveCircuit.run_preservesBornMass _ (p.instantiate_wellFormed read history hp) psi).le
-
-theorem phase_difference (dir : PhaseDir) (k : Nat) (t : Wire) (psi : State) :
-    applyGate (.P dir k t) psi - psi =
-      (phaseCoeff dir k - 1) • psi.filter (fun s => s t = true) := by
-  classical
-  induction psi using Finsupp.induction_linear with
-  | zero => ext s; simp [Finsupp.filter_apply]
-  | add psi phi ihpsi ihphi =>
-    rw [map_add, Finsupp.filter_add, smul_add, ← ihpsi, ← ihphi]
-    abel
-  | single s a =>
-    have hs : Finsupp.single s a = a • ket s := by ext x; simp [ket]
-    rw [hs, map_smul, applyGate_P_ket]
-    ext x
-    by_cases hx : s = x
-    · subst x
-      cases ht : s t <;> simp [ht, ket, Finsupp.filter_apply] <;> ring
-    · cases ht : s t <;> simp [ket, hx, Finsupp.filter_apply, ht]
-
-theorem phaseCoeff_error (dir : PhaseDir) (k : Nat) :
-    Complex.normSq (phaseCoeff dir k - 1) ≤ (phaseAngle dir k)^2 := by
-  have h := Real.norm_exp_I_mul_ofReal_sub_one_le (x:=phaseAngle dir k)
-  change ‖phaseCoeff dir k - 1‖ ≤ ‖phaseAngle dir k‖ at h
-  rw [Complex.normSq_eq_norm_sq]
-  have h1 := norm_nonneg (phaseCoeff dir k - 1)
-  have h2 := norm_nonneg (phaseAngle dir k)
-  have h3 := mul_nonneg (sub_nonneg.mpr h) (add_nonneg h2 h1)
-  simpa only [Real.norm_eq_abs, sq_abs] using (show ‖phaseCoeff dir k-1‖^2 ≤ ‖phaseAngle dir k‖^2 by nlinarith)
-
-theorem phase_difference_mass (dir : PhaseDir) (k : Nat) (t : Wire) (psi : State) :
-    normSq (applyGate (.P dir k t) psi - psi) ≤ (phaseAngle dir k)^2 * normSq psi := by
-  have smul_mass (c : ℂ) (phi : State) : normSq (c • phi) = Complex.normSq c * normSq phi := by
-    unfold normSq
-    rw [inner_smul_smul, ← Complex.normSq_eq_conj_mul_self]
-    simp
-  rw [phase_difference, smul_mass]
-  exact (mul_le_mul_of_nonneg_right (phaseCoeff_error dir k) (mass_nonneg _)).trans
-    (mul_le_mul_of_nonneg_left (normSq_filter_le _ psi) (sq_nonneg _))
-
-theorem expectation_phase_loss {n s e} (read : ConstantBit n → Bool)
-    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
-    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
-    (dir : PhaseDir) (k : Nat) (t : Wire) (delta : ℝ) (hd : 0 < delta)
-    (ha : (phaseAngle dir k)^2 ≤ delta^2) :
-    expectation read p history (applyGate (.P dir k t) psi) accept ≤
-      expectation read p history psi accept + 2*delta*normSq psi := by
-  let phi := applyGate (.P dir k t) psi
-  have hn : normSq phi = normSq psi := applyGate_preservesNormSq _ (by trivial) psi
-  have hA := expectation_le_mass read p history phi accept hp
-  rw [hn] at hA
-  have hE := expectation_le_mass read p history (psi-phi) accept hp
-  have hdiff : normSq (psi-phi) ≤ delta^2 * normSq psi := by
-    have hneg : psi-phi = -(phi-psi) := by abel
-    rw [hneg, normSq_neg]
-    exact (phase_difference_mass dir k t psi).trans
-      (mul_le_mul_of_nonneg_right ha (mass_nonneg psi))
-  have h := expectation_interference_weighted read p history phi (psi-phi) accept delta hd.le
-  have hsum : phi+(psi-phi)=psi := by abel
-  rw [hsum] at h
-  have hh := mul_le_mul_of_nonneg_left hA (sq_nonneg delta)
-  have hx : delta * expectation read p history phi accept ≤
-      delta * (expectation read p history psi accept + 2*delta*normSq psi) := by
-    nlinarith
-  exact (mul_le_mul_iff_right₀ hd).mp hx
-
-def delta : ℝ := 1 / 5000000000
-
-theorem phaseAngle_small (dir : PhaseDir) (k : Nat) (hk : 34 < k) :
-    (phaseAngle dir k)^2 ≤ delta^2 := by
-  have hp : (2:ℝ)^35 ≤ 2^k := pow_le_pow_right₀ (by norm_num) (by omega)
-  have hp0 : (0:ℝ) < 2^k := by positivity
-  have hn : 2*Real.pi/(2:ℝ)^k ≤ delta := by
-    apply (div_le_iff₀ hp0).mpr
-    have h := Real.pi_lt_d2
-    norm_num [delta] at *
-    linarith
-  have hn0 : 0 ≤ 2*Real.pi/(2:ℝ)^k := by positivity
-  have hd : 0 ≤ delta := by norm_num [delta]
-  cases dir <;> simp only [phaseAngle, neg_sq] <;> nlinarith
-
-def largePhase (cutoff : Nat) : Gate → Bool
-  | .P _ k _ => decide (cutoff < k)
-  | _ => false
-
-def removed {n s e} (cutoff : Nat) : Straight n s e → Nat
-  | .done => 0
-  | .gate (.literal g) p => (largePhase cutoff g).toNat + removed cutoff p
-  | .gate (.whenBit _ _ g) p => (largePhase cutoff g).toNat + removed cutoff p
-  | .recordGate _ _ g p => (largePhase cutoff g).toNat + removed cutoff p
-  | .measure _ p => removed cutoff p
-
-def trim {n s e} (cutoff : Nat) : Straight n s e → Straight n s e
-  | .done => .done
-  | .gate (.literal g) p => if largePhase cutoff g then trim cutoff p else .gate (.literal g) (trim cutoff p)
-  | .gate (.whenBit r v g) p => if largePhase cutoff g then trim cutoff p else .gate (.whenBit r v g) (trim cutoff p)
-  | .recordGate i v g p => if largePhase cutoff g then trim cutoff p else .recordGate i v g (trim cutoff p)
-  | .measure w p => .measure w (trim cutoff p)
-
-theorem dropped_loss {n s e} (read : ConstantBit n → Bool) (p : Straight n s e)
-    (history : Fin s → Bool) (psi : State) (accept : (Fin e → Bool) → Bool)
-    (hp : p.WellFormed) (g : Gate) (hg : largePhase 34 g = true) :
-    expectation read p history (applyGate g psi) accept ≤
-      expectation read p history psi accept + 2*delta*normSq psi := by
-  cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
-  case P dir k t =>
-    exact expectation_phase_loss read p history psi accept hp dir k t delta
-      (by norm_num [delta]) (phaseAngle_small dir k hg)
-
-theorem normSq_gate (g : Gate) (hg : g.WellFormed) (psi : State) :
-    normSq (applyGate g psi) = normSq psi := applyGate_preservesNormSq g hg psi
-
-theorem normSq_template {n} (read : ConstantBit n → Bool) (g : TemplateGate n)
-    (hg : g.WellFormed) (psi : State) :
-    normSq (Quantum.run (g.instantiate read) psi) = normSq psi :=
-  normSq_run _ (g.instantiate_wellFormed read hg) psi
-
-theorem trim_expectation {n s e} (read : ConstantBit n → Bool)
-    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
-    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed) :
-    expectation read p history psi accept ≤ expectation read (trim 34 p) history psi accept +
-      2*delta*(removed 34 p : ℝ)*normSq psi := by
-  have hd : 0 ≤ delta := by norm_num [delta]
-  induction p generalizing psi with
-  | done => simp [trim, removed, expectation]
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      by_cases hg : largePhase 34 g = true
-      · have hs := dropped_loss read p history psi accept hp.2 g hg
-        have hi := ih history psi accept hp.2
-        simp only [trim, hg, if_true, removed, Bool.toNat_true, Nat.cast_add, Nat.cast_one,
-          expectation, TemplateGate.instantiate, Quantum.run_singleton]
-        nlinarith
-      · have hgf : largePhase 34 g = false := Bool.eq_false_iff.mpr hg
-        have hi := ih history (applyGate g psi) accept hp.2
-        rw [normSq_gate g hp.1 psi] at hi
-        simpa only [trim, hgf, if_false, removed, Bool.toNat_false, zero_add,
-          expectation, TemplateGate.instantiate, Quantum.run_singleton] using hi
-    | whenBit r v g =>
-      by_cases hg : largePhase 34 g = true
-      · have hi := ih history psi accept hp.2
-        have hs := dropped_loss read p history psi accept hp.2 g hg
-        simp only [trim, hg, if_true, removed, Bool.toNat_true, Nat.cast_add, Nat.cast_one,
-          expectation, TemplateGate.instantiate]
-        by_cases hr : read r = v
-        · simp only [hr, if_true, Quantum.run_singleton]
-          nlinarith
-        · simp only [hr, if_false, Quantum.run_nil, LinearMap.id_coe, id_eq]
-          have hn := mul_nonneg hd (mass_nonneg psi)
-          nlinarith
-      · have hgf : largePhase 34 g = false := Bool.eq_false_iff.mpr hg
-        have hi := ih history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2
-        rw [normSq_template read (.whenBit r v g) hp.1 psi] at hi
-        simpa only [trim, hgf, if_false, removed, Bool.toNat_false, zero_add, expectation] using hi
-  | recordGate i v g p ih =>
-    by_cases hg : largePhase 34 g = true
-    · have hi := ih history psi accept hp.2
-      have hs := dropped_loss read p history psi accept hp.2 g hg
-      simp only [trim, hg, if_true, removed, Bool.toNat_true, Nat.cast_add, Nat.cast_one, expectation]
-      by_cases hr : history i = v
-      · simp only [hr, if_true, Quantum.run_singleton]
-        nlinarith
-      · simp only [hr, if_false, Quantum.run_nil, LinearMap.id_coe, id_eq]
-        have hn := mul_nonneg hd (mass_nonneg psi)
-        nlinarith
-    · have hgf : largePhase 34 g = false := Bool.eq_false_iff.mpr hg
-      have hi := ih history (Quantum.run (if history i=v then [g] else []) psi) accept hp.2
-      have hn : normSq (Quantum.run (if history i=v then [g] else []) psi) = normSq psi := by
-        apply normSq_run
-        split_ifs
-        · simpa [CircuitWellFormed] using hp.1
-        · simp [CircuitWellFormed]
-      rw [hn] at hi
-      simpa only [trim, hgf, if_false, removed, Bool.toNat_false, zero_add, expectation] using hi
-  | measure w p ih =>
-    have h0 := ih (Fin.lastCases false history) (xResetKraus w false psi) accept hp
-    have h1 := ih (Fin.lastCases true history) (xResetKraus w true psi) accept hp
-    have hm := normSq_xResetKraus_false_add_true w psi
-    have hme := congrArg (fun x : ℝ => 2*delta*(removed 34 p : ℝ)*x) hm
-    simp only [trim, removed, expectation]
-    nlinarith
-
-theorem trim_wellFormed {n s e} (cutoff : Nat) (p : Straight n s e)
-    (hp : p.WellFormed) : (trim cutoff p).WellFormed := by
-  induction p with
-  | done => trivial
-  | gate g p ih => cases g <;> simp only [trim] <;> split_ifs <;>
-      first | exact ih hp.2 | exact ⟨hp.1, ih hp.2⟩
-  | recordGate i v g p ih => simp only [trim]; split_ifs <;>
-      first | exact ih hp.2 | exact ⟨hp.1, ih hp.2⟩
-  | measure w p ih => exact ih hp
-
-theorem trim_within {n s e} (cutoff : Nat) (p : Straight n s e) (ws : List Wire)
-    (hp : Within ws p) : Within ws (trim cutoff p) := by
-  induction p with
-  | done => trivial
-  | gate g p ih => cases g <;> simp only [trim] <;> split_ifs <;>
-      first | exact ih hp.2 | exact ⟨hp.1, ih hp.2⟩
-  | recordGate i v g p ih => simp only [trim]; split_ifs <;>
-      first | exact ih hp.2 | exact ⟨hp.1, ih hp.2⟩
-  | measure w p ih => exact ⟨hp.1, ih hp.2⟩
-
-theorem trim_slots {n s e} (cutoff : Nat) (p : Straight n s e) :
-    (trim cutoff p).gateSlots ≤ p.gateSlots := by
-  induction p with
-  | done => rfl
-  | gate g p ih => cases g <;> simp only [trim] <;> split_ifs <;>
-      simp_all only [Straight.gateSlots] <;> omega
-  | recordGate i v g p ih => simp only [trim]; split_ifs <;>
-      simp_all only [Straight.gateSlots] <;> omega
-  | measure w p ih => exact ih
-
-theorem removed_le_residue {n s e} (p : Straight n s e) : removed 34 p ≤ residue p := by
-  have hg (g : Gate) : (largePhase 34 g).toNat ≤ primitivePhaseCost g ∧
-      (largePhase 34 g).toNat ≤ tCost g := by
-    cases g <;> simp [largePhase, primitivePhaseCost, tCost]
-    rename_i dir k t
-    cases h : decide (34 < k) <;> simp [h]
-  induction p with
-  | done => rfl
-  | gate g p ih => cases g <;> simp only [removed, residue] <;>
-      first | exact Nat.add_le_add (hg _).1 ih | exact Nat.add_le_add (hg _).2 ih
-  | recordGate i v g p ih => exact Nat.add_le_add (hg g).2 ih
-  | measure w p ih => exact ih
-
-theorem dropped_weight (g : Gate) (hg : largePhase 34 g = true) :
-    ConditionalCatalyst.weightedGate g = 1 ∧ ConditionalCatalyst.weightedLiteral g = 1 := by
-  cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
-  case P dir k t =>
-    have hk : k ≠ 2 := by omega
-    simp [ConditionalCatalyst.weightedGate, ConditionalCatalyst.weightedLiteral,
-      ConditionalCatalyst.phaseTwoGate_P, hk, tCost]
-
-theorem weight4_trim {n s e} (p : Straight n s e) :
-    ConditionalCatalyst.weight4 (trim 34 p) + removed 34 p = ConditionalCatalyst.weight4 p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g =>
-      by_cases hg : largePhase 34 g = true
-      · have hw := (dropped_weight g hg).2
-        simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]
-        omega
-      · have hgf : largePhase 34 g = false := Bool.eq_false_iff.mpr hg
-        simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
-        omega
-    | whenBit r v g =>
-      by_cases hg : largePhase 34 g = true
-      · have hw := (dropped_weight g hg).1
-        simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]
-        omega
-      · have hgf : largePhase 34 g = false := Bool.eq_false_iff.mpr hg
-        simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
-        omega
-  | recordGate i v g p ih =>
-    by_cases hg : largePhase 34 g = true
-    · have hw := (dropped_weight g hg).1
-      simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]
-      omega
-    · have hgf : largePhase 34 g = false := Bool.eq_false_iff.mpr hg
-      simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add, ConditionalCatalyst.weight4]
-      omega
-  | measure w p ih => exact ih
-
-@[simp] theorem removed_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
-    removed 34 (p.append q) = removed 34 p + removed 34 q := by
-  induction p with
-  | done => simp [Straight.append, removed]
-  | gate g p ih => cases g <;> simp [Straight.append, removed, ih, Nat.add_assoc]
-  | recordGate => simp_all [Straight.append, removed, Nat.add_assoc]
-  | measure => simp_all [Straight.append, removed]
-
-theorem removed_cast {n s e f} (p : Straight n s e) (h : e=f) :
-    removed 34 (castFinish h p) = removed 34 p := by subst f; rfl
-
-theorem removed_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
-    removed 34 (reindexStraight f p) = removed 34 p := by
-  induction p with
-  | done => rfl
-  | gate g p ih => cases g <;> simp_all [reindexStraight, reindexGate, removed]
-  | recordGate => simp_all [reindexStraight, removed]
-  | measure => simp_all [reindexStraight, removed]
-
-theorem removed_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
-    (k : Nat) (p : Straight n s e) :
-    removed 34 (feedbackProgram dir w indices k p) =
-      (indices.length - min indices.length (35-k)) + removed 34 p := by
-  induction indices generalizing k with
-  | nil => simp [feedbackProgram]
-  | cons i is ih =>
-    simp only [feedbackProgram, removed, largePhase, ih, List.length_cons]
-    by_cases hk : 34 < k
-    · simp only [hk, decide_true, Bool.toNat_true]
-      omega
-    · simp only [hk, decide_false, Bool.toNat_false]
-      omega
-
-theorem trim_t {n s e} (p : Straight n s e) (read : ConstantBit n → Bool)
-    (history : Fin s → Bool) :
-    ((trim 34 p).instantiate read history).tCount ≤ (p.instantiate read history).tCount := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g <;> simp only [trim] <;> split_ifs <;>
-      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
-      (have h := ih history; omega)
-  | recordGate i v g p ih =>
-    simp only [trim]; split_ifs <;>
-      simp only [Straight.instantiate, AdaptiveCircuit.tCount] <;>
-      (have h := ih history; omega)
-  | measure w p ih =>
-    simp only [trim, Straight.instantiate, AdaptiveCircuit.tCount]
-    exact max_le_max (ih _) (ih _)
-
-theorem trim_added {n s e} (p : Straight n s e) : added (trim 34 p) = added p := by
-  induction p with
-  | done => rfl
-  | gate g p ih =>
-    cases g with
-    | literal g => cases g <;> simp [trim, largePhase, added, ih] <;> split_ifs <;> simp_all [added]
-    | whenBit r v g => simp only [trim]; split_ifs <;> simpa only [added] using ih
-  | recordGate i v g p ih => simp only [trim]; split_ifs <;> simpa only [added] using ih
-  | measure w p ih => exact ih
-
-def trimEntry (entry : StraightEntry) : StraightEntry where
-  coefficients := entry.coefficients
-  finalCursor := entry.finalCursor
-  program := trim 34 entry.program
-
-theorem trim_certificate (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
-    (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (hcount : removed 34 entry.program ≤ 55458)
-    (hstrong : ∀ (Q : Secp256k1.Point) (d : Nat), Q ≠ 0 → Q = d • Secp256k1.G →
-      (99003/100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
-    Certificate limits layout (trimEntry entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
-  gateBudget := (trim_slots 34 entry.program).trans cert.gateBudget
-  recordBudget := cert.recordBudget
-  tableBudget := cert.tableBudget
-  candidateBudget := cert.candidateBudget
-  wellFormed := trim_wellFormed 34 entry.program cert.wellFormed
-  resources := by
-    intro Q
-    have hsup := (trim_within 34 entry.program ws hs).instantiate
-      (readConstant entry.coefficients.get Q) Fin.elim0
-    have hc : (((trimEntry entry).instantiate Q).wires.dedup.toFinset).card ≤ ws.length := by
-      apply (Finset.card_le_card ?_).trans (List.toFinset_card_le ws)
-      intro w hw
-      apply List.mem_toFinset.mpr
-      apply hsup
-      simpa only [List.mem_toFinset, List.mem_dedup] using hw
-    have hqc : ((trimEntry entry).instantiate Q).qubitCount ≤ ws.length := by
-      rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
-      exact hc
-    refine ⟨hqc, ?_, ?_⟩
-    · exact (trim_t entry.program (readConstant entry.coefficients.get Q) Fin.elim0).trans
-        (cert.resources Q).2.1
-    · have he := (trimEntry entry).program.measurementCount
-        (readConstant entry.coefficients.get Q) Fin.elim0
-      simpa only [Nat.add_zero] using he.le
-  success := by
-    intro Q d hn hd
-    have h := trim_expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
-      (ket zeroBasisState) (fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome) cert.wellFormed
-    rw [expectation_verified, expectation_verified, normSq_ket] at h
-    have hc : (removed 34 entry.program : ℝ) ≤ 55458 := by exact_mod_cast hcount
-    have hS := hstrong Q d hn hd
-    change 99/100 ≤ Instrument.bornMass
-      (((trim 34 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
-    change 99003/100000 ≤ Instrument.bornMass
-      ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
-        (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) at hS
-    norm_num [delta] at h
-    nlinarith
-end
-end ShorECDLP.Entrant.ApproximatePhase34

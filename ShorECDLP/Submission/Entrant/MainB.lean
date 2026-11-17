@@ -1065,7 +1065,7 @@ def portSuffixCodeE (rows : Nat → Fin 32768) : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 50694)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 48842)
 
 theorem portSuffixE_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32768) (a : Nat) :
     (specialize (portSuffixCodeE rows) a).instantiate read =
@@ -1078,7 +1078,7 @@ theorem portSuffixE_inst (read : ConstantBit 32768 → Bool) (rows : Nat → Fin
         portBits read (scrDExtraBits rows) a) ++
       (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect ++
         ([.CX streamLayout.control streamLayout.core.equalX] ++ ([.CX streamLayout.control streamLayout.core.double] ++
-          Arith.padding (streamLayout.core.poolWire 0) 50694))) := by
+          Arith.padding (streamLayout.core.poolWire 0) 48842))) := by
   simp only [portSuffixCodeE, scrDMiddle, specialize_append, Tmpl.instantiate_append, scr_lookup_inst, specialize_literal,
     Tmpl.instantiate_lit, scr_chain_inst, scrDPorts_targets, scrDPorts_bits, List.append_assoc]
 
@@ -1086,7 +1086,7 @@ theorem portSuffixE_inplace (read : ConstantBit 32768 → Bool) (rows : Nat → 
     (row : RowReads read (rows a) C) (m : List Bool) (s : State) (hs : ∀ w ∈ scrAllWires, s.basis w = false) :
     run ((specialize (portSuffixCodeE rows) a).instantiate read) m s =
       run (fourCorners streamLayout C ++ midIP read rows a ++ tail0 ++
-        Arith.padding (streamLayout.core.poolWire 0) 50694) m s := by
+        Arith.padding (streamLayout.core.poolWire 0) 48842) m s := by
   rw [portSuffixE_inst, scrECorners_inst, scr_sandwich_append _ _ _ _ _ (scrE_sim read rows a) m s hs,
     ← scrFCorners_inst2, scrFCorners_inst read rows a C row]
   simp only [tail0, List.append_assoc]
@@ -1095,7 +1095,7 @@ theorem portSuffixD_inplace (read : ConstantBit 32768 → Bool) (rows : Nat → 
     (row : RowReads read (rows a) C) (m : List Bool) (s : State) (hs : ∀ w ∈ scrAllWires, s.basis w = false) :
     run ((specialize (portSuffixCodeD rows) a).instantiate read) m s =
       run (thirdCorners streamLayout C ++ midIP read rows a ++ tail0 ++
-        Arith.padding (streamLayout.core.poolWire 0) 51716) m s := by
+        Arith.padding (streamLayout.core.poolWire 0) 49864) m s := by
   rw [portSuffixD_inst, scrDCorners_inst, scr_sandwich_append _ _ _ _ _ (scrD_sim read rows a) m s hs]
   have eC : scrNegP ++ (scrSw1 ++ (cBits streamLayout.core.equalNegY scrDTargets
         (portBits read (scrShortBits rows) a ++ portBits read (scrDExtraBits rows) a) ++ (scrSw1 ++ (scrSw2 ++
@@ -1197,22 +1197,22 @@ theorem portRowE_of_3 (read : ConstantBit 32768 → Bool) (rows : Nat → Fin 32
   have hX : measurementCount ([.X 838] : Program) = 0 := rfl
   -- both rows in their in-place form
   have r3 : ∀ m, run (A ++ thirdCorners streamLayout C ++ (midIP read rows address ++ tail0) ++
-      RecordShift.pad (streamLayout.core.poolWire 0) 51716 ++ ([.X 838] : Program)) m ⟨false,s⟩ = t := by
+      RecordShift.pad (streamLayout.core.poolWire 0) 49864 ++ ([.X 838] : Program)) m ⟨false,s⟩ = t := by
     intro m
     rw [← href m, e3]
     have := mid_replace A BD (thirdCorners streamLayout C ++ midIP read rows address ++ tail0 ++
-      Arith.padding (streamLayout.core.poolWire 0) 51716) ([.X 838] : Program) hX ⟨false,s⟩
+      Arith.padding (streamLayout.core.poolWire 0) 49864) ([.X 838] : Program) hX ⟨false,s⟩
       (fun k n => portSuffixD_inplace read rows address C hr n _ (hscr k)) m
     rw [this]
     simp only [RecordShift.pad, Arith.padding, List.append_assoc]
   have r4 := RecordShift.shift_padding A (thirdCorners streamLayout C) (fourCorners streamLayout C)
-    (midIP read rows address ++ tail0) ([.X 838] : Program) (streamLayout.core.poolWire 0) 51716 50694
+    (midIP read rows address ++ tail0) ([.X 838] : Program) (streamLayout.core.poolWire 0) 49864 48842
     (by norm_num) hX ⟨false,s⟩ t r3
     (fun mA mB mB' => fourCorners_third streamLayout hw hn R C hC0 true
       (dialogFlagState streamLayout O D I Gf E H K) reads.1 reads.2.1 reads.2.2.1 reads.2.2.2.2.2.1
       (run A mA ⟨false,s⟩) (hbound mA) mB' mB) m
   rw [e4, mid_replace A BE (fourCorners streamLayout C ++ midIP read rows address ++ tail0 ++
-      Arith.padding (streamLayout.core.poolWire 0) 50694) ([.X 838] : Program) hX ⟨false,s⟩
+      Arith.padding (streamLayout.core.poolWire 0) 48842) ([.X 838] : Program) hX ⟨false,s⟩
       (fun k n => portSuffixE_inplace read rows address C hr n _ (hscr k)) m]
   rw [← r4]
   simp only [RecordShift.pad, Arith.padding, List.append_assoc]
@@ -1283,8 +1283,8 @@ attribute [local irreducible] Arith.padding
 def sfxZ0 : WCode 32768 := wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double])
-def sfxPadE : WCode 32768 := wLiteral (Arith.padding (streamLayout.core.poolWire 0) 50694)
-def sfxPadD : WCode 32768 := wLiteral (Arith.padding (streamLayout.core.poolWire 0) 51716)
+def sfxPadE : WCode 32768 := wLiteral (Arith.padding (streamLayout.core.poolWire 0) 48842)
+def sfxPadD : WCode 32768 := wLiteral (Arith.padding (streamLayout.core.poolWire 0) 49864)
 
 theorem suffixE_split (rows : Nat → Fin 32768) :
     portSuffixCodeE rows = sfxL rows ++ (scrECorners rows ++ (sfxF ++ (scrDMiddle ++ (sfxL rows ++ (sfxZ0 ++ sfxPadE))))) ∧
@@ -1307,7 +1307,7 @@ theorem cornersD_split (rows : Nat → Fin 32768) :
 
 theorem suffixE_member (rows : Nat → Fin 32768) (i : WInstr 32768) (h : i ∈ portSuffixCodeE rows) :
     i = WInstr.literal scrNegE ∨ i = WInstr.literal scrW1 ∨ i = WInstr.literal scrW2 ∨
-    i = WInstr.literal (Arith.padding (streamLayout.core.poolWire 0) 50694) ∨ i ∈ portSuffixCodeD rows := by
+    i = WInstr.literal (Arith.padding (streamLayout.core.poolWire 0) 48842) ∨ i ∈ portSuffixCodeD rows := by
   have hs := suffixE_split rows
   rw [hs.1, cornersE_split] at h
   rw [hs.2, cornersD_split]
@@ -1354,10 +1354,10 @@ theorem newLiteral_facts :
       (by simp [d.1, d.2.1, d.2.2.1])
 
 theorem padE_facts :
-    ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 50694) ⊆ streamLayout.dialogUsedWires.toFinset ∧
-      GatePhysical (Arith.padding (streamLayout.core.poolWire 0) 50694) ∧
-      ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 50694) ⊆ sourceSupport.toFinset := by
-  have hq (q : Wire) (h : q ∈ ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 50694)) :
+    ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 48842) ⊆ streamLayout.dialogUsedWires.toFinset ∧
+      GatePhysical (Arith.padding (streamLayout.core.poolWire 0) 48842) ∧
+      ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 48842) ⊆ sourceSupport.toFinset := by
+  have hq (q : Wire) (h : q ∈ ECDSAAdd.wires (Arith.padding (streamLayout.core.poolWire 0) 48842)) :
       q = streamLayout.core.poolWire 0 := by
     simpa only [Finset.mem_singleton] using Arith.padding_support _ _ h
   have hpool : streamLayout.core.poolWire 0 ∈ streamLayout.dialogPool :=
@@ -1457,21 +1457,21 @@ theorem cornersE_counts (rows : Nat → Fin 32768) :
   exact ⟨True.intro, True.intro, True.intro, by omega, True.intro, by omega⟩
 
 theorem pad_counts_E :
-    literalToffolis sfxPadE = 0 ∧ literalRecords sfxPadE = 50694 ∧ traversals sfxPadE = 0 ∧
-    literalSlotSum sfxPadE = 50694 ∧ portTotal sfxPadE = 0 ∧ literalToffolis (normalizeW sfxPadE) = 0 := by
-  have w := wlit_counts (Arith.padding (streamLayout.core.poolWire 0) 50694)
-  have pc := Arith.padding_counts (streamLayout.core.poolWire 0) 50694
-  have ps := Arith.padding_slots (streamLayout.core.poolWire 0) 50694
+    literalToffolis sfxPadE = 0 ∧ literalRecords sfxPadE = 48842 ∧ traversals sfxPadE = 0 ∧
+    literalSlotSum sfxPadE = 48842 ∧ portTotal sfxPadE = 0 ∧ literalToffolis (normalizeW sfxPadE) = 0 := by
+  have w := wlit_counts (Arith.padding (streamLayout.core.poolWire 0) 48842)
+  have pc := Arith.padding_counts (streamLayout.core.poolWire 0) 48842
+  have ps := Arith.padding_slots (streamLayout.core.poolWire 0) 48842
   unfold sfxPadE
   rw [w.1, w.2.1, w.2.2.1, w.2.2.2.1, w.2.2.2.2.1, w.2.2.2.2.2, pc.1, pc.2, ps, norm_zero _ pc.1]
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem pad_counts_D :
-    literalToffolis sfxPadD = 0 ∧ literalRecords sfxPadD = 51716 ∧ traversals sfxPadD = 0 ∧
-    literalSlotSum sfxPadD = 51716 ∧ portTotal sfxPadD = 0 ∧ literalToffolis (normalizeW sfxPadD) = 0 := by
-  have w := wlit_counts (Arith.padding (streamLayout.core.poolWire 0) 51716)
-  have pc := Arith.padding_counts (streamLayout.core.poolWire 0) 51716
-  have ps := Arith.padding_slots (streamLayout.core.poolWire 0) 51716
+    literalToffolis sfxPadD = 0 ∧ literalRecords sfxPadD = 49864 ∧ traversals sfxPadD = 0 ∧
+    literalSlotSum sfxPadD = 49864 ∧ portTotal sfxPadD = 0 ∧ literalToffolis (normalizeW sfxPadD) = 0 := by
+  have w := wlit_counts (Arith.padding (streamLayout.core.poolWire 0) 49864)
+  have pc := Arith.padding_counts (streamLayout.core.poolWire 0) 49864
+  have ps := Arith.padding_slots (streamLayout.core.poolWire 0) 49864
   unfold sfxPadD
   rw [w.1, w.2.1, w.2.2.1, w.2.2.2.1, w.2.2.2.2.1, w.2.2.2.2.2, pc.1, pc.2, ps, norm_zero _ pc.1]
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -1508,7 +1508,7 @@ theorem portRowE_shape (rows : Nat → Fin 32768) :
 
 theorem portRowE_member (rows : Nat → Fin 32768) (i : WInstr 32768) (hi : i ∈ portRowCodeE rows) :
     i = WInstr.literal scrNegE ∨ i = WInstr.literal scrW1 ∨ i = WInstr.literal scrW2 ∨
-    i = WInstr.literal (Arith.padding (streamLayout.core.poolWire 0) 50694) ∨ i ∈ portRowCode3 rows := by
+    i = WInstr.literal (Arith.padding (streamLayout.core.poolWire 0) 48842) ∨ i ∈ portRowCode3 rows := by
   have hs := portRowE_shape rows
   dsimp only at hs
   rw [hs.1] at hi
@@ -1716,7 +1716,7 @@ theorem portRow5_shape (rows : Nat → Fin 32768) :
 
 theorem portRow5_member (rows : Nat → Fin 32768) (i : WInstr 32768) (hi : i ∈ portRowCode5 rows) :
     i = WInstr.literal scrNegE ∨ i = WInstr.literal scrW1 ∨ i = WInstr.literal scrW2 ∨
-    i = WInstr.literal (Arith.padding (streamLayout.core.poolWire 0) 50694) ∨ i ∈ portRowCode4 rows := by
+    i = WInstr.literal (Arith.padding (streamLayout.core.poolWire 0) 48842) ∨ i ∈ portRowCode4 rows := by
   have hs := portRow5_shape rows
   dsimp only at hs
   rw [hs.1] at hi
@@ -1977,7 +1977,7 @@ def sfxTailF : WCode 32768 :=
   wLiteral (zeroFlag streamLayout.point.finite streamLayout.control streamLayout.genericSelect) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.equalX]) ++
   wLiteral ([.CX streamLayout.control streamLayout.core.double]) ++
-  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 50694)
+  wLiteral (Arith.padding (streamLayout.core.poolWire 0) 48842)
 
 def portSuffixCodeF (rows : Nat → Fin 32768) : WCode 32768 :=
   [.lookup (some windowRoot) (scrDPorts rows)] ++ sfxMidF rows ++
@@ -2604,7 +2604,7 @@ theorem fixupProgram_wellFormed {n base} (data : List (ClearPort n)) (refs : Lis
   apply straight_append_wellFormed
   · apply literalProgram_wellFormed
     rw [hotPrepare,circuitWellFormed_append]
-    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],ParityBank7.parityNet_wellFormed 7 (lowN low) (hotNat hot) (hotLayout_of low hot hi hdlow) 7 le_rfl⟩
+    exact ⟨by simp [CircuitWellFormed,Gate.WellFormed],splitNetwork_wellFormed _ hp⟩
   · apply straight_append_wellFormed
     · exact literalProgram_wellFormed _ (hH _)
     · apply straight_append_wellFormed
@@ -2909,47 +2909,21 @@ set_option maxRecDepth 20000
 
 def scratch {n} (site : MaskedSite n) : Wire := (portTargets site.ports).headD 0
 
-/-- The recycled phase bank of a site: the 128 cleared wires after its scratch wire. -/
-def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire := fun i => scratch site + 1 + i.val
+def clearHot {n} (site : MaskedSite n) : Fin 128 → Wire :=
+  if site.guard = windowRoot then scrSiteHot else recycledHot
 
 def SiteKind {n} (site : MaskedSite n) : Prop :=
   (portTargets site.ports = List.range' 14115 256 ∧ site.guard = 14113) ∨
     (portTargets site.ports = WEX.scrWires ∧ site.guard = windowRoot) ∨
     (portTargets site.ports = List.range' 14115 256 ++ List.range' 15399 256 ∧ site.guard = 14113) ∨
-    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot) ∨
-    (portTargets site.ports = List.range' 14115 256 ∧ site.guard = windowRoot) ∨
-    (portTargets site.ports = List.range' 14374 256 ++ 14883 :: List.range' 15399 255 ∧ site.guard = windowRoot)
+    (portTargets site.ports = WEX.scrAllWires ∧ site.guard = windowRoot)
 
 theorem scrAllWires_eq : WEX.scrAllWires = WEX.scrWires ++ List.range' 15399 255 := by
   simp only [WEX.scrAllWires, WEX.scrDExtraWires, WEX.map_poolWire _ _ (by norm_num : 1284 + 255 ≤ 5699)]
 
--- Structural duplicate-freeness proofs: `decide +kernel` on these 771/513-wire lists cost 160 s / 31 s
--- of kernel replay; the words are increasing runs of ranges, so `omega` on the range bounds suffices.
 theorem scrAllWires_nodup : WEX.scrAllWires.Nodup := by
   rw [scrAllWires_eq, scrWires_eq]
-  simp only [List.nodup_append, List.nodup_cons, List.mem_append, List.mem_cons,
-    List.mem_range'_1, List.not_mem_nil, List.nodup_nil, List.cons_append, false_or, List.append_assoc]
-  repeat' (first | exact List.nodup_range' | (intro _) | constructor)
-  all_goals (try dsimp only [Wire] at *)
-  all_goals first | contradiction | omega
-
-theorem pointTargets_nodup : WEX.scrDTargets.Nodup := by
-  have hf : streamLayout.point.finite = 838 := by rw [streamLayout_point]
-  have hx : streamLayout.point.x = List.range' 263 256 := by rw [streamLayout_point]
-  have hy : streamLayout.point.y = List.range' 580 256 := by rw [streamLayout_point]
-  rw [WEX.scrDTargets, hf, hx, hy]
-  simp only [List.nodup_append, List.nodup_cons, List.mem_append, List.mem_range'_1, List.cons_append]
-  repeat' (first | exact List.nodup_range' | (intro _) | constructor)
-  all_goals (try dsimp only [Wire] at *)
-  all_goals first | contradiction | omega
-
-/-- The two pool words are disjoint ranges (structural; `decide` here costs a minute of kernel time). -/
-theorem kindPool2_nodup : (List.range' 14115 256 ++ List.range' 15399 256).Nodup := by
-  rw [List.nodup_append]
-  refine ⟨List.nodup_range', List.nodup_range', ?_⟩
-  intro a ha b hb
-  simp only [List.mem_range'_1] at ha hb
-  omega
+  decide +kernel
 
 theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     (portTargets site.ports).Nodup ∧ (∀ w ∈ portTargets site.ports, 14115 ≤ w ∧ oldWork w) ∧
@@ -2958,10 +2932,11 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     scratch site ∈ portTargets site.ports ∧
     (site.guard = 14113 ∨ site.guard = 10015) ∧ site.ports.length ≤ 771 := by
   have hlen : site.ports.length = (portTargets site.ports).length := by simp [portTargets]
-  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
-  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
-    have hc : clearHot site = recycledHot := by
-      funext i; simp only [clearHot,hs,recycledHot]
+  rcases hk with ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩ | ⟨ht,hg⟩
+  · have hc : clearHot site = recycledHot := by
+      unfold clearHot
+      rw [hg,if_neg (by decide)]
+    have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
     rw [hc,hs]
     refine ⟨by rw [ht]; exact List.nodup_range',?_,?_,?_,?_,Or.inl hg,?_⟩
     · intro w hw
@@ -2981,9 +2956,10 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_range']
       omega
-  · have hs : scratch site = 14373 := by rw [scratch,ht]; exact scrWires_head
-    have hc : clearHot site = scrSiteHot := by
-      funext i; simp only [clearHot,hs,scrSiteHot]
+  · have hc : clearHot site = scrSiteHot := by
+      unfold clearHot
+      rw [hg,if_pos rfl]
+    have hs : scratch site = 14373 := by rw [scratch,ht]; exact scrWires_head
     rw [hc,hs]
     refine ⟨by rw [ht]; exact WEX.scrWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
     · intro w hw
@@ -3002,11 +2978,12 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       simp
     · rw [hlen,ht,scrWires_eq]
       simp
-  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
-    have hc : clearHot site = recycledHot := by
-      funext i; simp only [clearHot,hs,recycledHot]
+  · have hc : clearHot site = recycledHot := by
+      unfold clearHot
+      rw [hg,if_neg (by decide)]
+    have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
     rw [hc,hs]
-    refine ⟨by rw [ht]; exact kindPool2_nodup,?_,?_,?_,?_,Or.inl hg,?_⟩
+    refine ⟨by rw [ht]; decide +kernel,?_,?_,?_,?_,Or.inl hg,?_⟩
     · intro w hw
       rw [ht] at hw
       simp only [List.mem_append,List.mem_range'_1] at hw
@@ -3027,9 +3004,10 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
       omega
     · rw [hlen,ht,List.length_append,List.length_range',List.length_range']
       omega
-  · have hs : scratch site = 14373 := by rw [scratch,ht,scrAllWires_eq,scrWires_eq]; rfl
-    have hc : clearHot site = scrSiteHot := by
-      funext i; simp only [clearHot,hs,scrSiteHot]
+  · have hc : clearHot site = scrSiteHot := by
+      unfold clearHot
+      rw [hg,if_pos rfl]
+    have hs : scratch site = 14373 := by rw [scratch,ht,scrAllWires_eq,scrWires_eq]; rfl
     rw [hc,hs]
     refine ⟨by rw [ht]; exact scrAllWires_nodup,?_,?_,?_,?_,Or.inr hg,?_⟩
     · intro w hw
@@ -3047,55 +3025,6 @@ theorem kind_facts {n} (site : MaskedSite n) (hk : SiteKind site) :
     · rw [ht,scrAllWires_eq,scrWires_eq]
       simp
     · rw [hlen,ht,scrAllWires_eq,scrWires_eq]
-      simp
-  · have hs : scratch site = 14115 := by rw [scratch,ht]; decide +kernel
-    have hc : clearHot site = recycledHot := by
-      funext i; simp only [clearHot,hs,recycledHot]
-    rw [hc,hs]
-    refine ⟨by rw [ht]; exact List.nodup_range',?_,?_,?_,?_,Or.inr hg,?_⟩
-    · intro w hw
-      rw [ht,List.mem_range'_1] at hw
-      unfold oldWork
-      dsimp only [Wire] at *
-      omega
-    · intro i
-      simp only [recycledHot]
-    · intro i
-      rw [ht,List.mem_range'_1]
-      have hi := i.isLt
-      simp only [recycledHot]
-      dsimp only [Wire] at *
-      omega
-    · rw [ht,List.mem_range'_1]
-      omega
-    · rw [hlen,ht,List.length_range']
-      omega
-  · have hs : scratch site = 14374 := by rw [scratch,ht]; rfl
-    refine ⟨?_,?_,fun i => rfl,?_,?_,Or.inr hg,?_⟩
-    · rw [ht]
-      refine List.nodup_append.mpr ⟨List.nodup_range', List.nodup_cons.mpr ⟨?_, List.nodup_range'⟩, ?_⟩
-      · intro h
-        rw [List.mem_range'_1] at h
-        omega
-      · intro a ha b hb
-        simp only [List.mem_cons,List.mem_range'_1] at ha hb
-        dsimp only [Wire] at *
-        omega
-    · intro w hw
-      rw [ht] at hw
-      simp only [List.mem_append,List.mem_cons,List.mem_range'_1] at hw
-      unfold oldWork
-      dsimp only [Wire] at *
-      omega
-    · intro i
-      show scratch site + 1 + i.val ∈ portTargets site.ports
-      rw [hs,ht]
-      have hi := i.isLt
-      simp only [List.mem_append,List.mem_cons,List.mem_range'_1]
-      omega
-    · rw [hs,ht]
-      simp
-    · rw [hlen,ht]
       simp
 
 theorem low_lt (i : Fin 7) : low i < 862 := by
@@ -3239,7 +3168,7 @@ theorem clear_slots_gen {n} (site : MaskedSite n) (H P : List Wire)
     (hl : (tableAddressTree H 0 1).Layout site.guard P) (start : Nat) :
     (MeasuredClear.measuredClear (clearData site.ports) low (clearHot site)
         (tableAddressTree H 0 1) site.guard (scratch site) P start).gateSlots =
-      512 * site.ports.length * 2 ^ H.length + 10 * (tableAddressTree H 0 1).internalNodes + 1140 := by
+      512 * site.ports.length * 2 ^ H.length + 10 * (tableAddressTree H 0 1).internalNodes + 1020 := by
   rw [MeasuredClear.measuredClear_slots _ _ _ _ _ _ _ hl,MeasuredClear.addressTree_leaves]
   simp [clearData]
 
@@ -3772,7 +3701,7 @@ theorem scrD_placed (bits : List Wire)
     · rw [WEX.scrDPorts_targets]
       exact scrAllWires_nodup
     · rw [WEX.scrCPorts, WEX.scr_point_targets]
-      exact pointTargets_nodup
+      decide +kernel
 
 theorem scr_placed (bits : List Wire)
     (hp : ∀ i ∈ (WEX.scrInSite probeRows).code, PlacedPair bits windowPaths windowRoot i) :
@@ -3939,7 +3868,7 @@ theorem row_geometry : ∀ b ∈ row, BlockGeometry b := by
     · subst hs
       exact ⟨scr_placed windowBits hp,hh,Or.inr (Or.inl ⟨WEX.scrInPorts_targets probeRows,rfl⟩)⟩
     · subst hs
-      exact ⟨scrD_placed windowBits hp,hh,Or.inr (Or.inr (Or.inr (Or.inl ⟨WEX.scrDPorts_targets probeRows,rfl⟩)))⟩
+      exact ⟨scrD_placed windowBits hp,hh,Or.inr (Or.inr (Or.inr ⟨WEX.scrDPorts_targets probeRows,rfl⟩))⟩
 
 local instance : Fact (Nat.Prime ShorECDLP.p) := ⟨ShorECDLP.Secp256k1.p_prime⟩
 
@@ -4002,7 +3931,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 32767
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 32767 + 375
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 32767 + 382
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -4030,11 +3959,11 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 255 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 2625 := by
+    ((clearProgram site start).instantiate read history).tCount = 2674 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem clearProgram_slots {n} (site : MaskedSite n) (hg : SiteGeometry site) (start : Nat) :
-    (clearProgram site start).gateSlots = 131072 * site.ports.length + 3690 := by
+    (clearProgram site start).gateSlots = 131072 * site.ports.length + 3570 := by
   rw [clearProgram,clear_slots_gen site high highPaths (site_high_layout site hg),high_nodes,
     show (2:Nat) ^ high.length = 256 by decide +kernel]
   omega
@@ -4080,7 +4009,7 @@ theorem program_tCount {n} (read : ConstantBit n → Bool) (code : Code n)
 @[simp] theorem erase_cons {n} (b : Block n) (code : Code n) : erase (b::code) = b.code ++ erase code := rfl
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 32392 = literalToffolis (normalizeW b.code) + traversals b.code * 32767 := by
+    blockCCX b + blockMasks b * 32385 = literalToffolis (normalizeW b.code) + traversals b.code * 32767 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -4095,7 +4024,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 32392 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 32767 := by
+    ccx code + masks code * 32385 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 32767 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -4362,7 +4291,7 @@ theorem site_old_clear_slots {n} (site : MaskedSite n) :
   simp [codeSlots,windowBits]
 
 theorem block_slots_relation {n} (b : Block n) (hg : BlockGeometry b) (start : Nat) :
-    (blockProgram b start).gateSlots + blockMasks b * 323980 =
+    (blockProgram b start).gateSlots + blockMasks b * 324100 =
       codeSlots windowBits (normalizeW b.code) + blockLen b * 98304 := by
   cases b with
   | plain code =>
@@ -4383,7 +4312,7 @@ theorem block_slots_relation {n} (b : Block n) (hg : BlockGeometry b) (start : N
     omega
 
 theorem program_slots_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b) (start : Nat) :
-    (program code start).gateSlots + masks code * 323980 =
+    (program code start).gateSlots + masks code * 324100 =
       codeSlots windowBits (normalizeW (erase code)) + lens code * 98304 := by
   induction code generalizing start with
   | nil => simp [program,records,masks,lens,Straight.gateSlots,erase,normalizeW,codeSlots]
@@ -4396,15 +4325,15 @@ theorem program_slots_relation {n} (code : Code n) (hg : ∀ b ∈ code, BlockGe
 
 theorem slots_credit5 {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b)
     (hm : masks code = 7) (hl : lens code = 2567) (start : Nat) :
-    (program code start).gateSlots = codeSlots windowBits (normalizeW (erase code)) + 250078508 := by
+    (program code start).gateSlots = codeSlots windowBits (normalizeW (erase code)) + 250077668 := by
   have h := program_slots_relation code hg start
   rw [hm,hl] at h
   omega
 
 theorem row_slots (start : Nat) : (program row start).gateSlots =
-    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250078508 := by
+    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250077668 := by
   exact (slots_credit5 row row_geometry row_masks row_lens start).trans
-    (congrArg (fun c : WCode 32768 => codeSlots windowBits (normalizeW c) + 250078508) erase_row)
+    (congrArg (fun c : WCode 32768 => codeSlots windowBits (normalizeW c) + 250077668) erase_row)
 
 end
 end ShorECDLP.Entrant.WEXUnlookup
@@ -4652,12 +4581,12 @@ attribute [local irreducible] ccx blockCCX masks blockMasks row WEX.traversals
 
 theorem ccx_credit5 {n} (code : Code n) (k : Nat) (hm : masks code = 7)
     (hk : literalToffolis (normalizeW (erase code)) + traversals (erase code)*32767 = k) :
-    ccx code + 226744 = k := by
+    ccx code + 226695 = k := by
   have h := ccx_relation code
   rw [hm] at h
   omega
 
-theorem row_ccx_relation : ccx row + 226744 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15*32767 := by
+theorem row_ccx_relation : ccx row + 226695 = literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15*32767 := by
   have ht := WEX.clearReferenceRow_traversals
   rw [traversals_normalize] at ht
   apply ccx_credit5 row _ row_masks
@@ -4704,7 +4633,7 @@ theorem addFixed_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (histo
   rw [addFixed,castFinish_instantiate,program_tCount read row row_geometry]
 
 theorem addFixed_slots (start : Nat) : (addFixed start).gateSlots =
-    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250078508 := by
+    codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 250077668 := by
   rw [addFixed,castFinish_gateSlots,row_slots]
 
 theorem addFixed_wellFormed (start : Nat) : (addFixed start).WellFormed := by
@@ -4808,7 +4737,7 @@ open AndGadget WEXCredit in
 
 theorem bodyProgram_slots (start : Nat) : (bodyProgram start).gateSlots =
     2*Bridge.tmplSlots (literalT (n := 32768) (ECDSAAdd.Baselines.normalizeProgram windowSignProgram)) +
-      codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 62 + 250078508 := by
+      codeSlots windowBits (normalizeW (clearReferenceRow probeRows)) + 62 + 250077668 := by
   rw [bodyProgram,castFinish_gateSlots]
   simp only [Straight.gateSlots_append,nProgram_slots,addFixed_slots,prefixProgram,suffixProgram,literalProgram_slots]
   have len : (signedAddressCircuit 836 870 windowBits).length = 30 := by decide +kernel
@@ -5065,7 +4994,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 63 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 1281 := by
+    ((clearProgram site start).instantiate read history).tCount = 1330 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
@@ -5132,7 +5061,7 @@ theorem high_nodes : (tableAddressTree high 0 1).internalNodes = 127 := by
 
 theorem clearProgram_tCount {n} (read : ConstantBit n → Bool) (site : MaskedSite n) (hg : SiteGeometry site)
     (start : Nat) (history : Fin start → Bool) :
-    ((clearProgram site start).instantiate read history).tCount = 1729 := by
+    ((clearProgram site start).instantiate read history).tCount = 1778 := by
   rw [clearProgram,MeasuredClear.measuredClear_tCount _ _ _ _ _ _ _ (site_high_layout site hg),high_nodes]
 
 theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
@@ -5140,7 +5069,7 @@ theorem high_records {n} (site : MaskedSite n) (hg : SiteGeometry site) :
   rw [(MeasuredClear.recordUnary_counts _ _ _ (site_high_layout site hg) 0).1,high_nodes]
 
 theorem clearProgram_slots {n} (site : MaskedSite n) (hg : SiteGeometry site) (start : Nat) :
-    (clearProgram site start).gateSlots ≤ 50530666 := by
+    (clearProgram site start).gateSlots ≤ 50530546 := by
   rw [clearProgram,clear_slots_gen site high highPaths (site_high_layout site hg),high_nodes,
     show (2:Nat) ^ high.length = 128 by decide +kernel]
   have := (kind_facts site hg.kind).2.2.2.2.2.2
@@ -6059,7 +5988,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 8191
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 8191 + 183
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 8191 + 190
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -6120,7 +6049,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
 
 def blockCCX {n} : Block n → Nat
   | .plain code => literalToffolis (normalizeW code) + traversals code * 16383
-  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 16383 + 247
+  | .masked site => literalToffolis (normalizeW site.prefix) + traversals site.prefix * 16383 + 254
 
 def blockMasks {n} : Block n → Nat
   | .plain _ => 0
@@ -6181,7 +6110,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 8008 = literalToffolis (normalizeW b.code) + traversals b.code * 8191 := by
+    blockCCX b + blockMasks b * 8001 = literalToffolis (normalizeW b.code) + traversals b.code * 8191 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -6196,7 +6125,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 8008 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 8191 := by
+    ccx code + masks code * 8001 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 8191 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -6279,7 +6208,7 @@ attribute [local irreducible] WEX.compile Bridge.translate ECDSAAdd.toffoliCount
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps program blockProgram clearProgram
 
 theorem block_ccx_relation {n} (b : Block n) :
-    blockCCX b + blockMasks b * 16136 = literalToffolis (normalizeW b.code) + traversals b.code * 16383 := by
+    blockCCX b + blockMasks b * 16129 = literalToffolis (normalizeW b.code) + traversals b.code * 16383 := by
   cases b with
   | plain code => simp [blockCCX,blockMasks,Block.code]
   | masked site =>
@@ -6294,7 +6223,7 @@ theorem block_ccx_relation {n} (b : Block n) :
     omega
 
 theorem ccx_relation {n} (code : Code n) :
-    ccx code + masks code * 16136 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 16383 := by
+    ccx code + masks code * 16129 = literalToffolis (normalizeW (erase code)) + traversals (erase code) * 16383 := by
   induction code with
   | nil => simp [ccx,masks,erase,normalizeW,literalToffolis,traversals]
   | cons b code ih =>
@@ -6682,7 +6611,7 @@ attribute [local irreducible] bodyProgram
 
 
 
-theorem row_ccx_relation : ccx row + 7 * 8008 =
+theorem row_ccx_relation : ccx row + 7 * 8001 =
     literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15 * 8191 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
@@ -6751,7 +6680,7 @@ attribute [local irreducible] bodyProgram
 
 
 
-theorem row_ccx_relation : ccx row + 7 * 16136 =
+theorem row_ccx_relation : ccx row + 7 * 16129 =
     literalToffolis (normalizeW (clearReferenceRow probeRows)) + 15 * 16383 := by
   have hr := ccx_relation row
   rw [row_masks,erase_row] at hr
@@ -6848,7 +6777,7 @@ attribute [local irreducible] program blockProgram clearProgram addFixed bodyPro
   | cons i code ih => cases i <;> simp [codeSlots,ih,Nat.add_assoc]
 
 theorem block_slots_upper {n} (b : Block n) (hg : BlockGeometry b) (start : Nat) :
-    (blockProgram b start).gateSlots ≤ codeSlots bits (normalizeW b.code) + blockMasks b * 50530666 := by
+    (blockProgram b start).gateSlots ≤ codeSlots bits (normalizeW b.code) + blockMasks b * 50530546 := by
   cases b with
   | plain code =>
     have hl := pair_layouts_of_placed bits windowPaths windowRoot (normalizeW code)
@@ -6868,7 +6797,7 @@ theorem block_slots_upper {n} (b : Block n) (hg : BlockGeometry b) (start : Nat)
     omega
 
 theorem program_slots_upper {n} (code : Code n) (hg : ∀ b ∈ code, BlockGeometry b) (start : Nat) :
-    (program code start).gateSlots ≤ codeSlots bits (normalizeW (erase code)) + masks code * 50530666 := by
+    (program code start).gateSlots ≤ codeSlots bits (normalizeW (erase code)) + masks code * 50530546 := by
   induction code generalizing start with
   | nil => simp [program,records,erase,normalizeW,codeSlots,masks,Straight.gateSlots]
   | cons b code ih =>
@@ -11869,7 +11798,7 @@ theorem widthFastBodyProgram_tBound (k : Nat) (hk : k ≤ 15) (start : Nat)
   have ha := literalToffolis_normalize (rowAddCode probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (rowAddCode probeRows) = 2156628 := by
+  have hrow : literalToffolis (rowAddCode probeRows) = 2161857 := by
     simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
       Nat.zero_add,Nat.add_zero,hc]
   rw [hrow] at ha
@@ -12207,8 +12136,8 @@ theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normaliz
   have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2158163 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2156628 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2163392 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2161857 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis, h0]
@@ -12420,8 +12349,8 @@ theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normaliz
   have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2158163 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2156628 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2163392 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2161857 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis, h0]
@@ -12642,8 +12571,8 @@ theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normaliz
   have ha := WEX.literalToffolis_normalize (clearReferenceRow probeRows)
   have hc := (finite23_literal_counts streamLayout probeRows).1.trans
     (tight_finite_literal_counts streamLayout streamLayout_widths streamLayout_nodup probeRows).1
-  have hrow : literalToffolis (clearReferenceRow probeRows) = 2158163 := by
-    have h0 : literalToffolis (rowAddCode probeRows) = 2156628 := by
+  have hrow : literalToffolis (clearReferenceRow probeRows) = 2163392 := by
+    have h0 : literalToffolis (rowAddCode probeRows) = 2161857 := by
       simp only [rowAddCode,literalToffolis_append,wLiteral,literalToffolis,ECDSAAdd.toffoliCount,
         Nat.zero_add,Nat.add_zero,hc]
     rw [WEX.clearReferenceRow_literalToffolis, h0]
