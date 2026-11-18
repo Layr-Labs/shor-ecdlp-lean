@@ -6409,6 +6409,106 @@ theorem deferTail_support {n} (B : Bank) (hB : BankOK B) (site : MaskedSite n) (
   rw [← hB.index]
   exact List.mem_dedup.mpr hw
 
+/-! #### Deferring one unit clear into the next unit's clear (narrow bank) -/
+
+theorem uinner_sim {n} (read : ConstantBit n → Bool) (B : Bank) (hB : BankOK B) (u : UnitSite n)
+    (hg : UnitGeoP B u) (hroot : u.clear.guard = windowRoot) (gd : List (ClearPort n)) (og : List Bool)
+    (hog : og.length = gd.length) :
+    ∃ cs : List ℂ, List.Forall₂ (WideBank8.UInnerSim B read u gd og)
+      ((source read B.bits B.paths windowRoot (normalizeW u.pre)).seq
+        (fusedFixSource B read u.clear gd og)).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  have hp : ∀ i ∈ u.pre, PlacedPair B.bits B.paths windowRoot i := fun i hi =>
+    hg.placed i (List.mem_append_left _ hi)
+  obtain ⟨c1, a1, m1⟩ := lnormalized_simulation read B.bits B.paths hB.bitsLen u.pre
+    (fun i hi => pair_of_placed_lit _ _ i (hp i hi))
+  obtain ⟨c2, a2, m2⟩ := fusedFix_sim read B hB u.clear hg.site gd og hog
+  refine ⟨coherentSeqCoefficients c1 c2, ?_, ?_⟩
+  · rw [AdaptiveCircuit.run_seq]
+    apply simulationAligned_seq a1 a2
+    intro b₁ k₁ b₂ k₂ h₁ h₂
+    obtain ⟨m, hm, h₁⟩ := h₁
+    refine ⟨m, hm, ?_⟩
+    intro a st v hs hun hv
+    have hn := strict_preserves read B.bits B.paths u.pre a hp st hs m
+    have hrun := unit_runP read B u hg a st m hs
+    have h1 := h₁ a st ⟨hs.2.1, hs.2.2⟩ (strict_pathsClean read B.bits B.paths u.pre a hp st hs)
+    set next := ECDSAAdd.run ((specialize u.pre a).instantiate read) m st with hnext
+    have hclean : Clean (portTargets u.clear.ports)
+        (tableXorState (portMask read u.clear.ports a) (next.basis u.clear.guard) next.basis) := by
+      have h := hun m
+      rw [hrun] at h
+      exact h
+    have hlast := hg.site.placed (.lookup (some u.clear.guard) u.clear.ports) (by simp [MaskedSite.code])
+    have hguard : next.basis u.clear.guard = st.basis u.clear.guard := by
+      rw [hroot, hn.2.2, hs.2.2]
+    have hsite : ∀ p ∈ u.clear.ports, next.basis p.target = (next.basis u.clear.guard &&
+        decide (read (p.ref (tableAddressValue B.bits next.basis)) = p.value)) := by
+      rw [hn.2.1]
+      exact loaded_of_clean_unload read u.clear.ports a u.clear.guard next.basis hlast.2.1 hclean
+    have h2 := h₂ next v (fun w hw => hn.1 w (hB.sub w hw)) hsite (by
+      intro p hp'
+      rw [hn.2.1, hguard]
+      exact hv p hp')
+    have hfin : (⟨next.phase, clearRegister (portTargets u.clear.ports) next.basis⟩ : ECDSAAdd.State) =
+        ECDSAAdd.run ((specialize u.code a).instantiate read) m st := by
+      rw [hrun, clear_eq_unload read u.clear.ports a u.clear.guard next.basis hclean]
+    change b₂.kraus (b₁.kraus (Bridge.signedKet st)) = _
+    rw [h1, map_smul, h2, hfin, smul_smul, mul_assoc]
+  · rw [simulationCoefficients_mass, m1, m2]
+    norm_num
+
+theorem utail_sim {n} (read : ConstantBit n → Bool) (B : Bank) (hB : BankOK B) (u : UnitSite n)
+    (hg : UnitGeoP B u) (hroot : u.clear.guard = windowRoot) (gd : List (ClearPort n))
+    (hgn : (gd.map ClearPort.target).Nodup) :
+    ∃ cs : List ℂ, List.Forall₂ (WideBank8.UTailSim B read u gd) (deferSource B read (WideBank8.unitTail u) gd).run cs ∧
+      (cs.map Complex.normSq).sum = 1 := by
+  unfold deferSource
+  apply MeasuredClear.measureResetThen_sim (gd.map ClearPort.target)
+    (fun og => (source read B.bits B.paths windowRoot (normalizeW u.pre)).seq
+      (fusedFixSource B read u.clear gd og)) (fun og => WideBank8.UInnerSim B read u gd og)
+  · intro og hog
+    exact uinner_sim read B hB u hg hroot gd og (by simpa using hog)
+  · intro og hog b c hb
+    obtain ⟨m, hm, hb⟩ := hb
+    refine ⟨m, hm, ?_⟩
+    intro a st w hs hun hu hph hclr
+    have hk' := xResetRegisterKraus_ket (gd.map ClearPort.target) og w.basis hog hgn
+    rw [registerXResetCoeff_eq_magnitude_mul_phase _ _ _ hog, hclr] at hk'
+    have h := hb a st w.basis hs hun hu
+    have hsq := MeasuredClear.registerXPhase_square (gd.map ClearPort.target) og w.basis
+    change b.kraus (xResetRegisterKraus (gd.map ClearPort.target) og (Bridge.signedKet w)) = _
+    have hstep : b.kraus (xResetRegisterKraus (gd.map ClearPort.target) og (Bridge.signedKet w)) =
+        (registerXResetMagnitude (gd.map ClearPort.target).length *
+          registerXPhase (gd.map ClearPort.target) og w.basis) •
+          b.kraus (Bridge.signedKet st) := by
+      simp only [Bridge.signedKet, hph, map_smul, hk', smul_smul]
+      congr 1
+      ring
+    rw [hstep, h, smul_smul]
+    congr 1
+    linear_combination (registerXResetMagnitude (gd.map ClearPort.target).length * c) * hsq
+
+theorem unitTail_wellFormed {n} (B : Bank) (hB : BankOK B) (u : UnitSite n) (hg : UnitGeoP B u)
+    (gd : List (ClearPort n))
+    (hlit : ∀ p, WInstr.literal p ∈ u.pre → ECDSAAdd.Arithmetic.GatePhysical p) (start : Nat) :
+    (deferTail B (WideBank8.unitTail u) gd start).WellFormed := by
+  obtain ⟨hl, hi, hdlow, hbank, hs, hshot, -, -, -⟩ := site_clear_facts B hB u.clear hg.site
+  have harith : ∀ i ∈ u.pre, PlacedPair B.bits B.paths windowRoot i := fun i hi =>
+    hg.placed i (List.mem_append_left _ hi)
+  rw [deferTail, castFinish_wellFormed]
+  apply MeasuredClear.measureThen_wellFormed
+  intro cursor grefs
+  rw [castFinish_wellFormed]
+  apply straight_append_wellFormed
+  · exact pair_compile_wellFormed _ _ _ _ hB.bitsLen (pair_placed_normalize _ _ _ _ harith)
+      (normalized_literals_valid u.pre hlit) _
+  · rw [fusedFix, castFinish_wellFormed]
+    apply MeasuredClear.measureThen_wellFormed
+    intro c rs
+    rw [castFinish_wellFormed]
+    exact MeasuredClear.fixupProgram_wellFormed _ rs low (clearHot u.clear) _ u.clear.guard (scratch u.clear) B.hp hl
+      hi hdlow hs hshot
+
 end
 end ShorECDLP.Entrant.WEXFast.Defer
 
@@ -7171,6 +7271,724 @@ end
 end ShorECDLP.Entrant.WEXFast
 end
 
+/-! ### Narrow rows: a pair of adjacent units with one fused clear -/
+
+namespace ShorECDLP.Entrant.WEXFast
+open Quantum Challenge Paper2607_13816 Paper2607_13816.ChallengeMigration WEX WEXUnlookup PathShare
+open ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Secp256k1
+open ECDSAAdd.ShorPort ECDSAAdd.Entrant
+open MeasuredClear (ClearPort)
+open WideBank8 (GuardKept)
+noncomputable section
+set_option maxHeartbeats 4000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
+set_option linter.unusedVariables false
+
+structure UnitPair7 (n : Nat) where
+  u₁ : UnitSite n
+  u₂ : UnitSite n
+
+namespace UnitPair7
+variable {n : Nat} (q : UnitPair7 n)
+
+def gd : List (ClearPort n) := clearData q.u₁.clear.ports
+
+def Geo : Prop :=
+  UnitGeoP bank15 q.u₁ ∧ UnitGeoP bank15 q.u₂ ∧ q.u₁.clear.guard = windowRoot ∧ q.u₂.clear.guard = windowRoot
+
+def pairRecords : Nat :=
+  codeRecords bank15.bits bank15.paths windowRoot (normalizeW q.u₁.pre) +
+    (q.gd.length + Defer.tailRec bank15 (WideBank8.unitTail q.u₂))
+
+def pairProgram (start : Nat) : Straight n start (start + q.pairRecords) :=
+  castFinish (by simp only [pairRecords]; omega)
+    ((compile bank15.bits bank15.paths windowRoot (normalizeW q.u₁.pre) start).append
+      (Defer.deferTail bank15 (WideBank8.unitTail q.u₂) q.gd
+        (start + codeRecords bank15.bits bank15.paths windowRoot (normalizeW q.u₁.pre))))
+
+def pairSource (read : ConstantBit n → Bool) : AdaptiveCircuit :=
+  (source read bank15.bits bank15.paths windowRoot (normalizeW q.u₁.pre)).seq
+    (Defer.deferSource bank15 read (WideBank8.unitTail q.u₂) q.gd)
+
+theorem pairProgram_run (read : ConstantBit n → Bool) (start : Nat) (history : Fin start → Bool) :
+    ((q.pairProgram start).instantiate read history).run = (q.pairSource read).run := by
+  rw [pairProgram, castFinish_instantiate,
+    append_run_fixed _ _ _ _ _ (fun h => Defer.deferTail_run bank15 read (WideBank8.unitTail q.u₂) q.gd _ h),
+    AdaptiveCircuit.run_seq, compile_run]
+  simp only [pairSource, AdaptiveCircuit.run_seq]
+
+theorem gd_nodup (hg : q.Geo) : (q.gd.map ClearPort.target).Nodup := by
+  rw [gd, clearData_targets]
+  exact (hg.1.site.placed (.lookup (some q.u₁.clear.guard) q.u₁.clear.ports)
+    (by simp [MaskedSite.code])).2.1
+
+theorem pair_sim (read : ConstantBit n → Bool) (hg : q.Geo) :
+    ∃ cs : List ℂ, List.Forall₂ (fun (br : InstrumentBranch) (c : ℂ) =>
+      ∃ m : List Bool, m.length = literalRecords (erase2 (Block2.unit q.u₁ :: Block2.unit q.u₂ :: [])) ∧
+        ∀ address st, AddrValid windowBits windowRoot address st → Clean pathBank st.basis →
+          Safe2 read address (Block2.unit q.u₁ :: Block2.unit q.u₂ :: []) st →
+          br.kraus (Bridge.signedKet st) =
+            c • Bridge.signedKet (ECDSAAdd.run
+              (reference2 read address (Block2.unit q.u₁ :: Block2.unit q.u₂ :: [])) m st))
+      (q.pairSource read).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  have hgn := q.gd_nodup hg
+  obtain ⟨g1, g2, r1, r2⟩ := hg
+  have hp1 : ∀ i ∈ q.u₁.pre, PlacedPair bank15.bits bank15.paths windowRoot i := fun i hi =>
+    g1.placed i (List.mem_append_left _ hi)
+  obtain ⟨c1, a1, m1⟩ := lnormalized_simulation read bank15.bits bank15.paths bank15_ok.bitsLen q.u₁.pre
+    (fun i hi => pair_of_placed_lit _ _ i (hp1 i hi))
+  obtain ⟨c2, a2, m2⟩ := Defer.utail_sim read bank15 bank15_ok q.u₂ g2 r2 q.gd hgn
+  refine ⟨coherentSeqCoefficients c1 c2, ?_, ?_⟩
+  · rw [pairSource, AdaptiveCircuit.run_seq]
+    apply simulationAligned_seq a1 a2
+    intro b₁ k₁ b₂ k₂ h₁ h₂
+    obtain ⟨m₁, hm₁, h₁⟩ := h₁
+    obtain ⟨m₂, hm₂, h₂⟩ := h₂
+    refine ⟨m₁ ++ m₂, ?_, ?_⟩
+    · simp [erase2, Block2.code, UnitSite.code, literalRecords_append, literalRecords, hm₁, hm₂]
+    · intro a st hs hcl hsafe
+      have hsv : SimulationValid bank15.bits bank15.paths windowRoot a st := ⟨hcl, hs.1, hs.2⟩
+      have hm1c : m₁.length = ECDSAAdd.measurementCount (blockReference2 read a (.unit q.u₁)) := by
+        rw [hm₁, blockReference2, (specialize_counts read _ a).2]
+        simp [Block2.code, UnitSite.code, literalRecords_append, literalRecords]
+      have hsafe1 : ∀ m, Clean (portTargets q.u₁.clear.ports)
+          (ECDSAAdd.run ((specialize q.u₁.code a).instantiate read) m st).basis := hsafe.1
+      have hsafe2 : ∀ m, Clean (portTargets q.u₂.clear.ports)
+          (ECDSAAdd.run ((specialize q.u₂.code a).instantiate read) m
+            (ECDSAAdd.run ((specialize q.u₁.code a).instantiate read) m₁ st)).basis :=
+        (hsafe.2 m₁ hm1c).1
+      have hmidv := strict_preserves read bank15.bits bank15.paths q.u₁.code a g1.placed st hsv m₁
+      have hn := strict_preserves read bank15.bits bank15.paths q.u₁.pre a hp1 st hsv m₁
+      have hrun := unit_runP read bank15 q.u₁ g1 a st m₁ hsv
+      have h1 := h₁ a st hs (strict_pathsClean read bank15.bits bank15.paths q.u₁.pre a hp1 st hsv)
+      have hred : ECDSAAdd.run (reference2 read a (Block2.unit q.u₁ :: Block2.unit q.u₂ :: [])) (m₁ ++ m₂) st =
+          ECDSAAdd.run ((specialize q.u₂.code a).instantiate read) m₂
+            (ECDSAAdd.run ((specialize q.u₁.code a).instantiate read) m₁ st) := by
+        rw [reference2_cons, reference2_cons, reference2_nil, List.append_nil,
+          run_append_records _ _ m₁ m₂ st hm1c]
+        rfl
+      rw [hred]
+      set next := ECDSAAdd.run ((specialize q.u₁.pre a).instantiate read) m₁ st with hnext
+      have hclean : Clean (portTargets q.u₁.clear.ports)
+          (tableXorState (portMask read q.u₁.clear.ports a) (next.basis q.u₁.clear.guard) next.basis) := by
+        have h := hsafe1 m₁
+        rw [hrun] at h
+        exact h
+      have hlast := g1.site.placed (.lookup (some q.u₁.clear.guard) q.u₁.clear.ports) (by simp [MaskedSite.code])
+      have hfin : (⟨next.phase, clearRegister (portTargets q.u₁.clear.ports) next.basis⟩ : ECDSAAdd.State) =
+          ECDSAAdd.run ((specialize q.u₁.code a).instantiate read) m₁ st := by
+        rw [hrun, clear_eq_unload read q.u₁.clear.ports a q.u₁.clear.guard next.basis hclean]
+      set mid := ECDSAAdd.run ((specialize q.u₁.code a).instantiate read) m₁ st with hmid
+      have hgdv : ∀ p ∈ q.gd, next.basis p.target =
+          (mid.basis q.u₂.clear.guard && decide (read (p.ref a) = p.value)) := by
+        intro p hp
+        simp only [gd, clearData] at hp
+        obtain ⟨p0, hp0, rfl⟩ := List.mem_map.mp hp
+        have hl := loaded_of_clean_unload read q.u₁.clear.ports a q.u₁.clear.guard next.basis
+          hlast.2.1 hclean p0 hp0
+        rw [r1, hn.2.2] at hl
+        rw [r2, hmidv.2.2]
+        exact hl
+      have hph : next.phase = mid.phase := by rw [← hfin]
+      have hclr : clearRegister (q.gd.map ClearPort.target) next.basis = mid.basis := by
+        rw [gd, clearData_targets, ← hfin]
+      have h2 := h₂ a mid next hmidv hsafe2 hgdv hph hclr
+      change b₂.kraus (b₁.kraus (Bridge.signedKet st)) = _
+      rw [h1, map_smul, h2, smul_smul]
+  · rw [simulationCoefficients_mass, m1, m2]
+    norm_num
+
+def pairTP : Nat :=
+  literalToffolis (normalizeW q.u₁.pre) + traversals q.u₁.pre * (2 ^ bank15.bits.length - 1) +
+    blockTP2 bank15 (.unit q.u₂)
+
+def pairSave : Nat := (tableAddressTree bank15.high 0 1).internalNodes + 120
+
+def pairRSave : Nat :=
+  MeasuredClear.recordMeasurements
+    (MeasuredClear.recordUnaryOps (tableAddressTree bank15.high 0 1) q.u₁.clear.guard bank15.hp) + 127
+
+theorem pair_tCount (read : ConstantBit n → Bool) (hg : q.Geo) (start : Nat) (history : Fin start → Bool) :
+    ((q.pairProgram start).instantiate read history).tCount = 7 * q.pairTP := by
+  obtain ⟨h1, -⟩ := geo_lay2 bank15 bank15_ok (.unit q.u₁) hg.1
+  obtain ⟨h2, h2t⟩ := geo_lay2 bank15 bank15_ok (.unit q.u₂) hg.2.1
+  rw [pairProgram, castFinish_instantiate,
+    append_tCount_fixed _ _ _ _ _ (fun h => Defer.deferTail_tCount read bank15 (WideBank8.unitTail q.u₂) q.gd
+      h2t h2 _ h),
+    WEX.compile_tCount read _ _ _ _ h1 start history]
+  simp only [pairTP, blockTP2, WideBank8.unitTail, traversals_normalize]
+  ring
+
+theorem pair_tp_relation :
+    q.pairTP + UnitPair7.pairSave = blockTP2 bank15 (.unit q.u₁) + blockTP2 bank15 (.unit q.u₂) := by
+  simp only [pairTP, pairSave, blockTP2]
+  omega
+
+theorem pair_records_relation :
+    q.pairRecords + q.pairRSave = blockRecP2 bank15 (.unit q.u₁) + blockRecP2 bank15 (.unit q.u₂) := by
+  simp only [pairRecords, pairRSave, blockRecP2, Defer.tailRec, Defer.fuseRec, gd, clearData, List.length_map,
+    WideBank8.unitTail]
+  omega
+
+theorem pair_slots (hg : q.Geo) (start : Nat) :
+    (q.pairProgram start).gateSlots ≤ blockSP2 bank15 (.unit q.u₁) + blockSP2 bank15 (.unit q.u₂) + 12 := by
+  obtain ⟨h1, -⟩ := geo_lay2 bank15 bank15_ok (.unit q.u₁) hg.1
+  obtain ⟨h2, h2t⟩ := geo_lay2 bank15 bank15_ok (.unit q.u₂) hg.2.1
+  rw [pairProgram, castFinish_gateSlots, Straight.gateSlots_append, WEX.compile_slots _ _ _ _ h1 start,
+    Defer.deferTail_slots bank15 (WideBank8.unitTail q.u₂) q.gd h2t h2]
+  simp only [blockSP2, gd, clearData, List.length_map, WideBank8.unitTail, bank_tree_leaves, bank_tree_nodes]
+  omega
+
+attribute [local irreducible] WEX.codeRecords lookupMeasurements WEX.portOps tableAddressTree
+  MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps WEX.compile Bridge.translate
+  MeasuredClear.measuredClear MeasuredClear.measuredClear8 ECDSAAdd.Baselines.normalizeProgram
+
+theorem pair_wellFormed (hg : q.Geo)
+    (hp : ∀ p, WInstr.literal p ∈ q.u₁.code ++ q.u₂.code → GatePhysical p) (start : Nat) :
+    (q.pairProgram start).WellFormed := by
+  have hpref1 : ∀ i ∈ q.u₁.pre, LPlaced bank15.bits bank15.paths windowRoot i := fun i hi =>
+    pair_of_placed_lit _ _ i (hg.1.placed i (List.mem_append_left _ hi))
+  have hl1 : ∀ p, WInstr.literal p ∈ q.u₁.pre → GatePhysical p := fun p hm =>
+    hp p (List.mem_append_left _ (List.mem_append_left _ hm))
+  have hl2 : ∀ p, WInstr.literal p ∈ q.u₂.pre → GatePhysical p := fun p hm =>
+    hp p (List.mem_append_right _ (List.mem_append_left _ hm))
+  rw [pairProgram, castFinish_wellFormed]
+  exact straight_append_wellFormed _ _
+    (compile_wellFormedL _ _ _ _ bank15_ok.bitsLen (lplaced_normalize _ _ _ _ hpref1)
+      (normalized_literals_valid q.u₁.pre hl1) start)
+    (Defer.unitTail_wellFormed bank15 bank15_ok q.u₂ hg.2.1 q.gd hl2 _)
+
+theorem pair_residue (start : Nat) : AndGadget.residue (q.pairProgram start) = 0 := by
+  simp [pairProgram, AndGadget.residue_cast, AndGadget.residue_append, WEXCredit.compile_residue,
+    Defer.deferTail_residue]
+
+theorem pair_support_new (hg : q.Geo)
+    (hlit : ∀ p, WInstr.literal p ∈ q.u₁.code ++ q.u₂.code → ECDSAAdd.wires p ⊆ newSourceH.toFinset)
+    (hlook : ∀ c ps, WInstr.lookup c ps ∈ q.u₁.code ++ q.u₂.code →
+      (∀ x ∈ c, x ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
+    (start : Nat) : ChallengeMigration.straightWires (q.pairProgram start) ⊆ newSourceH := by
+  obtain ⟨g1, g2, -, -⟩ := hg
+  have hl1 := hlook (some q.u₁.clear.guard) q.u₁.clear.ports
+    (List.mem_append_left _ (by simp [UnitSite.code]))
+  have hl2 := hlook (some q.u₂.clear.guard) q.u₂.clear.ports
+    (List.mem_append_right _ (by simp [UnitSite.code]))
+  rw [pairProgram, support_cast, straightWires_append]
+  refine List.append_subset.mpr ⟨?_, ?_⟩
+  · exact compile_support _ _ _ _ newSourceH root_new bits_new bank_new
+      (normalized_lit_support _ newSourceH
+        (fun p hm => hlit p (List.mem_append_left _ (List.mem_append_left _ hm))))
+      (normalized_look_support _ newSourceH
+        (fun c ps hm => hlook c ps (List.mem_append_left _ (List.mem_append_left _ hm)))) start
+  · exact Defer.deferTail_support bank15 bank15_ok (WideBank8.unitTail q.u₂) g2.site.kind _ newSourceH hl2.2
+      (hl2.1 _ (Option.mem_def.mpr rfl)) low_new high_new bank_new root_new bits_new
+      (by rw [gd, clearData_targets]; exact hl1.2)
+      (fun p hm => hlit p (List.mem_append_right _ (List.mem_append_left _ (show _ ∈ q.u₂.pre from hm))))
+      (fun c ps hm => hlook c ps (List.mem_append_right _ (List.mem_append_left _ (show _ ∈ q.u₂.pre from hm)))) _
+
+end UnitPair7
+
+/-! #### Narrow codes with fused pairs -/
+
+attribute [local irreducible] WEX.codeRecords lookupMeasurements WEX.portOps tableAddressTree
+  MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps WEX.compile Bridge.translate
+  MeasuredClear.measuredClear MeasuredClear.measuredClear8 ECDSAAdd.Baselines.normalizeProgram
+
+inductive HBlock (n : Nat) where
+  | blk (b : FBlock2 n)
+  | pair (q : UnitPair7 n)
+abbrev HCode (n : Nat) := List (HBlock n)
+
+def HBlock.forgetL {n} : HBlock n → Code2 n
+  | .blk b => b.forget :: []
+  | .pair q => Block2.unit q.u₁ :: Block2.unit q.u₂ :: []
+
+def hforget {n} (code : HCode n) : Code2 n := code.flatMap HBlock.forgetL
+
+@[simp] theorem hforget_cons {n} (b : HBlock n) (code : HCode n) :
+    hforget (b :: code) = b.forgetL ++ hforget code := by
+  simp [hforget]
+
+@[simp] theorem hforget_append {n} (a b : HCode n) : hforget (a ++ b) = hforget a ++ hforget b := by
+  simp [hforget, List.flatMap_append]
+
+theorem hforget_blk {n} (c : FCode2 n) : hforget (c.map HBlock.blk) = fforget c := by
+  induction c with
+  | nil => rfl
+  | cons b c ih => rw [List.map_cons, hforget_cons, ih]; rfl
+
+theorem codeTP2_append7 {n} (B : Bank) (a b : Code2 n) : codeTP2 B (a ++ b) = codeTP2 B a + codeTP2 B b := by
+  induction a with
+  | nil => simp [codeTP2]
+  | cons x a ih => simp [codeTP2, ih, Nat.add_assoc]
+
+theorem recordsP2_append7 {n} (B : Bank) (a b : Code2 n) :
+    recordsP2 B (a ++ b) = recordsP2 B a + recordsP2 B b := by
+  induction a with
+  | nil => simp [recordsP2]
+  | cons x a ih => simp [recordsP2, ih, Nat.add_assoc]
+
+theorem codeSP2_append7 {n} (B : Bank) (a b : Code2 n) : codeSP2 B (a ++ b) = codeSP2 B a + codeSP2 B b := by
+  induction a with
+  | nil => simp [codeSP2]
+  | cons x a ih => simp [codeSP2, ih, Nat.add_assoc]
+
+def hblockRec {n} : HBlock n → Nat
+  | .blk b => gblockRec b
+  | .pair q => q.pairRecords
+
+def hblockProg {n} : (b : HBlock n) → (start : Nat) → Straight n start (start + hblockRec b)
+  | .blk b, start => gblockProg b start
+  | .pair q, start => q.pairProgram start
+
+def hrecs {n} : HCode n → Nat
+  | [] => 0
+  | b :: code => hblockRec b + hrecs code
+
+def hprog {n} : (code : HCode n) → (start : Nat) → Straight n start (start + hrecs code)
+  | [], _ => .done
+  | b :: code, start => castFinish (by simp [hrecs]; omega)
+      ((hblockProg b start).append (hprog code (start + hblockRec b)))
+
+def hblockSrc {n} (read : ConstantBit n → Bool) : HBlock n → AdaptiveCircuit
+  | .blk b => gblockSrc read b
+  | .pair q => q.pairSource read
+
+def hsrc {n} (read : ConstantBit n → Bool) : HCode n → AdaptiveCircuit
+  | [] => .done
+  | b :: code => (hblockSrc read b).seq (hsrc read code)
+
+theorem hblockProg_run {n} (read : ConstantBit n → Bool) (b : HBlock n) (start : Nat)
+    (history : Fin start → Bool) :
+    ((hblockProg b start).instantiate read history).run = (hblockSrc read b).run := by
+  cases b with
+  | blk b => exact gblockProg_run read b start history
+  | pair q => exact q.pairProgram_run read start history
+
+theorem hprog_run {n} (read : ConstantBit n → Bool) (code : HCode n) (start : Nat)
+    (history : Fin start → Bool) :
+    ((hprog code start).instantiate read history).run = (hsrc read code).run := by
+  induction code generalizing start with
+  | nil => rfl
+  | cons b code ih =>
+    rw [hprog, castFinish_instantiate, append_run_fixed _ _ _ _ _ (ih _), AdaptiveCircuit.run_seq, hblockProg_run]
+    simp only [hsrc, AdaptiveCircuit.run_seq]
+
+def HBlockGeo {n} : HBlock n → Prop
+  | .blk b => GBlockGeo b
+  | .pair q => q.Geo
+
+def HBlockClean {n} : HBlock n → ECDSAAdd.State → Prop
+  | .blk b, st => FBlockClean b st
+  | .pair _, st => Clean pathBank st.basis
+
+def HCodeClean {n} (read : ConstantBit n → Bool) (address : Nat) : HCode n → ECDSAAdd.State → Prop
+  | [], _ => True
+  | b :: code, st => HBlockClean b st ∧
+      ∀ m, m.length = ECDSAAdd.measurementCount (reference2 read address b.forgetL) →
+        HCodeClean read address code (ECDSAAdd.run (reference2 read address b.forgetL) m st)
+
+def HBlockSim {n} (read : ConstantBit n → Bool) (block : HBlock n)
+    (branch : InstrumentBranch) (c : ℂ) : Prop :=
+  ∃ m : List Bool, m.length = literalRecords (erase2 block.forgetL) ∧
+    ∀ address st, AddrValid windowBits windowRoot address st → HBlockClean block st →
+      Safe2 read address block.forgetL st →
+      branch.kraus (Bridge.signedKet st) =
+        c • Bridge.signedKet (ECDSAAdd.run (reference2 read address block.forgetL) m st)
+
+theorem hblock_sim {n} (read : ConstantBit n → Bool) (block : HBlock n) (hg : HBlockGeo block) :
+    ∃ cs : List ℂ, List.Forall₂ (HBlockSim read block) (hblockSrc read block).run cs ∧
+      (cs.map Complex.normSq).sum = 1 := by
+  cases block with
+  | blk b =>
+    obtain ⟨cs, al, mass⟩ := gblock_sim read b hg
+    refine ⟨cs, al.imp ?_, mass⟩
+    intro br c h
+    obtain ⟨m, hm, h⟩ := h
+    refine ⟨m, by rw [show (HBlock.blk b).forgetL = b.forget :: [] from rfl, WideBank8.Fast16.erase2_single]; exact hm,
+      fun a st hs hc hsafe => ?_⟩
+    rw [show (HBlock.blk b).forgetL = b.forget :: [] from rfl, WideBank8.Fast16.reference2_single]
+    exact h a st hs hc hsafe.1
+  | pair q =>
+    obtain ⟨cs, al, mass⟩ := q.pair_sim read hg
+    exact ⟨cs, al.imp (fun _ _ h => h), mass⟩
+
+theorem hblock_addr {n} (read : ConstantBit n → Bool) (b : HBlock n) (hg : HBlockGeo b)
+    (a : Nat) (st : ECDSAAdd.State) (hs : AddrValid windowBits windowRoot a st)
+    (hc : HBlockClean b st) (m : List Bool) :
+    AddrValid windowBits windowRoot a (ECDSAAdd.run (reference2 read a b.forgetL) m st) := by
+  cases b with
+  | blk b =>
+    rw [show (HBlock.blk b).forgetL = b.forget :: [] from rfl, WideBank8.Fast16.reference2_single]
+    exact fblock_addr read b (gblock_geo b hg) a st hs hc m
+  | pair q =>
+    have hp : ∀ i ∈ erase2 (Block2.unit q.u₁ :: Block2.unit q.u₂ :: []),
+        PlacedPair windowBits pathBank windowRoot i := by
+      intro i hi
+      rw [erase2_cons, erase2_cons, erase2_nil, List.append_nil, List.mem_append] at hi
+      rcases hi with hi | hi
+      · exact hg.1.placed i hi
+      · exact hg.2.1.placed i hi
+    have h := strict_preserves read windowBits pathBank (erase2 (Block2.unit q.u₁ :: Block2.unit q.u₂ :: []))
+      a hp st ⟨hc, hs.1, hs.2⟩ m
+    exact ⟨h.2.1, h.2.2⟩
+
+def HSim {n} (read : ConstantBit n → Bool) (code : HCode n) (b : InstrumentBranch) (c : ℂ) : Prop :=
+  ∃ m : List Bool, m.length = literalRecords (erase2 (hforget code)) ∧
+    ∀ a st, AddrValid windowBits windowRoot a st → HCodeClean read a code st →
+      Safe2 read a (hforget code) st →
+      b.kraus (Bridge.signedKet st) = c • Bridge.signedKet (ECDSAAdd.run (reference2 read a (hforget code)) m st)
+
+theorem hsrc_sim {n} (read : ConstantBit n → Bool) (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b) :
+    ∃ cs : List ℂ, List.Forall₂ (HSim read code) (hsrc read code).run cs ∧
+      (cs.map Complex.normSq).sum = 1 := by
+  induction code with
+  | nil =>
+    refine ⟨[1], .cons ?_ .nil, by simp⟩
+    exact ⟨[], rfl, fun a st _ _ _ => by
+      simp [reference2, erase2, hforget, specialize, ECDSAAdd.ShorPort.Tmpl.instantiate, ECDSAAdd.run]⟩
+  | cons b code ih =>
+    obtain ⟨cs₁, h₁, mass₁⟩ := hblock_sim read b (hg b (by simp))
+    obtain ⟨cs₂, h₂, mass₂⟩ := ih (fun c hc => hg c (by simp [hc]))
+    refine ⟨coherentSeqCoefficients cs₁ cs₂, ?_, ?_⟩
+    · rw [hsrc, AdaptiveCircuit.run_seq]
+      apply simulationAligned_seq h₁ h₂
+      intro b₁ c₁ b₂ c₂ hb₁ hb₂
+      obtain ⟨m₁, len₁, run₁⟩ := hb₁
+      obtain ⟨m₂, len₂, run₂⟩ := hb₂
+      refine ⟨m₁ ++ m₂, ?_, ?_⟩
+      · simp [hforget_cons, erase2_append, List.length_append, len₁, len₂]
+      · intro a st hs hc hsafe
+        rw [hforget_cons] at hsafe ⊢
+        have hm : m₁.length = ECDSAAdd.measurementCount (reference2 read a b.forgetL) :=
+          len₁.trans (specialize_counts read (erase2 b.forgetL) a).2.symm
+        have hsp := WideBank8.Fast16.safe2_append_inv read a b.forgetL (hforget code) st hsafe
+        have hn := hblock_addr read b (hg b (by simp)) a st hs hc.1 m₁
+        change b₂.kraus (b₁.kraus (Bridge.signedKet st)) = _
+        rw [run₁ a st hs hc.1 hsp.1, map_smul,
+          run₂ a (ECDSAAdd.run (reference2 read a b.forgetL) m₁ st) hn (hc.2 m₁ hm) (hsp.2 m₁ hm),
+          reference2_append, run_append_records _ _ m₁ m₂ st hm]
+        simp [smul_smul]
+    · rw [simulationCoefficients_mass, mass₁, mass₂]
+      norm_num
+
+theorem hprog_coherent {n} (read : ConstantBit n → Bool) (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b)
+    (Valid : BasisState → Prop) (result : BasisState → BasisState)
+    (hsafe : ∀ s, Valid s → Safe2 read (tableAddressValue windowBits s) (hforget code) ⟨false,s⟩)
+    (hclean : ∀ s, Valid s → HCodeClean read (tableAddressValue windowBits s) code ⟨false,s⟩)
+    (hrun : ∀ s, Valid s → ∀ m,
+      ECDSAAdd.run (reference2 read (tableAddressValue windowBits s) (hforget code)) m ⟨false,s⟩ = ⟨false,result s⟩)
+    (start : Nat) (history : Fin start → Bool) :
+    CoherentlyImplementsOn ((hprog code start).instantiate read history)
+      (Finsupp.lmapDomain ℂ ℂ result) (fun s => s windowRoot = true ∧ Valid s) := by
+  obtain ⟨cs, aligned, mass⟩ := hsrc_sim read code hg
+  refine ⟨cs, ?_, mass⟩
+  rw [hprog_run]
+  apply aligned.imp
+  intro b c hb s hs
+  obtain ⟨m, _, h⟩ := hb
+  have he := h (tableAddressValue windowBits s) ⟨false,s⟩ ⟨rfl, hs.1⟩ (hclean s hs.2) (hsafe s hs.2)
+  rw [Bridge.signedKet_false, hrun s hs.2 m, Bridge.signedKet_false] at he
+  simpa [ket] using he
+
+def hblockTP {n} : HBlock n → Nat
+  | .blk b => gblockTP b
+  | .pair q => q.pairTP
+
+def hcodeTP {n} : HCode n → Nat
+  | [] => 0
+  | b :: code => hblockTP b + hcodeTP code
+
+def hblockSave {n} : HBlock n → Nat
+  | .blk b => gblockSave b
+  | .pair _ => UnitPair7.pairSave
+
+def hsave {n} : HCode n → Nat
+  | [] => 0
+  | b :: code => hblockSave b + hsave code
+
+def hblockRSave {n} : HBlock n → Nat
+  | .blk b => gblockRSave b
+  | .pair q => q.pairRSave
+
+def hrsave {n} : HCode n → Nat
+  | [] => 0
+  | b :: code => hblockRSave b + hrsave code
+
+def hblockSlack {n} : HBlock n → Nat
+  | .blk b => fblockSlack b
+  | .pair _ => 12
+
+def hslack {n} : HCode n → Nat
+  | [] => 0
+  | b :: code => hblockSlack b + hslack code
+
+theorem hblock_tCount {n} (read : ConstantBit n → Bool) (b : HBlock n) (hg : HBlockGeo b)
+    (start : Nat) (history : Fin start → Bool) :
+    ((hblockProg b start).instantiate read history).tCount = 7 * hblockTP b := by
+  cases b with
+  | blk b => exact gblock_tCount read b hg start history
+  | pair q => exact q.pair_tCount read hg start history
+
+theorem hprog_tCount {n} (read : ConstantBit n → Bool) (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b)
+    (start : Nat) (history : Fin start → Bool) :
+    ((hprog code start).instantiate read history).tCount = 7 * hcodeTP code := by
+  induction code generalizing start with
+  | nil => simp [hprog, hrecs, hcodeTP, Straight.instantiate, AdaptiveCircuit.tCount]
+  | cons b code ih =>
+    rw [hprog, castFinish_instantiate,
+      append_tCount_fixed _ _ _ _ _ (fun h => ih (fun d hd => hg d (by simp [hd])) _ h),
+      hblock_tCount read b (hg b (by simp))]
+    simp only [hcodeTP]; ring
+
+theorem hcodeTP_relation {n} (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b) :
+    hcodeTP code + hsave code = codeTP2 bank15 (hforget code) := by
+  induction code with
+  | nil => rfl
+  | cons b code ih =>
+    have ih' := ih (fun d hd => hg d (by simp [hd]))
+    have hb : hblockTP b + hblockSave b = codeTP2 bank15 b.forgetL := by
+      have hgb := hg b (by simp)
+      cases b with
+      | blk b =>
+        have h := gcodeTP_relation (b :: []) (fun d hd => by simp at hd; subst hd; exact hgb)
+        simp only [gcodeTP, gsave, fforget, List.map_cons, List.map_nil, codeTP2] at h
+        simp only [hblockTP, hblockSave, HBlock.forgetL, codeTP2]
+        omega
+      | pair q =>
+        have h := q.pair_tp_relation
+        simp only [hblockTP, hblockSave, HBlock.forgetL, codeTP2]
+        omega
+    simp only [hcodeTP, hsave, hforget_cons, codeTP2_append7]
+    omega
+
+theorem hrecs_relation {n} (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b) :
+    hrecs code + hrsave code = recordsP2 bank15 (hforget code) := by
+  induction code with
+  | nil => rfl
+  | cons b code ih =>
+    have ih' := ih (fun d hd => hg d (by simp [hd]))
+    have hb : hblockRec b + hblockRSave b = recordsP2 bank15 b.forgetL := by
+      have hgb := hg b (by simp)
+      cases b with
+      | blk b =>
+        have h := grecs_relation (b :: []) (fun d hd => by simp at hd; subst hd; exact hgb)
+        simp only [grecs, grsave, fforget, List.map_cons, List.map_nil, recordsP2] at h
+        simp only [hblockRec, hblockRSave, HBlock.forgetL, recordsP2]
+        omega
+      | pair q =>
+        have h := q.pair_records_relation
+        simp only [hblockRec, hblockRSave, HBlock.forgetL, recordsP2]
+        omega
+    simp only [hrecs, hrsave, hforget_cons, recordsP2_append7]
+    omega
+
+theorem hprog_slots {n} (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b) (start : Nat) :
+    (hprog code start).gateSlots ≤ codeSP2 bank15 (hforget code) + hslack code := by
+  induction code generalizing start with
+  | nil => simp [hprog, hrecs, hslack, Straight.gateSlots, codeSP2]
+  | cons b code ih =>
+    have ih' := ih (fun d hd => hg d (by simp [hd])) (start + hblockRec b)
+    have hb : (hblockProg b start).gateSlots ≤ codeSP2 bank15 b.forgetL + hblockSlack b := by
+      have hgb := hg b (by simp)
+      cases b with
+      | blk b =>
+        have h := gprog_slots (b :: []) (fun d hd => by simp at hd; subst hd; exact hgb) start
+        rw [gprog, castFinish_gateSlots, Straight.gateSlots_append] at h
+        simp only [gprog, Straight.gateSlots, fforget, List.map_cons, List.map_nil, codeSP2, fslack] at h
+        simp only [HBlock.forgetL, codeSP2, hblockSlack]
+        change (gblockProg b start).gateSlots ≤ _
+        omega
+      | pair q =>
+        have h := q.pair_slots hgb start
+        simp only [HBlock.forgetL, codeSP2, hblockSlack]
+        change (q.pairProgram start).gateSlots ≤ _
+        omega
+    rw [hprog, castFinish_gateSlots, Straight.gateSlots_append]
+    simp only [hforget_cons, codeSP2_append7, hslack]
+    omega
+
+theorem hprog_wellFormed {n} (code : HCode n) (hg : ∀ b ∈ code, HBlockGeo b)
+    (hp : ∀ p, WInstr.literal p ∈ erase2 (hforget code) → GatePhysical p) (start : Nat) :
+    (hprog code start).WellFormed := by
+  induction code generalizing start with
+  | nil => trivial
+  | cons b code ih =>
+    rw [hprog, castFinish_wellFormed]
+    have hpb : ∀ p, WInstr.literal p ∈ erase2 b.forgetL → GatePhysical p := fun p hm =>
+      hp p (by rw [hforget_cons, erase2_append]; exact List.mem_append_left _ hm)
+    apply straight_append_wellFormed
+    · cases b with
+      | blk b =>
+        exact gblock_wellFormed b (hg (HBlock.blk b) (by simp))
+          (fun p hm => hpb p (by simpa [HBlock.forgetL, erase2] using hm)) start
+      | pair q =>
+        change (q.pairProgram start).WellFormed
+        exact q.pair_wellFormed (hg (HBlock.pair q) (by simp))
+          (fun p hm => hpb p (by simpa [HBlock.forgetL, erase2, Block2.code] using hm)) start
+    · exact ih (fun d hd => hg d (by simp [hd]))
+        (fun p hm => hp p (by rw [hforget_cons, erase2_append]; exact List.mem_append_right _ hm)) _
+
+theorem hprog_residue {n} (code : HCode n) (start : Nat) : AndGadget.residue (hprog code start) = 0 := by
+  induction code generalizing start with
+  | nil => simp [hprog, hrecs]
+  | cons b code ih =>
+    have hb : AndGadget.residue (hblockProg b start) = 0 := by
+      cases b with
+      | blk b =>
+        have h := gprog_residue (b :: []) start
+        simpa [gprog, AndGadget.residue_cast, AndGadget.residue_append] using h
+      | pair q => exact q.pair_residue start
+    simp [hprog, AndGadget.residue_cast, AndGadget.residue_append, hb, ih]
+
+/-! Moving between a fused pair and its two standard units. -/
+
+theorem hforget_pair {n} (pre post : FCode2 n) (q : UnitPair7 n) :
+    hforget (pre.map HBlock.blk ++ HBlock.pair q :: post.map HBlock.blk) =
+      fforget (pre ++ FBlock2.std (.unit q.u₁) :: FBlock2.std (.unit q.u₂) :: post) := by
+  rw [hforget_append, hforget_cons, hforget_blk, hforget_blk]
+  simp [fforget, FBlock2.forget, HBlock.forgetL]
+
+theorem hclean_blk {n} (read : ConstantBit n → Bool) (a : Nat) (c : FCode2 n) (st : ECDSAAdd.State)
+    (h : FCodeClean read a c st) : HCodeClean read a (c.map HBlock.blk) st := by
+  induction c generalizing st with
+  | nil => trivial
+  | cons b c ih =>
+    refine ⟨h.1, fun m hm => ?_⟩
+    rw [show (HBlock.blk b).forgetL = b.forget :: [] from rfl, WideBank8.Fast16.reference2_single] at hm ⊢
+    exact ih _ (h.2 m hm)
+
+theorem hclean_pair {n} (read : ConstantBit n → Bool) (a : Nat) (pre post : FCode2 n) (q : UnitPair7 n)
+    (st : ECDSAAdd.State)
+    (h : FCodeClean read a (pre ++ FBlock2.std (.unit q.u₁) :: FBlock2.std (.unit q.u₂) :: post) st) :
+    HCodeClean read a (pre.map HBlock.blk ++ HBlock.pair q :: post.map HBlock.blk) st := by
+  induction pre generalizing st with
+  | nil =>
+    have hfl : (HBlock.pair q).forgetL = Block2.unit q.u₁ :: Block2.unit q.u₂ :: [] := rfl
+    refine ⟨h.1.1, fun m hm => ?_⟩
+    rw [hfl, reference2_cons, WideBank8.Fast16.reference2_single, ECDSAAdd.measurementCount_append] at hm
+    rw [hfl]
+    set k := ECDSAAdd.measurementCount (blockReference2 read a (.unit q.u₁)) with hk
+    have hlen : (m.take k).length = k := by rw [List.length_take]; omega
+    have h1 := h.2 (m.take k) hlen
+    have h2 := h1.2 (m.drop k) (by
+      rw [List.length_drop]
+      show m.length - k = ECDSAAdd.measurementCount (blockReference2 read a (.unit q.u₂))
+      omega)
+    rw [reference2_cons, WideBank8.Fast16.reference2_single, ← List.take_append_drop k m,
+      run_append_records _ _ _ _ st hlen]
+    exact hclean_blk read a post _ h2
+  | cons x pre ih =>
+    refine ⟨h.1, fun m hm => ?_⟩
+    rw [show (HBlock.blk x).forgetL = x.forget :: [] from rfl, WideBank8.Fast16.reference2_single] at hm ⊢
+    exact ih _ (h.2 m hm)
+
+theorem hsave_pair {n} (pre post : FCode2 n) (q : UnitPair7 n) :
+    hsave (pre.map HBlock.blk ++ HBlock.pair q :: post.map HBlock.blk) =
+      gsave (pre ++ FBlock2.std (.unit q.u₁) :: FBlock2.std (.unit q.u₂) :: post) + UnitPair7.pairSave := by
+  have hp : ∀ c : FCode2 n, hsave (c.map HBlock.blk) = gsave c := by
+    intro c; induction c with
+    | nil => rfl
+    | cons b c ih => simp only [List.map_cons, hsave, gsave, hblockSave, ih]
+  induction pre with
+  | nil => simp only [List.map_nil, List.nil_append, hsave, gsave, hblockSave, gblockSave, hp]; omega
+  | cons x pre ih => simp only [List.map_cons, List.cons_append, hsave, gsave, hblockSave]; omega
+
+theorem hrsave_pair {n} (pre post : FCode2 n) (q : UnitPair7 n) :
+    hrsave (pre.map HBlock.blk ++ HBlock.pair q :: post.map HBlock.blk) =
+      grsave (pre ++ FBlock2.std (.unit q.u₁) :: FBlock2.std (.unit q.u₂) :: post) + q.pairRSave := by
+  have hp : ∀ c : FCode2 n, hrsave (c.map HBlock.blk) = grsave c := by
+    intro c; induction c with
+    | nil => rfl
+    | cons b c ih => simp only [List.map_cons, hrsave, grsave, hblockRSave, ih]
+  induction pre with
+  | nil => simp only [List.map_nil, List.nil_append, hrsave, grsave, hblockRSave, gblockRSave, hp]; omega
+  | cons x pre ih => simp only [List.map_cons, List.cons_append, hrsave, grsave, hblockRSave]; omega
+
+theorem hslack_pair {n} (pre post : FCode2 n) (q : UnitPair7 n) :
+    hslack (pre.map HBlock.blk ++ HBlock.pair q :: post.map HBlock.blk) =
+      fslack (pre ++ FBlock2.std (.unit q.u₁) :: FBlock2.std (.unit q.u₂) :: post) := by
+  have hp : ∀ c : FCode2 n, hslack (c.map HBlock.blk) = fslack c := by
+    intro c; induction c with
+    | nil => rfl
+    | cons b c ih => simp only [List.map_cons, hslack, fslack, hblockSlack, ih]
+  induction pre with
+  | nil => simp only [List.map_nil, List.nil_append, hslack, fslack, hblockSlack, fblockSlack, hp]; omega
+  | cons x pre ih => simp only [List.map_cons, List.cons_append, hslack, fslack, hblockSlack]; omega
+
+
+def HNoHost {n} : HBlock n → Prop
+  | .blk b => FNoHost b
+  | .pair _ => True
+
+theorem hblock_support (b : HBlock 32768) (hg : HBlockGeo b)
+    (hlit : ∀ p, WInstr.literal p ∈ erase2 b.forgetL → ∀ w ∈ ECDSAAdd.wires p,
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH)
+    (hstrict : ∀ p, WInstr.literal p ∈ erase2 b.forgetL →
+      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+      ∃ c, b = .blk (.std (.plain c)))
+    (hctl : ∀ c, b = .blk (.std (.plain c)) →
+      hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c))
+    (hctl3 : ∀ c, b = .blk (.std (.plain c)) →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c))
+    (hlook : ∀ c ps, WInstr.lookup c ps ∈ erase2 b.forgetL →
+      (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
+    (hgarb : HNoHost b) (start : Nat) :
+    ChallengeMigration.straightWires (hblockProg b start) ⊆ newSourceH := by
+  cases b with
+  | blk b =>
+    have hm : ∀ i, i ∈ b.forget.code → i ∈ erase2 (HBlock.blk b).forgetL := fun i hi => by
+      simpa [HBlock.forgetL, erase2] using hi
+    exact gblock_support b hg (fun p hp => hlit p (hm _ hp))
+      (fun p hp hh => by
+        obtain ⟨c, hc⟩ := hstrict p (hm _ hp) hh
+        exact ⟨c, HBlock.blk.inj hc⟩)
+      (fun c hc => hctl c (congrArg HBlock.blk hc)) (fun c hc => hctl3 c (congrArg HBlock.blk hc))
+      (fun c ps hp => hlook c ps (hm _ hp)) hgarb start
+  | pair q =>
+    have hm : ∀ i, i ∈ q.u₁.code ++ q.u₂.code → i ∈ erase2 (HBlock.pair q).forgetL := fun i hi => by
+      simpa [HBlock.forgetL, erase2, Block2.code] using hi
+    refine q.pair_support_new hg ?_ (fun c ps hp => hlook c ps (hm _ hp)) start
+    intro p hp w hw
+    rcases hlit p (hm _ hp) w hw with e | e | e | e
+    · obtain ⟨c, hc⟩ := hstrict p (hm _ hp) (Or.inl (e ▸ hw)); cases hc
+    · obtain ⟨c, hc⟩ := hstrict p (hm _ hp) (Or.inr (Or.inl (e ▸ hw))); cases hc
+    · obtain ⟨c, hc⟩ := hstrict p (hm _ hp) (Or.inr (Or.inr (e ▸ hw))); cases hc
+    · exact List.mem_toFinset.mpr e
+
+theorem hprog_support (code : HCode 32768) (hg : ∀ b ∈ code, HBlockGeo b)
+    (hlit : ∀ p, WInstr.literal p ∈ erase2 (hforget code) → ∀ w ∈ ECDSAAdd.wires p,
+      w = hostWire ∨ w = hostWire2 ∨ w = hostWire3 ∨ w ∈ newSourceH)
+    (hstrict : ∀ b ∈ code, ∀ p, WInstr.literal p ∈ erase2 b.forgetL →
+      (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+      ∃ c, b = .blk (.std (.plain c)))
+    (hctl : ∀ b ∈ code, ∀ c, b = .blk (.std (.plain c)) →
+      hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c))
+    (hctl3 : ∀ b ∈ code, ∀ c, b = .blk (.std (.plain c)) →
+      hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c))
+    (hlook : ∀ c ps, WInstr.lookup c ps ∈ erase2 (hforget code) →
+      (∀ q ∈ c, q ∈ newSourceH) ∧ portTargets ps ⊆ newSourceH)
+    (hgarb : ∀ b ∈ code, HNoHost b)
+    (start : Nat) : ChallengeMigration.straightWires (hprog code start) ⊆ newSourceH := by
+  induction code generalizing start with
+  | nil => simp [hprog, hrecs, ChallengeMigration.straightWires]
+  | cons b code ih =>
+    rw [hprog, support_cast, straightWires_append]
+    exact List.append_subset.mpr ⟨hblock_support b (hg b (by simp))
+      (fun p hm => hlit p (by rw [hforget_cons, erase2_append]; exact List.mem_append_left _ hm))
+      (hstrict b (by simp)) (hctl b (by simp)) (hctl3 b (by simp))
+      (fun c ps hm => hlook c ps (by rw [hforget_cons, erase2_append]; exact List.mem_append_left _ hm))
+      (hgarb b (by simp)) start,
+      ih (fun d hd => hg d (by simp [hd]))
+        (fun p hm => hlit p (by rw [hforget_cons, erase2_append]; exact List.mem_append_right _ hm))
+        (fun d hd => hstrict d (by simp [hd])) (fun d hd => hctl d (by simp [hd])) (fun d hd => hctl3 d (by simp [hd]))
+        (fun c ps hm => hlook c ps (by rw [hforget_cons, erase2_append]; exact List.mem_append_right _ hm))
+        (fun d hd => hgarb d (by simp [hd])) _⟩
+
+end
+end ShorECDLP.Entrant.WEXFast
+
 /-! ### The narrow body with fused fast sites -/
 
 namespace ShorECDLP.Entrant.WEXFast.W15G
@@ -7211,53 +8029,166 @@ theorem rowCF_grsave : grsave rowCF = 39680 := by
   rw [rowCF, grsave_append, grsave_append, grsave_std, grsave_std]
   simp only [fgeneric3, grsave, gblockRSave, tripleF_garb_length, site2F_garb_length]
 
-theorem rowCF_gtp : gcodeTP rowCF + 39680 = ccx2 WEXUnlookup.rowC := by
-  have h := gcodeTP_relation rowCF rowCF_ggeo
-  rw [rowCF_gsave, fforget_rowCF, W15C.codeTP2_15] at h
+/-! The corner fusion on the narrow row. -/
+
+def corner7 : UnitPair7 32768 := ⟨WEXUnlookup.cornerUnit₁, WEXUnlookup.cornerUnit₂⟩
+
+def rowH : HCode 32768 :=
+  WideBank8.Row16.headF.map HBlock.blk ++ HBlock.pair corner7 :: WideBank8.Row16.tailF.map HBlock.blk
+
+theorem rowCF_split : rowCF = WideBank8.Row16.headF ++
+    FBlock2.std (.unit corner7.u₁) :: FBlock2.std (.unit corner7.u₂) :: WideBank8.Row16.tailF := by
+  rw [rowCF]
+  simp [WideBank8.Row16.headF, WideBank8.Row16.tailF, corner7, WEXUnlookup.rowPost3]
+
+theorem mem_rowCF_of_head (x : FBlock2 32768) (h : x ∈ WideBank8.Row16.headF) : x ∈ rowCF := by
+  rw [rowCF_split]; exact List.mem_append_left _ h
+
+theorem mem_rowCF_of_tail (x : FBlock2 32768) (h : x ∈ WideBank8.Row16.tailF) : x ∈ rowCF := by
+  rw [rowCF_split]
+  exact List.mem_append_right _ (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h))
+
+theorem corner7₁_mem : FBlock2.std (.unit corner7.u₁) ∈ rowCF := by
+  rw [rowCF_split]; exact List.mem_append_right _ (List.mem_cons.mpr (Or.inl rfl))
+
+theorem corner7₂_mem : FBlock2.std (.unit corner7.u₂) ∈ rowCF := by
+  rw [rowCF_split]
+  exact List.mem_append_right _ (List.mem_cons_of_mem _ (List.mem_cons.mpr (Or.inl rfl)))
+
+theorem corner7_geo : corner7.Geo :=
+  ⟨rowCF_ggeo _ corner7₁_mem, rowCF_ggeo _ corner7₂_mem, rfl, rfl⟩
+
+theorem rowH_blk_mem (x : FBlock2 32768) (h : HBlock.blk x ∈ rowH) : x ∈ rowCF := by
+  rw [rowH, List.mem_append, List.mem_cons] at h
+  rcases h with h | h | h
+  · obtain ⟨y, hy, he⟩ := List.mem_map.mp h
+    cases he
+    exact mem_rowCF_of_head _ hy
+  · cases h
+  · obtain ⟨y, hy, he⟩ := List.mem_map.mp h
+    cases he
+    exact mem_rowCF_of_tail _ hy
+
+theorem rowH_pair_mem (q : UnitPair7 32768) (h : HBlock.pair q ∈ rowH) : q = corner7 := by
+  rw [rowH, List.mem_append, List.mem_cons] at h
+  rcases h with h | h | h
+  · obtain ⟨y, -, he⟩ := List.mem_map.mp h
+    cases he
+  · cases h; rfl
+  · obtain ⟨y, -, he⟩ := List.mem_map.mp h
+    cases he
+
+theorem rowH_hgeo : ∀ b ∈ rowH, HBlockGeo b := by
+  intro b hb
+  cases b with
+  | blk x => exact rowCF_ggeo x (rowH_blk_mem x hb)
+  | pair q =>
+    rw [rowH_pair_mem q hb]
+    exact corner7_geo
+
+theorem hforget_rowH : hforget rowH = WEXUnlookup.rowC := by
+  rw [rowH, hforget_pair, ← rowCF_split, fforget_rowCF]
+
+theorem rowH_hsave : hsave rowH = 40055 := by
+  rw [rowH, hsave_pair, ← rowCF_split, rowCF_gsave, UnitPair7.pairSave, bank_tree_nodes]
+
+theorem rowH_hrsave : hrsave rowH = 40062 := by
+  rw [rowH, hrsave_pair, ← rowCF_split, rowCF_grsave]
+  have hcr := (MeasuredClear.recordUnary_counts _ _ _
+    (geo_lay2 bank15 bank15_ok (.unit corner7.u₁) corner7_geo.1).2 0).1
+  rw [bank_tree_nodes] at hcr
+  simp only [UnitPair7.pairRSave]
+  omega
+
+theorem rowH_hslack : hslack rowH = 167783782 := by
+  rw [rowH, hslack_pair, ← rowCF_split, ShorECDLP.Entrant.WEXFast.W15F.rowCF_slack]
+
+theorem rowH_htp : hcodeTP rowH + 40055 = ccx2 WEXUnlookup.rowC := by
+  have h := hcodeTP_relation rowH rowH_hgeo
+  rw [rowH_hsave, hforget_rowH, W15C.codeTP2_15] at h
   exact h
 
-theorem sub_arith (x : Nat) (h : x + 39680 = 1692440) : x = 1652760 := by omega
+theorem sub_arith (x : Nat) (h : x + 40062 = 1692440) : x = 1652378 := by omega
 
-theorem rowCF_grecords : grecs rowCF = 1652760 := by
-  have h := grecs_relation rowCF rowCF_ggeo
-  rw [rowCF_grsave, fforget_rowCF, W15C.rowC_recordsP] at h
+theorem rowH_hrecords : hrecs rowH = 1652378 := by
+  have h := hrecs_relation rowH rowH_hgeo
+  rw [rowH_hrsave, hforget_rowH, W15C.rowC_recordsP] at h
   exact sub_arith _ h
 
-theorem rowCF_gslots (start : Nat) : (gprog rowCF start).gateSlots ≤
+theorem rowH_hslots (start : Nat) : (hprog rowH start).gateSlots ≤
     codeSlots windowBits (normalizeW (erase2 WEXUnlookup.rowC)) + 418411946 := by
-  have h := gprog_slots rowCF rowCF_ggeo start
-  rw [fforget_rowCF, ShorECDLP.Entrant.WEXFast.W15F.rowC_slotsP start, ShorECDLP.Entrant.WEXFast.W15F.rowCF_slack] at h
+  have h := hprog_slots rowH rowH_hgeo start
+  rw [hforget_rowH, ShorECDLP.Entrant.WEXFast.W15F.rowC_slotsP start, rowH_hslack] at h
   exact ShorECDLP.Entrant.WEXFast.W15F.slots_arith _ _ h
 
-attribute [local irreducible] gprog gblockProg blockProgP2 clearP WEX.compile Bridge.translate
-  ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
-  WEX.literalToffolis WEX.normalizeW ccx2 gcodeTP Nat.add Nat.mul
+theorem rowH_strict : ∀ b ∈ rowH, ∀ p, WInstr.literal p ∈ erase2 b.forgetL →
+    (hostWire ∈ ECDSAAdd.wires p ∨ hostWire2 ∈ ECDSAAdd.wires p ∨ hostWire3 ∈ ECDSAAdd.wires p) →
+    ∃ c, b = .blk (.std (.plain c)) := by
+  intro b hb p hp hh
+  cases b with
+  | blk x =>
+    rw [show (HBlock.blk x).forgetL = x.forget :: [] from rfl, WideBank8.Fast16.erase2_single] at hp
+    obtain ⟨c, hc⟩ := ShorECDLP.Entrant.WEXFast.W15F.rowCF_strict x (rowH_blk_mem x hb) p hp hh
+    exact ⟨c, by rw [hc]⟩
+  | pair q =>
+    have hq := rowH_pair_mem q hb
+    subst hq
+    exfalso
+    rw [show (HBlock.pair corner7).forgetL = Block2.unit corner7.u₁ :: Block2.unit corner7.u₂ :: [] from rfl,
+      erase2_cons, erase2_cons, erase2_nil, List.append_nil, List.mem_append] at hp
+    rcases hp with hp | hp
+    · obtain ⟨c, hc⟩ := ShorECDLP.Entrant.WEXFast.W15F.rowCF_strict _ corner7₁_mem p hp hh
+      cases hc
+    · obtain ⟨c, hc⟩ := ShorECDLP.Entrant.WEXFast.W15F.rowCF_strict _ corner7₂_mem p hp hh
+      cases hc
 
-def addFixedCG (start : Nat) : Straight 32768 start (start+1652760) :=
-  castFinish (congrArg (fun m => start+m) rowCF_grecords) (gprog rowCF start)
+theorem rowH_ctl : ∀ b ∈ rowH, ∀ c, b = .blk (.std (.plain c)) →
+    hostWire2 ∈ ECDSAAdd.wires (litProg c) → hostCtl ∉ ECDSAAdd.wires (litProg c) := by
+  intro b hb c he
+  subst he
+  exact ShorECDLP.Entrant.WEXFast.W15F.rowCF_ctl _ (rowH_blk_mem _ hb) c rfl
+
+theorem rowH_ctl3 : ∀ b ∈ rowH, ∀ c, b = .blk (.std (.plain c)) →
+    hostWire3 ∈ ECDSAAdd.wires (litProg c) → hostCtl3 ∉ ECDSAAdd.wires (litProg c) := by
+  intro b hb c he
+  subst he
+  exact ShorECDLP.Entrant.WEXFast.W15F.rowCF_ctl3 _ (rowH_blk_mem _ hb) c rfl
+
+theorem rowH_nohost : ∀ b ∈ rowH, HNoHost b := by
+  intro b hb
+  cases b with
+  | blk x => exact ShorECDLP.Entrant.WEXFast.W15F.rowCF_nohost x (rowH_blk_mem x hb)
+  | pair q => trivial
+
+attribute [local irreducible] gprog gblockProg hprog hblockProg blockProgP2 clearP WEX.compile Bridge.translate
+  ECDSAAdd.Baselines.normalizeProgram ECDSAAdd.toffoliCount ECDSAAdd.measurementCount WEX.codeRecords
+  WEX.literalToffolis WEX.normalizeW ccx2 gcodeTP hcodeTP Nat.add Nat.mul
+
+def addFixedCG (start : Nat) : Straight 32768 start (start+1652378) :=
+  castFinish (congrArg (fun m => start+m) rowH_hrecords) (hprog rowH start)
 
 theorem addFixedCG_run (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
-    ((addFixedCG start).instantiate read history).run = (gsrc read rowCF).run := by
-  rw [addFixedCG, castFinish_instantiate, gprog_run]
+    ((addFixedCG start).instantiate read history).run = (hsrc read rowH).run := by
+  rw [addFixedCG, castFinish_instantiate, hprog_run]
 
 theorem addFixedCG_tCount (read : ConstantBit 32768 → Bool) (start : Nat) (history : Fin start → Bool) :
-    ((addFixedCG start).instantiate read history).tCount = 7 * gcodeTP rowCF := by
-  rw [addFixedCG, castFinish_instantiate, gprog_tCount read rowCF rowCF_ggeo]
+    ((addFixedCG start).instantiate read history).tCount = 7 * hcodeTP rowH := by
+  rw [addFixedCG, castFinish_instantiate, hprog_tCount read rowH rowH_hgeo]
 
 theorem addFixedCG_slots (start : Nat) : (addFixedCG start).gateSlots ≤
     codeSlots windowBits (normalizeW (erase2 WEXUnlookup.rowC)) + 418411946 := by
   rw [addFixedCG, castFinish_gateSlots]
-  exact rowCF_gslots start
+  exact rowH_hslots start
 
 theorem addFixedCG_wellFormed (start : Nat) : (addFixedCG start).WellFormed := by
   rw [addFixedCG, castFinish_wellFormed]
-  exact gprog_wellFormed rowCF rowCF_ggeo (by rw [fforget_rowCF]; exact WEXUnlookup.rowC_physical) start
+  exact hprog_wellFormed rowH rowH_hgeo (by rw [hforget_rowH]; exact WEXUnlookup.rowC_physical) start
 
 theorem addFixedCG_residue (start : Nat) : residue (addFixedCG start) = 0 := by
   rw [addFixedCG, residue_cast]
-  exact gprog_residue rowCF start
+  exact hprog_residue rowH start
 
-theorem addFixedCG_credit (start : Nat) : ProgramCredit (addFixedCG start) (gcodeTP rowCF) := by
+theorem addFixedCG_credit (start : Nat) : ProgramCredit (addFixedCG start) (hcodeTP rowH) := by
   have hz := addFixedCG_residue start
   refine ⟨hz, ?_⟩
   have he := exact_t (addFixedCG start) hz (fun _ => false) (fun _ => false)
@@ -7266,22 +8197,25 @@ theorem addFixedCG_credit (start : Nat) : ProgramCredit (addFixedCG start) (gcod
 
 theorem addFixedCG_support (start : Nat) : ChallengeMigration.straightWires (addFixedCG start) ⊆ newSourceH := by
   rw [addFixedCG, support_cast]
-  exact gprog_support rowCF rowCF_ggeo (by rw [fforget_rowCF]; exact rowC_lit_relaxed) ShorECDLP.Entrant.WEXFast.W15F.rowCF_strict ShorECDLP.Entrant.WEXFast.W15F.rowCF_ctl
-    ShorECDLP.Entrant.WEXFast.W15F.rowCF_ctl3 (by rw [fforget_rowCF]; exact rowC_look_newH) ShorECDLP.Entrant.WEXFast.W15F.rowCF_nohost start
+  exact hprog_support rowH rowH_hgeo (by rw [hforget_rowH]; exact rowC_lit_relaxed) rowH_strict rowH_ctl
+    rowH_ctl3 (by rw [hforget_rowH]; exact rowC_look_newH) rowH_nohost start
 
 def rowSourceCG (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
-  gsrc (readConstant coeffs Q) rowCF
+  hsrc (readConstant coeffs Q) rowH
 
 theorem rowSourceCG_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point)
     (hQ : ShorECDLP.order • Q = 0) (hn : ∀ a, constantPoint Q (coeffs a) ≠ 0) :
     CoherentlyImplementsOn (rowSourceCG coeffs Q) (Finsupp.lmapDomain ℂ ℂ (rowPointState coeffs Q)) LiveReady := by
-  have h := gprog_coherent (readConstant coeffs Q) rowCF rowCF_ggeo liveReady (rowPointState coeffs Q)
-    (fun s hs => by rw [fforget_rowCF]; exact (WEXUnlookup.rowC_safe_run coeffs Q hQ hn _ s hs).1)
-    (fun s hs => rowCF_clean coeffs Q hQ hn _ s hs)
-    (fun s hs m => by rw [fforget_rowCF]; exact WEXUnlookup.rowC_run_any _ coeffs Q hQ hn s hs m) 0 Fin.elim0
+  have h := hprog_coherent (readConstant coeffs Q) rowH rowH_hgeo liveReady (rowPointState coeffs Q)
+    (fun s hs => by rw [hforget_rowH]; exact (WEXUnlookup.rowC_safe_run coeffs Q hQ hn _ s hs).1)
+    (fun s hs => by
+      refine hclean_pair _ _ _ _ corner7 _ ?_
+      rw [← rowCF_split]
+      exact rowCF_clean coeffs Q hQ hn _ s hs)
+    (fun s hs m => by rw [hforget_rowH]; exact WEXUnlookup.rowC_run_any _ coeffs Q hQ hn s hs m) 0 Fin.elim0
   obtain ⟨cs, aligned, mass⟩ := h
   refine ⟨cs, ?_, mass⟩
-  rw [gprog_run] at aligned
+  rw [hprog_run] at aligned
   exact aligned.imp (fun b c hb s hs => hb s ⟨hs.1.2.2, hs.1⟩)
 
 def fastMiddleSource (coeffs : Fin 32768 → PointCoeff) (Q : Secp256k1.Point) : AdaptiveCircuit :=
@@ -7306,10 +8240,10 @@ theorem fastBodySource_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp256
   exact composeCoherent (f := fun s => middleState coeffs Q (prefixState s)) (g := suffixState)
     h WEX.suffix_coherent (fun _ _ => True.intro)
 
-def fastBodyProgram (start : Nat) : Straight 32768 start (start+1653272) :=
+def fastBodyProgram (start : Nat) : Straight 32768 start (start+1652890) :=
   castFinish (by omega)
     (((((prefixProgram start).append (nFastProgram start)).append (addFixedCG (start+256))).append
-      (nFastProgram (start+256+1652760))).append (suffixProgram (start+256+1652760+256)))
+      (nFastProgram (start+256+1652378))).append (suffixProgram (start+256+1652378+256)))
 
 attribute [local irreducible] fastBodyProgram addFixedCG
 
@@ -7317,15 +8251,15 @@ theorem fastBodyProgram_run (start : Nat) (coeffs : Fin 32768 → PointCoeff) (Q
     (history : Fin start → Bool) :
     ((fastBodyProgram start).instantiate (readConstant coeffs Q) history).run = (fastBodySource coeffs Q).run := by
   have hr : ((fastBodyProgram start).instantiate (readConstant coeffs Q) history).run =
-      ((prefixSource.seq ((fastSignSource.seq (gsrc (readConstant coeffs Q) rowCF)).seq
+      ((prefixSource.seq ((fastSignSource.seq (hsrc (readConstant coeffs Q) rowH)).seq
         fastSignSource)).seq suffixSource).run := by
     rw [fastBodyProgram, castFinish_instantiate]
     exact five_run (readConstant coeffs Q) _ _ _ _ _ prefixSource fastSignSource
-      (gsrc (readConstant coeffs Q) rowCF) fastSignSource suffixSource
+      (hsrc (readConstant coeffs Q) rowH) fastSignSource suffixSource
       (prefixProgram_run _ _) (nFastProgram_run _ _) (addFixedCG_run _ _)
       (nFastProgram_run _ _) (suffixProgram_run _ _) history
   have he : fastBodySource coeffs Q =
-      ((prefixSource.seq ((fastSignSource.seq (gsrc (readConstant coeffs Q) rowCF)).seq
+      ((prefixSource.seq ((fastSignSource.seq (hsrc (readConstant coeffs Q) rowH)).seq
         fastSignSource)).seq suffixSource) := by
     delta fastBodySource fastMiddleSource rowSourceCG
     rfl
@@ -7343,14 +8277,14 @@ theorem fastBodyProgram_coherent (coeffs : Fin 32768 → PointCoeff) (Q : Secp25
 
 theorem fastBodyProgram_credit (start : Nat) : ProgramCredit (fastBodyProgram start)
     (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-      gcodeTP rowCF) := by
+      hcodeTP rowH) := by
   let a := ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram)
   have hl : ProgramCredit (nFastProgram start) a := WEX.nFastProgram_credit start
-  have hr : ProgramCredit (nFastProgram (start+256+1652760)) a := WEX.nFastProgram_credit _
+  have hr : ProgramCredit (nFastProgram (start+256+1652378)) a := WEX.nFastProgram_credit _
   rw [fastBodyProgram]
   apply credit_cast
-  exact five_credit a (gcodeTP rowCF) (prefix_credit start) hl (addFixedCG_credit (start+256)) hr
-    (suffix_credit (start+256+1652760+256))
+  exact five_credit a (hcodeTP rowH) (prefix_credit start) hl (addFixedCG_credit (start+256)) hr
+    (suffix_credit (start+256+1652378+256))
 
 theorem fastBodyProgram_wellFormed (start : Nat) : (fastBodyProgram start).WellFormed := by
   rw [fastBodyProgram, castFinish_wellFormed]
@@ -7398,14 +8332,14 @@ theorem fastBodyProgram_slots_upper (start : Nat) : (fastBodyProgram start).gate
     at sign ⊢
   exact ShorECDLP.Entrant.WEXFast.W15F.body_slot_arith S A G C _ _ _ _ windowBits.length _ sign bound ha hc rfl hm.2.1 hm.2.2.1 hl hm.2.2.2.1 hp
 
-def compactProgram (start : Nat) : Straight 32768 start (start+1653272) :=
+def compactProgram (start : Nat) : Straight 32768 start (start+1652890) :=
   relabelStraight piH (fastBodyProgram start)
 
-theorem count_arith (s x y : Nat) (h : s + y ≤ 2292120) (hr : x + 39680 = y) : s + x ≤ 2252440 := by omega
+theorem count_arith (s x y : Nat) (h : s + y ≤ 2292120) (hr : x + 40055 = y) : s + x ≤ 2252065 := by omega
 
 theorem fastCount_upper : 2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    gcodeTP rowCF ≤ 2252440 := by
-  exact count_arith _ _ _ Width15Corner.fastCount_upper rowCF_gtp
+    hcodeTP rowH ≤ 2252065 := by
+  exact count_arith _ _ _ Width15Corner.fastCount_upper rowH_htp
 
 end
 end ShorECDLP.Entrant.WEXFast.W15G

@@ -1950,14 +1950,14 @@ local notation "wideCredit" =>
   (2 * WideSigned.Body.signCredit + WideBank8.Fast16.fcodeTP WideBank8.Row16.code)
 local notation "normalCredit" =>
   (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    WEXFast.gcodeTP WEXFast.rowCF)
+    WEXFast.hcodeTP WEXFast.W15G.rowH)
 
 def wide : Window 65536 :=
   ⟨(WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact,
     1743514, fun start => relabelStraight TightSupport.compact (WideBank8.Signed16.program start)⟩
 
 def normal : Window 32768 :=
-  ⟨streamAddress.reverse,1653272,WEXFast.W15G.compactProgram⟩
+  ⟨streamAddress.reverse,1652890,WEXFast.W15G.compactProgram⟩
 
 def signed : Digit → Window 1769472 := familyWindows wide normal
 
@@ -1965,7 +1965,7 @@ def signed : Digit → Window 1769472 := familyWindows wide normal
 theorem signed_width (w : Digit) : (signed w).wires.length = w.width :=
   family_widths wide normal (by simp only [wide,List.length_map,List.length_reverse]; decide) (by decide) w
 
-theorem signed_count (w : Digit) : (signed w).count = count 1743514 1653272 w :=
+theorem signed_count (w : Digit) : (signed w).count = count 1743514 1652890 w :=
   family_counts wide normal w
 
 theorem signed_credit (w : Digit) (start : Nat) :
@@ -1999,7 +1999,7 @@ theorem signed_credit (w : Digit) (start : Nat) :
       exact by rw [WEXFast.W15G.compactProgram,added_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).2
 
 def implementation : Implementation :=
-  withHeads 1743514 1653272 wideCredit normalCredit signed signed_width signed_count
+  withHeads 1743514 1652890 wideCredit normalCredit signed signed_width signed_count
     (fun w start => (signed_credit w start).1) (fun w start => (signed_credit w start).2)
 
 
@@ -2007,7 +2007,7 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2342685 ∧ implementation.credit16 ≤ 2252440 := by
+theorem credits : implementation.credit17 ≤ 2342685 ∧ implementation.credit16 ≤ 2252065 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
   exact ⟨WideBank8.Signed16.credit_bound, WEXFast.W15G.fastCount_upper⟩
 
@@ -2936,8 +2936,8 @@ theorem source_counts : rawEntry.finalCursor ≤ 50000000 ∧
   have hs : rawEntry.program.gateSlots ≤ 100000000000 := by
     rw [rawEntry,Width16Schedule.sourceEntry,Single.fixedEntry_slots]
     exact full_slots
-  have hm : rawEntry.finalCursor = 46521817 := by
-    change 132606+19*1743514+8*1653272+469+resetWires.length+34946=46521817
+  have hm : rawEntry.finalCursor = 46518761 := by
+    change 132606+19*1743514+8*1652890+469+resetWires.length+34946=46518761
     decide
   change _ ∧ _ ∧ _ ≤ 4000000000000000
   omega
@@ -3060,7 +3060,7 @@ theorem hcert : Certificate officialLimits
     rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2342685 → b ≤ 2252440 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2342685 → b ≤ 2252065 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
   intro a b ha hb
   omega
 
