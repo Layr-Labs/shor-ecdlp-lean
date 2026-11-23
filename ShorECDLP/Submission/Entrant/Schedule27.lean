@@ -5,6 +5,8 @@ import ShorECDLP.Submission.Entrant.TightSupport
 import ShorECDLP.Submission.Entrant.WideBank8
 import ShorECDLP.Submission.Entrant.First18Loader
 import ShorECDLP.Submission.Entrant.MixedBridge
+import ShorECDLP.Submission.Entrant.Site1Wire
+import ShorECDLP.Submission.Entrant.First18Split
 
 /-! Mixed-first-load schedule. Physical implementations remain explicit parameters.
     The 17-wire first load is one joint table over the 12 top bits of the left axis and the 5 top
@@ -641,14 +643,14 @@ structure Implementation where
   signed : Digit → Window 1769472
   headA_width : headA.wires.length = 10
   headB_width : headB.wires.length = 8
-  headA_count : headA.count = 132606
+  headA_count : headA.count = 99265
   headB_count : headB.count = 0
   signed_width : ∀ w, (signed w).wires.length = w.width
   signed_count : ∀ w, (signed w).count = count records17 records16 w
   headA_zero : ∀ start, residue (headA.program start) = 0
   headB_zero : ∀ start, residue (headB.program start) = 0
   signed_zero : ∀ w start, residue ((signed w).program start) = 0
-  headA_credit : ∀ start, added (headA.program start) = 132595
+  headA_credit : ∀ start, added (headA.program start) = 99251
   headB_credit : ∀ start, added (headB.program start) = 0
   signed_credit : ∀ w start, added ((signed w).program start) = count credit17 credit16 w
 
@@ -672,7 +674,7 @@ theorem right_metadata (impl : Implementation) :
   simp only [rightBodies, List.map_map, Function.comp_def, impl.signed_count, impl.signed_width]
   simp [rightDigits, List.ofFn_succ, Digit.width, count, rightMetadata, List.replicate]
 
-theorem headA_axisCount (impl : Implementation) : axisCount [impl.headA] = 132616 := by
+theorem headA_axisCount (impl : Implementation) : axisCount [impl.headA] = 99275 := by
   simp [Single.axisCount, impl.headA_count, impl.headA_width]
 
 theorem headB_axisCount (impl : Implementation) : axisCount [impl.headB] = 8 := by
@@ -692,17 +694,17 @@ theorem right_count (impl : Implementation) :
 
 theorem mixS4_value (impl : Implementation) :
     mixS4 impl.headA impl.headB (leftBodies impl) (rightBodies impl) 0 =
-      132606 + 19*impl.records17 + 8*impl.records16 + 469 := by
+      99265 + 19*impl.records17 + 8*impl.records16 + 469 := by
   simp only [mixS4, mixS3, mixS2, mixS1, headA_axisCount, headB_axisCount, left_count, right_count]
   omega
 
 /-- Static positions of the left word: the left head bank, then the left bodies. -/
 def leftPositions (r17 r16 : Nat) : List Nat :=
-  positions [(132606,10)] 0 ++ positions (leftMetadata r17 r16) 132624
+  positions [(99265,10)] 0 ++ positions (leftMetadata r17 r16) 99283
 
 /-- Static positions of the right word: the right head bank, then the right bodies. -/
 def rightPositions (r17 r16 : Nat) : List Nat :=
-  positions [(0,8)] 132616 ++ positions (rightMetadata r17 r16) (132624 + (11*r17 + 4*r16 + 251))
+  positions [(0,8)] 99275 ++ positions (rightMetadata r17 r16) (99283 + (11*r17 + 4*r16 + 251))
 
 theorem left_positions_length (r17 r16 : Nat) : (leftPositions r17 r16).length = 261 := by
   simp only [leftPositions, List.length_append, positions_length]
@@ -719,7 +721,7 @@ def trialPositions (r17 r16 : Nat) : TrialPositions SinAverage261.params261 wher
     simpa only [List.size_toArray, SinAverage261.params261] using right_positions_length r17 r16⟩
 
 theorem left_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r16).left.toList) :
-    i < 132875+11*r17+4*r16 := by
+    i < 99534+11*r17+4*r16 := by
   have hi' : i ∈ leftPositions r17 r16 := by simpa [trialPositions] using hi
   simp only [leftPositions, List.mem_append] at hi'
   rcases hi' with h | h
@@ -731,7 +733,7 @@ theorem left_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r1
     omega
 
 theorem right_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r16).right.toList) :
-    i < 132606+19*r17+8*r16+469 := by
+    i < 99265+19*r17+8*r16+469 := by
   have hi' : i ∈ rightPositions r17 r16 := by simpa [trialPositions] using hi
   simp only [rightPositions, List.mem_append] at hi'
   rcases hi' with h | h
@@ -743,7 +745,7 @@ theorem right_position_bound (r17 r16 i : Nat) (hi : i ∈ (trialPositions r17 r
     omega
 
 def cursor (impl : Implementation) (reset : List Wire) : Nat :=
-  132606+19*impl.records17+8*impl.records16+469+reset.length
+  99265+19*impl.records17+8*impl.records16+469+reset.length
 
 def finePositions (impl : Implementation) (reset : List Wire) : List (Fin (cursor impl reset)) :=
   (trialPositions impl.records17 impl.records16).right.toList.attach.map fun i =>
@@ -816,9 +818,9 @@ def rightCostMeta (c17 c16 : Nat) : List (Nat × Nat) :=
   List.replicate 8 (4*c17,17) ++ List.replicate 4 (4*c16,16)
 
 theorem exact_phase_metadata (c17 c16 : Nat) :
-    metadataWeight [(4*132595,10)] 0 + metadataWeight [(0,8)] 0 +
+    metadataWeight [(4*99251,10)] 0 + metadataWeight [(0,8)] 0 +
       metadataWeight (leftCostMeta c17 c16) 10 + metadataWeight (rightCostMeta c17 c16) 8 =
-      4*(132595+19*c17+8*c16)+54991 ∧
+      4*(99251+19*c17+8*c16)+54991 ∧
     WeightedPhase28.metadataDropped [10] 0 + WeightedPhase28.metadataDropped [8] 0 +
       WeightedPhase28.metadataDropped leftWidthsBody 10 +
       WeightedPhase28.metadataDropped rightWidthsBody 8 = 43966 := by
@@ -860,7 +862,7 @@ theorem signed_cost_relation (impl : Implementation) (ws : List Digit) :
 
 theorem headA_cost_relation (impl : Implementation) :
     List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start, weight4 (w.program start) ≤ k.1)
-      ([impl.headA]) ([(4*132595,10)]) :=
+      ([impl.headA]) ([(4*99251,10)]) :=
   .cons ⟨impl.headA_width, fun start => by
     rw [weight4_zero _ (impl.headA_zero start), impl.headA_credit]⟩ .nil
 
@@ -899,7 +901,7 @@ theorem mixPriorR_length (impl : Implementation) (start : Nat) :
 theorem axes_weight (impl : Implementation) (start : Nat) :
     weight4 (mixHead impl.headA start) +
       weight4 (mixTail impl.headA impl.headB (leftBodies impl) (rightBodies impl) start) ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+54991 := by
+      4*(99251+19*impl.credit17+8*impl.credit16)+54991 := by
   have hA := weight4_axis ([impl.headA]) _ (headA_cost_relation impl) start List.nil
   have hB := weight4_axis ([impl.headB]) _ (headB_cost_relation impl) (mixS1 impl.headA start) List.nil
   have hL := weight4_axis (leftBodies impl) _ (left_cost_relation impl)
@@ -934,7 +936,7 @@ theorem axes_removed (impl : Implementation) (start : Nat) :
   omega
 
 theorem fullProgram_weight (impl : Implementation) (reset : List Wire) :
-    weight4 (fullProgram impl reset) ≤ 4*(132595+19*impl.credit17+8*impl.credit16)+54991 := by
+    weight4 (fullProgram impl reset) ≤ 4*(99251+19*impl.credit17+8*impl.credit16)+54991 := by
   have h := axes_weight impl 0
   simp only [fullProgram, weight4_append, program, weight4_framed, weight4_reset,
     readout, weight4_cast, weight4_suffix56]
@@ -955,7 +957,7 @@ theorem fullProgram_removed (impl : Implementation) (reset : List Wire) :
 
 theorem fullProgram_trim27_weight (impl : Implementation) (reset : List Wire) :
     weight4 (ApproximatePhase34.trim 27 (fullProgram impl reset)) ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+11025 := by
+      4*(99251+19*impl.credit17+8*impl.credit16)+11025 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have h := weight4_trim (fullProgram impl reset)
@@ -1084,11 +1086,11 @@ set_option linter.unusedSectionVars false
 set_option linter.unnecessarySeqFocus false
 attribute [local irreducible] fourierOutcomes
 
-def firstWindow : Window 1769472 := RootPass.windowGeneric firstRow
+def firstWindow : Window 1769472 := First18Split.windowGeneric firstRow
 
 theorem firstWindow_law : WindowLaw ShorECDLP.Entrant.Width16Schedule.coefficientAt firstWindow
     (SelectSchedule18.update initialPoint) SelectSchedule18.Input := by
-  apply RootPass.window_law_generic
+  apply First18Split.window_law_generic
   intro Q hQ a
   rw [coefficientAt_first]
   exact initialCoefficients_point Q hQ a.val
@@ -1100,7 +1102,7 @@ def headLWires : List Wire := SelectSchedule18.bits.drop 8
 /-- Left head bank: measured wires are the twelve high address bits; its program first puts the
     five low address bits in superposition, then runs the one joint 17-wire first load. -/
 def headAG (L R : List Wire) : Window 1769472 :=
-  ⟨L.reverse, 132606, fun start => prepareOuterBank R (firstWindow.program start)⟩
+  ⟨L.reverse, 99265, fun start => prepareOuterBank R (firstWindow.program start)⟩
 
 /-- Right head bank: measured wires are the five low address bits; its program undoes the
     axis preparation, so the bank only measures the Fourier outcome of the loaded register. -/
@@ -1143,19 +1145,19 @@ theorem headB_width' : headB.wires.length = 8 := by
 theorem headA_zero' (start : Nat) : residue (headA.program start) = 0 := by
   change residue (prepareOuterBank headRWires (firstWindow.program start)) = 0
   rw [ApproximatePhase34.residue_prepare]
-  unfold firstWindow RootPass.windowGeneric
-  rw [residue_reindex, RootPass.first18_rootProgram_residue]
+  unfold firstWindow First18Split.windowGeneric
+  rw [residue_reindex, First18Split.program_residue]
 
 theorem headB_zero' (start : Nat) : residue (headB.program start) = 0 := by
   change residue (prepareOuterBank headRWires.reverse (Straight.done : Straight 1769472 start start)) = 0
   rw [ApproximatePhase34.residue_prepare]
   rfl
 
-theorem headA_credit' (start : Nat) : added (headA.program start) = 132595 := by
-  change added (prepareOuterBank headRWires (firstWindow.program start)) = 132595
+theorem headA_credit' (start : Nat) : added (headA.program start) = 99251 := by
+  change added (prepareOuterBank headRWires (firstWindow.program start)) = 99251
   rw [added_prepare]
-  unfold firstWindow RootPass.windowGeneric
-  rw [added_reindex, RootPass.first18_rootProgram_added]
+  unfold firstWindow First18Split.windowGeneric
+  rw [added_reindex, First18Split.program_added]
 
 theorem headB_credit' (start : Nat) : added (headB.program start) = 0 := by
   change added (prepareOuterBank headRWires.reverse (Straight.done : Straight 1769472 start start)) = 0
@@ -1254,7 +1256,7 @@ theorem fullProgram_band_count (impl : Implementation) (reset : List Wire) :
 
 theorem fullProgram_trim259_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 259 (fullProgram impl reset)) ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+10766 := by
+      4*(99251+19*impl.credit17+8*impl.credit16)+10766 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -1271,7 +1273,7 @@ theorem removed27_fixedEntry {n e : Nat} (f : Fin n → PointCoeff) (p : Straigh
 
 theorem source_trim259_weight (impl : Implementation) (reset : List Wire) :
     weight4 (trimN 259 (sourceEntry impl reset).program) ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+10766 := by
+      4*(99251+19*impl.credit17+8*impl.credit16)+10766 := by
   have hw := fullProgram_weight impl reset
   have hr := fullProgram_removed impl reset
   have hc := fullProgram_band_count impl reset
@@ -1336,7 +1338,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     (measurementBound : (sourceEntry impl reset).finalCursor+added (sourceEntry impl reset).program ≤ 544000000) :
     Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (sourceEntry impl reset)) (layout impl reset))
-      (finalEntry impl reset) ⟨qBound,4*(132595+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
+      (finalEntry impl reset) ⟨qBound,4*(99251+19*impl.credit17+8*impl.credit16)+10767,544000000⟩ := by
   have trimmed := trimN_certificate rawLimits (layout impl reset) (sourceEntry impl reset) baseBounds ws
     rawCertificate support (source_error impl reset) strongSuccess
   have hslots := trimN_slots 259 (sourceEntry impl reset).program
@@ -1355,7 +1357,7 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     exact recordBudget
   · exact qubitBudget
   · change weight4 (trimN 259 (sourceEntry impl reset).program)+1 ≤
-      4*(132595+19*impl.credit17+8*impl.credit16)+10767
+      4*(99251+19*impl.credit17+8*impl.credit16)+10767
     omega
   · change (sourceEntry impl reset).finalCursor+added (trimN 259 (sourceEntry impl reset).program) ≤ 544000000
     rw [trimN_added]
@@ -1365,8 +1367,8 @@ theorem conditional_certificate (impl : Implementation) (reset ws : List Wire)
     premises have been discharged. No Q or cost number is assumed by the proof. -/
 theorem strict_score (Q c17 c16 : Nat)
     (hQ : Q ≤ 1652) (h17 : c17 ≤ 2345143) (h16 : c16 ≤ 2253190) :
-    Q * (4*(132595+19*c17+8*c16)+10767) < 420149980414 := by
-  have ht : 4*(132595+19*c17+8*c16)+10767 ≤ 250907747 := by omega
+    Q * (4*(99251+19*c17+8*c16)+10767) < 420149980414 := by
+  have ht : 4*(99251+19*c17+8*c16)+10767 ≤ 250907747 := by omega
   exact (Nat.mul_le_mul hQ ht).trans_lt (by norm_num)
 
 end
@@ -1945,19 +1947,20 @@ set_option linter.unnecessarySimpa false
 
 attribute [local irreducible] WideBank8.Signed16.program WEXFast.W15G.fastBodyProgram
   WEXFast.W15G.compactProgram WideBank8.Row16.program PathShare.narrowCF15
+  Site1Wire.Wide16.program Site1Wire.Narrow15.fastBodyProgram Site1Wire.Narrow15.compactProgram
 
 local notation "wideCredit" =>
-  (2 * WideSigned.Body.signCredit + WideBank8.Fast16.fcodeTP WideBank8.Row16.code)
+  (2 * WideSigned.Body.signCredit + (WideBank8.Fast16.fcodeTP WideBank8.Row16.code - 15098))
 local notation "normalCredit" =>
   (2 * ECDSAAdd.toffoliCount (ECDSAAdd.Baselines.normalizeProgram WEX.fastWindowSignProgram) +
-    WEXFast.hcodeTP WEXFast.W15G.rowH)
+    (WEXFast.hcodeTP WEXFast.W15G.rowH - 6906))
 
 def wide : Window 65536 :=
-  ⟨(WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact,
-    1743514, fun start => relabelStraight TightSupport.compact (WideBank8.Signed16.program start)⟩
+  ⟨(WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact17_7,
+    1728416, fun start => relabelStraight TightSupport.compact17_7 (Site1Wire.Wide16.program start)⟩
 
 def normal : Window 32768 :=
-  ⟨streamAddress.reverse,1652890,WEXFast.W15G.compactProgram⟩
+  ⟨streamAddress.reverse,1645984,Site1Wire.Narrow15.compactProgram⟩
 
 def signed : Digit → Window 1769472 := familyWindows wide normal
 
@@ -1965,7 +1968,7 @@ def signed : Digit → Window 1769472 := familyWindows wide normal
 theorem signed_width (w : Digit) : (signed w).wires.length = w.width :=
   family_widths wide normal (by simp only [wide,List.length_map,List.length_reverse]; decide) (by decide) w
 
-theorem signed_count (w : Digit) : (signed w).count = count 1743514 1652890 w :=
+theorem signed_count (w : Digit) : (signed w).count = count 1728416 1645984 w :=
   family_counts wide normal w
 
 theorem signed_credit (w : Digit) (start : Nat) :
@@ -1973,33 +1976,33 @@ theorem signed_credit (w : Digit) (start : Nat) :
   cases w with
   | left17 j | right17 j =>
     rw [count]
-    change ProgramCredit (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))) wideCredit
+    change ProgramCredit (reindexStraight _ (relabelStraight _ (Site1Wire.Wide16.program start))) wideCredit
     constructor
     · rw [WEXCredit.residue_reindex, WEXUnlookup.residue_relabel]
-      exact (WideBank8.Signed16.program_credit start).1
+      exact (Site1Wire.Wide16.program_credit start).1
     · rw [added_reindex, added_relabel]
-      exact (WideBank8.Signed16.program_credit start).2
+      exact (Site1Wire.Wide16.program_credit start).2
   | left16 j =>
     rw [count]
     constructor
-    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (Site1Wire.Narrow15.compactProgram start) from rfl,
         WEXCredit.residue_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).1
-    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+      exact by rw [Site1Wire.Narrow15.compactProgram,WEXUnlookup.residue_relabel]; exact (Site1Wire.Narrow15.fastBodyProgram_credit start).1
+    · rw [show ((signed (.left16 j)).program start) = reindexStraight (row (.left16 j)) (Site1Wire.Narrow15.compactProgram start) from rfl,
         added_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,added_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).2
+      exact by rw [Site1Wire.Narrow15.compactProgram,added_relabel]; exact (Site1Wire.Narrow15.fastBodyProgram_credit start).2
   | right16 j =>
     rw [count]
     constructor
-    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (Site1Wire.Narrow15.compactProgram start) from rfl,
         WEXCredit.residue_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,WEXUnlookup.residue_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).1
-    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (WEXFast.W15G.compactProgram start) from rfl,
+      exact by rw [Site1Wire.Narrow15.compactProgram,WEXUnlookup.residue_relabel]; exact (Site1Wire.Narrow15.fastBodyProgram_credit start).1
+    · rw [show ((signed (.right16 j)).program start) = reindexStraight (row (.right16 j)) (Site1Wire.Narrow15.compactProgram start) from rfl,
         added_reindex]
-      exact by rw [WEXFast.W15G.compactProgram,added_relabel]; exact (WEXFast.W15G.fastBodyProgram_credit start).2
+      exact by rw [Site1Wire.Narrow15.compactProgram,added_relabel]; exact (Site1Wire.Narrow15.fastBodyProgram_credit start).2
 
 def implementation : Implementation :=
-  withHeads 1743514 1652890 wideCredit normalCredit signed signed_width signed_count
+  withHeads 1728416 1645984 wideCredit normalCredit signed signed_width signed_count
     (fun w start => (signed_credit w start).1) (fun w start => (signed_credit w start).2)
 
 
@@ -2007,37 +2010,37 @@ theorem withHeads_credits {r17 r16 c17 c16 : Nat} {s : Digit → Window 1769472}
     (withHeads r17 r16 c17 c16 s hw hc hz ha).credit17 = c17 ∧
       (withHeads r17 r16 c17 c16 s hw hc hz ha).credit16 = c16 := ⟨rfl, rfl⟩
 
-theorem credits : implementation.credit17 ≤ 2342685 ∧ implementation.credit16 ≤ 2252065 := by
+theorem credits : implementation.credit17 ≤ 2327593 ∧ implementation.credit16 ≤ 2245165 := by
   rw [implementation, withHeads_credits.1, withHeads_credits.2]
-  exact ⟨WideBank8.Signed16.credit_bound, WEXFast.W15G.fastCount_upper⟩
+  exact ⟨Site1Wire.Wide16.credit_bound, Site1Wire.Narrow15.fastCount_upper⟩
 
 theorem signed_support (w : Digit) (start : Nat) :
-    straightWires ((signed w).program start) ⊆ List.range 1618 := by
+    straightWires ((signed w).program start) ⊆ List.range 1613 := by
   cases w with
   | left17 j | right17 j =>
-    change straightWires (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))) ⊆ _
+    change straightWires (reindexStraight _ (relabelStraight _ (Site1Wire.Wide16.program start))) ⊆ _
     rw [straightWires_reindex]
-    exact WideBank8.Fast16.Tight.packed_support start
+    exact Site1Wire.Wide16.packed_support start
   | left16 j =>
-    change straightWires (reindexStraight _ (WEXFast.W15G.compactProgram start)) ⊆ _
-    rw [straightWires_reindex, WEXFast.W15G.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15G.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
+    change straightWires (reindexStraight _ (Site1Wire.Narrow15.compactProgram start)) ⊆ _
+    rw [straightWires_reindex, Site1Wire.Narrow15.compactProgram]
+    exact (PoolHost.relabelH7_support _ (Site1Wire.Narrow15.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1612 ≤ 1613))
   | right16 j =>
-    change straightWires (reindexStraight _ (WEXFast.W15G.compactProgram start)) ⊆ _
-    rw [straightWires_reindex, WEXFast.W15G.compactProgram]
-    exact (PathShare.relabelH_support _ (WEXFast.W15G.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1616 ≤ 1618))
+    change straightWires (reindexStraight _ (Site1Wire.Narrow15.compactProgram start)) ⊆ _
+    rw [straightWires_reindex, Site1Wire.Narrow15.compactProgram]
+    exact (PoolHost.relabelH7_support _ (Site1Wire.Narrow15.fastBodyProgram_support start)).trans (List.range_subset.mpr (by decide : 1612 ≤ 1613))
 
 
 theorem signed_wellFormed (w : Digit) (start : Nat) : ((signed w).program start).WellFormed := by
   cases w with
   | left17 j | right17 j =>
     apply (reindexStraight_wellFormed _ _).mpr
-    exact (relabelStraight_wellFormed _ _).mpr (WideBank8.Signed16.wellFormed start)
+    exact (relabelStraight_wellFormed _ _).mpr (Site1Wire.Wide16.wellFormed start)
   | left16 j | right16 j =>
     apply (reindexStraight_wellFormed _ _).mpr
-    change (WEXFast.W15G.compactProgram start).WellFormed
-    rw [WEXFast.W15G.compactProgram]
-    exact (relabelStraight_wellFormed _ _).mpr (WEXFast.W15G.fastBodyProgram_wellFormed start)
+    change (Site1Wire.Narrow15.compactProgram start).WellFormed
+    rw [Site1Wire.Narrow15.compactProgram]
+    exact (relabelStraight_wellFormed _ _).mpr (Site1Wire.Narrow15.fastBodyProgram_wellFormed start)
 
 end
 end ShorECDLP.Entrant.Width16Actual
@@ -2052,7 +2055,7 @@ set_option Elab.async false
 set_option maxRecDepth 10000
 set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
-attribute [local irreducible] fourierOutcomes WEXFast.W15G.fastBodyProgram WEXFast.W15G.compactProgram
+attribute [local irreducible] fourierOutcomes Site1Wire.Narrow15.fastBodyProgram Site1Wire.Narrow15.compactProgram
 
 def normalPoint (coeffs : Fin 32768 → PointCoeff) (Q : Point) (v : Nat) : Point :=
   if v < 32768 then -constantPoint Q (coeffs ⟨(32767-v)%32768,Nat.mod_lt _ (by decide)⟩)
@@ -2063,18 +2066,18 @@ def normalModel (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • 
   physical := normal
   point := normalPoint coeffs Q
   bias := 0
-  ideal := Finsupp.lmapDomain ℂ ℂ (PathShare.stateH coeffs Q)
-  valid := fun s => PathShare.readyH s ∧ ∃ P, pointStateCoordinates s=fig14PointEncoding P
+  ideal := Finsupp.lmapDomain ℂ ℂ (TightSupport.stateH7 coeffs Q)
+  valid := fun s => TightSupport.readyH7 s ∧ ∃ P, pointStateCoordinates s=fig14PointEncoding P
   nodup := by decide
   coherent := by
     intro start history
-    simpa only [normal,WEXFast.W15G.compactProgram] using
-      PathShare.relabelH_coherent _ coeffs Q history
-        (WEXFast.W15G.fastBodyProgram_coherent coeffs Q hQ hn start history)
+    simpa only [normal,Site1Wire.Narrow15.compactProgram] using
+      TightSupport.relabelH7_coherent _ coeffs Q history
+        (Site1Wire.Narrow15.fastBodyProgram_coherent coeffs Q hQ hn start history)
 
 theorem normal_correct (coeffs : Fin 32768 → PointCoeff) (Q : Point) (s : BasisState)
-    (hs : PathShare.readyH s) (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
-    PathShare.stateH coeffs Q s = pointWrite (P+normalPoint coeffs Q (windowRawDigit 0 s)) s := by
+    (hs : TightSupport.readyH7 s) (P : Point) (hP : pointStateCoordinates s = fig14PointEncoding P) :
+    TightSupport.stateH7 coeffs Q s = pointWrite (P+normalPoint coeffs Q (windowRawDigit 0 s)) s := by
   have hl : tableAddressValue WEX.windowBits s < 32768 := by
     simpa only [WEX.windowBits,List.length_range'] using tableAddressValue_lt WEX.windowBits s
   have hv : windowRawDigit 0 s = tableAddressValue WEX.windowBits s + Bool.toNat (s 870) * 32768 := by
@@ -2107,16 +2110,16 @@ theorem normal_correct (coeffs : Fin 32768 → PointCoeff) (Q : Point) (s : Basi
       apply Fin.ext
       simp only [signedTableAddress,if_neg hhigh,Fin.val_mk]
       rw [Nat.mod_eq_of_lt hval]
-  rw [PathShare.stateH_correct coeffs Q s hs P hP,PathShare.readyH_active s hs]
+  rw [TightSupport.stateH7_correct coeffs Q s hs P hP,TightSupport.readyH7_active s hs]
   rw [if_pos (show true=true from rfl)]
   exact congrArg (fun R : Point => pointWrite (P+R) s) hsel
 
 theorem normal_assigned_valid (root : BasisState) (hs : FirstWindowInput root)
     (P : Point) (input : List Bool) :
-    PathShare.readyH (phaseWordState streamAddress input (pointWrite P root)) ∧
+    TightSupport.readyH7 (phaseWordState streamAddress input (pointWrite P root)) ∧
       ∃ A,pointStateCoordinates (phaseWordState streamAddress input (pointWrite P root))=fig14PointEncoding A := by
-  refine ⟨phaseWordState_preserves PathShare.readyH streamAddress PathShare.readyH_address
-    input _ (PathShare.readyH_first root hs P),P,?_⟩
+  refine ⟨phaseWordState_preserves TightSupport.readyH7 streamAddress TightSupport.readyH7_address
+    input _ (TightSupport.readyH7_first root hs P),P,?_⟩
   rw [phaseWordState_pointWrite _ (by decide),pointWrite_coordinates]
 
 theorem normal_pointRule (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : order • Q=0)
@@ -2132,7 +2135,7 @@ theorem normal_pointRule (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : o
       pointStateCoordinates (phaseWordState streamAddress input (pointWrite P root)) = fig14PointEncoding P := by
     rw [phaseWordState_pointWrite _ (by decide),pointWrite_coordinates]
   have hword (input : List Bool) (hi : input.length=streamAddress.length) :
-      streamAddress.map (PathShare.stateH coeffs Q (phaseWordState streamAddress input (pointWrite P root))) = input := by
+      streamAddress.map (TightSupport.stateH7 coeffs Q (phaseWordState streamAddress input (pointWrite P root))) = input := by
     rw [normal_correct coeffs Q _ (normal_assigned_valid root hs P input).1 P (hcoords input)]
     have hf : streamAddress.map (pointWrite
         (P+normalPoint coeffs Q (windowRawDigit 0 (phaseWordState streamAddress input (pointWrite P root))))
@@ -2144,7 +2147,7 @@ theorem normal_pointRule (coeffs : Fin 32768 → PointCoeff) (Q : Point) (hQ : o
     rw [hf]
     exact phaseWordState_word _ (by decide) input hi _
   simp only [WindowModel.step,normalModel,normal,List.reverse_reverse,LinearMap.comp_apply,List.length_reverse]
-  rw [window_branch_uniform .inverse streamAddress (by decide) (PathShare.stateH coeffs Q)
+  rw [window_branch_uniform .inverse streamAddress (by decide) (TightSupport.stateH7 coeffs Q)
     prior output _ hc (fun input hi => hword input ((fourierOutcomes_mem _ _).mp hi))]
   apply congrArg (fun ψ : State => (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ))^streamAddress.length) • ψ)
   apply congrArg List.sum
@@ -2240,7 +2243,7 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 set_option linter.unnecessarySeqFocus false
-attribute [local irreducible] fourierOutcomes WideBank8.Signed16.program
+attribute [local irreducible] fourierOutcomes Site1Wire.Wide16.program
 local instance bodyInstance : Single.WindowBody := PathShare.bodyCF
 local instance resourceInstance : Single.ProducerResources bodyInstance :=
   Single.ProducerResources.ofBody PathShare.bodyCF
@@ -2275,7 +2278,7 @@ theorem wide_nonzero (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw
 
 theorem wide_point (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17)
     (v : Nat) (hv : v<131072) :
-    (WideBank8.Signed16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw)).point v =
+    (Site1Wire.Wide16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw)).point v =
       Width16Schedule.increment (d.base Q) 17 d.exponent v := by
   change (if v<65536 then -constantPoint Q
       (wideCoefficients d (WideSigned.Geometry.rows .w16 (65535-v)))
@@ -2296,12 +2299,12 @@ theorem normal_point (Q : Point) (hQ : order•Q=0) (w : Digit) (hw : w.width=16
 
 def wideRawModel (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :=
   interpretModel
-    (WideBank8.Signed16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw))
+    (Site1Wire.Wide16.model (wideCoefficients d) Q hQ (wide_nonzero Q hQ hn d hw))
     (Width16Schedule.increment (d.base Q) 17 d.exponent)
     (offsetScalar 17 d.exponent • d.base Q)
 
 def widePackedModel (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :=
-  relabelModel TightSupport.compact (wideRawModel Q hQ hn d hw)
+  relabelModel TightSupport.compact17_7 (wideRawModel Q hQ hn d hw)
 
 theorem normal_nonzero (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit) (hw : w.width=16)
     (a : Fin 32768) : constantPoint Q (Width16Schedule.signedCoefficients w a.val) ≠ 0 := by
@@ -2347,7 +2350,7 @@ def models (Q : Point) (hQ : order•Q=0) (hn : Q≠0) : ModelFrame implementati
 theorem wide_raw_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (hw : d.width=17) :
     PointRule initialRoot (wideRawModel Q hQ hn d hw) := by
   apply interpret_pointRule
-  · exact WideBank8.Signed16.pointRule (wideCoefficients d) Q hQ
+  · exact Site1Wire.Wide16.pointRule (wideCoefficients d) Q hQ
       (wide_nonzero Q hQ hn d hw) initialRoot initialRoot_input.1 (by
       intro v hv
       have hb := WideSigned.Body.bank_bounds .w16 v hv
@@ -2357,12 +2360,12 @@ theorem wide_raw_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit) (h
     exact wide_point Q hQ hn d hw v hv
 
 theorem inverse_pointFrame (P : Point) (s : BasisState) :
-    relabelBasis TightSupport.compact.symm (pointWrite P s) =
-      pointWrite P (relabelBasis TightSupport.compact.symm s) := by
-  have h := congrArg (relabelBasis TightSupport.compact.symm)
-    (TightSupport.compact_pointWrite P (relabelBasis TightSupport.compact.symm s))
-  have hr : relabelBasis TightSupport.compact (relabelBasis TightSupport.compact.symm s)=s := by
-    simpa only [Equiv.symm_symm] using relabelBasis_symm TightSupport.compact.symm s
+    relabelBasis TightSupport.compact17_7.symm (pointWrite P s) =
+      pointWrite P (relabelBasis TightSupport.compact17_7.symm s) := by
+  have h := congrArg (relabelBasis TightSupport.compact17_7.symm)
+    (TightSupport.compact17_7_pointWrite P (relabelBasis TightSupport.compact17_7.symm s))
+  have hr : relabelBasis TightSupport.compact17_7 (relabelBasis TightSupport.compact17_7.symm s)=s := by
+    simpa only [Equiv.symm_symm] using relabelBasis_symm TightSupport.compact17_7.symm s
   simpa only [relabelBasis_symm,hr] using h.symm
 
 theorem signed_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit) :
@@ -2370,12 +2373,12 @@ theorem signed_rule (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit) :
   cases w with
   | left17 j =>
     change PointRule initialRoot (widePackedModel Q hQ hn (.left17 j) rfl)
-    exact relabelModel_pointRule _ _ TightSupport.compact_pointWrite
-      TightSupport.compact_active (wide_raw_rule Q hQ hn (.left17 j) rfl)
+    exact relabelModel_pointRule _ _ TightSupport.compact17_7_pointWrite
+      TightSupport.compact17_7_active (wide_raw_rule Q hQ hn (.left17 j) rfl)
   | right17 j =>
     change PointRule initialRoot (widePackedModel Q hQ hn (.right17 j) rfl)
-    exact relabelModel_pointRule _ _ TightSupport.compact_pointWrite
-      TightSupport.compact_active (wide_raw_rule Q hQ hn (.right17 j) rfl)
+    exact relabelModel_pointRule _ _ TightSupport.compact17_7_pointWrite
+      TightSupport.compact17_7_active (wide_raw_rule Q hQ hn (.right17 j) rfl)
   | left16 j =>
     change PointRule initialRoot (localNormalModel Q hQ hn (.left16 j) rfl)
     apply interpret_pointRule
@@ -2399,7 +2402,7 @@ theorem wide_raw_prepared (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (d : Digit
     intro s hs
     obtain ⟨P,hP⟩ := hψ s hs
     exact ⟨P,by rw [pointWrite_overwrite]; exact hP⟩
-  exact WideBank8.Signed16.prepared (wideCoefficients d) Q hQ
+  exact Site1Wire.Wide16.prepared (wideCoefficients d) Q hQ
     (wide_nonzero Q hQ hn d hw) (pointWrite 0 initialRoot)
     (WEX.windowReady_first initialRoot initialRoot_input 0)
     (by
@@ -2416,10 +2419,10 @@ theorem signed_prepared (Q : Point) (hQ : order•Q=0) (hn : Q≠0) (w : Digit)
       (Quantum.run ((signedModel Q hQ hn w).physical.wires.reverse.map Gate.H) ψ) := by
   cases w with
   | left17 j =>
-    exact relabelModel_prepared _ _ inverse_pointFrame TightSupport.compact_active
+    exact relabelModel_prepared _ _ inverse_pointFrame TightSupport.compact17_7_active
       (wide_raw_prepared Q hQ hn (.left17 j) rfl) ψ hψ
   | right17 j =>
-    exact relabelModel_prepared _ _ inverse_pointFrame TightSupport.compact_active
+    exact relabelModel_prepared _ _ inverse_pointFrame TightSupport.compact17_7_active
       (wide_raw_prepared Q hQ hn (.right17 j) rfl) ψ hψ
   | left16 j =>
     exact normal_prepared (fun a : Fin 32768 => Width16Schedule.signedCoefficients (.left16 j) a.val)
@@ -2533,18 +2536,18 @@ theorem event_mass (Q : Point) (hQ : order•Q=0) (m : ModelFrame impl Q)
     pointRules ready 0 Fin.elim0 J hJ accept
   rw [selectedMixed_fixed_filter] at hm
   rw [m.headA_physical, m.headB_physical, model_left impl Q m, model_right impl Q m] at hm
-  have hA : axisPositions [impl.headA] 0 = positions [(132606,10)] 0 := by
+  have hA : axisPositions [impl.headA] 0 = positions [(99265,10)] 0 := by
     simp [Single.axisPositions, impl.headA_count, impl.headA_width]
-  have hB : axisPositions [impl.headB] (mixS1 impl.headA 0) = positions [(0,8)] 132616 := by
+  have hB : axisPositions [impl.headB] (mixS1 impl.headA 0) = positions [(0,8)] 99275 := by
     simp [Single.axisPositions, impl.headB_count, impl.headB_width, mixS1, Width16Schedule.headA_axisCount]
   have hL : axisPositions (Width16Schedule.leftBodies impl) (mixS2 impl.headA impl.headB 0) =
-      positions (Width16Schedule.leftMetadata impl.records17 impl.records16) 132624 := by
+      positions (Width16Schedule.leftMetadata impl.records17 impl.records16) 99283 := by
     rw [Single.axisPositions, Width16Schedule.left_metadata]
     simp [mixS2, mixS1, Width16Schedule.headA_axisCount, Width16Schedule.headB_axisCount]
   have hR : axisPositions (Width16Schedule.rightBodies impl)
       (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0) =
       positions (Width16Schedule.rightMetadata impl.records17 impl.records16)
-        (132624 + (11*impl.records17 + 4*impl.records16 + 251)) := by
+        (99283 + (11*impl.records17 + 4*impl.records16 + 251)) := by
     rw [Single.axisPositions, Width16Schedule.right_metadata]
     simp only [mixS3, mixS2, mixS1, Width16Schedule.headA_axisCount, Width16Schedule.headB_axisCount,
       Width16Schedule.left_count, Nat.zero_add]
@@ -2641,7 +2644,7 @@ theorem suffix_accept (Q : Point) (d : Nat) (hd : Q=d•G)
   · exact ha
   · intro j hj
     have h := left_position_bound impl.records17 impl.records16 j hj
-    have hh : 132875+11*impl.records17+4*impl.records16 ≤ startCursor impl := by
+    have hh : 99534+11*impl.records17+4*impl.records16 ≤ startCursor impl := by
       unfold startCursor cursor
       omega
     simpa only [List.length_ofFn] using h.trans_le hh
@@ -2698,6 +2701,8 @@ set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 attribute [local irreducible] PathShare.narrowCF15 WideBank8.Signed16.program
   WideBank8.Row16.program Single.axis resetProgram
+  Site1Wire.Wide16.program Site1Wire.Narrow15.compactProgram
+  First18Split.program
 attribute [local instance] bodyInstance resourceInstance
 
 def reset : List Wire := resetWires
@@ -2719,46 +2724,49 @@ theorem isWin_right (w : Window 1769472) (hw : w ∈ (Width16Schedule.rightBodie
   obtain ⟨d,_,rfl⟩ := List.mem_map.mp hw
   exact Or.inr (Or.inr ⟨d,rfl⟩)
 
-theorem signed_slots (w : Digit) (start : Nat) : ((signed w).program start).gateSlots ≤ 3000000000 := by
+theorem signed_slots (w : Digit) (start : Nat) : ((signed w).program start).gateSlots ≤ 3300000000 := by
   cases w with
   | left17 j | right17 j =>
-    change (reindexStraight _ (relabelStraight _ (WideBank8.Signed16.program start))).gateSlots ≤ _
+    change (reindexStraight _ (relabelStraight _ (Site1Wire.Wide16.program start))).gateSlots ≤ _
     rw [reindexStraight_gateSlots,relabelStraight_slots]
-    exact (WideBank8.Signed16.slots start).trans (by decide)
+    exact (Site1Wire.Wide16.slots start).trans (by decide)
   | left16 j | right16 j =>
-    change (reindexStraight _ (WEXFast.W15G.compactProgram start)).gateSlots ≤ _
-    rw [reindexStraight_gateSlots, WEXFast.W15G.compactProgram, relabelStraight_slots]
-    exact (WEXFast.W15G.fastBodyProgram_slots_upper start).trans (by decide)
+    change (reindexStraight _ (Site1Wire.Narrow15.compactProgram start)).gateSlots ≤ _
+    rw [reindexStraight_gateSlots, Site1Wire.Narrow15.compactProgram, relabelStraight_slots]
+    exact (Site1Wire.Narrow15.fastBodyProgram_slots_upper start).trans (by decide)
 
 theorem win_wellFormed (w : Window 1769472) (hw : IsWin w) (start : Nat) :
     (w.program start).WellFormed := by
   rcases hw with rfl|rfl|⟨d,rfl⟩
-  · exact prepareOuterBank_wellFormed _ _ (RootPass.window_wellFormed Width16Schedule.firstRow start)
+  · change (prepareOuterBank Width16Schedule.headRWires
+      (Width16Schedule.firstWindow.program start)).WellFormed
+    exact prepareOuterBank_wellFormed _ _ (First18Split.window_wellFormed Width16Schedule.firstRow start)
   · exact prepareOuterBank_wellFormed _ _ trivial
   · exact signed_wellFormed d start
 
-theorem win_slots (w : Window 1769472) (hw : IsWin w) (start : Nat) :
-    (w.program start).gateSlots ≤ 3000000000 := by
-  rcases hw with rfl|rfl|⟨d,rfl⟩
-  · change (prepareOuterBank Width16Schedule.headRWires
-      (Width16Schedule.firstWindow.program start)).gateSlots ≤ _
-    rw [prepareOuterBank_slots]
-    have h : (Width16Schedule.firstWindow.program start).gateSlots ≤ 1000000000 :=
-      RootPass.window_slots Width16Schedule.firstRow start
-    have hl : Width16Schedule.headRWires.length = 8 := Width16Schedule.headR_length
-    omega
-  · change (prepareOuterBank Width16Schedule.headRWires.reverse
-      (Straight.done : Straight 1769472 start start)).gateSlots ≤ _
-    rw [prepareOuterBank_slots]
-    have hl : Width16Schedule.headRWires.length = 8 := Width16Schedule.headR_length
-    simp only [List.length_reverse, hl]
-    change 8 + 0 ≤ _
-    omega
-  · exact signed_slots d start
+theorem headA_slots (start : Nat) :
+    (Width16Schedule.headA.program start).gateSlots ≤ 4500000010 := by
+  change (prepareOuterBank Width16Schedule.headRWires
+    (Width16Schedule.firstWindow.program start)).gateSlots ≤ _
+  rw [prepareOuterBank_slots]
+  have h : (Width16Schedule.firstWindow.program start).gateSlots ≤ 4500000000 :=
+    First18Split.window_slots Width16Schedule.firstRow start
+  have hl : Width16Schedule.headRWires.length = 8 := Width16Schedule.headR_length
+  omega
 
-theorem bits_range : ∀ v ∈ SelectSchedule18.bits, v ∈ List.range 1618 := by decide
+theorem headB_slots (start : Nat) :
+    (Width16Schedule.headB.program start).gateSlots ≤ 3300000000 := by
+  change (prepareOuterBank Width16Schedule.headRWires.reverse
+    (Straight.done : Straight 1769472 start start)).gateSlots ≤ _
+  rw [prepareOuterBank_slots]
+  have hl : Width16Schedule.headRWires.length = 8 := Width16Schedule.headR_length
+  simp only [List.length_reverse, hl]
+  change 8 + 0 ≤ _
+  omega
 
-theorem win_bank_support (w : Window 1769472) (hw : IsWin w) : w.wires ⊆ List.range 1618 := by
+theorem bits_range : ∀ v ∈ SelectSchedule18.bits, v ∈ List.range 1613 := by decide
+
+theorem win_bank_support (w : Window 1769472) (hw : IsWin w) : w.wires ⊆ List.range 1613 := by
   rcases hw with rfl|rfl|⟨d,rfl⟩
   · intro v hv
     exact bits_range v (Width16Schedule.headL_sub v (List.mem_reverse.mp hv))
@@ -2768,13 +2776,13 @@ theorem win_bank_support (w : Window 1769472) (hw : IsWin w) : w.wires ⊆ List.
       exact List.mem_append_left _ (List.mem_reverse.mp hv))
   · cases d with
     | left17 j | right17 j =>
-      change (WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact ⊆ _
+      change (WideSigned.Body.logicalBank .w16).reverse.map TightSupport.compact17_7 ⊆ _
       decide
     | left16 j | right16 j => change streamAddress.reverse ⊆ _; decide
 
 theorem win_support (w : Window 1769472) (hw : IsWin w) (start : Nat)
     (read : ConstantBit 1769472→Bool) (history : Fin start→Bool) :
-    ((w.program start).instantiate read history).wires ⊆ List.range 1618 := by
+    ((w.program start).instantiate read history).wires ⊆ List.range 1613 := by
   rcases hw with rfl|rfl|⟨d,rfl⟩
   · change ((prepareOuterBank Width16Schedule.headRWires
       (Width16Schedule.firstWindow.program start)).instantiate read history).wires ⊆ _
@@ -2782,8 +2790,7 @@ theorem win_support (w : Window 1769472) (hw : IsWin w) (start : Nat)
     · intro v hv
       exact bits_range v (Width16Schedule.headR_sub' v hv)
     · exact (straight_instantiate_support _ read history).trans
-        ((RootPass.window_support Width16Schedule.firstRow start).trans
-          (First18.support_range.trans (List.range_subset.mpr (by decide))))
+        (First18Split.window_support Width16Schedule.firstRow start)
   · change ((prepareOuterBank Width16Schedule.headRWires.reverse
       (Straight.done : Straight 1769472 start start)).instantiate read history).wires ⊆ _
     apply prepareOuterBank_support
@@ -2815,17 +2822,21 @@ theorem mix_slots_bound :
     (mixHead impl.headA 0).gateSlots +
       (mixTail impl.headA impl.headB (Width16Schedule.leftBodies impl)
         (Width16Schedule.rightBodies impl) 0).gateSlots ≤ 99998999998 := by
-  have hA := axis_slots ([impl.headA]) 3000000000
-    (fun w hw start => by rcases List.mem_singleton.mp hw with rfl; exact win_slots _ isWin_headA start)
+  have hA := axis_slots ([impl.headA]) 4500000010
+    (fun w hw start => by rcases List.mem_singleton.mp hw with rfl; exact headA_slots start)
     0 List.nil
-  have hB := axis_slots ([impl.headB]) 3000000000
-    (fun w hw start => by rcases List.mem_singleton.mp hw with rfl; exact win_slots _ isWin_headB start)
+  have hB := axis_slots ([impl.headB]) 3300000000
+    (fun w hw start => by rcases List.mem_singleton.mp hw with rfl; exact headB_slots start)
     (mixS1 impl.headA 0) List.nil
-  have hL := axis_slots (Width16Schedule.leftBodies impl) 3000000000
-    (fun w hw start => win_slots w (isWin_left w hw) start)
+  have hL := axis_slots (Width16Schedule.leftBodies impl) 3300000000
+    (fun w hw start => by
+      obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+      exact signed_slots d start)
     (mixS2 impl.headA impl.headB 0) (mixPriorL impl.headA impl.headB 0)
-  have hR := axis_slots (Width16Schedule.rightBodies impl) 3000000000
-    (fun w hw start => win_slots w (isWin_right w hw) start)
+  have hR := axis_slots (Width16Schedule.rightBodies impl) 3300000000
+    (fun w hw start => by
+      obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+      exact signed_slots d start)
     (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0)
     (mixPriorR impl.headA impl.headB (Width16Schedule.leftBodies impl) 0)
   rw [Width16Schedule.mixPriorL_length] at hL
@@ -2834,9 +2845,9 @@ theorem mix_slots_bound :
     impl.headB_count, impl.headB_width] at hA hB
   rw [Width16Schedule.left_metadata] at hL
   rw [Width16Schedule.right_metadata] at hR
-  have hb : metadataSlots 3000000000 ([(132606,10)]) 0 + metadataSlots 3000000000 ([(0,8)]) 0 +
-      metadataSlots 3000000000 (Width16Schedule.leftMetadata impl.records17 impl.records16) 10 +
-      metadataSlots 3000000000 (Width16Schedule.rightMetadata impl.records17 impl.records16) 8 ≤
+  have hb : metadataSlots 4500000010 ([(99265,10)]) 0 + metadataSlots 3300000000 ([(0,8)]) 0 +
+      metadataSlots 3300000000 (Width16Schedule.leftMetadata impl.records17 impl.records16) 10 +
+      metadataSlots 3300000000 (Width16Schedule.rightMetadata impl.records17 impl.records16) 8 ≤
       99998999998 := by
     norm_num [Width16Schedule.leftMetadata, Width16Schedule.rightMetadata, metadataSlots, fourierSlots,
       List.replicate]
@@ -2853,7 +2864,7 @@ theorem full_slots : rawProgram.gateSlots ≤ 100000000000 := by
   rw [Straight.gateSlots_append,framed_slots,resetProgram_gateSlots,hro]
   omega
 
-theorem reset_range : reset ⊆ List.range 1618 := by
+theorem reset_range : reset ⊆ List.range 1613 := by
   intro w hw
   simp only [reset, resetWires, List.mem_append, List.mem_range, List.mem_singleton,
     List.mem_range'_1] at hw ⊢
@@ -2861,33 +2872,33 @@ theorem reset_range : reset ⊆ List.range 1618 := by
   omega
 
 theorem full_support (read : ConstantBit 1769472→Bool) (history : Fin 0→Bool) :
-    (rawProgram.instantiate read history).wires ⊆ List.range 1618 := by
-  have hA := axis_support ([impl.headA]) (List.range 1618)
+    (rawProgram.instantiate read history).wires ⊆ List.range 1613 := by
+  have hA := axis_support ([impl.headA]) (List.range 1613)
     (fun w hw => by rcases List.mem_singleton.mp hw with rfl; exact win_bank_support _ isWin_headA)
     (fun w hw start r h => by
       rcases List.mem_singleton.mp hw with rfl; exact win_support _ isWin_headA start r h)
     0 List.nil read history
-  have hB (h : Fin (mixS1 impl.headA 0)→Bool) := axis_support ([impl.headB]) (List.range 1618)
+  have hB (h : Fin (mixS1 impl.headA 0)→Bool) := axis_support ([impl.headB]) (List.range 1613)
     (fun w hw => by rcases List.mem_singleton.mp hw with rfl; exact win_bank_support _ isWin_headB)
     (fun w hw start r h' => by
       rcases List.mem_singleton.mp hw with rfl; exact win_support _ isWin_headB start r h')
     (mixS1 impl.headA 0) List.nil read h
-  have hL (h : Fin (mixS2 impl.headA impl.headB 0)→Bool) := axis_support (Width16Schedule.leftBodies impl) (List.range 1618)
+  have hL (h : Fin (mixS2 impl.headA impl.headB 0)→Bool) := axis_support (Width16Schedule.leftBodies impl) (List.range 1613)
     (fun w hw => win_bank_support w (isWin_left w hw))
     (fun w hw start r h' => win_support w (isWin_left w hw) start r h')
     (mixS2 impl.headA impl.headB 0) (mixPriorL impl.headA impl.headB 0) read h
-  have hR (h : Fin (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0)→Bool) := axis_support (Width16Schedule.rightBodies impl) (List.range 1618)
+  have hR (h : Fin (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0)→Bool) := axis_support (Width16Schedule.rightBodies impl) (List.range 1613)
     (fun w hw => win_bank_support w (isWin_right w hw))
     (fun w hw start r h' => win_support w (isWin_right w hw) start r h')
     (mixS3 impl.headA impl.headB (Width16Schedule.leftBodies impl) 0) (mixPriorR impl.headA impl.headB (Width16Schedule.leftBodies impl) 0) read h
-  apply outer_append_support _ _ read history (List.range 1618) ?_ ?_
+  apply outer_append_support _ _ read history (List.range 1613) ?_ ?_
   · unfold Width16Schedule.program
     refine framed_support _ _ _ _ read history _ (by decide) hA ?_
       (fun h => resetProgram_support _ _ _ _ read h reset_range)
     intro h
     unfold mixTail
-    exact outer_append_support _ _ read h (List.range 1618) (hB h)
-      (fun h' => outer_append_support _ _ read h' (List.range 1618) (hL h') (fun h'' => hR h''))
+    exact outer_append_support _ _ read h (List.range 1613) (hB h)
+      (fun h' => outer_append_support _ _ read h' (List.range 1613) (hL h') (fun h'' => hR h''))
   · intro h
     unfold Width16Schedule.readout
     rw [castFinish_instantiate]
@@ -2901,11 +2912,11 @@ theorem within_reindex {n m s e} (p : Straight n s e) (f : Fin n→Fin m)
   | recordGate i v g p ih => exact ⟨hp.1,ih hp.2⟩
   | measure w p ih => exact ⟨hp.1,ih hp.2⟩
 
-theorem source_within : Within (List.range 1618) rawEntry.program := by
+theorem source_within : Within (List.range 1613) rawEntry.program := by
   unfold rawEntry Width16Schedule.sourceEntry Single.fixedEntry
   dsimp only
-  exact within_reindex rawProgram _ (List.range 1618)
-    (within_of_instantiate rawProgram (List.range 1618) full_support)
+  exact within_reindex rawProgram _ (List.range 1613)
+    (within_of_instantiate rawProgram (List.range 1613) full_support)
 
 theorem added_le_weight {n s e} (p : Straight n s e) : 4*added p ≤ weight4 p := by
   induction p with
@@ -2917,7 +2928,7 @@ theorem added_le_weight {n s e} (p : Straight n s e) : 4*added p ≤ weight4 p :
   | recordGate i b g p ih => simp only [added,weight4]; omega
   | measure w p ih => exact ih
 
-theorem source_credit_bound : added rawEntry.program ≤ 62737992 := by
+theorem source_credit_bound : added rawEntry.program ≤ 62298585 := by
   have h := added_le_weight rawEntry.program
   have hw := Width16Schedule.fullProgram_weight impl reset
   have hc := credits
@@ -2936,8 +2947,8 @@ theorem source_counts : rawEntry.finalCursor ≤ 50000000 ∧
   have hs : rawEntry.program.gateSlots ≤ 100000000000 := by
     rw [rawEntry,Width16Schedule.sourceEntry,Single.fixedEntry_slots]
     exact full_slots
-  have hm : rawEntry.finalCursor = 46518761 := by
-    change 132606+19*1743514+8*1652890+469+resetWires.length+34946=46518761
+  have hm : rawEntry.finalCursor = 46143310 := by
+    change 99265+19*1728416+8*1645984+469+resetWires.length+34946=46143310
     decide
   change _ ∧ _ ∧ _ ≤ 4000000000000000
   omega
@@ -2956,6 +2967,7 @@ set_option maxHeartbeats 2000000
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 attribute [local irreducible] Single.axis WideBank8.Signed16.program WEXFast.W15G.compactProgram
+  Site1Wire.Wide16.program Site1Wire.Narrow15.compactProgram First18Split.program
   ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
   AndGadget.lowerEntry AndGadget.lowerLayout
 attribute [local instance] bodyInstance resourceInstance
@@ -3004,7 +3016,7 @@ theorem strong_success (Q : Point) (d : Nat) (hn : Q≠0) (hd : Q=d•G) :
     (Width16Schedule.hfirst_concrete Q hQ hn initialRoot initialRoot_input initialRoot_clean)
     (fun w _ => signed_rule Q hQ hn w) (ready_models Q hQ hn)
 
-def rawBounds : Bounds := ⟨1618,700000000000,50000000⟩
+def rawBounds : Bounds := ⟨1613,700000000000,50000000⟩
 
 theorem raw_certificate : Certificate rawLimits rawLayout rawEntry rawBounds where
   gateBudget := by
@@ -3023,8 +3035,8 @@ theorem raw_certificate : Certificate rawLimits rawLayout rawEntry rawBounds whe
   resources := by
     intro Q
     have hs := source_within.instantiate (readConstant rawEntry.coefficients.get Q) Fin.elim0
-    have hq : (rawEntry.instantiate Q).qubitCount ≤ 1618 := by
-      have ht : (rawEntry.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1618).toFinset := by
+    have hq : (rawEntry.instantiate Q).qubitCount ≤ 1613 := by
+      have ht : (rawEntry.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1613).toFinset := by
         intro v hv
         exact List.mem_toFinset.mpr (hs (by simpa only [List.mem_toFinset,List.mem_dedup] using hv))
       have hc := (Finset.card_le_card ht).trans (List.toFinset_card_le _)
@@ -3049,18 +3061,18 @@ def entry : StraightEntry := Width16Schedule.finalEntry implementation reset
 def layout : DecodeLayout :=
   lowerLayout 1938 (trimNEntry rawEntry) rawLayout
 
-def bounds : Bounds := ⟨1620,250907747,544000000⟩
+def bounds : Bounds := ⟨1615,249150119,544000000⟩
 
 theorem hcert : Certificate officialLimits
       (lowerLayout 1938 (trimNEntry (Width16Schedule.sourceEntry implementation reset))
         (Width16Schedule.layout implementation reset))
       (Width16Schedule.finalEntry implementation reset)
-      ⟨1620,4*(132595+19*implementation.credit17+8*implementation.credit16)+10767,544000000⟩ :=
-  Width16Schedule.conditional_certificate implementation reset (List.range 1618)
-    rawBounds 1620 raw_certificate source_within strong_success (by decide) (by decide)
+      ⟨1615,4*(99251+19*implementation.credit17+8*implementation.credit16)+10767,544000000⟩ :=
+  Width16Schedule.conditional_certificate implementation reset (List.range 1613)
+    rawBounds 1615 raw_certificate source_within strong_success (by decide) (by decide)
     source_counts.2.2 (source_counts.2.1.trans (by decide)) (by decide) source_counts.2.1
 
-theorem tmodel_key : ∀ a b : Nat, a ≤ 2342685 → b ≤ 2252065 → 4*(132595+19*a+8*b)+10767 ≤ 250907747 := by
+theorem tmodel_key : ∀ a b : Nat, a ≤ 2327593 → b ≤ 2245165 → 4*(99251+19*a+8*b)+10767 ≤ 249150119 := by
   intro a b ha hb
   omega
 

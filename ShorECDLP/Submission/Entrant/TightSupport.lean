@@ -1,4 +1,5 @@
 import ShorECDLP.Submission.Entrant.Prefix
+import ShorECDLP.Submission.Entrant.PoolHost
 
 namespace ShorECDLP.Entrant.TightSupport
 open Quantum Challenge Secp256k1 AndGadget WEXCredit
@@ -378,6 +379,304 @@ theorem compact_pointWrite (P : Point) (s : BasisState) :
       exact hv (he.symm ▸ h)
     simp only [relabelBasis, pointWrite, if_neg hv, if_neg hi]
 
+/-- Tight support without wire `10000`: `PathShare.newSourceH` (1616 wires) plus wire `871`. -/
+def support17 : List Wire := PathShare.newSourceH ++ [871]
+theorem old_cover17 : PathShare.newSourceH ⊆ support17 := List.subset_append_left _ _
+theorem support17_length : support17.length = 1617 := by decide
+
+theorem frame_support17 (r : Nat) (row : (j : Nat) → Straight 65536 j (j + r))
+    (hrow : ∀ j, ChallengeMigration.straightWires (row j) ⊆ support17)
+    (start : Nat) : ChallengeMigration.straightWires (WideSigned.Frame16.program r row start) ⊆ support17 := by
+  have cover : newSourceH ⊆ support17 := old_cover17
+  have hs (j : Nat) : ChallengeMigration.straightWires (WideSigned.Body.nProgram .w16 j) ⊆ support17 := by
+    rw [WideSigned.Body.nProgram, straightWires_reindex]
+    exact (nFast_newH j).trans cover
+  have hp (j : Nat) : ChallengeMigration.straightWires (WideSigned.Body.prefixProgram .w16 j) ⊆ support17 := by
+    rw [WideSigned.Body.prefixProgram, straightWires_append, literalProgram_support, literalProgram_support]
+    decide
+  have hpost (j : Nat) : ChallengeMigration.straightWires (WideSigned.Body.suffixProgram .w16 j) ⊆ support17 := by
+    rw [WideSigned.Body.suffixProgram, straightWires_append, literalProgram_support, literalProgram_support]
+    decide
+  rw [WideSigned.Frame16.program, straightWires_castFinish]
+  simp only [straightWires_append, List.append_subset]
+  exact ⟨⟨⟨⟨hp start, hs start⟩, hrow _⟩, hs _⟩, hpost _⟩
+
+def compact17 : Wire ≃ Wire :=
+  PathShare.piH.trans (Equiv.swap 14436 1616)
+
+theorem compact17_bound (v : Wire) (hv : v ∈ support17) : compact17 v < 1617 := by
+  rcases List.mem_append.mp hv with h | h
+  · have hp := (PathShare.piH_apply v).trans_lt (PathShare.piH_bound v h)
+    simp only [compact17, Equiv.trans_apply, Equiv.swap_apply_def]
+    dsimp only [Wire] at hp ⊢
+    split_ifs <;> omega
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+    subst h
+    decide
+
+theorem compact17_point (v : Wire) (hv : v ∈ pointLogicalWires) : compact17 v = v := by
+  rw [compact17, Equiv.trans_apply, PathShare.piH_point v hv]
+  have hb := point_wire_small v hv
+  simp only [Equiv.swap_apply_def]
+  dsimp only [Wire] at *
+  split_ifs <;> omega
+
+theorem compact17_active : compact17 836 = 836 := by decide
+theorem compact17_sign : compact17 870 = 870 := by decide
+theorem compact17_extra : compact17 871 = 1616 := by decide
+
+theorem compact17_address (v : Wire) (hv : v ∈ streamAddress) : compact17 v = v := by
+  have hb : 855 ≤ v ∧ v < 871 := by simpa only [streamAddress, List.mem_range'_1] using hv
+  have hf : fixedPort v := by unfold fixedPort; dsimp only [Wire] at *; omega
+  rw [compact17, Equiv.trans_apply, PathShare.piH_fixed v hf]
+  simp only [Equiv.swap_apply_def]
+  dsimp only [Wire] at *
+  split_ifs <;> omega
+
+theorem compact17_pointWrite (P : Point) (s : BasisState) :
+    relabelBasis compact17 (pointWrite P s) = pointWrite P (relabelBasis compact17 s) := by
+  funext v
+  by_cases hv : v ∈ pointLogicalWires
+  · have he : compact17.symm v = v := (Equiv.symm_apply_eq compact17).mpr (compact17_point v hv).symm
+    simp only [relabelBasis, pointWrite, he, if_pos hv]
+  · have hi : compact17.symm v ∉ pointLogicalWires := by
+      intro h
+      have he := compact17_point _ h
+      rw [Equiv.apply_symm_apply] at he
+      exact hv (he.symm ▸ h)
+    simp only [relabelBasis, pointWrite, if_neg hv, if_neg hi]
+
+/-- Tight support with 4 flag-hosted pool wires retired (`14874..14877`): `PoolHost.newSourceH7` (1612 wires) plus wire `871`. -/
+def support17_7 : List Wire := PoolHost.newSourceH7 ++ [871]
+theorem old_cover17_7 : PoolHost.newSourceH7 ⊆ support17_7 := List.subset_append_left _ _
+theorem support17_7_length : support17_7.length = 1613 := by decide
+
+theorem nFast_newH7 (start : Nat) : ChallengeMigration.straightWires (nFastProgram start) ⊆ PoolHost.newSourceH7 := by
+  apply literalFixed_support (n := 32768) (ECDSAAdd.Baselines.normalizeProgram fastWindowSignProgram) 256
+    ((literal_meas (n := 32768) _).trans fastWindowSign_normalized_counts.2) PoolHost.newSourceH7 (start := start)
+  rw [ECDSAAdd.Baselines.normalize_wires]
+  have hs := WEX.finiteSignMeasured_support (negateYLayout streamLayout) 870 838 streamLayout.core.generic ECDSAAdd.p
+  have cover : 870 :: 838 :: (negateYLayout streamLayout).wires streamLayout.core.generic ⊆ PoolHost.newSourceH7 := by
+    apply PoolHost.newSourceH7_of_bounds; decide +kernel
+  have sub : ECDSAAdd.wires fastWindowSignProgram ⊆ ECDSAAdd.wires
+      (WEX.finiteSignMeasured (negateYLayout streamLayout) 870 838 streamLayout.core.generic ECDSAAdd.p) := by
+    simp only [fastWindowSignProgram, WEX.finiteSignMeasured, ECDSAAdd.wires_append]
+    exact Finset.union_subset_union (Finset.union_subset_union (fun _ h => h) WEX.TrimmedSign.reflection_wires)
+      (fun _ h => h)
+  exact sub.trans (hs.trans (fun w hw => List.mem_toFinset.mpr (cover (List.mem_toFinset.mp hw))))
+
+theorem frame_support17_7 (r : Nat) (row : (j : Nat) → Straight 65536 j (j + r))
+    (hrow : ∀ j, ChallengeMigration.straightWires (row j) ⊆ support17_7)
+    (start : Nat) : ChallengeMigration.straightWires (WideSigned.Frame16.program r row start) ⊆ support17_7 := by
+  have cover : PoolHost.newSourceH7 ⊆ support17_7 := old_cover17_7
+  have hs (j : Nat) : ChallengeMigration.straightWires (WideSigned.Body.nProgram .w16 j) ⊆ support17_7 := by
+    rw [WideSigned.Body.nProgram, straightWires_reindex]
+    exact (nFast_newH7 j).trans cover
+  have hp (j : Nat) : ChallengeMigration.straightWires (WideSigned.Body.prefixProgram .w16 j) ⊆ support17_7 := by
+    rw [WideSigned.Body.prefixProgram, straightWires_append, literalProgram_support, literalProgram_support]
+    decide
+  have hpost (j : Nat) : ChallengeMigration.straightWires (WideSigned.Body.suffixProgram .w16 j) ⊆ support17_7 := by
+    rw [WideSigned.Body.suffixProgram, straightWires_append, literalProgram_support, literalProgram_support]
+    decide
+  rw [WideSigned.Frame16.program, straightWires_castFinish]
+  simp only [straightWires_append, List.append_subset]
+  exact ⟨⟨⟨⟨hp start, hs start⟩, hrow _⟩, hs _⟩, hpost _⟩
+
+def compact17_7 : Wire ≃ Wire :=
+  PoolHost.piH7.trans (Equiv.swap 14436 1612)
+
+theorem compact17_7_bound (v : Wire) (hv : v ∈ support17_7) : (compact17_7 v : Nat) < 1613 := by
+  rcases List.mem_append.mp hv with h | h
+  · have hp := PoolHost.piH7_bound v h
+    simp only [compact17_7, Equiv.trans_apply, Equiv.swap_apply_def]
+    dsimp only [Wire] at hp ⊢
+    split_ifs <;> omega
+  · simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+    subst h
+    decide
+
+theorem compact17_7_point (v : Wire) (hv : v ∈ pointLogicalWires) : compact17_7 v = v := by
+  rw [compact17_7, Equiv.trans_apply, PoolHost.piH7_point v hv]
+  have hb := point_wire_small v hv
+  simp only [Equiv.swap_apply_def]
+  dsimp only [Wire] at *
+  split_ifs <;> omega
+
+theorem compact17_7_active : compact17_7 836 = 836 := by decide
+theorem compact17_7_sign : compact17_7 870 = 870 := by decide
+theorem compact17_7_extra : compact17_7 871 = 1612 := by decide
+
+theorem compact17_7_address (v : Wire) (hv : v ∈ streamAddress) : compact17_7 v = v := by
+  have hb : 855 ≤ v ∧ v < 871 := by simpa only [streamAddress, List.mem_range'_1] using hv
+  have hf : fixedPort v := by unfold fixedPort; dsimp only [Wire] at *; omega
+  rw [compact17_7, Equiv.trans_apply, PoolHost.piH7_fixed v hf]
+  simp only [Equiv.swap_apply_def]
+  dsimp only [Wire] at *
+  split_ifs <;> omega
+
+theorem compact17_7_pointWrite (P : Point) (s : BasisState) :
+    relabelBasis compact17_7 (pointWrite P s) = pointWrite P (relabelBasis compact17_7 s) := by
+  funext v
+  by_cases hv : v ∈ pointLogicalWires
+  · have he : compact17_7.symm v = v := (Equiv.symm_apply_eq compact17_7).mpr (compact17_7_point v hv).symm
+    simp only [relabelBasis, pointWrite, he, if_pos hv]
+  · have hi : compact17_7.symm v ∉ pointLogicalWires := by
+      intro h
+      have he := compact17_7_point _ h
+      rw [Equiv.apply_symm_apply] at he
+      exact hv (he.symm ▸ h)
+    simp only [relabelBasis, pointWrite, if_neg hv, if_neg hi]
+
+/-! ### Narrow-window compaction transport (`PoolHost.piH7`, `< 1612`) -/
+
+theorem piH7_address (w : Wire) (h : w ∈ streamAddress) : PoolHost.piH7 w = w := by
+  apply PoolHost.piH7_fixed
+  exact Or.inr (Or.inr (Or.inr (by simpa [streamAddress] using h)))
+
+def pullH7 (s : BasisState) : BasisState := relabelBasis PoolHost.piH7.symm s
+
+theorem pullH7_at (s : BasisState) (w : Wire) (h : fixedPort w) : pullH7 s w = s w := by
+  simp only [pullH7, relabelBasis, Equiv.symm_symm, PoolHost.piH7_fixed w h]
+
+theorem pullH7_hot (s : BasisState) (i : Fin 128) : pullH7 s (hot i) = s (hot i) := by
+  simp only [pullH7, relabelBasis, Equiv.symm_symm, PoolHost.piH7_hot]
+
+theorem pullH7_write (P : Point) (s : BasisState) : pullH7 (pointWrite P s) = pointWrite P (pullH7 s) := by
+  funext w
+  by_cases hp : w ∈ pointLogicalWires
+  · have h1 : PoolHost.piH7 w = w := PoolHost.piH7_point w hp
+    simp only [pullH7, relabelBasis, Equiv.symm_symm, pointWrite, h1, if_pos hp]
+  · have h2 : PoolHost.piH7 w ∉ pointLogicalWires := by
+      intro hm
+      have he := PoolHost.piH7_point _ hm
+      exact hp (PoolHost.piH7.injective he ▸ hm)
+    simp only [pullH7, relabelBasis, Equiv.symm_symm, pointWrite, if_neg hp, if_neg h2]
+
+theorem pushH7_write (P : Point) (s : BasisState) :
+    relabelBasis PoolHost.piH7 (pointWrite P (pullH7 s)) = pointWrite P s := by
+  rw [← pullH7_write P s]
+  funext w
+  simp only [pullH7, relabelBasis, Equiv.symm_symm, Equiv.apply_symm_apply]
+
+theorem pullH7_coordinates (s : BasisState) : pointStateCoordinates (pullH7 s) = pointStateCoordinates s := by
+  have he (ws : List Wire) (h : ∀ w ∈ ws, w ∈ pointLogicalWires) : wireValues ws (pullH7 s) = wireValues ws s :=
+    List.map_congr_left fun w hw => by
+      simp only [pullH7, relabelBasis, Equiv.symm_symm, PoolHost.piH7_point w (h w hw)]
+  have hx : wireValues (List.range' 263 256) (pullH7 s) = wireValues (List.range' 263 256) s :=
+    he _ (fun w hw => List.mem_append_left _ hw)
+  have hy : wireValues (List.range' 580 256) (pullH7 s) = wireValues (List.range' 580 256) s :=
+    he _ (fun w hw => List.mem_append_right _ (List.mem_append_left _ hw))
+  have h838 : pullH7 s 838 = s 838 := by
+    simp only [pullH7, relabelBasis, Equiv.symm_symm,
+      PoolHost.piH7_point 838 (by simp [pointLogicalWires, pointCorrectionYInf])]
+  simp only [pointStateCoordinates, hx, hy, h838]
+
+theorem pullH7_digit (s : BasisState) : windowRawDigit 0 (pullH7 s) = windowRawDigit 0 s := by
+  have he : wireValues (windowAddressBits 0) (pullH7 s) = wireValues (windowAddressBits 0) s :=
+    List.map_congr_left fun w hw => by
+      have hfix : fixedPort w := by
+        simp only [windowAddressBits, windowBankStart, List.mem_range'_1] at hw
+        unfold fixedPort; omega
+      exact pullH7_at s w hfix
+  have h870 : pullH7 s (windowBankStart 0 + 15) = s (windowBankStart 0 + 15) :=
+    pullH7_at s 870 (by decide +kernel)
+  simp only [windowRawDigit, he, h870]
+
+def readyH7 (s : BasisState) : Prop := windowReady (pullH7 s) ∧ MeasuredClear.HotClean hot s
+
+theorem readyH7_active (s : BasisState) (h : readyH7 s) : s 836 = true := by
+  simpa only [pullH7_at s 836 (by decide +kernel)] using windowReady_active (pullH7 s) h.1
+
+theorem readyH7_write (P : Point) (s : BasisState) (h : readyH7 s) :
+    readyH7 (pointWrite P s) := by
+  refine ⟨?_, pointWrite_hot P s h.2⟩
+  rw [pullH7_write]
+  exact windowReady_write P (pullH7 s) h.1
+
+theorem pullH7_address (s : BasisState) (v : Wire) (hv : v ∈ streamAddress) (b : Bool) :
+    pullH7 (s[v ↦ b]) = (pullH7 s)[v ↦ b] := by
+  have hh' : PoolHost.piH7.symm v = v := by
+    rw [Equiv.symm_apply_eq]; exact (piH7_address v hv).symm
+  simp only [pullH7, relabelBasis_upd, hh']
+
+theorem readyH7_address (s : BasisState) (h : readyH7 s)
+    (v : Wire) (hv : v ∈ streamAddress) (b : Bool) : readyH7 (s[v ↦ b]) := by
+  refine ⟨?_, ?_⟩
+  · rw [pullH7_address s v hv b]
+    exact windowReady_address (pullH7 s) h.1 v hv b
+  · intro i
+    have hn : hot i ≠ v := fun he => hot_outside_address i (he.symm ▸ hv)
+    exact (upd_other s v b hn).trans (h.2 i)
+
+theorem pullH7_first (s : BasisState) (h : FirstWindowInput s) : FirstWindowInput (pullH7 s) := by
+  constructor
+  · simpa only [pullH7_at s 836 (by decide +kernel)] using h.1
+  · intro w hw ha
+    change s (PoolHost.piH7 w) = false
+    apply h.2
+    · intro hh
+      have hfix : PoolHost.piH7 836 = 836 := PoolHost.piH7_fixed _ (by decide +kernel)
+      exact hw (PoolHost.piH7.injective (hh.trans hfix.symm))
+    · intro hh
+      have hfix := piH7_address _ hh
+      have he : PoolHost.piH7 w = w := PoolHost.piH7.injective hfix
+      exact ha (he ▸ hh)
+
+theorem readyH7_first (s : BasisState) (h : FirstWindowInput s) (P : Point) :
+    readyH7 (pointWrite P s) := by
+  refine ⟨?_, ?_⟩
+  · rw [pullH7_write]
+    exact windowReady_first (pullH7 s) (pullH7_first s h) P
+  · apply pointWrite_hot P s
+    intro i
+    apply h.2
+    · have hi := i.isLt
+      simp only [hot]
+      dsimp only [Wire] at *
+      omega
+    · exact hot_outside_address i
+
+def stateH7 (coeffs : Fin 32768 → PointCoeff) (Q : Point) (s : BasisState) : BasisState :=
+  relabelBasis PoolHost.piH7 (bodyState coeffs Q (pullH7 s))
+
+theorem stateH7_correct (coeffs : Fin 32768 → PointCoeff) (Q : Point)
+    (s : BasisState) (hs : readyH7 s) (P : Point)
+    (hP : pointStateCoordinates s = fig14PointEncoding P) :
+    stateH7 coeffs Q s = pointWrite
+      (P + if s 836 then
+        (if s 870 then constantPoint Q (coeffs ⟨signedTableAddress 32768
+          (windowRawDigit 0 s), signedTableAddress_bound 32768 _ (windowRawDigit_bound 0 s)⟩)
+         else -constantPoint Q (coeffs ⟨signedTableAddress 32768
+          (windowRawDigit 0 s), signedTableAddress_bound 32768 _ (windowRawDigit_bound 0 s)⟩))
+        else 0) s := by
+  unfold stateH7
+  rw [bodyState_correct coeffs Q (pullH7 s) hs.1 P ((pullH7_coordinates s).trans hP), pushH7_write]
+  simp only [pullH7_at s 836 (by decide +kernel), pullH7_at s 870 (by decide +kernel), pullH7_digit]
+
+theorem relabelH7_coherent {s e : Nat} (p : Straight 32768 s e) (coeffs : Fin 32768 → PointCoeff)
+    (Q : Point) (history : Fin s → Bool)
+    (hc : CoherentlyImplementsOn (p.instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)) Ready) :
+    CoherentlyImplementsOn ((relabelStraight PoolHost.piH7 p).instantiate (readConstant coeffs Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (stateH7 coeffs Q))
+      (fun s => readyH7 s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
+  have h := hc.relabel PoolHost.piH7
+  have hr : CoherentlyImplementsOn
+      ((p.instantiate (readConstant coeffs Q) history).relabel PoolHost.piH7)
+      ((relabelState PoolHost.piH7).comp ((Finsupp.lmapDomain ℂ ℂ (bodyState coeffs Q)).comp
+        (relabelState PoolHost.piH7.symm)))
+      (fun s => readyH7 s ∧ ∃ P, pointStateCoordinates s = fig14PointEncoding P) := by
+    obtain ⟨cs, aligned, mass⟩ := h
+    refine ⟨cs, aligned.imp ?_, mass⟩
+    intro b c hb s hs
+    apply hb s
+    refine ⟨hs.1.1, ?_⟩
+    intro i
+    exact (pullH7_hot s i).trans (hs.1.2 i)
+  have he := hr.congrIdeal (secondIdeal := Finsupp.lmapDomain ℂ ℂ (stateH7 coeffs Q))
+    (by intro s _; simp [stateH7, pullH7, LinearMap.comp_apply, relabelState, ket])
+  rw [relabelStraight_instantiate]
+  exact he
 
 end
 end ShorECDLP.Entrant.TightSupport
