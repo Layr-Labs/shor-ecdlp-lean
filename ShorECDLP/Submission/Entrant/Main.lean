@@ -6,19 +6,21 @@ set_option Elab.async false
 /-! ### Consolidated from `Schedule26.lean` -/
 section
 /-! Certified 26-body-window `(258, 204)` sine-windowed Shor ECDLP schedule (`Windowed26`):
-- First window: signed 20-bit 5-pass SelectSwap loader (`First20Signed`, `193,117` Toffolis,
-  `524,288` `G`-only rows — all frozen during specialization!).
+- First window: signed 20-bit 5-pass SelectSwap loader (`First20Signed`, `193,625` Toffolis,
+  `524,288` `G`-only rows — all frozen during specialization), locally compiled onto scratch wire `0`
+  and catalyst wire `1` inside `List.range 1613`.
 - Left body: `14` signed 17-bit windows (`14 × 17 = 238`, total left precision `20 + 238 = 258`),
-  all `G`-only rows frozen during specialization.
+  locally compiled via `LocalWide16.compiledProgram` (`≤ 4 × 2,303,094` T-gates/window, `0` global
+  ancilla overhead, catalyst on `compact17_7 15645 = 1`), all `G`-only rows frozen during specialization.
 - Right body: `12` signed 17-bit windows (`12 × 17 = 204`, `786,432` retained `Q`-rows + 1 sentinel
-  `= 786,433 ≤ 983,040`).
+  `= 786,433 ≤ 983,040`), locally compiled identically via `LocalWide16.compiledProgram`.
 - Top-10 centered sine window prepended to the left head (`First20Signed`) and right head (`right17 0`),
-  `2 × 28 = 56` T-model gates (`k ≤ 11`, untouched by `trim 18`).
+  `2 × 28 = 56` T-model gates (`k ≤ 11`, untouched by `trim 18`), compiled against catalyst wire `1`.
 - `K = 3` neighbour readout (`Readout3`, `-1, 0, +1`, `1,634` records, `0` T-gates).
 - Exact `trim 18` affine loss: `cost18 ≤ 425 * unit18 ≤ 51 / 10000`, `46,311` Fourier phase gates
   dropped (`7,088` kept), recovery probability `≥ 99 / 100`.
-- Certified resource bounds: `1,615` qubits, `240,353,597` T-model gates (`Q×T = 388,171,059,155`),
-  `≤ 544,000,000` measurements. -/
+- Certified resource bounds: `1,613` qubits, `240,303,421` T-model gates (`Q×T = 387,609,418,073`),
+  `≤ 105,000,000` measurements. -/
 
 
 namespace ShorECDLP.Entrant.Mixed
@@ -1635,6 +1637,1163 @@ theorem relabelBasis_phaseWordState (e : Wire ≃ Wire) (ws : List Wire) (bs : L
 end
 end ShorECDLP.Entrant.Schedule26Bridge
 
+/-! ### Part 2b: Local-catalyst axis combinators (`CatAxis`) -/
+
+namespace ShorECDLP.Entrant.CatAxis
+open Quantum Challenge Secp256k1 AndGadget ConditionalCatalyst ApproximatePhase34
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open Single Single.Distribution LocalFour Trim18
+noncomputable section
+set_option maxHeartbeats 2000000
+set_option maxRecDepth 20000
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
+set_option linter.unusedVariables false
+set_option linter.unnecessarySeqFocus false
+set_option linter.unusedSectionVars false
+attribute [local irreducible] fourierOutcomes
+
+local instance catAxisBody : Single.WindowBody := PathShare.bodyCF
+local instance catAxisRes : Single.ProducerResources catAxisBody :=
+  Single.ProducerResources.ofBody PathShare.bodyCF
+    (by change resetWires.Nodup; exact resetWires_nodup)
+    (by change (0 : Wire) ∈ resetWires; decide)
+    (by change (1 : Wire) ∈ resetWires; decide)
+
+/-! #### `CatCoherent` combinators -/
+
+theorem relabelState_prep (e : Wire ≃ Wire) (y : Wire) (ψ : State) :
+    relabelState e (Prep y ψ) = Prep (e y) (relabelState e ψ) := by
+  have hm : (Catalyst.prepare y).map (Gate.relabel e) = Catalyst.prepare (e y) := rfl
+  rw [Prep, Prep, ← hm]
+  exact (Quantum.run_relabel e (Catalyst.prepare y) ψ).symm
+
+theorem catCoherent_relabel (e : Wire ≃ Wire) (y : Wire) (C : AdaptiveCircuit)
+    (U : State →ₗ[ℂ] State) (V : BasisState → Prop)
+    (h : CatCoherent y C U V) :
+    CatCoherent (e y) (C.relabel e)
+      ((relabelState e).comp (U.comp (relabelState e.symm)))
+      (fun s => V (relabelBasis e.symm s)) := by
+  obtain ⟨cs, hal, hmass⟩ := h
+  refine ⟨cs, ?_, hmass⟩
+  rw [AdaptiveCircuit.run_relabel, List.forall₂_map_left_iff]
+  refine hal.imp (fun b c hb s hs => ?_)
+  change relabelState e (b.kraus (relabelState e.symm (Prep (e y) (ket s)))) = _
+  have hp1 : relabelState e.symm (Prep (e y) (ket s)) = Prep y (ket (relabelBasis e.symm s)) := by
+    rw [relabelState_prep, Equiv.symm_apply_apply, relabelState_ket]
+  rw [hp1, hb (relabelBasis e.symm s) hs, map_smul, relabelState_prep]
+  simp only [LinearMap.comp_apply, relabelState_ket]
+
+theorem catBranch_on_supported {y : Wire} {U : State →ₗ[ℂ] State} {V : BasisState → Prop}
+    {b : InstrumentBranch} {c : ℂ}
+    (hb : ∀ s, V s → b.kraus (Prep y (ket s)) = c • Prep y (U (ket s)))
+    (ψ : State) (hψ : SupportedOn V ψ) :
+    b.kraus (Prep y ψ) = c • Prep y (U ψ) := by
+  induction ψ using Finsupp.induction with
+  | zero => simp
+  | single_add s a f hsf ha ih =>
+    have hs : V s := hψ s (by
+      simp [Finsupp.add_apply, Finsupp.single_eq_same, Finsupp.notMem_support_iff.mp hsf, ha])
+    have hf : SupportedOn V f := fun t ht => hψ t (by
+      have hts : t ≠ s := fun h => hsf (h ▸ Finsupp.mem_support_iff.mpr ht)
+      rw [Finsupp.add_apply, Finsupp.single_eq_of_ne hts, zero_add]
+      exact ht)
+    have hket : Finsupp.single s a = a • ket s := by ext u; simp [ket]
+    rw [map_add, map_add, map_add, map_add, smul_add, ih hf, hket,
+      map_smul, map_smul, map_smul, map_smul, hb s hs, smul_comm]
+
+private theorem literals_append {n s e : Nat} (c₁ c₂ : Circuit) (p : Straight n s e) :
+    AndGadget.literals c₁ (AndGadget.literals c₂ p) = AndGadget.literals (c₁ ++ c₂) p := by
+  induction c₁ with
+  | nil => rfl
+  | cons g gs ih =>
+    simp only [AndGadget.literals, List.cons_append, List.foldr_cons]
+    exact congrArg (Straight.gate (.literal g)) ih
+
+private theorem literals_append_straight {n s m e : Nat} (c : Circuit) (p : Straight n s m)
+    (q : Straight n m e) :
+    (AndGadget.literals c p).append q = AndGadget.literals c (p.append q) := by
+  induction c with
+  | nil => rfl
+  | cons g gs ih =>
+    simp only [AndGadget.literals, List.foldr_cons, Straight.append]
+    exact congrArg (Straight.gate (.literal g)) ih
+
+theorem compile_literalProgram_eq {n s : Nat} (y : Wire) (c : Circuit) :
+    ConditionalCatalyst.compile y (literalProgram (n := n) (s := s) c) =
+      AndGadget.literals (compileCircuit y c) .done := by
+  induction c with
+  | nil => rfl
+  | cons g gs ih =>
+    change AndGadget.literals (ConditionalCatalyst.replacement y g)
+        (ConditionalCatalyst.compile y (literalProgram gs)) =
+      AndGadget.literals (ConditionalCatalyst.replacement y g ++ compileCircuit y gs) .done
+    rw [ih, literals_append]
+
+theorem prependCompiledCircuit_catCoherent {n s e : Nat} (y : Wire) (c : Circuit)
+    (p : Straight n s e) (read : ConstantBit n → Bool) (history : Fin s → Bool)
+    (U : State →ₗ[ℂ] State) (V W : BasisState → Prop)
+    (hy : y ∉ circuitWires c)
+    (hWY : ∀ x, W x → x y = false)
+    (hVW : ∀ x, W x → SupportedOn V (Quantum.run c (ket x)))
+    (hp : CatCoherent y (p.instantiate read history) U V) :
+    CatCoherent y (((ConditionalCatalyst.compile y (literalProgram c)).append p).instantiate read history)
+      (U.comp (Quantum.run c)) W := by
+  obtain ⟨cs, hal, hmass⟩ := hp
+  refine ⟨cs, ?_, hmass⟩
+  rw [compile_literalProgram_eq, literals_append_straight]
+  change List.Forall₂ _ ((AndGadget.literals (compileCircuit y c) p).instantiate read history).run cs
+  rw [LocalFour.literals_instantiate_run, List.forall₂_map_left_iff]
+  refine hal.imp (fun b k hb x hx => ?_)
+  change b.kraus (Quantum.run (compileCircuit y c) (Prep y (ket x))) = _
+  rw [compileCircuit_prep y c hy (ket x) (supportedOn_ket _ _ (hWY x hx))]
+  rw [catBranch_on_supported hb _ (hVW x hx)]
+  simp only [LinearMap.comp_apply]
+
+/-! #### Compiled semiclassical Fourier block on `Prep y` -/
+
+theorem compile_castFinish {n s e f : Nat} (y : Wire) (h : e = f) (p : Straight n s e) :
+    ConditionalCatalyst.compile y (castFinish h p) = castFinish h (ConditionalCatalyst.compile y p) := by
+  subst f; rfl
+
+theorem compile_feedbackProgram_run {n s e : Nat} (y : Wire) (dir : PhaseDir) (w : Wire)
+    (indices : List (Fin s)) (k : Nat) (next : Straight n s e)
+    (read : ConstantBit n → Bool) (history : Fin s → Bool) :
+    ((ConditionalCatalyst.compile y (feedbackProgram dir w indices k next)).instantiate read history).run =
+      ((ConditionalCatalyst.compile y next).instantiate read history).run.map
+        (fun b => ⟨b.history,
+          b.kraus.comp (Quantum.run (compileCircuit y (fourierHistoryRotations dir w (indices.map history) k)))⟩) := by
+  induction indices generalizing k with
+  | nil =>
+    simp only [feedbackProgram, List.map_nil, fourierHistoryRotations, compileCircuit, Quantum.run_nil]
+    symm
+    apply List.map_id'
+  | cons i is ih =>
+    simp only [feedbackProgram, ConditionalCatalyst.compile, LocalFour.recordLiterals_instantiate_run,
+      ih, List.map_map, Function.comp_def, List.map_cons, fourierHistoryRotations, fourierFeedForward]
+    apply List.map_congr_left
+    intro b _
+    cases hi : history i
+    · simp only [Bool.false_eq_true, ↓reduceIte, List.nil_append]
+      exact congrArg (InstrumentBranch.mk b.history) (LinearMap.comp_id _)
+    · simp only [↓reduceIte, List.cons_append, List.nil_append, compileCircuit]
+      exact congrArg (InstrumentBranch.mk b.history) (LinearMap.ext fun ψ => by
+        simp only [LinearMap.comp_apply, Quantum.run_append])
+
+def compileFourierBranch (y : Wire) (dir : PhaseDir) : List Wire → List Bool → List Bool → State →ₗ[ℂ] State
+  | [], _, [] => LinearMap.id
+  | w :: ws, prior, b :: bs =>
+      (compileFourierBranch y dir ws (b :: prior) bs).comp
+        ((xResetKraus w b).comp (Quantum.run (compileCircuit y (fourierHistoryRotations dir w prior 2))))
+  | _, _, _ => 0
+
+theorem compile_fourierProgram_run (y : Wire) (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    ((ConditionalCatalyst.compile y (fourierProgram n dir ws start prior)).instantiate read history).run =
+      (fourierOutcomes ws.length).map (fun bs => ⟨bs, compileFourierBranch y dir ws (prior.map history) bs⟩) := by
+  induction ws generalizing start with
+  | nil =>
+    simp [fourierProgram, ConditionalCatalyst.compile, Straight.instantiate, AdaptiveCircuit.run,
+      fourierOutcomes, compileFourierBranch]
+  | cons w ws ih =>
+    simp only [fourierProgram, compile_castFinish, castFinish_instantiate, compile_feedbackProgram_run,
+      ConditionalCatalyst.compile, Straight.instantiate, AdaptiveCircuit.run, ih]
+    simp only [List.length_cons, fourierOutcomes, List.map_append, List.map_map, Function.comp_def,
+      List.map_cons, Fin.lastCases_last, Fin.lastCases_castSucc]
+    congr 1
+
+theorem fourierHistoryRotations_wires (dir : PhaseDir) (w : Wire) (prior : List Bool) (k : Nat) :
+    circuitWires (fourierHistoryRotations dir w prior k) ⊆ [w] := by
+  induction prior generalizing k with
+  | nil => intro u hu; simp [fourierHistoryRotations, circuitWires] at hu
+  | cons b bs ih =>
+    intro u hu
+    simp only [fourierHistoryRotations, fourierFeedForward, circuitWires, List.flatMap_append,
+      List.mem_append] at hu
+    rcases hu with hu | hu
+    · cases b <;> simp [gateWires] at hu; exact List.mem_singleton.mpr hu
+    · exact ih (k + 1) hu
+
+theorem compileFourierBranch_prep (y : Wire) (dir : PhaseDir) (ws : List Wire)
+    (hy : y ∉ ws) (prior bits : List Bool) (ψ : State) (hψ : SupportedOn (fun s => s y = false) ψ) :
+    compileFourierBranch y dir ws prior bits (Prep y ψ) = Prep y (fourierBranch dir ws prior bits ψ) ∧
+      SupportedOn (fun s => s y = false) (fourierBranch dir ws prior bits ψ) := by
+  induction ws generalizing prior bits ψ with
+  | nil =>
+    cases bits with
+    | nil => exact ⟨rfl, hψ⟩
+    | cons _ _ => exact ⟨by simp [compileFourierBranch, fourierBranch], by simp [fourierBranch, SupportedOn]⟩
+  | cons w ws ih =>
+    have hyw : y ≠ w := fun h => hy (h ▸ List.mem_cons_self)
+    have hyws : y ∉ ws := fun h => hy (List.mem_cons_of_mem _ h)
+    cases bits with
+    | nil => exact ⟨by simp [compileFourierBranch, fourierBranch], by simp [fourierBranch, SupportedOn]⟩
+    | cons b bs =>
+      have hnw : y ∉ circuitWires (fourierHistoryRotations dir w prior 2) := fun hm =>
+        hyw (List.mem_singleton.mp (fourierHistoryRotations_wires dir w prior 2 hm))
+      have hrot_sup : SupportedOn (fun s => s y = false)
+          (Quantum.run (fourierHistoryRotations dir w prior 2) ψ) :=
+        LocalFour.circuit_frame y _ hnw ψ hψ
+      have hres_sup : SupportedOn (fun s => s y = false)
+          (xResetKraus w b (Quantum.run (fourierHistoryRotations dir w prior 2) ψ)) :=
+        ConditionalCatalyst.reset_frame y w hyw b _ hrot_sup
+      simp only [compileFourierBranch, fourierBranch, LinearMap.comp_apply]
+      rw [compileCircuit_prep y _ hnw ψ hψ, Catalyst.prepare_reset y w hyw]
+      exact ih hyws (b :: prior) bs _ hres_sup
+
+/-! #### `CatWindow`, `axisCat`, `selectedAxisCat`, and `selectedTwoAxesCat` -/
+
+structure CatWindow {n : Nat} (y : Wire) (read : ConstantBit n → Bool) where
+  model : WindowModel read
+  catPhys : Single.Window n
+  wires_eq : catPhys.wires = model.physical.wires
+  noY : y ∉ model.physical.wires
+  catCoherent : ∀ start history,
+    CatCoherent y ((catPhys.program start).instantiate read history) model.ideal model.valid
+  idealY : ∀ ψ, SupportedOn model.valid ψ → SupportedOn (fun s => s y = false) (model.ideal ψ)
+
+def axisCat {n : Nat} (y : Wire) :
+    (ws : List (Single.Window n)) → (start : Nat) → List (Fin start) →
+      Straight n start (start + Single.axisCount ws)
+  | [], _, _ => .done
+  | w :: ws, start, prior =>
+    let fourier : Straight n (start + w.count) (start + w.count + w.wires.length) :=
+      castFinish (by simp)
+        (ConditionalCatalyst.compile y
+          (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)))
+    castFinish (by simp only [Single.axisCount]; omega)
+      ((prepareOuterBank w.wires.reverse (w.program start)).append (fourier.append
+        (axisCat y ws (start + w.count + w.wires.length) (nextPrior w.count w.wires.length prior))))
+
+def taggedAxisCat {n : Nat} {y : Wire} {read : ConstantBit n → Bool} :
+    List (CatWindow y read) → (start : Nat) → (Fin start → Bool) → List (Fin start) →
+      List (List Bool × InstrumentBranch)
+  | [], _, history, prior => [(prior.map history, ⟨[], LinearMap.id⟩)]
+  | w :: ws, start, history, prior =>
+      (((prepareOuterBank w.catPhys.wires.reverse (w.catPhys.program start)).instantiate read history).run).flatMap
+        (fun a => (fourierOutcomes w.catPhys.wires.length).flatMap (fun bits =>
+          let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+          let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+          (taggedAxisCat ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior)).map
+            (fun b => (b.1, (a.seq ⟨bits, compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits⟩).seq b.2))))
+
+def selectedAxisCat {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start)) (terminal : List Bool → Instrument) : Instrument :=
+  (taggedAxisCat ws start history prior).flatMap (fun a => (terminal a.1).map a.2.seq)
+
+theorem axisCat_run_tagged {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start)) :
+    ((axisCat y (ws.map CatWindow.catPhys) start prior).instantiate read history).run =
+      (taggedAxisCat ws start history prior).map Prod.snd := by
+  induction ws generalizing start with
+  | nil => rfl
+  | cons w ws ih =>
+    simp only [List.map_cons, axisCat, castFinish_instantiate]
+    rw [append_run_history]
+    simp only [taggedAxisCat, List.map_flatMap, List.map_map, Function.comp_def]
+    apply List.flatMap_congr
+    intro a ha
+    rw [append_run_history]
+    simp only [castFinish_instantiate]
+    rw [compile_fourierProgram_run, bankPrior_map]
+    simp only [List.flatMap_map, List.map_flatMap, List.map_map, Function.comp_def]
+    apply List.flatMap_congr
+    intro bits hb
+    rw [ih]
+    simp only [List.map_map, Function.comp_def]
+    apply List.map_congr_left
+    intro x _
+    rcases a with ⟨ah, ak⟩; rcases x with ⟨xt, xh, xk⟩
+    simp [InstrumentBranch.seq, List.append_assoc, LinearMap.comp_assoc]
+
+theorem taggedAxisCat_transcript {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start)) (tagged : List Bool × InstrumentBranch)
+    (ht : tagged ∈ taggedAxisCat ws start history prior) :
+    ∃ bits, Transcript (ws.map (fun w => (w.catPhys.count, w.catPhys.wires.length)))
+        tagged.2.history bits ∧ tagged.1 = bits.reverse ++ prior.map history := by
+  induction ws generalizing start tagged with
+  | nil =>
+    simp only [taggedAxisCat, List.mem_singleton] at ht
+    subst tagged
+    exact ⟨[], Transcript.nil, rfl⟩
+  | cons w ws ih =>
+    obtain ⟨a, ha, ht⟩ := List.mem_flatMap.mp ht
+    obtain ⟨bits, hb, ht⟩ := List.mem_flatMap.mp ht
+    obtain ⟨b, hbt, rfl⟩ := List.mem_map.mp ht
+    obtain ⟨out, htrans, htag⟩ := ih _ _ _ b hbt
+    have hla : a.history.length = w.catPhys.count := by
+      have h := straight_history_length _ read history a ha
+      omega
+    have hlb := (fourierOutcomes_mem _ _).mp hb
+    refine ⟨bits ++ out, ?_, ?_⟩
+    · simpa only [List.map_cons, InstrumentBranch.seq, List.append_assoc] using
+        Transcript.cons w.catPhys.count w.catPhys.wires.length _ a.history bits b.2.history out hla hlb htrans
+    · rw [htag, nextPrior_map _ _ _ _ _ _ hla hlb]
+      simp only [List.reverse_append, List.append_assoc]
+
+theorem taggedAxisCat_readWord {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (tagged : List Bool × InstrumentBranch)
+    (ht : tagged ∈ taggedAxisCat ws start history List.nil) (after : List Bool) :
+    ShorECDLP.Challenge.readWord (List.ofFn history ++ tagged.2.history ++ after)
+      (Single.axisPositions (ws.map CatWindow.catPhys) start) =
+        some (fourierWordLSB tagged.1.reverse) := by
+  obtain ⟨bits, htrans, htag⟩ := taggedAxisCat_transcript ws start history List.nil tagged ht
+  rw [htag]
+  simpa only [List.map_nil, List.append_nil, List.reverse_reverse, List.length_ofFn,
+    Single.axisPositions, List.map_map, Function.comp_def] using htrans.readWord (List.ofFn history) after
+
+theorem taggedAxisCat_history_length {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start)) (tagged : List Bool × InstrumentBranch)
+    (ht : tagged ∈ taggedAxisCat ws start history prior) :
+    tagged.2.history.length = Single.axisCount (ws.map CatWindow.catPhys) := by
+  have hb : tagged.2 ∈ ((axisCat y (ws.map CatWindow.catPhys) start prior).instantiate read history).run := by
+    rw [axisCat_run_tagged]
+    exact List.mem_map.mpr ⟨tagged, ht, rfl⟩
+  have h := straight_history_length _ read history tagged.2 hb
+  omega
+
+theorem selectedAxisCat_cons_mass {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (w : CatWindow y read) (ws : List (CatWindow y read)) (start : Nat)
+    (history : Fin start → Bool) (prior : List (Fin start))
+    (terminal : List Bool → Instrument) (ψ : State) :
+    (selectedAxisCat (w :: ws) start history prior terminal).bornMass ψ =
+      (((w.catPhys.program start).instantiate read history).run.map (fun a =>
+        ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+          let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+          let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+          (selectedAxisCat ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior) terminal).bornMass
+            (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+              (a.kraus (Quantum.run (w.catPhys.wires.reverse.map Gate.H) ψ))))).sum)).sum := by
+  have hcons : selectedAxisCat (w :: ws) start history prior terminal =
+      (((prepareOuterBank w.catPhys.wires.reverse (w.catPhys.program start)).instantiate read history).run).flatMap
+        (fun a => (fourierOutcomes w.catPhys.wires.length).flatMap (fun bits =>
+          let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+          let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+          (selectedAxisCat ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior) terminal).map
+            (a.seq ⟨bits, compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits⟩).seq)) := by
+    simp only [selectedAxisCat, taggedAxisCat, List.flatMap_assoc, List.flatMap_map,
+      List.map_flatMap, List.map_map, Function.comp_def]
+    apply List.flatMap_congr; intro a _
+    apply List.flatMap_congr; intro bits _
+    apply List.flatMap_congr; intro b _
+    apply List.map_congr_left; intro c _
+    rcases a with ⟨ah, ak⟩; rcases b with ⟨tag, bh, bk⟩; rcases c with ⟨ch, ck⟩
+    simp [InstrumentBranch.seq, LinearMap.comp_assoc, List.append_assoc]
+  rw [hcons, prepare_run]
+  simp only [flat_mass, prefixed_mass, List.flatMap_map,
+    InstrumentBranch.seq, LinearMap.comp_apply, List.nil_append]
+
+private theorem sum_forall2_normSq_mul {α : Type} (xs : List α) (cs : List ℂ) (f : α → ℝ) (R : ℝ)
+    {P : α → ℂ → Prop}
+    (hal : List.Forall₂ P xs cs)
+    (hf : ∀ a ∈ xs, ∀ c, P a c → f a = Complex.normSq c * R)
+    (hmass : (cs.map Complex.normSq).sum = 1) :
+    (xs.map f).sum = R := by
+  have h : (xs.map f).sum = (cs.map Complex.normSq).sum * R := by
+    clear hmass
+    induction hal with
+    | nil => simp
+    | cons hd tl ih =>
+      simp only [List.map_cons, List.sum_cons, hf _ List.mem_cons_self _ hd,
+        ih (fun a ha c hp => hf a (List.mem_cons_of_mem _ ha) c hp), add_mul]
+  rw [h, hmass, one_mul]
+
+private theorem forall2_mem_left {α β : Type} {P : α → β → Prop} {xs : List α} {ys : List β}
+    (h : List.Forall₂ P xs ys) {a : α} (ha : a ∈ xs) : ∃ b, P a b := by
+  induction h with
+  | nil => cases ha
+  | cons hd tl ih =>
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact ⟨_, hd⟩
+    · exact ih ha
+
+private theorem state_normSq_smul (c : ℂ) (ψ : State) :
+    normSq (c • ψ) = Complex.normSq c * normSq ψ := by
+  unfold normSq
+  rw [inner_smul_smul, ← Complex.normSq_eq_conj_mul_self]
+  simp
+
+private theorem bornMass_smul (I : Instrument) (c : ℂ) (ψ : State) :
+    I.bornMass (c • ψ) = Complex.normSq c * I.bornMass ψ := by
+  induction I with
+  | nil => simp [Instrument.bornMass]
+  | cons b bs ih =>
+    change normSq (b.kraus (c • ψ)) + Instrument.bornMass bs (c • ψ) =
+      Complex.normSq c * (normSq (b.kraus ψ) + Instrument.bornMass bs ψ)
+    rw [map_smul, state_normSq_smul, ih]; ring
+
+private theorem sum_map_mul_left_real {α : Type} (xs : List α) (r : ℝ) (f : α → ℝ) :
+    (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih => simp only [List.map_cons, List.sum_cons, ih, mul_add]
+
+theorem selectedAxisCat_mass {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start))
+    (physTerm idealTerm : List Bool → Instrument)
+    (hterm : ∀ tag φ, SupportedOn (fun s => s y = false) φ →
+      (physTerm tag).bornMass (Prep y φ) = (idealTerm tag).bornMass φ)
+    (ψ : State) (hψ : Ready (ws.map CatWindow.model) ψ)
+    (hψY : SupportedOn (fun s => s y = false) ψ) :
+    (selectedAxisCat ws start history prior physTerm).bornMass (Prep y ψ) =
+      (idealAxis (ws.map CatWindow.model) (prior.map history) idealTerm).bornMass ψ := by
+  induction ws generalizing start ψ with
+  | nil =>
+    simp only [selectedAxisCat, taggedAxisCat, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+      List.map_nil, idealAxis]
+    rw [prefixed_mass ⟨[], LinearMap.id⟩ _ (Prep y ψ)]
+    exact hterm (prior.map history) ψ hψY
+  | cons w ws ih =>
+    rw [selectedAxisCat_cons_mass]
+    simp only [List.map_cons, idealAxis_cons_mass]
+    have hH_nw : y ∉ circuitWires (w.catPhys.wires.reverse.map Gate.H) := by
+      intro hm
+      simp only [circuitWires, List.mem_flatMap, List.mem_map] at hm
+      obtain ⟨g, ⟨v, hv, rfl⟩, hwg⟩ := hm
+      simp only [gateWires, List.mem_singleton] at hwg
+      have hv' : y ∈ w.catPhys.wires.reverse := hwg ▸ hv
+      rw [List.mem_reverse, w.wires_eq] at hv'
+      exact w.noY hv'
+    have hH_prep : Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ) =
+        Prep y (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ) := by
+      rw [prep_circuit y _ hH_nw ψ, w.wires_eq]
+    obtain ⟨cs, hal, hmass⟩ := w.catCoherent start history
+    apply sum_forall2_normSq_mul _ cs _ _ hal _ hmass
+    intro a ha_mem c ha
+    have ha_len : a.history.length = w.catPhys.count := by
+      have h := straight_history_length _ read history a ha_mem
+      omega
+    have ha_state : a.kraus (Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ)) =
+        c • Prep y (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)) := by
+      rw [hH_prep]
+      exact catBranch_on_supported ha _ hψ.1
+    have hidealY : SupportedOn (fun s => s y = false)
+        (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)) :=
+      w.idealY _ hψ.1
+    rw [w.wires_eq]
+    have hinner : ∀ bits ∈ fourierOutcomes w.model.physical.wires.length,
+        (selectedAxisCat ws (start + w.catPhys.count + w.model.physical.wires.length)
+          (Single.historyAfter (start + w.catPhys.count + w.model.physical.wires.length)
+            (Single.historyAfter (start + w.catPhys.count) history a.history) bits)
+          (nextPrior w.catPhys.count w.model.physical.wires.length prior) physTerm).bornMass
+          (compileFourierBranch y .inverse w.model.physical.wires (prior.map history) bits
+            (a.kraus (Quantum.run (w.model.physical.wires.reverse.map Gate.H) (Prep y ψ)))) =
+        Complex.normSq c *
+          (idealAxis (ws.map CatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass
+            (w.model.step (prior.map history) bits ψ) := by
+      intro bits hb
+      have ha_state' : a.kraus (Quantum.run (w.model.physical.wires.reverse.map Gate.H) (Prep y ψ)) =
+          c • Prep y (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)) := by
+        simpa only [w.wires_eq] using ha_state
+      rw [ha_state', map_smul]
+      have hfb := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY (prior.map history) bits _ hidealY
+      rw [hfb.1, bornMass_smul]
+      have hstep_eq : fourierBranch .inverse w.model.physical.wires (prior.map history) bits
+          (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)) =
+          w.model.step (prior.map history) bits ψ := rfl
+      rw [hstep_eq] at hfb ⊢
+      have hih := ih (start + w.catPhys.count + w.model.physical.wires.length)
+        (Single.historyAfter (start + w.catPhys.count + w.model.physical.wires.length)
+          (Single.historyAfter (start + w.catPhys.count) history a.history) bits)
+        (nextPrior w.catPhys.count w.model.physical.wires.length prior)
+        (w.model.step (prior.map history) bits ψ) (hψ.2 (prior.map history) bits) hfb.2
+      rw [hih, nextPrior_map _ _ _ _ _ _ ha_len ((fourierOutcomes_mem _ _).mp hb)]
+    have hsum_eq :
+        ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+          (selectedAxisCat ws (start + w.catPhys.count + w.model.physical.wires.length)
+            (Single.historyAfter (start + w.catPhys.count + w.model.physical.wires.length)
+              (Single.historyAfter (start + w.catPhys.count) history a.history) bits)
+            (nextPrior w.catPhys.count w.model.physical.wires.length prior) physTerm).bornMass
+            (compileFourierBranch y .inverse w.model.physical.wires (prior.map history) bits
+              (a.kraus (Quantum.run (w.model.physical.wires.reverse.map Gate.H) (Prep y ψ)))))).sum =
+        ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+          Complex.normSq c *
+            (idealAxis (ws.map CatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass
+              (w.model.step (prior.map history) bits ψ))).sum := by
+      apply congrArg List.sum
+      exact List.map_congr_left hinner
+    rw [hsum_eq, sum_map_mul_left_real]
+
+private theorem unprep_prep (y : Wire) (ψ : State) :
+    Quantum.run [.P .inverse 2 y, .H y] (Prep y ψ) = ψ := by
+  have hp : applyGate (.P .inverse 2 y) (applyGate (.P .forward 2 y) (applyGate (.H y) ψ)) =
+      applyGate (.H y) ψ := by
+    induction (applyGate (.H y) ψ) using Finsupp.induction_linear with
+    | zero => simp
+    | add a b ha hb => simp only [map_add, ha, hb]
+    | single s c =>
+      have hket : Finsupp.single s c = c • ket s := by ext u; simp [ket]
+      rw [hket, map_smul, map_smul, applyGate_P_ket, map_smul, applyGate_P_ket, smul_smul]
+      cases hs : s y
+      · simp
+      · have hprod : phaseCoeff .inverse 2 * phaseCoeff .forward 2 = 1 := by
+          simpa [PhaseDir.adjoint] using phaseCoeff_adjoint_mul .forward 2
+        simp only [↓reduceIte]
+        rw [smul_smul, mul_assoc, mul_comm (phaseCoeff .forward 2), hprod, mul_one]
+  change applyGate (.H y) (applyGate (.P .inverse 2 y) (applyGate (.P .forward 2 y) (applyGate (.H y) ψ))) = ψ
+  rw [hp]
+  exact SineCircuit.applyGate_H_twice_state y ψ
+
+def unprepInstrument (y : Wire) (I : Instrument) : Instrument :=
+  I.map (fun b => ⟨b.history, b.kraus.comp (Quantum.run [.P .inverse 2 y, .H y])⟩)
+
+theorem unprepInstrument_mass (y : Wire) (I : Instrument) (ψ : State) :
+    (unprepInstrument y I).bornMass (Prep y ψ) = I.bornMass ψ := by
+  simp only [unprepInstrument, Instrument.bornMass, List.map_map, Function.comp_def,
+    LinearMap.comp_apply, unprep_prep]
+
+theorem taggedAxisCat_ready_tail {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start)) (tagged : List Bool × InstrumentBranch)
+    (ht : tagged ∈ taggedAxisCat left start history prior) (ψ : State)
+    (hψ : Ready (left.map CatWindow.model ++ right.map CatWindow.model) ψ)
+    (hψY : SupportedOn (fun s => s y = false) ψ) :
+    ∃ φ : State, tagged.2.kraus (Prep y ψ) = Prep y φ ∧
+      Ready (right.map CatWindow.model) φ ∧ SupportedOn (fun s => s y = false) φ := by
+  induction left generalizing start tagged ψ with
+  | nil =>
+    simp only [taggedAxisCat, List.mem_singleton] at ht
+    subst tagged
+    exact ⟨ψ, rfl, hψ, hψY⟩
+  | cons w ws ih =>
+    obtain ⟨a, ha, ht⟩ := List.mem_flatMap.mp ht
+    obtain ⟨bits, hb, ht⟩ := List.mem_flatMap.mp ht
+    obtain ⟨b, hbt, rfl⟩ := List.mem_map.mp ht
+    rw [prepare_run] at ha
+    obtain ⟨a₀, ha₀, rfl⟩ := List.mem_map.mp ha
+    obtain ⟨cs, hal, _⟩ := w.catCoherent start history
+    obtain ⟨c, hc⟩ := forall2_mem_left hal ha₀
+    have hH_nw : y ∉ circuitWires (w.catPhys.wires.reverse.map Gate.H) := by
+      intro hm
+      simp only [circuitWires, List.mem_flatMap, List.mem_map] at hm
+      obtain ⟨g, ⟨v, hv, rfl⟩, hwg⟩ := hm
+      simp only [gateWires, List.mem_singleton] at hwg
+      have hv' : y ∈ w.catPhys.wires.reverse := hwg ▸ hv
+      rw [List.mem_reverse, w.wires_eq] at hv'
+      exact w.noY hv'
+    have hstep_prep : compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+        (a₀.kraus (Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ))) =
+        Prep y (c • w.model.step (prior.map history) bits ψ) := by
+      rw [prep_circuit y _ hH_nw ψ, w.wires_eq, catBranch_on_supported hc _ hψ.1, map_smul]
+      have hfb := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+        (prior.map history) bits _ (w.idealY _ hψ.1)
+      rw [hfb.1, ← map_smul]
+      rfl
+    have hfbY : SupportedOn (fun s => s y = false) (c • w.model.step (prior.map history) bits ψ) :=
+      support_smul c (compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+        (prior.map history) bits _ (w.idealY _ hψ.1)).2
+    have hready : Ready (ws.map CatWindow.model ++ right.map CatWindow.model)
+        (c • w.model.step (prior.map history) bits ψ) :=
+      Ready.smul _ _ (hψ.2 (prior.map history) bits) c
+    obtain ⟨φ, hφ_eq, hφ_ready, hφ_Y⟩ := ih _ _ _ b hbt _ hready hfbY
+    refine ⟨φ, ?_, hφ_ready, hφ_Y⟩
+    change b.2.kraus (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+      (a₀.kraus (Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ)))) = _
+    rw [hstep_prep, hφ_eq]
+
+/-! #### Two-axis catalyst bridge -/
+
+def taggedTwoAxesCat {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool) :
+    List ((List Bool × List Bool) × InstrumentBranch) :=
+  (taggedAxisCat left start history List.nil).flatMap (fun l =>
+    (taggedAxisCat right (start + Single.axisCount (left.map CatWindow.catPhys))
+      (Single.historyAfter _ history l.2.history) List.nil).map (fun r => ((l.1, r.1), l.2.seq r.2)))
+
+def selectedTwoAxesCat {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (terminal : List Bool → List Bool → Instrument) : Instrument :=
+  (taggedTwoAxesCat left right start history).flatMap (fun a => (terminal a.1.1 a.1.2).map a.2.seq)
+
+def physicalAxesCat {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool) : Instrument :=
+  (((axisCat y (left.map CatWindow.catPhys) start List.nil).append
+    (axisCat y (right.map CatWindow.catPhys) (start + Single.axisCount (left.map CatWindow.catPhys))
+      List.nil)).instantiate read history).run
+
+theorem twoAxesCat_run_tagged {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool) :
+    physicalAxesCat left right start history =
+      (taggedTwoAxesCat left right start history).map Prod.snd := by
+  unfold physicalAxesCat
+  rw [append_run_history, axisCat_run_tagged]
+  simp only [taggedTwoAxesCat, List.flatMap_map, List.map_flatMap, List.map_map, Function.comp_def]
+  apply List.flatMap_congr; intro a _
+  rw [axisCat_run_tagged]
+  simp only [List.map_map, Function.comp_def]
+
+theorem selectedTwoAxesCat_constant {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (J : Instrument) : selectedTwoAxesCat left right start history (fun _ _ => J) =
+      (physicalAxesCat left right start history).seq J := by
+  rw [twoAxesCat_run_tagged]
+  simp only [selectedTwoAxesCat, Instrument.seq, List.flatMap_map]
+
+theorem taggedTwoAxesCat_readWords {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (tagged : (List Bool × List Bool) × InstrumentBranch)
+    (ht : tagged ∈ taggedTwoAxesCat left right start history) (after : List Bool) :
+    ShorECDLP.Challenge.readWord (List.ofFn history ++ tagged.2.history ++ after)
+      (Single.axisPositions (left.map CatWindow.catPhys) start) =
+        some (fourierWordLSB tagged.1.1.reverse) ∧
+    ShorECDLP.Challenge.readWord (List.ofFn history ++ tagged.2.history ++ after)
+      (Single.axisPositions (right.map CatWindow.catPhys)
+        (start + Single.axisCount (left.map CatWindow.catPhys))) =
+        some (fourierWordLSB tagged.1.2.reverse) := by
+  obtain ⟨l, hl, ht⟩ := List.mem_flatMap.mp ht
+  obtain ⟨r, hr, rfl⟩ := List.mem_map.mp ht
+  have hleft := taggedAxisCat_readWord left start history l hl (r.2.history ++ after)
+  have hright := taggedAxisCat_readWord right _ _ r hr after
+  have hlen := taggedAxisCat_history_length left start history List.nil l hl
+  rw [historyAfter_list history l.2.history (by omega)] at hright
+  exact ⟨by simpa only [InstrumentBranch.seq, List.append_assoc] using hleft,
+    by simpa only [InstrumentBranch.seq, List.append_assoc] using hright⟩
+
+theorem selectedTwoAxesCat_fixed_filter {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (J : Instrument) (accept : Nat → Nat → Bool) :
+    selectedTwoAxesCat left right 0 Fin.elim0 (fun lhs rhs =>
+      if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then J else List.nil) =
+      ((physicalAxesCat left right 0 Fin.elim0).seq J).filter (fun b =>
+        pairAccept (Single.axisPositions (left.map CatWindow.catPhys) 0)
+          (Single.axisPositions (right.map CatWindow.catPhys)
+            (Single.axisCount (left.map CatWindow.catPhys))) accept b.history) := by
+  rw [← selectedTwoAxesCat_constant left right 0 Fin.elim0 J]
+  rw [selectedTwoAxesCat, selectedTwoAxesCat, List.filter_flatMap]
+  apply List.flatMap_congr; intro a ha
+  have hp (b : InstrumentBranch) :
+      pairAccept (Single.axisPositions (left.map CatWindow.catPhys) 0)
+        (Single.axisPositions (right.map CatWindow.catPhys) (Single.axisCount (left.map CatWindow.catPhys)))
+        accept (a.2.seq b).history =
+          accept (fourierWordLSB a.1.1.reverse) (fourierWordLSB a.1.2.reverse) := by
+    have h := taggedTwoAxesCat_readWords left right 0 Fin.elim0 a ha b.history
+    simp only [List.ofFn_zero, List.nil_append, Nat.zero_add] at h
+    simp only [pairAccept, InstrumentBranch.seq, h.1, h.2, Option.bind_some,
+      Option.map_some, Option.getD_some]
+  rw [List.filter_map]
+  simp only [Function.comp_def, hp]
+  split <;> simp_all
+
+theorem selectedTwoAxesCat_expand {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (terminal : List Bool → List Bool → Instrument) :
+    selectedTwoAxesCat left right start history terminal =
+      (taggedAxisCat left start history List.nil).flatMap (fun l =>
+        (selectedAxisCat right (start + Single.axisCount (left.map CatWindow.catPhys))
+          (Single.historyAfter _ history l.2.history) List.nil (terminal l.1)).map l.2.seq) := by
+  simp only [selectedTwoAxesCat, taggedTwoAxesCat, selectedAxisCat, List.flatMap_assoc,
+    List.flatMap_map, List.map_flatMap, List.map_map, Function.comp_def]
+  apply List.flatMap_congr; intro l _
+  apply List.flatMap_congr; intro r _
+  apply List.map_congr_left; intro b _
+  rcases l with ⟨lt, lh, lk⟩; rcases r with ⟨rt, rh, rk⟩; rcases b with ⟨bh, bk⟩
+  simp [InstrumentBranch.seq, LinearMap.comp_assoc, List.append_assoc]
+
+theorem selectedTwoAxesCat_mass {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (left right : List (CatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (physTerm idealTerm : List Bool → List Bool → Instrument)
+    (hterm : ∀ lhs rhs φ, SupportedOn (fun s => s y = false) φ →
+      (physTerm lhs rhs).bornMass (Prep y φ) = (idealTerm lhs rhs).bornMass φ)
+    (ψ : State) (hψ : Ready (left.map CatWindow.model ++ right.map CatWindow.model) ψ)
+    (hψY : SupportedOn (fun s => s y = false) ψ) :
+    (selectedTwoAxesCat left right start history physTerm).bornMass (Prep y ψ) =
+      (idealTwoAxes (left.map CatWindow.model) (right.map CatWindow.model) idealTerm).bornMass ψ := by
+  rw [selectedTwoAxesCat_expand, flat_mass]
+  simp only [prefixed_mass]
+  let liftL : List Bool → Instrument := fun lhs =>
+    unprepInstrument y (idealAxis (right.map CatWindow.model) List.nil (idealTerm lhs))
+  have hL_eq : ((taggedAxisCat left start history List.nil).map (fun l =>
+      (selectedAxisCat right (start + Single.axisCount (left.map CatWindow.catPhys))
+        (Single.historyAfter _ history l.2.history) List.nil (physTerm l.1)).bornMass (l.2.kraus (Prep y ψ)))).sum =
+      (selectedAxisCat left start history List.nil liftL).bornMass (Prep y ψ) := by
+    rw [show (selectedAxisCat left start history List.nil liftL).bornMass (Prep y ψ) =
+        ((taggedAxisCat left start history List.nil).map (fun l =>
+          (liftL l.1).bornMass (l.2.kraus (Prep y ψ)))).sum by
+      simp only [selectedAxisCat, flat_mass, prefixed_mass]]
+    apply congrArg List.sum
+    apply List.map_congr_left
+    intro l hl
+    obtain ⟨φ, hφ_eq, hφ_ready, hφ_Y⟩ := taggedAxisCat_ready_tail left right start history List.nil l hl ψ hψ hψY
+    rw [hφ_eq, unprepInstrument_mass]
+    simpa only [List.map_nil] using
+      selectedAxisCat_mass right _ _ List.nil (physTerm l.1) (idealTerm l.1) (hterm l.1) φ hφ_ready hφ_Y
+  rw [hL_eq]
+  have hres := selectedAxisCat_mass left start history List.nil liftL
+    (fun lhs => idealAxis (right.map CatWindow.model) List.nil (idealTerm lhs))
+    (fun tag φ _ => unprepInstrument_mass y _ φ)
+    ψ (Ready.append_left _ _ ψ hψ) hψY
+  simpa only [List.map_nil, idealTwoAxes] using hres
+
+/-! #### Static properties of `axisCat`, `trim 18`, `cost18`, and `tCount` -/
+
+theorem cost18_zero_of_removed18 {n s e : Nat} (p : Straight n s e) (h : removed 18 p = 0) :
+    cost18 p = 0 := by
+  induction p with
+  | done => rfl
+  | measure w p ih => exact ih h
+  | recordGate i v g p ih =>
+    simp only [removed] at h
+    have hg : largePhase 18 g = false := by cases h1 : largePhase 18 g <;> simp [h1] at h ⊢
+    have hp : removed 18 p = 0 := by simp [hg] at h; exact h
+    simp only [cost18, charge18_false g hg, ih hp, add_zero]
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      simp only [removed] at h
+      have hg : largePhase 18 g = false := by cases h1 : largePhase 18 g <;> simp [h1] at h ⊢
+      have hp : removed 18 p = 0 := by simp [hg] at h; exact h
+      simp only [cost18, charge18_false g hg, ih hp, add_zero]
+    | whenBit r v g =>
+      simp only [removed] at h
+      have hg : largePhase 18 g = false := by cases h1 : largePhase 18 g <;> simp [h1] at h ⊢
+      have hp : removed 18 p = 0 := by simp [hg] at h; exact h
+      simp only [cost18, charge18_false g hg, ih hp, add_zero]
+
+theorem cost18_literals {n s e : Nat} (gs : Circuit) (p : Straight n s e)
+    (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    cost18 (AndGadget.literals gs p) = cost18 p := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    change charge18 g + cost18 (AndGadget.literals gs p) = cost18 p
+    rw [charge18_false g (h g List.mem_cons_self),
+      ih (fun x hx => h x (List.mem_cons_of_mem _ hx)), zero_add]
+
+theorem cost18_whenLiterals {n s e : Nat} (r : ConstantBit n) (v : Bool) (gs : Circuit)
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    cost18 (ConditionalCatalyst.whenLiterals r v gs p) = cost18 p := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    change charge18 g + cost18 (ConditionalCatalyst.whenLiterals r v gs p) = cost18 p
+    rw [charge18_false g (h g List.mem_cons_self),
+      ih (fun x hx => h x (List.mem_cons_of_mem _ hx)), zero_add]
+
+theorem cost18_recordLiterals {n s e : Nat} (i : Fin s) (v : Bool) (gs : Circuit)
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    cost18 (ConditionalCatalyst.recordLiterals i v gs p) = cost18 p := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    change charge18 g + cost18 (ConditionalCatalyst.recordLiterals i v gs p) = cost18 p
+    rw [charge18_false g (h g List.mem_cons_self),
+      ih (fun x hx => h x (List.mem_cons_of_mem _ hx)), zero_add]
+
+private theorem replacement_largePhase18_false (y : Wire) (g : Gate) (hg : largePhase 18 g = false) :
+    ∀ x ∈ ConditionalCatalyst.replacement y g, largePhase 18 x = false := by
+  intro x hx
+  unfold ConditionalCatalyst.replacement at hx
+  split at hx
+  · simp [Catalyst.kick, controlledZ, largePhase] at hx
+    rcases hx with rfl | rfl | rfl | rfl <;> rfl
+  · simp [ConditionalCatalyst.inverseKick, Catalyst.kick, controlledZ, Circuit.adjoint, Gate.adjoint, largePhase] at hx
+    rcases hx with rfl | rfl | rfl | rfl <;> rfl
+  · simp only [List.mem_singleton] at hx; subst hx; exact hg
+
+private theorem replacement_of_largePhase18_true (y : Wire) (g : Gate) (hg : largePhase 18 g = true) :
+    ConditionalCatalyst.replacement y g = [g] := by
+  cases g with
+  | P d k t =>
+    simp only [largePhase, decide_eq_true_eq] at hg
+    have hk : k ≠ 2 := by omega
+    unfold ConditionalCatalyst.replacement
+    split <;> simp_all
+  | _ => simp [largePhase] at hg
+
+theorem cost18_compile {n s e : Nat} (y : Wire) (p : Straight n s e) :
+    cost18 (ConditionalCatalyst.compile y p) = cost18 p := by
+  induction p with
+  | done => rfl
+  | measure w p ih => exact ih
+  | recordGate i v g p ih =>
+    by_cases hg : largePhase 18 g = true
+    · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
+        ConditionalCatalyst.recordLiterals, cost18, ih]
+    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      simp only [ConditionalCatalyst.compile, cost18, charge18_false g hgf, zero_add]
+      rw [cost18_recordLiterals i v _ _ (replacement_largePhase18_false y g hgf), ih]
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      by_cases hg : largePhase 18 g = true
+      · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
+          AndGadget.literals, List.foldr_cons, List.foldr_nil, cost18, ih]
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        simp only [ConditionalCatalyst.compile, cost18, charge18_false g hgf, zero_add]
+        rw [cost18_literals _ _ (replacement_largePhase18_false y g hgf), ih]
+    | whenBit r v g =>
+      by_cases hg : largePhase 18 g = true
+      · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
+          ConditionalCatalyst.whenLiterals, cost18, ih]
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        simp only [ConditionalCatalyst.compile, cost18, charge18_false g hgf, zero_add]
+        rw [cost18_whenLiterals r v _ _ (replacement_largePhase18_false y g hgf), ih]
+
+theorem trim18_append {n s m e : Nat} (p : Straight n s m) (q : Straight n m e) :
+    trim 18 (p.append q) = (trim 18 p).append (trim 18 q) := by
+  induction p with
+  | done => rfl
+  | gate g p ih =>
+    cases g with
+    | literal g => simp only [Straight.append, trim]; split_ifs <;> simp [Straight.append, ih]
+    | whenBit r v g => simp only [Straight.append, trim]; split_ifs <;> simp [Straight.append, ih]
+  | recordGate i v g p ih => simp only [Straight.append, trim]; split_ifs <;> simp [Straight.append, ih]
+  | measure w p ih => simp only [Straight.append, trim, ih]
+
+theorem trim18_castFinish {n s e f : Nat} (h : e = f) (p : Straight n s e) :
+    trim 18 (castFinish h p) = castFinish h (trim 18 p) := by
+  subst f; rfl
+
+theorem trim18_prepareOuterBank {n s e : Nat} (ws : List Wire) (p : Straight n s e) :
+    trim 18 (prepareOuterBank ws p) = prepareOuterBank ws (trim 18 p) := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    change trim 18 (.gate (.literal (.H w)) (prepareOuterBank ws p)) =
+      .gate (.literal (.H w)) (prepareOuterBank ws (trim 18 p))
+    simp [trim, largePhase, ih]
+
+theorem trim18_literals_false {n s e : Nat} (gs : Circuit) (p : Straight n s e)
+    (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    trim 18 (AndGadget.literals gs p) = AndGadget.literals gs (trim 18 p) := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    change trim 18 (.gate (.literal g) (AndGadget.literals gs p)) =
+      .gate (.literal g) (AndGadget.literals gs (trim 18 p))
+    simp only [trim, h g List.mem_cons_self, Bool.false_eq_true, ↓reduceIte,
+      ih (fun x hx => h x (List.mem_cons_of_mem _ hx))]
+
+theorem trim18_whenLiterals_false {n s e : Nat} (r : ConstantBit n) (v : Bool) (gs : Circuit)
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    trim 18 (ConditionalCatalyst.whenLiterals r v gs p) =
+      ConditionalCatalyst.whenLiterals r v gs (trim 18 p) := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    simp only [ConditionalCatalyst.whenLiterals, trim, h g List.mem_cons_self, Bool.false_eq_true, ↓reduceIte,
+      ih (fun x hx => h x (List.mem_cons_of_mem _ hx))]
+
+theorem trim18_recordLiterals_false {n s e : Nat} (i : Fin s) (v : Bool) (gs : Circuit)
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    trim 18 (ConditionalCatalyst.recordLiterals i v gs p) =
+      ConditionalCatalyst.recordLiterals i v gs (trim 18 p) := by
+  induction gs with
+  | nil => rfl
+  | cons g gs ih =>
+    simp only [ConditionalCatalyst.recordLiterals, trim, h g List.mem_cons_self, Bool.false_eq_true, ↓reduceIte,
+      ih (fun x hx => h x (List.mem_cons_of_mem _ hx))]
+
+theorem trim18_compile {n s e : Nat} (y : Wire) (p : Straight n s e) :
+    trim 18 (ConditionalCatalyst.compile y p) = ConditionalCatalyst.compile y (trim 18 p) := by
+  induction p with
+  | done => rfl
+  | measure w p ih => simp only [ConditionalCatalyst.compile, trim, ih]
+  | recordGate i v g p ih =>
+    by_cases hg : largePhase 18 g = true
+    · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
+        ConditionalCatalyst.recordLiterals, trim, hg, ↓reduceIte, ih]
+    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      simp only [ConditionalCatalyst.compile, trim, hgf, Bool.false_eq_true, ↓reduceIte]
+      rw [trim18_recordLiterals_false i v _ _ (replacement_largePhase18_false y g hgf), ih]
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      by_cases hg : largePhase 18 g = true
+      · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
+          AndGadget.literals, List.foldr_cons, List.foldr_nil, trim, hg, ↓reduceIte, ih]
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        simp only [ConditionalCatalyst.compile, trim, hgf, Bool.false_eq_true, ↓reduceIte]
+        rw [trim18_literals_false _ _ (replacement_largePhase18_false y g hgf), ih]
+    | whenBit r v g =>
+      by_cases hg : largePhase 18 g = true
+      · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
+          ConditionalCatalyst.whenLiterals, trim, hg, ↓reduceIte, ih]
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        simp only [ConditionalCatalyst.compile, trim, hgf, Bool.false_eq_true, ↓reduceIte]
+        rw [trim18_whenLiterals_false r v _ _ (replacement_largePhase18_false y g hgf), ih]
+
+theorem weight7_trim18 {n s e : Nat} (p : Straight n s e) :
+    ConditionalCatalyst.weight7 (trim 18 p) + removed 18 p = ConditionalCatalyst.weight7 p := by
+  induction p with
+  | done => rfl
+  | measure w p ih => exact ih
+  | recordGate i v g p ih =>
+    by_cases hg : largePhase 18 g = true
+    · have hw := (Trim18.dropped_weight18 g hg).1
+      simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight7, hw]; omega
+    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
+        ConditionalCatalyst.weight7]; omega
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      by_cases hg : largePhase 18 g = true
+      · have hw := (Trim18.dropped_weight18 g hg).1
+        simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight7, hw]; omega
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
+          ConditionalCatalyst.weight7]; omega
+    | whenBit r v g =>
+      by_cases hg : largePhase 18 g = true
+      · have hw := (Trim18.dropped_weight18 g hg).1
+        simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight7, hw]; omega
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
+          ConditionalCatalyst.weight7]; omega
+
+theorem weight7_feedbackProgram {n s e : Nat} (dir : PhaseDir) (w : Wire)
+    (indices : List (Fin s)) (k : Nat) (next : Straight n s e) :
+    ConditionalCatalyst.weight7 (feedbackProgram dir w indices k next) =
+      ConditionalCatalyst.weight4 (feedbackProgram dir w indices k next) +
+        (ConditionalCatalyst.weight7 next - ConditionalCatalyst.weight4 next) := by
+  induction indices generalizing k with
+  | nil =>
+    have hle : ConditionalCatalyst.weight4 next ≤ ConditionalCatalyst.weight7 next := by
+      clear dir w k
+      induction next with
+      | done => rfl
+      | measure _ _ ih => exact ih
+      | recordGate _ _ _ _ ih => simp only [ConditionalCatalyst.weight4, ConditionalCatalyst.weight7]; omega
+      | gate g _ ih =>
+        cases g with
+        | literal g => cases g <;> simp only [ConditionalCatalyst.weight4, ConditionalCatalyst.weight7,
+            ConditionalCatalyst.weightedLiteral, ConditionalCatalyst.weightedGate,
+            ConditionalCatalyst.phaseTwoGate, tCost] <;> omega
+        | whenBit => simp only [ConditionalCatalyst.weight4, ConditionalCatalyst.weight7]; omega
+    simp only [feedbackProgram]; omega
+  | cons i is ih =>
+    simp only [feedbackProgram, ConditionalCatalyst.weight7, ConditionalCatalyst.weight4, ih]; omega
+
+theorem weight7_fourierProgram (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) :
+    ConditionalCatalyst.weight7 (fourierProgram n dir ws start prior) =
+      fourierWeight ws.length prior.length := by
+  have heq : ConditionalCatalyst.weight7 (fourierProgram n dir ws start prior) =
+      ConditionalCatalyst.weight4 (fourierProgram n dir ws start prior) := by
+    induction ws generalizing start with
+    | nil => rfl
+    | cons w ws ih =>
+      simp only [fourierProgram]
+      have hc7 : ∀ {a b} (h : a = b) (p : Straight n start a),
+          ConditionalCatalyst.weight7 (castFinish h p) = ConditionalCatalyst.weight7 p := by
+        intro a b h p; subst b; rfl
+      rw [hc7, weight4_cast, weight7_feedbackProgram]
+      simp only [ConditionalCatalyst.weight7, ConditionalCatalyst.weight4, ih, Nat.sub_self, Nat.add_zero]
+  rw [heq, weight4_fourier]
+
+theorem tCount_trim18_compile_fourier (y : Wire) (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) (read : ConstantBit n → Bool) (h : Fin start → Bool) :
+    ((trim 18 (ConditionalCatalyst.compile y (fourierProgram n dir ws start prior))).instantiate read h).tCount ≤
+      fourierWeight ws.length prior.length - droppedSlots18 ws.length prior.length := by
+  rw [trim18_compile]
+  have ht := ConditionalCatalyst.compile_t y (trim 18 (fourierProgram n dir ws start prior)) read h
+  have hw := weight7_trim18 (fourierProgram n dir ws start prior)
+  rw [weight7_fourierProgram, removed_fourier18] at hw
+  omega
+
+theorem append_tCount_le {n s m e : Nat} (p : Straight n s m) (q : Straight n m e)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) (B : Nat)
+    (hq : ∀ h' : Fin m → Bool, (q.instantiate read h').tCount ≤ B) :
+    ((p.append q).instantiate read h).tCount ≤ (p.instantiate read h).tCount + B := by
+  induction p with
+  | done => simpa [Straight.append, Straight.instantiate, AdaptiveCircuit.tCount] using hq h
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      simp only [Straight.append, Straight.instantiate, TemplateGate.instantiate, AdaptiveCircuit.tCount]
+      have := ih q h hq; omega
+    | whenBit r v g =>
+      simp only [Straight.append, Straight.instantiate, TemplateGate.instantiate, AdaptiveCircuit.tCount]
+      split_ifs <;> (have := ih q h hq; omega)
+  | recordGate i v g p ih =>
+    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.tCount]
+    split_ifs <;> (have := ih q h hq; omega)
+  | measure w p ih =>
+    simp only [Straight.append, Straight.instantiate, AdaptiveCircuit.tCount]
+    have h0 := ih q (Fin.lastCases false h) hq
+    have h1 := ih q (Fin.lastCases true h) hq
+    exact max_le (h0.trans (Nat.add_le_add_right (le_max_left _ _) B))
+      (h1.trans (Nat.add_le_add_right (le_max_right _ _) B))
+
+theorem prepareOuterBank_tCount {n s e : Nat} (ws : List Wire) (p : Straight n s e)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((prepareOuterBank ws p).instantiate read h).tCount = (p.instantiate read h).tCount := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    change ((Straight.gate (.literal (.H w)) (prepareOuterBank ws p)).instantiate read h).tCount = _
+    simp only [Straight.instantiate, TemplateGate.instantiate, AdaptiveCircuit.tCount,
+      ShorECDLP.tCount, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, tCost, Nat.zero_add, ih]
+
+def metadataTrimmedWeight : List (Nat × Nat) → Nat → Nat
+  | [], _ => 0
+  | (cost, width) :: rest, prior =>
+      cost + (fourierWeight width prior - droppedSlots18 width prior) +
+        metadataTrimmedWeight rest (prior + width)
+
+theorem axisCat_tCount_trim18 {n : Nat} (y : Wire) (ws : List (Single.Window n))
+    (spec : List (Nat × Nat))
+    (hrel : List.Forall₂ (fun w k => w.wires.length = k.2 ∧
+        ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1) ws spec)
+    (start : Nat) (prior : List (Fin start)) (read : ConstantBit n → Bool) (h : Fin start → Bool) :
+    ((trim 18 (axisCat y ws start prior)).instantiate read h).tCount ≤
+      metadataTrimmedWeight spec prior.length := by
+  induction ws generalizing spec start with
+  | nil =>
+    cases hrel
+    simp [axisCat, trim, Straight.instantiate, AdaptiveCircuit.tCount, metadataTrimmedWeight]
+  | cons w ws ih =>
+    cases hrel with
+    | cons hhd htl =>
+      rename_i k rest
+      simp only [axisCat, trim18_castFinish, castFinish_instantiate, trim18_append,
+        trim18_prepareOuterBank, metadataTrimmedWeight]
+      have htail : ∀ h' : Fin (start + w.count + w.wires.length) → Bool,
+          ((trim 18 (axisCat y ws (start + w.count + w.wires.length)
+              (nextPrior w.count w.wires.length prior))).instantiate read h').tCount ≤
+            metadataTrimmedWeight rest (prior.length + k.2) := by
+        intro h'
+        have := ih rest htl (start + w.count + w.wires.length) (nextPrior w.count w.wires.length prior) h'
+        rw [nextPrior_length] at this
+        exact this.trans (le_of_eq (congrArg (fun m => metadataTrimmedWeight rest (prior.length + m)) hhd.1))
+      have hmid : ∀ h' : Fin (start + w.count) → Bool,
+          (((castFinish (by simp) (trim 18 (ConditionalCatalyst.compile y
+              (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior))))).append
+            (trim 18 (axisCat y ws (start + w.count + w.wires.length)
+              (nextPrior w.count w.wires.length prior)))).instantiate read h').tCount ≤
+            (fourierWeight k.2 prior.length - droppedSlots18 k.2 prior.length) +
+              metadataTrimmedWeight rest (prior.length + k.2) := by
+        intro h'
+        have h1 := append_tCount_le
+          (castFinish (by simp) (trim 18 (ConditionalCatalyst.compile y
+            (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)))))
+          _ read h' _ htail
+        rw [castFinish_instantiate] at h1
+        have hf := tCount_trim18_compile_fourier y n .inverse w.wires (start + w.count) (bankPrior w.count prior) read h'
+        rw [bankPrior_length] at hf
+        have hf' : ((trim 18 (ConditionalCatalyst.compile y
+            (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)))).instantiate read h').tCount ≤
+            fourierWeight k.2 prior.length - droppedSlots18 k.2 prior.length :=
+          hf.trans (le_of_eq (congrArg (fun m => fourierWeight m prior.length - droppedSlots18 m prior.length) hhd.1))
+        omega
+      have h1 := append_tCount_le (prepareOuterBank w.wires.reverse (trim 18 (w.program start))) _ read h _ hmid
+      rw [prepareOuterBank_tCount] at h1
+      have hw := (trim18_t (w.program start) read h).trans (hhd.2 start read h)
+      omega
+
+private theorem fourierProgram_within (n : Nat) (dir : PhaseDir) (ws : List Wire)
+    (start : Nat) (prior : List (Fin start)) :
+    Within ws (fourierProgram n dir ws start prior) :=
+  within_of_instantiate _ ws (fun read h =>
+    fourierProgram_support n dir ws start prior read h ws (List.Subset.refl ws))
+
+private theorem within_mono {n s e : Nat} {ws₁ ws₂ : List Wire} {p : Straight n s e}
+    (hsub : ws₁ ⊆ ws₂) (hp : Within ws₁ p) : Within ws₂ p :=
+  within_of_instantiate p ws₂ (fun read h => (hp.instantiate read h).trans hsub)
+
+theorem axisCat_wellFormed {n : Nat} (y : Wire) (ws : List (Single.Window n))
+    (hnoY : ∀ w ∈ ws, y ∉ w.wires)
+    (hwf : ∀ w ∈ ws, ∀ start, (w.program start).WellFormed)
+    (start : Nat) (prior : List (Fin start)) :
+    (axisCat y ws start prior).WellFormed := by
+  induction ws generalizing start with
+  | nil => trivial
+  | cons w ws ih =>
+    simp only [axisCat, castFinish_wellFormed]
+    apply straight_append_wellFormed
+    · exact prepareOuterBank_wellFormed _ _ (hwf w List.mem_cons_self start)
+    · apply straight_append_wellFormed
+      · rw [castFinish_wellFormed]
+        apply ConditionalCatalyst.compile_wellFormed y _ _ (fourierProgram_wellFormed n .inverse w.wires _ _)
+        apply LocalFour.fresh_of_not_mem_straightWires
+        intro hm
+        have hsub : ChallengeMigration.straightWires
+            (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)) ⊆ w.wires :=
+          LocalFour.straightWires_of_within _ _ (fourierProgram_within n .inverse w.wires _ _)
+        exact hnoY w List.mem_cons_self (hsub hm)
+      · exact ih (fun v hv => hnoY v (List.mem_cons_of_mem _ hv))
+          (fun v hv => hwf v (List.mem_cons_of_mem _ hv)) _ _
+
+theorem axisCat_support {n : Nat} (y : Wire) (ws : List (Single.Window n)) (sup : List Wire)
+    (hy : y ∈ sup)
+    (hbank : ∀ w ∈ ws, w.wires ⊆ sup)
+    (hprog : ∀ w ∈ ws, ∀ start read h, ((w.program start).instantiate read h).wires ⊆ sup)
+    (start : Nat) (prior : List (Fin start)) (read : ConstantBit n → Bool) (h : Fin start → Bool) :
+    ((axisCat y ws start prior).instantiate read h).wires ⊆ sup := by
+  induction ws generalizing start with
+  | nil => intro u hu; simp [axisCat, Straight.instantiate, AdaptiveCircuit.wires] at hu
+  | cons w ws ih =>
+    simp only [axisCat, castFinish_instantiate]
+    apply outer_append_support _ _ read h sup
+    · apply prepareOuterBank_support
+      · exact fun u hu => hbank w List.mem_cons_self (List.mem_reverse.mp hu)
+      · exact hprog w List.mem_cons_self start read h
+    · intro h₁
+      apply outer_append_support _ _ read h₁ sup
+      · rw [castFinish_instantiate]
+        have hw : Within sup (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)) :=
+          within_mono (hbank w List.mem_cons_self) (fourierProgram_within n .inverse w.wires _ _)
+        have hc := ConditionalCatalyst.compile_within y _ sup hw
+        have hsup := hc.instantiate read h₁
+        intro u hu
+        have hm := hsup hu
+        simp only [List.mem_cons] at hm
+        rcases hm with rfl | hm
+        · exact hy
+        · exact hm
+      · intro h₂
+        exact ih (fun v hv => hbank v (List.mem_cons_of_mem _ hv))
+          (fun v hv => hprog v (List.mem_cons_of_mem _ hv)) _ _ h₂
+
+theorem axisCat_slots {n : Nat} (y : Wire) (ws : List (Single.Window n)) (B : Nat)
+    (hb : ∀ w ∈ ws, ∀ start, (w.program start).gateSlots ≤ B)
+    (start : Nat) (prior : List (Fin start)) :
+    (axisCat y ws start prior).gateSlots ≤
+      4 * metadataSlots B (ws.map (fun w => (w.count, w.wires.length))) prior.length := by
+  induction ws generalizing start with
+  | nil => simp [axisCat, Straight.gateSlots, metadataSlots]
+  | cons w ws ih =>
+    simp only [axisCat, castFinish_gateSlots, Straight.gateSlots_append, prepareOuterBank_slots,
+      List.length_reverse, List.map_cons, metadataSlots]
+    have hprog := hb w List.mem_cons_self start
+    have hf1 := ConditionalCatalyst.compile_slots y
+      (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior))
+    have hf2 := ConditionalCatalyst.phaseTwos_le_slots
+      (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior))
+    have hf3 := fourierProgram_slots n .inverse w.wires (start + w.count) (bankPrior w.count prior)
+    rw [bankPrior_length] at hf3
+    have htail := ih (fun v hv => hb v (List.mem_cons_of_mem _ hv))
+      (start + w.count + w.wires.length) (nextPrior w.count w.wires.length prior)
+    rw [nextPrior_length] at htail
+    omega
+
+theorem axisCat_cost18_exact {n : Nat} (y : Wire) (ws : List (Single.Window n))
+    (hz : ∀ w ∈ ws, ∀ start, cost18 (w.program start) = 0)
+    (start : Nat) (prior : List (Fin start)) :
+    cost18 (axisCat y ws start prior) =
+      account18 ((ws.map (fun w => w.wires.length)).sum) prior.length := by
+  induction ws generalizing start with
+  | nil => simp [axisCat, cost18, account18]
+  | cons w ws ih =>
+    simp only [axisCat, cost18_cast, cost18_append, cost18_prepare, cost18_compile]
+    rw [hz w List.mem_cons_self start, zero_add]
+    have hf := cost18_fourier_exact n .inverse w.wires (start + w.count) (bankPrior w.count prior)
+    have hi := ih (fun v hv s => hz v (List.mem_cons_of_mem w hv) s)
+      (start + w.count + w.wires.length) (nextPrior w.count w.wires.length prior)
+    rw [hf, hi]
+    simp only [bankPrior, nextPrior, List.length_append, List.length_reverse, List.length_ofFn,
+      List.length_map, List.map_cons, List.sum_cons, account18_append]
+    rw [Nat.add_comm w.wires.length prior.length]
+
+end
+end ShorECDLP.Entrant.CatAxis
+
 /-! ### Part 3: Schedule26 geometry, coefficients, specialization, and physical program -/
 
 namespace ShorECDLP.Entrant.Schedule26
@@ -1842,9 +3001,9 @@ def mkCreditBox26 (c : Nat) : CreditBox26 := ⟨c⟩
 theorem mkCreditBox26_val (c : Nat) : (mkCreditBox26 c).val = c := rfl
 
 def wideCredit26Box : CreditBox26 :=
-  mkCreditBox26 (2 * WideSigned.Body.signCredit + (WideBank8.Fast16.fcodeTP WideBank8.Row16.code - 15098 - 23997))
+  mkCreditBox26 (2 * WideSigned.Body.signCredit + (WideBank8.Fast16.fcodeTP WideBank8.Row16.code - 15098 - 23997 - 502))
 
-theorem wideCredit26_bound : wideCredit26Box.val ≤ 2303596 := by
+theorem wideCredit26_bound : wideCredit26Box.val ≤ 2303094 := by
   rw [wideCredit26Box, mkCreditBox26_val]
   exact CornerWire.Wide16.credit_bound
 
@@ -1870,11 +3029,11 @@ theorem top10Right_sub_range : top10Right ⊆ List.range 1613 :=
 def first20RawWin : Window 2228224 := First20Signed.windowGeneric firstRow26
 
 def first20Win : Window 2228224 :=
-  ⟨First20Signed.bits.reverse, 193132,
+  ⟨First20Signed.bits.reverse, 193640,
     fun start => prependCircuit (sineFromPlus top10Left) (first20RawWin.program start)⟩
 
 def bodyWin (d : Digit26) : Window 2228224 :=
-  ⟨bank17.reverse, 1703898,
+  ⟨bank17.reverse, 1703388,
     fun start => reindexStraight (row26 d)
       (relabelStraight TightSupport.compact17_7 (CornerWire.Wide16.program start))⟩
 
@@ -1885,111 +3044,11 @@ theorem rightDigits26_cons : rightDigits26 = rightHeadDigit :: rightTailDigits26
   simp [rightDigits26, rightHeadDigit, rightTailDigits26, List.ofFn_succ]
 
 def rightHeadWin : Window 2228224 :=
-  ⟨bank17.reverse, 1703898,
+  ⟨bank17.reverse, 1703388,
     fun start => prependCircuit (sineFromPlus top10Right) ((bodyWin rightHeadDigit).program start)⟩
 
 def leftWins26 : List (Window 2228224) := first20Win :: leftDigits26.map bodyWin
 def rightWins26 : List (Window 2228224) := rightHeadWin :: rightTailDigits26.map bodyWin
-
-def leftMeta26 : List (Nat × Nat) := (193132, 20) :: List.replicate 14 (1703898, 17)
-def rightMeta26 : List (Nat × Nat) := List.replicate 12 (1703898, 17)
-def leftWidths26 : List Nat := 20 :: List.replicate 14 17
-def rightWidths26 : List Nat := List.replicate 12 17
-
-theorem leftWins26_meta : leftWins26.map (fun w => (w.count, w.wires.length)) = leftMeta26 := by
-  simp only [leftWins26, leftMeta26, List.map_cons, List.map_map, Function.comp_def,
-    first20Win, bodyWin, List.length_reverse, First20Signed.bits_length, bank17_length]
-  simp [leftDigits26, List.ofFn_succ, List.replicate]
-
-theorem rightWins26_meta : rightWins26.map (fun w => (w.count, w.wires.length)) = rightMeta26 := by
-  simp only [rightWins26, rightMeta26, List.map_cons, List.map_map, Function.comp_def,
-    rightHeadWin, bodyWin, List.length_reverse, bank17_length]
-  simp [rightTailDigits26, List.ofFn_succ, List.replicate]
-
-theorem leftWins26_widths :
-    List.Forall₂ (fun w c => w.wires.length = c) leftWins26 leftWidths26 := by
-  simp [leftWins26, leftWidths26, leftDigits26, List.ofFn_succ, List.replicate,
-    first20Win, bodyWin, First20Signed.bits_length, bank17_length]
-
-theorem rightWins26_widths :
-    List.Forall₂ (fun w c => w.wires.length = c) rightWins26 rightWidths26 := by
-  simp [rightWins26, rightWidths26, rightTailDigits26, List.ofFn_succ, List.replicate,
-    rightHeadWin, bodyWin, bank17_length]
-
-theorem leftWins26_count : axisCount leftWins26 = 24047962 := by
-  rw [← recordCount_eq_axisCount, leftWins26_meta]
-  decide +kernel
-
-theorem rightWins26_count : axisCount rightWins26 = 20446980 := by
-  rw [← recordCount_eq_axisCount, rightWins26_meta]
-  decide +kernel
-
-def leftPositions26 : List Nat := positions leftMeta26 0
-def rightPositions26 : List Nat := positions rightMeta26 24047962
-
-theorem leftPositions26_length : leftPositions26.length = 258 := by
-  simp only [leftPositions26, positions_length]
-  decide +kernel
-
-theorem rightPositions26_length : rightPositions26.length = 204 := by
-  simp only [rightPositions26, positions_length]
-  decide +kernel
-
-def trialPositions26 : TrialPositions params258 where
-  left := ⟨leftPositions26.toArray, by
-    simpa only [List.size_toArray, params258] using leftPositions26_length⟩
-  right := ⟨rightPositions26.toArray, by
-    simpa only [List.size_toArray, params258] using rightPositions26_length⟩
-
-theorem leftPositions26_bound (i : Nat) (hi : i ∈ trialPositions26.left.toList) : i < 24047962 := by
-  have hi' : i ∈ leftPositions26 := by simpa [trialPositions26] using hi
-  have hb := positions_bounds leftMeta26 0 i hi'
-  have hr : recordCount leftMeta26 = 24047962 := by decide +kernel
-  omega
-
-theorem rightPositions26_bound (i : Nat) (hi : i ∈ trialPositions26.right.toList) : i < 44494942 := by
-  have hi' : i ∈ rightPositions26 := by simpa [trialPositions26] using hi
-  have hb := positions_bounds rightMeta26 24047962 i hi'
-  have hr : recordCount rightMeta26 = 20446980 := by decide +kernel
-  omega
-
-def cursor26 : Nat := 44494942 + resetWires.length
-
-def finePositions26 : List (Fin cursor26) :=
-  trialPositions26.right.toList.attach.map fun i =>
-    ⟨i.val, (rightPositions26_bound i.val i.property).trans_le (by unfold cursor26; omega)⟩
-
-theorem finePositions26_length : finePositions26.length = 204 := by
-  simp [finePositions26, params258]
-
-def fineBits26 : Vector (Fin cursor26) 204 :=
-  Vector.ofFn fun i => finePositions26[i.val]'(by rw [finePositions26_length]; exact i.isLt)
-
-theorem fineBits26_vals : fineBits26.map Fin.val = trialPositions26.right := by
-  apply Vector.ext; intro i hi
-  simp [fineBits26, finePositions26]; rfl
-
-def readout26 : Straight 2228224 cursor26 (cursor26 + 1634) :=
-  castFinish (by omega) (Readout3.suffix3 2228224 cursor26 204 fineBits26)
-
-def program26 : Straight 2228224 0 cursor26 :=
-  Single.framed
-    (Single.axis leftWins26 0 List.nil)
-    (Single.axis rightWins26 (0 + axisCount leftWins26) List.nil)
-    (resetProgram 2228224 (0 + axisCount leftWins26 + axisCount rightWins26) resetWires)
-    (by rw [leftWins26_count, rightWins26_count]; unfold cursor26; omega)
-
-def fullProgram26 : Straight 2228224 0 (cursor26 + 1634) :=
-  program26.append readout26
-
-def rawEntry26 : StraightEntry := Single.fixedEntry coefficientAt26 fullProgram26
-
-def positionsFor26 (ps : Vector Nat 204) : TrialPositions params258 :=
-  { left := trialPositions26.left, right := ps }
-
-def rawLayout26 : DecodeLayout :=
-  ⟨.wrappedShift, params258, (Readout3.rightWords3 fineBits26).map positionsFor26, by
-    simp only [List.length_map, Readout3.rightWords3_length]; decide⟩
 
 /-! ### Window models, rules, readiness, and strong ideal success (`≥ 9911 / 10000`) -/
 
@@ -2453,34 +3512,421 @@ theorem ready_all26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       exact Support.smul _ (supportedOn_ket _ _ ⟨_, rfl⟩)
   exact happ leftDigits26 _ h1
 
-def fineEvent26 (accept : Nat → Nat → Bool) (history : List Bool) : Bool :=
-  pairAccept trialPositions26.left.toList trialPositions26.right.toList accept history
+/-! ### Part 3b: Local-catalyst compiled windows, program, layout, and `≥ 9911/10000` ideal success -/
 
-theorem program26_run_data (read : ConstantBit 2228224 → Bool) :
-    (program26.instantiate read Fin.elim0).run =
-      ((((Single.axis leftWins26 0 List.nil).append
-          (Single.axis rightWins26 (0 + axisCount leftWins26) List.nil)).instantiate read Fin.elim0).run.seq
+attribute [local irreducible] LocalWide16.compiledProgram LocalWide16.compiledProgramFn
+  LocalFour.compileLower CatAxis.axisCat ConditionalCatalyst.compile
+  AndGadget.added AndGadget.residue
+
+-- Kernel-opaque `Nat` counts via `Classical.choose`: the kernel's `is_def_eq_offset` / `whnf`
+-- stops immediately at `Classical.choose` instead of unfolding `compileLower` or `compiledProgramFn`.
+private theorem cFirst20_exists :
+    ∃ n : Nat, n = AndGadget.Lowered.finish (LocalFour.compileLower 0 1 (first20RawWin.program 0) 0 Fin.elim0) :=
+  ⟨_, rfl⟩
+
+def cFirst20 : Nat := Classical.choose cFirst20_exists
+
+theorem cFirst20_eq :
+    cFirst20 = AndGadget.Lowered.finish (LocalFour.compileLower 0 1 (first20RawWin.program 0) 0 Fin.elim0) :=
+  Classical.choose_spec cFirst20_exists
+
+private theorem cBody16_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (LocalWide16.compiledProgramFn 0) :=
+  ⟨_, rfl⟩
+
+def cBody16 : Nat := Classical.choose cBody16_exists
+
+theorem cBody16_eq :
+    cBody16 = LocalFour.CatProg.finish (LocalWide16.compiledProgramFn 0) :=
+  Classical.choose_spec cBody16_exists
+
+theorem cBody16_le : cBody16 ≤ 4010000 := by
+  rw [cBody16_eq]
+  exact LocalWide16.compiledRec16_bound
+
+private theorem compileLower_finish_zero {n e : Nat} (q y : Wire) (p : Straight n 0 e) (start : Nat) :
+    (LocalFour.compileLower q y p start Fin.elim0).finish =
+      start + (LocalFour.compileLower q y p 0 Fin.elim0).finish := by
+  have h1 := LocalFour.compileLower_finish q y p start Fin.elim0
+  have h0 := LocalFour.compileLower_finish q y p 0 Fin.elim0
+  omega
+
+private theorem compileLower_finish_le {n e : Nat} (q y : Wire) (p : Straight n 0 e)
+    (E A B : Nat) (he : e ≤ E) (ha : AndGadget.added p ≤ A) (hB : E + A ≤ B) :
+    (LocalFour.compileLower q y p 0 Fin.elim0).finish ≤ B := by
+  have h0 := LocalFour.compileLower_finish q y p 0 Fin.elim0
+  omega
+
+theorem first20Cat_finish_eq (start : Nat) :
+    (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).finish = start + cFirst20 := by
+  rw [cFirst20_eq]
+  exact compileLower_finish_zero 0 1 (first20RawWin.program 0) start
+
+theorem first20Cat_count_le : cFirst20 ≤ 387265 := by
+  rw [cFirst20_eq]
+  exact compileLower_finish_le 0 1 (first20RawWin.program 0) 193640 193625 387265
+    (by change 0 + 193640 ≤ 193640; omega)
+    (by unfold first20RawWin First20Signed.windowGeneric; rw [added_reindex]; exact First20Signed.program_added 0)
+    (by omega)
+
+def first20CatWin : Window 2228224 :=
+  ⟨First20Signed.bits.reverse, cFirst20,
+    fun start => (ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append
+      (castFinish (first20Cat_finish_eq start)
+        (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)⟩
+
+def bodyCatWin (d : Digit26) : Window 2228224 :=
+  ⟨bank17.reverse, cBody16,
+    fun start => castFinish (congrArg (start + ·) cBody16_eq.symm)
+      (reindexStraight (row26 d)
+        (relabelStraight TightSupport.compact17_7 (LocalWide16.compiledProgram start)))⟩
+
+def rightHeadCatWin : Window 2228224 :=
+  ⟨bank17.reverse, cBody16,
+    fun start => (ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
+      ((bodyCatWin rightHeadDigit).program start)⟩
+
+def leftWins26Cat : List (Window 2228224) := first20CatWin :: leftDigits26.map bodyCatWin
+def rightWins26Cat : List (Window 2228224) := rightHeadCatWin :: rightTailDigits26.map bodyCatWin
+
+def leftMeta26Cat : List (Nat × Nat) := (cFirst20, 20) :: List.replicate 14 (cBody16, 17)
+def rightMeta26Cat : List (Nat × Nat) := List.replicate 12 (cBody16, 17)
+
+theorem leftWins26Cat_meta : leftWins26Cat.map (fun w => (w.count, w.wires.length)) = leftMeta26Cat := by
+  simp only [leftWins26Cat, leftMeta26Cat, List.map_cons, List.map_map, Function.comp_def,
+    first20CatWin, bodyCatWin, List.length_reverse, First20Signed.bits_length, bank17_length]
+  simp [leftDigits26, List.ofFn_succ, List.replicate]
+
+theorem rightWins26Cat_meta : rightWins26Cat.map (fun w => (w.count, w.wires.length)) = rightMeta26Cat := by
+  simp only [rightWins26Cat, rightMeta26Cat, List.map_cons, List.map_map, Function.comp_def,
+    rightHeadCatWin, bodyCatWin, List.length_reverse, bank17_length]
+  simp [rightTailDigits26, List.ofFn_succ, List.replicate]
+
+theorem leftWins26Cat_count_eq :
+    axisCount leftWins26Cat = cFirst20 + 20 + 14 * (cBody16 + 17) := by
+  rw [← recordCount_eq_axisCount, leftWins26Cat_meta]
+  simp only [leftMeta26Cat, List.replicate, recordCount]
+  omega
+
+theorem rightWins26Cat_count_eq :
+    axisCount rightWins26Cat = 12 * (cBody16 + 17) := by
+  rw [← recordCount_eq_axisCount, rightWins26Cat_meta]
+  simp only [rightMeta26Cat, List.replicate, recordCount]
+  omega
+
+def leftPositions26Cat : List Nat := positions leftMeta26Cat 0
+def rightPositions26Cat : List Nat := positions rightMeta26Cat (axisCount leftWins26Cat)
+
+theorem leftPositions26Cat_length : leftPositions26Cat.length = 258 := by
+  simp only [leftPositions26Cat, positions_length, leftMeta26Cat, List.replicate,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  rfl
+
+theorem rightPositions26Cat_length : rightPositions26Cat.length = 204 := by
+  simp only [rightPositions26Cat, positions_length, rightMeta26Cat, List.replicate,
+    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+  rfl
+
+def trialPositions26Cat : TrialPositions params258 where
+  left := ⟨leftPositions26Cat.toArray, by
+    simpa only [List.size_toArray, params258] using leftPositions26Cat_length⟩
+  right := ⟨rightPositions26Cat.toArray, by
+    simpa only [List.size_toArray, params258] using rightPositions26Cat_length⟩
+
+theorem leftPositions26Cat_bound (i : Nat) (hi : i ∈ trialPositions26Cat.left.toList) :
+    i < axisCount leftWins26Cat := by
+  have hi' : i ∈ leftPositions26Cat := by simpa [trialPositions26Cat] using hi
+  have hb := positions_bounds leftMeta26Cat 0 i hi'
+  have hr : recordCount leftMeta26Cat = axisCount leftWins26Cat := by
+    rw [← leftWins26Cat_meta, recordCount_eq_axisCount]
+  omega
+
+theorem rightPositions26Cat_bound (i : Nat) (hi : i ∈ trialPositions26Cat.right.toList) :
+    i < axisCount leftWins26Cat + axisCount rightWins26Cat := by
+  have hi' : i ∈ rightPositions26Cat := by simpa [trialPositions26Cat] using hi
+  have hb := positions_bounds rightMeta26Cat (axisCount leftWins26Cat) i hi'
+  have hr : recordCount rightMeta26Cat = axisCount rightWins26Cat := by
+    rw [← rightWins26Cat_meta, recordCount_eq_axisCount]
+  omega
+
+def cursor26Cat : Nat := axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length
+
+def finePositions26Cat : List (Fin cursor26Cat) :=
+  trialPositions26Cat.right.toList.attach.map fun i =>
+    ⟨i.val, (rightPositions26Cat_bound i.val i.property).trans_le (by unfold cursor26Cat; omega)⟩
+
+theorem finePositions26Cat_length : finePositions26Cat.length = 204 := by
+  simp [finePositions26Cat, params258]
+
+def fineBits26Cat : Vector (Fin cursor26Cat) 204 :=
+  Vector.ofFn fun i => finePositions26Cat[i.val]'(by rw [finePositions26Cat_length]; exact i.isLt)
+
+theorem fineBits26Cat_vals : fineBits26Cat.map Fin.val = trialPositions26Cat.right := by
+  apply Vector.ext; intro i hi
+  simp [fineBits26Cat, finePositions26Cat]; rfl
+
+def readout26Cat : Straight 2228224 cursor26Cat (cursor26Cat + 1634) :=
+  castFinish (by omega) (Readout3.suffix3 2228224 cursor26Cat 204 fineBits26Cat)
+
+def program26Cat : Straight 2228224 0 cursor26Cat :=
+  AndGadget.literals (Catalyst.prepare 1)
+    (Single.framed
+      (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)
+      (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)
+      (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)
+      (by unfold cursor26Cat; omega))
+
+def fullProgram26Cat : Straight 2228224 0 (cursor26Cat + 1634) :=
+  program26Cat.append readout26Cat
+
+def rawEntry26Cat : StraightEntry := Single.fixedEntry coefficientAt26 fullProgram26Cat
+
+def positionsFor26Cat (ps : Vector Nat 204) : TrialPositions params258 :=
+  { left := trialPositions26Cat.left, right := ps }
+
+def rawLayout26Cat : DecodeLayout :=
+  ⟨.wrappedShift, params258, (Readout3.rightWords3 fineBits26Cat).map positionsFor26Cat, by
+    simp only [List.length_map, Readout3.rightWords3_length]; decide⟩
+
+/-! ### Catalyst window models and strong ideal success (`≥ 9911 / 10000`) -/
+
+private theorem wire01_not_first20Bits :
+    (0 : Wire) ∉ First20Signed.bits ∧ (1 : Wire) ∉ First20Signed.bits := by
+  constructor <;> intro hm <;>
+    (have := First20Signed.bits_subset_drop01 hm; simp only [List.mem_range'_1] at this; omega)
+
+private theorem wire1_not_bank17 : (1 : Wire) ∉ bank17 := by decide
+
+private theorem first20_input_clean01 (s : BasisState) (hs : First20Signed.Input s) :
+    s 0 = false ∧ s 1 = false :=
+  ⟨hs.2 0 (by decide) wire01_not_first20Bits.1, hs.2 1 (by decide) wire01_not_first20Bits.2⟩
+
+private theorem wire15645_mem_windowScratch : (15645 : Wire) ∈ WEX.windowScratch :=
+  List.mem_append_left _ (List.mem_append_left _
+    (Site1Wire.dialogPool_sub_work
+      (Site1Wire.pool_band_in_dialogPool (w := 15645) (by dsimp only [Wire, ECDSAAdd.Wire]; omega))))
+
+private theorem bodyModel_valid_y1 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26)
+    (s : BasisState) (hs : (bodyModel Q hQ hn d).valid s) : s 1 = false := by
+  have h15645 : (relabelBasis TightSupport.compact17_7.symm s) 15645 = false :=
+    hs.2 15645 wire15645_mem_windowScratch
+  have hsym : TightSupport.compact17_7.symm 1 = 15645 :=
+    (Equiv.symm_apply_eq _).mpr LocalWide16.compact17_7_15645.symm
+  simpa only [relabelBasis, hsym] using h15645
+
+private theorem bodyModel_ideal_y1 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26)
+    (ψ : State) (hψ : SupportedOn (bodyModel Q hQ hn d).valid ψ) :
+    SupportedOn (fun s => s 1 = false) ((bodyModel Q hQ hn d).ideal ψ) := by
+  refine Support.linear _ _ (bodyModel Q hQ hn d).ideal (fun s hs => ?_) ψ hψ
+  change SupportedOn (fun t => t 1 = false)
+    (relabelState TightSupport.compact17_7
+      (Finsupp.lmapDomain ℂ ℂ (WideSigned.Body.state .w16 (wideCoeffs26 d) Q)
+        (relabelState TightSupport.compact17_7.symm (ket s))))
+  rw [relabelState_ket, Mixed.lmap_ket', relabelState_ket]
+  apply supportedOn_ket
+  have h15645 : (WideSigned.Body.state .w16 (wideCoeffs26 d) Q (relabelBasis TightSupport.compact17_7.symm s)) 15645 = false := by
+    obtain ⟨P, hP⟩ := hs.1.2
+    rw [WideSigned.Body.state_correct .w16 (wideCoeffs26 d) Q _ P hP,
+      pointWrite_frame _ _ _ (WEX.windowScratch_point_disjoint 15645 wire15645_mem_windowScratch)]
+    exact hs.2 15645 wire15645_mem_windowScratch
+  have hsym : TightSupport.compact17_7.symm 1 = 15645 :=
+    (Equiv.symm_apply_eq _).mpr LocalWide16.compact17_7_15645.symm
+  simpa only [relabelBasis, hsym] using h15645
+
+def first20CatModel (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    CatAxis.CatWindow 1 (readConstant coefficientAt26 Q) where
+  model := first20Model Q hQ hn
+  catPhys := first20CatWin
+  wires_eq := rfl
+  noY := fun hm => wire01_not_first20Bits.2 (List.mem_reverse.mp hm)
+  catCoherent := by
+    intro start history
+    apply CatAxis.prependCompiledCircuit_catCoherent 1 (sineFromPlus top10Left)
+      (castFinish (first20Cat_finish_eq start)
+        (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)
+      (readConstant coefficientAt26 Q) history
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q))
+      First20Signed.Input First20Signed.Input
+    · intro hm
+      exact wire01_not_first20Bits.2 (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hm))
+    · intro s hs; exact (first20_input_clean01 s hs).2
+    · intro s hs
+      exact circuit_preserves_pred (sineFromPlus top10Left) First20Signed.Input
+        (fun t w b hw ht => first20_input_upd t w b
+          (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hw)) ht) s hs
+    · rw [castFinish_instantiate]
+      have hsub := First20Signed.window_support_drop01 firstRow26 0
+      have hf0 : Fresh 0 (first20RawWin.program 0) :=
+        LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
+          have := hsub hm; simp only [List.mem_range'_1] at this; omega)
+      have hf1 : Fresh 1 (first20RawWin.program 0) :=
+        LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
+          have := hsub hm; simp only [List.mem_range'_1] at this; omega)
+      exact LocalFour.compileLower_catCoherent 0 1 (first20RawWin.program 0) start Fin.elim0
+        (readConstant coefficientAt26 Q) Fin.elim0 history (fun i => Fin.elim0 i)
+        (First20Signed.window_wellFormed firstRow26 0) hf0 hf1 (by decide)
+        _ First20Signed.Input first20_input_clean01 (first20Win_law Q hQ hn 0 Fin.elim0)
+  idealY := by
+    intro ψ hψ
+    refine Support.linear _ _ (first20Model Q hQ hn).ideal (fun s hs => ?_) ψ hψ
+    change SupportedOn (fun t => t 1 = false)
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)
+        (Quantum.run (sineFromPlus top10Left) (ket s)))
+    have hsine : SupportedOn First20Signed.Input (Quantum.run (sineFromPlus top10Left) (ket s)) :=
+      circuit_preserves_pred (sineFromPlus top10Left) First20Signed.Input
+        (fun t w b hw ht => first20_input_upd t w b
+          (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hw)) ht) s hs
+    refine Support.linear First20Signed.Input (fun t => t 1 = false)
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)) (fun t ht => ?_) _ hsine
+    rw [Mixed.lmap_ket']
+    apply supportedOn_ket
+    unfold First20Signed.update
+    rw [pointWrite_frame _ _ _ (by decide)]
+    exact (first20_input_clean01 t ht).2
+
+def bodyCatModel (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26) :
+    CatAxis.CatWindow 1 (readConstant coefficientAt26 Q) where
+  model := bodyModel Q hQ hn d
+  catPhys := bodyCatWin d
+  wires_eq := by rw [bodyModel_physical]; rfl
+  noY := by rw [bodyModel_physical]; exact fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
+  catCoherent := by
+    intro start history
+    change LocalFour.CatCoherent 1
+      ((castFinish (congrArg (start + ·) cBody16_eq.symm)
+        (reindexStraight (row26 d)
+          (relabelStraight TightSupport.compact17_7 (LocalWide16.compiledProgram start)))).instantiate
+            (readConstant coefficientAt26 Q) history)
+      (bodyModel Q hQ hn d).ideal (bodyModel Q hQ hn d).valid
+    rw [castFinish_instantiate, reindexStraight_instantiate,
+      readConstant_reindex (row26 d) (wideCoeffs26 d) coefficientAt26 Q (fun a => coefficientAt26_row d a),
+      relabelStraight_instantiate]
+    have hrel := CatAxis.catCoherent_relabel TightSupport.compact17_7 15645
+      ((LocalWide16.compiledProgram start).instantiate (readConstant (wideCoeffs26 d) Q) history)
+      _ _ (LocalWide16.compiled_coherent (wideCoeffs26 d) Q hQ (wide26_nonzero Q hQ hn d) start history)
+    rw [LocalWide16.compact17_7_15645] at hrel
+    exact hrel
+  idealY := bodyModel_ideal_y1 Q hQ hn d
+
+def rightHeadCatModel (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    CatAxis.CatWindow 1 (readConstant coefficientAt26 Q) where
+  model := rightHeadModel Q hQ hn
+  catPhys := rightHeadCatWin
+  wires_eq := rfl
+  noY := fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
+  catCoherent := by
+    intro start history
+    apply CatAxis.prependCompiledCircuit_catCoherent 1 (sineFromPlus top10Right)
+      ((bodyCatWin rightHeadDigit).program start)
+      (readConstant coefficientAt26 Q) history
+      (bodyModel Q hQ hn rightHeadDigit).ideal
+      (bodyModel Q hQ hn rightHeadDigit).valid
+      (bodyModel Q hQ hn rightHeadDigit).valid
+    · intro hm
+      exact wire1_not_bank17 (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length hm))
+    · exact bodyModel_valid_y1 Q hQ hn rightHeadDigit
+    · intro s hs
+      exact circuit_preserves_pred (sineFromPlus top10Right) (bodyModel Q hQ hn rightHeadDigit).valid
+        (fun t w b hw ht => bodyModel_valid_upd Q hQ hn rightHeadDigit t w b
+          (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length hw)) ht) s hs
+    · exact (bodyCatModel Q hQ hn rightHeadDigit).catCoherent start history
+  idealY := by
+    intro ψ hψ
+    apply bodyModel_ideal_y1 Q hQ hn rightHeadDigit
+    refine Support.linear _ _ (Quantum.run (sineFromPlus top10Right)) (fun s hs => ?_) ψ hψ
+    exact circuit_preserves_pred (sineFromPlus top10Right) (bodyModel Q hQ hn rightHeadDigit).valid
+      (fun t w b hw ht => bodyModel_valid_upd Q hQ hn rightHeadDigit t w b
+        (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length hw)) ht) s hs
+
+def leftCatModels26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (CatAxis.CatWindow 1 (readConstant coefficientAt26 Q)) :=
+  first20CatModel Q hQ hn :: leftDigits26.map (bodyCatModel Q hQ hn)
+
+def rightCatModels26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (CatAxis.CatWindow 1 (readConstant coefficientAt26 Q)) :=
+  rightHeadCatModel Q hQ hn :: rightTailDigits26.map (bodyCatModel Q hQ hn)
+
+theorem leftCatModels26_model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (leftCatModels26 Q hQ hn).map CatAxis.CatWindow.model = leftModels26 Q hQ hn := by
+  simp [leftCatModels26, leftModels26, first20CatModel, bodyCatModel, List.map_map, Function.comp_def]
+
+theorem rightCatModels26_model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (rightCatModels26 Q hQ hn).map CatAxis.CatWindow.model = rightModels26 Q hQ hn := by
+  simp [rightCatModels26, rightModels26, rightHeadCatModel, bodyCatModel, List.map_map, Function.comp_def]
+
+theorem leftCatModels26_catPhys (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (leftCatModels26 Q hQ hn).map CatAxis.CatWindow.catPhys = leftWins26Cat := by
+  simp [leftCatModels26, leftWins26Cat, first20CatModel, bodyCatModel, List.map_map, Function.comp_def]
+
+theorem rightCatModels26_catPhys (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (rightCatModels26 Q hQ hn).map CatAxis.CatWindow.catPhys = rightWins26Cat := by
+  simp [rightCatModels26, rightWins26Cat, rightHeadCatModel, bodyCatModel, List.map_map, Function.comp_def]
+
+def fineEvent26Cat (accept : Nat → Nat → Bool) (history : List Bool) : Bool :=
+  pairAccept trialPositions26Cat.left.toList trialPositions26Cat.right.toList accept history
+
+theorem program26Cat_run_data (read : ConstantBit 2228224 → Bool) :
+    (program26Cat.instantiate read Fin.elim0).run =
+      ((((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
+          (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).instantiate read Fin.elim0).run.seq
+        terminalInstrument).map
+        (fun b => ({ history := List.nil, kraus := Quantum.run (Catalyst.prepare 1 ++ [.X 836]) } : InstrumentBranch).seq b) := by
+  unfold program26Cat
+  rw [LocalFour.literals_instantiate_run]
+  have hh : 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat := by
+    unfold cursor26Cat; omega
+  have hfr : ((Single.framed
+      (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)
+      (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)
+      (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires) hh).instantiate read Fin.elim0).run =
+      ((((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
+          (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).instantiate read Fin.elim0).run.seq
         terminalInstrument).map
         (fun b => ({ history := List.nil, kraus := Quantum.run [.X 836] } : InstrumentBranch).seq b) := by
-  unfold program26
-  have hh : 0 + axisCount leftWins26 + axisCount rightWins26 + resetWires.length = cursor26 := by
-    rw [leftWins26_count, rightWins26_count]; unfold cursor26; omega
-  simpa only [terminalInstrument, bodyInst26, PathShare.bodyCF] using
-    framed_reset_run (Single.axis leftWins26 0 List.nil)
-      (Single.axis rightWins26 (0 + axisCount leftWins26) List.nil)
-      (resetProgram 2228224 (0 + axisCount leftWins26 + axisCount rightWins26) resetWires)
-      hh read Fin.elim0 (measureResetWithCorrection resetWires (fun _ => List.nil))
-      (fun h => resetProgram_run _ _ _ read h)
+    simpa only [terminalInstrument, bodyInst26, PathShare.bodyCF] using
+      framed_reset_run (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)
+        (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)
+        (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)
+        hh read Fin.elim0 (measureResetWithCorrection resetWires (fun _ => List.nil))
+        (fun h => resetProgram_run _ _ _ read h)
+  rw [hfr, List.map_map]
+  apply List.map_congr_left
+  intro b _
+  exact congrArg (InstrumentBranch.mk b.history) (LinearMap.ext fun ψ => by
+    change b.kraus (Quantum.run [.X 836] (Quantum.run (Catalyst.prepare 1) ψ)) =
+      b.kraus (Quantum.run (Catalyst.prepare 1 ++ [.X 836]) ψ)
+    rw [Quantum.run_append])
 
-theorem program26_event_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
-    Instrument.bornMass ((program26.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
-      (fun b => fineEvent26 accept b.history)) (ket zeroBasisState) =
+theorem program26Cat_event_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
+    Instrument.bornMass ((program26Cat.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
+      (fun b => fineEvent26Cat accept b.history)) (ket zeroBasisState) =
       windowedEventMass Q initialRoot 258 204 accept := by
-  rw [program26_run_data, prefix_filter_mass _ ([Gate.X 836]) (fineEvent26 accept) (ket zeroBasisState)]
-  have hs : Quantum.run [.X 836] (ket zeroBasisState) = ket initialRoot := by
-    simp [Quantum.run, applyGate_ket, onKet, initialRoot, zeroBasisState]
+  rw [program26Cat_run_data, prefix_filter_mass]
+  have hs : Quantum.run (Catalyst.prepare 1 ++ [.X 836]) (ket zeroBasisState) =
+      LocalFour.Prep 1 (ket initialRoot) := by
+    rw [Quantum.run_append, LocalFour.prep_circuit 1 ([.X 836] : Circuit) (by decide)]
+    have hx : Quantum.run [.X 836] (ket zeroBasisState) = ket initialRoot := by
+      simp [Quantum.run, applyGate_ket, onKet, initialRoot, zeroBasisState]
+    rw [hx]
   rw [hs]
-  have hm := windowed_physicalTwoAxes_event_mass_anyBias Q initialRoot (ket initialRoot)
+  have hY0 : SupportedOn (fun s => s 1 = false) (ket initialRoot) :=
+    supportedOn_ket _ _ (by simp [initialRoot, upd, zeroBasisState])
+  have hterm : ∀ (lhs rhs : List Bool) (φ : State), SupportedOn (fun s => s 1 = false) φ →
+      (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then terminalInstrument else List.nil).bornMass
+        (LocalFour.Prep 1 φ) =
+      (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then terminalInstrument else List.nil).bornMass φ := by
+    intro lhs rhs φ _
+    split_ifs
+    · rw [terminalInstrument_mass, terminalInstrument_mass, LocalFour.normSq_prep]
+    · simp [Instrument.bornMass]
+  have hm := CatAxis.selectedTwoAxesCat_mass (leftCatModels26 Q hQ hn) (rightCatModels26 Q hQ hn) 0 Fin.elim0
+    (fun lhs rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then terminalInstrument else List.nil)
+    (fun lhs rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then terminalInstrument else List.nil)
+    hterm (ket initialRoot)
+    (by rw [leftCatModels26_model, rightCatModels26_model]; exact ready_all26 Q hQ hn) hY0
+  rw [CatAxis.selectedTwoAxesCat_fixed_filter, leftCatModels26_model, rightCatModels26_model] at hm
+  dsimp only [leftModels26, rightModels26] at hm
+  rw [windowed_idealTwoAxes_event_mass_anyBias Q initialRoot (ket initialRoot)
     (first20Model Q hQ hn) (leftDigits26.map (bodyModel Q hQ hn))
     (rightHeadModel Q hQ hn) (rightTailDigits26.map (bodyModel Q hQ hn))
     (first20Model_rule Q hQ hn) (rightHeadModel_rule Q hQ hn)
@@ -2490,13 +3936,8 @@ theorem program26_event_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw; exact bodyModel_rule Q hQ hn d
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw; exact bodyModel_rule Q hQ hn d)
     (leftModels26_weights Q hQ hn) (rightModels26_weights Q hQ hn)
-    (ready_all26 Q hQ hn) 0 Fin.elim0 terminalInstrument terminalInstrument_mass accept
-  rw [selectedTwoAxes_fixed_filter] at hm
-  change Instrument.bornMass
-      (((physicalAxes (leftModels26 Q hQ hn) (rightModels26 Q hQ hn) 0 Fin.elim0).seq terminalInstrument).filter
-        (fun b => pairAccept (axisPositions ((leftModels26 Q hQ hn).map WindowModel.physical) 0)
-          (axisPositions ((rightModels26 Q hQ hn).map WindowModel.physical)
-            (axisCount ((leftModels26 Q hQ hn).map WindowModel.physical))) accept b.history)) (ket initialRoot) =
+    terminalInstrument terminalInstrument_mass accept] at hm
+  change Instrument.bornMass _ _ =
       windowedEventMass Q initialRoot (precision (leftModels26 Q hQ hn)) (precision (rightModels26 Q hQ hn)) accept at hm
   have hpl : precision (leftModels26 Q hQ hn) = 258 := by
     unfold precision
@@ -2504,477 +3945,707 @@ theorem program26_event_mass (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (
         ((leftModels26 Q hQ hn).map WindowModel.physical).map (fun w => w.wires.length) := by
       rw [List.map_map]; rfl
     rw [hmap, leftModels26_physical]
-    have h := congrArg (fun l => (l.map Prod.snd).sum) leftWins26_meta
-    simp only [List.map_map, Function.comp_def] at h
-    rw [h]; decide +kernel
+    simp [leftWins26, leftDigits26, List.ofFn_succ, first20Win, bodyWin,
+      First20Signed.bits_length, bank17_length]
   have hpr : precision (rightModels26 Q hQ hn) = 204 := by
     unfold precision
     have hmap : (rightModels26 Q hQ hn).map (fun w => w.physical.wires.length) =
         ((rightModels26 Q hQ hn).map WindowModel.physical).map (fun w => w.wires.length) := by
       rw [List.map_map]; rfl
     rw [hmap, rightModels26_physical]
-    have h := congrArg (fun l => (l.map Prod.snd).sum) rightWins26_meta
-    simp only [List.map_map, Function.comp_def] at h
-    rw [h]; decide +kernel
-  unfold physicalAxes at hm
-  rw [leftModels26_physical, rightModels26_physical, hpl, hpr] at hm
-  have hposL : Single.axisPositions leftWins26 0 = leftPositions26 := by
-    rw [Single.axisPositions, leftWins26_meta]; rfl
-  have hposR : Single.axisPositions rightWins26 (axisCount leftWins26) = rightPositions26 := by
-    rw [Single.axisPositions, rightWins26_meta, leftWins26_count]; rfl
+    simp [rightWins26, rightTailDigits26, List.ofFn_succ, rightHeadWin, bodyWin, bank17_length]
+  unfold CatAxis.physicalAxesCat at hm
+  rw [leftCatModels26_catPhys, rightCatModels26_catPhys, hpl, hpr] at hm
+  have hposL : Single.axisPositions leftWins26Cat 0 = leftPositions26Cat := by
+    rw [Single.axisPositions, leftWins26Cat_meta]; rfl
+  have hposR : Single.axisPositions rightWins26Cat (axisCount leftWins26Cat) = rightPositions26Cat := by
+    rw [Single.axisPositions, rightWins26Cat_meta]; rfl
   rw [hposL, hposR] at hm
-  simpa only [fineEvent26, trialPositions26, Vector.toList_mk, List.toList_toArray] using hm
+  simpa only [fineEvent26Cat, trialPositions26Cat, Vector.toList_mk, List.toList_toArray] using hm
 
-theorem program26_clean (read : ConstantBit 2228224 → Bool) (b : InstrumentBranch)
-    (hb : b ∈ (program26.instantiate read Fin.elim0).run) (ψ : State) :
+theorem program26Cat_clean (read : ConstantBit 2228224 → Bool) (b : InstrumentBranch)
+    (hb : b ∈ (program26Cat.instantiate read Fin.elim0).run) (ψ : State) :
     SupportedOn RoundedReadout.CleanReadout (b.kraus ψ) := by
-  rw [program26_run_data] at hb
+  rw [program26Cat_run_data] at hb
   obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hb
   obtain ⟨a, _, hx⟩ := List.mem_flatMap.mp hx
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
   simp only [terminalInstrument, AdaptiveCircuit.run] at hc
   obtain ⟨e, he, rfl⟩ := List.mem_map.mp hc
   have h := resetRegister_clean bodyInst26.reset resourceInst26.reset_nodup e he
-    (Quantum.run [.X 836] (a.kraus (Quantum.run [.X 836] ψ)))
+    (Quantum.run [.X 836] (a.kraus (Quantum.run (Catalyst.prepare 1 ++ [.X 836]) ψ)))
   intro s hs
   exact ⟨h s hs 0 resourceInst26.reset_zero, h s hs 1 resourceInst26.reset_one⟩
 
-theorem verified_of_reads26 (ps : Vector Nat 204) (hps : ps ∈ Readout3.rightWords3 fineBits26)
+theorem verified_of_reads26Cat (ps : Vector Nat 204) (hps : ps ∈ Readout3.rightWords3 fineBits26Cat)
     (Q : Point) (d : Nat) (hd : Q = d • G) (hist : List Bool) (a b : Nat)
-    (hl : readWord hist trialPositions26.left.toList = some a)
+    (hl : readWord hist trialPositions26Cat.left.toList = some a)
     (hr : readWord hist ps.toList = some b)
     (hm : (d : ZMod order) ∈ fixedCandidates params258 a b) :
-    (verifiedCandidate rawLayout26 Q hist).isSome := by
+    (verifiedCandidate rawLayout26Cat Q hist).isSome := by
   classical
   apply List.find?_isSome.mpr
   refine ⟨(d : ZMod order), ?_, ?_⟩
   · unfold candidates
     apply List.mem_flatMap.mpr
-    refine ⟨positionsFor26 ps, List.mem_map.mpr ⟨ps, hps, rfl⟩, ?_⟩
-    simpa only [decodeTrial, trialCandidates, positionsFor26, rawLayout26, hl, hr,
+    refine ⟨positionsFor26Cat ps, List.mem_map.mpr ⟨ps, hps, rfl⟩, ?_⟩
+    simpa only [decodeTrial, trialCandidates, positionsFor26Cat, rawLayout26Cat, hl, hr,
       fixedCandidates_take, Finset.mem_toList] using hm
   · simp only [decide_eq_true_eq, ZMod.val_natCast]
     rw [hd]
     exact nsmul_eq_nsmul_iff_modEq.mpr (by rw [generator_order]; exact Nat.mod_mod _ _)
 
-theorem readout26_wellFormed : readout26.WellFormed := by
-  unfold readout26
+theorem readout26Cat_wellFormed : readout26Cat.WellFormed := by
+  unfold readout26Cat
   rw [castFinish_wellFormed]
   exact Readout3.suffix3_wellFormed _ _ _ _
 
-theorem suffix26_accept (Q : Point) (d : Nat) (hd : Q = d • G)
-    (read : ConstantBit 2228224 → Bool) (history : Fin cursor26 → Bool)
+theorem suffix26Cat_accept (Q : Point) (d : Nat) (hd : Q = d • G)
+    (read : ConstantBit 2228224 → Bool) (history : Fin cursor26Cat → Bool)
     (ψ : State) (hψ : SupportedOn RoundedReadout.CleanReadout ψ)
-    (hf : fineEvent26 (pairRecovered258 d) (List.ofFn history) = true)
-    (b : InstrumentBranch) (hb : b ∈ (readout26.instantiate read history).run)
+    (hf : fineEvent26Cat (pairRecovered258 d) (List.ofFn history) = true)
+    (b : InstrumentBranch) (hb : b ∈ (readout26Cat.instantiate read history).run)
     (hn : b.kraus ψ ≠ 0) :
-    (verifiedCandidate rawLayout26 Q (List.ofFn history ++ b.history)).isSome := by
-  have hr := NeighborReadout.input_read fineBits26 history
-  rw [fineBits26_vals] at hr
+    (verifiedCandidate rawLayout26Cat Q (List.ofFn history ++ b.history)).isSome := by
+  have hr := NeighborReadout.input_read fineBits26Cat history
+  rw [fineBits26Cat_vals] at hr
   obtain ⟨a, ha, hp⟩ := Rounded.pairAccept_value _ _ _ _ _ hr hf
   obtain ⟨i, hi⟩ := of_decide_eq_true hp
-  obtain ⟨ps, hps, hread⟩ := Readout3.suffix3_reads 2228224 cursor26 fineBits26
-    read history ψ hψ b (by simpa only [readout26, castFinish_instantiate] using hb) hn
+  obtain ⟨ps, hps, hread⟩ := Readout3.suffix3_reads 2228224 cursor26Cat fineBits26Cat
+    read history ψ hψ b (by simpa only [readout26Cat, castFinish_instantiate] using hb) hn
     ((i.val : ℤ) - 1) (by have h := i.isLt; omega)
-  apply verified_of_reads26 ps hps Q d hd _ a _ _ hread hi
+  apply verified_of_reads26Cat ps hps Q d hd _ a _ _ hread hi
   rw [NeighborReadout.readWord_append_left]
   · exact ha
   · intro j hj
-    have h := leftPositions26_bound j hj
-    have hh : 24047962 ≤ cursor26 := by unfold cursor26; omega
+    have h := leftPositions26Cat_bound j hj
+    have hh : axisCount leftWins26Cat ≤ cursor26Cat := by unfold cursor26Cat; omega
     simpa only [List.length_ofFn] using h.trans_le hh
 
-theorem strong_success26 (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+theorem strong_success26Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (9911 / 10000 : ℝ) ≤ Instrument.bornMass
-      ((rawEntry26.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout26 Q b.history).isSome))
+      ((rawEntry26Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout26Cat Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
-  rw [rawEntry26, Single.fixedEntry_instantiate]
+  rw [rawEntry26Cat, Single.fixedEntry_instantiate]
   have hneighbor : (9911 / 10000 : ℝ) ≤ Instrument.bornMass
-      ((program26.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
-        (fun b => fineEvent26 (pairRecovered258 d) b.history)) (ket zeroBasisState) := by
-    rw [program26_event_mass Q hQ hn, windowedEventMass_distribution Q d hd initialRoot 258 204]
+      ((program26Cat.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
+        (fun b => fineEvent26Cat (pairRecovered258 d) b.history)) (ket zeroBasisState) := by
+    rw [program26Cat_event_mass Q hQ hn, windowedEventMass_distribution Q d hd initialRoot 258 204]
     exact sine_pair_success Q d hn hd
   apply hneighbor.trans
-  unfold fullProgram26
+  unfold fullProgram26Cat
   rw [Single.append_run_history]
   apply Rounded.appended_mass_lower
   · intro a _
     exact AdaptiveCircuit.run_preservesBornMass _
-      (readout26.instantiate_wellFormed _ _ readout26_wellFormed) _
+      (readout26Cat.instantiate_wellFormed _ _ readout26Cat_wellFormed) _
   · intro a ha hf b hb hne
-    have hlen : a.history.length = cursor26 := by
-      have h := straight_history_length program26 (readConstant coefficientAt26 Q) Fin.elim0 a ha
+    have hlen : a.history.length = cursor26Cat := by
+      have h := straight_history_length program26Cat (readConstant coefficientAt26 Q) Fin.elim0 a ha
       simpa only [Nat.zero_add, Nat.sub_zero] using h
-    have hh : List.ofFn (Single.historyAfter cursor26 Fin.elim0 a.history) = a.history := by
+    have hh : List.ofFn (Single.historyAfter cursor26Cat Fin.elim0 a.history) = a.history := by
       simpa only [List.ofFn_zero, List.nil_append] using Single.historyAfter_list Fin.elim0 a.history
         (by simpa only [Nat.zero_add] using hlen)
-    have h := suffix26_accept Q d hd (readConstant coefficientAt26 Q)
-      (Single.historyAfter cursor26 Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
-      (program26_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
+    have h := suffix26Cat_accept Q d hd (readConstant coefficientAt26 Q)
+      (Single.historyAfter cursor26Cat Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
+      (program26Cat_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
     simpa only [hh, InstrumentBranch.seq] using h
 
-/-! ### Part 4: Static budgets (wellFormed, slots, support, weight4, cost18, removed18) -/
+/-! ### Part 4: Static budgets (`wellFormed`, `slots`, `support`, `tCount`, `cost18`, `measurements`) -/
 
-def IsWin26 (w : Window 2228224) : Prop :=
-  w = first20Win ∨ w = rightHeadWin ∨ ∃ d, w = bodyWin d
+def IsWin26Cat (w : Window 2228224) : Prop :=
+  w = first20CatWin ∨ w = rightHeadCatWin ∨ ∃ d, w = bodyCatWin d
 
-theorem bodyWin_wellFormed (d : Digit26) (start : Nat) : ((bodyWin d).program start).WellFormed :=
-  (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (CornerWire.Wide16.wellFormed start))
+theorem bodyCatWin_wellFormed (d : Digit26) (start : Nat) : ((bodyCatWin d).program start).WellFormed := by
+  change (castFinish _ (reindexStraight _ (relabelStraight _ (LocalWide16.compiledProgram start)))).WellFormed
+  rw [castFinish_wellFormed]
+  exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (LocalWide16.compiled_wellFormed start))
 
-theorem bodyWin_support (d : Digit26) (start : Nat) :
-    straightWires ((bodyWin d).program start) ⊆ List.range 1613 := by
-  change straightWires (reindexStraight _ (relabelStraight _ (CornerWire.Wide16.program start))) ⊆ _
-  rw [straightWires_reindex]
-  exact CornerWire.Wide16.packed_support start
+theorem bodyCatWin_support (d : Digit26) (start : Nat) :
+    straightWires ((bodyCatWin d).program start) ⊆ List.range 1613 := by
+  change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (LocalWide16.compiledProgram start)))) ⊆ _
+  rw [straightWires_castFinish, straightWires_reindex]
+  exact LocalWide16.compiled_packed_support start
 
-theorem bodyWin_slots (d : Digit26) (start : Nat) : ((bodyWin d).program start).gateSlots ≤ 4260000000 := by
-  change (reindexStraight _ (relabelStraight _ (CornerWire.Wide16.program start))).gateSlots ≤ _
-  rw [reindexStraight_gateSlots, relabelStraight_slots]
-  exact CornerWire.Wide16.slots start
+theorem bodyCatWin_slots (d : Digit26) (start : Nat) : ((bodyCatWin d).program start).gateSlots ≤ 80000000000 := by
+  change (castFinish _ (reindexStraight _ (relabelStraight _ (LocalWide16.compiledProgram start)))).gateSlots ≤ _
+  rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
+  exact LocalWide16.compiled_slots start
 
-theorem bodyWin_credit (d : Digit26) (start : Nat) :
-    ProgramCredit ((bodyWin d).program start) wideCredit26Box.val := by
-  change ProgramCredit (reindexStraight _ (relabelStraight _ (CornerWire.Wide16.program start))) wideCredit26Box.val
-  refine ⟨by rw [WEXCredit.residue_reindex, WEXUnlookup.residue_relabel]; exact (CornerWire.Wide16.program_credit start).1, ?_⟩
-  rw [added_reindex, added_relabel, wideCredit26Box, mkCreditBox26_val]
-  exact (CornerWire.Wide16.program_credit start).2
+theorem bodyCatWin_tCount (d : Digit26) (start : Nat) (read : ConstantBit 2228224 → Bool) (h : Fin start → Bool) :
+    (((bodyCatWin d).program start).instantiate read h).tCount ≤ 4 * 2303094 := by
+  change ((castFinish _ (reindexStraight _ (relabelStraight _ (LocalWide16.compiledProgram start)))).instantiate read h).tCount ≤ _
+  rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+  exact LocalWide16.compiled_tCount start _ h
 
-attribute [local irreducible] wideCredit26Box
+theorem bodyCatWin_cost18 (d : Digit26) (start : Nat) : cost18 ((bodyCatWin d).program start) = 0 := by
+  apply CatAxis.cost18_zero_of_removed18
+  change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (LocalWide16.compiledProgram start)))) = 0
+  rw [LocalFour.removed_castFinish, removed18_reindex]
+  have hrel : ∀ {n s e} (f : Wire ≃ Wire) (p : Straight n s e), removed 18 (relabelStraight f p) = removed 18 p := by
+    intro n s e f p
+    induction p with
+    | done => rfl
+    | measure w p ih => exact ih
+    | recordGate i v g p ih => cases g <;> simp [relabelStraight, Gate.relabel, removed, largePhase, ih]
+    | gate g p ih =>
+      cases g with
+      | literal g => cases g <;> simp [relabelStraight, relabelTemplateGate, Gate.relabel, removed, largePhase, ih]
+      | whenBit r v g => cases g <;> simp [relabelStraight, relabelTemplateGate, Gate.relabel, removed, largePhase, ih]
+  rw [hrel]
+  exact LocalWide16.compiled_removed18 start
 
-theorem win26_wellFormed (w : Window 2228224) (hw : IsWin26 w) (start : Nat) :
+theorem first20CatWin_wellFormed (start : Nat) : (first20CatWin.program start).WellFormed := by
+  apply straight_append_wellFormed
+  · apply ConditionalCatalyst.compile_wellFormed 1 _ _
+      (literalProgram_wellFormed _ (sineFromPlus_wellFormed top10Left top10Left_length top10Left_nodup))
+    apply LocalFour.fresh_of_not_mem_straightWires
+    intro hm
+    exact wire01_not_first20Bits.2 (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length
+      (literalProgram_straightWires _ hm)))
+  · rw [castFinish_wellFormed]
+    have hsub := First20Signed.window_support_drop01 firstRow26 0
+    have hf0 : Fresh 0 (first20RawWin.program 0) :=
+      LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
+        have := hsub hm; simp only [List.mem_range'_1] at this; omega)
+    have hf1 : Fresh 1 (first20RawWin.program 0) :=
+      LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
+        have := hsub hm; simp only [List.mem_range'_1] at this; omega)
+    exact LocalFour.compileLower_wellFormed 0 1 (first20RawWin.program 0) start Fin.elim0 hf0 hf1 (by decide)
+      (First20Signed.window_wellFormed firstRow26 0)
+
+theorem first20CatWin_slots (start : Nat) : (first20CatWin.program start).gateSlots ≤ 60000000000 := by
+  change ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append _).gateSlots ≤ _
+  rw [Straight.gateSlots_append, castFinish_gateSlots]
+  have hs1 := ConditionalCatalyst.compile_slots 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left))
+  have hs2 := ConditionalCatalyst.phaseTwos_le_slots (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left))
+  have hs3 : (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)).gateSlots = 52 := by
+    rw [ChallengeMigration.literalProgram_slots, sineFromPlus_length top10Left top10Left_length]
+  have hl1 := LocalFour.compileLower_slots 0 1 (first20RawWin.program 0) start Fin.elim0
+  have hl2 : (first20RawWin.program 0).gateSlots ≤ 13100000000 := First20Signed.window_slots firstRow26 0
+  have hl3 : AndGadget.added (first20RawWin.program 0) ≤ 193625 := by
+    unfold first20RawWin First20Signed.windowGeneric; rw [added_reindex]; exact First20Signed.program_added 0
+  omega
+
+theorem sineFromPlus_weight7_eq_weight4 {n s : Nat} (ws : List Wire) :
+    ConditionalCatalyst.weight7 (literalProgram (n := n) (s := s) (sineFromPlus ws)) =
+      ConditionalCatalyst.weight4 (literalProgram (n := n) (s := s) (sineFromPlus ws)) := by
+  have hno : ∀ c ts k, ∀ x ∈ SineCircuit.cPhaseLoop c ts k, ∀ a b t, x ≠ .CCX a b t := by
+    intro c ts
+    induction ts with
+    | nil => intro _ _ hx; cases hx
+    | cons u us ih =>
+      intro k x hx a b t
+      simp only [SineCircuit.cPhaseLoop, SineCircuit.cPhaseBlock, List.mem_append,
+        List.mem_cons, List.not_mem_nil, or_false] at hx
+      rcases hx with (rfl | rfl | rfl | rfl) | hx
+      · intro h; cases h
+      · intro h; cases h
+      · intro h; cases h
+      · intro h; cases h
+      · exact ih (k - 1) x hx a b t
+  have hno2 : ∀ ts k, ∀ x ∈ SineCircuit.centerLoop ts k, ∀ a b t, x ≠ .CCX a b t := by
+    intro ts
+    induction ts with
+    | nil => intro _ _ hx; cases hx
+    | cons u us ih =>
+      intro k x hx a b t
+      simp only [SineCircuit.centerLoop, List.mem_cons] at hx
+      rcases hx with rfl | hx
+      · intro h; cases h
+      · exact ih (k - 1) x hx a b t
+  have hnoCCX : ∀ g ∈ sineFromPlus ws, ∀ a b t, g ≠ .CCX a b t := by
+    intro g hg a b t
+    simp only [SineCircuit.sineFromPlus, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hg
+    rcases hg with ((((rfl | rfl | rfl | rfl | rfl) | hx) | rfl) | hx)
+    · intro h; cases h
+    · intro h; cases h
+    · intro h; cases h
+    · intro h; cases h
+    · intro h; cases h
+    · exact hno _ _ 11 g hx a b t
+    · intro h; cases h
+    · exact hno2 _ 11 g hx a b t
+  have hgen : ∀ (cs : Circuit), (∀ g ∈ cs, ∀ a b t, g ≠ .CCX a b t) →
+      ConditionalCatalyst.weight7 (literalProgram (n := n) (s := s) cs) =
+        ConditionalCatalyst.weight4 (literalProgram (n := n) (s := s) cs) := by
+    intro cs hcs
+    induction cs with
+    | nil => rfl
+    | cons g gs ih =>
+      have hgw : ConditionalCatalyst.weightedGate g = ConditionalCatalyst.weightedLiteral g := by
+        cases g with
+        | CCX a b t => exact absurd rfl (hcs _ List.mem_cons_self a b t)
+        | _ => rfl
+      change ConditionalCatalyst.weightedGate g + ConditionalCatalyst.weight7 (literalProgram gs) =
+        ConditionalCatalyst.weightedLiteral g + ConditionalCatalyst.weight4 (literalProgram gs)
+      rw [hgw, ih (fun x hx => hcs x (List.mem_cons_of_mem _ hx))]
+  exact hgen _ hnoCCX
+
+theorem first20CatWin_tCount (start : Nat) (read : ConstantBit 2228224 → Bool) (h : Fin start → Bool) :
+    ((first20CatWin.program start).instantiate read h).tCount ≤ 4 * 193625 + 28 := by
+  change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append
+    (castFinish (first20Cat_finish_eq start)
+      (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)).instantiate read h).tCount ≤ _
+  have h1 := CatAxis.append_tCount_le
+    (ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)))
+    (castFinish (first20Cat_finish_eq start)
+      (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)
+    read h (4 * 193625) (fun h' => by
+      rw [castFinish_instantiate]
+      have hlo := LocalFour.compileLower_tCount 0 1 (first20RawWin.program 0) start Fin.elim0 read h'
+      have hz : residue (first20RawWin.program 0) = 0 := First20Signed.window_residue firstRow26 0
+      have ha : added (first20RawWin.program 0) ≤ 193625 := by
+        unfold first20RawWin First20Signed.windowGeneric; rw [added_reindex]; exact First20Signed.program_added 0
+      rw [weight4_zero _ hz] at hlo
+      omega)
+  have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start)
+      (sineFromPlus top10Left))).instantiate read h).tCount ≤ 28 := by
+    have ht := ConditionalCatalyst.compile_t 1
+      (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)) read h
+    rw [sineFromPlus_weight7_eq_weight4, sineFromPlus_weight4 top10Left top10Left_length] at ht
+    exact ht
+  omega
+
+theorem rightHeadCatWin_wellFormed (start : Nat) : (rightHeadCatWin.program start).WellFormed := by
+  apply straight_append_wellFormed
+  · apply ConditionalCatalyst.compile_wellFormed 1 _ _
+      (literalProgram_wellFormed _ (sineFromPlus_wellFormed top10Right top10Right_length top10Right_nodup))
+    apply LocalFour.fresh_of_not_mem_straightWires
+    intro hm
+    exact wire1_not_bank17 (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length
+      (literalProgram_straightWires _ hm)))
+  · exact bodyCatWin_wellFormed rightHeadDigit start
+
+theorem rightHeadCatWin_slots (start : Nat) : (rightHeadCatWin.program start).gateSlots ≤ 80000000400 := by
+  change ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
+    ((bodyCatWin rightHeadDigit).program start)).gateSlots ≤ _
+  rw [Straight.gateSlots_append]
+  have hs : (ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right))).gateSlots ≤ 400 := by
+    have hs1 := ConditionalCatalyst.compile_slots 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right))
+    have hs2 := ConditionalCatalyst.phaseTwos_le_slots (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right))
+    have hs3 : (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)).gateSlots = 52 := by
+      rw [ChallengeMigration.literalProgram_slots, sineFromPlus_length top10Right top10Right_length]
+    omega
+  exact (Nat.add_le_add hs (bodyCatWin_slots rightHeadDigit start)).trans (by decide)
+
+theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 2228224 → Bool) (h : Fin start → Bool) :
+    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2303094 + 28 := by
+  change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
+    ((bodyCatWin rightHeadDigit).program start)).instantiate read h).tCount ≤ _
+  have h1 := CatAxis.append_tCount_le
+    (ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)))
+    ((bodyCatWin rightHeadDigit).program start) read h (4 * 2303094)
+    (fun h' => bodyCatWin_tCount rightHeadDigit start read h')
+  have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start)
+      (sineFromPlus top10Right))).instantiate read h).tCount ≤ 28 := by
+    have ht := ConditionalCatalyst.compile_t 1
+      (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)) read h
+    rw [sineFromPlus_weight7_eq_weight4, sineFromPlus_weight4 top10Right top10Right_length] at ht
+    exact ht
+  exact h1.trans (Nat.add_le_add_right hsine_t _ |>.trans (by decide))
+
+theorem win26Cat_wellFormed (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat) :
     (w.program start).WellFormed := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
-  · exact prependCircuit_wellFormed _ _ (sineFromPlus_wellFormed top10Left top10Left_length top10Left_nodup)
-      (First20Signed.window_wellFormed firstRow26 start)
-  · exact prependCircuit_wellFormed _ _ (sineFromPlus_wellFormed top10Right top10Right_length top10Right_nodup)
-      (bodyWin_wellFormed rightHeadDigit start)
-  · exact bodyWin_wellFormed d start
+  · exact first20CatWin_wellFormed start
+  · exact rightHeadCatWin_wellFormed start
+  · exact bodyCatWin_wellFormed d start
 
-theorem win26_bank_support (w : Window 2228224) (hw : IsWin26 w) : w.wires ⊆ List.range 1613 := by
+theorem win26Cat_bank_support (w : Window 2228224) (hw : IsWin26Cat w) : w.wires ⊆ List.range 1613 := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
   · intro v hv; exact First20Signed.bits_subset_range (List.mem_reverse.mp hv)
   · intro v hv; exact bank17_sub_range (List.mem_reverse.mp hv)
   · intro v hv; exact bank17_sub_range (List.mem_reverse.mp hv)
 
-theorem win26_support (w : Window 2228224) (hw : IsWin26 w) (start : Nat)
+theorem win26Cat_noY (w : Window 2228224) (hw : IsWin26Cat w) : (1 : Wire) ∉ w.wires := by
+  rcases hw with rfl | rfl | ⟨d, rfl⟩
+  · exact fun hm => wire01_not_first20Bits.2 (List.mem_reverse.mp hm)
+  · exact fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
+  · exact fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
+
+theorem win26Cat_support (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat)
     (read : ConstantBit 2228224 → Bool) (history : Fin start → Bool) :
     ((w.program start).instantiate read history).wires ⊆ List.range 1613 := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
-  · exact prependCircuit_support _ _ _
-      ((sineFromPlus_wires top10Left top10Left_length).trans top10Left_sub_range)
-      (fun r h => (straight_instantiate_support _ r h).trans (First20Signed.window_support firstRow26 start))
-      read history
-  · exact prependCircuit_support _ _ _
-      ((sineFromPlus_wires top10Right top10Right_length).trans top10Right_sub_range)
-      (fun r h => (straight_instantiate_support _ r h).trans (bodyWin_support rightHeadDigit start))
-      read history
-  · exact (straight_instantiate_support _ read history).trans (bodyWin_support d start)
+  · apply outer_append_support _ _ read history (List.range 1613)
+    · have hw1 : Within (List.range 1613)
+          (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)) :=
+        LocalFour.within_of_straightWires _ _
+          ((literalProgram_straightWires _).trans
+            ((sineFromPlus_wires top10Left top10Left_length).trans top10Left_sub_range))
+      have hsup := (ConditionalCatalyst.compile_within 1 _ _ hw1).instantiate read history
+      intro u hu
+      rcases List.mem_cons.mp (hsup hu) with rfl | hm
+      · exact List.mem_range.mpr (by decide)
+      · exact hm
+    · intro h'
+      rw [castFinish_instantiate]
+      refine (straight_instantiate_support _ read h').trans ?_
+      exact LocalFour.compileLower_straightWires 0 1 (first20RawWin.program 0) (List.range 1613)
+        (First20Signed.window_support firstRow26 0)
+        (List.mem_range.mpr (by decide)) (List.mem_range.mpr (by decide)) start Fin.elim0
+  · apply outer_append_support _ _ read history (List.range 1613)
+    · have hw1 : Within (List.range 1613)
+          (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)) :=
+        LocalFour.within_of_straightWires _ _
+          ((literalProgram_straightWires _).trans
+            ((sineFromPlus_wires top10Right top10Right_length).trans top10Right_sub_range))
+      have hsup := (ConditionalCatalyst.compile_within 1 _ _ hw1).instantiate read history
+      intro u hu
+      rcases List.mem_cons.mp (hsup hu) with rfl | hm
+      · exact List.mem_range.mpr (by decide)
+      · exact hm
+    · intro h'
+      exact (straight_instantiate_support _ read h').trans (bodyCatWin_support rightHeadDigit start)
+  · exact (straight_instantiate_support _ read history).trans (bodyCatWin_support d start)
 
-theorem full26_wellFormed : fullProgram26.WellFormed := by
-  apply straight_append_wellFormed _ _ _ readout26_wellFormed
-  unfold program26
+theorem win26Cat_cost18 (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat) :
+    cost18 (w.program start) = 0 := by
+  rcases hw with rfl | rfl | ⟨d, rfl⟩
+  · change cost18 ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append _) = 0
+    rw [cost18_append, CatAxis.cost18_compile,
+      cost18_literal_zero _ (sineFromPlus_largePhase_false top10Left 18 (by decide)), zero_add, cost18_cast]
+    apply CatAxis.cost18_zero_of_removed18
+    rw [LocalFour.compileLower_removed18]
+    exact LocalFour.removed18_zero_of_residue _ (First20Signed.window_residue firstRow26 0)
+  · change cost18 ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append _) = 0
+    rw [cost18_append, CatAxis.cost18_compile,
+      cost18_literal_zero _ (sineFromPlus_largePhase_false top10Right 18 (by decide)), zero_add]
+    exact bodyCatWin_cost18 rightHeadDigit start
+  · exact bodyCatWin_cost18 d start
+
+theorem full26Cat_wellFormed : fullProgram26Cat.WellFormed := by
+  apply straight_append_wellFormed _ _ _ readout26Cat_wellFormed
+  unfold program26Cat
+  apply Catalyst.literals_wellFormed _ _ (LocalFour.prepare_wellFormed 1)
   apply framed_wellFormed
-  · exact axis_wellFormed leftWins26 (fun w hw start => by
-      rcases List.mem_cons.mp hw with rfl | hw
-      · exact win26_wellFormed _ (Or.inl rfl) start
-      · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact win26_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
-  · exact axis_wellFormed rightWins26 (fun w hw start => by
-      rcases List.mem_cons.mp hw with rfl | hw
-      · exact win26_wellFormed _ (Or.inr (Or.inl rfl)) start
-      · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact win26_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
+  · exact CatAxis.axisCat_wellFormed 1 leftWins26Cat
+      (fun w hw => by
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact win26Cat_noY _ (Or.inl rfl)
+        · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+          exact win26Cat_noY _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+      (fun w hw start => by
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact win26Cat_wellFormed _ (Or.inl rfl) start
+        · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+          exact win26Cat_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
+  · exact CatAxis.axisCat_wellFormed 1 rightWins26Cat
+      (fun w hw => by
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact win26Cat_noY _ (Or.inr (Or.inl rfl))
+        · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+          exact win26Cat_noY _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+      (fun w hw start => by
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact win26Cat_wellFormed _ (Or.inr (Or.inl rfl)) start
+        · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+          exact win26Cat_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
   · exact resetProgram_wellFormed _ _ _
 
-theorem full26_slots : fullProgram26.gateSlots ≤ 400000000000 := by
-  have hL := axis_slots leftWins26 13100000100
+theorem full26Cat_slots : fullProgram26Cat.gateSlots ≤ 10000000000000 := by
+  have hL := CatAxis.axisCat_slots 1 leftWins26Cat 80000000400
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
-      · change (prependCircuit (sineFromPlus top10Left) (first20RawWin.program start)).gateSlots ≤ _
-        rw [prependCircuit_slots, sineFromPlus_length top10Left top10Left_length]
-        unfold first20RawWin
-        have hs := First20Signed.window_slots firstRow26 start; omega
+      · exact (first20CatWin_slots start).trans (by decide)
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact (bodyWin_slots d start).trans (by decide))
+        exact (bodyCatWin_slots d start).trans (by decide))
     0 List.nil
-  have hR := axis_slots rightWins26 4260000100
+  have hR := CatAxis.axisCat_slots 1 rightWins26Cat 80000000400
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
-      · change (prependCircuit (sineFromPlus top10Right) ((bodyWin rightHeadDigit).program start)).gateSlots ≤ _
-        rw [prependCircuit_slots, sineFromPlus_length top10Right top10Right_length]
-        have hs := bodyWin_slots rightHeadDigit start; omega
+      · exact rightHeadCatWin_slots start
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact (bodyWin_slots d start).trans (by decide))
-    (0 + axisCount leftWins26) List.nil
-  rw [leftWins26_meta, List.length_nil] at hL
-  rw [rightWins26_meta, List.length_nil] at hR
-  have hLnum : metadataSlots 13100000100 leftMeta26 0 ≤ 340000000000 := by
-    norm_num [leftMeta26, metadataSlots, fourierSlots, List.replicate]
-  have hRnum : metadataSlots 4260000100 rightMeta26 0 ≤ 52000000000 := by
-    norm_num [rightMeta26, metadataSlots, fourierSlots, List.replicate]
-  have hro : readout26.gateSlots = 5719 := by
-    unfold readout26
+        exact (bodyCatWin_slots d start).trans (by decide))
+    (0 + axisCount leftWins26Cat) List.nil
+  rw [leftWins26Cat_meta, List.length_nil] at hL
+  rw [rightWins26Cat_meta, List.length_nil] at hR
+  have hLnum : metadataSlots 80000000400 leftMeta26Cat 0 ≤ 1300000000000 := by
+    simp only [leftMeta26Cat, List.replicate, metadataSlots, fourierSlots]
+    omega
+  have hRnum : metadataSlots 80000000400 rightMeta26Cat 0 ≤ 1000000000000 := by
+    simp only [rightMeta26Cat, List.replicate, metadataSlots, fourierSlots]
+    omega
+  have hro : readout26Cat.gateSlots = 5719 := by
+    unfold readout26Cat
     rw [castFinish_gateSlots, Readout3.suffix3_slots]
-  unfold fullProgram26 program26
-  rw [Straight.gateSlots_append, framed_slots, resetProgram_gateSlots, hro]
+  unfold fullProgram26Cat program26Cat
+  rw [Straight.gateSlots_append, AndGadget.literals_slots, framed_slots, resetProgram_gateSlots, hro]
   have hres : resetWires.length ≤ 2000 := by decide +kernel
+  have hprep : (Catalyst.prepare 1).length = 2 := rfl
   omega
 
-theorem full26_support (read : ConstantBit 2228224 → Bool) (history : Fin 0 → Bool) :
-    (fullProgram26.instantiate read history).wires ⊆ List.range 1613 := by
+theorem full26Cat_support (read : ConstantBit 2228224 → Bool) (history : Fin 0 → Bool) :
+    (fullProgram26Cat.instantiate read history).wires ⊆ List.range 1613 := by
   apply outer_append_support _ _ read history (List.range 1613)
-  · unfold program26
-    refine framed_support _ _ _ _ read history _ (by decide) ?_ ?_ ?_
-    · exact axis_support leftWins26 (List.range 1613)
-        (fun w hw => by
-          rcases List.mem_cons.mp hw with rfl | hw
-          · exact win26_bank_support _ (Or.inl rfl)
-          · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-            exact win26_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
-        (fun w hw start r h => by
-          rcases List.mem_cons.mp hw with rfl | hw
-          · exact win26_support _ (Or.inl rfl) start r h
-          · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-            exact win26_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r h)
-        0 List.nil read history
-    · intro h
-      exact axis_support rightWins26 (List.range 1613)
-        (fun w hw => by
-          rcases List.mem_cons.mp hw with rfl | hw
-          · exact win26_bank_support _ (Or.inr (Or.inl rfl))
-          · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-            exact win26_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
-        (fun w hw start r h' => by
-          rcases List.mem_cons.mp hw with rfl | hw
-          · exact win26_support _ (Or.inr (Or.inl rfl)) start r h'
-          · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-            exact win26_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r h')
-        (0 + axisCount leftWins26) List.nil read h
-    · intro h
-      exact resetProgram_support _ _ _ _ read h Width16Actual.reset_range
+  · unfold program26Cat
+    have hcur : 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat := by
+      unfold cursor26Cat; omega
+    have hlit : Within (List.range 1613)
+        (AndGadget.literals (Catalyst.prepare 1)
+          (Single.framed
+            (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)
+            (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)
+            (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)
+            hcur)) := by
+      apply Catalyst.literals_within
+      · intro u hu
+        simp only [Catalyst.prepare, circuitWires, gateWires, List.flatMap_cons, List.flatMap_nil,
+          List.mem_append, List.mem_singleton, List.not_mem_nil, or_false] at hu
+        rcases hu with rfl | rfl <;> exact List.mem_range.mpr (by decide)
+      · apply within_of_instantiate
+        intro r h0
+        refine framed_support _ _ _ _ r h0 (List.range 1613) (by decide) ?_ ?_ ?_
+        · exact CatAxis.axisCat_support 1 leftWins26Cat (List.range 1613)
+            (List.mem_range.mpr (by decide))
+            (fun w hw => by
+              rcases List.mem_cons.mp hw with rfl | hw
+              · exact win26Cat_bank_support _ (Or.inl rfl)
+              · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+                exact win26Cat_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+            (fun w hw start r' h' => by
+              rcases List.mem_cons.mp hw with rfl | hw
+              · exact win26Cat_support _ (Or.inl rfl) start r' h'
+              · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+                exact win26Cat_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r' h')
+            0 List.nil r h0
+        · intro h1
+          exact CatAxis.axisCat_support 1 rightWins26Cat (List.range 1613)
+            (List.mem_range.mpr (by decide))
+            (fun w hw => by
+              rcases List.mem_cons.mp hw with rfl | hw
+              · exact win26Cat_bank_support _ (Or.inr (Or.inl rfl))
+              · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+                exact win26Cat_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+            (fun w hw start r' h' => by
+              rcases List.mem_cons.mp hw with rfl | hw
+              · exact win26Cat_support _ (Or.inr (Or.inl rfl)) start r' h'
+              · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
+                exact win26Cat_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r' h')
+            (0 + axisCount leftWins26Cat) List.nil r h1
+        · intro h2
+          exact resetProgram_support _ _ _ _ r h2 Width16Actual.reset_range
+    exact hlit.instantiate read history
   · intro h
-    unfold readout26
+    unfold readout26Cat
     rw [castFinish_instantiate]
     exact (Readout3.suffix3_support _ _ _ _ read h).trans (by decide)
 
-theorem source26_within : Within (List.range 1613) rawEntry26.program := by
-  unfold rawEntry26 Single.fixedEntry
+theorem source26Cat_within : Within (List.range 1613) rawEntry26Cat.program := by
+  unfold rawEntry26Cat Single.fixedEntry
   dsimp only
-  exact Width16Actual.within_reindex fullProgram26 _ (List.range 1613)
-    (within_of_instantiate fullProgram26 (List.range 1613) full26_support)
+  exact Width16Actual.within_reindex fullProgram26Cat _ (List.range 1613)
+    (within_of_instantiate fullProgram26Cat (List.range 1613) full26Cat_support)
 
-def leftCostMeta26 (c : Nat) : List (Nat × Nat) :=
-  (4 * 193117 + 28, 20) :: List.replicate 14 (4 * c, 17)
+def leftTCountMeta26Cat : List (Nat × Nat) :=
+  (4 * 193625 + 28, 20) :: List.replicate 14 (4 * 2303094, 17)
 
-def rightCostMeta26 (c : Nat) : List (Nat × Nat) :=
-  (4 * c + 28, 17) :: List.replicate 11 (4 * c, 17)
+def rightTCountMeta26Cat : List (Nat × Nat) :=
+  (4 * 2303094 + 28, 17) :: List.replicate 11 (4 * 2303094, 17)
 
-theorem exact_phase_metadata26 (c : Nat) :
-    metadataWeight (leftCostMeta26 c) 0 + metadataWeight (rightCostMeta26 c) 0 =
-      4 * (193117 + 26 * c) + 53399 + 56 ∧
-    metadataDropped18 leftWidths26 0 + metadataDropped18 rightWidths26 0 = 46311 := by
-  constructor
-  · simp [leftCostMeta26, rightCostMeta26, List.replicate, metadataWeight, fourierWeight]
-    omega
-  · decide +kernel
+theorem exact_trimmed_tCount26Cat :
+    CatAxis.metadataTrimmedWeight leftTCountMeta26Cat 0 +
+      CatAxis.metadataTrimmedWeight rightTCountMeta26Cat 0 = 240303420 := by
+  decide +kernel
 
-theorem bodyList_cost_relation (c : Nat) (f : Digit26 → Window 2228224)
-    (hw : ∀ d, (f d).wires.length = 17)
-    (hc : ∀ d start, ProgramCredit ((f d).program start) c)
-    (ws : List Digit26) :
-    List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start, weight4 (w.program start) ≤ k.1)
-      (ws.map f) (ws.map (fun _ => (4 * c, 17))) := by
-  induction ws with
+theorem left26Cat_tCount_relation :
+    List.Forall₂ (fun w k => w.wires.length = k.2 ∧
+        ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
+      leftWins26Cat leftTCountMeta26Cat := by
+  refine .cons ⟨by simp [first20CatWin, First20Signed.bits_length], first20CatWin_tCount⟩ ?_
+  have hmap : List.replicate 14 (4 * 2303094, 17) = leftDigits26.map (fun _ => (4 * 2303094, 17)) := by
+    simp [leftDigits26, List.ofFn_succ, List.replicate]
+  rw [hmap]
+  induction leftDigits26 with
   | nil => exact .nil
   | cons d ds ih =>
-    refine .cons ⟨hw d, fun start => ?_⟩ ih
-    rw [weight4_zero _ (hc d start).1, (hc d start).2]
+    exact .cons ⟨by simp [bodyCatWin, bank17_length], bodyCatWin_tCount d⟩ ih
 
-theorem left26_cost_relation :
-    List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start, weight4 (w.program start) ≤ k.1)
-      leftWins26 (leftCostMeta26 wideCredit26Box.val) := by
-  refine .cons ⟨by simp [first20Win, First20Signed.bits_length], fun start => ?_⟩ ?_
-  · change weight4 (prependCircuit (sineFromPlus top10Left) (first20RawWin.program start)) ≤ _
-    rw [prependCircuit_weight4, sineFromPlus_weight4 top10Left top10Left_length]
-    have hz : residue (first20RawWin.program start) = 0 := by
-      unfold first20RawWin First20Signed.windowGeneric
-      rw [WEXCredit.residue_reindex, First20Signed.program_residue]
-    have ha : added (first20RawWin.program start) ≤ 193117 := by
-      unfold first20RawWin First20Signed.windowGeneric
-      rw [added_reindex]
-      exact First20Signed.program_added start
-    rw [weight4_zero _ hz]
+theorem right26Cat_tCount_relation :
+    List.Forall₂ (fun w k => w.wires.length = k.2 ∧
+        ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
+      rightWins26Cat rightTCountMeta26Cat := by
+  refine .cons ⟨by simp [rightHeadCatWin, bank17_length], rightHeadCatWin_tCount⟩ ?_
+  have hmap : List.replicate 11 (4 * 2303094, 17) = rightTailDigits26.map (fun _ => (4 * 2303094, 17)) := by
+    simp [rightTailDigits26, List.ofFn_succ, List.replicate]
+  rw [hmap]
+  induction rightTailDigits26 with
+  | nil => exact .nil
+  | cons d ds ih =>
+    exact .cons ⟨by simp [bodyCatWin, bank17_length], bodyCatWin_tCount d⟩ ih
+
+theorem full26Cat_trim18_tCount (read : ConstantBit 2228224 → Bool) (h : Fin 0 → Bool) :
+    ((trim 18 fullProgram26Cat).instantiate read h).tCount ≤ 240303421 := by
+  unfold fullProgram26Cat program26Cat
+  have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 18 g = false := by decide
+  rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
+  have hcur : 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat := by
+    unfold cursor26Cat; omega
+  have hro_t : ∀ h' : Fin cursor26Cat → Bool, ((trim 18 readout26Cat).instantiate read h').tCount ≤ 0 := by
+    intro h'
+    have h1 := trim18_t readout26Cat read h'
+    have h2 : (readout26Cat.instantiate read h').tCount = 0 := by
+      unfold readout26Cat; rw [castFinish_instantiate]; exact Readout3.suffix3_t _ _ _ _ read h'
     omega
-  · have hmap : List.replicate 14 (4 * wideCredit26Box.val, 17) =
-        leftDigits26.map (fun _ => (4 * wideCredit26Box.val, 17)) := by
-      simp [leftDigits26, List.ofFn_succ, List.replicate]
-    rw [hmap]
-    exact bodyList_cost_relation wideCredit26Box.val bodyWin
-      (fun _ => by simp [bodyWin, bank17_length]) bodyWin_credit leftDigits26
-
-theorem right26_cost_relation :
-    List.Forall₂ (fun w k => w.wires.length = k.2 ∧ ∀ start, weight4 (w.program start) ≤ k.1)
-      rightWins26 (rightCostMeta26 wideCredit26Box.val) := by
-  refine .cons ⟨by simp [rightHeadWin, bank17_length], fun start => ?_⟩ ?_
-  · change weight4 (prependCircuit (sineFromPlus top10Right) ((bodyWin rightHeadDigit).program start)) ≤ _
-    rw [prependCircuit_weight4, sineFromPlus_weight4 top10Right top10Right_length,
-      weight4_zero _ (bodyWin_credit rightHeadDigit start).1, (bodyWin_credit rightHeadDigit start).2]
+  have h1 := CatAxis.append_tCount_le
+    (AndGadget.literals (Catalyst.prepare 1)
+      (trim 18 (Single.framed
+        (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)
+        (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)
+        (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)
+        hcur)))
+    (trim 18 readout26Cat) read h 0 hro_t
+  rw [Catalyst.literals_t] at h1
+  have hprep_t : ShorECDLP.tCount (Catalyst.prepare 1) = 1 := by decide
+  rw [hprep_t] at h1
+  have hframed_t : ((trim 18 (Single.framed
+      (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)
+      (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)
+      (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)
+      hcur)).instantiate read h).tCount ≤ 240303420 := by
+    unfold Single.framed
+    simp only [trim, largePhase, Bool.false_eq_true, ↓reduceIte, Straight.instantiate,
+      TemplateGate.instantiate, AdaptiveCircuit.tCount, ShorECDLP.tCount, tCost,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.zero_add,
+      CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append]
+    have hres_t : ∀ h' : Fin (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) → Bool,
+        ((Straight.gate (.literal (.X 836))
+          (trim 18 (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires))).instantiate read h').tCount ≤ 0 := by
+      intro h'
+      simp only [Straight.instantiate, TemplateGate.instantiate, AdaptiveCircuit.tCount,
+        ShorECDLP.tCount, tCost, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.zero_add]
+      have hrt : ∀ (n start : Nat) (ws : List Wire) (r : ConstantBit n → Bool) (hist : Fin start → Bool),
+          ((resetProgram n start ws).instantiate r hist).tCount = 0 := by
+        intro n start ws r
+        induction ws generalizing start with
+        | nil => intro hist; simp [resetProgram, Straight.instantiate, AdaptiveCircuit.tCount]
+        | cons w ws ih =>
+          intro hist
+          simp only [resetProgram, castFinish_instantiate, Straight.instantiate, AdaptiveCircuit.tCount,
+            ShorECDLP.tCount, tCost, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
+            Nat.zero_add, ih, max_self]
+      have hle := trim18_t (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires) read h'
+      rw [hrt] at hle
+      exact hle
+    have hR_t : ∀ h' : Fin (0 + axisCount leftWins26Cat) → Bool,
+        (((trim 18 (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).append
+          (Straight.gate (.literal (.X 836))
+            (trim 18 (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)))).instantiate read h').tCount ≤
+          CatAxis.metadataTrimmedWeight rightTCountMeta26Cat 0 := by
+      intro h'
+      have ha := CatAxis.append_tCount_le
+        (trim 18 (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil))
+        _ read h' 0 hres_t
+      have hax := CatAxis.axisCat_tCount_trim18 1 rightWins26Cat rightTCountMeta26Cat
+        right26Cat_tCount_relation (0 + axisCount leftWins26Cat) List.nil read h'
+      rw [List.length_nil] at hax
+      omega
+    have hL := CatAxis.append_tCount_le
+      (trim 18 (CatAxis.axisCat 1 leftWins26Cat 0 List.nil))
+      _ read h _ hR_t
+    have hLax := CatAxis.axisCat_tCount_trim18 1 leftWins26Cat leftTCountMeta26Cat
+      left26Cat_tCount_relation 0 List.nil read h
+    rw [List.length_nil] at hLax
+    have hex := exact_trimmed_tCount26Cat
     omega
-  · have hmap : List.replicate 11 (4 * wideCredit26Box.val, 17) =
-        rightTailDigits26.map (fun _ => (4 * wideCredit26Box.val, 17)) := by
-      simp [rightTailDigits26, List.ofFn_succ, List.replicate]
-    rw [hmap]
-    exact bodyList_cost_relation wideCredit26Box.val bodyWin
-      (fun _ => by simp [bodyWin, bank17_length]) bodyWin_credit rightTailDigits26
-
-theorem full26_weight :
-    weight4 fullProgram26 ≤ 4 * (193117 + 26 * wideCredit26Box.val) + 53399 + 56 := by
-  have hL := weight4_axis leftWins26 _ left26_cost_relation 0 List.nil
-  have hR := weight4_axis rightWins26 _ right26_cost_relation (0 + axisCount leftWins26) List.nil
-  simp only [List.length_nil] at hL hR
-  have he := (exact_phase_metadata26 wideCredit26Box.val).1
-  unfold fullProgram26 program26 readout26
-  simp only [weight4_append, weight4_framed, weight4_reset, weight4_cast, Readout3.weight4_suffix3]
   omega
 
-theorem source26_removed18 : 46311 ≤ removed 18 rawEntry26.program := by
-  have hL := removed_axis18 leftWins26 leftWidths26 leftWins26_widths 0 List.nil
-  have hR := removed_axis18 rightWins26 rightWidths26 rightWins26_widths (0 + axisCount leftWins26) List.nil
-  simp only [List.length_nil] at hL hR
-  have he := (exact_phase_metadata26 wideCredit26Box.val).2
-  unfold rawEntry26 Single.fixedEntry
-  dsimp only
-  rw [removed18_reindex]
-  simp only [fullProgram26, removed18_append, program26, removed18_framed]
-  omega
-
-theorem source26_trim18_weight :
-    weight4 (trim 18 rawEntry26.program) ≤ 4 * (193117 + 26 * wideCredit26Box.val) + 7088 + 56 := by
-  have hw := full26_weight
-  have hr := source26_removed18
-  have hew : weight4 rawEntry26.program = weight4 fullProgram26 := by
-    unfold rawEntry26 Single.fixedEntry; dsimp only; exact weight4_reindex _ _
-  have ht := weight4_trim18 rawEntry26.program
-  omega
-
-theorem source26_cost18 : cost18 rawEntry26.program ≤ 51 / 10000 := by
-  have hwin_zero : ∀ w, IsWin26 w → ∀ start, cost18 (w.program start) = 0 := by
-    intro w hw start
-    rcases hw with rfl | rfl | ⟨d, rfl⟩
-    · change cost18 (prependCircuit (sineFromPlus top10Left) (first20RawWin.program start)) = 0
-      rw [prependCircuit_cost18,
-        cost18_literal_zero _ (sineFromPlus_largePhase_false top10Left 18 (by decide)), zero_add]
-      apply cost18_zero_of_residue
-      unfold first20RawWin First20Signed.windowGeneric
-      rw [WEXCredit.residue_reindex, First20Signed.program_residue]
-    · change cost18 (prependCircuit (sineFromPlus top10Right) ((bodyWin rightHeadDigit).program start)) = 0
-      rw [prependCircuit_cost18,
-        cost18_literal_zero _ (sineFromPlus_largePhase_false top10Right 18 (by decide)), zero_add]
-      exact cost18_zero_of_residue _ (bodyWin_credit rightHeadDigit start).1
-    · exact cost18_zero_of_residue _ (bodyWin_credit d start).1
-  have hL := cost18_axis_exact leftWins26
+theorem source26Cat_cost18 : cost18 rawEntry26Cat.program ≤ 51 / 10000 := by
+  have hL := CatAxis.axisCat_cost18_exact 1 leftWins26Cat
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
-      · exact hwin_zero _ (Or.inl rfl) start
+      · exact win26Cat_cost18 _ (Or.inl rfl) start
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact hwin_zero _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) 0 List.nil
-  have hR := cost18_axis_exact rightWins26
+        exact win26Cat_cost18 _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) 0 List.nil
+  have hR := CatAxis.axisCat_cost18_exact 1 rightWins26Cat
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
-      · exact hwin_zero _ (Or.inr (Or.inl rfl)) start
+      · exact win26Cat_cost18 _ (Or.inr (Or.inl rfl)) start
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact hwin_zero _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) (0 + axisCount leftWins26) List.nil
-  have hlw : (leftWins26.map (fun w => w.wires.length)).sum = 258 := by
-    have h := congrArg (fun l => (l.map Prod.snd).sum) leftWins26_meta
+        exact win26Cat_cost18 _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) (0 + axisCount leftWins26Cat) List.nil
+  have hlw : (leftWins26Cat.map (fun w => w.wires.length)).sum = 258 := by
+    have h := congrArg (fun l => (l.map Prod.snd).sum) leftWins26Cat_meta
     simp only [List.map_map, Function.comp_def] at h
-    rw [h]; decide +kernel
-  have hrw : (rightWins26.map (fun w => w.wires.length)).sum = 204 := by
-    have h := congrArg (fun l => (l.map Prod.snd).sum) rightWins26_meta
+    rw [h]; simp only [leftMeta26Cat, List.replicate, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]; rfl
+  have hrw : (rightWins26Cat.map (fun w => w.wires.length)).sum = 204 := by
+    have h := congrArg (fun l => (l.map Prod.snd).sum) rightWins26Cat_meta
     simp only [List.map_map, Function.comp_def] at h
-    rw [h]; decide +kernel
+    rw [h]; simp only [rightMeta26Cat, List.replicate, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]; rfl
   rw [hlw, List.length_nil] at hL
   rw [hrw, List.length_nil] at hR
-  have hreset : cost18 (resetProgram 2228224 (0 + axisCount leftWins26 + axisCount rightWins26) resetWires) = 0 := by
+  have hreset : cost18 (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires) = 0 := by
     apply cost18_zero_of_residue
     have hz : ∀ (n start : Nat) (ws : List Wire), residue (resetProgram n start ws) = 0 := by
       intro n start ws; induction ws generalizing start with
       | nil => simp [resetProgram, residue]
       | cons w ws ih => simpa [resetProgram, residue_cast, residue] using ih (start + 1)
     exact hz _ _ _
-  have hro : cost18 readout26 = 0 := by
+  have hro : cost18 readout26Cat = 0 := by
     apply cost18_zero_of_residue
-    simp only [readout26, residue_cast, Readout3.residue_suffix3]
-  unfold rawEntry26 Single.fixedEntry
+    simp only [readout26Cat, residue_cast, Readout3.residue_suffix3]
+  unfold rawEntry26Cat Single.fixedEntry
   dsimp only
   rw [cost18_reindex]
-  simp only [fullProgram26, cost18_append, program26, Single.framed, cost18_cast, cost18, charge18,
-    zero_add, add_zero, hreset, hro, hL, hR]
+  simp only [fullProgram26Cat, cost18_append, program26Cat]
+  rw [CatAxis.cost18_literals _ _ (by decide)]
+  simp only [Single.framed, cost18_cast, cost18_append, cost18, charge18, zero_add, add_zero, hreset, hro, hL, hR]
   exact joint_error18
 
-theorem source26_credit_bound : added rawEntry26.program ≤ 62000000 := by
-  have h := Width16Actual.added_le_weight rawEntry26.program
-  have hw := full26_weight
-  have hc := wideCredit26_bound
-  have he : weight4 rawEntry26.program = weight4 fullProgram26 := by
-    unfold rawEntry26 Single.fixedEntry; dsimp only; exact weight4_reindex _ _
-  rw [he] at h
+theorem source26Cat_cursor_le : rawEntry26Cat.finalCursor ≤ 105000000 := by
+  have hfc : rawEntry26Cat.finalCursor = cursor26Cat + 1634 := by
+    unfold rawEntry26Cat; rw [Single.fixedEntry_cursor]
+  have h1 := first20Cat_count_le
+  have h2 := cBody16_le
+  have hL := leftWins26Cat_count_eq
+  have hR := rightWins26Cat_count_eq
+  have hres : resetWires.length ≤ 2000 := by decide +kernel
+  unfold cursor26Cat at hfc
   omega
 
-theorem source26_counts : rawEntry26.finalCursor ≤ 50000000 ∧
-    rawEntry26.finalCursor + added rawEntry26.program ≤ 544000000 ∧
-    4 * (rawEntry26.program.gateSlots + 18 * added rawEntry26.program) + 2 ≤ officialLimits.gateSlots := by
-  have hc := source26_credit_bound
-  have hs : rawEntry26.program.gateSlots ≤ 400000000000 := by
-    rw [rawEntry26, Single.fixedEntry_slots]; exact full26_slots
-  have hm : rawEntry26.finalCursor = 44494942 + resetWires.length + 1634 := by
-    unfold rawEntry26; rw [Single.fixedEntry_cursor]; rfl
-  have hr : resetWires.length ≤ 2000 := by decide +kernel
-  change _ ∧ _ ∧ _ ≤ 4000000000000000
-  omega
-
-/-! ### Part 5: Raw certificate, `trim 18`, catalyst compilation, specialization, and final certificate -/
+/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,613 × 240,303,421` certificate -/
 
 section Cert26
-attribute [local irreducible] rawEntry26 fullProgram26 program26 readout26
+attribute [local irreducible] rawEntry26Cat fullProgram26Cat program26Cat readout26Cat
 
-def rawBounds26 : Bounds := ⟨1613, 2800000000000, 50000000⟩
+def rawBounds26Cat : Bounds := ⟨1613, 70000000000000, 105000000⟩
 
-theorem raw_certificate26 : Certificate rawLimits26 rawLayout26 rawEntry26 rawBounds26 where
+theorem raw_certificate26Cat : Certificate rawLimits26 rawLayout26Cat rawEntry26Cat rawBounds26Cat where
   gateBudget := by
-    rw [rawEntry26, Single.fixedEntry_slots]
-    exact full26_slots.trans (by unfold rawLimits26 officialLimits; dsimp only; omega)
-  recordBudget := source26_counts.1.trans (by unfold rawLimits26 officialLimits; dsimp only; omega)
-  tableBudget := by rw [rawEntry26, Single.fixedEntry_rows]; unfold rawLimits26; exact le_rfl
+    rw [rawEntry26Cat, Single.fixedEntry_slots]
+    exact full26Cat_slots.trans (by unfold rawLimits26 officialLimits; dsimp only; omega)
+  recordBudget := source26Cat_cursor_le.trans (by unfold rawLimits26 officialLimits; dsimp only; omega)
+  tableBudget := by rw [rawEntry26Cat, Single.fixedEntry_rows]; unfold rawLimits26; exact le_rfl
   candidateBudget := by
-    change rawLayout26.trials.length * (2 * (order / 2 ^ 204 + 2)) ≤ 56 * (2 ^ 49 + 2)
-    have hl : rawLayout26.trials.length = 3 := by
-      simp only [rawLayout26, List.length_map, Readout3.rightWords3_length]
+    change rawLayout26Cat.trials.length * (2 * (order / 2 ^ 204 + 2)) ≤ 56 * (2 ^ 49 + 2)
+    have hl : rawLayout26Cat.trials.length = 3 := by
+      simp only [rawLayout26Cat, List.length_map, Readout3.rightWords3_length]
     rw [hl]
     exact decoder_budget258
-  wellFormed := by rw [rawEntry26, Single.fixedEntry_wellFormed]; exact full26_wellFormed
+  wellFormed := by rw [rawEntry26Cat, Single.fixedEntry_wellFormed]; exact full26Cat_wellFormed
   resources := by
     intro Q
-    have hs := source26_within.instantiate (readConstant rawEntry26.coefficients.get Q) Fin.elim0
-    have hq : (rawEntry26.instantiate Q).qubitCount ≤ 1613 := by
-      have ht : (rawEntry26.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1613).toFinset := by
+    have hs := source26Cat_within.instantiate (readConstant rawEntry26Cat.coefficients.get Q) Fin.elim0
+    have hq : (rawEntry26Cat.instantiate Q).qubitCount ≤ 1613 := by
+      have ht : (rawEntry26Cat.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1613).toFinset := by
         intro v hv
         exact List.mem_toFinset.mpr (hs (by simpa only [List.mem_toFinset, List.mem_dedup] using hv))
       have hc := (Finset.card_le_card ht).trans (List.toFinset_card_le _)
       rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
       simpa only [AdaptiveCircuit.qubitCount, List.length_range] using hc
     refine ⟨hq, ?_, ?_⟩
-    · have ht := Width16Actual.straight_t_bound rawEntry26.program
-        (readConstant rawEntry26.coefficients.get Q) Fin.elim0
-      have hb : rawEntry26.program.gateSlots ≤ 400000000000 := by
-        rw [rawEntry26, Single.fixedEntry_slots]; exact full26_slots
-      exact ht.trans (by change _ ≤ 2800000000000; omega)
-    · have hm := source26_counts.1
-      change (rawEntry26.program.instantiate _ _).measurementCount ≤ 50000000
+    · have ht := Width16Actual.straight_t_bound rawEntry26Cat.program
+        (readConstant rawEntry26Cat.coefficients.get Q) Fin.elim0
+      have hb : rawEntry26Cat.program.gateSlots ≤ 10000000000000 := by
+        rw [rawEntry26Cat, Single.fixedEntry_slots]; exact full26Cat_slots
+      exact ht.trans (by change _ ≤ 70000000000000; omega)
+    · have hm := source26Cat_cursor_le
+      change (rawEntry26Cat.program.instantiate _ _).measurementCount ≤ 105000000
       rw [Straight.measurementCount]; omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99 / 100 : ℝ) ≤ 9911 / 10000).trans (strong_success26 Q d hn hd)
+    exact (by norm_num : (99 / 100 : ℝ) ≤ 9911 / 10000).trans (strong_success26Cat Q d hn hd)
 
 def entryTrim18 (e : StraightEntry) : StraightEntry where
   coefficients := e.coefficients
@@ -3037,55 +4708,51 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
     nlinarith
 
-theorem trim18_certificate :
-    Certificate rawLimits26 rawLayout26 (entryTrim18 rawEntry26)
-      ⟨1613, rawBounds26.tModel, rawEntry26.finalCursor⟩ :=
-  trim18_certificate_generic rawLimits26 rawLayout26 rawEntry26 rawBounds26 (List.range 1613)
-    raw_certificate26 source26_within source26_cost18 strong_success26
+theorem trimmed26Cat_coefficients :
+    (entryTrim18 rawEntry26Cat).coefficients = List.ofFn coefficientAt26 := by
+  unfold entryTrim18 rawEntry26Cat Single.fixedEntry; rfl
 
-theorem compiled26_coefficients :
-    (ConditionalCatalyst.fourEntry 1938 1939 (entryTrim18 rawEntry26)).coefficients =
-      List.ofFn coefficientAt26 :=
-  (Width16Schedule.four_coefficients 1938 1939 (entryTrim18 rawEntry26)).trans
-    (by unfold entryTrim18 rawEntry26 Single.fixedEntry; rfl)
+theorem trim18_reindex {n m s e : Nat} (f : Fin n → Fin m) (p : Straight n s e) :
+    trim 18 (reindexStraight f p) = reindexStraight f (trim 18 p) := by
+  induction p with
+  | done => rfl
+  | measure w p ih => simp only [reindexStraight, trim, ih]
+  | recordGate i v g p ih => simp only [reindexStraight, trim]; split_ifs <;> simp [reindexStraight, ih]
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      cases h : largePhase 18 g <;> simp [reindexStraight, reindexGate, trim, h, ih]
+    | whenBit r v g =>
+      cases h : largePhase 18 g <;> simp [reindexStraight, reindexGate, trim, h, ih]
 
-theorem conditional_certificate26
-    (e : StraightEntry) (lay : DecodeLayout) (baseBounds : Bounds) (ws : List Wire)
-    (qBound tBound mBound : Nat)
-    (hcoef : (ConditionalCatalyst.fourEntry 1938 1939 (entryTrim18 e)).coefficients =
-      List.ofFn coefficientAt26)
-    (hcert0 : Certificate rawLimits26 lay e baseBounds)
-    (hs : Within ws e.program) (hcost : cost18 e.program ≤ 51 / 10000)
-    (hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
-      (9911 / 10000 : ℝ) ≤ Instrument.bornMass ((e.instantiate Q).run.filter
-        (fun b => (verifiedCandidate lay Q b.history).isSome)) (ket zeroBasisState))
-    (hq : (1938 : Wire) ∉ ws) (hy : (1939 : Wire) ∉ 1938 :: ws)
-    (hslots : 4 * (e.program.gateSlots + 18 * added e.program) + 2 ≤ officialLimits.gateSlots)
-    (hrecords : e.finalCursor + added e.program ≤ officialLimits.measurements)
-    (hqubits : ws.length + 2 ≤ qBound)
-    (hweight : weight4 (trim 18 e.program) + 1 ≤ tBound)
-    (hm : e.finalCursor + added e.program ≤ mBound) :
-    Certificate officialLimits (lowerLayout 1938 (entryTrim18 e) lay)
-      (specializeEntry26 (ConditionalCatalyst.fourEntry 1938 1939 (entryTrim18 e)) hcoef)
-      ⟨qBound, tBound, mBound⟩ := by
-  have htrim := trim18_certificate_generic rawLimits26 lay e baseBounds ws hcert0 hs hcost hstrong
-  have hsl := trim18_slots e.program
-  apply specializeEntry26_certificate _ hcoef
-  apply ConditionalCatalyst.four_certificate rawLimits26 lay (entryTrim18 e)
-    _ _ 1938 1939 ws htrim (trim18_within e.program ws hs) hq hy
-  · change 4 * ((trim 18 e.program).gateSlots + 18 * added (trim 18 e.program)) + 2 ≤
-      rawLimits26.gateSlots
-    rw [trim18_added]
-    change _ ≤ officialLimits.gateSlots
-    omega
-  · change e.finalCursor + added (trim 18 e.program) ≤ rawLimits26.measurements
-    rw [trim18_added]
-    exact hrecords
-  · exact hqubits
-  · exact hweight
-  · change e.finalCursor + added (trim 18 e.program) ≤ mBound
-    rw [trim18_added]
-    exact hm
+private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCoeff)
+    (p : Straight n 0 e) (Q : Point) (B : Nat)
+    (hp : ∀ read, ((trim 18 p).instantiate read Fin.elim0).tCount ≤ B) :
+    ((entryTrim18 (Single.fixedEntry coeffs p)).instantiate Q).tCount ≤ B := by
+  change ((trim 18 (Single.fixedEntry coeffs p).program).instantiate _ Fin.elim0).tCount ≤ B
+  unfold Single.fixedEntry
+  dsimp only
+  rw [trim18_reindex, reindexStraight_instantiate]
+  exact hp _
+
+theorem trimmed26Cat_tCount (Q : Point) :
+    ((entryTrim18 rawEntry26Cat).instantiate Q).tCount ≤ 240303421 := by
+  rw [rawEntry26Cat]
+  exact trim18_fixedEntry_tCount coefficientAt26 fullProgram26Cat Q 240303421
+    (fun r => full26Cat_trim18_tCount r Fin.elim0)
+
+theorem trim18_certificate26Cat :
+    Certificate rawLimits26 rawLayout26Cat (entryTrim18 rawEntry26Cat) ⟨1613, 240303421, 105000000⟩ := by
+  have hbase := trim18_certificate_generic rawLimits26 rawLayout26Cat rawEntry26Cat rawBounds26Cat
+    (List.range 1613) raw_certificate26Cat source26Cat_within source26Cat_cost18 strong_success26Cat
+  refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
+    hbase.wellFormed, ?_, hbase.success⟩
+  intro Q
+  have hq : ((entryTrim18 rawEntry26Cat).instantiate Q).qubitCount ≤ 1613 := by
+    simpa only [List.length_range] using (hbase.resources Q).1
+  have hm : ((entryTrim18 rawEntry26Cat).instantiate Q).measurementCount ≤ 105000000 :=
+    (hbase.resources Q).2.2.trans source26Cat_cursor_le
+  exact ⟨hq, trimmed26Cat_tCount Q, hm⟩
 
 end Cert26
 
@@ -3101,47 +4768,22 @@ set_option maxHeartbeats 2000000
 set_option maxRecDepth 30000
 set_option linter.unusedSimpArgs false
 attribute [local irreducible] List.ofFn Single.axis Single.fixedEntry
-  First20Signed.program CornerWire.Wide16.program Schedule26.wideCredit26Box
-  Schedule26.rawEntry26 Schedule26.fullProgram26 Schedule26.program26 Schedule26.readout26
-  Schedule26.entryTrim18 Schedule26.rawLayout26 Schedule26.specializeEntry26
-  ConditionalCatalyst.fourEntry ConditionalCatalyst.compileEntry ConditionalCatalyst.compile
-  AndGadget.lowerEntry AndGadget.lowerLayout
+  LocalWide16.compiledProgram LocalWide16.compiledProgramFn
+  LocalFour.compileLower CatAxis.axisCat
+  Schedule26.rawEntry26Cat Schedule26.fullProgram26Cat Schedule26.program26Cat Schedule26.readout26Cat
+  Schedule26.entryTrim18 Schedule26.rawLayout26Cat Schedule26.specializeEntry26
+  ConditionalCatalyst.compile
 
 def entry : StraightEntry :=
-  specializeEntry26 (ConditionalCatalyst.fourEntry 1938 1939 (entryTrim18 rawEntry26))
-    compiled26_coefficients
+  specializeEntry26 (entryTrim18 rawEntry26Cat) trimmed26Cat_coefficients
 
-def layout : DecodeLayout :=
-  lowerLayout 1938 (entryTrim18 rawEntry26) rawLayout26
+def layout : DecodeLayout := rawLayout26Cat
 
-def bounds : Bounds := ⟨1615, 240353597, 544000000⟩
-
-theorem hcert : Certificate officialLimits layout entry
-    ⟨1615, 4 * (193117 + 26 * wideCredit26Box.val) + 7145, 544000000⟩ :=
-  conditional_certificate26 rawEntry26 rawLayout26 rawBounds26 (List.range 1613)
-    1615 (4 * (193117 + 26 * wideCredit26Box.val) + 7145) 544000000
-    compiled26_coefficients raw_certificate26 source26_within source26_cost18 strong_success26
-    (by simp [List.mem_range])
-    (by simp [List.mem_range])
-    source26_counts.2.2
-    (source26_counts.2.1.trans (by unfold officialLimits; dsimp only; omega))
-    (by simp [List.length_range])
-    (by have := source26_trim18_weight; omega)
-    source26_counts.2.1
-
-theorem tmodel_key : ∀ a : Nat, a ≤ 2303596 → 4 * (193117 + 26 * a) + 7145 ≤ 240353597 := by
-  intro a ha; omega
-
-theorem hres (Q : Point) : (resources (entry.instantiate Q)).qubits ≤ bounds.qubits ∧
-    (resources (entry.instantiate Q)).tModel ≤ bounds.tModel ∧
-    (resources (entry.instantiate Q)).measurements ≤ bounds.measurements :=
-  ⟨(hcert.resources Q).1,
-    (Width16Actual.tmodel_of hcert Q).trans (tmodel_key _ wideCredit26_bound),
-    (hcert.resources Q).2.2⟩
+def bounds : Bounds := ⟨1613, 240303421, 105000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
-  Certificate.mk hcert.gateBudget hcert.recordBudget hcert.tableBudget hcert.candidateBudget
-    hcert.wellFormed hres hcert.success
+  specializeEntry26_certificate (entryTrim18 rawEntry26Cat) trimmed26Cat_coefficients
+    rawLayout26Cat bounds trim18_certificate26Cat
 
 end
 end ShorECDLP.Entrant.Schedule26Actual
@@ -3154,7 +4796,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1615,240353597,544000000⟩
+def bounds : Bounds := ⟨1613, 240303421, 105000000⟩
 def entry : StraightEntry := Schedule26Actual.entry
 def layout : DecodeLayout := Schedule26Actual.layout
 set_option maxRecDepth 30000 in

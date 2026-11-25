@@ -7652,7 +7652,7 @@ structure Geo (P : Pass) : Prop where
   hsel_nodup : (836 :: P.selBits ++ P.selPaths).Nodup
   hregs_nodup : (P.out ++ P.garb).Nodup
   hdisj_sel : (836 :: bits ++ P.selPaths).Disjoint (P.out ++ P.garb)
-  hsupp : (836 :: bits ++ P.selPaths ++ P.out ++ P.garb) ⊆ List.range 1613
+  hsupp : (836 :: bits ++ P.selPaths ++ P.out ++ P.garb) ⊆ List.range' 2 1611
 
 theorem regs_length (P : Pass) (g : P.Geo) : P.regs.length = 2 ^ P.k := by
   rw [regs, List.length_cons, chunks_length]
@@ -7822,11 +7822,11 @@ theorem loadProg_wellFormed (P : Pass) (g : P.Geo) (start : Nat) :
     · exact P.regs_nodup g
 
 theorem loadProg_support (P : Pass) (g : P.Geo) (start : Nat) :
-    straightWires (P.loadProg g start) ⊆ List.range 1613 := by
+    straightWires (P.loadProg g start) ⊆ List.range' 2 1611 := by
   rw [loadProg, straightWires_append, straightWires_castFinish, lookupProgram_support, literalProgram_support]
   apply List.append_subset.mpr
   constructor
-  · have hl : ∀ op ∈ P.selOps, lookupOpWires op ⊆ List.range 1613 := by
+  · have hl : ∀ op ∈ P.selOps, lookupOpWires op ⊆ List.range' 2 1611 := by
       rw [selOps]
       apply unaryLookupOps_support
       · exact g.hsupp (by simp)
@@ -8096,13 +8096,13 @@ theorem stepProg_wellFormed (P : Pass) (g : P.Geo) {R : Nat}
 
 theorem stepProg_support (P : Pass) (g : P.Geo) {R : Nat}
     (next : (c : Nat) → List (Fin c) → Straight 524288 c (c + R))
-    (hn : ∀ c rs, straightWires (next c rs) ⊆ List.range 1613)
+    (hn : ∀ c rs, straightWires (next c rs) ⊆ List.range' 2 1611)
     (start : Nat) (refs : List (Fin start)) :
-    straightWires (P.stepProg g next start refs) ⊆ List.range 1613 := by
+    straightWires (P.stepProg g next start refs) ⊆ List.range' 2 1611 := by
   rw [stepProg, straightWires_castFinish, straightWires_append, straightWires_castFinish]
   refine List.append_subset.mpr ⟨P.loadProg_support g start, ?_⟩
   rw [RootPass.straightWires_eq_naive]
-  apply MeasuredClear.measureThen_within next (List.range 1613)
+  apply MeasuredClear.measureThen_within next (List.range' 2 1611)
   · intro c rs; rw [← RootPass.straightWires_eq_naive]; exact hn c rs
   · intro w hw
     have hg := (P.targets_mem_iff g w).mp hw
@@ -8181,28 +8181,28 @@ theorem stepSrc_sim (P : Pass) (g : P.Geo) (read : ConstantBit 524288 → Bool)
 
 end Pass
 
-/-! ### Part 4: Five-pass instantiation `((9, 3), (2, 393), (7, 9), (4, 73), (5, 34))` -/
+/-! ### Part 4: Five-pass instantiation `((8, 4), (2, 392), (7, 9), (4, 73), (5, 34))` (wires `0, 1` reserved) -/
 
 def anc17 : List Wire :=
-  List.range' 0 263 ++ List.range' 536 44 ++ List.range' 837 18 ++ List.range' 875 738
+  List.range' 2 261 ++ List.range' 536 44 ++ List.range' 837 18 ++ List.range' 875 738
 
 def anc15 : List Wire := anc17 ++ [534, 535]
 def anc14 : List Wire := anc17 ++ [533, 534, 535]
 def anc12 : List Wire := anc17 ++ [531, 532, 533, 534, 535]
-def anc10 : List Wire := anc17 ++ [529, 530, 531, 532, 533, 534, 535]
+def anc11 : List Wire := anc17 ++ [530, 531, 532, 533, 534, 535]
 
 theorem mem_anc17 {w : Wire} : w ∈ anc17 ↔
-    w < 263 ∨ (536 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
+    (2 ≤ w ∧ w < 263) ∨ (536 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
   simp only [anc17, List.mem_append, List.mem_range'_1]
   (try dsimp only [Wire] at *); omega
 
-theorem anc17_length : anc17.length = 1063 := by simp [anc17]
+theorem anc17_length : anc17.length = 1061 := by simp [anc17]
 
 theorem anc17_nodup : anc17.Nodup := by
-  have h1 : (List.range' 0 263 ++ List.range' 536 44).Nodup :=
+  have h1 : (List.range' 2 261 ++ List.range' 536 44).Nodup :=
     List.nodup_append.mpr ⟨List.nodup_range', List.nodup_range', fun a ha b hb => by
       simp only [List.mem_range'_1] at ha hb; omega⟩
-  have h2 : (List.range' 0 263 ++ List.range' 536 44 ++ List.range' 837 18).Nodup :=
+  have h2 : (List.range' 2 261 ++ List.range' 536 44 ++ List.range' 837 18).Nodup :=
     List.nodup_append.mpr ⟨h1, List.nodup_range', fun a ha b hb => by
       simp only [List.mem_append, List.mem_range'_1] at ha hb; omega⟩
   exact List.nodup_append.mpr ⟨h2, List.nodup_range', fun a ha b hb => by
@@ -8234,44 +8234,44 @@ theorem anc12_nodup : anc12.Nodup :=
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
     (try dsimp only [Wire] at *); omega⟩
 
-theorem anc10_nodup : anc10.Nodup :=
+theorem anc11_nodup : anc11.Nodup :=
   List.nodup_append.mpr ⟨anc17_nodup, by decide, fun a ha b hb => by
     have h1 := mem_anc17.mp ha
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
     (try dsimp only [Wire] at *); omega⟩
 
 theorem mem_anc15 {w : Wire} : w ∈ anc15 ↔
-    w < 263 ∨ (534 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
+    (2 ≤ w ∧ w < 263) ∨ (534 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
   simp only [anc15, List.mem_append, mem_anc17, List.mem_cons, List.not_mem_nil, or_false]
   (try dsimp only [Wire] at *); omega
 
 theorem mem_anc14 {w : Wire} : w ∈ anc14 ↔
-    w < 263 ∨ (533 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
+    (2 ≤ w ∧ w < 263) ∨ (533 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
   simp only [anc14, List.mem_append, mem_anc17, List.mem_cons, List.not_mem_nil, or_false]
   (try dsimp only [Wire] at *); omega
 
 theorem mem_anc12 {w : Wire} : w ∈ anc12 ↔
-    w < 263 ∨ (531 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
+    (2 ≤ w ∧ w < 263) ∨ (531 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
   simp only [anc12, List.mem_append, mem_anc17, List.mem_cons, List.not_mem_nil, or_false]
   (try dsimp only [Wire] at *); omega
 
-theorem mem_anc10 {w : Wire} : w ∈ anc10 ↔
-    w < 263 ∨ (529 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
-  simp only [anc10, List.mem_append, mem_anc17, List.mem_cons, List.not_mem_nil, or_false]
+theorem mem_anc11 {w : Wire} : w ∈ anc11 ↔
+    (2 ≤ w ∧ w < 263) ∨ (530 ≤ w ∧ w < 580) ∨ (837 ≤ w ∧ w < 855) ∨ (875 ≤ w ∧ w < 1613) := by
+  simp only [anc11, List.mem_append, mem_anc17, List.mem_cons, List.not_mem_nil, or_false]
   (try dsimp only [Wire] at *); omega
 
-def p1 : List Wire := xyWires.take 3
-def rem1 : List Wire := xyWires.drop 3
-def p2 : List Wire := rem1.take 393
-def rem2 : List Wire := rem1.drop 393
+def p1 : List Wire := xyWires.take 4
+def rem1 : List Wire := xyWires.drop 4
+def p2 : List Wire := rem1.take 392
+def rem2 : List Wire := rem1.drop 392
 def p3 : List Wire := rem2.take 9
 def rem3 : List Wire := rem2.drop 9
 def p4 : List Wire := rem3.take 73
 def rem4 : List Wire := rem3.drop 73
 def p5 : List Wire := rem4
 
-def s1 : List (Fin 524288 → ConstantBit 524288) := slots.take 3
-def s2 : List (Fin 524288 → ConstantBit 524288) := (slots.drop 3).take 393
+def s1 : List (Fin 524288 → ConstantBit 524288) := slots.take 4
+def s2 : List (Fin 524288 → ConstantBit 524288) := (slots.drop 4).take 392
 def s3 : List (Fin 524288 → ConstantBit 524288) := (slots.drop 396).take 9
 def s4 : List (Fin 524288 → ConstantBit 524288) := (slots.drop 405).take 73
 def s5 : List (Fin 524288 → ConstantBit 524288) := slots.drop 478
@@ -8280,14 +8280,14 @@ theorem xy_split : p1 ++ p2 ++ p3 ++ p4 ++ p5 = xyWires := by
   simp only [p1, p2, p3, p4, p5, rem1, rem2, rem3, rem4, List.append_assoc, List.take_append_drop]
 
 theorem slots_split : s1 ++ s2 ++ s3 ++ s4 ++ s5 = slots := by
-  have h1 : slots.drop 396 = (slots.drop 3).drop 393 := by rw [List.drop_drop]
+  have h1 : slots.drop 396 = (slots.drop 4).drop 392 := by rw [List.drop_drop]
   have h2 : slots.drop 405 = (slots.drop 396).drop 9 := by rw [List.drop_drop]
   have h3 : slots.drop 478 = (slots.drop 405).drop 73 := by rw [List.drop_drop]
   simp only [s1, s2, s3, s4, s5, h3, h2, h1, List.append_assoc, List.take_append_drop]
 
-theorem p1_len : p1.length = 3 := by rw [p1, List.length_take, xyWires_length]; decide
-theorem rem1_len : rem1.length = 509 := by rw [rem1, List.length_drop, xyWires_length]
-theorem p2_len : p2.length = 393 := by rw [p2, List.length_take, rem1_len]; decide
+theorem p1_len : p1.length = 4 := by rw [p1, List.length_take, xyWires_length]; decide
+theorem rem1_len : rem1.length = 508 := by rw [rem1, List.length_drop, xyWires_length]
+theorem p2_len : p2.length = 392 := by rw [p2, List.length_take, rem1_len]; decide
 theorem rem2_len : rem2.length = 116 := by rw [rem2, List.length_drop, rem1_len]
 theorem p3_len : p3.length = 9 := by rw [p3, List.length_take, rem2_len]; decide
 theorem rem3_len : rem3.length = 107 := by rw [rem3, List.length_drop, rem2_len]
@@ -8295,8 +8295,8 @@ theorem p4_len : p4.length = 73 := by rw [p4, List.length_take, rem3_len]; decid
 theorem rem4_len : rem4.length = 34 := by rw [rem4, List.length_drop, rem3_len]
 theorem p5_len : p5.length = 34 := rem4_len
 
-theorem s1_len : s1.length = 3 := by rw [s1, List.length_take, slots_length]; decide
-theorem s2_len : s2.length = 393 := by rw [s2, List.length_take, List.length_drop, slots_length]; decide
+theorem s1_len : s1.length = 4 := by rw [s1, List.length_take, slots_length]; decide
+theorem s2_len : s2.length = 392 := by rw [s2, List.length_take, List.length_drop, slots_length]; decide
 theorem s3_len : s3.length = 9 := by rw [s3, List.length_take, List.length_drop, slots_length]; decide
 theorem s4_len : s4.length = 73 := by rw [s4, List.length_take, List.length_drop, slots_length]; decide
 theorem s5_len : s5.length = 34 := by rw [s5, List.length_drop, slots_length]
@@ -8304,8 +8304,8 @@ theorem s5_len : s5.length = 34 := by rw [s5, List.length_drop, slots_length]
 theorem p_mem_xy : ∀ w, (w ∈ p1 ∨ w ∈ p2 ∨ w ∈ p3 ∨ w ∈ p4 ∨ w ∈ p5) ↔ w ∈ xyWires := by
   intro w; rw [← xy_split]; simp only [List.mem_append, or_assoc]
 
-theorem p1_rem1_eq : p1 ++ rem1 = xyWires := List.take_append_drop 3 xyWires
-theorem p2_rem2_eq : p2 ++ rem2 = rem1 := List.take_append_drop 393 rem1
+theorem p1_rem1_eq : p1 ++ rem1 = xyWires := List.take_append_drop 4 xyWires
+theorem p2_rem2_eq : p2 ++ rem2 = rem1 := List.take_append_drop 392 rem1
 theorem p3_rem3_eq : p3 ++ rem3 = rem2 := List.take_append_drop 9 rem2
 theorem p4_p5_eq : p4 ++ p5 = rem3 := List.take_append_drop 73 rem3
 
@@ -8351,10 +8351,10 @@ theorem p4_sub_rem3 {w} (h : w ∈ p4) : w ∈ rem3 := List.mem_of_mem_take h
 theorem p5_sub_rem3 {w} (h : w ∈ p5) : w ∈ rem3 := List.mem_of_mem_drop h
 
 def pass1 : Pass :=
-  ⟨9, 3, s1, addrBits.take 9, addrBits.drop 9, List.range' 519 10, p1, (anc10 ++ rem1).take 1533⟩
+  ⟨8, 4, s1, addrBits.take 8, addrBits.drop 8, List.range' 519 11, p1, (anc11 ++ rem1).take 1020⟩
 
 def pass2 : Pass :=
-  ⟨2, 393, s2, addrBits.take 2, addrBits.drop 2, List.range' 519 17, p2, (anc17 ++ rem2).take 1179⟩
+  ⟨2, 392, s2, addrBits.take 2, addrBits.drop 2, List.range' 519 17, p2, (anc17 ++ rem2).take 1176⟩
 
 def pass3 : Pass :=
   ⟨7, 9, s3, addrBits.take 7, addrBits.drop 7, List.range' 519 12, p3, (anc12 ++ rem3).take 1143⟩
@@ -8370,21 +8370,21 @@ theorem pass1_geo : pass1.Geo where
   hctrl_len := by decide
   hsel_len := by decide
   hpaths_len := by decide
-  hbits := List.take_append_drop 9 addrBits
+  hbits := List.take_append_drop 8 addrBits
   hslots_len := s1_len
   hout_len := p1_len
-  hgarb_len := by simp [pass1, anc10, anc17_length, rem1_len]
+  hgarb_len := by simp [pass1, anc11, anc17_length, rem1_len]
   hsel_nodup := by decide
   hregs_nodup := by
-    change (p1 ++ (anc10 ++ rem1).take 1533).Nodup
-    have hfull : (p1 ++ (anc10 ++ rem1)).Nodup := by
-      refine List.nodup_append.mpr ⟨p1_nodup, List.nodup_append.mpr ⟨anc10_nodup, rem1_nodup, ?_⟩, ?_⟩
+    change (p1 ++ (anc11 ++ rem1).take 1020).Nodup
+    have hfull : (p1 ++ (anc11 ++ rem1)).Nodup := by
+      refine List.nodup_append.mpr ⟨p1_nodup, List.nodup_append.mpr ⟨anc11_nodup, rem1_nodup, ?_⟩, ?_⟩
       · intro a ha b hb he; subst he
-        have h1 := mem_anc10.mp ha; have h2 := mem_xyWires.mp (rem1_sub_xy hb)
+        have h1 := mem_anc11.mp ha; have h2 := mem_xyWires.mp (rem1_sub_xy hb)
         (try dsimp only [Wire] at *); omega
       · intro a ha b hb he; subst he
         rcases List.mem_append.mp hb with hb | hb
-        · have h1 := mem_anc10.mp hb; have h2 := mem_xyWires.mp (p1_sub_xy ha)
+        · have h1 := mem_anc11.mp hb; have h2 := mem_xyWires.mp (p1_sub_xy ha)
           (try dsimp only [Wire] at *); omega
         · exact List.disjoint_left.mp p1_disj_rem1 ha hb
     exact hfull.sublist (List.Sublist.append (List.Sublist.refl _) (List.take_sublist _ _))
@@ -8395,11 +8395,11 @@ theorem pass1_geo : pass1.Geo where
     rcases List.mem_append.mp h2 with hp | hg
     · have := mem_xyWires.mp (p1_sub_xy hp); (try dsimp only [Wire] at *); omega
     · rcases List.mem_append.mp (List.mem_of_mem_take hg) with ha | hr
-      · have := mem_anc10.mp ha; (try dsimp only [Wire] at *); omega
+      · have := mem_anc11.mp ha; (try dsimp only [Wire] at *); omega
       · have := mem_xyWires.mp (rem1_sub_xy hr); (try dsimp only [Wire] at *); omega
   hsupp := by
     intro w hw
-    rw [List.mem_range]
+    rw [List.mem_range'_1]
     simp only [pass1, bits, List.mem_cons, List.mem_append, List.mem_range'_1] at hw
     rcases hw with (((rfl | h) | h) | hp) | hg
     · decide
@@ -8407,7 +8407,7 @@ theorem pass1_geo : pass1.Geo where
     · (try dsimp only [Wire] at *); omega
     · have := mem_xyWires.mp (p1_sub_xy hp); (try dsimp only [Wire] at *); omega
     · rcases List.mem_append.mp (List.mem_of_mem_take hg) with ha | hr
-      · have := mem_anc10.mp ha; (try dsimp only [Wire] at *); omega
+      · have := mem_anc11.mp ha; (try dsimp only [Wire] at *); omega
       · have := mem_xyWires.mp (rem1_sub_xy hr); (try dsimp only [Wire] at *); omega
 
 theorem pass2_geo : pass2.Geo where
@@ -8421,7 +8421,7 @@ theorem pass2_geo : pass2.Geo where
   hgarb_len := by simp [pass2, anc17_length, rem2_len]
   hsel_nodup := by decide
   hregs_nodup := by
-    change (p2 ++ (anc17 ++ rem2).take 1179).Nodup
+    change (p2 ++ (anc17 ++ rem2).take 1176).Nodup
     have hfull : (p2 ++ (anc17 ++ rem2)).Nodup := by
       refine List.nodup_append.mpr ⟨p2_nodup, List.nodup_append.mpr ⟨anc17_nodup, rem2_nodup, ?_⟩, ?_⟩
       · intro a ha b hb he; subst he
@@ -8442,7 +8442,7 @@ theorem pass2_geo : pass2.Geo where
       · have := mem_xyWires.mp (rem1_sub_xy (rem2_sub_rem1 hr)); (try dsimp only [Wire] at *); omega
   hsupp := by
     intro w hw
-    rw [List.mem_range]
+    rw [List.mem_range'_1]
     simp only [pass2, bits, List.mem_cons, List.mem_append, List.mem_range'_1] at hw
     rcases hw with (((rfl | h) | h) | hp) | hg
     · decide
@@ -8487,7 +8487,7 @@ theorem pass3_geo : pass3.Geo where
       · have := mem_xyWires.mp (rem1_sub_xy (rem2_sub_rem1 (rem3_sub_rem2 hr))); (try dsimp only [Wire] at *); omega
   hsupp := by
     intro w hw
-    rw [List.mem_range]
+    rw [List.mem_range'_1]
     simp only [pass3, bits, List.mem_cons, List.mem_append, List.mem_range'_1] at hw
     rcases hw with (((rfl | h) | h) | hp) | hg
     · decide
@@ -8534,7 +8534,7 @@ theorem pass4_geo : pass4.Geo where
         (try dsimp only [Wire] at *); omega
   hsupp := by
     intro w hw
-    rw [List.mem_range]
+    rw [List.mem_range'_1]
     simp only [pass4, bits, List.mem_cons, List.mem_append, List.mem_range'_1] at hw
     rcases hw with (((rfl | h) | h) | hp) | hg
     · decide
@@ -8574,7 +8574,7 @@ theorem pass5_geo : pass5.Geo where
     · have := mem_anc14.mp (List.mem_of_mem_take hg); (try dsimp only [Wire] at *); omega
   hsupp := by
     intro w hw
-    rw [List.mem_range]
+    rw [List.mem_range'_1]
     simp only [pass5, bits, List.mem_cons, List.mem_append, List.mem_range'_1] at hw
     rcases hw with (((rfl | h) | h) | hp) | hg
     · decide
@@ -8597,9 +8597,9 @@ theorem fixRec9_eq : fixRec9 = 1534 := by
 def allData : List (MeasuredClear.ClearPort 524288) :=
   pass1.clearData ++ pass2.clearData ++ pass3.clearData ++ pass4.clearData ++ pass5.clearData
 
-theorem pass1_nums : pass1.k = 9 ∧ pass1.m = 3 ∧ pass1.selMeas = 1023 ∧ pass1.garbLen = 1533 := by
+theorem pass1_nums : pass1.k = 8 ∧ pass1.m = 4 ∧ pass1.selMeas = 2047 ∧ pass1.garbLen = 1020 := by
   refine ⟨rfl, rfl, ?_, ?_⟩ <;> simp [Pass.selMeas, Pass.garbLen, pass1]
-theorem pass2_nums : pass2.k = 2 ∧ pass2.m = 393 ∧ pass2.selMeas = 131071 ∧ pass2.garbLen = 1179 := by
+theorem pass2_nums : pass2.k = 2 ∧ pass2.m = 392 ∧ pass2.selMeas = 131071 ∧ pass2.garbLen = 1176 := by
   refine ⟨rfl, rfl, ?_, ?_⟩ <;> simp [Pass.selMeas, Pass.garbLen, pass2]
 theorem pass3_nums : pass3.k = 7 ∧ pass3.m = 9 ∧ pass3.selMeas = 4095 ∧ pass3.garbLen = 1143 := by
   refine ⟨rfl, rfl, ?_, ?_⟩ <;> simp [Pass.selMeas, Pass.garbLen, pass3]
@@ -8608,7 +8608,7 @@ theorem pass4_nums : pass4.k = 4 ∧ pass4.m = 73 ∧ pass4.selMeas = 32767 ∧ 
 theorem pass5_nums : pass5.k = 5 ∧ pass5.m = 34 ∧ pass5.selMeas = 16383 ∧ pass5.garbLen = 1054 := by
   refine ⟨rfl, rfl, ?_, ?_⟩ <;> simp [Pass.selMeas, Pass.garbLen, pass5]
 
-theorem allData_length : allData.length = 6004 := by
+theorem allData_length : allData.length = 5488 := by
   simp only [allData, List.length_append, pass1.clearData_length pass1_geo,
     pass2.clearData_length pass2_geo, pass3.clearData_length pass3_geo,
     pass4.clearData_length pass4_geo, pass5.clearData_length pass5_geo,
@@ -8642,16 +8642,16 @@ def step2345 (c : Nat) (rs : List (Fin c)) :
 theorem qrom_rec_eq :
     pass1.selMeas + (pass1.garbLen + (pass2.selMeas + (pass2.garbLen +
       (pass3.selMeas + (pass3.garbLen + (pass4.selMeas + (pass4.garbLen +
-        (pass5.selMeas + (pass5.garbLen + fixRec9))))))))) = 192877 := by
+        (pass5.selMeas + (pass5.garbLen + fixRec9))))))))) = 193385 := by
   rw [fixRec9_eq, pass1_nums.2.2.1, pass1_nums.2.2.2, pass2_nums.2.2.1, pass2_nums.2.2.2,
     pass3_nums.2.2.1, pass3_nums.2.2.2, pass4_nums.2.2.1, pass4_nums.2.2.2,
     pass5_nums.2.2.1, pass5_nums.2.2.2]
 
-def rawQromProgram (start : Nat) : Straight 524288 start (start + 192877) :=
+def rawQromProgram (start : Nat) : Straight 524288 start (start + 193385) :=
   castFinish (by rw [qrom_rec_eq])
     (pass1.stepProg pass1_geo step2345 start ([] : List (Fin start)))
 
-def qromProgram (start : Nat) : Straight 524288 start (start + 192877) :=
+def qromProgram (start : Nat) : Straight 524288 start (start + 193385) :=
   RootPass.seedProgram 836 (rawQromProgram start)
 
 attribute [local irreducible] stepFix step5 step45 step345 step2345 rawQromProgram qromProgram
@@ -9122,7 +9122,7 @@ theorem rawQromProgram_coherent (coeffs : Fin 524288 → PointCoeff) (Q : Point)
 /-! ### Part 7: Resources of `qromProgram` -/
 
 theorem rawQromProgram_tCount (read : ConstantBit 524288 → Bool) (start : Nat) (h : Fin start → Bool) :
-    ((rawQromProgram start).instantiate read h).tCount = 7 * 192868 := by
+    ((rawQromProgram start).instantiate read h).tCount = 7 * 193376 := by
   have hlay : tree10.Layout 836 clearPaths := by unfold tree10; exact clear_layout
   have hFix : ∀ c rs hh, ((stepFix c rs).instantiate read hh).tCount = 7 * 1525 := by
     intro c rs hh
@@ -9163,7 +9163,7 @@ theorem rawQromProgram_residue (start : Nat) : residue (rawQromProgram start) = 
   rw [rawQromProgram, residue_cast]
   exact pass1.stepProg_residue pass1_geo step2345 h2345 start List.nil
 
-theorem rawQromProgram_added (start : Nat) : added (rawQromProgram start) = 192868 := by
+theorem rawQromProgram_added (start : Nat) : added (rawQromProgram start) = 193376 := by
   have h := exact_t (rawQromProgram start) (rawQromProgram_residue start) (fun _ => false) (fun _ => false)
   have ht := rawQromProgram_tCount (fun _ => false) start (fun _ => false)
   exact Nat.eq_of_mul_eq_mul_left (by decide) (h.symm.trans ht)
@@ -9175,7 +9175,7 @@ theorem rawQromProgram_slots (start : Nat) : (rawQromProgram start).gateSlots �
       MeasuredClear.fixupProgram_slots9 allData rs low hot tree10 836 scratch clearPaths hlay]
     have hl : tree10.leaves = 1024 := by unfold tree10; exact clear_leaves
     have hn : tree10.internalNodes = 1023 := by unfold tree10; exact clear_nodes
-    have hm : min allData.length rs.length ≤ 6004 := (Nat.min_le_left _ _).trans (by rw [allData_length])
+    have hm : min allData.length rs.length ≤ 5488 := (Nat.min_le_left _ _).trans (by rw [allData_length])
     rw [hl, hn]
     omega
   have h5 : ∀ c rs, (step5 c rs).gateSlots ≤
@@ -9224,26 +9224,26 @@ theorem rawQromProgram_wellFormed (start : Nat) : (rawQromProgram start).WellFor
   rw [rawQromProgram, castFinish_wellFormed]
   exact pass1.stepProg_wellFormed pass1_geo step2345 h2345 start List.nil
 
-theorem rawQromProgram_support (start : Nat) : straightWires (rawQromProgram start) ⊆ List.range 1613 := by
-  have hFix : ∀ c rs, straightWires (stepFix c rs) ⊆ List.range 1613 := fun c rs => by
+theorem rawQromProgram_support (start : Nat) : straightWires (rawQromProgram start) ⊆ List.range' 2 1611 := by
+  have hFix : ∀ c rs, straightWires (stepFix c rs) ⊆ List.range' 2 1611 := fun c rs => by
     rw [stepFix, straightWires_castFinish, RootPass.straightWires_eq_naive]
     apply MeasuredClear.fixupProgram_within9
     · decide
     · decide
-    · intro i; rw [List.mem_range]; have := i.isLt; simp only [low]; (try dsimp only [Wire] at *); omega
-    · intro i; rw [List.mem_range]; have := i.isLt; simp only [hot]; (try dsimp only [Wire] at *); omega
+    · intro i; rw [List.mem_range'_1]; have := i.isLt; simp only [low]; (try dsimp only [Wire] at *); omega
+    · intro i; rw [List.mem_range'_1]; have := i.isLt; simp only [hot]; (try dsimp only [Wire] at *); omega
     · intro w hw
       have hi : w ∈ high := by unfold tree10 at hw; exact (tableAddressTree_mem_index high 0 1 w).mp hw
-      rw [List.mem_range]; simp only [high, List.mem_range'_1] at hi; (try dsimp only [Wire] at *); omega
+      rw [List.mem_range'_1]; simp only [high, List.mem_range'_1] at hi; (try dsimp only [Wire] at *); omega
     · intro w hw
-      rw [List.mem_range]; simp only [clearPaths, List.mem_range'_1] at hw; (try dsimp only [Wire] at *); omega
-  have h5 : ∀ c rs, straightWires (step5 c rs) ⊆ List.range 1613 := fun c rs => by
+      rw [List.mem_range'_1]; simp only [clearPaths, List.mem_range'_1] at hw; (try dsimp only [Wire] at *); omega
+  have h5 : ∀ c rs, straightWires (step5 c rs) ⊆ List.range' 2 1611 := fun c rs => by
     rw [step5]; exact pass5.stepProg_support pass5_geo stepFix hFix c rs
-  have h45 : ∀ c rs, straightWires (step45 c rs) ⊆ List.range 1613 := fun c rs => by
+  have h45 : ∀ c rs, straightWires (step45 c rs) ⊆ List.range' 2 1611 := fun c rs => by
     rw [step45]; exact pass4.stepProg_support pass4_geo step5 h5 c rs
-  have h345 : ∀ c rs, straightWires (step345 c rs) ⊆ List.range 1613 := fun c rs => by
+  have h345 : ∀ c rs, straightWires (step345 c rs) ⊆ List.range' 2 1611 := fun c rs => by
     rw [step345]; exact pass3.stepProg_support pass3_geo step45 h45 c rs
-  have h2345 : ∀ c rs, straightWires (step2345 c rs) ⊆ List.range 1613 := fun c rs => by
+  have h2345 : ∀ c rs, straightWires (step2345 c rs) ⊆ List.range' 2 1611 := fun c rs => by
     rw [step2345]; exact pass2.stepProg_support pass2_geo step345 h345 c rs
   rw [rawQromProgram, straightWires_castFinish]
   exact pass1.stepProg_support pass1_geo step2345 h2345 start List.nil
@@ -9301,7 +9301,7 @@ theorem qromProgram_residue (start : Nat) : residue (qromProgram start) = 0 := b
   rw [qromProgram]
   exact Nat.eq_zero_of_le_zero h
 
-theorem qromProgram_added (start : Nat) : added (qromProgram start) = 192862 := by
+theorem qromProgram_added (start : Nat) : added (qromProgram start) = 193370 := by
   have h := RootPass.seedProgram_added 836 (rawQromProgram start)
   rw [rawQromProgram_added, rawQromProgram_hits836] at h
   rw [qromProgram]
@@ -9311,7 +9311,7 @@ theorem qromProgram_slots (start : Nat) : (qromProgram start).gateSlots ≤ 1300
   rw [qromProgram, RootPass.seedProgram_slots]
   exact rawQromProgram_slots start
 
-theorem qromProgram_support (start : Nat) : straightWires (qromProgram start) ⊆ List.range 1613 := by
+theorem qromProgram_support (start : Nat) : straightWires (qromProgram start) ⊆ List.range' 2 1611 := by
   rw [qromProgram]
   exact (RootPass.seedProgram_wires 836 _).trans (rawQromProgram_support start)
 
@@ -9522,9 +9522,9 @@ theorem signed_address_match (coeffs : Fin 524288 → PointCoeff) (Q : Point) (s
 
 def negYLayout : ECDSAAdd.Arithmetic.CompactRecoveryNegateLayout where
   word := List.range' 580 256
-  work := List.range' 0 256
-  cin := 256
-  zero := 257
+  work := List.range' 2 256
+  cin := 258
+  zero := 259
 
 def negYRaw : ECDSAAdd.Program := negYLayout.reflection signBit (ECDSAAdd.p + 1)
 def negYNorm : ECDSAAdd.Program := ECDSAAdd.Baselines.normalizeProgram negYRaw
@@ -9583,15 +9583,19 @@ theorem negYFixed_credit (start : Nat) : residue (negYFixed start) = 0 ∧ added
   · rw [WEXCredit.added_naive_cast, WEXCredit.literal_added]
     exact negYNorm_counts.1
 
-theorem negYFixed_support (start : Nat) : straightWires (negYFixed start) ⊆ List.range 1613 := by
-  apply WEX.literalFixed_support negYNorm 255 negYNorm_meas (List.range 1613)
+theorem negYFixed_added_eq (start : Nat) : added (negYFixed start) = ECDSAAdd.toffoliCount negYNorm := by
+  unfold negYFixed WEX.literalFixed
+  rw [WEXCredit.added_naive_cast, WEXCredit.literal_added]
+
+theorem negYFixed_support (start : Nat) : straightWires (negYFixed start) ⊆ List.range' 2 1611 := by
+  apply WEX.literalFixed_support negYNorm 255 negYNorm_meas (List.range' 2 1611)
   intro w hw
   rw [negYNorm_def, ECDSAAdd.Baselines.normalize_wires, negYRaw_def] at hw
   have h2 := negYLayout.reflection_support signBit (ECDSAAdd.p + 1) hw
   rw [List.mem_toFinset] at h2 ⊢
   simp only [ECDSAAdd.Arithmetic.CompactRecoveryNegateLayout.wires, negYLayout, signBit,
     List.mem_cons, List.mem_append, List.mem_range'_1] at h2
-  rw [List.mem_range]
+  rw [List.mem_range'_1]
   (try dsimp only [Wire, ECDSAAdd.Wire] at *); omega
 
 theorem negYFixed_slots (start : Nat) : (negYFixed start).gateSlots ≤ 300000 := by
@@ -9706,7 +9710,7 @@ theorem eq_of_wireValues_eq {ws : List Wire} {s t : BasisState}
 
 def NegYValid (s : BasisState) : Prop :=
   ∃ (P : Point) (t : BasisState), P ≠ 0 ∧ order • P = 0 ∧ s = pointWrite P t ∧
-    ∀ w, w < 258 → t w = false
+    ∀ w, 2 ≤ w ∧ w < 260 → t w = false
 
 def negYResult (s : BasisState) : BasisState :=
   pointWrite (if s signBit then -(WEX.inputPoint s) else WEX.inputPoint s) s
@@ -9747,10 +9751,10 @@ theorem negY_coherent :
       exact htclean w (by (try dsimp only [Wire, ECDSAAdd.Wire] at *); omega)
     have hcin : pointWrite (.some hP) t negYLayout.cin = false := by
       rw [pointWrite_frame _ _ _ (fun hp => by have := First18.mem_point hp; simp only [negYLayout] at this; (try dsimp only [Wire, ECDSAAdd.Wire] at *); omega)]
-      exact htclean 256 (by decide)
+      exact htclean 258 (by decide)
     have hzero : pointWrite (.some hP) t negYLayout.zero = false := by
       rw [pointWrite_frame _ _ _ (fun hp => by have := First18.mem_point hp; simp only [negYLayout] at this; (try dsimp only [Wire, ECDSAAdd.Wire] at *); omega)]
-      exact htclean 257 (by decide)
+      exact htclean 259 (by decide)
     have href := negYLayout.reflection_correct signBit negYLayout_nodup
       (negYLayout_word_len.trans negYLayout_work_len.symm) (by rw [negYLayout_word_len]; omega)
       (ECDSAAdd.p + 1) y.val hp_lt (by omega)
@@ -9818,12 +9822,12 @@ theorem negYFixed_run (read : ConstantBit 524288 → Bool) (start : Nat) (h : Fi
 
 attribute [local irreducible] negYFixed
 
-def program (start : Nat) : Straight 524288 start (start + 193132) :=
+def program (start : Nat) : Straight 524288 start (start + 193640) :=
   castFinish (by omega)
     ((literalProgram (n := 524288) (s := start) flipAddr).append
       ((qromProgram start).append
-        ((negYFixed (start + 192877)).append
-          (literalProgram (n := 524288) (s := start + 192877 + 255) unflipAddr))))
+        ((negYFixed (start + 193385)).append
+          (literalProgram (n := 524288) (s := start + 193385 + 255) unflipAddr))))
 
 theorem literal_append_run {n s e : Nat} (c : Circuit) (q : Straight n s e)
     (read : ConstantBit n → Bool) (history : Fin s → Bool) :
@@ -9844,14 +9848,14 @@ theorem program_run (read : ConstantBit 524288 → Bool) (start : Nat) (history 
         (((qromProgram start).instantiate read history).seq
           ((WEX.literalSource negYNorm).seq (.unitary unflipAddr .done)))).run := by
   have hneg_unflip : ∀ h',
-      (((negYFixed (start + 192877)).append
-          (literalProgram (n := 524288) (s := start + 192877 + 255) unflipAddr)).instantiate
+      (((negYFixed (start + 193385)).append
+          (literalProgram (n := 524288) (s := start + 193385 + 255) unflipAddr)).instantiate
         read h').run =
       ((WEX.literalSource negYNorm).seq (.unitary unflipAddr .done)).run := by
     intro h'
     rw [append_run_fixed _ _ _ _ (.unitary unflipAddr .done)
         (fun h'' => literalProgram_run unflipAddr read h''),
-      AdaptiveCircuit.run_seq, negYFixed_run read (start + 192877) h', ← AdaptiveCircuit.run_seq]
+      AdaptiveCircuit.run_seq, negYFixed_run read (start + 193385) h', ← AdaptiveCircuit.run_seq]
   rw [program, castFinish_instantiate, literal_append_run, AdaptiveCircuit.run_seq,
     append_run_fixed _ _ _ _ ((WEX.literalSource negYNorm).seq (.unitary unflipAddr .done)) hneg_unflip,
     ← AdaptiveCircuit.run_seq]
@@ -9919,10 +9923,15 @@ theorem program_residue (start : Nat) : residue (program start) = 0 := by
     residue_append, qromProgram_residue, residue_append, (negYFixed_credit _).1,
     residue_literal_HPFree unflipAddr unflipAddr_hp]
 
-theorem program_added (start : Nat) : added (program start) ≤ 193117 := by
+theorem program_added_eq (start : Nat) :
+    added (program start) = 193370 + ECDSAAdd.toffoliCount negYNorm := by
   rw [program, added_cast, added_append, added_literal, flipAddr_ccx,
-    added_append, qromProgram_added, added_append, added_literal, unflipAddr_ccx]
-  have h := (negYFixed_credit (start + 192877)).2
+    added_append, qromProgram_added, added_append, negYFixed_added_eq, added_literal, unflipAddr_ccx]
+  omega
+
+theorem program_added (start : Nat) : added (program start) ≤ 193625 := by
+  rw [program_added_eq]
+  have h := negYNorm_counts.1
   omega
 
 theorem program_slots (start : Nat) : (program start).gateSlots ≤ 13100000000 := by
@@ -9931,15 +9940,25 @@ theorem program_slots (start : Nat) : (program start).gateSlots ≤ 13100000000 
   have h1 : flipAddr.length = 20 := by decide
   have h2 : unflipAddr.length = 20 := by decide
   have h3 := qromProgram_slots start
-  have h4 := negYFixed_slots (start + 192877)
+  have h4 := negYFixed_slots (start + 193385)
   omega
 
-theorem program_support (start : Nat) : straightWires (program start) ⊆ List.range 1613 := by
+theorem bits_subset_drop01 : bits ⊆ List.range' 2 1611 := by
+  intro w hw
+  have h := mem_bits.mp hw
+  rw [List.mem_range'_1]; (try dsimp only [Wire] at *); omega
+
+theorem program_support_drop01 (start : Nat) : straightWires (program start) ⊆ List.range' 2 1611 := by
   rw [program, straightWires_castFinish, straightWires_append, straightWires_append,
     straightWires_append, literalProgram_support, literalProgram_support]
-  refine List.append_subset.mpr ⟨fun w hw => bits_subset_range (flipAddr_wires w hw),
+  refine List.append_subset.mpr ⟨fun w hw => bits_subset_drop01 (flipAddr_wires w hw),
     List.append_subset.mpr ⟨qromProgram_support start,
-      List.append_subset.mpr ⟨negYFixed_support _, fun w hw => bits_subset_range (unflipAddr_wires w hw)⟩⟩⟩
+      List.append_subset.mpr ⟨negYFixed_support _, fun w hw => bits_subset_drop01 (unflipAddr_wires w hw)⟩⟩⟩
+
+theorem program_support (start : Nat) : straightWires (program start) ⊆ List.range 1613 := by
+  intro w hw
+  have h := List.mem_range'_1.mp (program_support_drop01 start hw)
+  rw [List.mem_range]; (try dsimp only [Wire] at *); omega
 
 theorem program_wellFormed (start : Nat) : (program start).WellFormed := by
   rw [program, castFinish_wellFormed]
@@ -9949,7 +9968,7 @@ theorem program_wellFormed (start : Nat) : (program start).WellFormed := by
         (literalProgram_wellFormed unflipAddr unflipAddr_wf)))
 
 def windowGeneric {n : Nat} (rows : Fin 524288 → Fin n) : Single.Window n :=
-  ⟨bits.reverse, 193132, fun start => reindexStraight rows (program start)⟩
+  ⟨bits.reverse, 193640, fun start => reindexStraight rows (program start)⟩
 
 theorem window_law_generic {n : Nat} (coeffs : Fin n → PointCoeff) (rows : Fin 524288 → Fin n)
     (init : Point → Nat → Point)
@@ -9993,10 +10012,22 @@ theorem window_support {n : Nat} (rows : Fin 524288 → Fin n) (start : Nat) :
 
 theorem window_credit {n : Nat} (_coeffs : Fin n → PointCoeff) (rows : Fin 524288 → Fin n)
     (_Q : Point) (start : Nat) (_history : Fin start → Bool) :
-    added ((windowGeneric rows).program start) ≤ 193117 := by
+    added ((windowGeneric rows).program start) ≤ 193625 := by
   unfold windowGeneric
   rw [added_reindex]
   exact program_added start
+
+theorem window_support_drop01 {n : Nat} (rows : Fin 524288 → Fin n) (start : Nat) :
+    straightWires ((windowGeneric rows).program start) ⊆ List.range' 2 1611 := by
+  unfold windowGeneric
+  rw [straightWires_reindex]
+  exact program_support_drop01 start
+
+theorem window_added_eq {n : Nat} (rows : Fin 524288 → Fin n) (start : Nat) :
+    added ((windowGeneric rows).program start) = 193370 + ECDSAAdd.toffoliCount negYNorm := by
+  unfold windowGeneric
+  rw [added_reindex]
+  exact program_added_eq start
 
 theorem window_residue {n : Nat} (rows : Fin 524288 → Fin n) (start : Nat) :
     residue ((windowGeneric rows).program start) = 0 := by
