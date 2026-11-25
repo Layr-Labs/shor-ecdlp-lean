@@ -11981,9 +11981,9 @@ end
 end ShorECDLP.Entrant.LocalKernel
 end
 
-/-! ### Generic-only 16-bit signed body window (`Generic16`, 1,610 qubits, 2,238,256 Toffolis) -/
+/-! ### Polymorphic signed generic body windows (`GenericW`, `k ∈ {16, 17, 18}`, `1,612` qubits) -/
 section
-namespace ShorECDLP.Entrant.Generic16
+namespace ShorECDLP.Entrant.GenericW
 open Quantum Challenge Secp256k1 AndGadget ConditionalCatalyst ApproximatePhase34 WEXCredit
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
 open WEX WEXUnlookup PathShare Site1Fast WideSigned
@@ -12030,8 +12030,9 @@ attribute [local irreducible] Quantum.run Quantum.applyGate Quantum.ket
   ECDSAAdd.Frontier.arithS ECDSAAdd.Frontier.SquareOB5.program
   WEX.codeRecords lookupMeasurements WEX.portOps tableAddressTree
   MeasuredClear.recordMeasurements MeasuredClear.recordUnaryOps WEX.compile Bridge.translate
-  MeasuredClear.measuredClear MeasuredClear.measuredClear8 MeasuredClear.measureThen
+  MeasuredClear.measuredClear MeasuredClear.measuredClear8 MeasuredClear.measuredClear9 MeasuredClear.measureThen
   MeasuredClear.fixupProgram MeasuredClear.fixupProgram8 MeasuredClear.fixupSource8
+  MeasuredClear.fixupProgram9 MeasuredClear.fixupSource9
   ECDSAAdd.Challenge.gateSlots
   AndGadget.added AndGadget.residue
   SS1.loadProg SS2.loadProg SS1.selCode SS2.selCode SS1.selPorts SS2.selPorts
@@ -12140,6 +12141,48 @@ theorem fixupFactor8_eq_portPhase {n : Nat} (data : List (MeasuredClear.ClearPor
       have h2 := ih os (by simpa using hl)
       simpa only [List.cons_append, List.nil_append, portPhase, registerXPhase, List.map_cons, List.map_nil, mul_one] using
         hsp.trans (congrArg₂ (· * ·) h1 h2)
+
+
+theorem fixupFactor9_eq_portPhase {n : Nat} (data : List (MeasuredClear.ClearPort n)) (outcomes : List Bool)
+    (hl : outcomes.length = data.length)
+    (read : ConstantBit n → Bool) (low : Fin 9 → Wire) (hot : Fin 512 → Wire)
+    (tree : UnaryActionTree) (root : Wire) (paths : List Wire)
+    (hi : Function.Injective hot) (hdlow : ∀ i j, low i ≠ hot j)
+    (hbank : (MeasuredClear.hotBank9 hot).Disjoint (root :: tree.indexWires.dedup ++ paths))
+    (t : BasisState) (a : Nat) (hhot : MeasuredClear.HotClean9 hot t)
+    (haddr : 512 * tree.routeLabel t + MeasuredClear.hotAddress9 low t = a)
+    (hroot : t root = true) :
+    MeasuredClear.fixupFactor9 data outcomes read low hot tree root t =
+      portPhase data outcomes read a := by
+  let prepared := Classical.run (MeasuredClear.hotPrepare9 low hot) t
+  have hframe (w : Wire) (hw : w ∈ root :: tree.indexWires.dedup ++ paths) : prepared w = t w :=
+    MeasuredClear.hotPrepare_frame9 low hot t w (fun i he =>
+      List.disjoint_left.mp hbank (List.mem_ofFn.mpr ⟨i, he.symm⟩) hw)
+  have hrt : prepared root = true := (hframe root (by simp)).trans hroot
+  have hroute : tree.routeLabel prepared = tree.routeLabel t :=
+    tree.routeLabel_congr prepared t (fun w hw => hframe w (by simp [hw]))
+  let selected : Fin 512 := ⟨MeasuredClear.hotAddress9 low t, MeasuredClear.hotAddress_bound9 low t⟩
+  have hmark : ∀ i, prepared (hot i) = decide (i = selected) := fun i => by
+    simpa only [Fin.ext_iff] using MeasuredClear.hotPrepare_marker9 low hot hi hdlow t hhot i
+  change MeasuredClear.phaseLookupFactor (MeasuredClear.logicalPorts9 data outcomes hot) read
+      MeasuredClear.boolHistory tree root prepared = portPhase data outcomes read a
+  unfold MeasuredClear.phaseLookupFactor
+  induction data generalizing outcomes with
+  | nil =>
+    cases outcomes with
+    | nil =>
+      simp only [MeasuredClear.logicalPorts9, MeasuredClear.phasePorts9, List.zip_nil_right,
+        List.flatMap_nil, MeasuredClear.recordTargets, List.filter_nil, List.filterMap_nil,
+        MeasuredClear.xorPhase, List.map_nil, List.prod_nil, portPhase]
+    | cons _ _ => simp at hl
+  | cons q qs ih =>
+    cases outcomes with
+    | nil => simp at hl
+    | cons o os =>
+      rw [MeasuredClear.logicalPorts_cons9, MeasuredClear.recordTargets_append, MeasuredClear.xorPhase_append,
+        MeasuredClear.phasePorts_block9 q o hot read (tree.routeLabel prepared) root prepared selected hmark,
+        hrt, Bool.true_and, ih os (by simpa using hl), hroute, haddr]
+      rfl
 
 
 /-- Lower and catalyst-compile any closed `Straight n 0 R` into a shift-invariant `CatFn n`. -/
@@ -13523,7 +13566,6 @@ private theorem b_catFn_swapSurround_run {n : Nat} (y₁ y₂ : Wire) (body : Ca
   exact b_catProg_surround_run (swapCircuit y₁ y₂) (swapCircuit y₂ y₁) (body s) read h
 
 
-
 private theorem b_seq_tCount_any {n : Nat} (a b : CatFn n) {ta tb : Nat}
     (ha : ∀ s r h, ((a s).prog.instantiate r h).tCount ≤ ta)
     (hb : ∀ s r h, ((b s).prog.instantiate r h).tCount ≤ tb)
@@ -13659,22 +13701,20 @@ private theorem catLitSim_to_ket_aux (P : ECDSAAdd.Program) (circ : AdaptiveCirc
 
 attribute [local irreducible] Straight.gateSlots ChallengeMigration.straightWires CatProg.measureThen stepCatFn
 
-/-! #### 1. Wire geometry, `support1610`, involution `compact1610`, and `Good16` specification -/
+/-! #### 1. Wire geometry (`1,612` qubits), involution `compact1612`, and `GoodW` specification -/
 
-def bits16 : List Wire := WideBank8.Fast16.windowBits
-def bank17 : List Wire := bits16 ++ [870]
-def selBits1 : List Wire := List.range' 856 14 ++ [871]
-def selBits2 : List Wire := List.range' 857 13 ++ [871]
-def pathBank15 : List Wire := List.range' 14834 15
-def selPaths1 : List Wire := List.range' 14834 15
-def selPaths2 : List Wire := List.range' 14834 14
-def fixPaths8 : List Wire := List.range' 14834 8
+def bank19 : List Wire := List.range' 855 19
+def bitsW (k : Nat) : List Wire := List.range' 855 k
+def signBitW (k : Nat) : Wire := 855 + k
+def bankW (k : Nat) : List Wire := List.range' 855 (k + 1)
+def selBits1W (k : Nat) : List Wire := List.range' 856 (k - 1)
+def selBits2W (k : Nat) : List Wire := List.range' 857 (k - 2)
+def pathBankW (k : Nat) : List Wire := List.range' 14834 (k - 1)
+def selPaths1W (k : Nat) : List Wire := List.range' 14834 (k - 1)
+def selPaths2W (k : Nat) : List Wire := List.range' 14834 (k - 2)
 
-def rootWire : Wire := 14849
-def guardWire : Wire := 14850
-def fixScratch : Wire := 14373
-def hot8 (i : Fin 256) : Wire := 14374 + i.val
-def tree8 : UnaryActionTree := tableAddressTree WideBank8.Fast16.high 0 1
+def rootWire : Wire := 14851
+def guardWire : Wire := 14852
 
 def cxWord : List Wire := List.range' 14374 256
 def cyWord : List Wire := 14883 :: List.range' 15399 255
@@ -13687,15 +13727,15 @@ def g4 : List Wire := g4_1 ++ g4_2 ++ g4_3
 def pool1081 : List Wire :=
   List.range' 14115 515 ++ List.range' 14832 48 ++ List.range' 14883 261 ++ List.range' 15399 257
 
-def support1610 : List Wire :=
-  List.range' 263 256 ++ List.range' 580 256 ++ bank17 ++ pool1081
+def support1612 : List Wire :=
+  List.range' 263 256 ++ List.range' 580 256 ++ bank19 ++ pool1081
 
-theorem bits16_eq : bits16 = List.range' 855 15 ++ [871] := rfl
-theorem bank17_eq_logical : bank17 = WideSigned.Body.logicalBank .w16 := by decide
-theorem bits16_length : bits16.length = 16 := by decide
-theorem bank17_length : bank17.length = 17 := by decide
-theorem bits16_nodup : bits16.Nodup := by decide
-theorem bank17_nodup : bank17.Nodup := by decide
+theorem bitsW_length (k : Nat) : (bitsW k).length = k := List.length_range'
+theorem bankW_length (k : Nat) : (bankW k).length = k + 1 := List.length_range'
+theorem bitsW_nodup (k : Nat) : (bitsW k).Nodup := List.nodup_range'
+theorem bankW_nodup (k : Nat) : (bankW k).Nodup := List.nodup_range'
+theorem bankW_eq_append (k : Nat) : bankW k = bitsW k ++ [signBitW k] := by
+  simp [bankW, bitsW, signBitW, List.range'_concat]
 theorem cxWord_length : cxWord.length = 256 := by simp [cxWord]
 theorem cyWord_length : cyWord.length = 256 := by simp [cyWord]
 theorem g1_1_length : g1_1.length = 512 := by simp [g1_1]
@@ -13703,22 +13743,17 @@ theorem g4_1_length : g4_1.length = 256 := by simp [g4_1]
 theorem g4_2_length : g4_2.length = 256 := by simp [g4_2]
 theorem g4_3_length : g4_3.length = 256 := by simp [g4_3]
 theorem g4_length : g4.length = 768 := by simp [g4, g4_1, g4_2, g4_3]
-theorem selBits1_length : selBits1.length = 15 := by decide
-theorem selBits2_length : selBits2.length = 14 := by decide
+theorem selBits1W_length (k : Nat) : (selBits1W k).length = k - 1 := List.length_range'
+theorem selBits2W_length (k : Nat) : (selBits2W k).length = k - 2 := List.length_range'
 
-theorem mem_bits16 {w : Wire} : w ∈ bits16 ↔ (855 ≤ w ∧ w < 870) ∨ w = 871 := by
-  simp only [bits16, WideBank8.Fast16.windowBits, List.mem_append, List.mem_singleton, List.mem_range'_1]
+theorem mem_bitsW {k : Nat} {w : Wire} : w ∈ bitsW k ↔ 855 ≤ w ∧ w < 855 + k := by
+  simp only [bitsW, List.mem_range'_1]
 
-theorem mem_bank17 {w : Wire} : w ∈ bank17 ↔ 855 ≤ w ∧ w < 872 := by
-  simp only [bank17, List.mem_append, List.mem_singleton, mem_bits16]
-  constructor
-  · rintro ((h | rfl) | rfl) <;> exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  · intro ⟨h1, h2⟩
-    by_cases h70 : w = 870
-    · exact Or.inr h70
-    · by_cases h71 : w = 871
-      · exact Or.inl (Or.inr h71)
-      · exact Or.inl (Or.inl ⟨h1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩)
+theorem mem_bankW {k : Nat} {w : Wire} : w ∈ bankW k ↔ 855 ≤ w ∧ w < 855 + (k + 1) := by
+  simp only [bankW, List.mem_range'_1]
+
+theorem mem_bank19 {w : Wire} : w ∈ bank19 ↔ 855 ≤ w ∧ w < 874 := by
+  simp only [bank19, List.mem_range'_1]
 
 theorem mem_pool1081 {w : Wire} :
     w ∈ pool1081 ↔
@@ -13726,31 +13761,31 @@ theorem mem_pool1081 {w : Wire} :
       (14883 ≤ w ∧ w < 15144) ∨ (15399 ≤ w ∧ w < 15656) := by
   simp only [pool1081, List.mem_append, List.mem_range'_1, or_assoc]
 
-theorem mem_support1610 {w : Wire} :
-    w ∈ support1610 ↔
-      (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836) ∨ (855 ≤ w ∧ w < 872) ∨
+theorem mem_support1612 {w : Wire} :
+    w ∈ support1612 ↔
+      (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836) ∨ (855 ≤ w ∧ w < 874) ∨
       (14115 ≤ w ∧ w < 14630) ∨ (14832 ≤ w ∧ w < 14880) ∨
       (14883 ≤ w ∧ w < 15144) ∨ (15399 ≤ w ∧ w < 15656) := by
-  simp only [support1610, List.mem_append, List.mem_range'_1, mem_bank17, mem_pool1081, or_assoc]
+  simp only [support1612, List.mem_append, List.mem_range'_1, mem_bank19, mem_pool1081, or_assoc]
 
-private theorem mem_support1610_x {w : Wire} (h : 263 ≤ w ∧ w < 519) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inl h)
-private theorem mem_support1610_y {w : Wire} (h : 580 ≤ w ∧ w < 836) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inr (Or.inl h))
-private theorem mem_support1610_bank {w : Wire} (h : 855 ≤ w ∧ w < 872) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inr (Or.inr (Or.inl h)))
-private theorem mem_support1610_p1 {w : Wire} (h : 14115 ≤ w ∧ w < 14630) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inr (Or.inr (Or.inr (Or.inl h))))
-private theorem mem_support1610_p2 {w : Wire} (h : 14832 ≤ w ∧ w < 14880) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h)))))
-private theorem mem_support1610_p3 {w : Wire} (h : 14883 ≤ w ∧ w < 15144) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h))))))
-private theorem mem_support1610_p4 {w : Wire} (h : 15399 ≤ w ∧ w < 15656) : w ∈ support1610 :=
-  mem_support1610.mpr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr h))))))
+private theorem mem_support1612_x {w : Wire} (h : 263 ≤ w ∧ w < 519) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inl h)
+private theorem mem_support1612_y {w : Wire} (h : 580 ≤ w ∧ w < 836) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inr (Or.inl h))
+private theorem mem_support1612_bank {w : Wire} (h : 855 ≤ w ∧ w < 874) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inr (Or.inr (Or.inl h)))
+private theorem mem_support1612_p1 {w : Wire} (h : 14115 ≤ w ∧ w < 14630) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inr (Or.inr (Or.inr (Or.inl h))))
+private theorem mem_support1612_p2 {w : Wire} (h : 14832 ≤ w ∧ w < 14880) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h)))))
+private theorem mem_support1612_p3 {w : Wire} (h : 14883 ≤ w ∧ w < 15144) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl h))))))
+private theorem mem_support1612_p4 {w : Wire} (h : 15399 ≤ w ∧ w < 15656) : w ∈ support1612 :=
+  mem_support1612.mpr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr h))))))
 
-/-- Involution packing `support1610` into `List.range 1610`, fixing `pointX`, `pointY`, and `bank17`,
+/-- Involution packing `support1612` into `List.range 1612`, fixing `pointX`, `pointY`, and `bank19`,
     and sending scratch/catalyst `(14832, 14833)` to `(0, 1)`. -/
-def compact1610Fn (w : Wire) : Wire :=
+def compact1612Fn (w : Wire) : Wire :=
   if w < 48 then w + 14832
   else if 14832 ≤ w ∧ w < 14880 then w - 14832
   else if 48 ≤ w ∧ w < 263 then w + 14067
@@ -13759,156 +13794,153 @@ def compact1610Fn (w : Wire) : Wire :=
   else if 14330 ≤ w ∧ w < 14391 then w - 13811
   else if 836 ≤ w ∧ w < 855 then w + 13555
   else if 14391 ≤ w ∧ w < 14410 then w - 13555
-  else if 872 ≤ w ∧ w < 1092 then w + 13538
-  else if 14410 ≤ w ∧ w < 14630 then w - 13538
-  else if 1092 ≤ w ∧ w < 1353 then w + 13791
-  else if 14883 ≤ w ∧ w < 15144 then w - 13791
-  else if 1353 ≤ w ∧ w < 1610 then w + 14046
-  else if 15399 ≤ w ∧ w < 15656 then w - 14046
+  else if 874 ≤ w ∧ w < 1094 then w + 13536
+  else if 14410 ≤ w ∧ w < 14630 then w - 13536
+  else if 1094 ≤ w ∧ w < 1355 then w + 13789
+  else if 14883 ≤ w ∧ w < 15144 then w - 13789
+  else if 1355 ≤ w ∧ w < 1612 then w + 14044
+  else if 15399 ≤ w ∧ w < 15656 then w - 14044
   else w
 
-private theorem c1610_1 {w : Wire} (h : w < 48) : compact1610Fn w = w + 14832 := by
-  unfold compact1610Fn
-  rw [if_pos h]
-private theorem c1610_2 {w : Wire} (h : 14832 ≤ w ∧ w < 14880) : compact1610Fn w = w - 14832 := by
-  unfold compact1610Fn
-  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_3 {w : Wire} (h : 48 ≤ w ∧ w < 263) : compact1610Fn w = w + 14067 := by
-  unfold compact1610Fn
+private theorem c1612_1 {w : Wire} (h : w < 48) : compact1612Fn w = w + 14832 := by
+  unfold compact1612Fn; rw [if_pos h]
+private theorem c1612_2 {w : Wire} (h : 14832 ≤ w ∧ w < 14880) : compact1612Fn w = w - 14832 := by
+  unfold compact1612Fn; rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
+private theorem c1612_3 {w : Wire} (h : 48 ≤ w ∧ w < 263) : compact1612Fn w = w + 14067 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_4 {w : Wire} (h : 14115 ≤ w ∧ w < 14330) : compact1610Fn w = w - 14067 := by
-  unfold compact1610Fn
+private theorem c1612_4 {w : Wire} (h : 14115 ≤ w ∧ w < 14330) : compact1612Fn w = w - 14067 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_5 {w : Wire} (h : 519 ≤ w ∧ w < 580) : compact1610Fn w = w + 13811 := by
-  unfold compact1610Fn
+private theorem c1612_5 {w : Wire} (h : 519 ≤ w ∧ w < 580) : compact1612Fn w = w + 13811 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_6 {w : Wire} (h : 14330 ≤ w ∧ w < 14391) : compact1610Fn w = w - 13811 := by
-  unfold compact1610Fn
+private theorem c1612_6 {w : Wire} (h : 14330 ≤ w ∧ w < 14391) : compact1612Fn w = w - 13811 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_7 {w : Wire} (h : 836 ≤ w ∧ w < 855) : compact1610Fn w = w + 13555 := by
-  unfold compact1610Fn
+private theorem c1612_7 {w : Wire} (h : 836 ≤ w ∧ w < 855) : compact1612Fn w = w + 13555 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_8 {w : Wire} (h : 14391 ≤ w ∧ w < 14410) : compact1610Fn w = w - 13555 := by
-  unfold compact1610Fn
+private theorem c1612_8 {w : Wire} (h : 14391 ≤ w ∧ w < 14410) : compact1612Fn w = w - 13555 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_9 {w : Wire} (h : 872 ≤ w ∧ w < 1092) : compact1610Fn w = w + 13538 := by
-  unfold compact1610Fn
+private theorem c1612_9 {w : Wire} (h : 874 ≤ w ∧ w < 1094) : compact1612Fn w = w + 13536 := by
+  unfold compact1612Fn
   rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_10 {w : Wire} (h : 14410 ≤ w ∧ w < 14630) : compact1610Fn w = w - 13538 := by
-  unfold compact1610Fn
-  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(872 ≤ w ∧ w < 1092) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_11 {w : Wire} (h : 1092 ≤ w ∧ w < 1353) : compact1610Fn w = w + 13791 := by
-  unfold compact1610Fn
-  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(872 ≤ w ∧ w < 1092) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_12 {w : Wire} (h : 14883 ≤ w ∧ w < 15144) : compact1610Fn w = w - 13791 := by
-  unfold compact1610Fn
-  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(872 ≤ w ∧ w < 1092) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1092 ≤ w ∧ w < 1353) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_13 {w : Wire} (h : 1353 ≤ w ∧ w < 1610) : compact1610Fn w = w + 14046 := by
-  unfold compact1610Fn
-  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(872 ≤ w ∧ w < 1092) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1092 ≤ w ∧ w < 1353) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14883 ≤ w ∧ w < 15144) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_14 {w : Wire} (h : 15399 ≤ w ∧ w < 15656) : compact1610Fn w = w - 14046 := by
-  unfold compact1610Fn
-  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(872 ≤ w ∧ w < 1092) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1092 ≤ w ∧ w < 1353) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14883 ≤ w ∧ w < 15144) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1353 ≤ w ∧ w < 1610) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
-private theorem c1610_fix_raw {w : Wire}
+private theorem c1612_10 {w : Wire} (h : 14410 ≤ w ∧ w < 14630) : compact1612Fn w = w - 13536 := by
+  unfold compact1612Fn
+  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(874 ≤ w ∧ w < 1094) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
+private theorem c1612_11 {w : Wire} (h : 1094 ≤ w ∧ w < 1355) : compact1612Fn w = w + 13789 := by
+  unfold compact1612Fn
+  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(874 ≤ w ∧ w < 1094) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
+private theorem c1612_12 {w : Wire} (h : 14883 ≤ w ∧ w < 15144) : compact1612Fn w = w - 13789 := by
+  unfold compact1612Fn
+  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(874 ≤ w ∧ w < 1094) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1094 ≤ w ∧ w < 1355) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
+private theorem c1612_13 {w : Wire} (h : 1355 ≤ w ∧ w < 1612) : compact1612Fn w = w + 14044 := by
+  unfold compact1612Fn
+  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(874 ≤ w ∧ w < 1094) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1094 ≤ w ∧ w < 1355) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14883 ≤ w ∧ w < 15144) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
+private theorem c1612_14 {w : Wire} (h : 15399 ≤ w ∧ w < 15656) : compact1612Fn w = w - 14044 := by
+  unfold compact1612Fn
+  rw [if_neg (show ¬(w < 48) by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14832 ≤ w ∧ w < 14880) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(48 ≤ w ∧ w < 263) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14115 ≤ w ∧ w < 14330) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(519 ≤ w ∧ w < 580) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14330 ≤ w ∧ w < 14391) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(836 ≤ w ∧ w < 855) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14391 ≤ w ∧ w < 14410) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(874 ≤ w ∧ w < 1094) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14410 ≤ w ∧ w < 14630) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1094 ≤ w ∧ w < 1355) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(14883 ≤ w ∧ w < 15144) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_neg (show ¬(1355 ≤ w ∧ w < 1612) from fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), if_pos h]
+private theorem c1612_fix_raw {w : Wire}
     (h1 : ¬(w < 48)) (h2 : ¬(14832 ≤ w ∧ w < 14880)) (h3 : ¬(48 ≤ w ∧ w < 263)) (h4 : ¬(14115 ≤ w ∧ w < 14330))
     (h5 : ¬(519 ≤ w ∧ w < 580)) (h6 : ¬(14330 ≤ w ∧ w < 14391)) (h7 : ¬(836 ≤ w ∧ w < 855)) (h8 : ¬(14391 ≤ w ∧ w < 14410))
-    (h9 : ¬(872 ≤ w ∧ w < 1092)) (h10 : ¬(14410 ≤ w ∧ w < 14630)) (h11 : ¬(1092 ≤ w ∧ w < 1353)) (h12 : ¬(14883 ≤ w ∧ w < 15144))
-    (h13 : ¬(1353 ≤ w ∧ w < 1610)) (h14 : ¬(15399 ≤ w ∧ w < 15656)) : compact1610Fn w = w := by
-  unfold compact1610Fn
+    (h9 : ¬(874 ≤ w ∧ w < 1094)) (h10 : ¬(14410 ≤ w ∧ w < 14630)) (h11 : ¬(1094 ≤ w ∧ w < 1355)) (h12 : ¬(14883 ≤ w ∧ w < 15144))
+    (h13 : ¬(1355 ≤ w ∧ w < 1612)) (h14 : ¬(15399 ≤ w ∧ w < 15656)) : compact1612Fn w = w := by
+  unfold compact1612Fn
   rw [if_neg h1, if_neg h2, if_neg h3, if_neg h4, if_neg h5, if_neg h6, if_neg h7,
       if_neg h8, if_neg h9, if_neg h10, if_neg h11, if_neg h12, if_neg h13, if_neg h14]
 
-theorem compact1610Fn_invol (w : Wire) : compact1610Fn (compact1610Fn w) = w := by
+theorem compact1612Fn_invol (w : Wire) : compact1612Fn (compact1612Fn w) = w := by
   by_cases h1 : w < 48
-  · rw [c1610_1 h1, c1610_2 (w := w + 14832) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_1 h1, c1612_2 (w := w + 14832) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h2 : 14832 ≤ w ∧ w < 14880
-  · rw [c1610_2 h2, c1610_1 (w := w - 14832) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_2 h2, c1612_1 (w := w - 14832) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h3 : 48 ≤ w ∧ w < 263
-  · rw [c1610_3 h3, c1610_4 (w := w + 14067) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_3 h3, c1612_4 (w := w + 14067) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h4 : 14115 ≤ w ∧ w < 14330
-  · rw [c1610_4 h4, c1610_3 (w := w - 14067) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_4 h4, c1612_3 (w := w - 14067) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h5 : 519 ≤ w ∧ w < 580
-  · rw [c1610_5 h5, c1610_6 (w := w + 13811) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_5 h5, c1612_6 (w := w + 13811) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h6 : 14330 ≤ w ∧ w < 14391
-  · rw [c1610_6 h6, c1610_5 (w := w - 13811) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_6 h6, c1612_5 (w := w - 13811) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h7 : 836 ≤ w ∧ w < 855
-  · rw [c1610_7 h7, c1610_8 (w := w + 13555) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_7 h7, c1612_8 (w := w + 13555) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h8 : 14391 ≤ w ∧ w < 14410
-  · rw [c1610_8 h8, c1610_7 (w := w - 13555) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  by_cases h9 : 872 ≤ w ∧ w < 1092
-  · rw [c1610_9 h9, c1610_10 (w := w + 13538) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_8 h8, c1612_7 (w := w - 13555) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  by_cases h9 : 874 ≤ w ∧ w < 1094
+  · rw [c1612_9 h9, c1612_10 (w := w + 13536) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h10 : 14410 ≤ w ∧ w < 14630
-  · rw [c1610_10 h10, c1610_9 (w := w - 13538) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  by_cases h11 : 1092 ≤ w ∧ w < 1353
-  · rw [c1610_11 h11, c1610_12 (w := w + 13791) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_10 h10, c1612_9 (w := w - 13536) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  by_cases h11 : 1094 ≤ w ∧ w < 1355
+  · rw [c1612_11 h11, c1612_12 (w := w + 13789) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h12 : 14883 ≤ w ∧ w < 15144
-  · rw [c1610_12 h12, c1610_11 (w := w - 13791) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  by_cases h13 : 1353 ≤ w ∧ w < 1610
-  · rw [c1610_13 h13, c1610_14 (w := w + 14046) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_12 h12, c1612_11 (w := w - 13789) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  by_cases h13 : 1355 ≤ w ∧ w < 1612
+  · rw [c1612_13 h13, c1612_14 (w := w + 14044) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   by_cases h14 : 15399 ≤ w ∧ w < 15656
-  · rw [c1610_14 h14, c1610_13 (w := w - 14046) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  rw [c1610_fix_raw h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14,
-      c1610_fix_raw h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14]
+  · rw [c1612_14 h14, c1612_13 (w := w - 14044) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  rw [c1612_fix_raw h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14,
+      c1612_fix_raw h1 h2 h3 h4 h5 h6 h7 h8 h9 h10 h11 h12 h13 h14]
 
-def compact1610 : Wire ≃ Wire where
-  toFun := compact1610Fn
-  invFun := compact1610Fn
-  left_inv := compact1610Fn_invol
-  right_inv := compact1610Fn_invol
+def compact1612 : Wire ≃ Wire where
+  toFun := compact1612Fn
+  invFun := compact1612Fn
+  left_inv := compact1612Fn_invol
+  right_inv := compact1612Fn_invol
 
-theorem compact1610_symm : compact1610.symm = compact1610 := rfl
-theorem compact1610_invol (w : Wire) : compact1610 (compact1610 w) = w := compact1610Fn_invol w
-theorem compact1610_14832 : compact1610 14832 = 0 := by decide
-theorem compact1610_14833 : compact1610 14833 = 1 := by decide
-theorem compact1610_838 : compact1610 838 = 14393 := by decide
+theorem compact1612_symm : compact1612.symm = compact1612 := rfl
+theorem compact1612_invol (w : Wire) : compact1612 (compact1612 w) = w := compact1612Fn_invol w
+theorem compact1612_14832 : compact1612 14832 = 0 := by decide
+theorem compact1612_14833 : compact1612 14833 = 1 := by decide
 
-theorem compact1610_fix (w : Wire)
-    (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836) ∨ (855 ≤ w ∧ w < 872)) :
-    compact1610 w = w := by
-  change compact1610Fn w = w
+theorem compact1612_fix (w : Wire)
+    (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836) ∨ (855 ≤ w ∧ w < 874)) :
+    compact1612 w = w := by
+  change compact1612Fn w = w
   rcases hw with h | h | h <;>
-    exact c1610_fix_raw (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+    exact c1612_fix_raw (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
       (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
       (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
       (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compact1610_bound (w : Wire) (hw : w ∈ support1610) : compact1610 w < 1610 := by
-  rw [mem_support1610] at hw
-  change compact1610Fn w < 1610
+theorem compact1612_bound (w : Wire) (hw : w ∈ support1612) : compact1612 w < 1612 := by
+  rw [mem_support1612] at hw
+  change compact1612Fn w < 1612
   rcases hw with h | h | h | h | h | h | h
-  · rw [show compact1610Fn w = w from compact1610_fix w (Or.inl h)]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  · rw [show compact1610Fn w = w from compact1610_fix w (Or.inr (Or.inl h))]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  · rw [show compact1610Fn w = w from compact1610_fix w (Or.inr (Or.inr h))]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [show compact1612Fn w = w from compact1612_fix w (Or.inl h)]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [show compact1612Fn w = w from compact1612_fix w (Or.inr (Or.inl h))]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [show compact1612Fn w = w from compact1612_fix w (Or.inr (Or.inr h))]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
   · by_cases ha : w < 14330
-    · rw [c1610_4 ⟨h.1, ha⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+    · rw [c1612_4 ⟨h.1, ha⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
     by_cases hb : w < 14391
-    · rw [c1610_6 (w := w) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hb⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+    · rw [c1612_6 (w := w) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hb⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
     by_cases hc : w < 14410
-    · rw [c1610_8 (w := w) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hc⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-    · rw [c1610_10 (w := w) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), h.2⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  · rw [c1610_2 h]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  · rw [c1610_12 h]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  · rw [c1610_14 h]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+    · rw [c1612_8 (w := w) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hc⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+    · rw [c1612_10 (w := w) ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), h.2⟩]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_2 h]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_12 h]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · rw [c1612_14 h]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compact1610_outside (w : Wire)
-    (h1 : ¬(263 ≤ w ∧ w < 519)) (h2 : ¬(580 ≤ w ∧ w < 836)) (h3 : ¬(855 ≤ w ∧ w < 872)) :
-    ¬(263 ≤ compact1610 w ∧ compact1610 w < 519) ∧
-    ¬(580 ≤ compact1610 w ∧ compact1610 w < 836) ∧
-    ¬(855 ≤ compact1610 w ∧ compact1610 w < 872) := by
+theorem compact1612_outside (w : Wire)
+    (h1 : ¬(263 ≤ w ∧ w < 519)) (h2 : ¬(580 ≤ w ∧ w < 836)) (h3 : ¬(855 ≤ w ∧ w < 874)) :
+    ¬(263 ≤ compact1612 w ∧ compact1612 w < 519) ∧
+    ¬(580 ≤ compact1612 w ∧ compact1612 w < 836) ∧
+    ¬(855 ≤ compact1612 w ∧ compact1612 w < 874) := by
   refine ⟨fun hm => h1 ?_, fun hm => h2 ?_, fun hm => h3 ?_⟩
-  · have hf := compact1610_fix (compact1610 w) (Or.inl hm); rw [compact1610_invol] at hf; exact hf ▸ hm
-  · have hf := compact1610_fix (compact1610 w) (Or.inr (Or.inl hm)); rw [compact1610_invol] at hf; exact hf ▸ hm
-  · have hf := compact1610_fix (compact1610 w) (Or.inr (Or.inr hm)); rw [compact1610_invol] at hf; exact hf ▸ hm
+  · have hf := compact1612_fix (compact1612 w) (Or.inl hm); rw [compact1612_invol] at hf; exact hf ▸ hm
+  · have hf := compact1612_fix (compact1612 w) (Or.inr (Or.inl hm)); rw [compact1612_invol] at hf; exact hf ▸ hm
+  · have hf := compact1612_fix (compact1612 w) (Or.inr (Or.inr hm)); rw [compact1612_invol] at hf; exact hf ▸ hm
 
-/-- Every wire outside `pointX (263..518)`, `pointY (580..835)`, and `bank17 (855..871)` is `false`. -/
+/-- Every wire outside `pointX (263..518)`, `pointY (580..835)`, and `bank19 (855..873)` is `false`. -/
 def CleanOutsideXYBank (bs : BasisState) : Prop :=
-  ∀ w : Wire, ¬(263 ≤ w ∧ w < 519) → ¬(580 ≤ w ∧ w < 836) → ¬(855 ≤ w ∧ w < 872) → bs w = false
+  ∀ w : Wire, ¬(263 ≤ w ∧ w < 519) → ¬(580 ≤ w ∧ w < 836) → ¬(855 ≤ w ∧ w < 874) → bs w = false
 
 theorem cleanOutside_relabel (bs : BasisState) (h : CleanOutsideXYBank bs) :
-    CleanOutsideXYBank (relabelBasis compact1610 bs) := by
+    CleanOutsideXYBank (relabelBasis compact1612 bs) := by
   intro w h1 h2 h3
-  have ho := compact1610_outside w h1 h2 h3
-  exact h (compact1610 w) ho.1 ho.2.1 ho.2.2
+  have ho := compact1612_outside w h1 h2 h3
+  exact h (compact1612 w) ho.1 ho.2.1 ho.2.2
 
 theorem cleanOutside_dialogPool (bs : BasisState) (h : CleanOutsideXYBank bs) :
     ECDSAAdd.regValue streamLayout.dialogPool bs = 0 := by
@@ -13922,13 +13954,13 @@ theorem cleanOutside_dialogPool (bs : BasisState) (h : CleanOutsideXYBank bs) :
   exact h w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
 theorem cleanOutside_upd_bank (bs : BasisState) (h : CleanOutsideXYBank bs) (w : Wire)
-    (hw : w ∈ bank17) (b : Bool) : CleanOutsideXYBank (bs[w ↦ b]) := by
+    (hw : w ∈ bank19) (b : Bool) : CleanOutsideXYBank (bs[w ↦ b]) := by
   intro u h1 h2 h3
-  have hne : u ≠ w := fun e => h3 (mem_bank17.mp (e ▸ hw))
+  have hne : u ≠ w := fun e => h3 (mem_bank19.mp (e ▸ hw))
   simp [upd, hne, h u h1 h2 h3]
 
 theorem cleanOutside_frame (bs t : BasisState) (h : CleanOutsideXYBank bs)
-    (hfr : ∀ w, ¬(263 ≤ w ∧ w < 519) → ¬(580 ≤ w ∧ w < 836) → ¬(855 ≤ w ∧ w < 872) → t w = bs w) :
+    (hfr : ∀ w, ¬(263 ≤ w ∧ w < 519) → ¬(580 ≤ w ∧ w < 836) → ¬(855 ≤ w ∧ w < 874) → t w = bs w) :
     CleanOutsideXYBank t := fun w h1 h2 h3 => (hfr w h1 h2 h3).trans (h w h1 h2 h3)
 
 /-- Exact canonical finite-point encoding in `pointX` and `pointY`. -/
@@ -14040,103 +14072,107 @@ theorem eq_pointWrite_of_hasFinitePoint {R : ShorECDLP.Secp256k1.Point} {s t : B
           rw [pointWrite_frame _ _ _ hnot]
 
 theorem hasFinitePoint_relabel {R : ShorECDLP.Secp256k1.Point} {bs : BasisState}
-    (hR : HasFinitePoint R bs) : HasFinitePoint R (relabelBasis compact1610 bs) := by
+    (hR : HasFinitePoint R bs) : HasFinitePoint R (relabelBasis compact1612 bs) := by
   obtain ⟨x, y, hns, rfl, hx, hy⟩ := hR
   refine ⟨x, y, hns, rfl, ?_, ?_⟩
   · rw [← hx]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw
     rw [List.mem_range'_1] at hw
-    change bs (compact1610 w) = bs w
-    rw [compact1610_fix w (Or.inl hw)]
+    change bs (compact1612 w) = bs w
+    rw [compact1612_fix w (Or.inl hw)]
   · rw [← hy]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw
     rw [List.mem_range'_1] at hw
-    change bs (compact1610 w) = bs w
-    rw [compact1610_fix w (Or.inr (Or.inl hw))]
+    change bs (compact1612 w) = bs w
+    rw [compact1612_fix w (Or.inr (Or.inl hw))]
 
 theorem pointWrite_relabel_clean {R : ShorECDLP.Secp256k1.Point} (hR0 : R ≠ 0) {bs : BasisState}
     (hcl : CleanOutsideXYBank bs) :
-    relabelBasis compact1610 (pointWrite R bs) = pointWrite R (relabelBasis compact1610 bs) := by
+    relabelBasis compact1612 (pointWrite R bs) = pointWrite R (relabelBasis compact1612 bs) := by
   apply eq_pointWrite_of_hasFinitePoint (cleanOutside_relabel bs hcl)
   · exact hasFinitePoint_relabel (hasFinitePoint_pointWrite R hR0 bs)
   · intro w h1 h2
-    change pointWrite R bs (compact1610 w) = bs (compact1610 w)
-    have hfix : compact1610 w ≠ 838 → compact1610 w ∉ pointLogicalWires := by
+    change pointWrite R bs (compact1612 w) = bs (compact1612 w)
+    have hfix : compact1612 w ≠ 838 → compact1612 w ∉ pointLogicalWires := by
       intro hne hm
       simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append,
         List.mem_cons, List.not_mem_nil, or_false, List.mem_range'_1] at hm
       rcases hm with hx | hy | h8
-      · have := compact1610_fix (compact1610 w) (Or.inl hx); rw [compact1610_invol] at this; exact h1 (this ▸ hx)
-      · have := compact1610_fix (compact1610 w) (Or.inr (Or.inl hy)); rw [compact1610_invol] at this; exact h2 (this ▸ hy)
+      · have := compact1612_fix (compact1612 w) (Or.inl hx); rw [compact1612_invol] at this; exact h1 (this ▸ hx)
+      · have := compact1612_fix (compact1612 w) (Or.inr (Or.inl hy)); rw [compact1612_invol] at this; exact h2 (this ▸ hy)
       · exact hne h8
-    by_cases h8 : compact1610 w = 838
+    by_cases h8 : compact1612 w = 838
     · rw [h8]
       have hpw8 : pointWrite R bs 838 = false := by
         cases R with
         | zero => exact absurd rfl hR0
         | some hns => exact congrArg Prod.fst (pointWrite_coordinates (.some hns) bs)
       rw [hpw8, hcl 838 (by decide) (by decide) (by decide)]
-    · exact pointWrite_frame R bs (compact1610 w) (hfix h8)
+    · exact pointWrite_frame R bs (compact1612 w) (hfix h8)
 
-def raw16 (bs : BasisState) : Nat := tableAddressValue bits16 bs
-def raw17 (bs : BasisState) : Nat := tableAddressValue bank17 bs
-def rows16 (a : Nat) : Fin 65536 := ⟨a % 65536, Nat.mod_lt a (by decide)⟩
 
-def signedDelta16 (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+def rawW (k : Nat) (bs : BasisState) : Nat := tableAddressValue (bitsW k) bs
+def rawBankW (k : Nat) (bs : BasisState) : Nat := tableAddressValue (bankW k) bs
+def rowsW (k : Nat) (a : Nat) : Fin (2 ^ k) := ⟨a % 2 ^ k, Nat.mod_lt a (by positivity)⟩
+
+def signedDeltaW (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (bs : BasisState) : ShorECDLP.Secp256k1.Point :=
-  let v := raw16 bs
-  if bs 870 then constantPoint Q (coeffs (rows16 v))
-  else -constantPoint Q (coeffs (rows16 (65535 - v)))
+  let v := rawW k bs
+  if bs (signBitW k) then constantPoint Q (coeffs (rowsW k v))
+  else -constantPoint Q (coeffs (rowsW k (2 ^ k - 1 - v)))
 
 def GoodPoint (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
   R ≠ 0 ∧ R ≠ Δ ∧ R ≠ -Δ ∧ R ≠ -(Δ + Δ)
 
-def Good16 (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+def GoodW (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (bs : BasisState) : Prop :=
   CleanOutsideXYBank bs ∧
-  ∃ R : ShorECDLP.Secp256k1.Point, HasFinitePoint R bs ∧ GoodPoint R (signedDelta16 coeffs Q bs)
+  ∃ R : ShorECDLP.Secp256k1.Point, HasFinitePoint R bs ∧ GoodPoint R (signedDeltaW k coeffs Q bs)
 
-noncomputable def update16 (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+noncomputable def updateW (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (bs : BasisState) : BasisState := by
   classical
   exact if h : ∃ R : ShorECDLP.Secp256k1.Point, pointStateCoordinates bs = fig14PointEncoding R then
-    pointWrite (Classical.choose h + signedDelta16 coeffs Q bs) bs
+    pointWrite (Classical.choose h + signedDeltaW k coeffs Q bs) bs
   else bs
 
-theorem update16_eq {coeffs : Fin 65536 → PointCoeff} {Q R : ShorECDLP.Secp256k1.Point}
+theorem updateW_eq {k : Nat} {coeffs : Fin (2 ^ k) → PointCoeff} {Q R : ShorECDLP.Secp256k1.Point}
     {bs : BasisState} (hR : pointStateCoordinates bs = fig14PointEncoding R) :
-    update16 coeffs Q bs = pointWrite (R + signedDelta16 coeffs Q bs) bs := by
+    updateW k coeffs Q bs = pointWrite (R + signedDeltaW k coeffs Q bs) bs := by
   have hex : ∃ P : ShorECDLP.Secp256k1.Point, pointStateCoordinates bs = fig14PointEncoding P := ⟨R, hR⟩
-  rw [update16, dif_pos hex]
+  rw [updateW, dif_pos hex]
   have hch : Classical.choose hex = R := fig14PointEncoding_injective ((Classical.choose_spec hex).symm.trans hR)
   rw [hch]
 
-theorem raw16_lt (bs : BasisState) : raw16 bs < 65536 := by
-  simpa only [raw16, bits16_length] using tableAddressValue_lt bits16 bs
+theorem rawW_lt (k : Nat) (bs : BasisState) : rawW k bs < 2 ^ k := by
+  simpa only [rawW, bitsW_length] using tableAddressValue_lt (bitsW k) bs
 
-theorem raw17_split (bs : BasisState) : raw17 bs = raw16 bs + 65536 * (bs 870).toNat := by
-  rw [raw17, bank17, raw16, WEX.tableAddress_word, WEX.tableAddress_word,
+theorem rawBankW_split (k : Nat) (bs : BasisState) :
+    rawBankW k bs = rawW k bs + 2 ^ k * (bs (signBitW k)).toNat := by
+  rw [rawBankW, bankW_eq_append, rawW, WEX.tableAddress_word, WEX.tableAddress_word,
     ← regValue_eq_boolWordToNat, ← regValue_eq_boolWordToNat, Bridge.regValueB_eq, Bridge.regValueB_eq,
-    Bridge.regValue_append, bits16_length]
-  change ShorECDLP.regValue bits16 bs + 2 ^ 16 * ((if bs 870 then 1 else 0) + 2 * 0) = _
-  cases bs 870 <;> simp
+    Bridge.regValue_append, bitsW_length]
+  change ShorECDLP.regValue (bitsW k) bs + 2 ^ k * ((if bs (signBitW k) then 1 else 0) + 2 * 0) = _
+  cases bs (signBitW k) <;> simp
 
-theorem signedDelta16_relabel (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (bs : BasisState) :
-    signedDelta16 coeffs Q (relabelBasis compact1610 bs) = signedDelta16 coeffs Q bs := by
-  have h870 : relabelBasis compact1610 bs 870 = bs 870 := by
-    change bs (compact1610 870) = bs 870; rw [compact1610_fix 870 (by decide)]
-  have hr : raw16 (relabelBasis compact1610 bs) = raw16 bs := by
+theorem signedDeltaW_relabel {k : Nat} (hk : k ≤ 18) (coeffs : Fin (2 ^ k) → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) :
+    signedDeltaW k coeffs Q (relabelBasis compact1612 bs) = signedDeltaW k coeffs Q bs := by
+  have hsb : relabelBasis compact1612 bs (signBitW k) = bs (signBitW k) := by
+    change bs (compact1612 (signBitW k)) = bs (signBitW k)
+    rw [compact1612_fix (signBitW k) (Or.inr (Or.inr ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))]
+  have hr : rawW k (relabelBasis compact1612 bs) = rawW k bs := by
     apply WEX.tableAddressValue_congr
     intro w hw
-    change bs (compact1610 w) = bs w
-    rw [compact1610_fix w (Or.inr (Or.inr (mem_bank17.mp (List.mem_append_left _ hw))))]
-  simp only [signedDelta16, h870, hr]
+    have hwb := mem_bitsW.mp hw
+    change bs (compact1612 w) = bs w
+    rw [compact1612_fix w (Or.inr (Or.inr ⟨hwb.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))]
+  simp only [signedDeltaW, hsb, hr]
 
-theorem good16_relabel (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (bs : BasisState) (h : Good16 coeffs Q bs) :
-    Good16 coeffs Q (relabelBasis compact1610 bs) := by
+theorem goodW_relabel {k : Nat} (hk : k ≤ 18) (coeffs : Fin (2 ^ k) → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) (h : GoodW k coeffs Q bs) :
+    GoodW k coeffs Q (relabelBasis compact1612 bs) := by
   obtain ⟨hcl, R, hR, hg⟩ := h
   refine ⟨cleanOutside_relabel bs hcl, R, hasFinitePoint_relabel hR, ?_⟩
-  rwa [signedDelta16_relabel]
+  rwa [signedDeltaW_relabel hk]
 
 theorem goodPoint_add_ne_zero {R Δ : ShorECDLP.Secp256k1.Point} (hg : GoodPoint R Δ) : R + Δ ≠ 0 :=
   fun hz => hg.2.2.1 (eq_neg_of_add_eq_zero_left hz)
@@ -14152,34 +14188,34 @@ theorem goodPoint_neg_iff {R Δ : ShorECDLP.Secp256k1.Point} :
     refine ⟨fun e => h1 (neg_eq_zero.mp e), fun e => h2 (neg_injective e), fun e => h3 (neg_injective e), fun e => h4 ?_⟩
     apply neg_injective; rw [e]; abel
 
-theorem update16_relabel_good (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (bs : BasisState) (h : Good16 coeffs Q bs) :
-    relabelBasis compact1610 (update16 coeffs Q bs) = update16 coeffs Q (relabelBasis compact1610 bs) := by
+theorem updateW_relabel_good {k : Nat} (hk : k ≤ 18) (coeffs : Fin (2 ^ k) → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) (h : GoodW k coeffs Q bs) :
+    relabelBasis compact1612 (updateW k coeffs Q bs) = updateW k coeffs Q (relabelBasis compact1612 bs) := by
   obtain ⟨hcl, R, hR, hg⟩ := h
   have hco1 := hasFinitePoint_coords hcl hR
   have hco2 := hasFinitePoint_coords (cleanOutside_relabel bs hcl) (hasFinitePoint_relabel hR)
-  rw [update16_eq hco1, update16_eq hco2, signedDelta16_relabel]
+  rw [updateW_eq hco1, updateW_eq hco2, signedDeltaW_relabel hk]
   exact pointWrite_relabel_clean (goodPoint_add_ne_zero hg) hcl
 
-/-! #### 2. Address flip (`flipAddr16` / `unflipAddr16`) and sign reflection (`compiledSign`) -/
+/-! #### 2. Polymorphic address flip (`flipAddrW` / `unflipAddrW`) and sign reflection (`compiledSign`) -/
 
-def flipAddr16 : Circuit := [.X 870] ++ bits16.map (fun w => .CX 870 w)
-def unflipAddr16 : Circuit := bits16.map (fun w => .CX 870 w) ++ [.X 870]
+def flipAddrW (k : Nat) : Circuit := [.X (signBitW k)] ++ (bitsW k).map (fun w => .CX (signBitW k) w)
+def unflipAddrW (k : Nat) : Circuit := (bitsW k).map (fun w => .CX (signBitW k) w) ++ [.X (signBitW k)]
 
-def flipAddrBasis (bs : BasisState) : BasisState :=
-  fun w => if w = 870 then !bs 870 else if w ∈ bits16 then bs w ^^ !bs 870 else bs w
+def flipAddrBasisW (k : Nat) (bs : BasisState) : BasisState :=
+  fun w => if w = signBitW k then !bs (signBitW k) else if w ∈ bitsW k then bs w ^^ !bs (signBitW k) else bs w
 
-def unflipAddrBasis (bs : BasisState) : BasisState :=
-  fun w => if w = 870 then !bs 870 else if w ∈ bits16 then bs w ^^ bs 870 else bs w
+def unflipAddrBasisW (k : Nat) (bs : BasisState) : BasisState :=
+  fun w => if w = signBitW k then !bs (signBitW k) else if w ∈ bitsW k then bs w ^^ bs (signBitW k) else bs w
 
-theorem unflip_flipAddrBasis (bs : BasisState) : unflipAddrBasis (flipAddrBasis bs) = bs := by
+theorem unflip_flipAddrBasisW (k : Nat) (bs : BasisState) : unflipAddrBasisW k (flipAddrBasisW k bs) = bs := by
   funext w
-  by_cases h1 : w = 870
-  · subst h1; simp [unflipAddrBasis, flipAddrBasis]
-  · by_cases h2 : w ∈ bits16
-    · simp only [unflipAddrBasis, flipAddrBasis, h1, h2, ↓reduceIte]
-      cases bs w <;> cases bs 870 <;> rfl
-    · simp [unflipAddrBasis, flipAddrBasis, h1, h2]
+  by_cases h1 : w = signBitW k
+  · subst h1; simp [unflipAddrBasisW, flipAddrBasisW]
+  · by_cases h2 : w ∈ bitsW k
+    · simp only [unflipAddrBasisW, flipAddrBasisW, h1, h2, ↓reduceIte]
+      cases bs w <;> cases bs (signBitW k) <;> rfl
+    · simp [unflipAddrBasisW, flipAddrBasisW, h1, h2]
 
 private theorem circuitWF_X (w : Wire) : CircuitWellFormed [.X w] := by
   intro g hg; simp only [List.mem_singleton] at hg; subst hg; trivial
@@ -14187,42 +14223,92 @@ private theorem circuitWF_X (w : Wire) : CircuitWellFormed [.X w] := by
 private theorem circuitWF_XX (w₁ w₂ : Wire) : CircuitWellFormed [.X w₁, .X w₂] := by
   intro g hg; simp only [List.mem_cons, List.not_mem_nil, or_false] at hg; rcases hg with rfl | rfl <;> trivial
 
-theorem flipAddr16_wellFormed : CircuitWellFormed flipAddr16 := by
+theorem signBitW_not_mem_bitsW (k : Nat) : signBitW k ∉ bitsW k := fun hm => by
+  have h := mem_bitsW.mp hm; unfold signBitW at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+theorem flipAddrW_wellFormed (k : Nat) : CircuitWellFormed (flipAddrW k) := by
   intro g hg
-  simp only [flipAddr16, List.mem_append, List.mem_singleton, List.mem_map] at hg
+  simp only [flipAddrW, List.mem_append, List.mem_singleton, List.mem_map] at hg
   rcases hg with rfl | ⟨w, hw, rfl⟩
   · trivial
-  · intro e; subst e; have := mem_bits16.mp hw; norm_num at this
+  · intro e; exact signBitW_not_mem_bitsW k (e ▸ hw)
 
-theorem unflipAddr16_wellFormed : CircuitWellFormed unflipAddr16 := by
+theorem unflipAddrW_wellFormed (k : Nat) : CircuitWellFormed (unflipAddrW k) := by
   intro g hg
-  simp only [unflipAddr16, List.mem_append, List.mem_singleton, List.mem_map] at hg
+  simp only [unflipAddrW, List.mem_append, List.mem_singleton, List.mem_map] at hg
   rcases hg with ⟨w, hw, rfl⟩ | rfl
-  · intro e; subst e; have := mem_bits16.mp hw; norm_num at this
+  · intro e; exact signBitW_not_mem_bitsW k (e ▸ hw)
   · trivial
-theorem flipAddr16_tCount : ShorECDLP.tCount flipAddr16 = 0 := by decide
-theorem unflipAddr16_tCount : ShorECDLP.tCount unflipAddr16 = 0 := by decide
-theorem flipAddr16_length : flipAddr16.length = 17 := by decide
-theorem unflipAddr16_length : unflipAddr16.length = 17 := by decide
-theorem flipAddr16_removed18 : (flipAddr16.map (fun g => (largePhase 18 g).toNat)).sum = 0 := by decide
-theorem unflipAddr16_removed18 : (unflipAddr16.map (fun g => (largePhase 18 g).toNat)).sum = 0 := by decide
 
-theorem flipAddr16_wires : circuitWires flipAddr16 ⊆ support1610 := by
+private theorem cxMap_tCount (c : Wire) (ws : List Wire) : ShorECDLP.tCount (ws.map (fun w => .CX c w)) = 0 := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    simp only [List.map_cons, ShorECDLP.tCount, List.sum_cons, tCost, Nat.zero_add] at ih ⊢
+    exact ih
+
+private theorem cxMap_removed18 (c : Wire) (ws : List Wire) :
+    ((ws.map (fun w => .CX c w)).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+  induction ws with
+  | nil => rfl
+  | cons w ws ih =>
+    simp only [List.map_cons, List.sum_cons, largePhase, Bool.toNat_false, Nat.zero_add] at ih ⊢
+    exact ih
+
+theorem flipAddrW_tCount (k : Nat) : ShorECDLP.tCount (flipAddrW k) = 0 := by
+  rw [flipAddrW, ShorECDLP.tCount, List.map_append, List.sum_append]
+  change ShorECDLP.tCount [.X (signBitW k)] + ShorECDLP.tCount ((bitsW k).map (fun w => .CX (signBitW k) w)) = 0
+  rw [cxMap_tCount]; rfl
+theorem unflipAddrW_tCount (k : Nat) : ShorECDLP.tCount (unflipAddrW k) = 0 := by
+  rw [unflipAddrW, ShorECDLP.tCount, List.map_append, List.sum_append]
+  change ShorECDLP.tCount ((bitsW k).map (fun w => .CX (signBitW k) w)) + ShorECDLP.tCount [.X (signBitW k)] = 0
+  rw [cxMap_tCount]; rfl
+theorem flipAddrW_length (k : Nat) : (flipAddrW k).length = k + 1 := by
+  simp [flipAddrW, bitsW_length]
+theorem unflipAddrW_length (k : Nat) : (unflipAddrW k).length = k + 1 := by
+  simp [unflipAddrW, bitsW_length]
+theorem flipAddrW_removed18 (k : Nat) : ((flipAddrW k).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+  rw [flipAddrW, List.map_append, List.sum_append, cxMap_removed18]; rfl
+theorem unflipAddrW_removed18 (k : Nat) : ((unflipAddrW k).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+  rw [unflipAddrW, List.map_append, List.sum_append, cxMap_removed18]; rfl
+
+theorem flipAddrW_wires {k : Nat} (hk : k ≤ 18) : circuitWires (flipAddrW k) ⊆ support1612 := by
   intro w hw
-  have hb : w ∈ bank17 := by
-    have : circuitWires flipAddr16 ⊆ bank17 := by decide
-    exact this hw
-  exact mem_support1610.mpr (Or.inr (Or.inr (Or.inl (mem_bank17.mp hb))))
+  simp only [flipAddrW, circuitWires, List.flatMap_append, List.flatMap_cons, List.flatMap_nil,
+    List.flatMap_map, List.mem_append, List.mem_flatMap, gateWires, List.mem_cons, List.not_mem_nil, or_false] at hw
+  rcases hw with rfl | ⟨u, hu, hwu⟩
+  · exact mem_support1612_bank ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · rcases hwu with rfl | rfl
+    · exact mem_support1612_bank ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · have hb := mem_bitsW.mp hu; exact mem_support1612_bank ⟨hb.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
 
-theorem unflipAddr16_wires : circuitWires unflipAddr16 ⊆ support1610 := by
+theorem unflipAddrW_wires {k : Nat} (hk : k ≤ 18) : circuitWires (unflipAddrW k) ⊆ support1612 := by
   intro w hw
-  have hb : w ∈ bank17 := by
-    have : circuitWires unflipAddr16 ⊆ bank17 := by decide
-    exact this hw
-  exact mem_support1610.mpr (Or.inr (Or.inr (Or.inl (mem_bank17.mp hb))))
+  simp only [unflipAddrW, circuitWires, List.flatMap_append, List.flatMap_cons, List.flatMap_nil,
+    List.flatMap_map, List.mem_append, List.mem_flatMap, gateWires, List.mem_cons, List.not_mem_nil, or_false] at hw
+  rcases hw with ⟨u, hu, hwu⟩ | rfl
+  · rcases hwu with rfl | rfl
+    · exact mem_support1612_bank ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · have hb := mem_bitsW.mp hu; exact mem_support1612_bank ⟨hb.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_bank ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
 
-private theorem flipAddr16_no14833 : (14833 : Wire) ∉ circuitWires flipAddr16 := by decide
-private theorem unflipAddr16_no14833 : (14833 : Wire) ∉ circuitWires unflipAddr16 := by decide
+private theorem flipAddrW_no14833 {k : Nat} (hk : k ≤ 18) : (14833 : Wire) ∉ circuitWires (flipAddrW k) := by
+  intro hm
+  simp only [flipAddrW, circuitWires, List.flatMap_append, List.flatMap_cons, List.flatMap_nil,
+    List.flatMap_map, List.mem_append, List.mem_flatMap, gateWires, List.mem_cons, List.not_mem_nil, or_false] at hm
+  rcases hm with h | ⟨u, hu, h | h⟩
+  · unfold signBitW at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · unfold signBitW at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · have hb := mem_bitsW.mp hu; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+private theorem unflipAddrW_no14833 {k : Nat} (hk : k ≤ 18) : (14833 : Wire) ∉ circuitWires (unflipAddrW k) := by
+  intro hm
+  simp only [unflipAddrW, circuitWires, List.flatMap_append, List.flatMap_cons, List.flatMap_nil,
+    List.flatMap_map, List.mem_append, List.mem_flatMap, gateWires, List.mem_cons, List.not_mem_nil, or_false] at hm
+  rcases hm with ⟨u, hu, h | h⟩ | h
+  · unfold signBitW at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · have hb := mem_bitsW.mp hu; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  · unfold signBitW at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 private theorem cxMap_ket (c : Wire) : ∀ (ws : List Wire), ws.Nodup → c ∉ ws →
     ∀ (bs : BasisState),
@@ -14242,25 +14328,25 @@ private theorem cxMap_ket (c : Wire) : ∀ (ws : List Wire), ws.Nodup → c ∉ 
       · simp [hu, hus, upd, hcw]
       · simp [hu, hus, upd]
 
-theorem flipAddr16_ket (bs : BasisState) :
-    Quantum.run flipAddr16 (ket bs) = ket (flipAddrBasis bs) := by
-  have h870 : (870 : Wire) ∉ bits16 := by decide
-  rw [flipAddr16, Quantum.run_append, Quantum.run_singleton, applyGate_X_ket,
-    cxMap_ket 870 bits16 bits16_nodup h870]
+theorem flipAddrW_ket (k : Nat) (bs : BasisState) :
+    Quantum.run (flipAddrW k) (ket bs) = ket (flipAddrBasisW k bs) := by
+  have hsb := signBitW_not_mem_bitsW k
+  rw [flipAddrW, Quantum.run_append, Quantum.run_singleton, applyGate_X_ket,
+    cxMap_ket (signBitW k) (bitsW k) (bitsW_nodup k) hsb]
   apply congrArg ket; funext w
-  by_cases h1 : w = 870
-  · subst h1; simp [flipAddrBasis, h870, upd]
-  · by_cases h2 : w ∈ bits16 <;> simp [flipAddrBasis, h1, h2, upd]
+  by_cases h1 : w = signBitW k
+  · subst h1; simp [flipAddrBasisW, hsb, upd]
+  · by_cases h2 : w ∈ bitsW k <;> simp [flipAddrBasisW, h1, h2, upd]
 
-theorem unflipAddr16_ket (bs : BasisState) :
-    Quantum.run unflipAddr16 (ket bs) = ket (unflipAddrBasis bs) := by
-  have h870 : (870 : Wire) ∉ bits16 := by decide
-  rw [unflipAddr16, Quantum.run_append, cxMap_ket 870 bits16 bits16_nodup h870,
+theorem unflipAddrW_ket (k : Nat) (bs : BasisState) :
+    Quantum.run (unflipAddrW k) (ket bs) = ket (unflipAddrBasisW k bs) := by
+  have hsb := signBitW_not_mem_bitsW k
+  rw [unflipAddrW, Quantum.run_append, cxMap_ket (signBitW k) (bitsW k) (bitsW_nodup k) hsb,
     Quantum.run_singleton, applyGate_X_ket]
   apply congrArg ket; funext w
-  by_cases h1 : w = 870
-  · subst h1; simp [unflipAddrBasis, h870, upd]
-  · by_cases h2 : w ∈ bits16 <;> simp [unflipAddrBasis, h1, h2, upd]
+  by_cases h1 : w = signBitW k
+  · subst h1; simp [unflipAddrBasisW, hsb, upd]
+  · by_cases h2 : w ∈ bitsW k <;> simp [unflipAddrBasisW, h1, h2, upd]
 
 private theorem boolWordToNat_not (xs : List Bool) :
     boolWordToNat (xs.map (!·)) + boolWordToNat xs = 2 ^ xs.length - 1 := by
@@ -14271,51 +14357,53 @@ private theorem boolWordToNat_not (xs : List Bool) :
     simp only [List.map_cons, List.length_cons, boolWordToNat, Nat.pow_succ]
     cases b <;> simp <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem raw16_flipAddrBasis (bs : BasisState) :
-    raw16 (flipAddrBasis bs) = if bs 870 then raw16 bs else 65535 - raw16 bs := by
-  have h870 : (870 : Wire) ∉ bits16 := by decide
-  cases h8 : bs 870 with
+theorem rawW_flipAddrBasisW (k : Nat) (bs : BasisState) :
+    rawW k (flipAddrBasisW k bs) = if bs (signBitW k) then rawW k bs else 2 ^ k - 1 - rawW k bs := by
+  have hsb := signBitW_not_mem_bitsW k
+  cases h8 : bs (signBitW k) with
   | true =>
     simp only [if_true]
     apply WEX.tableAddressValue_congr
     intro w hw
-    have hne : w ≠ 870 := fun e => h870 (e ▸ hw)
-    simp [flipAddrBasis, hne, hw, h8]
+    have hne : w ≠ signBitW k := fun e => hsb (e ▸ hw)
+    simp [flipAddrBasisW, hne, hw, h8]
   | false =>
     simp only [Bool.false_eq_true, if_false]
-    have hmap : wireValues bits16 (flipAddrBasis bs) = (wireValues bits16 bs).map (!·) := by
+    have hmap : wireValues (bitsW k) (flipAddrBasisW k bs) = (wireValues (bitsW k) bs).map (!·) := by
       simp only [wireValues, List.map_map]
       apply List.map_congr_left
       intro w hw
-      have hne : w ≠ 870 := fun e => h870 (e ▸ hw)
-      simp [Function.comp_def, flipAddrBasis, hne, hw, h8]
-    have hsum := boolWordToNat_not (wireValues bits16 bs)
-    have hlen : (wireValues bits16 bs).length = 16 := by simp [wireValues, bits16_length]
+      have hne : w ≠ signBitW k := fun e => hsb (e ▸ hw)
+      simp [Function.comp_def, flipAddrBasisW, hne, hw, h8]
+    have hsum := boolWordToNat_not (wireValues (bitsW k) bs)
+    have hlen : (wireValues (bitsW k) bs).length = k := by simp [wireValues, bitsW_length]
     rw [hlen] at hsum
-    rw [raw16, raw16, WEX.tableAddress_word, WEX.tableAddress_word, hmap]
+    rw [rawW, rawW, WEX.tableAddress_word, WEX.tableAddress_word, hmap]
     (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
--- Conditional y-negation (`251` Toffolis, `255` measurements) controlled directly by wire `870`.
-def signSwap : Equiv.Perm Wire := Equiv.swap 14113 870
-private theorem signSwap_self (w : Wire) : signSwap (signSwap w) = w := Equiv.swap_apply_self _ _ w
-def signProg : ECDSAAdd.Program := ECDSAAdd.renameProgram signSwap WEX.TrimmedSign.reflection
-def compiledSign : CatFn 65536 := CatFn.compileProg 14832 14833 signProg
+-- Polymorphic conditional y-negation (`251` Toffolis, `255` measurements) controlled directly by `signBit ∈ bank19`.
+def signSwap (signBit : Wire) : Equiv.Perm Wire := Equiv.swap 14113 signBit
+private theorem signSwap_self (signBit w : Wire) : signSwap signBit (signSwap signBit w) = w :=
+  Equiv.swap_apply_self _ _ w
+def signProg (signBit : Wire) : ECDSAAdd.Program :=
+  ECDSAAdd.renameProgram (signSwap signBit) WEX.TrimmedSign.reflection
+def compiledSign {n : Nat} (signBit : Wire) : CatFn n := CatFn.compileProg 14832 14833 (signProg signBit)
 
 attribute [local irreducible] signProg compiledSign
 
-theorem signProg_counts :
-    ECDSAAdd.toffoliCount signProg = 251 ∧ ECDSAAdd.measurementCount signProg = 255 := by
+theorem signProg_counts (signBit : Wire) :
+    ECDSAAdd.toffoliCount (signProg signBit) = 251 ∧ ECDSAAdd.measurementCount (signProg signBit) = 255 := by
   rw [signProg]
-  have h := ECDSAAdd.renameProgram_counts signSwap WEX.TrimmedSign.reflection
+  have h := ECDSAAdd.renameProgram_counts (signSwap signBit) WEX.TrimmedSign.reflection
   exact ⟨h.1.trans WEX.TrimmedSign.reflection_counts.1, h.2.trans WEX.TrimmedSign.reflection_counts.2⟩
 
-theorem signProg_physical : ECDSAAdd.Arithmetic.GatePhysical signProg := by
+theorem signProg_physical (signBit : Wire) : ECDSAAdd.Arithmetic.GatePhysical (signProg signBit) := by
   rw [signProg]
-  exact ECDSAAdd.Arithmetic.gatePhysical_rename signSwap signSwap.injective _ WEX.TrimmedSign.reflection_physical
+  exact ECDSAAdd.Arithmetic.gatePhysical_rename (signSwap signBit) (signSwap signBit).injective _ WEX.TrimmedSign.reflection_physical
 
-theorem signProg_wires_sub :
-    ECDSAAdd.wires signProg ⊆
-      (870 :: List.range' 580 256 ++ List.range' 14115 258).toFinset := by
+theorem signProg_wires_sub (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874) :
+    ECDSAAdd.wires (signProg signBit) ⊆
+      (signBit :: List.range' 580 256 ++ List.range' 14115 258).toFinset := by
   rw [signProg, ECDSAAdd.renameProgram_support]
   intro w hw
   obtain ⟨u, hu, rfl⟩ := Finset.mem_image.mp hw
@@ -14339,32 +14427,33 @@ theorem signProg_wires_sub :
   apply List.mem_toFinset.mpr
   simp only [List.mem_cons, List.mem_append, List.mem_range'_1]
   rcases hrange with rfl | hy | hp
-  · left; left; exact Equiv.swap_apply_left 14113 870
+  · left; left; exact Equiv.swap_apply_left 14113 signBit
   · left; right
-    rw [signSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 870 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
+    rw [signSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ signBit by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
     exact hy
   · right
-    rw [signSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 870 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
+    rw [signSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ signBit by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
     exact hp
 
-theorem signProg_wires_support1610 : ECDSAAdd.wires signProg ⊆ support1610.toFinset := by
+theorem signProg_wires_support1612 (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874) :
+    ECDSAAdd.wires (signProg signBit) ⊆ support1612.toFinset := by
   intro w hw
-  have hm := List.mem_toFinset.mp (signProg_wires_sub hw)
+  have hm := List.mem_toFinset.mp (signProg_wires_sub signBit hsb hw)
   simp only [List.mem_cons, List.mem_append, List.mem_range'_1] at hm
   apply List.mem_toFinset.mpr
   rcases hm with (rfl | hy) | hp
-  · exact mem_support1610_bank (by decide)
-  · exact mem_support1610_y hy
-  · exact mem_support1610_p1 ⟨hp.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_bank hsb
+  · exact mem_support1612_y hy
+  · exact mem_support1612_p1 ⟨hp.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
 
-theorem signProg_avoid_14832_14833 :
-    (14832 : Wire) ∉ ECDSAAdd.wires signProg ∧ (14833 : Wire) ∉ ECDSAAdd.wires signProg := by
+theorem signProg_avoid_14832_14833 (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874) :
+    (14832 : Wire) ∉ ECDSAAdd.wires (signProg signBit) ∧ (14833 : Wire) ∉ ECDSAAdd.wires (signProg signBit) := by
   constructor <;> intro hm <;>
-  · have h := List.mem_toFinset.mp (signProg_wires_sub hm)
+  · have h := List.mem_toFinset.mp (signProg_wires_sub signBit hsb hm)
     simp only [List.mem_cons, List.mem_append, List.mem_range'_1] at h
-    norm_num at h
+    rcases h with (h | h) | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem signProg_slots_le : ECDSAAdd.Challenge.gateSlots signProg ≤ 5000 := by
+theorem signProg_slots_le (signBit : Wire) : ECDSAAdd.Challenge.gateSlots (signProg signBit) ≤ 5000 := by
   rw [signProg, ECDSAAdd.Baselines.rename_gateSlots]
   have h1 := WEX.TrimmedSign.reflection_slots
   have hm := ECDSAAdd.Baselines.maskedConstant_gateSlots_le 14113
@@ -14390,25 +14479,27 @@ private theorem signedKet_eq_ket_of_phase (s : ECDSAAdd.State) (bs : BasisState)
 
 attribute [local irreducible] ECDSAAdd.pullState
 
-theorem signProg_correct (st : ECDSAAdd.State) (m : List Bool)
+theorem signProg_correct (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874)
+    (st : ECDSAAdd.State) (m : List Bool)
     (R : ShorECDLP.Secp256k1.Point) (hR : HasFinitePoint R st.basis)
     (hcl : CleanOutsideXYBank st.basis) :
-    (ECDSAAdd.run signProg m st).phase = st.phase ∧
-    HasFinitePoint (if st.basis 870 then -R else R) (ECDSAAdd.run signProg m st).basis ∧
-    (∀ w, ¬(580 ≤ w ∧ w < 836) → (ECDSAAdd.run signProg m st).basis w = st.basis w) := by
+    (ECDSAAdd.run (signProg signBit) m st).phase = st.phase ∧
+    HasFinitePoint (if st.basis signBit then -R else R) (ECDSAAdd.run (signProg signBit) m st).basis ∧
+    (∀ w, ¬(580 ≤ w ∧ w < 836) → (ECDSAAdd.run (signProg signBit) m st).basis w = st.basis w) := by
   obtain ⟨x, y, hns, rfl, hx, hy⟩ := hR
-  let t : ECDSAAdd.State := ECDSAAdd.pullState signSwap st
-  have hren : ECDSAAdd.pullState signSwap (ECDSAAdd.run signProg m st) = ECDSAAdd.run WEX.TrimmedSign.reflection m t := by
-    rw [signProg]; exact ECDSAAdd.run_rename signSwap signSwap.injective WEX.TrimmedSign.reflection m st
-  have hfix_y (w : Wire) (hw : 580 ≤ w ∧ w < 836) : signSwap w = w :=
+  let t : ECDSAAdd.State := ECDSAAdd.pullState (signSwap signBit) st
+  have hren : ECDSAAdd.pullState (signSwap signBit) (ECDSAAdd.run (signProg signBit) m st) =
+      ECDSAAdd.run WEX.TrimmedSign.reflection m t := by
+    rw [signProg]; exact ECDSAAdd.run_rename (signSwap signBit) (signSwap signBit).injective WEX.TrimmedSign.reflection m st
+  have hfix_y (w : Wire) (hw : 580 ≤ w ∧ w < 836) : signSwap signBit w = w :=
     Equiv.swap_apply_of_ne_of_ne (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have hfix_pool (w : Wire) (hw : 14115 ≤ w ∧ w < 14373) : signSwap w = w :=
+  have hfix_pool (w : Wire) (hw : 14115 ≤ w ∧ w < 14373) : signSwap signBit w = w :=
     Equiv.swap_apply_of_ne_of_ne (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
   have ht_clean : ∀ w ∈ WEX.TrimmedSign.cleanWires, t.basis w = false := by
     intro w hw
     simp only [WEX.TrimmedSign.cleanWires, List.mem_cons, List.not_mem_nil, or_false] at hw
     rw [pullState_basis]
-    have hfp : signSwap w = w := hfix_pool w (by rcases hw with rfl | rfl | rfl | rfl <;> decide)
+    have hfp : signSwap signBit w = w := hfix_pool w (by rcases hw with rfl | rfl | rfl | rfl <;> decide)
     rw [hfp]
     exact hcl w (by rcases hw with rfl | rfl | rfl | rfl <;> decide)
       (by rcases hw with rfl | rfl | rfl | rfl <;> decide)
@@ -14436,39 +14527,39 @@ theorem signProg_correct (st : ECDSAAdd.State) (m : List Bool)
       ECDSAAdd.run ((negateYLayout streamLayout).reflection 14113 (ECDSAAdd.p + 1)) m t := by
     simpa only [WEX.TrimmedSign.layout, WEX.TrimmedSign.control, streamLayout_generic_eq] using ht_run
   rw [← ht_run'] at hcorr
-  have hph : (ECDSAAdd.run signProg m st).phase = st.phase := by
+  have hph : (ECDSAAdd.run (signProg signBit) m st).phase = st.phase := by
     have h1 := congrArg ECDSAAdd.State.phase hren
     rw [pullState_phase] at h1
-    exact h1.trans (hcorr.1.trans (pullState_phase signSwap st))
-  have hout_at (w : Wire) : (ECDSAAdd.run signProg m st).basis w =
-      (ECDSAAdd.run WEX.TrimmedSign.reflection m t).basis (signSwap w) := by
-    have h1 := congrFun (congrArg ECDSAAdd.State.basis hren) (signSwap w)
+    exact h1.trans (hcorr.1.trans (pullState_phase (signSwap signBit) st))
+  have hout_at (w : Wire) : (ECDSAAdd.run (signProg signBit) m st).basis w =
+      (ECDSAAdd.run WEX.TrimmedSign.reflection m t).basis (signSwap signBit w) := by
+    have h1 := congrFun (congrArg ECDSAAdd.State.basis hren) (signSwap signBit w)
     rw [pullState_basis, signSwap_self] at h1
     exact h1
-  have hfr : ∀ w, ¬(580 ≤ w ∧ w < 836) → (ECDSAAdd.run signProg m st).basis w = st.basis w := by
+  have hfr : ∀ w, ¬(580 ≤ w ∧ w < 836) → (ECDSAAdd.run (signProg signBit) m st).basis w = st.basis w := by
     intro w hw
     rw [hout_at w]
-    have hny : signSwap w ∉ (negateYLayout streamLayout).word := by
-      change signSwap w ∉ streamLayout.point.y
+    have hny : signSwap signBit w ∉ (negateYLayout streamLayout).word := by
+      change signSwap signBit w ∉ streamLayout.point.y
       rw [streamLayout_point_y_eq, List.mem_range'_1]
       intro hm
-      have hf := hfix_y (signSwap w) hm
+      have hf := hfix_y (signSwap signBit w) hm
       rw [signSwap_self] at hf
       exact hw (hf ▸ hm)
-    rw [hcorr.2.2 (signSwap w) hny, pullState_basis, signSwap_self]
-  have hy_out : ECDSAAdd.regValue (List.range' 580 256) (ECDSAAdd.run signProg m st).basis =
-      if st.basis 870 then (-y).val else y.val := by
-    have heq : ECDSAAdd.regValue (List.range' 580 256) (ECDSAAdd.run signProg m st).basis =
+    rw [hcorr.2.2 (signSwap signBit w) hny, pullState_basis, signSwap_self]
+  have hy_out : ECDSAAdd.regValue (List.range' 580 256) (ECDSAAdd.run (signProg signBit) m st).basis =
+      if st.basis signBit then (-y).val else y.val := by
+    have heq : ECDSAAdd.regValue (List.range' 580 256) (ECDSAAdd.run (signProg signBit) m st).basis =
         ECDSAAdd.regValue (negateYLayout streamLayout).word (ECDSAAdd.run WEX.TrimmedSign.reflection m t).basis := by
       change _ = ECDSAAdd.regValue streamLayout.point.y _
       rw [streamLayout_point_y_eq]
       apply ECDSAAdd.Arithmetic.regValue_congr
       intro w hw; rw [List.mem_range'_1] at hw; rw [hout_at w, hfix_y w hw]
     rw [heq, hcorr.2.1]
-    have ht13 : t.basis 14113 = st.basis 870 := by
+    have ht13 : t.basis 14113 = st.basis signBit := by
       rw [pullState_basis, signSwap, Equiv.swap_apply_left]
     rw [ht13]
-    cases st.basis 870 with
+    cases st.basis signBit with
     | false => rfl
     | true =>
       have hy0 : y ≠ 0 := ECDSAAdd.Frontier.curve_y_ne_zero hns
@@ -14476,11 +14567,11 @@ theorem signProg_correct (st : ECDSAAdd.State) (m : List Bool)
       have hneg : (-y).val = ECDSAAdd.p - y.val := by
         rw [ZMod.neg_val, if_neg hy0]
       simp only [if_true, hneg]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  have hx_out : ECDSAAdd.regValue (List.range' 263 256) (ECDSAAdd.run signProg m st).basis = x.val := by
+  have hx_out : ECDSAAdd.regValue (List.range' 263 256) (ECDSAAdd.run (signProg signBit) m st).basis = x.val := by
     rw [← hx]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw
     rw [List.mem_range'_1] at hw; exact hfr w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
   refine ⟨hph, ?_, hfr⟩
-  cases h8 : st.basis 870 with
+  cases h8 : st.basis signBit with
   | false =>
     rw [h8] at hy_out
     simp only [Bool.false_eq_true, if_false] at hy_out ⊢
@@ -14495,34 +14586,39 @@ theorem signProg_correct (st : ECDSAAdd.State) (m : List Bool)
       WeierstrassCurve.Affine.Point.neg_some hns, hx_out, ?_⟩
     rw [hny]; exact hy_out
 
-theorem compiledSign_shiftFin : ShiftFin compiledSign 506 := by
+theorem compiledSign_shiftFin {n : Nat} (signBit : Wire) : ShiftFin (compiledSign (n := n) signBit) 506 := by
   rw [compiledSign]
-  exact (CatFn.compileProg_shiftFin 14832 14833 signProg).mono (by rw [signProg_counts.1, signProg_counts.2])
+  exact (CatFn.compileProg_shiftFin 14832 14833 (signProg signBit)).mono
+    (by rw [(signProg_counts signBit).1, (signProg_counts signBit).2])
 
-theorem compiledSign_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledSign s).prog.instantiate read h).tCount ≤ 4 * 251 := by
+theorem compiledSign_tCount {n : Nat} (signBit : Wire) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledSign (n := n) signBit s).prog.instantiate read h).tCount ≤ 4 * 251 := by
   rw [compiledSign]
-  exact (b_catFn_compileProg_tCount 14832 14833 signProg s read h).trans (by rw [signProg_counts.1])
+  exact (b_catFn_compileProg_tCount 14832 14833 (signProg signBit) s read h).trans (by rw [(signProg_counts signBit).1])
 
-theorem compiledSign_removed18 (s : Nat) : removed 18 (compiledSign s).prog = 0 := by
-  rw [compiledSign]; exact CatFn.compileProg_removed18 14832 14833 signProg s
+theorem compiledSign_removed18 {n : Nat} (signBit : Wire) (s : Nat) :
+    removed 18 (compiledSign (n := n) signBit s).prog = 0 := by
+  rw [compiledSign]; exact CatFn.compileProg_removed18 14832 14833 (signProg signBit) s
 
-theorem compiledSign_wellFormed (s : Nat) : (compiledSign s).prog.WellFormed := by
+theorem compiledSign_wellFormed {n : Nat} (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874) (s : Nat) :
+    (compiledSign (n := n) signBit s).prog.WellFormed := by
   rw [compiledSign]
-  exact CatFn.compileProg_wellFormed 14832 14833 signProg
-    signProg_avoid_14832_14833.1 signProg_avoid_14832_14833.2 (by decide) signProg_physical s
+  exact CatFn.compileProg_wellFormed 14832 14833 (signProg signBit)
+    (signProg_avoid_14832_14833 signBit hsb).1 (signProg_avoid_14832_14833 signBit hsb).2 (by decide)
+    (signProg_physical signBit) s
 
-theorem compiledSign_wires (s : Nat) :
-    ChallengeMigration.straightWires (compiledSign s).prog ⊆ support1610 := by
+theorem compiledSign_wires {n : Nat} (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874) (s : Nat) :
+    ChallengeMigration.straightWires (compiledSign (n := n) signBit s).prog ⊆ support1612 := by
   rw [compiledSign]
-  exact CatFn.compileProg_wires 14832 14833 signProg signProg_wires_support1610
-    (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide)) s
+  exact CatFn.compileProg_wires 14832 14833 (signProg signBit) (signProg_wires_support1612 signBit hsb)
+    (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide)) s
 
-theorem compiledSign_slots (s : Nat) : (compiledSign s).prog.gateSlots ≤ 120000 := by
+theorem compiledSign_slots {n : Nat} (signBit : Wire) (s : Nat) :
+    (compiledSign (n := n) signBit s).prog.gateSlots ≤ 120000 := by
   rw [compiledSign]
-  have h1 := CatFn.compileProg_slots (n := 65536) 14832 14833 signProg s
-  have h2 := signProg_slots_le
-  have h3 := signProg_counts.1
+  have h1 := CatFn.compileProg_slots (n := n) 14832 14833 (signProg signBit) s
+  have h2 := signProg_slots_le signBit
+  have h3 := (signProg_counts signBit).1
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 /-! #### 3. Direct canonical modular adders `xAddProg` and `yAddProg` (`1,023` Toffolis each) -/
@@ -14545,8 +14641,8 @@ def yAddLayout : MeasuredCanonicalModLayout where
 
 def xAddProg : ECDSAAdd.Program := xAddLayout.program SquareReduction.c ECDSAAdd.p
 def yAddProg : ECDSAAdd.Program := yAddLayout.program SquareReduction.c ECDSAAdd.p
-def compiledXAdd : CatFn 65536 := CatFn.compileProg 14832 14833 xAddProg
-def compiledYAdd : CatFn 65536 := CatFn.compileProg 14832 14833 yAddProg
+def compiledXAdd {n : Nat} : CatFn n := CatFn.compileProg 14832 14833 xAddProg
+def compiledYAdd {n : Nat} : CatFn n := CatFn.compileProg 14832 14833 yAddProg
 
 attribute [local irreducible] xAddProg yAddProg compiledXAdd compiledYAdd
 
@@ -14599,7 +14695,7 @@ theorem xAddProg_physical : ECDSAAdd.Arithmetic.GatePhysical xAddProg := by
 theorem yAddProg_physical : ECDSAAdd.Arithmetic.GatePhysical yAddProg := by
   rw [yAddProg]; exact yAddLayout.physical SquareReduction.c ECDSAAdd.p yAddLayout_nodup
 
-theorem xAddProg_wires_support1610 : ECDSAAdd.wires xAddProg ⊆ support1610.toFinset := by
+theorem xAddProg_wires_support1612 : ECDSAAdd.wires xAddProg ⊆ support1612.toFinset := by
   intro w hw
   rw [xAddProg] at hw
   have hm := List.mem_toFinset.mp (xAddLayout.program_wires_subset SquareReduction.c ECDSAAdd.p hw)
@@ -14607,14 +14703,14 @@ theorem xAddProg_wires_support1610 : ECDSAAdd.wires xAddProg ⊆ support1610.toF
     List.mem_append, List.mem_cons, List.not_mem_nil, or_false, List.mem_range'_1, or_assoc] at hm
   apply List.mem_toFinset.mpr
   rcases hm with h | h | h | rfl | rfl | rfl
-  · exact mem_support1610_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  · exact mem_support1610_x h
-  · exact mem_support1610_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  · exact mem_support1610_p1 (by decide)
-  · exact mem_support1610_p1 (by decide)
-  · exact mem_support1610_p1 (by decide)
+  · exact mem_support1612_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_x h
+  · exact mem_support1612_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_p1 (by decide)
+  · exact mem_support1612_p1 (by decide)
+  · exact mem_support1612_p1 (by decide)
 
-theorem yAddProg_wires_support1610 : ECDSAAdd.wires yAddProg ⊆ support1610.toFinset := by
+theorem yAddProg_wires_support1612 : ECDSAAdd.wires yAddProg ⊆ support1612.toFinset := by
   intro w hw
   rw [yAddProg] at hw
   have hm := List.mem_toFinset.mp (yAddLayout.program_wires_subset SquareReduction.c ECDSAAdd.p hw)
@@ -14622,13 +14718,13 @@ theorem yAddProg_wires_support1610 : ECDSAAdd.wires yAddProg ⊆ support1610.toF
     List.mem_append, List.mem_cons, List.not_mem_nil, or_false, List.mem_range'_1, or_assoc] at hm
   apply List.mem_toFinset.mpr
   rcases hm with rfl | h | h | h | rfl | rfl | rfl
-  · exact mem_support1610_p3 (by decide)
-  · exact mem_support1610_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  · exact mem_support1610_y h
-  · exact mem_support1610_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  · exact mem_support1610_p1 (by decide)
-  · exact mem_support1610_p1 (by decide)
-  · exact mem_support1610_p1 (by decide)
+  · exact mem_support1612_p3 (by decide)
+  · exact mem_support1612_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_y h
+  · exact mem_support1612_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_p1 (by decide)
+  · exact mem_support1612_p1 (by decide)
+  · exact mem_support1612_p1 (by decide)
 
 theorem xAddProg_avoid_14832_14833 :
     (14832 : Wire) ∉ ECDSAAdd.wires xAddProg ∧ (14833 : Wire) ∉ ECDSAAdd.wires xAddProg := by
@@ -14656,52 +14752,52 @@ theorem yAddProg_slots_le : ECDSAAdd.Challenge.gateSlots yAddProg ≤ 20000 := b
   rw [yAddProg]
   exact (ECDSAAdd.Baselines.canonicalMod_gateSlots_le yAddLayout 256 SquareReduction.c ECDSAAdd.p yAddLayout_widths).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledXAdd_shiftFin : ShiftFin compiledXAdd 2046 := by
+theorem compiledXAdd_shiftFin {n : Nat} : ShiftFin (compiledXAdd (n := n)) 2046 := by
   rw [compiledXAdd]
   exact (CatFn.compileProg_shiftFin 14832 14833 xAddProg).mono (by rw [xAddProg_counts.1, xAddProg_counts.2])
 
-theorem compiledYAdd_shiftFin : ShiftFin compiledYAdd 2046 := by
+theorem compiledYAdd_shiftFin {n : Nat} : ShiftFin (compiledYAdd (n := n)) 2046 := by
   rw [compiledYAdd]
   exact (CatFn.compileProg_shiftFin 14832 14833 yAddProg).mono (by rw [yAddProg_counts.1, yAddProg_counts.2])
 
-theorem compiledXAdd_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledXAdd s).prog.instantiate read h).tCount ≤ 4 * 1023 := by
+theorem compiledXAdd_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledXAdd (n := n) s).prog.instantiate read h).tCount ≤ 4 * 1023 := by
   rw [compiledXAdd]; exact (b_catFn_compileProg_tCount _ _ _ s read h).trans (by rw [xAddProg_counts.1])
 
-theorem compiledYAdd_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledYAdd s).prog.instantiate read h).tCount ≤ 4 * 1023 := by
+theorem compiledYAdd_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledYAdd (n := n) s).prog.instantiate read h).tCount ≤ 4 * 1023 := by
   rw [compiledYAdd]; exact (b_catFn_compileProg_tCount _ _ _ s read h).trans (by rw [yAddProg_counts.1])
 
-theorem compiledXAdd_removed18 (s : Nat) : removed 18 (compiledXAdd s).prog = 0 := by
+theorem compiledXAdd_removed18 {n : Nat} (s : Nat) : removed 18 (compiledXAdd (n := n) s).prog = 0 := by
   rw [compiledXAdd]; exact CatFn.compileProg_removed18 _ _ _ s
 
-theorem compiledYAdd_removed18 (s : Nat) : removed 18 (compiledYAdd s).prog = 0 := by
+theorem compiledYAdd_removed18 {n : Nat} (s : Nat) : removed 18 (compiledYAdd (n := n) s).prog = 0 := by
   rw [compiledYAdd]; exact CatFn.compileProg_removed18 _ _ _ s
 
-theorem compiledXAdd_wellFormed (s : Nat) : (compiledXAdd s).prog.WellFormed := by
+theorem compiledXAdd_wellFormed {n : Nat} (s : Nat) : (compiledXAdd (n := n) s).prog.WellFormed := by
   rw [compiledXAdd]
   exact CatFn.compileProg_wellFormed _ _ _ xAddProg_avoid_14832_14833.1 xAddProg_avoid_14832_14833.2 (by decide) xAddProg_physical s
 
-theorem compiledYAdd_wellFormed (s : Nat) : (compiledYAdd s).prog.WellFormed := by
+theorem compiledYAdd_wellFormed {n : Nat} (s : Nat) : (compiledYAdd (n := n) s).prog.WellFormed := by
   rw [compiledYAdd]
   exact CatFn.compileProg_wellFormed _ _ _ yAddProg_avoid_14832_14833.1 yAddProg_avoid_14832_14833.2 (by decide) yAddProg_physical s
 
-theorem compiledXAdd_wires (s : Nat) : ChallengeMigration.straightWires (compiledXAdd s).prog ⊆ support1610 := by
+theorem compiledXAdd_wires {n : Nat} (s : Nat) : ChallengeMigration.straightWires (compiledXAdd (n := n) s).prog ⊆ support1612 := by
   rw [compiledXAdd]
-  exact CatFn.compileProg_wires _ _ _ xAddProg_wires_support1610 (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide)) s
+  exact CatFn.compileProg_wires _ _ _ xAddProg_wires_support1612 (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide)) s
 
-theorem compiledYAdd_wires (s : Nat) : ChallengeMigration.straightWires (compiledYAdd s).prog ⊆ support1610 := by
+theorem compiledYAdd_wires {n : Nat} (s : Nat) : ChallengeMigration.straightWires (compiledYAdd (n := n) s).prog ⊆ support1612 := by
   rw [compiledYAdd]
-  exact CatFn.compileProg_wires _ _ _ yAddProg_wires_support1610 (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide)) s
+  exact CatFn.compileProg_wires _ _ _ yAddProg_wires_support1612 (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide)) s
 
-theorem compiledXAdd_slots (s : Nat) : (compiledXAdd s).prog.gateSlots ≤ 400000 := by
+theorem compiledXAdd_slots {n : Nat} (s : Nat) : (compiledXAdd (n := n) s).prog.gateSlots ≤ 400000 := by
   rw [compiledXAdd]
-  have h1 := CatFn.compileProg_slots (n := 65536) 14832 14833 xAddProg s
+  have h1 := CatFn.compileProg_slots (n := n) 14832 14833 xAddProg s
   have h2 := xAddProg_slots_le; have h3 := xAddProg_counts.1; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledYAdd_slots (s : Nat) : (compiledYAdd s).prog.gateSlots ≤ 400000 := by
+theorem compiledYAdd_slots {n : Nat} (s : Nat) : (compiledYAdd (n := n) s).prog.gateSlots ≤ 400000 := by
   rw [compiledYAdd]
-  have h1 := CatFn.compileProg_slots (n := 65536) 14832 14833 yAddProg s
+  have h1 := CatFn.compileProg_slots (n := n) 14832 14833 yAddProg s
   have h2 := yAddProg_slots_le; have h3 := yAddProg_counts.1; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 private theorem secp_pc : ECDSAAdd.p + SquareReduction.c = 2 ^ 256 := by decide +kernel
@@ -14747,7 +14843,7 @@ theorem yAddProg_correct (A Y : ECDSAAdd.Fp) (st : ECDSAAdd.State) (m : List Boo
 
 /-! #### 4. Direct selector-free field division/multiplication (`compiledDirectArith`, zero hosting) -/
 
-def compiledDirectArith (multiply : Bool) : CatFn 65536 :=
+def compiledDirectArith {n : Nat} (multiply : Bool) : CatFn n :=
   CatFn.map (wireFn2 streamLayout) (compiledKernelS (!multiply))
 
 attribute [local irreducible] compiledDirectArith
@@ -14762,9 +14858,9 @@ private theorem wireFn2_inj_logical (a : Wire) (ha : a ∈ logicalNo2400)
     (ArithmeticOB5.logical_sub_old (Finset.mem_erase.mp ha).2) b
     (ArithmeticOB5.logical_sub_old (Finset.mem_erase.mp hb).2) heq
 
-private theorem wireFn2_mem_support1610 (w : Wire) (hw : w ∈ logicalNo2400)
+private theorem wireFn2_mem_support1612 (w : Wire) (hw : w ∈ logicalNo2400)
     (h4 : w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312) :
-    wireFn2 streamLayout w ∈ support1610 := by
+    wireFn2 streamLayout w ∈ support1612 := by
   have hlog : w ∈ OB5Support.logicalSites := (Finset.mem_erase.mp hw).2
   have hne2400 : w ≠ base 2400 := (Finset.mem_erase.mp hw).1
   have himg := OwnParityPhysical.wire_image streamLayout streamLayout_widths w
@@ -14797,8 +14893,8 @@ private theorem wireFn2_mem_support1610 (w : Wire) (hw : w ∈ logicalNo2400)
   simp only [OwnParityPhysical.sites, List.mem_cons, List.mem_append] at hmem
   rcases hmem with ((hgen | hx) | hy) | hpool
   · rw [streamLayout_generic_eq] at hgen; exact absurd hgen hne_gen
-  · rw [streamLayout_point_x_eq, List.mem_range'_1] at hx; exact mem_support1610_x hx
-  · rw [streamLayout_point_y_eq, List.mem_range'_1] at hy; exact mem_support1610_y hy
+  · rw [streamLayout_point_x_eq, List.mem_range'_1] at hx; exact mem_support1612_x hx
+  · rw [streamLayout_point_y_eq, List.mem_range'_1] at hy; exact mem_support1612_y hy
   · obtain ⟨i, hi, heq⟩ := OwnParityPhysical.pool_index streamLayout _ hpool
     have h765 : i ≠ 765 := fun e => hne_pool 765 (Or.inl rfl) (heq.trans (congrArg _ e))
     have h766 : i ≠ 766 := fun e => hne_pool 766 (Or.inr (Or.inl rfl)) (heq.trans (congrArg _ e))
@@ -14806,26 +14902,26 @@ private theorem wireFn2_mem_support1610 (w : Wire) (hw : w ∈ logicalNo2400)
     have hlt : i < 5699 := by rcases hi with h | h | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
     rw [heq, streamPool_at i hlt]
     rcases hi with h | h | h
-    · exact mem_support1610_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · exact mem_support1612_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
     · by_cases hlt765 : i < 765
-      · exact mem_support1610_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-      · exact mem_support1610_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-    · exact mem_support1610_p4 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+      · exact mem_support1612_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+      · exact mem_support1612_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · exact mem_support1612_p4 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
 
-theorem compiledDirectArith_indep (multiply : Bool) (s : Nat) :
-    Indep (compiledDirectArith multiply s).prog := by
+theorem compiledDirectArith_indep {n : Nat} (multiply : Bool) (s : Nat) :
+    Indep (compiledDirectArith (n := n) multiply s).prog := by
   rw [compiledDirectArith]
   exact CatFn.map_indep _ _ (compiledKernelS_indep (!multiply))
     (fun s' a ha b hb => wireFn2_inj_logical a (Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s' ha))
       b (Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s' hb))) s
 
-theorem compiledDirectArith_removed18 (multiply : Bool) (s : Nat) :
-    removed 18 (compiledDirectArith multiply s).prog = 0 := by
+theorem compiledDirectArith_removed18 {n : Nat} (multiply : Bool) (s : Nat) :
+    removed 18 (compiledDirectArith (n := n) multiply s).prog = 0 := by
   rw [compiledDirectArith]
   exact CatFn.map_removed18 _ _ (compiledKernelS_removed18 (!multiply)) s
 
-theorem compiledDirectArith_shiftFin (multiply : Bool) :
-    ShiftFin (compiledDirectArith multiply)
+theorem compiledDirectArith_shiftFin {n : Nat} (multiply : Bool) :
+    ShiftFin (compiledDirectArith (n := n) multiply)
       (if multiply then 1769354 else 1768845) := by
   have hc := arithS_counts streamLayout
   have hren_m : ECDSAAdd.measurementCount (arithS streamLayout multiply) =
@@ -14838,9 +14934,9 @@ theorem compiledDirectArith_shiftFin (multiply : Bool) :
   refine (CatFn.map_shiftFin _ _ (compiledKernelS_shiftFin (!multiply))).mono ?_
   cases multiply <;> simp only [Bool.false_eq_true, if_false, if_true] at hren_m hren_t ⊢ <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledDirectArith_tCount (multiply : Bool) (s : Nat)
-    (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledDirectArith multiply s).prog.instantiate read h).tCount ≤
+theorem compiledDirectArith_tCount {n : Nat} (multiply : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledDirectArith (n := n) multiply s).prog.instantiate read h).tCount ≤
       4 * (if multiply then 1048077 else 1047824) := by
   have hc := arithS_counts streamLayout
   have hren_t : ECDSAAdd.toffoliCount (arithS streamLayout multiply) =
@@ -14850,21 +14946,21 @@ theorem compiledDirectArith_tCount (multiply : Bool) (s : Nat)
   refine (CatFn.map_tCount_le _ _ (compiledKernelS_tCount (!multiply)) s read h).trans ?_
   cases multiply <;> simp only [Bool.false_eq_true, if_false, if_true] at hren_t ⊢ <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledDirectArith_slots (multiply : Bool) (s : Nat) :
-    (compiledDirectArith multiply s).prog.gateSlots ≤ 1000000000 := by
+theorem compiledDirectArith_slots {n : Nat} (multiply : Bool) (s : Nat) :
+    (compiledDirectArith (n := n) multiply s).prog.gateSlots ≤ 1000000000 := by
   rw [compiledDirectArith]
   exact CatFn.map_slots _ _ (compiledKernelS_slots (!multiply)) s
 
-theorem compiledDirectArith_wires (multiply : Bool) (s : Nat) :
-    ChallengeMigration.straightWires (compiledDirectArith multiply s).prog ⊆ support1610 := by
+theorem compiledDirectArith_wires {n : Nat} (multiply : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledDirectArith (n := n) multiply s).prog ⊆ support1612 := by
   intro w hw
   rw [compiledDirectArith] at hw
-  obtain ⟨u, hu, rfl⟩ := catFn_map_mem (wireFn2 streamLayout) (compiledKernelS (n := 65536) (!multiply)) s hw
-  exact wireFn2_mem_support1610 u (Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s hu))
+  obtain ⟨u, hu, rfl⟩ := catFn_map_mem (wireFn2 streamLayout) (compiledKernelS (n := n) (!multiply)) s hw
+  exact wireFn2_mem_support1612 u (Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s hu))
     (compiledKernelS_avoid4 (!multiply) s u hu)
 
-theorem compiledDirectArith_wellFormed (multiply : Bool) (s : Nat) :
-    (compiledDirectArith multiply s).prog.WellFormed := by
+theorem compiledDirectArith_wellFormed {n : Nat} (multiply : Bool) (s : Nat) :
+    (compiledDirectArith (n := n) multiply s).prog.WellFormed := by
   rw [compiledDirectArith]
   exact CatFn.map_wellFormed _ _ (compiledKernelS_wellFormed (!multiply))
     (fun s' a ha b hb => wireFn2_inj_logical a (Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s' ha))
@@ -14876,23 +14972,23 @@ def DirectArithValid (bs : BasisState) : Prop :=
     ECDSAAdd.regValue (List.range' 580 256) bs = Y.val ∧
     CleanOutsideXYBank bs
 
-theorem compiledDirectArith_catLitSim (multiply : Bool) (s : Nat)
-    (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    CatLitSim 14833 ((compiledDirectArith multiply s).prog.instantiate read h)
+theorem compiledDirectArith_catLitSim {n : Nat} (multiply : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim 14833 ((compiledDirectArith (n := n) multiply s).prog.instantiate read h)
       (arithS streamLayout multiply) DirectArithValid := by
   have hker_sites : ECDSAAdd.wires (SW.kernelS (!multiply)) ⊆ logicalNo2400 := fun q hq =>
     Finset.mem_erase.mpr ⟨fun e => (SW.selKernel_sel (!multiply)).away (by subst e; exact hq), arithS_sites multiply hq⟩
   have h718_mem : base 718 ∈ logicalNo2400 := by
     rw [logicalNo2400, Finset.mem_erase]
     exact ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨718, by decide, rfl⟩)⟩
-  have hrestr : ∀ (s'' : Nat) (r'' : ConstantBit 65536 → Bool) (h'' : Fin s'' → Bool),
-      CatLitSim (base 718) ((compiledKernelS (n := 65536) (!multiply) s'').prog.instantiate r'' h'') (SW.kernelS (!multiply))
+  have hrestr : ∀ (s'' : Nat) (r'' : ConstantBit n → Bool) (h'' : Fin s'' → Bool),
+      CatLitSim (base 718) ((compiledKernelS (n := n) (!multiply) s'').prog.instantiate r'' h'') (SW.kernelS (!multiply))
         (fun bs => ∃ bs', KernelInput bs' ∧ ∀ w ∈ logicalNo2400, bs w = bs' w) := fun s'' r'' h'' =>
     catLitSim_restrict_S logicalNo2400 (base 718) _ (SW.kernelS (!multiply)) KernelInput
       (fun w hw => Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s'' hw))
       hker_sites h718_mem r'' h'' (compiledKernelS_catLitSim (!multiply) s'' r'' h'')
   have hmap := CatFn.map_catLitSim (wireFn2 streamLayout) (base 718) logicalNo2400
-    (compiledKernelS (n := 65536) (!multiply)) (SW.kernelS (!multiply)) _
+    (compiledKernelS (n := n) (!multiply)) (SW.kernelS (!multiply)) _
     (fun s'' w hw => Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s'' hw))
     hker_sites h718_mem wireFn2_inj_logical hrestr s read h
   rw [wireFn2_base718] at hmap
@@ -14941,7 +15037,7 @@ def sqSwap : Equiv.Perm Wire := Equiv.swap 14113 15651
 private theorem sqSwap_self (w : Wire) : sqSwap (sqSwap w) = w := Equiv.swap_apply_self _ _ w
 def sqProg : ECDSAAdd.Program := ECDSAAdd.renameProgram sqSwap (SquareOB5.program streamLayout)
 
-def compiledSquare : CatFn 65536 :=
+def compiledSquare {n : Nat} : CatFn n :=
   CatFn.swapSurround 14833 15653
     (CatFn.seq (CatFn.seq (CatFn.lit [.X 15651]) (CatFn.compileProg 15652 15653 sqProg))
       (CatFn.lit [.X 15651]))
@@ -15087,20 +15183,20 @@ theorem sqProg_physical : ECDSAAdd.Arithmetic.GatePhysical sqProg := by
   exact ECDSAAdd.Arithmetic.gatePhysical_rename sqSwap sqSwap.injective _
     (SquareOB5.physical streamLayout streamLayout_widths streamLayout_nodup)
 
-theorem sqProg_wires_support1610 : ECDSAAdd.wires sqProg ⊆ support1610.toFinset := by
+theorem sqProg_wires_support1612 : ECDSAAdd.wires sqProg ⊆ support1612.toFinset := by
   rw [sqProg, ECDSAAdd.renameProgram_support]
   intro w hw
   obtain ⟨u, hu, rfl⟩ := Finset.mem_image.mp hw
   have hb := squareOB5_wires_exact u hu
   apply List.mem_toFinset.mpr
   rcases hb with rfl | h | h | h | h | h | h
-  · rw [sqSwap, Equiv.swap_apply_left]; exact mem_support1610_p4 (by decide)
-  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1610_x h
-  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1610_y h
-  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1610_p1 h
-  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1610_p2 h
-  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1610_p3 h
-  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1610_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · rw [sqSwap, Equiv.swap_apply_left]; exact mem_support1612_p4 (by decide)
+  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1612_x h
+  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1612_y h
+  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1612_p1 h
+  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1612_p2 h
+  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1612_p3 h
+  · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]; exact mem_support1612_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
 
 theorem sqProg_avoid_15652_15653 :
     (15652 : Wire) ∉ ECDSAAdd.wires sqProg ∧ (15653 : Wire) ∉ ECDSAAdd.wires sqProg := by
@@ -15117,7 +15213,7 @@ theorem sqProg_avoid_15652_15653 :
     · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))] at heq; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
     · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))] at heq; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledSquare_shiftFin : ShiftFin compiledSquare 106716 := by
+theorem compiledSquare_shiftFin {n : Nat} : ShiftFin (compiledSquare (n := n)) 106716 := by
   rw [compiledSquare]
   refine (CatFn.swapSurround_shiftFin _ _ _
     (CatFn.seq_shiftFin _ _
@@ -15125,8 +15221,8 @@ theorem compiledSquare_shiftFin : ShiftFin compiledSquare 106716 := by
       (CatFn.lit_shiftFin _))).mono ?_
   rw [sqProg_counts.1, sqProg_counts.2]
 
-theorem compiledSquare_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledSquare s).prog.instantiate read h).tCount ≤ 4 * 52276 := by
+theorem compiledSquare_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledSquare (n := n) s).prog.instantiate read h).tCount ≤ 4 * 52276 := by
   rw [compiledSquare]
   refine CatFn.swapSurround_tCount_le 14833 15653 _
     (CatFn.seq_indep _ _ (CatFn.seq_indep _ _ (CatFn.lit_indep _) (CatFn.compileProg_indep _ _ _)) (CatFn.lit_indep _))
@@ -15137,14 +15233,14 @@ theorem compiledSquare_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h :
   have hlt : ShorECDLP.tCount [.X 15651] = 0 := rfl
   rw [hlt, sqProg_counts.1]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledSquare_removed18 (s : Nat) : removed 18 (compiledSquare s).prog = 0 := by
+theorem compiledSquare_removed18 {n : Nat} (s : Nat) : removed 18 (compiledSquare (n := n) s).prog = 0 := by
   rw [compiledSquare]
   exact CatFn.swapSurround_removed18 _ _ _
     (CatFn.seq_removed18 _ _
       (CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ rfl) (CatFn.compileProg_removed18 _ _ _))
       (CatFn.lit_removed18 _ rfl)) s
 
-theorem compiledSquare_wellFormed (s : Nat) : (compiledSquare s).prog.WellFormed := by
+theorem compiledSquare_wellFormed {n : Nat} (s : Nat) : (compiledSquare (n := n) s).prog.WellFormed := by
   rw [compiledSquare]
   exact CatFn.swapSurround_wellFormed 14833 15653 _ (by decide)
     (CatFn.seq_wellFormed _ _
@@ -15152,20 +15248,20 @@ theorem compiledSquare_wellFormed (s : Nat) : (compiledSquare s).prog.WellFormed
         (CatFn.compileProg_wellFormed _ _ _ sqProg_avoid_15652_15653.1 sqProg_avoid_15652_15653.2 (by decide) sqProg_physical))
       (CatFn.lit_wellFormed [.X 15651] (circuitWF_X 15651))) s
 
-theorem compiledSquare_wires (s : Nat) : ChallengeMigration.straightWires (compiledSquare s).prog ⊆ support1610 := by
-  have hx : circuitWires [.X 15651] ⊆ support1610 := by
-    intro w hw; simp [circuitWires, gateWires] at hw; subst hw; exact mem_support1610.mpr (by decide)
+theorem compiledSquare_wires {n : Nat} (s : Nat) : ChallengeMigration.straightWires (compiledSquare (n := n) s).prog ⊆ support1612 := by
+  have hx : circuitWires [.X 15651] ⊆ support1612 := by
+    intro w hw; simp [circuitWires, gateWires] at hw; subst hw; exact mem_support1612.mpr (by decide)
   rw [compiledSquare]
-  exact CatFn.swapSurround_wires 14833 15653 _ (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide))
+  exact CatFn.swapSurround_wires 14833 15653 _ (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide))
     (CatFn.seq_wires _ _
       (CatFn.seq_wires _ _ (CatFn.lit_wires _ hx)
-        (CatFn.compileProg_wires _ _ _ sqProg_wires_support1610 (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide))))
+        (CatFn.compileProg_wires _ _ _ sqProg_wires_support1612 (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide))))
       (CatFn.lit_wires _ hx)) s
 
-theorem compiledSquare_slots (s : Nat) : (compiledSquare s).prog.gateSlots ≤ 120000000 := by
+theorem compiledSquare_slots {n : Nat} (s : Nat) : (compiledSquare (n := n) s).prog.gateSlots ≤ 120000000 := by
   rw [compiledSquare]
   have h1 := CatFn.swapSurround_slots 14833 15653
-    (CatFn.seq (CatFn.seq (CatFn.lit (n := 65536) [.X 15651]) (CatFn.compileProg 15652 15653 sqProg))
+    (CatFn.seq (CatFn.seq (CatFn.lit (n := n) [.X 15651]) (CatFn.compileProg 15652 15653 sqProg))
       (CatFn.lit [.X 15651]))
     (CatFn.seq_slots _ _
       (CatFn.seq_slots _ _ (CatFn.lit_slots [.X 15651]) (CatFn.compileProg_slots 15652 15653 sqProg))
@@ -15263,7 +15359,7 @@ theorem sqProg_run_flipped (X Y : ECDSAAdd.Fp) (st : ECDSAAdd.State) (m : List B
       rw [hsq.2.rest (sqSwap w) hnxy, pullState_basis, sqSwap_self]
   exact ⟨hph, hx_out, hy_out, hfr⟩
 
-private theorem compiledSquare_sim_aux (P : ECDSAAdd.Program)
+private theorem compiledSquare_sim_aux {n : Nat} (P : ECDSAAdd.Program)
     (hav1 : (15652 : Wire) ∉ ECDSAAdd.wires P) (hav2 : (15653 : Wire) ∉ ECDSAAdd.wires P)
     (hph : ECDSAAdd.Arithmetic.GatePhysical P)
     (hrunP : ∀ (X Y : ECDSAAdd.Fp) (st : ECDSAAdd.State) (m : List Bool),
@@ -15274,7 +15370,7 @@ private theorem compiledSquare_sim_aux (P : ECDSAAdd.Program)
       ECDSAAdd.regValue (List.range' 263 256) (ECDSAAdd.run P m ⟨st.phase, st.basis[15651 ↦ true]⟩).basis = (X - Y * Y).val ∧
       ECDSAAdd.regValue (List.range' 580 256) (ECDSAAdd.run P m ⟨st.phase, st.basis[15651 ↦ true]⟩).basis = Y.val ∧
       (∀ w, ¬(263 ≤ w ∧ w < 519) → (ECDSAAdd.run P m ⟨st.phase, st.basis[15651 ↦ true]⟩).basis w = (st.basis[15651 ↦ true]) w))
-    (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c =>
         ∀ (X Y : ECDSAAdd.Fp) (bs : BasisState),
@@ -15289,7 +15385,7 @@ private theorem compiledSquare_sim_aux (P : ECDSAAdd.Program)
       ((CatFn.swapSurround 14833 15653
         (CatFn.seq (CatFn.seq (CatFn.lit [.X 15651]) (CatFn.compileProg 15652 15653 P))
           (CatFn.lit [.X 15651])) s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-  obtain ⟨cs, al, hm⟩ := CatFn.compileProg_catLitSim (n := 65536) 15652 15653 P hav1 hav2 (by decide) hph s read h
+  obtain ⟨cs, al, hm⟩ := CatFn.compileProg_catLitSim (n := n) 15652 15653 P hav1 hav2 (by decide) hph s read h
   refine ⟨cs, ?_, hm⟩
   rw [b_catFn_swapSurround_run 14833 15653 _
     (CatFn.seq_indep _ _ (CatFn.seq_indep _ _ (CatFn.lit_indep _) (CatFn.compileProg_indep _ _ _)) (CatFn.lit_indep _)),
@@ -15334,7 +15430,7 @@ private theorem compiledSquare_sim_aux (P : ECDSAAdd.Program)
       swapCircuit_prep_signedKet 15653 14833 (by decide) ⟨false, out.basis[15651 ↦ false]⟩
         (by simp [upd, h53_out]) (by simp [upd, h33_out]), Bridge.signedKet_false]
 
-theorem compiledSquare_sim (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+theorem compiledSquare_sim {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c =>
         ∀ (X Y : ECDSAAdd.Fp) (bs : BasisState),
@@ -15346,7 +15442,7 @@ theorem compiledSquare_sim (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fi
             ECDSAAdd.regValue (List.range' 580 256) bs' = Y.val ∧
             (∀ w, ¬(263 ≤ w ∧ w < 519) → bs' w = bs w) ∧
             b.kraus (Prep 14833 (ket bs)) = c • Prep 14833 (ket bs'))
-      ((compiledSquare s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      ((compiledSquare (n := n) s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   rw [compiledSquare]
   exact compiledSquare_sim_aux sqProg sqProg_avoid_15652_15653.1 sqProg_avoid_15652_15653.2
     sqProg_physical sqProg_run_flipped s read h
@@ -15361,7 +15457,7 @@ def negXAdd : ECDSAAdd.Program := (negXLayout.add 14113 (ECDSAAdd.p + 1)).drop 4
 def negXRefl : ECDSAAdd.Program := negXLayout.complement 14113 ++ negXAdd
 def negXProg : ECDSAAdd.Program := ECDSAAdd.renameProgram sqSwap negXRefl
 
-def compiledNegX : CatFn 65536 :=
+def compiledNegX {n : Nat} : CatFn n :=
   CatFn.seq (CatFn.seq (CatFn.lit [.X 15651]) (CatFn.compileProg 14832 14833 negXProg))
     (CatFn.lit [.X 15651])
 
@@ -15483,15 +15579,15 @@ theorem negXProg_wires_sub :
     rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
     exact hp
 
-theorem negXProg_wires_support1610 : ECDSAAdd.wires negXProg ⊆ support1610.toFinset := by
+theorem negXProg_wires_support1612 : ECDSAAdd.wires negXProg ⊆ support1612.toFinset := by
   intro w hw
   have hm := List.mem_toFinset.mp (negXProg_wires_sub hw)
   simp only [List.mem_cons, List.mem_append, List.mem_range'_1] at hm
   apply List.mem_toFinset.mpr
   rcases hm with (rfl | hx) | hp
-  · exact mem_support1610_p4 (by decide)
-  · exact mem_support1610_x hx
-  · exact mem_support1610_p1 ⟨hp.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  · exact mem_support1612_p4 (by decide)
+  · exact mem_support1612_x hx
+  · exact mem_support1612_p1 ⟨hp.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
 
 theorem negXProg_avoid_14832_14833 :
     (14832 : Wire) ∉ ECDSAAdd.wires negXProg ∧ (14833 : Wire) ∉ ECDSAAdd.wires negXProg := by
@@ -15500,15 +15596,15 @@ theorem negXProg_avoid_14832_14833 :
     simp only [List.mem_cons, List.mem_append, List.mem_range'_1] at h
     norm_num at h
 
-theorem compiledNegX_shiftFin : ShiftFin compiledNegX 506 := by
+theorem compiledNegX_shiftFin {n : Nat} : ShiftFin (compiledNegX (n := n)) 506 := by
   rw [compiledNegX]
   refine (CatFn.seq_shiftFin _ _
     (CatFn.seq_shiftFin _ _ (CatFn.lit_shiftFin _) (CatFn.compileProg_shiftFin 14832 14833 negXProg))
     (CatFn.lit_shiftFin _)).mono ?_
   rw [negXProg_counts.1, negXProg_counts.2]
 
-theorem compiledNegX_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledNegX s).prog.instantiate read h).tCount ≤ 4 * 251 := by
+theorem compiledNegX_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledNegX (n := n) s).prog.instantiate read h).tCount ≤ 4 * 251 := by
   rw [compiledNegX]
   refine (b_seq_tCount_any _ _
     (b_seq_tCount_any _ _ (fun _ _ _ => le_of_eq (CatFn.lit_tCount _ _ _ _)) (b_catFn_compileProg_tCount _ _ _))
@@ -15516,32 +15612,32 @@ theorem compiledNegX_tCount (s : Nat) (read : ConstantBit 65536 → Bool) (h : F
   have hlt : ShorECDLP.tCount [.X 15651] = 0 := rfl
   rw [hlt, negXProg_counts.1]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledNegX_removed18 (s : Nat) : removed 18 (compiledNegX s).prog = 0 := by
+theorem compiledNegX_removed18 {n : Nat} (s : Nat) : removed 18 (compiledNegX (n := n) s).prog = 0 := by
   rw [compiledNegX]
   exact CatFn.seq_removed18 _ _
     (CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ rfl) (CatFn.compileProg_removed18 _ _ _))
     (CatFn.lit_removed18 _ rfl) s
 
-theorem compiledNegX_wellFormed (s : Nat) : (compiledNegX s).prog.WellFormed := by
+theorem compiledNegX_wellFormed {n : Nat} (s : Nat) : (compiledNegX (n := n) s).prog.WellFormed := by
   rw [compiledNegX]
   exact CatFn.seq_wellFormed _ _
     (CatFn.seq_wellFormed _ _ (CatFn.lit_wellFormed [.X 15651] (circuitWF_X 15651))
       (CatFn.compileProg_wellFormed _ _ _ negXProg_avoid_14832_14833.1 negXProg_avoid_14832_14833.2 (by decide) negXProg_physical))
     (CatFn.lit_wellFormed [.X 15651] (circuitWF_X 15651)) s
 
-theorem compiledNegX_wires (s : Nat) : ChallengeMigration.straightWires (compiledNegX s).prog ⊆ support1610 := by
-  have hx : circuitWires [.X 15651] ⊆ support1610 := by
-    intro w hw; simp [circuitWires, gateWires] at hw; subst hw; exact mem_support1610.mpr (by decide)
+theorem compiledNegX_wires {n : Nat} (s : Nat) : ChallengeMigration.straightWires (compiledNegX (n := n) s).prog ⊆ support1612 := by
+  have hx : circuitWires [.X 15651] ⊆ support1612 := by
+    intro w hw; simp [circuitWires, gateWires] at hw; subst hw; exact mem_support1612.mpr (by decide)
   rw [compiledNegX]
   exact CatFn.seq_wires _ _
     (CatFn.seq_wires _ _ (CatFn.lit_wires _ hx)
-      (CatFn.compileProg_wires _ _ _ negXProg_wires_support1610 (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide))))
+      (CatFn.compileProg_wires _ _ _ negXProg_wires_support1612 (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide))))
     (CatFn.lit_wires _ hx) s
 
-theorem compiledNegX_slots (s : Nat) : (compiledNegX s).prog.gateSlots ≤ 120000 := by
+theorem compiledNegX_slots {n : Nat} (s : Nat) : (compiledNegX (n := n) s).prog.gateSlots ≤ 120000 := by
   rw [compiledNegX]
   have h1 := CatFn.seq_slots
-    (CatFn.seq (CatFn.lit (n := 65536) [.X 15651]) (CatFn.compileProg 14832 14833 negXProg))
+    (CatFn.seq (CatFn.lit (n := n) [.X 15651]) (CatFn.compileProg 14832 14833 negXProg))
     (CatFn.lit [.X 15651])
     (CatFn.seq_slots _ _ (CatFn.lit_slots [.X 15651]) (CatFn.compileProg_slots 14832 14833 negXProg))
     (CatFn.lit_slots [.X 15651]) s
@@ -15632,7 +15728,7 @@ theorem negXProg_run_flipped (X : ECDSAAdd.Fp) (hX0 : X ≠ 0) (st : ECDSAAdd.St
     rw [hcorr.2.2 (sqSwap w) hnx, pullState_basis, sqSwap_self]
   exact ⟨hph, hx_out, hfr⟩
 
-private theorem compiledNegX_sim_aux (P : ECDSAAdd.Program)
+private theorem compiledNegX_sim_aux {n : Nat} (P : ECDSAAdd.Program)
     (hav1 : (14832 : Wire) ∉ ECDSAAdd.wires P) (hav2 : (14833 : Wire) ∉ ECDSAAdd.wires P)
     (hph : ECDSAAdd.Arithmetic.GatePhysical P)
     (hrunP : ∀ (X : ECDSAAdd.Fp) (hX0 : X ≠ 0) (st : ECDSAAdd.State) (m : List Bool),
@@ -15641,7 +15737,7 @@ private theorem compiledNegX_sim_aux (P : ECDSAAdd.Program)
       (ECDSAAdd.run P m ⟨st.phase, st.basis[15651 ↦ true]⟩).phase = st.phase ∧
       ECDSAAdd.regValue (List.range' 263 256) (ECDSAAdd.run P m ⟨st.phase, st.basis[15651 ↦ true]⟩).basis = (-X).val ∧
       (∀ w, ¬(263 ≤ w ∧ w < 519) → (ECDSAAdd.run P m ⟨st.phase, st.basis[15651 ↦ true]⟩).basis w = (st.basis[15651 ↦ true]) w))
-    (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c =>
         ∀ (X : ECDSAAdd.Fp) (bs : BasisState), X ≠ 0 →
@@ -15653,7 +15749,7 @@ private theorem compiledNegX_sim_aux (P : ECDSAAdd.Program)
             b.kraus (Prep 14833 (ket bs)) = c • Prep 14833 (ket bs'))
       ((CatFn.seq (CatFn.seq (CatFn.lit [.X 15651]) (CatFn.compileProg 14832 14833 P))
         (CatFn.lit [.X 15651]) s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-  obtain ⟨cs, al, hm⟩ := CatFn.compileProg_catLitSim (n := 65536) 14832 14833 P hav1 hav2 (by decide) hph s read h
+  obtain ⟨cs, al, hm⟩ := CatFn.compileProg_catLitSim (n := n) 14832 14833 P hav1 hav2 (by decide) hph s read h
   refine ⟨cs, ?_, hm⟩
   rw [b_catFn_surround_run ([.X 15651] : Circuit) ([.X 15651] : Circuit) _ s read h, List.forall₂_map_left_iff]
   refine al.imp (fun b c ⟨m, _, hb⟩ X bs hX0 hx hcl => ?_)
@@ -15686,7 +15782,7 @@ private theorem compiledNegX_sim_aux (P : ECDSAAdd.Program)
   · dsimp only
     rw [LinearMap.comp_apply, LinearMap.comp_apply, hx1, hb_st, map_smul, hx2]
 
-theorem compiledNegX_sim (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+theorem compiledNegX_sim {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c =>
         ∀ (X : ECDSAAdd.Fp) (bs : BasisState), X ≠ 0 →
@@ -15696,49 +15792,50 @@ theorem compiledNegX_sim (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin 
             ECDSAAdd.regValue (List.range' 263 256) bs' = (-X).val ∧
             (∀ w, ¬(263 ≤ w ∧ w < 519) → bs' w = bs w) ∧
             b.kraus (Prep 14833 (ket bs)) = c • Prep 14833 (ket bs'))
-      ((compiledNegX s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      ((compiledNegX (n := n) s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   rw [compiledNegX]
   exact compiledNegX_sim_aux negXProg negXProg_avoid_14832_14833.1 negXProg_avoid_14832_14833.2
     negXProg_physical negXProg_run_flipped s read h
 
-/-! #### 7. SelectSwap table loaders (`ss1Neg`, `ss2Triple`, `ss1Rec`), `wrapSS`, and combined 8-bit `compiledFixup` -/
 
-def ports1 : List (LookupPort 65536) :=
-  wordPorts rows16 .negX cxWord ++ wordPorts rows16 .negY cyWord
+/-! #### 7. Polymorphic SelectSwap table loaders (`ss1NegW`, `ss2TripleW`, `ss1RecW`), `wrapSS`, and `FixupSpec` -/
 
-def ports4 : List (LookupPort 65536) :=
-  wordPorts rows16 .tripleX cxWord
+def ports1W (k : Nat) : List (LookupPort (2 ^ k)) :=
+  wordPorts (rowsW k) .negX cxWord ++ wordPorts (rowsW k) .negY cyWord
 
-def ports6 : List (LookupPort 65536) :=
-  wordPorts rows16 .x cxWord ++ wordPorts rows16 .negY cyWord
+def ports4W (k : Nat) : List (LookupPort (2 ^ k)) :=
+  wordPorts (rowsW k) .tripleX cxWord
 
-def ss1Neg : SS1 65536 where
-  bits := bits16
-  paths := pathBank15
-  selBits := selBits1
-  selPaths := selPaths1
+def ports6W (k : Nat) : List (LookupPort (2 ^ k)) :=
+  wordPorts (rowsW k) .x cxWord ++ wordPorts (rowsW k) .negY cyWord
+
+def ss1NegW (k : Nat) : SS1 (2 ^ k) where
+  bits := bitsW k
+  paths := pathBankW k
+  selBits := selBits1W k
+  selPaths := selPaths1W k
   guard := guardWire
-  ports := ports1
+  ports := ports1W k
   g1 := g1_1
 
-def ss2Triple : SS2 65536 where
-  bits := bits16
-  paths := pathBank15
-  selBits := selBits2
-  selPaths := selPaths2
+def ss2TripleW (k : Nat) : SS2 (2 ^ k) where
+  bits := bitsW k
+  paths := pathBankW k
+  selBits := selBits2W k
+  selPaths := selPaths2W k
   guard := guardWire
-  ports := ports4
+  ports := ports4W k
   g1 := g4_1
   g2 := g4_2
   g3 := g4_3
 
-def ss1Rec : SS1 65536 where
-  bits := bits16
-  paths := pathBank15
-  selBits := selBits1
-  selPaths := selPaths1
+def ss1RecW (k : Nat) : SS1 (2 ^ k) where
+  bits := bitsW k
+  paths := pathBankW k
+  selBits := selBits1W k
+  selPaths := selPaths1W k
   guard := guardWire
-  ports := ports6
+  ports := ports6W k
   g1 := g1_1
 
 theorem wordPorts_targets {n : Nat} (rows : Nat → Fin n) (f : PointField) (ws : List Wire) :
@@ -15755,24 +15852,24 @@ theorem wordPorts_targets {n : Nat} (rows : Nat → Fin n) (f : PointField) (ws 
     exact h1 (List.range k) l (by simp [hl])
   exact h ws.length ws rfl
 
-theorem ports1_targets : portTargets ports1 = cxWord ++ cyWord := by
-  simp only [ports1, portTargets, List.map_append]; exact congrArg₂ (· ++ ·) (wordPorts_targets _ _ _) (wordPorts_targets _ _ _)
+theorem ports1W_targets (k : Nat) : portTargets (ports1W k) = cxWord ++ cyWord := by
+  simp only [ports1W, portTargets, List.map_append]; exact congrArg₂ (· ++ ·) (wordPorts_targets _ _ _) (wordPorts_targets _ _ _)
 
-theorem ports4_targets : portTargets ports4 = cxWord := wordPorts_targets _ _ _
+theorem ports4W_targets (k : Nat) : portTargets (ports4W k) = cxWord := wordPorts_targets _ _ _
 
-theorem ports6_targets : portTargets ports6 = cxWord ++ cyWord := by
-  simp only [ports6, portTargets, List.map_append]; exact congrArg₂ (· ++ ·) (wordPorts_targets _ _ _) (wordPorts_targets _ _ _)
+theorem ports6W_targets (k : Nat) : portTargets (ports6W k) = cxWord ++ cyWord := by
+  simp only [ports6W, portTargets, List.map_append]; exact congrArg₂ (· ++ ·) (wordPorts_targets _ _ _) (wordPorts_targets _ _ _)
 
-theorem ports1_length : ports1.length = 512 := by
-  have h := congrArg List.length ports1_targets
+theorem ports1W_length (k : Nat) : (ports1W k).length = 512 := by
+  have h := congrArg List.length (ports1W_targets k)
   simp only [portTargets, List.length_map, List.length_append, cxWord_length, cyWord_length] at h; exact h
 
-theorem ports4_length : ports4.length = 256 := by
-  have h := congrArg List.length ports4_targets
+theorem ports4W_length (k : Nat) : (ports4W k).length = 256 := by
+  have h := congrArg List.length (ports4W_targets k)
   simp only [portTargets, List.length_map, cxWord_length] at h; exact h
 
-theorem ports6_length : ports6.length = 512 := by
-  have h := congrArg List.length ports6_targets
+theorem ports6W_length (k : Nat) : (ports6W k).length = 512 := by
+  have h := congrArg List.length (ports6W_targets k)
   simp only [portTargets, List.length_map, List.length_append, cxWord_length, cyWord_length] at h; exact h
 
 theorem cxWord_nodup : cxWord.Nodup := List.nodup_range'
@@ -15804,90 +15901,119 @@ theorem ss2_regs_nodup : (cxWord ++ g4).Nodup := by
   subst he; simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1, or_assoc] at ha hb
   rcases hb with hb | hb | hb <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem ss1Neg_geo : ss1Neg.Geo where
-  bitsEq := by decide
+private theorem range'_bitsW_1 {k : Nat} (hk : 16 ≤ k) : bitsW k = 855 :: selBits1W k := by
+  unfold bitsW selBits1W
+  cases k with
+  | zero => (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  | succ m => simp [List.range'_succ]
+
+private theorem range'_bitsW_2 {k : Nat} (hk : 16 ≤ k) : bitsW k = 855 :: 856 :: selBits2W k := by
+  unfold bitsW selBits2W
+  match k, hk with
+  | m + 2, _ => simp [List.range'_succ]
+
+private theorem ss1_selNodup (k : Nat) (hk_hi : k ≤ 18) :
+    (guardWire :: selBits1W k ++ selPaths1W k).Nodup := by
+  have h1 : (selBits1W k ++ selPaths1W k).Nodup :=
+    range'_nodup_disj 856 (k - 1) 14834 (k - 1) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  change (guardWire :: (selBits1W k ++ selPaths1W k)).Nodup
+  refine List.nodup_cons.mpr ⟨fun hm => ?_, h1⟩
+  simp only [guardWire, selBits1W, selPaths1W, List.mem_append, List.mem_range'_1] at hm
+  rcases hm with h | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+private theorem ss2_selNodup (k : Nat) (hk_hi : k ≤ 18) :
+    (guardWire :: selBits2W k ++ selPaths2W k).Nodup := by
+  have h1 : (selBits2W k ++ selPaths2W k).Nodup :=
+    range'_nodup_disj 857 (k - 2) 14834 (k - 2) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  change (guardWire :: (selBits2W k ++ selPaths2W k)).Nodup
+  refine List.nodup_cons.mpr ⟨fun hm => ?_, h1⟩
+  simp only [guardWire, selBits2W, selPaths2W, List.mem_append, List.mem_range'_1] at hm
+  rcases hm with h | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+theorem ss1NegW_geo {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (ss1NegW k).Geo where
+  bitsEq := range'_bitsW_1 hk_lo
   pathsSub := fun _ h => h
-  selLen := by decide
-  selNodup := by decide
+  selLen := by simp [ss1NegW, selBits1W, selPaths1W]
+  selNodup := ss1_selNodup k hk_hi
   selDisj := by
     rw [List.disjoint_left]; intro w hw hm
-    change w ∈ portTargets ports1 ++ g1_1 at hm
-    rw [ports1_targets] at hm
-    simp only [ss1Neg, windowRoot, guardWire, selBits1, selPaths1, List.mem_cons, List.mem_append, List.mem_range'_1,
-      List.not_mem_nil, or_false, or_assoc] at hw
+    change w ∈ portTargets (ports1W k) ++ g1_1 at hm
+    rw [ports1W_targets] at hm
+    simp only [ss1NegW, windowRoot, guardWire, selBits1W, selPaths1W, List.mem_cons, List.mem_append, List.mem_range'_1,
+      or_assoc] at hw
     simp only [cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1, or_assoc] at hm
-    rcases hw with rfl | rfl | hw | rfl | hw <;> rcases hm with hm | hm | hm | hm | hm <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  len1 := by change g1_1.length = ports1.length; rw [g1_1_length, ports1_length]
-  nodup := by change (portTargets ports1 ++ g1_1).Nodup; rw [ports1_targets]; exact ss1_regs_nodup
+    rcases hw with hw | hw | hw | hw <;> rcases hm with hm | hm | hm | hm | hm <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  len1 := by change g1_1.length = (ports1W k).length; rw [g1_1_length, ports1W_length]
+  nodup := by change (portTargets (ports1W k) ++ g1_1).Nodup; rw [ports1W_targets]; exact ss1_regs_nodup
   n855 := fun hm => by
-    change (855 : Wire) ∈ portTargets ports1 ++ g1_1 at hm; rw [ports1_targets] at hm
+    change (855 : Wire) ∈ portTargets (ports1W k) ++ g1_1 at hm; rw [ports1W_targets] at hm
     simp only [cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1] at hm
     norm_num at hm
 
-theorem ss1Rec_geo : ss1Rec.Geo where
-  bitsEq := by decide
+theorem ss1RecW_geo {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (ss1RecW k).Geo where
+  bitsEq := range'_bitsW_1 hk_lo
   pathsSub := fun _ h => h
-  selLen := by decide
-  selNodup := by decide
+  selLen := by simp [ss1RecW, selBits1W, selPaths1W]
+  selNodup := ss1_selNodup k hk_hi
   selDisj := by
     rw [List.disjoint_left]; intro w hw hm
-    change w ∈ portTargets ports6 ++ g1_1 at hm
-    rw [ports6_targets] at hm
-    simp only [ss1Rec, windowRoot, guardWire, selBits1, selPaths1, List.mem_cons, List.mem_append, List.mem_range'_1,
-      List.not_mem_nil, or_false, or_assoc] at hw
+    change w ∈ portTargets (ports6W k) ++ g1_1 at hm
+    rw [ports6W_targets] at hm
+    simp only [ss1RecW, windowRoot, guardWire, selBits1W, selPaths1W, List.mem_cons, List.mem_append, List.mem_range'_1,
+      or_assoc] at hw
     simp only [cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1, or_assoc] at hm
-    rcases hw with rfl | rfl | hw | rfl | hw <;> rcases hm with hm | hm | hm | hm | hm <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  len1 := by change g1_1.length = ports6.length; rw [g1_1_length, ports6_length]
-  nodup := by change (portTargets ports6 ++ g1_1).Nodup; rw [ports6_targets]; exact ss1_regs_nodup
+    rcases hw with hw | hw | hw | hw <;> rcases hm with hm | hm | hm | hm | hm <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  len1 := by change g1_1.length = (ports6W k).length; rw [g1_1_length, ports6W_length]
+  nodup := by change (portTargets (ports6W k) ++ g1_1).Nodup; rw [ports6W_targets]; exact ss1_regs_nodup
   n855 := fun hm => by
-    change (855 : Wire) ∈ portTargets ports6 ++ g1_1 at hm; rw [ports6_targets] at hm
+    change (855 : Wire) ∈ portTargets (ports6W k) ++ g1_1 at hm; rw [ports6W_targets] at hm
     simp only [cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1] at hm
     norm_num at hm
 
-theorem ss2Triple_geo : ss2Triple.Geo where
-  bitsEq := by decide
+theorem ss2TripleW_geo {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (ss2TripleW k).Geo where
+  bitsEq := range'_bitsW_2 hk_lo
   pathsSub := fun w hw => by
-    simp only [ss2Triple, selPaths2, pathBank15, List.mem_range'_1] at hw ⊢; exact ⟨hw.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  selLen := by decide
-  selNodup := by decide
+    simp only [ss2TripleW, selPaths2W, pathBankW, List.mem_range'_1] at hw ⊢; exact ⟨hw.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  selLen := by simp [ss2TripleW, selBits2W, selPaths2W]
+  selNodup := ss2_selNodup k hk_hi
   selDisj := by
     rw [List.disjoint_left]; intro w hw hm
-    change w ∈ portTargets ports4 ++ g4 at hm
-    rw [ports4_targets] at hm
-    simp only [ss2Triple, windowRoot, guardWire, selBits2, selPaths2, List.mem_cons, List.mem_append, List.mem_range'_1,
-      List.not_mem_nil, or_false, or_assoc] at hw
+    change w ∈ portTargets (ports4W k) ++ g4 at hm
+    rw [ports4W_targets] at hm
+    simp only [ss2TripleW, windowRoot, guardWire, selBits2W, selPaths2W, List.mem_cons, List.mem_append, List.mem_range'_1,
+      or_assoc] at hw
     simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1, or_assoc] at hm
-    rcases hw with rfl | rfl | hw | rfl | hw <;> rcases hm with hm | hm | hm | hm <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  len1 := by change g4_1.length = ports4.length; rw [g4_1_length, ports4_length]
-  len2 := by change g4_2.length = ports4.length; rw [g4_2_length, ports4_length]
-  len3 := by change g4_3.length = ports4.length; rw [g4_3_length, ports4_length]
-  nodup := by change (portTargets ports4 ++ g4).Nodup; rw [ports4_targets]; exact ss2_regs_nodup
+    rcases hw with rfl | rfl | hw | hw <;> rcases hm with hm | hm | hm | hm <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  len1 := by change g4_1.length = (ports4W k).length; rw [g4_1_length, ports4W_length]
+  len2 := by change g4_2.length = (ports4W k).length; rw [g4_2_length, ports4W_length]
+  len3 := by change g4_3.length = (ports4W k).length; rw [g4_3_length, ports4W_length]
+  nodup := by change (portTargets (ports4W k) ++ g4).Nodup; rw [ports4W_targets]; exact ss2_regs_nodup
   n855 := fun hm => by
-    change (855 : Wire) ∈ portTargets ports4 ++ g4 at hm; rw [ports4_targets] at hm
+    change (855 : Wire) ∈ portTargets (ports4W k) ++ g4 at hm; rw [ports4W_targets] at hm
     simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1] at hm
     norm_num at hm
   n856 := fun hm => by
-    change (856 : Wire) ∈ portTargets ports4 ++ g4 at hm; rw [ports4_targets] at hm
+    change (856 : Wire) ∈ portTargets (ports4W k) ++ g4 at hm; rw [ports4W_targets] at hm
     simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1] at hm
     norm_num at hm
 
 -- Helper: reading an `Fp` word loaded by `wordPorts`
-theorem regValue_wordPorts_xor (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+theorem regValue_wordPorts_xor {k : Nat} (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (f : PointField) (ws : List Wire) (hl : ws.length = 256) (hnd : ws.Nodup)
     (a : Nat) (bs : BasisState) (hcl : Clean ws bs)
-    (hv : fieldValue (constantPoint Q (coeffs (rows16 a))) f < 2 ^ 256) :
-    ECDSAAdd.regValue ws (tableXorState (portMask (readConstant coeffs Q) (wordPorts rows16 f ws) a) true bs) =
-      fieldValue (constantPoint Q (coeffs (rows16 a))) f := by
+    (hv : fieldValue (constantPoint Q (coeffs (rowsW k a))) f < 2 ^ 256) :
+    ECDSAAdd.regValue ws (tableXorState (portMask (readConstant coeffs Q) (wordPorts (rowsW k) f ws) a) true bs) =
+      fieldValue (constantPoint Q (coeffs (rowsW k a))) f := by
   apply regValue_of_testBit ws _ _ (by rw [hl]; exact hv)
   intro i hi
   have hi256 : i < 256 := hl ▸ hi
-  have hp_mem : (⟨fun addr => ECDSAAdd.ShorPort.bitRef (rows16 addr) f i, true, ws[i]'hi⟩ : LookupPort 65536) ∈
-      wordPorts rows16 f ws := by
+  have hp_mem : (⟨fun addr => ECDSAAdd.ShorPort.bitRef (rowsW k addr) f i, true, ws[i]'hi⟩ : LookupPort (2 ^ k)) ∈
+      wordPorts (rowsW k) f ws := by
     rw [wordPorts, List.mem_iff_getElem]
     refine ⟨i, by simp [hi], ?_⟩
     simp [List.getElem_zipWith]
-  have hndp : (portTargets (wordPorts rows16 f ws)).Nodup := by rw [wordPorts_targets]; exact hnd
-  have hsel := port_selected (readConstant coeffs Q) (wordPorts rows16 f ws) a hndp _ hp_mem
+  have hndp : (portTargets (wordPorts (rowsW k) f ws)).Nodup := by rw [wordPorts_targets]; exact hnd
+  have hsel := port_selected (readConstant coeffs Q) (wordPorts (rowsW k) f ws) a hndp _ hp_mem
   dsimp only [tableXorState]
   rw [hsel, hcl (ws[i]'hi) (List.getElem_mem hi), Bool.true_and, Bool.false_xor]
   simp only [ECDSAAdd.ShorPort.bitRef_eq _ f i hi256, readConstant, decide_eq_true_eq, Bool.decide_eq_true]
@@ -15910,17 +16036,17 @@ theorem tableXorState_append (m₁ m₂ : List Wire) (b : Bool) (s : BasisState)
     simp [h1, h2]
   · simp [h1]
 
--- Root-swapped SelectSwap wrapper (moves `windowRoot = 10015` to `rootWire = 14849` inside `support1610`).
+-- Root-swapped SelectSwap wrapper (moves `windowRoot = 10015` to `rootWire = 14851` inside `support1612`).
 def rootSwap : Equiv.Perm Wire := Equiv.swap windowRoot rootWire
 
-def wrapSS {R : Nat} (p0 : Straight 65536 0 R) : CatFn 65536 :=
+def wrapSS {n R : Nat} (p0 : Straight n 0 R) : CatFn n :=
   CatFn.seq (CatFn.seq (CatFn.lit [.X rootWire, .X guardWire])
     (CatFn.map rootSwap (CatFn.lower 14832 14833 p0)))
     (CatFn.lit [.X rootWire, .X guardWire])
 
 attribute [local irreducible] wrapSS
 
-theorem wrapSS_removed18 {R : Nat} (p0 : Straight 65536 0 R) (hres : AndGadget.residue p0 = 0) (s : Nat) :
+theorem wrapSS_removed18 {n R : Nat} (p0 : Straight n 0 R) (hres : AndGadget.residue p0 = 0) (s : Nat) :
     removed 18 (wrapSS p0 s).prog = 0 := by
   rw [wrapSS]
   exact CatFn.seq_removed18 _ _
@@ -15928,7 +16054,7 @@ theorem wrapSS_removed18 {R : Nat} (p0 : Straight 65536 0 R) (hres : AndGadget.r
       (CatFn.map_removed18 _ _ (CatFn.lower_removed18 _ _ _ hres)))
     (CatFn.lit_removed18 _ rfl) s
 
-theorem wrapSS_finish {R : Nat} (p0 : Straight 65536 0 R) (tp : Nat)
+theorem wrapSS_finish {n R : Nat} (p0 : Straight n 0 R) (tp : Nat)
     (hres : AndGadget.residue p0 = 0)
     (ht : (p0.instantiate (fun _ => false) Fin.elim0).tCount = 7 * tp) (s : Nat) :
     (wrapSS p0 s).finish = s + (R + tp) := by
@@ -15938,10 +16064,10 @@ theorem wrapSS_finish {R : Nat} (p0 : Straight 65536 0 R) (tp : Nat)
       rw [CatFn.map, CatProg.map, CatFn.lower_finish, ha]))
     (fun s' => by rw [CatFn.lit]; rfl), Nat.zero_add, Nat.add_zero]
 
-theorem wrapSS_tCount {R : Nat} (p0 : Straight 65536 0 R) (tp : Nat)
+theorem wrapSS_tCount {n R : Nat} (p0 : Straight n 0 R) (tp : Nat)
     (hres : AndGadget.residue p0 = 0)
     (ht : (p0.instantiate (fun _ => false) Fin.elim0).tCount = 7 * tp)
-    (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
     ((wrapSS p0 s).prog.instantiate read h).tCount ≤ 4 * tp := by
   rw [wrapSS]
   refine (b_seq_tCount_any _ _
@@ -15951,7 +16077,7 @@ theorem wrapSS_tCount {R : Nat} (p0 : Straight 65536 0 R) (tp : Nat)
   have hlt : ShorECDLP.tCount [.X rootWire, .X guardWire] = 0 := rfl
   rw [hlt]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem wrapSS_wellFormed {R : Nat} (p0 : Straight 65536 0 R)
+theorem wrapSS_wellFormed {n R : Nat} (p0 : Straight n 0 R)
     (h32 : (14832 : Wire) ∉ ChallengeMigration.straightWires p0)
     (h33 : (14833 : Wire) ∉ ChallengeMigration.straightWires p0)
     (hwf : p0.WellFormed) (s : Nat) : (wrapSS p0 s).prog.WellFormed := by
@@ -15962,7 +16088,7 @@ theorem wrapSS_wellFormed {R : Nat} (p0 : Straight 65536 0 R)
         (fun _ a _ b _ he => rootSwap.injective he)))
     (CatFn.lit_wellFormed [.X rootWire, .X guardWire] (circuitWF_XX rootWire guardWire)) s
 
-theorem wrapSS_slots {R : Nat} (p0 : Straight 65536 0 R) (tp B : Nat)
+theorem wrapSS_slots {n R : Nat} (p0 : Straight n 0 R) (tp B : Nat)
     (hres : AndGadget.residue p0 = 0)
     (ht : (p0.instantiate (fun _ => false) Fin.elim0).tCount = 7 * tp)
     (hs : p0.gateSlots ≤ B) (s : Nat) :
@@ -15970,7 +16096,7 @@ theorem wrapSS_slots {R : Nat} (p0 : Straight 65536 0 R) (tp B : Nat)
   have ha := added_eq_of_residue_tCount p0 tp hres ht
   rw [wrapSS]
   have h1 := CatFn.seq_slots
-    (CatFn.seq (CatFn.lit (n := 65536) [.X rootWire, .X guardWire])
+    (CatFn.seq (CatFn.lit (n := n) [.X rootWire, .X guardWire])
       (CatFn.map rootSwap (CatFn.lower 14832 14833 p0)))
     (CatFn.lit [.X rootWire, .X guardWire])
     (CatFn.seq_slots _ _ (CatFn.lit_slots [.X rootWire, .X guardWire])
@@ -15981,72 +16107,72 @@ theorem wrapSS_slots {R : Nat} (p0 : Straight 65536 0 R) (tp B : Nat)
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 private def ssSup : List Wire :=
-  windowRoot :: support1610.filter (fun w => decide (w ≠ rootWire ∧ w ≠ 14832 ∧ w ≠ 14833))
+  windowRoot :: support1612.filter (fun w => decide (w ≠ rootWire ∧ w ≠ 14832 ∧ w ≠ 14833))
 
-private theorem mem_ssSup_of_support1610 {w : Wire} (h1 : w ∈ support1610)
+private theorem mem_ssSup_of_support1612 {w : Wire} (h1 : w ∈ support1612)
     (h2 : w ≠ rootWire) (h3 : w ≠ 14832) (h4 : w ≠ 14833) : w ∈ ssSup :=
   List.mem_cons_of_mem _ (List.mem_filter.mpr ⟨h1, by simp [h2, h3, h4]⟩)
 
 private theorem ss1_regs_in_ssSup (w : Wire) (hw : w ∈ cxWord ++ cyWord ++ g1_1) : w ∈ ssSup := by
   simp only [cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1, or_assoc] at hw
   rcases hw with h | rfl | h | h | h
-  · exact mem_ssSup_of_support1610 (mem_support1610_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  · exact mem_ssSup_of_support1610 (mem_support1610_p3 (by decide)) (by decide) (by decide) (by decide)
-  · exact mem_ssSup_of_support1610 (mem_support1610_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  · exact mem_ssSup_of_support1610 (mem_support1610_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  · exact mem_ssSup_of_support1610 (mem_support1610_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  · exact mem_ssSup_of_support1612 (mem_support1612_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  · exact mem_ssSup_of_support1612 (mem_support1612_p3 (by decide)) (by decide) (by decide) (by decide)
+  · exact mem_ssSup_of_support1612 (mem_support1612_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  · exact mem_ssSup_of_support1612 (mem_support1612_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  · exact mem_ssSup_of_support1612 (mem_support1612_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-private theorem ss1Neg_raw_support : ChallengeMigration.straightWires (ss1Neg.loadProg 0) ⊆ ssSup := by
-  refine ss1Neg.loadProg_support ss1Neg_geo ssSup List.mem_cons_self
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
-    (fun w hw => by
-      simp only [ss1Neg, selBits1, List.mem_append, List.mem_singleton, List.mem_range'_1] at hw
-      rcases hw with h | rfl
-      · exact mem_ssSup_of_support1610 (mem_support1610_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact mem_ssSup_of_support1610 (mem_support1610_bank (by decide)) (by decide) (by decide) (by decide))
-    (fun w hw => by
-      simp only [ss1Neg, selPaths1, List.mem_range'_1] at hw
-      exact mem_ssSup_of_support1610 (mem_support1610_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
-    (fun w hw => by change w ∈ portTargets ports1 ++ g1_1 at hw; rw [ports1_targets] at hw; exact ss1_regs_in_ssSup w hw) 0
+private theorem guardWire_mem_ssSup : guardWire ∈ ssSup :=
+  mem_ssSup_of_support1612 (mem_support1612.mpr (by decide)) (by decide) (by decide) (by decide)
+private theorem w855_mem_ssSup : (855 : Wire) ∈ ssSup :=
+  mem_ssSup_of_support1612 (mem_support1612.mpr (by decide)) (by decide) (by decide) (by decide)
+private theorem w856_mem_ssSup : (856 : Wire) ∈ ssSup :=
+  mem_ssSup_of_support1612 (mem_support1612.mpr (by decide)) (by decide) (by decide) (by decide)
 
-private theorem ss1Rec_raw_support : ChallengeMigration.straightWires (ss1Rec.loadProg 0) ⊆ ssSup := by
-  refine ss1Rec.loadProg_support ss1Rec_geo ssSup List.mem_cons_self
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
+private theorem ss1NegW_raw_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    ChallengeMigration.straightWires ((ss1NegW k).loadProg 0) ⊆ ssSup := by
+  refine (ss1NegW k).loadProg_support (ss1NegW_geo hk_lo hk_hi) ssSup List.mem_cons_self
+    guardWire_mem_ssSup w855_mem_ssSup
     (fun w hw => by
-      simp only [ss1Rec, selBits1, List.mem_append, List.mem_singleton, List.mem_range'_1] at hw
-      rcases hw with h | rfl
-      · exact mem_ssSup_of_support1610 (mem_support1610_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact mem_ssSup_of_support1610 (mem_support1610_bank (by decide)) (by decide) (by decide) (by decide))
+      simp only [ss1NegW, selBits1W, List.mem_range'_1] at hw
+      exact mem_ssSup_of_support1612 (mem_support1612_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
     (fun w hw => by
-      simp only [ss1Rec, selPaths1, List.mem_range'_1] at hw
-      exact mem_ssSup_of_support1610 (mem_support1610_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
-    (fun w hw => by change w ∈ portTargets ports6 ++ g1_1 at hw; rw [ports6_targets] at hw; exact ss1_regs_in_ssSup w hw) 0
+      simp only [ss1NegW, selPaths1W, List.mem_range'_1] at hw
+      exact mem_ssSup_of_support1612 (mem_support1612_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by change w ∈ portTargets (ports1W k) ++ g1_1 at hw; rw [ports1W_targets] at hw; exact ss1_regs_in_ssSup w hw) 0
 
-private theorem ss2Triple_raw_support : ChallengeMigration.straightWires (ss2Triple.loadProg 0) ⊆ ssSup := by
-  refine ss2Triple.loadProg_support ss2Triple_geo ssSup List.mem_cons_self
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
-    (mem_ssSup_of_support1610 (mem_support1610.mpr (by decide)) (by decide) (by decide) (by decide))
+private theorem ss1RecW_raw_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    ChallengeMigration.straightWires ((ss1RecW k).loadProg 0) ⊆ ssSup := by
+  refine (ss1RecW k).loadProg_support (ss1RecW_geo hk_lo hk_hi) ssSup List.mem_cons_self
+    guardWire_mem_ssSup w855_mem_ssSup
     (fun w hw => by
-      simp only [ss2Triple, selBits2, List.mem_append, List.mem_singleton, List.mem_range'_1] at hw
-      rcases hw with h | rfl
-      · exact mem_ssSup_of_support1610 (mem_support1610_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact mem_ssSup_of_support1610 (mem_support1610_bank (by decide)) (by decide) (by decide) (by decide))
+      simp only [ss1RecW, selBits1W, List.mem_range'_1] at hw
+      exact mem_ssSup_of_support1612 (mem_support1612_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
     (fun w hw => by
-      simp only [ss2Triple, selPaths2, List.mem_range'_1] at hw
-      exact mem_ssSup_of_support1610 (mem_support1610_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+      simp only [ss1RecW, selPaths1W, List.mem_range'_1] at hw
+      exact mem_ssSup_of_support1612 (mem_support1612_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by change w ∈ portTargets (ports6W k) ++ g1_1 at hw; rw [ports6W_targets] at hw; exact ss1_regs_in_ssSup w hw) 0
+
+private theorem ss2TripleW_raw_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    ChallengeMigration.straightWires ((ss2TripleW k).loadProg 0) ⊆ ssSup := by
+  refine (ss2TripleW k).loadProg_support (ss2TripleW_geo hk_lo hk_hi) ssSup List.mem_cons_self
+    guardWire_mem_ssSup w855_mem_ssSup w856_mem_ssSup
     (fun w hw => by
-      change w ∈ portTargets ports4 ++ g4 at hw; rw [ports4_targets] at hw
+      simp only [ss2TripleW, selBits2W, List.mem_range'_1] at hw
+      exact mem_ssSup_of_support1612 (mem_support1612_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by
+      simp only [ss2TripleW, selPaths2W, List.mem_range'_1] at hw
+      exact mem_ssSup_of_support1612 (mem_support1612_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by
+      change w ∈ portTargets (ports4W k) ++ g4 at hw; rw [ports4W_targets] at hw
       simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1, or_assoc] at hw
       rcases hw with h | h | h | h
-      · exact mem_ssSup_of_support1610 (mem_support1610_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact mem_ssSup_of_support1610 (mem_support1610_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact mem_ssSup_of_support1610 (mem_support1610_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact mem_ssSup_of_support1610 (mem_support1610_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))) 0
+      · exact mem_ssSup_of_support1612 (mem_support1612_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      · exact mem_ssSup_of_support1612 (mem_support1612_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      · exact mem_ssSup_of_support1612 (mem_support1612_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      · exact mem_ssSup_of_support1612 (mem_support1612_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))) 0
 
-private theorem ssSup_avoid_14832_14833 {R : Nat} (p0 : Straight 65536 0 R)
+private theorem ssSup_avoid_14832_14833 {n R : Nat} (p0 : Straight n 0 R)
     (hsub : ChallengeMigration.straightWires p0 ⊆ ssSup) :
     (14832 : Wire) ∉ ChallengeMigration.straightWires p0 ∧
     (14833 : Wire) ∉ ChallengeMigration.straightWires p0 := by
@@ -16056,44 +16182,41 @@ private theorem ssSup_avoid_14832_14833 {R : Nat} (p0 : Straight 65536 0 R)
     · exact absurd h1 (by decide)
     · have hf := (List.mem_filter.mp h2).2; simp at hf
 
-theorem wrapSS_wires {R : Nat} (p0 : Straight 65536 0 R)
+theorem wrapSS_wires {n R : Nat} (p0 : Straight n 0 R)
     (hsub : ChallengeMigration.straightWires p0 ⊆ ssSup) (s : Nat) :
-    ChallengeMigration.straightWires (wrapSS p0 s).prog ⊆ support1610 := by
-  have hrg : circuitWires [.X rootWire, .X guardWire] ⊆ support1610 := by
+    ChallengeMigration.straightWires (wrapSS p0 s).prog ⊆ support1612 := by
+  have hrg : circuitWires [.X rootWire, .X guardWire] ⊆ support1612 := by
     intro w hw; simp [circuitWires, gateWires, rootWire, guardWire] at hw
-    rcases hw with rfl | rfl <;> exact mem_support1610.mpr (by decide)
-  have hlow : ChallengeMigration.straightWires (CatFn.lower 14832 14833 p0 s).prog ⊆ 14832 :: 14833 :: ssSup :=
-    CatFn.lower_wires 14832 14833 p0 (fun w hw => List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (hsub hw)))
-      List.mem_cons_self (List.mem_cons_of_mem _ List.mem_cons_self) s
+    rcases hw with rfl | rfl <;> exact mem_support1612.mpr (by decide)
   rw [wrapSS]
   refine CatFn.seq_wires _ _ (CatFn.seq_wires _ _ (CatFn.lit_wires _ hrg) (fun s' w hw => ?_)) (CatFn.lit_wires _ hrg) s
   obtain ⟨u, hu, rfl⟩ := catFn_map_mem rootSwap (CatFn.lower 14832 14833 p0) s' hw
   have hlow' := CatFn.lower_wires 14832 14833 p0 (fun x hx => List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (hsub hx)))
     List.mem_cons_self (List.mem_cons_of_mem _ List.mem_cons_self) s' hu
   rcases List.mem_cons.mp hlow' with rfl | hlow'
-  · rw [rootSwap, Equiv.swap_apply_of_ne_of_ne (show (14832 : Wire) ≠ windowRoot by decide) (show (14832 : Wire) ≠ rootWire by decide)]; exact mem_support1610.mpr (by decide)
+  · rw [rootSwap, Equiv.swap_apply_of_ne_of_ne (show (14832 : Wire) ≠ windowRoot by decide) (show (14832 : Wire) ≠ rootWire by decide)]; exact mem_support1612.mpr (by decide)
   · rcases List.mem_cons.mp hlow' with rfl | hlow'
-    · rw [rootSwap, Equiv.swap_apply_of_ne_of_ne (show (14833 : Wire) ≠ windowRoot by decide) (show (14833 : Wire) ≠ rootWire by decide)]; exact mem_support1610.mpr (by decide)
+    · rw [rootSwap, Equiv.swap_apply_of_ne_of_ne (show (14833 : Wire) ≠ windowRoot by decide) (show (14833 : Wire) ≠ rootWire by decide)]; exact mem_support1612.mpr (by decide)
     · rcases List.mem_cons.mp hlow' with rfl | hlow'
-      · rw [rootSwap, Equiv.swap_apply_left]; exact mem_support1610.mpr (by decide)
+      · rw [rootSwap, Equiv.swap_apply_left]; exact mem_support1612.mpr (by decide)
       · have hfil := List.mem_filter.mp hlow'
         have hne_rt : u ≠ rootWire := by simp at hfil; exact hfil.2.1
         have hne_wr : u ≠ windowRoot := fun e => by
-          have := mem_support1610.mp hfil.1; rw [e] at this; dsimp only [windowRoot] at this; norm_num at this
+          have := mem_support1612.mp hfil.1; rw [e] at this; dsimp only [windowRoot] at this; norm_num at this
         rw [rootSwap, Equiv.swap_apply_of_ne_of_ne hne_wr hne_rt]
         exact hfil.1
 
 -- Helper: simulation of `wrapSS (f.loadProg 0)` for `SS1` and `SS2`
-private theorem wrapSS_SS1_sim (f : SS1 65536) (hg : f.Geo)
-    (hbits : f.bits = bits16) (hpaths : f.paths = pathBank15) (hguard : f.guard = guardWire)
+private theorem wrapSS_SS1_sim {kw : Nat} (hk_hi : kw ≤ 18) (f : SS1 (2 ^ kw)) (hg : f.Geo)
+    (hbits : f.bits = bitsW kw) (hpaths : f.paths = pathBankW kw) (hguard : f.guard = guardWire)
     (hsub : ChallengeMigration.straightWires (f.loadProg 0) ⊆ ssSup)
     (hdisj_rg : ∀ w ∈ portTargets f.ports ++ f.g1, w ≠ windowRoot ∧ w ≠ rootWire ∧ w ≠ guardWire)
     (hreg_out : ∀ w ∈ portTargets f.ports ++ f.g1,
-      ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 872))
-    (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+      ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 874))
+    (s : Nat) (read : ConstantBit (2 ^ kw) → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bs : BasisState),
-        tableAddressValue bits16 bs = a →
+        tableAddressValue (bitsW kw) bs = a →
         CleanOutsideXYBank bs →
         ∃ bs' : BasisState,
           (∀ w, w ∉ portTargets f.ports → w ∉ f.g1 → bs' w = bs w) ∧
@@ -16139,14 +16262,14 @@ private theorem wrapSS_SS1_sim (f : SS1 65536) (hg : f.Geo)
     rw [hs0_w, hs33]; simp [upd, rootWire, guardWire, h33_0]
   have hs0_sv : SimulationValid f.bits f.paths windowRoot a s0 := by
     refine ⟨?_, ?_, ?_⟩
-    · intro w hw; rw [hpaths] at hw; simp only [pathBank15, List.mem_range'_1] at hw
+    · intro w hw; rw [hpaths] at hw; simp only [pathBankW, List.mem_range'_1] at hw
       rw [hs0_w, rootSwap, Equiv.swap_apply_of_ne_of_ne (show w ≠ windowRoot by unfold windowRoot; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
       simp [upd, show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
         show w ≠ guardWire by unfold guardWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
         hcl w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
     · rw [hbits, ← ha]; apply WEX.tableAddressValue_congr; intro w hw
-      have hwb := mem_bits16.mp hw
-      have hwlt : w < 872 := by rcases hwb with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+      have hwb := mem_bitsW.mp hw
+      have hwlt : w < 874 := by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
       rw [hs0_w, rootSwap, Equiv.swap_apply_of_ne_of_ne (show w ≠ windowRoot by unfold windowRoot; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
       simp [upd, show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), show w ≠ guardWire by unfold guardWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))]
     · rw [hs0_w, rootSwap, Equiv.swap_apply_left]; simp [upd, rootWire, guardWire]
@@ -16241,16 +16364,16 @@ private theorem wrapSS_SS1_sim (f : SS1 65536) (hg : f.Geo)
       · rw [hbs'_frame w hwt hwg]
         exact (tableXorState_outside _ _ _ _ (fun hm => hwt (tableBitsMask_subset _ _ hm))).symm
 
-private theorem wrapSS_SS2_sim (f : SS2 65536) (hg : f.Geo)
-    (hbits : f.bits = bits16) (hpaths : f.paths = pathBank15) (hguard : f.guard = guardWire)
+private theorem wrapSS_SS2_sim {kw : Nat} (hk_hi : kw ≤ 18) (f : SS2 (2 ^ kw)) (hg : f.Geo)
+    (hbits : f.bits = bitsW kw) (hpaths : f.paths = pathBankW kw) (hguard : f.guard = guardWire)
     (hsub : ChallengeMigration.straightWires (f.loadProg 0) ⊆ ssSup)
     (hdisj_rg : ∀ w ∈ portTargets f.ports ++ f.garb, w ≠ windowRoot ∧ w ≠ rootWire ∧ w ≠ guardWire)
     (hreg_out : ∀ w ∈ portTargets f.ports ++ f.garb,
-      ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 872))
-    (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+      ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 874))
+    (s : Nat) (read : ConstantBit (2 ^ kw) → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bs : BasisState),
-        tableAddressValue bits16 bs = a →
+        tableAddressValue (bitsW kw) bs = a →
         CleanOutsideXYBank bs →
         ∃ bs' : BasisState,
           (∀ w, w ∉ portTargets f.ports → w ∉ f.garb → bs' w = bs w) ∧
@@ -16295,14 +16418,14 @@ private theorem wrapSS_SS2_sim (f : SS2 65536) (hg : f.Geo)
     rw [hs0_w, hs33]; simp [upd, rootWire, guardWire, h33_0]
   have hs0_sv : SimulationValid f.bits f.paths windowRoot a s0 := by
     refine ⟨?_, ?_, ?_⟩
-    · intro w hw; rw [hpaths] at hw; simp only [pathBank15, List.mem_range'_1] at hw
+    · intro w hw; rw [hpaths] at hw; simp only [pathBankW, List.mem_range'_1] at hw
       rw [hs0_w, rootSwap, Equiv.swap_apply_of_ne_of_ne (show w ≠ windowRoot by unfold windowRoot; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
       simp [upd, show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
         show w ≠ guardWire by unfold guardWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
         hcl w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
     · rw [hbits, ← ha]; apply WEX.tableAddressValue_congr; intro w hw
-      have hwb := mem_bits16.mp hw
-      have hwlt : w < 872 := by rcases hwb with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+      have hwb := mem_bitsW.mp hw
+      have hwlt : w < 874 := by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
       rw [hs0_w, rootSwap, Equiv.swap_apply_of_ne_of_ne (show w ≠ windowRoot by unfold windowRoot; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
       simp [upd, show w ≠ rootWire by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), show w ≠ guardWire by unfold guardWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))]
     · rw [hs0_w, rootSwap, Equiv.swap_apply_left]; simp [upd, rootWire, guardWire]
@@ -16397,261 +16520,151 @@ private theorem wrapSS_SS2_sim (f : SS2 65536) (hg : f.Geo)
       · rw [hbs'_frame w hwt hwg]
         exact (tableXorState_outside _ _ _ _ (fun hm => hwt (tableBitsMask_subset _ _ hm))).symm
 
--- Concrete bounds for `ss1Neg`, `ss2Triple`, `ss1Rec`
-theorem ss1Neg_tcount : ((ss1Neg.loadProg 0).instantiate (fun _ => false) Fin.elim0).tCount = 7 * 33279 := by
-  rw [ss1Neg.loadProg_tCount _ ss1Neg_geo]
-  change 7 * (2 ^ selBits1.length - 1 + ports1.length) = _
-  rw [selBits1_length, ports1_length]; rfl
 
-theorem ss1Rec_tcount : ((ss1Rec.loadProg 0).instantiate (fun _ => false) Fin.elim0).tCount = 7 * 33279 := by
-  rw [ss1Rec.loadProg_tCount _ ss1Rec_geo]
-  change 7 * (2 ^ selBits1.length - 1 + ports6.length) = _
-  rw [selBits1_length, ports6_length]; rfl
+-- Polymorphic SelectSwap counts, records, shiftFin, and slots for `16 ≤ k ≤ 18`
+theorem ss1NegW_tcount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    (((ss1NegW k).loadProg 0).instantiate (fun _ => false) Fin.elim0).tCount = 7 * (2 ^ (k - 1) - 1 + 512) := by
+  rw [(ss1NegW k).loadProg_tCount _ (ss1NegW_geo hk_lo hk_hi)]
+  change 7 * (2 ^ (selBits1W k).length - 1 + (ports1W k).length) = _
+  rw [selBits1W_length, ports1W_length]
 
-theorem ss2Triple_tcount : ((ss2Triple.loadProg 0).instantiate (fun _ => false) Fin.elim0).tCount = 7 * 17151 := by
-  rw [ss2Triple.loadProg_tCount _ ss2Triple_geo]
-  change 7 * (2 ^ selBits2.length - 1 + 3 * ports4.length) = _
-  rw [selBits2_length, ports4_length]; rfl
+theorem ss1RecW_tcount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    (((ss1RecW k).loadProg 0).instantiate (fun _ => false) Fin.elim0).tCount = 7 * (2 ^ (k - 1) - 1 + 512) := by
+  rw [(ss1RecW k).loadProg_tCount _ (ss1RecW_geo hk_lo hk_hi)]
+  change 7 * (2 ^ (selBits1W k).length - 1 + (ports6W k).length) = _
+  rw [selBits1W_length, ports6W_length]
 
-theorem ss1Neg_rec : codeRecords ss1Neg.selBits ss1Neg.selPaths windowRoot ss1Neg.selCode = 32767 := by
-  rw [ss1Neg.loadProg_records ss1Neg_geo]; change 2 ^ selBits1.length - 1 = _; rw [selBits1_length]; rfl
+theorem ss2TripleW_tcount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    (((ss2TripleW k).loadProg 0).instantiate (fun _ => false) Fin.elim0).tCount = 7 * (2 ^ (k - 2) - 1 + 768) := by
+  rw [(ss2TripleW k).loadProg_tCount _ (ss2TripleW_geo hk_lo hk_hi)]
+  change 7 * (2 ^ (selBits2W k).length - 1 + 3 * (ports4W k).length) = _
+  rw [selBits2W_length, ports4W_length]
 
-theorem ss1Rec_rec : codeRecords ss1Rec.selBits ss1Rec.selPaths windowRoot ss1Rec.selCode = 32767 := by
-  rw [ss1Rec.loadProg_records ss1Rec_geo]; change 2 ^ selBits1.length - 1 = _; rw [selBits1_length]; rfl
+theorem ss1NegW_rec {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    codeRecords (ss1NegW k).selBits (ss1NegW k).selPaths windowRoot (ss1NegW k).selCode = 2 ^ (k - 1) - 1 := by
+  rw [(ss1NegW k).loadProg_records (ss1NegW_geo hk_lo hk_hi)]; change 2 ^ (selBits1W k).length - 1 = _; rw [selBits1W_length]
 
-theorem ss2Triple_rec : codeRecords ss2Triple.selBits ss2Triple.selPaths windowRoot ss2Triple.selCode = 16383 := by
-  rw [ss2Triple.loadProg_records ss2Triple_geo]; change 2 ^ selBits2.length - 1 = _; rw [selBits2_length]; rfl
+theorem ss1RecW_rec {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    codeRecords (ss1RecW k).selBits (ss1RecW k).selPaths windowRoot (ss1RecW k).selCode = 2 ^ (k - 1) - 1 := by
+  rw [(ss1RecW k).loadProg_records (ss1RecW_geo hk_lo hk_hi)]; change 2 ^ (selBits1W k).length - 1 = _; rw [selBits1W_length]
 
-theorem ss1Neg_shiftFin : ShiftFin (wrapSS (ss1Neg.loadProg 0)) 66046 :=
+theorem ss2TripleW_rec {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    codeRecords (ss2TripleW k).selBits (ss2TripleW k).selPaths windowRoot (ss2TripleW k).selCode = 2 ^ (k - 2) - 1 := by
+  rw [(ss2TripleW k).loadProg_records (ss2TripleW_geo hk_lo hk_hi)]; change 2 ^ (selBits2W k).length - 1 = _; rw [selBits2W_length]
+
+theorem ss1NegW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    ShiftFin (wrapSS ((ss1NegW k).loadProg 0)) (2 * (2 ^ (k - 1) - 1) + 512) :=
   ShiftFin.of_exact (fun s => by
-    rw [wrapSS_finish _ 33279 (ss1Neg.loadProg_residue 0) ss1Neg_tcount s, Nat.zero_add, ss1Neg_rec]) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+    rw [wrapSS_finish _ (2 ^ (k - 1) - 1 + 512) ((ss1NegW k).loadProg_residue 0) (ss1NegW_tcount hk_lo hk_hi) s,
+      Nat.zero_add, ss1NegW_rec hk_lo hk_hi]) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem ss1Rec_shiftFin : ShiftFin (wrapSS (ss1Rec.loadProg 0)) 66046 :=
+theorem ss1RecW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    ShiftFin (wrapSS ((ss1RecW k).loadProg 0)) (2 * (2 ^ (k - 1) - 1) + 512) :=
   ShiftFin.of_exact (fun s => by
-    rw [wrapSS_finish _ 33279 (ss1Rec.loadProg_residue 0) ss1Rec_tcount s, Nat.zero_add, ss1Rec_rec]) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+    rw [wrapSS_finish _ (2 ^ (k - 1) - 1 + 512) ((ss1RecW k).loadProg_residue 0) (ss1RecW_tcount hk_lo hk_hi) s,
+      Nat.zero_add, ss1RecW_rec hk_lo hk_hi]) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem ss2Triple_shiftFin : ShiftFin (wrapSS (ss2Triple.loadProg 0)) 33534 :=
+theorem ss2TripleW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) :
+    ShiftFin (wrapSS ((ss2TripleW k).loadProg 0)) (2 * (2 ^ (k - 2) - 1) + 768) :=
   ShiftFin.of_exact (fun s => by
-    rw [wrapSS_finish _ 17151 (ss2Triple.loadProg_residue 0) ss2Triple_tcount s, Nat.zero_add, ss2Triple_rec]) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+    rw [wrapSS_finish _ (2 ^ (k - 2) - 1 + 768) ((ss2TripleW k).loadProg_residue 0) (ss2TripleW_tcount hk_lo hk_hi) s,
+      Nat.zero_add, ss2TripleW_rec hk_lo hk_hi]) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem ss1Neg_slots (s : Nat) : (wrapSS (ss1Neg.loadProg 0) s).prog.gateSlots ≤ 200000000 := by
-  have h1 := ss1Neg.loadProg_slots ss1Neg_geo 0
-  change (ss1Neg.loadProg 0).gateSlots ≤ 2 ^ selBits1.length * (2 * ports1.length) + 10 * (2 ^ selBits1.length - 1) + 12 * ports1.length at h1
-  rw [selBits1_length, ports1_length] at h1
-  exact (wrapSS_slots _ 33279 _ (ss1Neg.loadProg_residue 0) ss1Neg_tcount h1 s).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+private theorem pow2_km1_le {k : Nat} (hk_hi : k ≤ 18) : 2 ^ (k - 1) ≤ 131072 :=
+  (Nat.pow_le_pow_right (by decide) (show k - 1 ≤ 17 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))).trans (by decide)
 
-theorem ss1Rec_slots (s : Nat) : (wrapSS (ss1Rec.loadProg 0) s).prog.gateSlots ≤ 200000000 := by
-  have h1 := ss1Rec.loadProg_slots ss1Rec_geo 0
-  change (ss1Rec.loadProg 0).gateSlots ≤ 2 ^ selBits1.length * (2 * ports6.length) + 10 * (2 ^ selBits1.length - 1) + 12 * ports6.length at h1
-  rw [selBits1_length, ports6_length] at h1
-  exact (wrapSS_slots _ 33279 _ (ss1Rec.loadProg_residue 0) ss1Rec_tcount h1 s).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+private theorem pow2_km2_le {k : Nat} (hk_hi : k ≤ 18) : 2 ^ (k - 2) ≤ 65536 :=
+  (Nat.pow_le_pow_right (by decide) (show k - 2 ≤ 16 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))).trans (by decide)
 
-theorem ss2Triple_slots (s : Nat) : (wrapSS (ss2Triple.loadProg 0) s).prog.gateSlots ≤ 100000000 := by
-  have h1 := ss2Triple.loadProg_slots ss2Triple_geo 0
-  change (ss2Triple.loadProg 0).gateSlots ≤ 2 ^ selBits2.length * (4 * ports4.length) + 10 * (2 ^ selBits2.length - 1) + 36 * ports4.length at h1
-  rw [selBits2_length, ports4_length] at h1
-  exact (wrapSS_slots _ 17151 _ (ss2Triple.loadProg_residue 0) ss2Triple_tcount h1 s).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+theorem ss1NegW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (s : Nat) :
+    (wrapSS ((ss1NegW k).loadProg 0) s).prog.gateSlots ≤ 600000000 := by
+  have h1 := (ss1NegW k).loadProg_slots (ss1NegW_geo hk_lo hk_hi) 0
+  change ((ss1NegW k).loadProg 0).gateSlots ≤ 2 ^ (selBits1W k).length * (2 * (ports1W k).length) + 10 * (2 ^ (selBits1W k).length - 1) + 12 * (ports1W k).length at h1
+  rw [selBits1W_length, ports1W_length] at h1
+  have hp := pow2_km1_le hk_hi
+  exact (wrapSS_slots _ (2 ^ (k - 1) - 1 + 512) _ ((ss1NegW k).loadProg_residue 0) (ss1NegW_tcount hk_lo hk_hi) h1 s).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
--- Combined 8-bit measured-clear fixup (`502` Toffolis, `1,012` records, `3,072` refs)
-def d1 : List (MeasuredClear.ClearPort 65536) := clearData ss1Neg.garbPorts
-def d2 : List (MeasuredClear.ClearPort 65536) := clearData ports1
-def d3 : List (MeasuredClear.ClearPort 65536) := clearData ss2Triple.garbPorts
-def d4 : List (MeasuredClear.ClearPort 65536) := clearData ports4
-def d5 : List (MeasuredClear.ClearPort 65536) := clearData ss1Rec.garbPorts
-def d6 : List (MeasuredClear.ClearPort 65536) := clearData ports6
-def allData : List (MeasuredClear.ClearPort 65536) := d1 ++ d2 ++ d3 ++ d4 ++ d5 ++ d6
+theorem ss1RecW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (s : Nat) :
+    (wrapSS ((ss1RecW k).loadProg 0) s).prog.gateSlots ≤ 600000000 := by
+  have h1 := (ss1RecW k).loadProg_slots (ss1RecW_geo hk_lo hk_hi) 0
+  change ((ss1RecW k).loadProg 0).gateSlots ≤ 2 ^ (selBits1W k).length * (2 * (ports6W k).length) + 10 * (2 ^ (selBits1W k).length - 1) + 12 * (ports6W k).length at h1
+  rw [selBits1W_length, ports6W_length] at h1
+  have hp := pow2_km1_le hk_hi
+  exact (wrapSS_slots _ (2 ^ (k - 1) - 1 + 512) _ ((ss1RecW k).loadProg_residue 0) (ss1RecW_tcount hk_lo hk_hi) h1 s).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem d1_targets : d1.map MeasuredClear.ClearPort.target = g1_1 := by
-  rw [d1, clearData_targets]; exact ss1Neg.garbPorts_targets ss1Neg_geo
-theorem d2_targets : d2.map MeasuredClear.ClearPort.target = cxWord ++ cyWord := by
-  rw [d2, clearData_targets]; exact ports1_targets
-theorem d3_targets : d3.map MeasuredClear.ClearPort.target = g4 := by
-  rw [d3, clearData_targets]; exact ss2Triple.garbPorts_targets ss2Triple_geo
-theorem d4_targets : d4.map MeasuredClear.ClearPort.target = cxWord := by
-  rw [d4, clearData_targets]; exact ports4_targets
-theorem d5_targets : d5.map MeasuredClear.ClearPort.target = g1_1 := by
-  rw [d5, clearData_targets]; exact ss1Rec.garbPorts_targets ss1Rec_geo
-theorem d6_targets : d6.map MeasuredClear.ClearPort.target = cxWord ++ cyWord := by
-  rw [d6, clearData_targets]; exact ports6_targets
+theorem ss2TripleW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (s : Nat) :
+    (wrapSS ((ss2TripleW k).loadProg 0) s).prog.gateSlots ≤ 300000000 := by
+  have h1 := (ss2TripleW k).loadProg_slots (ss2TripleW_geo hk_lo hk_hi) 0
+  change ((ss2TripleW k).loadProg 0).gateSlots ≤ 2 ^ (selBits2W k).length * (4 * (ports4W k).length) + 10 * (2 ^ (selBits2W k).length - 1) + 36 * (ports4W k).length at h1
+  rw [selBits2W_length, ports4W_length] at h1
+  have hp := pow2_km2_le hk_hi
+  exact (wrapSS_slots _ (2 ^ (k - 2) - 1 + 768) _ ((ss2TripleW k).loadProg_residue 0) (ss2TripleW_tcount hk_lo hk_hi) h1 s).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem d1_len : d1.length = 512 := by have := congrArg List.length d1_targets; simpa [g1_1_length] using this
-theorem d2_len : d2.length = 512 := by have := congrArg List.length d2_targets; simpa [cxWord_length, cyWord_length] using this
-theorem d3_len : d3.length = 768 := by have := congrArg List.length d3_targets; simpa [g4_length] using this
-theorem d4_len : d4.length = 256 := by have := congrArg List.length d4_targets; simpa [cxWord_length] using this
-theorem d5_len : d5.length = 512 := by have := congrArg List.length d5_targets; simpa [g1_1_length] using this
-theorem d6_len : d6.length = 512 := by have := congrArg List.length d6_targets; simpa [cxWord_length, cyWord_length] using this
-theorem allData_len : allData.length = 3072 := by
-  simp only [allData, List.length_append, d1_len, d2_len, d3_len, d4_len, d5_len, d6_len]
+-- Combined measured-clear data lists (3,072 clear ports)
+def d1W (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) := clearData (ss1NegW k).garbPorts
+def d2W (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) := clearData (ports1W k)
+def d3W (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) := clearData (ss2TripleW k).garbPorts
+def d4W (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) := clearData (ports4W k)
+def d5W (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) := clearData (ss1RecW k).garbPorts
+def d6W (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) := clearData (ports6W k)
+def allDataW (k : Nat) : List (MeasuredClear.ClearPort (2 ^ k)) :=
+  d1W k ++ d2W k ++ d3W k ++ d4W k ++ d5W k ++ d6W k
 
-theorem tree8_layout : tree8.Layout rootWire fixPaths8 :=
-  tableAddressTree_layout _ _ _ 0 1 (by decide) (by decide)
-theorem tree8_nodes : tree8.internalNodes = 255 := WideBank8.Fast16.high_nodes
-theorem tree8_leaves : tree8.leaves = 256 := by
-  have h := MeasuredClear.addressTree_leaves WideBank8.Fast16.high 0 1
-  simpa [tree8, WideBank8.Fast16.high] using h
-theorem tree8_indexWires_sub : tree8.indexWires ⊆ WideBank8.Fast16.high := by
-  intro w hw
-  have h1 : w ∈ tree8.indexWires.dedup := List.mem_dedup.mpr hw
-  have h2 : tree8.indexWires.dedup = WideBank8.Fast16.high := WideBank8.Fast16.bank15_ok.index
-  rwa [h2] at h1
-theorem hot8_inj : Function.Injective hot8 := by
-  intro a b h; apply Fin.ext; simp only [hot8] at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-theorem low8_ne_hot8 (i : Fin 8) (j : Fin 256) : WideBank8.low8 i ≠ hot8 j := by
-  have hi := i.isLt; have hj := j.isLt; simp only [WideBank8.low8, hot8]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-theorem hot8_disj : (MeasuredClear.hotBank8 hot8).Disjoint (rootWire :: tree8.indexWires.dedup ++ fixPaths8) := by
-  rw [List.disjoint_left]; intro w hw hm
-  obtain ⟨j, rfl⟩ := List.mem_ofFn.mp hw
-  have hj := j.isLt
-  have hidx : tree8.indexWires.dedup = WideBank8.Fast16.high := WideBank8.Fast16.bank15_ok.index
-  rw [hidx] at hm
-  simp only [rootWire, fixPaths8, WideBank8.Fast16.high, hot8, List.mem_cons, List.mem_append,
-    List.mem_range'_1, List.not_mem_nil, or_false, or_assoc] at hm
-  rcases hm with h | h | h | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-theorem fixScratch_not_tree : fixScratch ∉ rootWire :: tree8.indexWires.dedup ++ fixPaths8 := by
-  have hidx : tree8.indexWires.dedup = WideBank8.Fast16.high := WideBank8.Fast16.bank15_ok.index
-  rw [hidx]; decide
-theorem fixScratch_not_hot : fixScratch ∉ MeasuredClear.hotBank8 hot8 := by
-  intro hm; obtain ⟨j, hj⟩ := List.mem_ofFn.mp hm
-  simp only [hot8, fixScratch] at hj; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-theorem fixRec8_eq :
-    MeasuredClear.recordMeasurements (MeasuredClear.recordUnaryOps tree8 rootWire fixPaths8) + 255 = 510 := by
-  rw [(MeasuredClear.recordUnary_counts tree8 rootWire fixPaths8 tree8_layout 0).1, tree8_nodes]
+theorem d1W_targets {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (d1W k).map MeasuredClear.ClearPort.target = g1_1 := by
+  rw [d1W, clearData_targets]; exact (ss1NegW k).garbPorts_targets (ss1NegW_geo hk_lo hk_hi)
+theorem d2W_targets (k : Nat) : (d2W k).map MeasuredClear.ClearPort.target = cxWord ++ cyWord := by
+  rw [d2W, clearData_targets]; exact ports1W_targets k
+theorem d3W_targets {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (d3W k).map MeasuredClear.ClearPort.target = g4 := by
+  rw [d3W, clearData_targets]; exact (ss2TripleW k).garbPorts_targets (ss2TripleW_geo hk_lo hk_hi)
+theorem d4W_targets (k : Nat) : (d4W k).map MeasuredClear.ClearPort.target = cxWord := by
+  rw [d4W, clearData_targets]; exact ports4W_targets k
+theorem d5W_targets {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (d5W k).map MeasuredClear.ClearPort.target = g1_1 := by
+  rw [d5W, clearData_targets]; exact (ss1RecW k).garbPorts_targets (ss1RecW_geo hk_lo hk_hi)
+theorem d6W_targets (k : Nat) : (d6W k).map MeasuredClear.ClearPort.target = cxWord ++ cyWord := by
+  rw [d6W, clearData_targets]; exact ports6W_targets k
 
-private theorem low8_high_eq_bits16 :
-    [MeasuredClear.lowN8 WideBank8.low8 0, MeasuredClear.lowN8 WideBank8.low8 1,
-     MeasuredClear.lowN8 WideBank8.low8 2, MeasuredClear.lowN8 WideBank8.low8 3,
-     MeasuredClear.lowN8 WideBank8.low8 4, MeasuredClear.lowN8 WideBank8.low8 5,
-     MeasuredClear.lowN8 WideBank8.low8 6, MeasuredClear.lowN8 WideBank8.low8 7] ++
-    WideBank8.Fast16.high = bits16 := by decide
+theorem d1W_len {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (d1W k).length = 512 := by
+  have := congrArg List.length (d1W_targets hk_lo hk_hi); simpa [g1_1_length] using this
+theorem d2W_len (k : Nat) : (d2W k).length = 512 := by
+  have := congrArg List.length (d2W_targets k); simpa [cxWord_length, cyWord_length] using this
+theorem d3W_len {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (d3W k).length = 768 := by
+  have := congrArg List.length (d3W_targets hk_lo hk_hi); simpa [g4_length] using this
+theorem d4W_len (k : Nat) : (d4W k).length = 256 := by
+  have := congrArg List.length (d4W_targets k); simpa [cxWord_length] using this
+theorem d5W_len {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (d5W k).length = 512 := by
+  have := congrArg List.length (d5W_targets hk_lo hk_hi); simpa [g1_1_length] using this
+theorem d6W_len (k : Nat) : (d6W k).length = 512 := by
+  have := congrArg List.length (d6W_targets k); simpa [cxWord_length, cyWord_length] using this
+theorem allDataW_len {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) : (allDataW k).length = 3072 := by
+  simp only [allDataW, List.length_append, d1W_len hk_lo hk_hi, d2W_len, d3W_len hk_lo hk_hi, d4W_len,
+    d5W_len hk_lo hk_hi, d6W_len]
 
-attribute [local irreducible] List.range' ports1 ports4 ports6 d1 d2 d3 d4 d5 d6 allData
+/-- Abstract measured-clear phase-fixup backend, instantiated once via `fixupProgram8` (`k = 16`)
+    and once via `fixupProgram9` (`k ∈ {17, 18}`). -/
+structure FixupSpec (k : Nat) where
+  prog : (cur : Nat) → List (Fin cur) → CatProg (2 ^ k) cur
+  tof : Nat
+  fin : Nat
+  slots : Nat
+  finish_eq : ∀ cur rs, (prog cur rs).finish = cur + fin
+  removed18 : ∀ cur rs, removed 18 (prog cur rs).prog = 0
+  tCount : ∀ read cur rs hh, ((prog cur rs).prog.instantiate read hh).tCount ≤ 4 * tof
+  slots_le : ∀ cur rs, (prog cur rs).prog.gateSlots ≤ slots
+  wires_sub : ∀ cur rs, ChallengeMigration.straightWires (prog cur rs).prog ⊆ support1612
+  wellFormed : ∀ cur rs, (prog cur rs).prog.WellFormed
+  sim : ∀ (read : ConstantBit (2 ^ k) → Bool) (os : List Bool), os.length = 3072 →
+    ∀ (cur : Nat) (rs : List (Fin cur)) (hh : Fin cur → Bool), rs.map hh = os →
+    ∃ cs : List ℂ, List.Forall₂
+      (fun b c => ∀ (a : Nat) (t : BasisState),
+        tableAddressValue (bitsW k) t = a → CleanOutsideXYBank t →
+        b.kraus (Prep 14833 (ket t)) = (c * portPhase (allDataW k) os read a) • Prep 14833 (ket t))
+      ((prog cur rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1
 
-def rawFixup (cur : Nat) (rs : List (Fin cur)) :=
-  MeasuredClear.fixupProgram8 allData rs WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8
+attribute [local irreducible] ports1W ports4W ports6W d1W d2W d3W d4W d5W d6W allDataW
 
-def compiledFixup (cur : Nat) (rs : List (Fin cur)) : CatProg 65536 cur :=
-  let r := compileLower 14832 14833 (rawFixup cur rs) cur id
-  ((CatProg.lit [.X rootWire]).append ⟨r.finish, r.program⟩).append (CatProg.lit [.X rootWire])
-
-attribute [local irreducible] rawFixup compiledFixup
-
-private theorem rawFixup_added (cur : Nat) (rs : List (Fin cur)) :
-    AndGadget.added (rawFixup cur rs) = 502 := by
-  rw [rawFixup]
-  have hres := MeasuredClear.fixupProgram_residue8 allData rs WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8
-  have he := WEXCredit.exact_t _ hres (fun _ => false) (fun _ => false)
-  have ht := MeasuredClear.fixupProgram_tCount8 allData rs WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8
-    tree8_layout (fun _ => false) (fun _ => false)
-  rw [tree8_nodes] at ht
-  exact Nat.eq_of_mul_eq_mul_left (by decide : 0 < 7) (he.symm.trans ht)
-
-private theorem rawFixup_wires_sub (cur : Nat) (rs : List (Fin cur)) :
-    ChallengeMigration.straightWires (rawFixup cur rs) ⊆
-      support1610.filter (fun w => decide (w ≠ 14832 ∧ w ≠ 14833)) := by
-  let S := support1610.filter (fun w => decide (w ≠ 14832 ∧ w ≠ 14833))
-  have hmS (w : Wire) (h1 : w ∈ support1610) (h2 : w ≠ 14832) (h3 : w ≠ 14833) : w ∈ S :=
-    List.mem_filter.mpr ⟨h1, by simp [h2, h3]⟩
-  rw [rawFixup, WEX.support_agrees]
-  refine MeasuredClear.fixupProgram_within8 _ _ _ _ _ _ _ _ S
-    (hmS _ (mem_support1610.mpr (by decide)) (by decide) (by decide))
-    (hmS _ (mem_support1610.mpr (by decide)) (by decide) (by decide))
-    (fun i => hmS _ (mem_support1610_bank (by have := i.isLt; simp only [WideBank8.low8]; exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
-      (by have := i.isLt; simp only [WideBank8.low8]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      (by have := i.isLt; simp only [WideBank8.low8]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
-    (fun i => hmS _ (mem_support1610_p1 (by have := i.isLt; simp only [hot8]; exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
-      (by have := i.isLt; simp only [hot8]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      (by have := i.isLt; simp only [hot8]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
-    (fun w hw => by
-      have h1 := tree8_indexWires_sub hw
-      simp only [WideBank8.Fast16.high, List.mem_append, List.mem_cons, List.not_mem_nil, or_false, List.mem_range'_1] at h1
-      rcases h1 with h1 | rfl
-      · exact hmS w (mem_support1610_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-      · exact hmS _ (mem_support1610_bank (by decide)) (by decide) (by decide))
-    (fun w hw => by
-      simp only [fixPaths8, List.mem_range'_1] at hw
-      exact hmS w (mem_support1610_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
-
-private theorem rawFixup_avoid (cur : Nat) (rs : List (Fin cur)) :
-    (14832 : Wire) ∉ ChallengeMigration.straightWires (rawFixup cur rs) ∧
-    (14833 : Wire) ∉ ChallengeMigration.straightWires (rawFixup cur rs) := by
-  have hsub := rawFixup_wires_sub cur rs
-  exact ⟨fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this,
-    fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this⟩
-
-theorem compiledFixup_finish (cur : Nat) (rs : List (Fin cur)) :
-    (compiledFixup cur rs).finish = cur + 1012 := by
-  rw [compiledFixup]
-  change (compileLower 14832 14833 (rawFixup cur rs) cur id).finish = cur + 1012
-  have hfin := compileLower_finish 14832 14833 (rawFixup cur rs) cur id
-  have hadd := rawFixup_added cur rs
-  have hrec := fixRec8_eq
-  (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-
-theorem compiledFixup_removed18 (cur : Nat) (rs : List (Fin cur)) :
-    removed 18 (compiledFixup cur rs).prog = 0 := by
-  rw [compiledFixup]; dsimp only [CatProg.append]
-  rw [LocalFour.removed_append, LocalFour.removed_append, CatProg.lit_removed, CatProg.lit_removed,
-    compileLower_removed18 14832 14833 (rawFixup cur rs) cur id,
-    removed18_zero_of_residue (rawFixup cur rs) (by rw [rawFixup]; exact MeasuredClear.fixupProgram_residue8 _ _ _ _ _ _ _ _)]
-  rfl
-
-theorem compiledFixup_tCount (read : ConstantBit 65536 → Bool) (cur : Nat) (rs : List (Fin cur)) (hh : Fin cur → Bool) :
-    ((compiledFixup cur rs).prog.instantiate read hh).tCount ≤ 4 * 502 := by
-  rw [compiledFixup]; dsimp only [CatProg.append]
-  rw [indep_append_tCount _ _ (CatProg.lit_indep _) read hh, CatProg.lit_tCount]
-  have hlt : ShorECDLP.tCount [.X rootWire] = 0 := rfl
-  rw [hlt, Nat.add_zero]
-  have h1 := b_append_tCount_le (CatProg.lit (n := 65536) (start := cur) [.X rootWire]).prog
-    (compileLower 14832 14833 (rawFixup cur rs) cur id).program read hh (4 * 502) (fun h' => by
-      have hc := compileLower_tCount 14832 14833 (rawFixup cur rs) cur id read h'
-      have hw := ConditionalCatalyst.weight4_zero (rawFixup cur rs)
-        (by rw [rawFixup]; exact MeasuredClear.fixupProgram_residue8 _ _ _ _ _ _ _ _)
-      rw [rawFixup_added cur rs] at hw
-      exact hc.trans (le_of_eq hw))
-  rw [CatProg.lit_tCount, hlt, Nat.zero_add] at h1
-  exact h1
-
-theorem compiledFixup_slots (cur : Nat) (rs : List (Fin cur)) :
-    (compiledFixup cur rs).prog.gateSlots ≤ 4000000000 := by
-  rw [compiledFixup]; dsimp only [CatProg.append]
-  rw [Straight.gateSlots_append, Straight.gateSlots_append, CatProg.lit_slots, CatProg.lit_slots]
-  have hcl := compileLower_slots 14832 14833 (rawFixup cur rs) cur id
-  have hfs : (rawFixup cur rs).gateSlots = 1024 * min allData.length rs.length * tree8.leaves + 10 * tree8.internalNodes + 2291 := by
-    rw [rawFixup]; exact MeasuredClear.fixupProgram_slots8 allData rs WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8 tree8_layout
-  rw [allData_len, tree8_leaves, tree8_nodes] at hfs
-  rw [rawFixup_added cur rs] at hcl
-  have hmin : min 3072 rs.length ≤ 3072 := Nat.min_le_left _ _
-  simp only [List.length_cons, List.length_nil]
-  (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-
-theorem compiledFixup_wires (cur : Nat) (rs : List (Fin cur)) :
-    ChallengeMigration.straightWires (compiledFixup cur rs).prog ⊆ support1610 := by
-  have hx : circuitWires [.X rootWire] ⊆ support1610 := by
-    intro w hw; simp [circuitWires, gateWires, rootWire] at hw; subst hw; exact mem_support1610.mpr (by decide)
-  rw [compiledFixup]; dsimp only [CatProg.append]
-  rw [straightWires_append, straightWires_append, CatProg.lit_wires, CatProg.lit_wires]
-  refine List.append_subset.mpr ⟨List.append_subset.mpr ⟨hx, ?_⟩, hx⟩
-  exact compileLower_straightWires 14832 14833 (rawFixup cur rs) support1610
-    (fun w hw => (List.mem_filter.mp (rawFixup_wires_sub cur rs hw)).1)
-    (mem_support1610.mpr (by decide)) (mem_support1610.mpr (by decide)) cur id
-
-theorem compiledFixup_wellFormed (cur : Nat) (rs : List (Fin cur)) :
-    (compiledFixup cur rs).prog.WellFormed := by
-  have hav := rawFixup_avoid cur rs
-  rw [compiledFixup]; dsimp only [CatProg.append]
-  exact straight_append_wellFormed _ _
-    (straight_append_wellFormed _ _ (CatProg.lit_wellFormed [.X rootWire] (circuitWF_X rootWire))
-      (compileLower_wellFormed 14832 14833 (rawFixup cur rs) cur id
-        (fresh_of_not_mem_straightWires _ _ hav.1) (fresh_of_not_mem_straightWires _ _ hav.2) (by decide)
-        (by
-          rw [rawFixup]
-          exact MeasuredClear.fixupProgram_wellFormed8 allData rs WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8
-            tree8_layout hot8_inj low8_ne_hot8 fixScratch_not_tree fixScratch_not_hot)))
-    (CatProg.lit_wellFormed [.X rootWire] (circuitWF_X rootWire))
-
-private theorem compiledFixup_surround_run {cur fin : Nat} (raw : Straight 65536 cur fin)
-    (read : ConstantBit 65536 → Bool) (hh : Fin cur → Bool) :
-    ((((CatProg.lit (n := 65536) (start := cur) [.X rootWire]).append
+private theorem compiledFixup_surround_run {n cur fin : Nat} (raw : Straight n cur fin)
+    (read : ConstantBit n → Bool) (hh : Fin cur → Bool) :
+    ((((CatProg.lit (n := n) (start := cur) [.X rootWire]).append
         ⟨(compileLower 14832 14833 raw cur id).finish, (compileLower 14832 14833 raw cur id).program⟩).append
       (CatProg.lit [.X rootWire])).prog.instantiate read hh).run =
       ((compileLower 14832 14833 raw cur id).program.instantiate read hh).run.map (fun br =>
@@ -16659,58 +16672,215 @@ private theorem compiledFixup_surround_run {cur fin : Nat} (raw : Straight 65536
   b_catProg_surround_run ([.X rootWire] : Circuit) ([.X rootWire] : Circuit)
     ⟨(compileLower 14832 14833 raw cur id).finish, (compileLower 14832 14833 raw cur id).program⟩ read hh
 
-theorem compiledFixup_sim (read : ConstantBit 65536 → Bool) (os : List Bool) (ho : os.length = 3072)
+/-! #### 7b. Concrete FixupSpec instances (`fixupSpec16` via `fixupProgram8`, `fixupSpec9` via `fixupProgram9` for `k = 17, 18`) -/
+
+def low8W (i : Fin 8) : Wire := 855 + i.val
+def high8_16 : List Wire := List.range' 863 8
+def fixPaths8 : List Wire := List.range' 14834 8
+def fixScratch8 : Wire := 14373
+def hot8W (i : Fin 256) : Wire := 14374 + i.val
+def tree8_16 : UnaryActionTree := tableAddressTree high8_16 0 1
+
+def rawFixup16 (cur : Nat) (rs : List (Fin cur)) :=
+  MeasuredClear.fixupProgram8 (allDataW 16) rs low8W hot8W tree8_16 rootWire fixScratch8 fixPaths8
+
+def compiledFixup16 (cur : Nat) (rs : List (Fin cur)) : CatProg (2 ^ 16) cur :=
+  let r := compileLower 14832 14833 (rawFixup16 cur rs) cur id
+  ((CatProg.lit [.X rootWire]).append ⟨r.finish, r.program⟩).append (CatProg.lit [.X rootWire])
+
+attribute [local irreducible] rawFixup16 compiledFixup16
+
+private theorem tree8_16_layout : tree8_16.Layout rootWire fixPaths8 :=
+  tableAddressTree_layout _ _ _ 0 1 (by decide) (by decide)
+private theorem tree8_16_nodes : tree8_16.internalNodes = 255 := by
+  have h := tableAddressTree_nodes high8_16 0 1
+  have hl : high8_16.length = 8 := by decide
+  rw [hl] at h; unfold tree8_16; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem tree8_16_leaves : tree8_16.leaves = 256 := by
+  have h := MeasuredClear.addressTree_leaves high8_16 0 1
+  simpa [tree8_16, high8_16] using h
+private theorem tree8_16_index : tree8_16.indexWires.dedup = high8_16 :=
+  tableAddressTree_index high8_16 0 1 (by decide)
+private theorem hot8W_inj : Function.Injective hot8W := fun a b h => by
+  apply Fin.ext; simp only [hot8W] at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem low8W_ne_hot8W (i : Fin 8) (j : Fin 256) : low8W i ≠ hot8W j := by
+  have hi := i.isLt; have hj := j.isLt; simp only [low8W, hot8W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem hot8W_disj : (MeasuredClear.hotBank8 hot8W).Disjoint (rootWire :: tree8_16.indexWires.dedup ++ fixPaths8) := by
+  rw [List.disjoint_left]; intro w hw hm
+  obtain ⟨j, rfl⟩ := List.mem_ofFn.mp hw
+  have hj := j.isLt
+  rw [tree8_16_index] at hm
+  simp only [rootWire, fixPaths8, high8_16, hot8W, List.mem_cons, List.mem_append, List.mem_range'_1, or_assoc] at hm
+  rcases hm with h | h | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem fixScratch8_not_tree : fixScratch8 ∉ rootWire :: tree8_16.indexWires.dedup ++ fixPaths8 := by
+  rw [tree8_16_index]; decide
+private theorem fixScratch8_not_hot : fixScratch8 ∉ MeasuredClear.hotBank8 hot8W := by
+  intro hm; obtain ⟨j, hj⟩ := List.mem_ofFn.mp hm; simp only [hot8W, fixScratch8] at hj; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem low8W_high_eq_bits16 :
+    [MeasuredClear.lowN8 low8W 0, MeasuredClear.lowN8 low8W 1,
+     MeasuredClear.lowN8 low8W 2, MeasuredClear.lowN8 low8W 3,
+     MeasuredClear.lowN8 low8W 4, MeasuredClear.lowN8 low8W 5,
+     MeasuredClear.lowN8 low8W 6, MeasuredClear.lowN8 low8W 7] ++ high8_16 = bitsW 16 := by
+  unfold bitsW high8_16; decide
+
+private theorem rawFixup16_added (cur : Nat) (rs : List (Fin cur)) :
+    AndGadget.added (rawFixup16 cur rs) = 502 := by
+  rw [rawFixup16]
+  have hres := MeasuredClear.fixupProgram_residue8 (allDataW 16) rs low8W hot8W tree8_16 rootWire fixScratch8 fixPaths8
+  have he := WEXCredit.exact_t _ hres (fun _ => false) (fun _ => false)
+  have ht := MeasuredClear.fixupProgram_tCount8 (allDataW 16) rs low8W hot8W tree8_16 rootWire fixScratch8 fixPaths8
+    tree8_16_layout (fun _ => false) (fun _ => false)
+  rw [tree8_16_nodes] at ht
+  exact Nat.eq_of_mul_eq_mul_left (by decide : 0 < 7) (he.symm.trans ht)
+
+private theorem rawFixup16_wires_sub (cur : Nat) (rs : List (Fin cur)) :
+    ChallengeMigration.straightWires (rawFixup16 cur rs) ⊆
+      support1612.filter (fun w => decide (w ≠ 14832 ∧ w ≠ 14833)) := by
+  let S := support1612.filter (fun w => decide (w ≠ 14832 ∧ w ≠ 14833))
+  have hmS (w : Wire) (h1 : w ∈ support1612) (h2 : w ≠ 14832) (h3 : w ≠ 14833) : w ∈ S :=
+    List.mem_filter.mpr ⟨h1, by simp [h2, h3]⟩
+  rw [rawFixup16, WEX.support_agrees]
+  refine MeasuredClear.fixupProgram_within8 _ _ _ _ _ _ _ _ S
+    (hmS _ (mem_support1612.mpr (by decide)) (by decide) (by decide))
+    (hmS _ (mem_support1612.mpr (by decide)) (by decide) (by decide))
+    (fun i => hmS _ (mem_support1612_bank (by have := i.isLt; simp only [low8W]; exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
+      (by have := i.isLt; simp only [low8W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      (by have := i.isLt; simp only [low8W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun i => hmS _ (mem_support1612_p1 (by have := i.isLt; simp only [hot8W]; exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
+      (by have := i.isLt; simp only [hot8W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      (by have := i.isLt; simp only [hot8W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by
+      have h1 : w ∈ high8_16 := (tableAddressTree_mem_index high8_16 0 1 w).mp hw
+      simp only [high8_16, List.mem_range'_1] at h1
+      exact hmS w (mem_support1612_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by
+      simp only [fixPaths8, List.mem_range'_1] at hw
+      exact hmS w (mem_support1612_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+
+private theorem compiledFixup16_finish (cur : Nat) (rs : List (Fin cur)) :
+    (compiledFixup16 cur rs).finish = cur + 1012 := by
+  rw [compiledFixup16]
+  change (compileLower 14832 14833 (rawFixup16 cur rs) cur id).finish = cur + 1012
+  have hfin := compileLower_finish 14832 14833 (rawFixup16 cur rs) cur id
+  have hadd := rawFixup16_added cur rs
+  have hrec : MeasuredClear.recordMeasurements (MeasuredClear.recordUnaryOps tree8_16 rootWire fixPaths8) + 255 = 510 := by
+    rw [(MeasuredClear.recordUnary_counts tree8_16 rootWire fixPaths8 tree8_16_layout 0).1, tree8_16_nodes]
+  (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+private theorem compiledFixup16_removed18 (cur : Nat) (rs : List (Fin cur)) :
+    removed 18 (compiledFixup16 cur rs).prog = 0 := by
+  rw [compiledFixup16]; dsimp only [CatProg.append]
+  rw [LocalFour.removed_append, LocalFour.removed_append, CatProg.lit_removed, CatProg.lit_removed,
+    compileLower_removed18 14832 14833 (rawFixup16 cur rs) cur id,
+    removed18_zero_of_residue (rawFixup16 cur rs) (by rw [rawFixup16]; exact MeasuredClear.fixupProgram_residue8 _ _ _ _ _ _ _ _)]
+  rfl
+
+private theorem compiledFixup16_tCount (read : ConstantBit (2 ^ 16) → Bool) (cur : Nat) (rs : List (Fin cur))
+    (hh : Fin cur → Bool) :
+    ((compiledFixup16 cur rs).prog.instantiate read hh).tCount ≤ 4 * 502 := by
+  rw [compiledFixup16]; dsimp only [CatProg.append]
+  rw [indep_append_tCount _ _ (CatProg.lit_indep _) read hh, CatProg.lit_tCount]
+  have hlt : ShorECDLP.tCount [.X rootWire] = 0 := rfl
+  rw [hlt, Nat.add_zero]
+  have h1 := b_append_tCount_le (CatProg.lit (n := 2 ^ 16) (start := cur) [.X rootWire]).prog
+    (compileLower 14832 14833 (rawFixup16 cur rs) cur id).program read hh (4 * 502) (fun h' => by
+      have hc := compileLower_tCount 14832 14833 (rawFixup16 cur rs) cur id read h'
+      have hw := ConditionalCatalyst.weight4_zero (rawFixup16 cur rs)
+        (by rw [rawFixup16]; exact MeasuredClear.fixupProgram_residue8 _ _ _ _ _ _ _ _)
+      rw [rawFixup16_added cur rs] at hw
+      exact hc.trans (le_of_eq hw))
+  rw [CatProg.lit_tCount, hlt, Nat.zero_add] at h1
+  exact h1
+
+private theorem compiledFixup16_slots (cur : Nat) (rs : List (Fin cur)) :
+    (compiledFixup16 cur rs).prog.gateSlots ≤ 4000000000 := by
+  rw [compiledFixup16]; dsimp only [CatProg.append]
+  rw [Straight.gateSlots_append, Straight.gateSlots_append, CatProg.lit_slots, CatProg.lit_slots]
+  have hcl := compileLower_slots 14832 14833 (rawFixup16 cur rs) cur id
+  have hfs : (rawFixup16 cur rs).gateSlots = 1024 * min (allDataW 16).length rs.length * tree8_16.leaves + 10 * tree8_16.internalNodes + 2291 := by
+    rw [rawFixup16]; exact MeasuredClear.fixupProgram_slots8 (allDataW 16) rs low8W hot8W tree8_16 rootWire fixScratch8 fixPaths8 tree8_16_layout
+  rw [allDataW_len (by decide) (by decide), tree8_16_leaves, tree8_16_nodes] at hfs
+  rw [rawFixup16_added cur rs] at hcl
+  have hmin : min 3072 rs.length ≤ 3072 := Nat.min_le_left _ _
+  simp only [List.length_cons, List.length_nil]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+private theorem compiledFixup16_wires_sub (cur : Nat) (rs : List (Fin cur)) :
+    ChallengeMigration.straightWires (compiledFixup16 cur rs).prog ⊆ support1612 := by
+  have hx : circuitWires [.X rootWire] ⊆ support1612 := by
+    intro w hw; simp [circuitWires, gateWires, rootWire] at hw; subst hw; exact mem_support1612.mpr (by decide)
+  rw [compiledFixup16]; dsimp only [CatProg.append]
+  rw [straightWires_append, straightWires_append, CatProg.lit_wires, CatProg.lit_wires]
+  refine List.append_subset.mpr ⟨List.append_subset.mpr ⟨hx, ?_⟩, hx⟩
+  exact compileLower_straightWires 14832 14833 (rawFixup16 cur rs) support1612
+    (fun w hw => (List.mem_filter.mp (rawFixup16_wires_sub cur rs hw)).1)
+    (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide)) cur id
+
+private theorem compiledFixup16_wellFormed (cur : Nat) (rs : List (Fin cur)) :
+    (compiledFixup16 cur rs).prog.WellFormed := by
+  have hsub := rawFixup16_wires_sub cur rs
+  have hav : (14832 : Wire) ∉ ChallengeMigration.straightWires (rawFixup16 cur rs) ∧
+      (14833 : Wire) ∉ ChallengeMigration.straightWires (rawFixup16 cur rs) :=
+    ⟨fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this,
+     fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this⟩
+  rw [compiledFixup16]; dsimp only [CatProg.append]
+  exact straight_append_wellFormed _ _
+    (straight_append_wellFormed _ _ (CatProg.lit_wellFormed [.X rootWire] (circuitWF_X rootWire))
+      (compileLower_wellFormed 14832 14833 (rawFixup16 cur rs) cur id
+        (fresh_of_not_mem_straightWires _ _ hav.1) (fresh_of_not_mem_straightWires _ _ hav.2) (by decide)
+        (by rw [rawFixup16]; exact MeasuredClear.fixupProgram_wellFormed8 _ _ _ _ _ _ _ _
+              tree8_16_layout hot8W_inj low8W_ne_hot8W fixScratch8_not_tree fixScratch8_not_hot)))
+    (CatProg.lit_wellFormed [.X rootWire] (circuitWF_X rootWire))
+
+private theorem compiledFixup16_sim (read : ConstantBit (2 ^ 16) → Bool) (os : List Bool) (ho : os.length = 3072)
     (cur : Nat) (rs : List (Fin cur)) (hh : Fin cur → Bool) (hrs : rs.map hh = os) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (t : BasisState),
-        tableAddressValue bits16 t = a →
-        CleanOutsideXYBank t →
-        b.kraus (Prep 14833 (ket t)) = (c * portPhase allData os read a) • Prep 14833 (ket t))
-      ((compiledFixup cur rs).prog.instantiate read hh).run cs ∧
-    (cs.map Complex.normSq).sum = 1 := by
-  obtain ⟨cs0, al0, m0⟩ := MeasuredClear.fixupSource_coherent8 allData os read WideBank8.low8 hot8 tree8
-    rootWire fixScratch fixPaths8 tree8_layout hot8_inj low8_ne_hot8 hot8_disj fixScratch_not_tree fixScratch_not_hot
-  have hrun : ((rawFixup cur rs).instantiate read hh).run =
-      (MeasuredClear.fixupSource8 allData os read WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8).run := by
-    rw [rawFixup, ← hrs]; exact MeasuredClear.fixupProgram_run8 _ _ _ _ _ _ _ _ _ _
+        tableAddressValue (bitsW 16) t = a → CleanOutsideXYBank t →
+        b.kraus (Prep 14833 (ket t)) = (c * portPhase (allDataW 16) os read a) • Prep 14833 (ket t))
+      ((compiledFixup16 cur rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  obtain ⟨cs0, al0, m0⟩ := MeasuredClear.fixupSource_coherent8 (allDataW 16) os read low8W hot8W tree8_16
+    rootWire fixScratch8 fixPaths8 tree8_16_layout hot8W_inj low8W_ne_hot8W hot8W_disj fixScratch8_not_tree fixScratch8_not_hot
+  have hrun : ((rawFixup16 cur rs).instantiate read hh).run =
+      (MeasuredClear.fixupSource8 (allDataW 16) os read low8W hot8W tree8_16 rootWire fixScratch8 fixPaths8).run := by
+    rw [rawFixup16, ← hrs]; exact MeasuredClear.fixupProgram_run8 _ _ _ _ _ _ _ _ _ _
   rw [← hrun] at al0
-  have hav := rawFixup_avoid cur rs
-  obtain ⟨cs', al', m'⟩ := compileLower_lift_raw 14832 14833 (rawFixup cur rs) cur id read hh hh (fun _ => rfl)
-    (by
-      rw [rawFixup]
-      exact MeasuredClear.fixupProgram_wellFormed8 allData rs WideBank8.low8 hot8 tree8 rootWire fixScratch fixPaths8
-        tree8_layout hot8_inj low8_ne_hot8 fixScratch_not_tree fixScratch_not_hot)
+  have hsub := rawFixup16_wires_sub cur rs
+  have hav : (14832 : Wire) ∉ ChallengeMigration.straightWires (rawFixup16 cur rs) ∧
+      (14833 : Wire) ∉ ChallengeMigration.straightWires (rawFixup16 cur rs) :=
+    ⟨fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this,
+     fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this⟩
+  obtain ⟨cs', al', m'⟩ := compileLower_lift_raw 14832 14833 (rawFixup16 cur rs) cur id read hh hh (fun _ => rfl)
+    (by rw [rawFixup16]; exact MeasuredClear.fixupProgram_wellFormed8 _ _ _ _ _ _ _ _
+          tree8_16_layout hot8W_inj low8W_ne_hot8W fixScratch8_not_tree fixScratch8_not_hot)
     (fresh_of_not_mem_straightWires _ _ hav.1) (fresh_of_not_mem_straightWires _ _ hav.2) (by decide) _ cs0 al0
   refine ⟨cs', ?_, m'.trans m0⟩
-  rw [compiledFixup, compiledFixup_surround_run (rawFixup cur rs) read hh, List.forall₂_map_left_iff]
+  rw [compiledFixup16, compiledFixup_surround_run (rawFixup16 cur rs) read hh, List.forall₂_map_left_iff]
   refine al'.imp (fun b' c' ⟨b, c, α, hb, hc', hlift⟩ a t ha hcl => ?_)
   have hrt0 : t rootWire = false := hcl rootWire (by decide) (by decide) (by decide)
   let t1 : BasisState := t[rootWire ↦ true]
   have ht1_32 : t1 14832 = false := by simp [t1, upd, rootWire, hcl 14832 (by decide) (by decide) (by decide)]
   have ht1_33 : t1 14833 = false := by simp [t1, upd, rootWire, hcl 14833 (by decide) (by decide) (by decide)]
-  have ht1_hot : MeasuredClear.HotClean8 hot8 t1 := fun i => by
+  have ht1_hot : MeasuredClear.HotClean8 hot8W t1 := fun i => by
     have hi := i.isLt
-    simp [t1, upd, hot8, rootWire, show 14374 + i.val ≠ 14849 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
+    simp [t1, upd, hot8W, rootWire, show 14374 + i.val ≠ 14851 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
       hcl (14374 + i.val) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
   have ht1_paths : Clean fixPaths8 t1 := fun w hw => by
     simp only [fixPaths8, List.mem_range'_1] at hw
-    simp [t1, upd, rootWire, show w ≠ 14849 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
+    simp [t1, upd, rootWire, show w ≠ 14851 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
       hcl w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
-  have ht1_addr : 256 * tree8.routeLabel t1 + MeasuredClear.hotAddress8 WideBank8.low8 t1 = a := by
-    rw [tree8, MeasuredClear.splitAddress_value8 WideBank8.low8 WideBank8.Fast16.high t1]
-    rw [low8_high_eq_bits16, ← ha]
-    apply WEX.tableAddressValue_congr
-    intro w hw; have hwb := mem_bits16.mp hw
-    have hwne : w ≠ 14849 := by rcases hwb with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-    simp [t1, upd, rootWire, hwne]
-  have hfac := fixupFactor8_eq_portPhase allData os (ho.trans allData_len.symm) read WideBank8.low8 hot8
-    tree8 rootWire fixPaths8 hot8_inj low8_ne_hot8 hot8_disj t1 a ht1_hot ht1_addr (by simp [t1, upd])
+  have ht1_addr : 256 * tree8_16.routeLabel t1 + MeasuredClear.hotAddress8 low8W t1 = a := by
+    rw [tree8_16, MeasuredClear.splitAddress_value8 low8W high8_16 t1, low8W_high_eq_bits16, ← ha]
+    apply WEX.tableAddressValue_congr; intro w hw
+    have hwb := mem_bitsW.mp hw
+    simp [t1, upd, rootWire, show w ≠ 14851 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))]
+  have hfac := fixupFactor8_eq_portPhase (allDataW 16) os (ho.trans (allDataW_len (by decide) (by decide)).symm)
+    read low8W hot8W tree8_16 rootWire fixPaths8 hot8W_inj low8W_ne_hot8W hot8W_disj t1 a ht1_hot ht1_addr (by simp [t1, upd])
   have hx1 : Quantum.run [.X rootWire] (Prep 14833 (ket t)) = Prep 14833 (ket t1) := by
     rw [prep_circuit 14833 ([.X rootWire] : Circuit) (by decide), Quantum.run_singleton, applyGate_X_ket, hrt0]; rfl
   have hx2 : Quantum.run [.X rootWire] (Prep 14833 (ket t1)) = Prep 14833 (ket t) := by
     rw [prep_circuit 14833 ([.X rootWire] : Circuit) (by decide), Quantum.run_singleton, applyGate_X_ket]
     have ht1r : t1 rootWire = true := by simp [t1, upd]
-    rw [ht1r]; congr 2; funext w
+    rw [ht1r]; apply congrArg (Prep 14833); apply congrArg ket; funext w
     by_cases hw : w = rootWire
     · subst hw; simp [t1, upd, hrt0]
     · simp [t1, upd, hw]
@@ -16718,235 +16888,504 @@ theorem compiledFixup_sim (read : ConstantBit 65536 → Bool) (os : List Bool) (
   rw [hx1, hlift (ket t1) (supportedOn_ket _ t1 ⟨ht1_32, ht1_33⟩), hb t1 ⟨ht1_hot, ht1_paths⟩,
     MeasuredClear.basisIdeal_ket, id_eq, hfac, map_smul, map_smul, map_smul, map_smul, map_smul, hx2, smul_smul, smul_smul, hc']
 
-/-! #### 8. 18-step generic-only core (`compiledGenericCore`, `2,237,754` Toffolis, `3,825,361` records) -/
+def fixupSpec16 : FixupSpec 16 where
+  prog := compiledFixup16
+  tof := 502
+  fin := 1012
+  slots := 4000000000
+  finish_eq := compiledFixup16_finish
+  removed18 := compiledFixup16_removed18
+  tCount := compiledFixup16_tCount
+  slots_le := compiledFixup16_slots
+  wires_sub := compiledFixup16_wires_sub
+  wellFormed := compiledFixup16_wellFormed
+  sim := compiledFixup16_sim
+
+-- 9-bit low / (k - 9)-bit high fixup (`k = 17` → `757` Tof, `k = 18` → `1,013` Tof)
+def low9W (i : Fin 9) : Wire := 855 + i.val
+def high9W (k : Nat) : List Wire := List.range' 864 (k - 9)
+def fixPaths9W (k : Nat) : List Wire := List.range' 14834 (k - 9)
+def fixScratch9 : Wire := 14115
+def hot9W (i : Fin 512) : Wire := 14116 + i.val
+def tree9W (k : Nat) : UnaryActionTree := tableAddressTree (high9W k) 0 1
+
+def rawFixup9 (k : Nat) (cur : Nat) (rs : List (Fin cur)) :=
+  MeasuredClear.fixupProgram9 (allDataW k) rs low9W hot9W (tree9W k) rootWire fixScratch9 (fixPaths9W k)
+
+def compiledFixup9 (k : Nat) (cur : Nat) (rs : List (Fin cur)) : CatProg (2 ^ k) cur :=
+  let r := compileLower 14832 14833 (rawFixup9 k cur rs) cur id
+  ((CatProg.lit [.X rootWire]).append ⟨r.finish, r.program⟩).append (CatProg.lit [.X rootWire])
+
+attribute [local irreducible] rawFixup9 compiledFixup9
+
+private theorem tree9W_layout {k : Nat} (hk : k = 17 ∨ k = 18) : (tree9W k).Layout rootWire (fixPaths9W k) := by
+  rcases hk with rfl | rfl <;> exact tableAddressTree_layout _ _ _ 0 1 (by decide) (by decide)
+private theorem tree9W_nodes {k : Nat} (hk : k = 17 ∨ k = 18) : (tree9W k).internalNodes = 2 ^ (k - 9) - 1 := by
+  have h := tableAddressTree_nodes (high9W k) 0 1
+  have hl : (high9W k).length = k - 9 := by rcases hk with rfl | rfl <;> decide
+  rw [hl] at h; unfold tree9W; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem tree9W_leaves {k : Nat} (hk : k = 17 ∨ k = 18) : (tree9W k).leaves = 2 ^ (k - 9) := by
+  have h := MeasuredClear.addressTree_leaves (high9W k) 0 1
+  have hl : (high9W k).length = k - 9 := by rcases hk with rfl | rfl <;> decide
+  simpa [tree9W, hl] using h
+private theorem tree9W_index {k : Nat} (hk : k = 17 ∨ k = 18) : (tree9W k).indexWires.dedup = high9W k :=
+  tableAddressTree_index (high9W k) 0 1 (by rcases hk with rfl | rfl <;> decide)
+private theorem hot9W_inj : Function.Injective hot9W := fun a b h => by
+  apply Fin.ext; simp only [hot9W] at h; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem low9W_ne_hot9W (i : Fin 9) (j : Fin 512) : low9W i ≠ hot9W j := by
+  have hi := i.isLt; have hj := j.isLt; simp only [low9W, hot9W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem hot9W_disj {k : Nat} (hk : k = 17 ∨ k = 18) :
+    (MeasuredClear.hotBank9 hot9W).Disjoint (rootWire :: (tree9W k).indexWires.dedup ++ fixPaths9W k) := by
+  rw [List.disjoint_left]; intro w hw hm
+  obtain ⟨j, rfl⟩ := List.mem_ofFn.mp hw
+  have hj := j.isLt
+  rw [tree9W_index hk] at hm
+  simp only [rootWire, fixPaths9W, high9W, hot9W, List.mem_cons, List.mem_append, List.mem_range'_1, or_assoc] at hm
+  rcases hk with rfl | rfl <;> (rcases hm with h | h | h <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+private theorem fixScratch9_not_tree {k : Nat} (hk : k = 17 ∨ k = 18) :
+    fixScratch9 ∉ rootWire :: (tree9W k).indexWires.dedup ++ fixPaths9W k := by
+  rw [tree9W_index hk]; rcases hk with rfl | rfl <;> decide
+private theorem fixScratch9_not_hot : fixScratch9 ∉ MeasuredClear.hotBank9 hot9W := by
+  intro hm; obtain ⟨j, hj⟩ := List.mem_ofFn.mp hm; simp only [hot9W, fixScratch9] at hj; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+private theorem low9W_high_eq_bitsW {k : Nat} (hk : k = 17 ∨ k = 18) :
+    [MeasuredClear.lowN9 low9W 0, MeasuredClear.lowN9 low9W 1, MeasuredClear.lowN9 low9W 2,
+     MeasuredClear.lowN9 low9W 3, MeasuredClear.lowN9 low9W 4, MeasuredClear.lowN9 low9W 5,
+     MeasuredClear.lowN9 low9W 6, MeasuredClear.lowN9 low9W 7, MeasuredClear.lowN9 low9W 8] ++ high9W k = bitsW k := by
+  unfold bitsW high9W; rcases hk with rfl | rfl <;> decide
+
+private theorem rawFixup9_added {k : Nat} (hk : k = 17 ∨ k = 18) (cur : Nat) (rs : List (Fin cur)) :
+    AndGadget.added (rawFixup9 k cur rs) = 2 ^ (k - 9) - 1 + 502 := by
+  rw [rawFixup9]
+  have hres := MeasuredClear.fixupProgram_residue9 (allDataW k) rs low9W hot9W (tree9W k) rootWire fixScratch9 (fixPaths9W k)
+  have he := WEXCredit.exact_t _ hres (fun _ => false) (fun _ => false)
+  have ht := MeasuredClear.fixupProgram_tCount9 (allDataW k) rs low9W hot9W (tree9W k) rootWire fixScratch9 (fixPaths9W k)
+    (tree9W_layout hk) (fun _ => false) (fun _ => false)
+  rw [tree9W_nodes hk] at ht
+  have h7 : 7 * (2 ^ (k - 9) - 1) + 3514 = 7 * (2 ^ (k - 9) - 1 + 502) := by ring
+  rw [h7] at ht
+  exact Nat.eq_of_mul_eq_mul_left (by decide : 0 < 7) (he.symm.trans ht)
+
+private theorem rawFixup9_wires_sub {k : Nat} (hk : k = 17 ∨ k = 18) (cur : Nat) (rs : List (Fin cur)) :
+    ChallengeMigration.straightWires (rawFixup9 k cur rs) ⊆
+      support1612.filter (fun w => decide (w ≠ 14832 ∧ w ≠ 14833)) := by
+  let S := support1612.filter (fun w => decide (w ≠ 14832 ∧ w ≠ 14833))
+  have hmS (w : Wire) (h1 : w ∈ support1612) (h2 : w ≠ 14832) (h3 : w ≠ 14833) : w ∈ S :=
+    List.mem_filter.mpr ⟨h1, by simp [h2, h3]⟩
+  rw [rawFixup9, WEX.support_agrees]
+  refine MeasuredClear.fixupProgram_within9 _ _ _ _ _ _ _ _ S
+    (hmS _ (mem_support1612.mpr (by decide)) (by decide) (by decide))
+    (hmS _ (mem_support1612.mpr (by decide)) (by decide) (by decide))
+    (fun i => hmS _ (mem_support1612_bank (by have := i.isLt; simp only [low9W]; exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
+      (by have := i.isLt; simp only [low9W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      (by have := i.isLt; simp only [low9W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun i => hmS _ (mem_support1612_p1 (by have := i.isLt; simp only [hot9W]; exact ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
+      (by have := i.isLt; simp only [hot9W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+      (by have := i.isLt; simp only [hot9W]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by
+      have h1 : w ∈ high9W k := (tableAddressTree_mem_index (high9W k) 0 1 w).mp hw
+      simp only [high9W, List.mem_range'_1] at h1
+      have hkh : k ≤ 18 := by rcases hk with rfl | rfl <;> decide
+      exact hmS w (mem_support1612_bank ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+    (fun w hw => by
+      simp only [fixPaths9W, List.mem_range'_1] at hw
+      have hkh : k ≤ 18 := by rcases hk with rfl | rfl <;> decide
+      exact hmS w (mem_support1612_p2 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
+
+private theorem compiledFixup9_finish {k : Nat} (hk : k = 17 ∨ k = 18) (cur : Nat) (rs : List (Fin cur)) :
+    (compiledFixup9 k cur rs).finish = cur + (2 * (2 ^ (k - 9) - 1) + 1013) := by
+  rw [compiledFixup9]
+  change (compileLower 14832 14833 (rawFixup9 k cur rs) cur id).finish = cur + (2 * (2 ^ (k - 9) - 1) + 1013)
+  have hfin := compileLower_finish 14832 14833 (rawFixup9 k cur rs) cur id
+  have hadd := rawFixup9_added hk cur rs
+  have hrec : MeasuredClear.recordMeasurements (MeasuredClear.recordUnaryOps (tree9W k) rootWire (fixPaths9W k)) + 511 =
+      (2 ^ (k - 9) - 1) + 511 := by
+    rw [(MeasuredClear.recordUnary_counts (tree9W k) rootWire (fixPaths9W k) (tree9W_layout hk) 0).1, tree9W_nodes hk]
+  (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+private theorem compiledFixup9_removed18 {k : Nat} (cur : Nat) (rs : List (Fin cur)) :
+    removed 18 (compiledFixup9 k cur rs).prog = 0 := by
+  rw [compiledFixup9]; dsimp only [CatProg.append]
+  rw [LocalFour.removed_append, LocalFour.removed_append, CatProg.lit_removed, CatProg.lit_removed,
+    compileLower_removed18 14832 14833 (rawFixup9 k cur rs) cur id,
+    removed18_zero_of_residue (rawFixup9 k cur rs) (by rw [rawFixup9]; exact MeasuredClear.fixupProgram_residue9 _ _ _ _ _ _ _ _)]
+  rfl
+
+private theorem compiledFixup9_tCount {k : Nat} (hk : k = 17 ∨ k = 18) (read : ConstantBit (2 ^ k) → Bool)
+    (cur : Nat) (rs : List (Fin cur)) (hh : Fin cur → Bool) :
+    ((compiledFixup9 k cur rs).prog.instantiate read hh).tCount ≤ 4 * (2 ^ (k - 9) - 1 + 502) := by
+  rw [compiledFixup9]; dsimp only [CatProg.append]
+  rw [indep_append_tCount _ _ (CatProg.lit_indep _) read hh, CatProg.lit_tCount]
+  have hlt : ShorECDLP.tCount [.X rootWire] = 0 := rfl
+  rw [hlt, Nat.add_zero]
+  have h1 := b_append_tCount_le (CatProg.lit (n := 2 ^ k) (start := cur) [.X rootWire]).prog
+    (compileLower 14832 14833 (rawFixup9 k cur rs) cur id).program read hh (4 * (2 ^ (k - 9) - 1 + 502)) (fun h' => by
+      have hc := compileLower_tCount 14832 14833 (rawFixup9 k cur rs) cur id read h'
+      have hw := ConditionalCatalyst.weight4_zero (rawFixup9 k cur rs)
+        (by rw [rawFixup9]; exact MeasuredClear.fixupProgram_residue9 _ _ _ _ _ _ _ _)
+      rw [rawFixup9_added hk cur rs] at hw
+      exact hc.trans (le_of_eq hw))
+  rw [CatProg.lit_tCount, hlt, Nat.zero_add] at h1
+  exact h1
+
+private theorem compiledFixup9_slots {k : Nat} (hk : k = 17 ∨ k = 18) (cur : Nat) (rs : List (Fin cur)) :
+    (compiledFixup9 k cur rs).prog.gateSlots ≤ 16000000000 := by
+  rw [compiledFixup9]; dsimp only [CatProg.append]
+  rw [Straight.gateSlots_append, Straight.gateSlots_append, CatProg.lit_slots, CatProg.lit_slots]
+  have hcl := compileLower_slots 14832 14833 (rawFixup9 k cur rs) cur id
+  have hfs : (rawFixup9 k cur rs).gateSlots =
+      2048 * min (allDataW k).length rs.length * (tree9W k).leaves + 10 * (tree9W k).internalNodes + 4594 := by
+    rw [rawFixup9]; exact MeasuredClear.fixupProgram_slots9 (allDataW k) rs low9W hot9W (tree9W k) rootWire fixScratch9 (fixPaths9W k) (tree9W_layout hk)
+  have hlo : 16 ≤ k := by rcases hk with rfl | rfl <;> decide
+  have hhi : k ≤ 18 := by rcases hk with rfl | rfl <;> decide
+  rw [allDataW_len hlo hhi, tree9W_leaves hk, tree9W_nodes hk] at hfs
+  rw [rawFixup9_added hk cur rs] at hcl
+  have hmin : min 3072 rs.length ≤ 3072 := Nat.min_le_left _ _
+  have hpow : 2 ^ (k - 9) ≤ 512 := by rcases hk with rfl | rfl <;> decide
+  have hprod : 2048 * min 3072 rs.length * 2 ^ (k - 9) ≤ 2048 * 3072 * 512 :=
+    Nat.mul_le_mul (Nat.mul_le_mul_left 2048 hmin) hpow
+  simp only [List.length_cons, List.length_nil]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+private theorem compiledFixup9_wires_sub {k : Nat} (hk : k = 17 ∨ k = 18) (cur : Nat) (rs : List (Fin cur)) :
+    ChallengeMigration.straightWires (compiledFixup9 k cur rs).prog ⊆ support1612 := by
+  have hx : circuitWires [.X rootWire] ⊆ support1612 := by
+    intro w hw; simp [circuitWires, gateWires, rootWire] at hw; subst hw; exact mem_support1612.mpr (by decide)
+  rw [compiledFixup9]; dsimp only [CatProg.append]
+  rw [straightWires_append, straightWires_append, CatProg.lit_wires, CatProg.lit_wires]
+  refine List.append_subset.mpr ⟨List.append_subset.mpr ⟨hx, ?_⟩, hx⟩
+  exact compileLower_straightWires 14832 14833 (rawFixup9 k cur rs) support1612
+    (fun w hw => (List.mem_filter.mp (rawFixup9_wires_sub hk cur rs hw)).1)
+    (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide)) cur id
+
+private theorem compiledFixup9_wellFormed {k : Nat} (hk : k = 17 ∨ k = 18) (cur : Nat) (rs : List (Fin cur)) :
+    (compiledFixup9 k cur rs).prog.WellFormed := by
+  have hsub := rawFixup9_wires_sub hk cur rs
+  have hav : (14832 : Wire) ∉ ChallengeMigration.straightWires (rawFixup9 k cur rs) ∧
+      (14833 : Wire) ∉ ChallengeMigration.straightWires (rawFixup9 k cur rs) :=
+    ⟨fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this,
+     fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this⟩
+  rw [compiledFixup9]; dsimp only [CatProg.append]
+  exact straight_append_wellFormed _ _
+    (straight_append_wellFormed _ _ (CatProg.lit_wellFormed [.X rootWire] (circuitWF_X rootWire))
+      (compileLower_wellFormed 14832 14833 (rawFixup9 k cur rs) cur id
+        (fresh_of_not_mem_straightWires _ _ hav.1) (fresh_of_not_mem_straightWires _ _ hav.2) (by decide)
+        (by rw [rawFixup9]; exact MeasuredClear.fixupProgram_wellFormed9 _ _ _ _ _ _ _ _
+              (tree9W_layout hk) hot9W_inj low9W_ne_hot9W (fixScratch9_not_tree hk) fixScratch9_not_hot)))
+    (CatProg.lit_wellFormed [.X rootWire] (circuitWF_X rootWire))
+
+private theorem compiledFixup9_sim {k : Nat} (hk : k = 17 ∨ k = 18) (read : ConstantBit (2 ^ k) → Bool)
+    (os : List Bool) (ho : os.length = 3072) (cur : Nat) (rs : List (Fin cur)) (hh : Fin cur → Bool)
+    (hrs : rs.map hh = os) :
+    ∃ cs : List ℂ, List.Forall₂
+      (fun b c => ∀ (a : Nat) (t : BasisState),
+        tableAddressValue (bitsW k) t = a → CleanOutsideXYBank t →
+        b.kraus (Prep 14833 (ket t)) = (c * portPhase (allDataW k) os read a) • Prep 14833 (ket t))
+      ((compiledFixup9 k cur rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  have hlo : 16 ≤ k := by rcases hk with rfl | rfl <;> decide
+  have hhi : k ≤ 18 := by rcases hk with rfl | rfl <;> decide
+  obtain ⟨cs0, al0, m0⟩ := MeasuredClear.fixupSource_coherent9 (allDataW k) os read low9W hot9W (tree9W k)
+    rootWire fixScratch9 (fixPaths9W k) (tree9W_layout hk) hot9W_inj low9W_ne_hot9W (hot9W_disj hk) (fixScratch9_not_tree hk) fixScratch9_not_hot
+  have hrun : ((rawFixup9 k cur rs).instantiate read hh).run =
+      (MeasuredClear.fixupSource9 (allDataW k) os read low9W hot9W (tree9W k) rootWire fixScratch9 (fixPaths9W k)).run := by
+    rw [rawFixup9, ← hrs]; exact MeasuredClear.fixupProgram_run9 _ _ _ _ _ _ _ _ _ _
+  rw [← hrun] at al0
+  have hsub := rawFixup9_wires_sub hk cur rs
+  have hav : (14832 : Wire) ∉ ChallengeMigration.straightWires (rawFixup9 k cur rs) ∧
+      (14833 : Wire) ∉ ChallengeMigration.straightWires (rawFixup9 k cur rs) :=
+    ⟨fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this,
+     fun hm => by have := (List.mem_filter.mp (hsub hm)).2; simp at this⟩
+  obtain ⟨cs', al', m'⟩ := compileLower_lift_raw 14832 14833 (rawFixup9 k cur rs) cur id read hh hh (fun _ => rfl)
+    (by rw [rawFixup9]; exact MeasuredClear.fixupProgram_wellFormed9 _ _ _ _ _ _ _ _
+          (tree9W_layout hk) hot9W_inj low9W_ne_hot9W (fixScratch9_not_tree hk) fixScratch9_not_hot)
+    (fresh_of_not_mem_straightWires _ _ hav.1) (fresh_of_not_mem_straightWires _ _ hav.2) (by decide) _ cs0 al0
+  refine ⟨cs', ?_, m'.trans m0⟩
+  rw [compiledFixup9, compiledFixup_surround_run (rawFixup9 k cur rs) read hh, List.forall₂_map_left_iff]
+  refine al'.imp (fun b' c' ⟨b, c, α, hb, hc', hlift⟩ a t ha hcl => ?_)
+  have hrt0 : t rootWire = false := hcl rootWire (by decide) (by decide) (by decide)
+  let t1 : BasisState := t[rootWire ↦ true]
+  have ht1_32 : t1 14832 = false := by simp [t1, upd, rootWire, hcl 14832 (by decide) (by decide) (by decide)]
+  have ht1_33 : t1 14833 = false := by simp [t1, upd, rootWire, hcl 14833 (by decide) (by decide) (by decide)]
+  have ht1_hot : MeasuredClear.HotClean9 hot9W t1 := fun i => by
+    have hi := i.isLt
+    simp [t1, upd, hot9W, rootWire, show 14116 + i.val ≠ 14851 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
+      hcl (14116 + i.val) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
+  have ht1_paths : Clean (fixPaths9W k) t1 := fun w hw => by
+    simp only [fixPaths9W, List.mem_range'_1] at hw
+    simp [t1, upd, rootWire, show w ≠ 14851 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)),
+      hcl w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))]
+  have ht1_addr : 512 * (tree9W k).routeLabel t1 + MeasuredClear.hotAddress9 low9W t1 = a := by
+    rw [tree9W, MeasuredClear.splitAddress_value9 low9W (high9W k) t1, low9W_high_eq_bitsW hk, ← ha]
+    apply WEX.tableAddressValue_congr; intro w hw
+    have hwb := mem_bitsW.mp hw
+    simp [t1, upd, rootWire, show w ≠ 14851 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))]
+  have hfac := fixupFactor9_eq_portPhase (allDataW k) os (ho.trans (allDataW_len hlo hhi).symm)
+    read low9W hot9W (tree9W k) rootWire (fixPaths9W k) hot9W_inj low9W_ne_hot9W (hot9W_disj hk) t1 a ht1_hot ht1_addr (by simp [t1, upd])
+  have hx1 : Quantum.run [.X rootWire] (Prep 14833 (ket t)) = Prep 14833 (ket t1) := by
+    rw [prep_circuit 14833 ([.X rootWire] : Circuit) (by decide), Quantum.run_singleton, applyGate_X_ket, hrt0]; rfl
+  have hx2 : Quantum.run [.X rootWire] (Prep 14833 (ket t1)) = Prep 14833 (ket t) := by
+    rw [prep_circuit 14833 ([.X rootWire] : Circuit) (by decide), Quantum.run_singleton, applyGate_X_ket]
+    have ht1r : t1 rootWire = true := by simp [t1, upd]
+    rw [ht1r]; apply congrArg (Prep 14833); apply congrArg ket; funext w
+    by_cases hw : w = rootWire
+    · subst hw; simp [t1, upd, hrt0]
+    · simp [t1, upd, hw]
+  dsimp only; simp only [LinearMap.comp_apply]
+  rw [hx1, hlift (ket t1) (supportedOn_ket _ t1 ⟨ht1_32, ht1_33⟩), hb t1 ⟨ht1_hot, ht1_paths⟩,
+    MeasuredClear.basisIdeal_ket, id_eq, hfac, map_smul, map_smul, map_smul, map_smul, map_smul, hx2, smul_smul, smul_smul, hc']
+
+def fixupSpec9 (k : Nat) (hk : k = 17 ∨ k = 18) : FixupSpec k where
+  prog := compiledFixup9 k
+  tof := 2 ^ (k - 9) - 1 + 502
+  fin := 2 * (2 ^ (k - 9) - 1) + 1013
+  slots := 16000000000
+  finish_eq := compiledFixup9_finish hk
+  removed18 := compiledFixup9_removed18
+  tCount := compiledFixup9_tCount hk
+  slots_le := compiledFixup9_slots hk
+  wires_sub := compiledFixup9_wires_sub hk
+  wellFormed := compiledFixup9_wellFormed hk
+  sim := compiledFixup9_sim hk
+
+
+/-! #### 8. Polymorphic 18-step generic-only core (`compiledGenericCoreW`, parameterized by `(k, fx)`) -/
+
+attribute [local irreducible] List.range'
 
 def cxCy : List Wire := cxWord ++ cyWord
 theorem cxCy_len : cxCy.length = 512 := by simp [cxCy, cxWord_length, cyWord_length]
 
-def gStep18 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := CatProg.measureThen compiledFixup cxCy s rs
-def gStep17 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledYAdd gStep18 s rs
-def gStep16 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledXAdd gStep17 s rs
-def gStep15 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := CatProg.measureThen gStep16 g1_1 s rs
-def gStep14 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn (wrapSS (ss1Rec.loadProg 0)) gStep15 s rs
-def gStep13 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledNegX gStep14 s rs
-def gStep12 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn (compiledDirectArith true) gStep13 s rs
-def gStep11 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := CatProg.measureThen gStep12 cxWord s rs
-def gStep10 (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledXAdd gStep11 s rs
-def gStep9  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := CatProg.measureThen gStep10 g4 s rs
-def gStep8  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn (wrapSS (ss2Triple.loadProg 0)) gStep9 s rs
-def gStep7  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledSquare gStep8 s rs
-def gStep6  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn (compiledDirectArith false) gStep7 s rs
-def gStep5  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := CatProg.measureThen gStep6 cxCy s rs
-def gStep4  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledYAdd gStep5 s rs
-def gStep3  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := stepCatFn compiledXAdd gStep4 s rs
-def gStep2  (s : Nat) (rs : List (Fin s)) : CatProg 65536 s := CatProg.measureThen gStep3 g1_1 s rs
-def compiledGenericCore (s : Nat) (rs : List (Fin s)) : CatProg 65536 s :=
-  stepCatFn (wrapSS (ss1Neg.loadProg 0)) gStep2 s rs
+def gStep18W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen fx.prog cxCy s rs
+def gStep17W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledYAdd (gStep18W fx) s rs
+def gStep16W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep17W fx) s rs
+def gStep15W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep16W fx) g1_1 s rs
+def gStep14W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (wrapSS ((ss1RecW k).loadProg 0)) (gStep15W fx) s rs
+def gStep13W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledNegX (gStep14W fx) s rs
+def gStep12W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (compiledDirectArith true) (gStep13W fx) s rs
+def gStep11W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep12W fx) cxWord s rs
+def gStep10W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep11W fx) s rs
+def gStep9W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep10W fx) g4 s rs
+def gStep8W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (wrapSS ((ss2TripleW k).loadProg 0)) (gStep9W fx) s rs
+def gStep7W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledSquare (gStep8W fx) s rs
+def gStep6W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (compiledDirectArith false) (gStep7W fx) s rs
+def gStep5W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep6W fx) cxCy s rs
+def gStep4W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledYAdd (gStep5W fx) s rs
+def gStep3W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep4W fx) s rs
+def gStep2W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep3W fx) g1_1 s rs
+def compiledGenericCoreW {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s :=
+  stepCatFn (wrapSS ((ss1NegW k).loadProg 0)) (gStep2W fx) s rs
 
-attribute [local irreducible] gStep18 gStep17 gStep16 gStep15 gStep14 gStep13 gStep12 gStep11
-  gStep10 gStep9 gStep8 gStep7 gStep6 gStep5 gStep4 gStep3 gStep2 compiledGenericCore
+attribute [local irreducible] gStep18W gStep17W gStep16W gStep15W gStep14W gStep13W gStep12W gStep11W
+  gStep10W gStep9W gStep8W gStep7W gStep6W gStep5W gStep4W gStep3W gStep2W compiledGenericCoreW
 
-theorem compiledGenericCore_shiftFin :
-    ShiftFin (fun s => compiledGenericCore s List.nil) 3825361 := by
-  have h18 : ∃ D, (∀ c rs, (gStep18 c rs).finish = c + D) ∧ D ≤ 1524 := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin compiledFixup cxCy 1012 ⟨1012, compiledFixup_finish, le_rfl⟩
-    exact ⟨D, fun c rs => by rw [gStep18]; exact h1 c rs, by rw [cxCy_len] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h17 : ∃ D, (∀ c rs, (gStep17 c rs).finish = c + D) ∧ D ≤ 3570 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledYAdd gStep18 2046 1524 compiledYAdd_shiftFin h18
-    exact ⟨D, fun c rs => by rw [gStep17]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h16 : ∃ D, (∀ c rs, (gStep16 c rs).finish = c + D) ∧ D ≤ 5616 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd gStep17 2046 3570 compiledXAdd_shiftFin h17
-    exact ⟨D, fun c rs => by rw [gStep16]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h15 : ∃ D, (∀ c rs, (gStep15 c rs).finish = c + D) ∧ D ≤ 6128 := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin gStep16 g1_1 5616 h16
-    exact ⟨D, fun c rs => by rw [gStep15]; exact h1 c rs, by rw [g1_1_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h14 : ∃ D, (∀ c rs, (gStep14 c rs).finish = c + D) ∧ D ≤ 72174 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (wrapSS (ss1Rec.loadProg 0)) gStep15 66046 6128 ss1Rec_shiftFin h15
-    exact ⟨D, fun c rs => by rw [gStep14]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h13 : ∃ D, (∀ c rs, (gStep13 c rs).finish = c + D) ∧ D ≤ 72680 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledNegX gStep14 506 72174 compiledNegX_shiftFin h14
-    exact ⟨D, fun c rs => by rw [gStep13]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h12 : ∃ D, (∀ c rs, (gStep12 c rs).finish = c + D) ∧ D ≤ 1842034 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (compiledDirectArith true) gStep13 1769354 72680 (compiledDirectArith_shiftFin true) h13
-    exact ⟨D, fun c rs => by rw [gStep12]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h11 : ∃ D, (∀ c rs, (gStep11 c rs).finish = c + D) ∧ D ≤ 1842290 := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin gStep12 cxWord 1842034 h12
-    exact ⟨D, fun c rs => by rw [gStep11]; exact h1 c rs, by rw [cxWord_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h10 : ∃ D, (∀ c rs, (gStep10 c rs).finish = c + D) ∧ D ≤ 1844336 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd gStep11 2046 1842290 compiledXAdd_shiftFin h11
-    exact ⟨D, fun c rs => by rw [gStep10]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h9 : ∃ D, (∀ c rs, (gStep9 c rs).finish = c + D) ∧ D ≤ 1845104 := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin gStep10 g4 1844336 h10
-    exact ⟨D, fun c rs => by rw [gStep9]; exact h1 c rs, by rw [g4_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h8 : ∃ D, (∀ c rs, (gStep8 c rs).finish = c + D) ∧ D ≤ 1878638 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (wrapSS (ss2Triple.loadProg 0)) gStep9 33534 1845104 ss2Triple_shiftFin h9
-    exact ⟨D, fun c rs => by rw [gStep8]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h7 : ∃ D, (∀ c rs, (gStep7 c rs).finish = c + D) ∧ D ≤ 1985354 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledSquare gStep8 106716 1878638 compiledSquare_shiftFin h8
-    exact ⟨D, fun c rs => by rw [gStep7]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h6 : ∃ D, (∀ c rs, (gStep6 c rs).finish = c + D) ∧ D ≤ 3754199 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (compiledDirectArith false) gStep7 1768845 1985354 (compiledDirectArith_shiftFin false) h7
-    exact ⟨D, fun c rs => by rw [gStep6]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h5 : ∃ D, (∀ c rs, (gStep5 c rs).finish = c + D) ∧ D ≤ 3754711 := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin gStep6 cxCy 3754199 h6
-    exact ⟨D, fun c rs => by rw [gStep5]; exact h1 c rs, by rw [cxCy_len] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h4 : ∃ D, (∀ c rs, (gStep4 c rs).finish = c + D) ∧ D ≤ 3756757 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledYAdd gStep5 2046 3754711 compiledYAdd_shiftFin h5
-    exact ⟨D, fun c rs => by rw [gStep4]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h3 : ∃ D, (∀ c rs, (gStep3 c rs).finish = c + D) ∧ D ≤ 3758803 := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd gStep4 2046 3756757 compiledXAdd_shiftFin h4
-    exact ⟨D, fun c rs => by rw [gStep3]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h2 : ∃ D, (∀ c rs, (gStep2 c rs).finish = c + D) ∧ D ≤ 3759315 := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin gStep3 g1_1 3758803 h3
-    exact ⟨D, fun c rs => by rw [gStep2]; exact h1 c rs, by rw [g1_1_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  obtain ⟨D, hD1, hD2⟩ := stepCatFn_shiftFin (wrapSS (ss1Neg.loadProg 0)) gStep2 66046 3759315 ss1Neg_shiftFin h2
-  exact ShiftFin.of_exact (fun s => by rw [compiledGenericCore]; exact hD1 s List.nil) (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+theorem compiledGenericCoreW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) :
+    ShiftFin (fun s => compiledGenericCoreW fx s List.nil)
+      (3658723 + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin) := by
+  let b1 := 2 * (2 ^ (k - 1) - 1) + 512
+  let b2 := 2 * (2 ^ (k - 2) - 1) + 768
+  have h18 : ∃ D, (∀ c rs, (gStep18W fx c rs).finish = c + D) ∧ D ≤ 512 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin fx.prog cxCy fx.fin ⟨fx.fin, fx.finish_eq, le_rfl⟩
+    exact ⟨D, fun c rs => by rw [gStep18W]; exact h1 c rs, by rw [cxCy_len] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h17 : ∃ D, (∀ c rs, (gStep17W fx c rs).finish = c + D) ∧ D ≤ 2558 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledYAdd (gStep18W fx) 2046 _ compiledYAdd_shiftFin h18
+    exact ⟨D, fun c rs => by rw [gStep17W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h16 : ∃ D, (∀ c rs, (gStep16W fx c rs).finish = c + D) ∧ D ≤ 4604 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep17W fx) 2046 _ compiledXAdd_shiftFin h17
+    exact ⟨D, fun c rs => by rw [gStep16W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h15 : ∃ D, (∀ c rs, (gStep15W fx c rs).finish = c + D) ∧ D ≤ 5116 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep16W fx) g1_1 _ h16
+    exact ⟨D, fun c rs => by rw [gStep15W]; exact h1 c rs, by rw [g1_1_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h14 : ∃ D, (∀ c rs, (gStep14W fx c rs).finish = c + D) ∧ D ≤ 5116 + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (wrapSS ((ss1RecW k).loadProg 0)) (gStep15W fx) b1 _ (ss1RecW_shiftFin hk_lo hk_hi) h15
+    exact ⟨D, fun c rs => by rw [gStep14W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h13 : ∃ D, (∀ c rs, (gStep13W fx c rs).finish = c + D) ∧ D ≤ 5622 + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledNegX (gStep14W fx) 506 _ compiledNegX_shiftFin h14
+    exact ⟨D, fun c rs => by rw [gStep13W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h12 : ∃ D, (∀ c rs, (gStep12W fx c rs).finish = c + D) ∧ D ≤ 1774976 + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (compiledDirectArith true) (gStep13W fx) 1769354 _ (compiledDirectArith_shiftFin true) h13
+    exact ⟨D, fun c rs => by rw [gStep12W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h11 : ∃ D, (∀ c rs, (gStep11W fx c rs).finish = c + D) ∧ D ≤ 1775232 + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep12W fx) cxWord _ h12
+    exact ⟨D, fun c rs => by rw [gStep11W]; exact h1 c rs, by rw [cxWord_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h10 : ∃ D, (∀ c rs, (gStep10W fx c rs).finish = c + D) ∧ D ≤ 1777278 + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep11W fx) 2046 _ compiledXAdd_shiftFin h11
+    exact ⟨D, fun c rs => by rw [gStep10W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h9  : ∃ D, (∀ c rs, (gStep9W fx c rs).finish = c + D) ∧ D ≤ 1778046 + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep10W fx) g4 _ h10
+    exact ⟨D, fun c rs => by rw [gStep9W]; exact h1 c rs, by rw [g4_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h8  : ∃ D, (∀ c rs, (gStep8W fx c rs).finish = c + D) ∧ D ≤ 1778046 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (wrapSS ((ss2TripleW k).loadProg 0)) (gStep9W fx) b2 _ (ss2TripleW_shiftFin hk_lo hk_hi) h9
+    exact ⟨D, fun c rs => by rw [gStep8W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h7  : ∃ D, (∀ c rs, (gStep7W fx c rs).finish = c + D) ∧ D ≤ 1884762 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledSquare (gStep8W fx) 106716 _ compiledSquare_shiftFin h8
+    exact ⟨D, fun c rs => by rw [gStep7W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h6  : ∃ D, (∀ c rs, (gStep6W fx c rs).finish = c + D) ∧ D ≤ 3653607 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (compiledDirectArith false) (gStep7W fx) 1768845 _ (compiledDirectArith_shiftFin false) h7
+    exact ⟨D, fun c rs => by rw [gStep6W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h5  : ∃ D, (∀ c rs, (gStep5W fx c rs).finish = c + D) ∧ D ≤ 3654119 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep6W fx) cxCy _ h6
+    exact ⟨D, fun c rs => by rw [gStep5W]; exact h1 c rs, by rw [cxCy_len] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h4  : ∃ D, (∀ c rs, (gStep4W fx c rs).finish = c + D) ∧ D ≤ 3656165 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledYAdd (gStep5W fx) 2046 _ compiledYAdd_shiftFin h5
+    exact ⟨D, fun c rs => by rw [gStep4W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h3  : ∃ D, (∀ c rs, (gStep3W fx c rs).finish = c + D) ∧ D ≤ 3658211 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep4W fx) 2046 _ compiledXAdd_shiftFin h4
+    exact ⟨D, fun c rs => by rw [gStep3W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h2  : ∃ D, (∀ c rs, (gStep2W fx c rs).finish = c + D) ∧ D ≤ 3658723 + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep3W fx) g1_1 _ h3
+    exact ⟨D, fun c rs => by rw [gStep2W]; exact h1 c rs, by rw [g1_1_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  obtain ⟨D, hD1, hD2⟩ := stepCatFn_shiftFin (wrapSS ((ss1NegW k).loadProg 0)) (gStep2W fx) b1 _ (ss1NegW_shiftFin hk_lo hk_hi) h2
+  exact ShiftFin.of_exact (fun s => by rw [compiledGenericCoreW]; exact hD1 s List.nil) (by dsimp only [b1, b2] at hD2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledGenericCore_removed18 (s : Nat) (rs : List (Fin s)) :
-    removed 18 (compiledGenericCore s rs).prog = 0 := by
-  have h18 (c : Nat) (r : List (Fin c)) : removed 18 (gStep18 c r).prog = 0 := by rw [gStep18]; exact CatProg.measureThen_removed18 _ compiledFixup_removed18 _ c r
-  have h17 (c : Nat) (r : List (Fin c)) : removed 18 (gStep17 c r).prog = 0 := by rw [gStep17]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h18 c r
-  have h16 (c : Nat) (r : List (Fin c)) : removed 18 (gStep16 c r).prog = 0 := by rw [gStep16]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h17 c r
-  have h15 (c : Nat) (r : List (Fin c)) : removed 18 (gStep15 c r).prog = 0 := by rw [gStep15]; exact CatProg.measureThen_removed18 _ h16 _ c r
-  have h14 (c : Nat) (r : List (Fin c)) : removed 18 (gStep14 c r).prog = 0 := by rw [gStep14]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ (ss1Rec.loadProg_residue 0)) h15 c r
-  have h13 (c : Nat) (r : List (Fin c)) : removed 18 (gStep13 c r).prog = 0 := by rw [gStep13]; exact stepCatFn_removed18 _ _ compiledNegX_removed18 h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : removed 18 (gStep12 c r).prog = 0 := by rw [gStep12]; exact stepCatFn_removed18 _ _ (compiledDirectArith_removed18 true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : removed 18 (gStep11 c r).prog = 0 := by rw [gStep11]; exact CatProg.measureThen_removed18 _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : removed 18 (gStep10 c r).prog = 0 := by rw [gStep10]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : removed 18 (gStep9 c r).prog = 0  := by rw [gStep9]; exact CatProg.measureThen_removed18 _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : removed 18 (gStep8 c r).prog = 0  := by rw [gStep8]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ (ss2Triple.loadProg_residue 0)) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : removed 18 (gStep7 c r).prog = 0  := by rw [gStep7]; exact stepCatFn_removed18 _ _ compiledSquare_removed18 h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : removed 18 (gStep6 c r).prog = 0  := by rw [gStep6]; exact stepCatFn_removed18 _ _ (compiledDirectArith_removed18 false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : removed 18 (gStep5 c r).prog = 0  := by rw [gStep5]; exact CatProg.measureThen_removed18 _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : removed 18 (gStep4 c r).prog = 0  := by rw [gStep4]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : removed 18 (gStep3 c r).prog = 0  := by rw [gStep3]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : removed 18 (gStep2 c r).prog = 0  := by rw [gStep2]; exact CatProg.measureThen_removed18 _ h3 _ c r
-  rw [compiledGenericCore]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ (ss1Neg.loadProg_residue 0)) h2 s rs
+theorem compiledGenericCoreW_removed18 {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) :
+    removed 18 (compiledGenericCoreW fx s rs).prog = 0 := by
+  have h18 (c : Nat) (r : List (Fin c)) : removed 18 (gStep18W fx c r).prog = 0 := by rw [gStep18W]; exact CatProg.measureThen_removed18 _ fx.removed18 _ c r
+  have h17 (c : Nat) (r : List (Fin c)) : removed 18 (gStep17W fx c r).prog = 0 := by rw [gStep17W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h18 c r
+  have h16 (c : Nat) (r : List (Fin c)) : removed 18 (gStep16W fx c r).prog = 0 := by rw [gStep16W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h17 c r
+  have h15 (c : Nat) (r : List (Fin c)) : removed 18 (gStep15W fx c r).prog = 0 := by rw [gStep15W]; exact CatProg.measureThen_removed18 _ h16 _ c r
+  have h14 (c : Nat) (r : List (Fin c)) : removed 18 (gStep14W fx c r).prog = 0 := by rw [gStep14W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1RecW k).loadProg_residue 0)) h15 c r
+  have h13 (c : Nat) (r : List (Fin c)) : removed 18 (gStep13W fx c r).prog = 0 := by rw [gStep13W]; exact stepCatFn_removed18 _ _ compiledNegX_removed18 h14 c r
+  have h12 (c : Nat) (r : List (Fin c)) : removed 18 (gStep12W fx c r).prog = 0 := by rw [gStep12W]; exact stepCatFn_removed18 _ _ (compiledDirectArith_removed18 true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : removed 18 (gStep11W fx c r).prog = 0 := by rw [gStep11W]; exact CatProg.measureThen_removed18 _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : removed 18 (gStep10W fx c r).prog = 0 := by rw [gStep10W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : removed 18 (gStep9W fx c r).prog = 0  := by rw [gStep9W]; exact CatProg.measureThen_removed18 _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : removed 18 (gStep8W fx c r).prog = 0  := by rw [gStep8W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss2TripleW k).loadProg_residue 0)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : removed 18 (gStep7W fx c r).prog = 0  := by rw [gStep7W]; exact stepCatFn_removed18 _ _ compiledSquare_removed18 h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : removed 18 (gStep6W fx c r).prog = 0  := by rw [gStep6W]; exact stepCatFn_removed18 _ _ (compiledDirectArith_removed18 false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : removed 18 (gStep5W fx c r).prog = 0  := by rw [gStep5W]; exact CatProg.measureThen_removed18 _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : removed 18 (gStep4W fx c r).prog = 0  := by rw [gStep4W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : removed 18 (gStep3W fx c r).prog = 0  := by rw [gStep3W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : removed 18 (gStep2W fx c r).prog = 0  := by rw [gStep2W]; exact CatProg.measureThen_removed18 _ h3 _ c r
+  rw [compiledGenericCoreW]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1NegW k).loadProg_residue 0)) h2 s rs
 
-theorem compiledGenericCore_tCount (s : Nat) (rs : List (Fin s))
-    (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
-    ((compiledGenericCore s rs).prog.instantiate read h).tCount ≤ 4 * 2237754 := by
-  have h18 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep18 c r).prog.instantiate read hh).tCount ≤ 4 * 502 := by
-    rw [gStep18]; exact CatProg.measureThen_tCount_le _ _ read (compiledFixup_tCount read) _ c r hh
-  have h17 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep17 c r).prog.instantiate read hh).tCount ≤ 4 * 1525 := by
-    rw [gStep17]; exact (stepCatFn_tCount_le _ gStep18 (4 * 1023) (4 * 502) read (fun s' h' => compiledYAdd_tCount s' read h') h18 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h16 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep16 c r).prog.instantiate read hh).tCount ≤ 4 * 2548 := by
-    rw [gStep16]; exact (stepCatFn_tCount_le _ gStep17 (4 * 1023) (4 * 1525) read (fun s' h' => compiledXAdd_tCount s' read h') h17 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h15 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep15 c r).prog.instantiate read hh).tCount ≤ 4 * 2548 := by
-    rw [gStep15]; exact CatProg.measureThen_tCount_le _ _ read h16 _ c r hh
-  have h14 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep14 c r).prog.instantiate read hh).tCount ≤ 4 * 35827 := by
-    rw [gStep14]; exact (stepCatFn_tCount_le _ gStep15 (4 * 33279) (4 * 2548) read (fun s' h' => wrapSS_tCount _ 33279 (ss1Rec.loadProg_residue 0) ss1Rec_tcount s' read h') h15 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h13 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep13 c r).prog.instantiate read hh).tCount ≤ 4 * 36078 := by
-    rw [gStep13]; exact (stepCatFn_tCount_le _ gStep14 (4 * 251) (4 * 35827) read (fun s' h' => compiledNegX_tCount s' read h') h14 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h12 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep12 c r).prog.instantiate read hh).tCount ≤ 4 * 1084155 := by
-    rw [gStep12]; exact (stepCatFn_tCount_le _ gStep13 (4 * 1048077) (4 * 36078) read (fun s' h' => compiledDirectArith_tCount true s' read h') h13 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h11 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep11 c r).prog.instantiate read hh).tCount ≤ 4 * 1084155 := by
-    rw [gStep11]; exact CatProg.measureThen_tCount_le _ _ read h12 _ c r hh
-  have h10 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep10 c r).prog.instantiate read hh).tCount ≤ 4 * 1085178 := by
-    rw [gStep10]; exact (stepCatFn_tCount_le _ gStep11 (4 * 1023) (4 * 1084155) read (fun s' h' => compiledXAdd_tCount s' read h') h11 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h9  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep9 c r).prog.instantiate read hh).tCount ≤ 4 * 1085178 := by
-    rw [gStep9]; exact CatProg.measureThen_tCount_le _ _ read h10 _ c r hh
-  have h8  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep8 c r).prog.instantiate read hh).tCount ≤ 4 * 1102329 := by
-    rw [gStep8]; exact (stepCatFn_tCount_le _ gStep9 (4 * 17151) (4 * 1085178) read (fun s' h' => wrapSS_tCount _ 17151 (ss2Triple.loadProg_residue 0) ss2Triple_tcount s' read h') h9 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h7  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep7 c r).prog.instantiate read hh).tCount ≤ 4 * 1154605 := by
-    rw [gStep7]; exact (stepCatFn_tCount_le _ gStep8 (4 * 52276) (4 * 1102329) read (fun s' h' => compiledSquare_tCount s' read h') h8 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h6  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep6 c r).prog.instantiate read hh).tCount ≤ 4 * 2202429 := by
-    rw [gStep6]; exact (stepCatFn_tCount_le _ gStep7 (4 * 1047824) (4 * 1154605) read (fun s' h' => compiledDirectArith_tCount false s' read h') h7 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h5  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep5 c r).prog.instantiate read hh).tCount ≤ 4 * 2202429 := by
-    rw [gStep5]; exact CatProg.measureThen_tCount_le _ _ read h6 _ c r hh
-  have h4  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep4 c r).prog.instantiate read hh).tCount ≤ 4 * 2203452 := by
-    rw [gStep4]; exact (stepCatFn_tCount_le _ gStep5 (4 * 1023) (4 * 2202429) read (fun s' h' => compiledYAdd_tCount s' read h') h5 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h3  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep3 c r).prog.instantiate read hh).tCount ≤ 4 * 2204475 := by
-    rw [gStep3]; exact (stepCatFn_tCount_le _ gStep4 (4 * 1023) (4 * 2203452) read (fun s' h' => compiledXAdd_tCount s' read h') h4 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h2  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep2 c r).prog.instantiate read hh).tCount ≤ 4 * 2204475 := by
-    rw [gStep2]; exact CatProg.measureThen_tCount_le _ _ read h3 _ c r hh
-  rw [compiledGenericCore]
-  exact (stepCatFn_tCount_le _ gStep2 (4 * 33279) (4 * 2204475) read
-    (fun s' h' => wrapSS_tCount _ 33279 (ss1Neg.loadProg_residue 0) ss1Neg_tcount s' read h') h2 s rs h).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (s : Nat) (rs : List (Fin s)) (read : ConstantBit (2 ^ k) → Bool) (h : Fin s → Bool) :
+    ((compiledGenericCoreW fx s rs).prog.instantiate read h).tCount ≤
+      4 * (2153543 + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
+  let t1 := 2 ^ (k - 1) - 1 + 512
+  let t2 := 2 ^ (k - 2) - 1 + 768
+  have h18 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep18W fx c r).prog.instantiate read hh).tCount ≤ 4 * fx.tof := by
+    rw [gStep18W]; exact CatProg.measureThen_tCount_le _ _ read (fx.tCount read) _ c r hh
+  have h17 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep17W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1023 + fx.tof) := by
+    rw [gStep17W]; exact (stepCatFn_tCount_le _ (gStep18W fx) (4 * 1023) _ read (fun s' h' => compiledYAdd_tCount s' read h') h18 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h16 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep16W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2046 + fx.tof) := by
+    rw [gStep16W]; exact (stepCatFn_tCount_le _ (gStep17W fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h17 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h15 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep15W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2046 + fx.tof) := by
+    rw [gStep15W]; exact CatProg.measureThen_tCount_le _ _ read h16 _ c r hh
+  have h14 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep14W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2046 + t1 + fx.tof) := by
+    rw [gStep14W]; exact (stepCatFn_tCount_le _ (gStep15W fx) (4 * t1) _ read (fun s' h' => wrapSS_tCount _ t1 ((ss1RecW k).loadProg_residue 0) (ss1RecW_tcount hk_lo hk_hi) s' read h') h15 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h13 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep13W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2297 + t1 + fx.tof) := by
+    rw [gStep13W]; exact (stepCatFn_tCount_le _ (gStep14W fx) (4 * 251) _ read (fun s' h' => compiledNegX_tCount s' read h') h14 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h12 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep12W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1050374 + t1 + fx.tof) := by
+    rw [gStep12W]; exact (stepCatFn_tCount_le _ (gStep13W fx) (4 * 1048077) _ read (fun s' h' => compiledDirectArith_tCount true s' read h') h13 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h11 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep11W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1050374 + t1 + fx.tof) := by
+    rw [gStep11W]; exact CatProg.measureThen_tCount_le _ _ read h12 _ c r hh
+  have h10 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep10W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1051397 + t1 + fx.tof) := by
+    rw [gStep10W]; exact (stepCatFn_tCount_le _ (gStep11W fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h11 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h9  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep9W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1051397 + t1 + fx.tof) := by
+    rw [gStep9W]; exact CatProg.measureThen_tCount_le _ _ read h10 _ c r hh
+  have h8  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep8W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1051397 + t1 + t2 + fx.tof) := by
+    rw [gStep8W]; exact (stepCatFn_tCount_le _ (gStep9W fx) (4 * t2) _ read (fun s' h' => wrapSS_tCount _ t2 ((ss2TripleW k).loadProg_residue 0) (ss2TripleW_tcount hk_lo hk_hi) s' read h') h9 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h7  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep7W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1103673 + t1 + t2 + fx.tof) := by
+    rw [gStep7W]; exact (stepCatFn_tCount_le _ (gStep8W fx) (4 * 52276) _ read (fun s' h' => compiledSquare_tCount s' read h') h8 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h6  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep6W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2151497 + t1 + t2 + fx.tof) := by
+    rw [gStep6W]; exact (stepCatFn_tCount_le _ (gStep7W fx) (4 * 1047824) _ read (fun s' h' => compiledDirectArith_tCount false s' read h') h7 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h5  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep5W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2151497 + t1 + t2 + fx.tof) := by
+    rw [gStep5W]; exact CatProg.measureThen_tCount_le _ _ read h6 _ c r hh
+  have h4  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep4W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2152520 + t1 + t2 + fx.tof) := by
+    rw [gStep4W]; exact (stepCatFn_tCount_le _ (gStep5W fx) (4 * 1023) _ read (fun s' h' => compiledYAdd_tCount s' read h') h5 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h3  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep3W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2153543 + t1 + t2 + fx.tof) := by
+    rw [gStep3W]; exact (stepCatFn_tCount_le _ (gStep4W fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h4 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h2  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep2W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2153543 + t1 + t2 + fx.tof) := by
+    rw [gStep2W]; exact CatProg.measureThen_tCount_le _ _ read h3 _ c r hh
+  rw [compiledGenericCoreW]
+  exact (stepCatFn_tCount_le _ (gStep2W fx) (4 * t1) _ read
+    (fun s' h' => wrapSS_tCount _ t1 ((ss1NegW k).loadProg_residue 0) (ss1NegW_tcount hk_lo hk_hi) s' read h') h2 s rs h).trans (by dsimp only [t1, t2]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledGenericCore_slots (s : Nat) (rs : List (Fin s)) :
-    (compiledGenericCore s rs).prog.gateSlots ≤ 10000000000 := by
-  have h18 (c : Nat) (r : List (Fin c)) : (gStep18 c r).prog.gateSlots ≤ 4000000000 := by rw [gStep18]; exact CatProg.measureThen_slots_le _ _ compiledFixup_slots _ c r
-  have h17 (c : Nat) (r : List (Fin c)) : (gStep17 c r).prog.gateSlots ≤ 4000400000 := by rw [gStep17]; exact (stepCatFn_slots_le _ gStep18 _ _ compiledYAdd_slots h18 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h16 (c : Nat) (r : List (Fin c)) : (gStep16 c r).prog.gateSlots ≤ 4000800000 := by rw [gStep16]; exact (stepCatFn_slots_le _ gStep17 _ _ compiledXAdd_slots h17 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h15 (c : Nat) (r : List (Fin c)) : (gStep15 c r).prog.gateSlots ≤ 4000800000 := by rw [gStep15]; exact CatProg.measureThen_slots_le _ _ h16 _ c r
-  have h14 (c : Nat) (r : List (Fin c)) : (gStep14 c r).prog.gateSlots ≤ 4200800000 := by rw [gStep14]; exact (stepCatFn_slots_le _ gStep15 _ _ ss1Rec_slots h15 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h13 (c : Nat) (r : List (Fin c)) : (gStep13 c r).prog.gateSlots ≤ 4200920000 := by rw [gStep13]; exact (stepCatFn_slots_le _ gStep14 _ _ compiledNegX_slots h14 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h12 (c : Nat) (r : List (Fin c)) : (gStep12 c r).prog.gateSlots ≤ 5200920000 := by rw [gStep12]; exact (stepCatFn_slots_le _ gStep13 _ _ (compiledDirectArith_slots true) h13 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h11 (c : Nat) (r : List (Fin c)) : (gStep11 c r).prog.gateSlots ≤ 5200920000 := by rw [gStep11]; exact CatProg.measureThen_slots_le _ _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : (gStep10 c r).prog.gateSlots ≤ 5201320000 := by rw [gStep10]; exact (stepCatFn_slots_le _ gStep11 _ _ compiledXAdd_slots h11 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h9  (c : Nat) (r : List (Fin c)) : (gStep9 c r).prog.gateSlots ≤ 5201320000  := by rw [gStep9]; exact CatProg.measureThen_slots_le _ _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : (gStep8 c r).prog.gateSlots ≤ 5301320000  := by rw [gStep8]; exact (stepCatFn_slots_le _ gStep9 _ _ ss2Triple_slots h9 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h7  (c : Nat) (r : List (Fin c)) : (gStep7 c r).prog.gateSlots ≤ 5421320000  := by rw [gStep7]; exact (stepCatFn_slots_le _ gStep8 _ _ compiledSquare_slots h8 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h6  (c : Nat) (r : List (Fin c)) : (gStep6 c r).prog.gateSlots ≤ 6421320000  := by rw [gStep6]; exact (stepCatFn_slots_le _ gStep7 _ _ (compiledDirectArith_slots false) h7 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h5  (c : Nat) (r : List (Fin c)) : (gStep5 c r).prog.gateSlots ≤ 6421320000  := by rw [gStep5]; exact CatProg.measureThen_slots_le _ _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : (gStep4 c r).prog.gateSlots ≤ 6421720000  := by rw [gStep4]; exact (stepCatFn_slots_le _ gStep5 _ _ compiledYAdd_slots h5 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h3  (c : Nat) (r : List (Fin c)) : (gStep3 c r).prog.gateSlots ≤ 6422120000  := by rw [gStep3]; exact (stepCatFn_slots_le _ gStep4 _ _ compiledXAdd_slots h4 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h2  (c : Nat) (r : List (Fin c)) : (gStep2 c r).prog.gateSlots ≤ 6422120000  := by rw [gStep2]; exact CatProg.measureThen_slots_le _ _ h3 _ c r
-  rw [compiledGenericCore]; exact (stepCatFn_slots_le _ gStep2 _ _ ss1Neg_slots h2 s rs).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+theorem compiledGenericCoreW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (s : Nat) (rs : List (Fin s)) :
+    (compiledGenericCoreW fx s rs).prog.gateSlots ≤ fx.slots + 5000000000 := by
+  have h18 (c : Nat) (r : List (Fin c)) : (gStep18W fx c r).prog.gateSlots ≤ fx.slots := by rw [gStep18W]; exact CatProg.measureThen_slots_le _ _ fx.slots_le _ c r
+  have h17 (c : Nat) (r : List (Fin c)) : (gStep17W fx c r).prog.gateSlots ≤ fx.slots + 400000 := by rw [gStep17W]; exact (stepCatFn_slots_le _ (gStep18W fx) _ _ compiledYAdd_slots h18 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h16 (c : Nat) (r : List (Fin c)) : (gStep16W fx c r).prog.gateSlots ≤ fx.slots + 800000 := by rw [gStep16W]; exact (stepCatFn_slots_le _ (gStep17W fx) _ _ compiledXAdd_slots h17 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h15 (c : Nat) (r : List (Fin c)) : (gStep15W fx c r).prog.gateSlots ≤ fx.slots + 800000 := by rw [gStep15W]; exact CatProg.measureThen_slots_le _ _ h16 _ c r
+  have h14 (c : Nat) (r : List (Fin c)) : (gStep14W fx c r).prog.gateSlots ≤ fx.slots + 600800000 := by rw [gStep14W]; exact (stepCatFn_slots_le _ (gStep15W fx) _ _ (ss1RecW_slots hk_lo hk_hi) h15 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h13 (c : Nat) (r : List (Fin c)) : (gStep13W fx c r).prog.gateSlots ≤ fx.slots + 600920000 := by rw [gStep13W]; exact (stepCatFn_slots_le _ (gStep14W fx) _ _ compiledNegX_slots h14 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h12 (c : Nat) (r : List (Fin c)) : (gStep12W fx c r).prog.gateSlots ≤ fx.slots + 1600920000 := by rw [gStep12W]; exact (stepCatFn_slots_le _ (gStep13W fx) _ _ (compiledDirectArith_slots true) h13 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h11 (c : Nat) (r : List (Fin c)) : (gStep11W fx c r).prog.gateSlots ≤ fx.slots + 1600920000 := by rw [gStep11W]; exact CatProg.measureThen_slots_le _ _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : (gStep10W fx c r).prog.gateSlots ≤ fx.slots + 1601320000 := by rw [gStep10W]; exact (stepCatFn_slots_le _ (gStep11W fx) _ _ compiledXAdd_slots h11 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h9  (c : Nat) (r : List (Fin c)) : (gStep9W fx c r).prog.gateSlots ≤ fx.slots + 1601320000 := by rw [gStep9W]; exact CatProg.measureThen_slots_le _ _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : (gStep8W fx c r).prog.gateSlots ≤ fx.slots + 1901320000 := by rw [gStep8W]; exact (stepCatFn_slots_le _ (gStep9W fx) _ _ (ss2TripleW_slots hk_lo hk_hi) h9 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h7  (c : Nat) (r : List (Fin c)) : (gStep7W fx c r).prog.gateSlots ≤ fx.slots + 2021320000 := by rw [gStep7W]; exact (stepCatFn_slots_le _ (gStep8W fx) _ _ compiledSquare_slots h8 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h6  (c : Nat) (r : List (Fin c)) : (gStep6W fx c r).prog.gateSlots ≤ fx.slots + 3021320000 := by rw [gStep6W]; exact (stepCatFn_slots_le _ (gStep7W fx) _ _ (compiledDirectArith_slots false) h7 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h5  (c : Nat) (r : List (Fin c)) : (gStep5W fx c r).prog.gateSlots ≤ fx.slots + 3021320000 := by rw [gStep5W]; exact CatProg.measureThen_slots_le _ _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : (gStep4W fx c r).prog.gateSlots ≤ fx.slots + 3021720000 := by rw [gStep4W]; exact (stepCatFn_slots_le _ (gStep5W fx) _ _ compiledYAdd_slots h5 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h3  (c : Nat) (r : List (Fin c)) : (gStep3W fx c r).prog.gateSlots ≤ fx.slots + 3022120000 := by rw [gStep3W]; exact (stepCatFn_slots_le _ (gStep4W fx) _ _ compiledXAdd_slots h4 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h2  (c : Nat) (r : List (Fin c)) : (gStep2W fx c r).prog.gateSlots ≤ fx.slots + 3022120000 := by rw [gStep2W]; exact CatProg.measureThen_slots_le _ _ h3 _ c r
+  rw [compiledGenericCoreW]; exact (stepCatFn_slots_le _ (gStep2W fx) _ _ (ss1NegW_slots hk_lo hk_hi) h2 s rs).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledGenericCore_wires (s : Nat) (rs : List (Fin s)) :
-    ChallengeMigration.straightWires (compiledGenericCore s rs).prog ⊆ support1610 := by
-  have hcx : cxWord ⊆ support1610 := fun w hw => by simp only [cxWord, List.mem_range'_1] at hw; exact mem_support1610_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have hcy : cyWord ⊆ support1610 := fun w hw => by
+theorem compiledGenericCoreW_wires {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (s : Nat) (rs : List (Fin s)) :
+    ChallengeMigration.straightWires (compiledGenericCoreW fx s rs).prog ⊆ support1612 := by
+  have hcx : cxWord ⊆ support1612 := fun w hw => by simp only [cxWord, List.mem_range'_1] at hw; exact mem_support1612_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have hcy : cyWord ⊆ support1612 := fun w hw => by
     simp only [cyWord, List.mem_cons, List.mem_range'_1] at hw
     rcases hw with rfl | h
-    · exact mem_support1610_p3 (by decide)
-    · exact mem_support1610_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have hcc : cxCy ⊆ support1610 := List.append_subset.mpr ⟨hcx, hcy⟩
-  have hg1 : g1_1 ⊆ support1610 := fun w hw => by
+    · exact mem_support1612_p3 (by decide)
+    · exact mem_support1612_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have hcc : cxCy ⊆ support1612 := List.append_subset.mpr ⟨hcx, hcy⟩
+  have hg1 : g1_1 ⊆ support1612 := fun w hw => by
     simp only [g1_1, List.mem_append, List.mem_range'_1] at hw
     rcases hw with h | h
-    · exact mem_support1610_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-    · exact mem_support1610_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have hg4 : g4 ⊆ support1610 := fun w hw => by
+    · exact mem_support1612_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · exact mem_support1612_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have hg4 : g4 ⊆ support1612 := fun w hw => by
     simp only [g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1, or_assoc] at hw
     rcases hw with h | h | h
-    · exact mem_support1610_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-    · exact mem_support1610_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-    · exact mem_support1610_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h18 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep18 c r).prog ⊆ support1610 := by rw [gStep18]; exact CatProg.measureThen_wires _ compiledFixup_wires _ hcc c r
-  have h17 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep17 c r).prog ⊆ support1610 := by rw [gStep17]; exact stepCatFn_wires _ _ compiledYAdd_wires h18 c r
-  have h16 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep16 c r).prog ⊆ support1610 := by rw [gStep16]; exact stepCatFn_wires _ _ compiledXAdd_wires h17 c r
-  have h15 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep15 c r).prog ⊆ support1610 := by rw [gStep15]; exact CatProg.measureThen_wires _ h16 _ hg1 c r
-  have h14 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep14 c r).prog ⊆ support1610 := by rw [gStep14]; exact stepCatFn_wires _ _ (wrapSS_wires _ ss1Rec_raw_support) h15 c r
-  have h13 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep13 c r).prog ⊆ support1610 := by rw [gStep13]; exact stepCatFn_wires _ _ compiledNegX_wires h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep12 c r).prog ⊆ support1610 := by rw [gStep12]; exact stepCatFn_wires _ _ (compiledDirectArith_wires true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep11 c r).prog ⊆ support1610 := by rw [gStep11]; exact CatProg.measureThen_wires _ h12 _ hcx c r
-  have h10 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep10 c r).prog ⊆ support1610 := by rw [gStep10]; exact stepCatFn_wires _ _ compiledXAdd_wires h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep9 c r).prog ⊆ support1610  := by rw [gStep9]; exact CatProg.measureThen_wires _ h10 _ hg4 c r
-  have h8  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep8 c r).prog ⊆ support1610  := by rw [gStep8]; exact stepCatFn_wires _ _ (wrapSS_wires _ ss2Triple_raw_support) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep7 c r).prog ⊆ support1610  := by rw [gStep7]; exact stepCatFn_wires _ _ compiledSquare_wires h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep6 c r).prog ⊆ support1610  := by rw [gStep6]; exact stepCatFn_wires _ _ (compiledDirectArith_wires false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep5 c r).prog ⊆ support1610  := by rw [gStep5]; exact CatProg.measureThen_wires _ h6 _ hcc c r
-  have h4  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep4 c r).prog ⊆ support1610  := by rw [gStep4]; exact stepCatFn_wires _ _ compiledYAdd_wires h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep3 c r).prog ⊆ support1610  := by rw [gStep3]; exact stepCatFn_wires _ _ compiledXAdd_wires h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep2 c r).prog ⊆ support1610  := by rw [gStep2]; exact CatProg.measureThen_wires _ h3 _ hg1 c r
-  rw [compiledGenericCore]; exact stepCatFn_wires _ _ (wrapSS_wires _ ss1Neg_raw_support) h2 s rs
+    · exact mem_support1612_p1 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · exact mem_support1612_p3 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+    · exact mem_support1612_p4 ⟨h.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  have h18 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep18W fx c r).prog ⊆ support1612 := by rw [gStep18W]; exact CatProg.measureThen_wires _ fx.wires_sub _ hcc c r
+  have h17 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep17W fx c r).prog ⊆ support1612 := by rw [gStep17W]; exact stepCatFn_wires _ _ compiledYAdd_wires h18 c r
+  have h16 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep16W fx c r).prog ⊆ support1612 := by rw [gStep16W]; exact stepCatFn_wires _ _ compiledXAdd_wires h17 c r
+  have h15 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep15W fx c r).prog ⊆ support1612 := by rw [gStep15W]; exact CatProg.measureThen_wires _ h16 _ hg1 c r
+  have h14 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep14W fx c r).prog ⊆ support1612 := by rw [gStep14W]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss1RecW_raw_support hk_lo hk_hi)) h15 c r
+  have h13 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep13W fx c r).prog ⊆ support1612 := by rw [gStep13W]; exact stepCatFn_wires _ _ compiledNegX_wires h14 c r
+  have h12 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep12W fx c r).prog ⊆ support1612 := by rw [gStep12W]; exact stepCatFn_wires _ _ (compiledDirectArith_wires true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep11W fx c r).prog ⊆ support1612 := by rw [gStep11W]; exact CatProg.measureThen_wires _ h12 _ hcx c r
+  have h10 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep10W fx c r).prog ⊆ support1612 := by rw [gStep10W]; exact stepCatFn_wires _ _ compiledXAdd_wires h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep9W fx c r).prog ⊆ support1612  := by rw [gStep9W]; exact CatProg.measureThen_wires _ h10 _ hg4 c r
+  have h8  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep8W fx c r).prog ⊆ support1612  := by rw [gStep8W]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss2TripleW_raw_support hk_lo hk_hi)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep7W fx c r).prog ⊆ support1612  := by rw [gStep7W]; exact stepCatFn_wires _ _ compiledSquare_wires h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep6W fx c r).prog ⊆ support1612  := by rw [gStep6W]; exact stepCatFn_wires _ _ (compiledDirectArith_wires false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep5W fx c r).prog ⊆ support1612  := by rw [gStep5W]; exact CatProg.measureThen_wires _ h6 _ hcc c r
+  have h4  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep4W fx c r).prog ⊆ support1612  := by rw [gStep4W]; exact stepCatFn_wires _ _ compiledYAdd_wires h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep3W fx c r).prog ⊆ support1612  := by rw [gStep3W]; exact stepCatFn_wires _ _ compiledXAdd_wires h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep2W fx c r).prog ⊆ support1612  := by rw [gStep2W]; exact CatProg.measureThen_wires _ h3 _ hg1 c r
+  rw [compiledGenericCoreW]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss1NegW_raw_support hk_lo hk_hi)) h2 s rs
 
-theorem compiledGenericCore_wellFormed (s : Nat) (rs : List (Fin s)) :
-    (compiledGenericCore s rs).prog.WellFormed := by
-  have av1 := ssSup_avoid_14832_14833 _ ss1Neg_raw_support
-  have av4 := ssSup_avoid_14832_14833 _ ss2Triple_raw_support
-  have av6 := ssSup_avoid_14832_14833 _ ss1Rec_raw_support
-  have h18 (c : Nat) (r : List (Fin c)) : (gStep18 c r).prog.WellFormed := by rw [gStep18]; exact CatProg.measureThen_wellFormed _ compiledFixup_wellFormed _ c r
-  have h17 (c : Nat) (r : List (Fin c)) : (gStep17 c r).prog.WellFormed := by rw [gStep17]; exact stepCatFn_wellFormed _ _ compiledYAdd_wellFormed h18 c r
-  have h16 (c : Nat) (r : List (Fin c)) : (gStep16 c r).prog.WellFormed := by rw [gStep16]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h17 c r
-  have h15 (c : Nat) (r : List (Fin c)) : (gStep15 c r).prog.WellFormed := by rw [gStep15]; exact CatProg.measureThen_wellFormed _ h16 _ c r
-  have h14 (c : Nat) (r : List (Fin c)) : (gStep14 c r).prog.WellFormed := by rw [gStep14]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av6.1 av6.2 (ss1Rec.loadProg_wellFormed ss1Rec_geo 0)) h15 c r
-  have h13 (c : Nat) (r : List (Fin c)) : (gStep13 c r).prog.WellFormed := by rw [gStep13]; exact stepCatFn_wellFormed _ _ compiledNegX_wellFormed h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : (gStep12 c r).prog.WellFormed := by rw [gStep12]; exact stepCatFn_wellFormed _ _ (compiledDirectArith_wellFormed true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : (gStep11 c r).prog.WellFormed := by rw [gStep11]; exact CatProg.measureThen_wellFormed _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : (gStep10 c r).prog.WellFormed := by rw [gStep10]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : (gStep9 c r).prog.WellFormed  := by rw [gStep9]; exact CatProg.measureThen_wellFormed _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : (gStep8 c r).prog.WellFormed  := by rw [gStep8]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av4.1 av4.2 (ss2Triple.loadProg_wellFormed ss2Triple_geo 0)) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : (gStep7 c r).prog.WellFormed  := by rw [gStep7]; exact stepCatFn_wellFormed _ _ compiledSquare_wellFormed h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : (gStep6 c r).prog.WellFormed  := by rw [gStep6]; exact stepCatFn_wellFormed _ _ (compiledDirectArith_wellFormed false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : (gStep5 c r).prog.WellFormed  := by rw [gStep5]; exact CatProg.measureThen_wellFormed _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : (gStep4 c r).prog.WellFormed  := by rw [gStep4]; exact stepCatFn_wellFormed _ _ compiledYAdd_wellFormed h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : (gStep3 c r).prog.WellFormed  := by rw [gStep3]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : (gStep2 c r).prog.WellFormed  := by rw [gStep2]; exact CatProg.measureThen_wellFormed _ h3 _ c r
-  rw [compiledGenericCore]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av1.1 av1.2 (ss1Neg.loadProg_wellFormed ss1Neg_geo 0)) h2 s rs
+theorem compiledGenericCoreW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (s : Nat) (rs : List (Fin s)) :
+    (compiledGenericCoreW fx s rs).prog.WellFormed := by
+  have av1 := ssSup_avoid_14832_14833 _ (ss1NegW_raw_support hk_lo hk_hi)
+  have av4 := ssSup_avoid_14832_14833 _ (ss2TripleW_raw_support hk_lo hk_hi)
+  have av6 := ssSup_avoid_14832_14833 _ (ss1RecW_raw_support hk_lo hk_hi)
+  have h18 (c : Nat) (r : List (Fin c)) : (gStep18W fx c r).prog.WellFormed := by rw [gStep18W]; exact CatProg.measureThen_wellFormed _ fx.wellFormed _ c r
+  have h17 (c : Nat) (r : List (Fin c)) : (gStep17W fx c r).prog.WellFormed := by rw [gStep17W]; exact stepCatFn_wellFormed _ _ compiledYAdd_wellFormed h18 c r
+  have h16 (c : Nat) (r : List (Fin c)) : (gStep16W fx c r).prog.WellFormed := by rw [gStep16W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h17 c r
+  have h15 (c : Nat) (r : List (Fin c)) : (gStep15W fx c r).prog.WellFormed := by rw [gStep15W]; exact CatProg.measureThen_wellFormed _ h16 _ c r
+  have h14 (c : Nat) (r : List (Fin c)) : (gStep14W fx c r).prog.WellFormed := by rw [gStep14W]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av6.1 av6.2 ((ss1RecW k).loadProg_wellFormed (ss1RecW_geo hk_lo hk_hi) 0)) h15 c r
+  have h13 (c : Nat) (r : List (Fin c)) : (gStep13W fx c r).prog.WellFormed := by rw [gStep13W]; exact stepCatFn_wellFormed _ _ compiledNegX_wellFormed h14 c r
+  have h12 (c : Nat) (r : List (Fin c)) : (gStep12W fx c r).prog.WellFormed := by rw [gStep12W]; exact stepCatFn_wellFormed _ _ (compiledDirectArith_wellFormed true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : (gStep11W fx c r).prog.WellFormed := by rw [gStep11W]; exact CatProg.measureThen_wellFormed _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : (gStep10W fx c r).prog.WellFormed := by rw [gStep10W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : (gStep9W fx c r).prog.WellFormed  := by rw [gStep9W]; exact CatProg.measureThen_wellFormed _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : (gStep8W fx c r).prog.WellFormed  := by rw [gStep8W]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av4.1 av4.2 ((ss2TripleW k).loadProg_wellFormed (ss2TripleW_geo hk_lo hk_hi) 0)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : (gStep7W fx c r).prog.WellFormed  := by rw [gStep7W]; exact stepCatFn_wellFormed _ _ compiledSquare_wellFormed h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : (gStep6W fx c r).prog.WellFormed  := by rw [gStep6W]; exact stepCatFn_wellFormed _ _ (compiledDirectArith_wellFormed false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : (gStep5W fx c r).prog.WellFormed  := by rw [gStep5W]; exact CatProg.measureThen_wellFormed _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : (gStep4W fx c r).prog.WellFormed  := by rw [gStep4W]; exact stepCatFn_wellFormed _ _ compiledYAdd_wellFormed h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : (gStep3W fx c r).prog.WellFormed  := by rw [gStep3W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : (gStep2W fx c r).prog.WellFormed  := by rw [gStep2W]; exact CatProg.measureThen_wellFormed _ h3 _ c r
+  rw [compiledGenericCoreW]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av1.1 av1.2 ((ss1NegW k).loadProg_wellFormed (ss1NegW_geo hk_lo hk_hi) 0)) h2 s rs
 
 -- Clean canonical `(X, Y)` state helper for zero-boilerplate simulation across all 18 steps
 def setXY (bg : BasisState) (X Y : ECDSAAdd.Fp) (w : Wire) : Bool :=
@@ -16982,11 +17421,10 @@ private theorem setXY_cleanOutside (bg : BasisState) (X Y : ECDSAAdd.Fp) (hcl : 
     CleanOutsideXYBank (setXY bg X Y) :=
   fun w h1 h2 h3 => (setXY_outside bg X Y w h1 h2).trans (hcl w h1 h2 h3)
 
-private theorem setXY_bits16 (bg : BasisState) (X Y : ECDSAAdd.Fp) :
-    tableAddressValue bits16 (setXY bg X Y) = tableAddressValue bits16 bg :=
+private theorem setXY_bitsW (kw : Nat) (bg : BasisState) (X Y : ECDSAAdd.Fp) :
+    tableAddressValue (bitsW kw) (setXY bg X Y) = tableAddressValue (bitsW kw) bg :=
   WEX.tableAddressValue_congr _ _ _ (fun w hw => by
-    have hwb := mem_bits16.mp hw
-    have hwge : 855 ≤ w := by rcases hwb with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+    have hwb := mem_bitsW.mp hw
     exact setXY_outside bg X Y w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
 
 private theorem setXY_setXY (bg : BasisState) (X₁ Y₁ X₂ Y₂ : ECDSAAdd.Fp) :
@@ -17014,15 +17452,15 @@ private theorem xResetRegisterKraus_prep_ket (y : Wire) (ws : List Wire) (os : L
         Prep y (ket (clearRegister ws bs)) := by
   simpa [Bridge.signedKet_false] using xResetRegisterKraus_prep_signedKet y ws os ⟨false, bs⟩ hy ho hnd
 
--- Helper: values loaded by `ports1`, `ports4`, `ports6` for finite table point `C = .some hC`
-private theorem ports_pair_values (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+-- Helper: values loaded by `ports1`, `(ports4W kw)`, `ports6` for finite table point `C = .some hC`
+private theorem ports_pair_values {kw : Nat} (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (fx fy : PointField) (a : Nat) (bs : BasisState) (hcl : CleanOutsideXYBank bs)
-    (hvx : fieldValue (constantPoint Q (coeffs (rows16 a))) fx < 2 ^ 256)
-    (hvy : fieldValue (constantPoint Q (coeffs (rows16 a))) fy < 2 ^ 256) :
-    let ps := wordPorts rows16 fx cxWord ++ wordPorts rows16 fy cyWord
+    (hvx : fieldValue (constantPoint Q (coeffs ((rowsW kw) a))) fx < 2 ^ 256)
+    (hvy : fieldValue (constantPoint Q (coeffs ((rowsW kw) a))) fy < 2 ^ 256) :
+    let ps := wordPorts (rowsW kw) fx cxWord ++ wordPorts (rowsW kw) fy cyWord
     let t := tableXorState (portMask (readConstant coeffs Q) ps a) true bs
-    ECDSAAdd.regValue cxWord t = fieldValue (constantPoint Q (coeffs (rows16 a))) fx ∧
-    ECDSAAdd.regValue cyWord t = fieldValue (constantPoint Q (coeffs (rows16 a))) fy := by
+    ECDSAAdd.regValue cxWord t = fieldValue (constantPoint Q (coeffs ((rowsW kw) a))) fx ∧
+    ECDSAAdd.regValue cyWord t = fieldValue (constantPoint Q (coeffs ((rowsW kw) a))) fy := by
   intro ps t
   have hcl_x : Clean cxWord bs := fun w hw => by
     simp only [cxWord, List.mem_range'_1] at hw
@@ -17032,15 +17470,15 @@ private theorem ports_pair_values (coeffs : Fin 65536 → PointCoeff) (Q : ShorE
     rcases hw with rfl | hw
     · exact hcl 14883 (by decide) (by decide) (by decide)
     · exact hcl w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have hdisj_m : List.Disjoint (portMask (readConstant coeffs Q) (wordPorts rows16 fx cxWord) a)
-      (portMask (readConstant coeffs Q) (wordPorts rows16 fy cyWord) a) := by
+  have hdisj_m : List.Disjoint (portMask (readConstant coeffs Q) (wordPorts (rowsW kw) fx cxWord) a)
+      (portMask (readConstant coeffs Q) (wordPorts (rowsW kw) fy cyWord) a) := by
     rw [List.disjoint_left]; intro w h1 h2
     have hm1 := tableBitsMask_subset _ _ h1; rw [wordPorts_targets] at hm1
     have hm2 := tableBitsMask_subset _ _ h2; rw [wordPorts_targets] at hm2
     simp only [cxWord, cyWord, List.mem_cons, List.mem_range'_1] at hm1 hm2
     rcases hm2 with rfl | hm2 <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-  have ht_eq : t = tableXorState (portMask (readConstant coeffs Q) (wordPorts rows16 fy cyWord) a) true
-      (tableXorState (portMask (readConstant coeffs Q) (wordPorts rows16 fx cxWord) a) true bs) := by
+  have ht_eq : t = tableXorState (portMask (readConstant coeffs Q) (wordPorts (rowsW kw) fy cyWord) a) true
+      (tableXorState (portMask (readConstant coeffs Q) (wordPorts (rowsW kw) fx cxWord) a) true bs) := by
     change tableXorState (portMask _ (_ ++ _) a) true bs = _
     rw [portMask_append, tableXorState_append _ _ true bs hdisj_m]
   constructor
@@ -17052,13 +17490,13 @@ private theorem ports_pair_values (coeffs : Fin 65536 → PointCoeff) (Q : ShorE
   · rw [ht_eq, ← regValue_wordPorts_xor coeffs Q fy cyWord cyWord_length cyWord_nodup a bs hcl_y hvy]
     apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw
     simp only [tableXorState]
-    have hnotx : w ∉ portMask (readConstant coeffs Q) (wordPorts rows16 fx cxWord) a := fun hm => by
+    have hnotx : w ∉ portMask (readConstant coeffs Q) (wordPorts (rowsW kw) fx cxWord) a := fun hm => by
       have hmx := tableBitsMask_subset _ _ hm; rw [wordPorts_targets] at hmx
       simp only [cxWord, cyWord, List.mem_cons, List.mem_range'_1] at hw hmx; rcases hw with rfl | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
     simp [hnotx]
 
 -- Clean ket-level wrappers for `compiledXAdd`, `compiledYAdd`, `compiledDirectArith` (parametric over `P`, zero kernel reduction)
-private theorem compiledXAdd_ket_sim (c : Nat) (read : ConstantBit 65536 → Bool) (hh : Fin c → Bool) :
+private theorem compiledXAdd_ket_sim {n : Nat} (c : Nat) (read : ConstantBit n → Bool) (hh : Fin c → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b k => ∀ (t : BasisState),
         (t 14832 = false ∧ t 14833 = false ∧ (∀ w, 14115 ≤ w ∧ w < 14374 → t w = false) ∧
@@ -17070,7 +17508,7 @@ private theorem compiledXAdd_ket_sim (c : Nat) (read : ConstantBit 65536 → Boo
             ECDSAAdd.regValue (List.range' 263 256) t' = (A + X).val ∧
             (∀ w, ¬(263 ≤ w ∧ w < 519) → t' w = t w)) ∧
           b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
-      ((compiledXAdd c).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      ((compiledXAdd (n := n) c).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   refine catLitSim_to_ket_aux xAddProg ((compiledXAdd c).prog.instantiate read hh)
     (fun bs => bs 14832 = false ∧ bs 14833 = false) _ _ ?_ (fun _ h => ⟨h.1, h.2.1⟩) ?_
   · rw [compiledXAdd]
@@ -17081,7 +17519,7 @@ private theorem compiledXAdd_ket_sim (c : Nat) (read : ConstantBit 65536 → Boo
     have h := xAddProg_correct A X ⟨false, bs⟩ m hA hX hwk
     exact ⟨h.2.1, h.2.2⟩
 
-private theorem compiledYAdd_ket_sim (c : Nat) (read : ConstantBit 65536 → Bool) (hh : Fin c → Bool) :
+private theorem compiledYAdd_ket_sim {n : Nat} (c : Nat) (read : ConstantBit n → Bool) (hh : Fin c → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b k => ∀ (t : BasisState),
         (t 14832 = false ∧ t 14833 = false ∧ (∀ w, 14115 ≤ w ∧ w < 14374 → t w = false) ∧
@@ -17093,7 +17531,7 @@ private theorem compiledYAdd_ket_sim (c : Nat) (read : ConstantBit 65536 → Boo
             ECDSAAdd.regValue (List.range' 580 256) t' = (A + Y).val ∧
             (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
           b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
-      ((compiledYAdd c).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      ((compiledYAdd (n := n) c).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   refine catLitSim_to_ket_aux yAddProg ((compiledYAdd c).prog.instantiate read hh)
     (fun bs => bs 14832 = false ∧ bs 14833 = false) _ _ ?_ (fun _ h => ⟨h.1, h.2.1⟩) ?_
   · rw [compiledYAdd]
@@ -17104,7 +17542,7 @@ private theorem compiledYAdd_ket_sim (c : Nat) (read : ConstantBit 65536 → Boo
     have h := yAddProg_correct A Y ⟨false, bs⟩ m hA hY hwk
     exact ⟨h.2.1, h.2.2⟩
 
-private theorem compiledDirectArith_ket_sim (mul : Bool) (s : Nat) (read : ConstantBit 65536 → Bool) (h : Fin s → Bool) :
+private theorem compiledDirectArith_ket_sim {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b k => ∀ (t : BasisState), DirectArithValid t →
         ∃ t' : BasisState,
@@ -17115,7 +17553,7 @@ private theorem compiledDirectArith_ket_sim (mul : Bool) (s : Nat) (read : Const
             ECDSAAdd.regValue (List.range' 580 256) t' = (if mul then Y * X else Y / X).val ∧
             (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
           b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
-      ((compiledDirectArith mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      ((compiledDirectArith (n := n) mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   refine catLitSim_to_ket_aux (arithS streamLayout mul) ((compiledDirectArith mul s).prog.instantiate read h)
     DirectArithValid DirectArithValid _ (compiledDirectArith_catLitSim mul s read h) (fun _ h => h) ?_
   rintro bs m ⟨X₀, Y₀, hX₀, hx₀, hy₀, hcl₀⟩
@@ -17138,14 +17576,14 @@ private theorem compiledDirectArith_ket_sim (mul : Bool) (s : Nat) (read : Const
     fun w hw => har.2.2 w (by rw [streamLayout_point_y_eq, List.mem_range'_1]; exact hw)⟩
 
 -- Reusable `SS1` + `measureThen g1_1` + `xAdd` + `yAdd` + `measureThen cxCy` step lemma (used for Stages 1 & 7)
-private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (f : SS1 65536) (hg : f.Geo) (fx fy : PointField)
-    (hbits : f.bits = bits16) (hpaths : f.paths = pathBank15) (hguard : f.guard = guardWire)
+private theorem ss1_addXY_clear_sim {kw : Nat} (hk_hi : kw ≤ 18) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (f : SS1 (2 ^ kw)) (hg : f.Geo) (fx fy : PointField)
+    (hbits : f.bits = bitsW kw) (hpaths : f.paths = pathBankW kw) (hguard : f.guard = guardWire)
     (hg1 : f.g1 = g1_1)
-    (hports : f.ports = wordPorts rows16 fx cxWord ++ wordPorts rows16 fy cyWord)
+    (hports : f.ports = wordPorts (rowsW kw) fx cxWord ++ wordPorts (rowsW kw) fy cyWord)
     (hsub : ChallengeMigration.straightWires (f.loadProg 0) ⊆ ssSup)
-    (k : (c : Nat) → List (Fin c) → CatProg 65536 c)
-    (dBefore : List (MeasuredClear.ClearPort 65536)) (oB : List Bool) (hoB : oB.length = dBefore.length)
+    (k : (c : Nat) → List (Fin c) → CatProg (2 ^ kw) c)
+    (dBefore : List (MeasuredClear.ClearPort (2 ^ kw))) (oB : List Bool) (hoB : oB.length = dBefore.length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB)
     (GoodXY : ECDSAAdd.Fp → ECDSAAdd.Fp → ECDSAAdd.Fp → ECDSAAdd.Fp → Prop)
     (Target : Nat → BasisState → ECDSAAdd.Fp → ECDSAAdd.Fp → State)
@@ -17155,8 +17593,8 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
         (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
           GoodXY X Y cx cy →
-          tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           b.kraus (Prep 14833 (ket (setXY bg X Y))) =
             (c * (portPhase dBefore oB (readConstant coeffs Q) a *
                   portPhase (clearData f.garbPorts) o1 (readConstant coeffs Q) a *
@@ -17173,8 +17611,8 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         ∀ (vx vy : ECDSAAdd.Fp),
           GoodXY (vx + X) (vy + Y) cx cy →
           fieldValue (.some hC) fx = vx.val → fieldValue (.some hC) fy = vy.val →
@@ -17189,7 +17627,7 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
     rw [hpt, hg1] at hw
     simp only [cxCy, cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1, or_assoc] at hw
     rcases hw with h | rfl | h | h | h <;> exact ⟨by unfold windowRoot; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold guardWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have hout : ∀ w ∈ portTargets f.ports ++ f.g1, ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 872) := fun w hw => by
+  have hout : ∀ w ∈ portTargets f.ports ++ f.g1, ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 874) := fun w hw => by
     rw [hpt, hg1] at hw
     simp only [cxCy, cxWord, cyWord, g1_1, List.mem_append, List.mem_cons, List.mem_range'_1, or_assoc] at hw
     rcases hw with h | rfl | h | h | h <;> exact ⟨fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
@@ -17204,8 +17642,8 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
         (fun b k5 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
           GoodXY X Y cx cy →
-          tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxCy t = setXY bg X Y →
           (∀ q ∈ clearData f.ports, t q.target = decide (read (q.ref a) = q.value)) →
           b.kraus (Prep 14833 (ket t)) =
@@ -17234,8 +17672,8 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
         (fun b k4 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy vy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
           GoodXY X (vy + Y) cx cy →
-          tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxCy t = setXY bg X Y →
           ECDSAAdd.regValue cyWord t = vy.val →
           (∀ q ∈ clearData f.ports, t q.target = decide (read (q.ref a) = q.value)) →
@@ -17295,8 +17733,8 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
         (fun b k3 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy vx vy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
           GoodXY (vx + X) (vy + Y) cx cy →
-          tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxCy t = setXY bg X Y →
           ECDSAAdd.regValue cxWord t = vx.val → ECDSAAdd.regValue cyWord t = vy.val →
           (∀ q ∈ clearData f.ports, t q.target = decide (read (q.ref a) = q.value)) →
@@ -17359,8 +17797,8 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
         (fun b k2 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy vx vy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
           GoodXY (vx + X) (vy + Y) cx cy →
-          tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           fieldValue (.some hC) fx = vx.val → fieldValue (.some hC) fy = vy.val →
           (∀ q ∈ clearData f.garbPorts, t q.target = decide (read (q.ref a) = q.value)) →
           clearRegister g1_1 t = tableXorState (portMask read f.ports a) true (setXY bg X Y) →
@@ -17407,80 +17845,80 @@ private theorem ss1_addXY_clear_sim (coeffs : Fin 65536 → PointCoeff) (Q : Sho
     rw [hmul]
   -- Step 1: wrapSS
   refine stepCatFn_sim (wrapSS (f.loadProg 0)) p2 read s refs h _ _ _
-    (wrapSS_SS1_sim f hg hbits hpaths hguard hsub hdisj hout s read h)
+    (wrapSS_SS1_sim hk_hi f hg hbits hpaths hguard hsub hdisj hout s read h)
     (fun c' rs' hh' hrs' => hs2 c' rs' hh' (hrs'.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC ha hcl hQ vx vy hgdxy hvx hvy => ?_)
-  obtain ⟨bs', _, hgd, hcg, hkr⟩ := hb₁ a (setXY bg X Y) ((setXY_bits16 bg X Y).trans ha) (setXY_cleanOutside bg X Y hcl)
+  obtain ⟨bs', _, hgd, hcg, hkr⟩ := hb₁ a (setXY bg X Y) ((setXY_bitsW kw bg X Y).trans ha) (setXY_cleanOutside bg X Y hcl)
   rw [hg1] at hcg
   dsimp only [InstrumentBranch.seq]; rw [LinearMap.comp_apply, hkr, map_smul,
     hb₂ a bg X Y cx cy vx vy hC bs' hgdxy ha hcl hQ hvx hvy hgd hcg, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 7 (`gStep14..gStep18`): `ss1Rec → meas g1_1 → xAdd → yAdd → meas cxCy → compiledFixup`
-private theorem stage7_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (oB : List Bool) (hoB : oB.length = (d1 ++ d2 ++ d3 ++ d4).length)
+-- Stage 7 (`(gStep14W fx)..(gStep18W fx)`): `(ss1RecW kw) → meas g1_1 → xAdd → yAdd → meas cxCy → fx.prog`
+private theorem stage7_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
-          (c * portPhase (d1 ++ d2 ++ d3 ++ d4) oB read a) •
+          (c * portPhase ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + X) ((-cy) + Y))))
-      ((gStep14 s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep14W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
-  have hlen14 : (d1 ++ d2 ++ d3 ++ d4).length = 2048 := by simp [d1_len, d2_len, d3_len, d4_len]
-  have hsim := ss1_addXY_clear_sim coeffs Q ss1Rec ss1Rec_geo .x .negY rfl rfl rfl rfl (by change ports6 = _; rw [ports6])
-    ss1Rec_raw_support compiledFixup (d1 ++ d2 ++ d3 ++ d4) oB hoB s refs h hrefs
+  have hlen14 : ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)).length = 2048 := by simp [(d1W_len hk_lo hk_hi), (d2W_len kw), (d3W_len hk_lo hk_hi), (d4W_len kw)]
+  have hsim := ss1_addXY_clear_sim hk_hi coeffs Q (ss1RecW kw) (ss1RecW_geo hk_lo hk_hi) .x .negY rfl rfl rfl rfl (by change ports6W kw = _; rw [ports6W])
+    (ss1RecW_raw_support hk_lo hk_hi) fx.prog ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) oB hoB s refs h hrefs
     (fun _ _ _ _ => True)
     (fun _ bg X Y => Prep 14833 (ket (setXY bg X Y)))
     (fun o5 o6 ho5 ho6 cur rs hh hrs => by
       have ho_all : (oB ++ o5 ++ o6).length = 3072 := by
-        simp only [List.length_append, hoB, d1_len, d2_len, d3_len, d4_len, ho5, ho6]
-      obtain ⟨cs, al, hm⟩ := compiledFixup_sim read (oB ++ o5 ++ o6) ho_all cur rs hh hrs
+        simp only [List.length_append, hoB, (d1W_len hk_lo hk_hi), (d2W_len kw), (d3W_len hk_lo hk_hi), (d4W_len kw), ho5, ho6]
+      obtain ⟨cs, al, hm⟩ := fx.sim read (oB ++ o5 ++ o6) ho_all cur rs hh hrs
       refine ⟨cs, al.imp (fun b c hb a bg X Y cx cy hC _ ha hcl _ => ?_), hm⟩
-      have hpp : portPhase allData (oB ++ o5 ++ o6) read a =
-          portPhase (d1 ++ d2 ++ d3 ++ d4) oB read a * portPhase d5 o5 read a * portPhase d6 o6 read a := by
-        have hall : allData = (d1 ++ d2 ++ d3 ++ d4) ++ d5 ++ d6 := by rw [allData]
-        rw [hall, portPhase_append ((d1 ++ d2 ++ d3 ++ d4) ++ d5) d6 (oB ++ o5) o6
-              (by simp only [List.length_append, hoB, ho5, d5_len]),
-          portPhase_append (d1 ++ d2 ++ d3 ++ d4) d5 oB o5 hoB]
-      rw [hb a (setXY bg X Y) ((setXY_bits16 bg X Y).trans ha) (setXY_cleanOutside bg X Y hcl), hpp, d5, d6]; rfl)
+      have hpp : portPhase (allDataW kw) (oB ++ o5 ++ o6) read a =
+          portPhase ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) oB read a * portPhase (d5W kw) o5 read a * portPhase (d6W kw) o6 read a := by
+        have hall : (allDataW kw) = ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) ++ (d5W kw) ++ (d6W kw) := by rw [allDataW]
+        rw [hall, portPhase_append (((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) ++ (d5W kw)) (d6W kw) (oB ++ o5) o6
+              (by simp only [List.length_append, hoB, ho5, (d5W_len hk_lo hk_hi)]),
+          portPhase_append ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) (d5W kw) oB o5 hoB]
+      rw [hb a (setXY bg X Y) ((setXY_bitsW kw bg X Y).trans ha) (setXY_cleanOutside bg X Y hcl), hpp, d5W, d6W]; rfl)
   obtain ⟨cs, al, hm⟩ := hsim
   refine ⟨cs, ?_, hm⟩
-  have hcat : gStep14 s refs = stepCatFn (wrapSS (ss1Rec.loadProg 0))
+  have hcat : (gStep14W fx) s refs = stepCatFn (wrapSS ((ss1RecW kw).loadProg 0))
       (fun c rs => CatProg.measureThen (fun c' rs' => stepCatFn compiledXAdd
-        (fun c'' rs'' => stepCatFn compiledYAdd (fun c3 rs3 => CatProg.measureThen compiledFixup cxCy c3 rs3) c'' rs'')
+        (fun c'' rs'' => stepCatFn compiledYAdd (fun c3 rs3 => CatProg.measureThen fx.prog cxCy c3 rs3) c'' rs'')
         c' rs') g1_1 c rs) s refs := by
-    simp only [gStep14,
-      show gStep15 = fun c rs => CatProg.measureThen gStep16 g1_1 c rs from funext₂ fun c rs => by rw [gStep15],
-      show gStep16 = fun c' rs' => stepCatFn compiledXAdd gStep17 c' rs' from funext₂ fun c' rs' => by rw [gStep16],
-      show gStep17 = fun c'' rs'' => stepCatFn compiledYAdd gStep18 c'' rs'' from funext₂ fun c'' rs'' => by rw [gStep17],
-      show gStep18 = fun c3 rs3 => CatProg.measureThen compiledFixup cxCy c3 rs3 from funext₂ fun c3 rs3 => by rw [gStep18]]
+    simp only [gStep14W,
+      show gStep15W fx = fun c rs => CatProg.measureThen (gStep16W fx) g1_1 c rs from funext₂ fun c rs => by rw [gStep15W],
+      show gStep16W fx = fun c' rs' => stepCatFn compiledXAdd (gStep17W fx) c' rs' from funext₂ fun c' rs' => by rw [gStep16W],
+      show gStep17W fx = fun c'' rs'' => stepCatFn compiledYAdd (gStep18W fx) c'' rs'' from funext₂ fun c'' rs'' => by rw [gStep17W],
+      show gStep18W fx = fun c3 rs3 => CatProg.measureThen fx.prog cxCy c3 rs3 from funext₂ fun c3 rs3 => by rw [gStep18W]]
   rw [hcat]
   exact al.imp (fun b c hb a bg X Y cx cy hC ha hcl hQ => hb a bg X Y cx cy hC ha hcl hQ cx (-cy) trivial rfl rfl)
 
--- Stage 6 (`gStep13`): `compiledNegX` → Stage 7
-private theorem stage6_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (oB : List Bool) (hoB : oB.length = (d1 ++ d2 ++ d3 ++ d4).length)
+-- Stage 6 (`(gStep13W fx)`): `compiledNegX` → Stage 7
+private theorem stage6_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        X ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
-          (c * portPhase (d1 ++ d2 ++ d3 ++ d4) oB read a) •
+          (c * portPhase ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-X)) ((-cy) + Y))))
-      ((gStep13 s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep13W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
-  rw [gStep13]
-  refine stepCatFn_sim compiledNegX gStep14 read s refs h _ _ _
+  rw [gStep13W]
+  refine stepCatFn_sim compiledNegX (gStep14W fx) read s refs h _ _ _
     (compiledNegX_sim s read h)
-    (fun c rs hh hrs => stage7_sim coeffs Q oB hoB c rs hh (hrs.trans hrefs))
+    (fun c rs hh hrs => stage7_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hX0 ha hcl hQ => ?_)
   obtain ⟨bs', hx', hfr', hkr⟩ := hb₁ X (setXY bg X Y) hX0 (setXY_regValue_x bg X Y) (setXY_cleanOutside bg X Y hcl)
   have hout_eq : bs' = setXY bg (-X) Y := by
@@ -17492,25 +17930,25 @@ private theorem stage6_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
     hb₂ a bg (-X) Y cx cy hC ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 5 (`gStep12`): `compiledDirectArith true` (mul) → Stage 6
-private theorem stage5_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (oB : List Bool) (hoB : oB.length = (d1 ++ d2 ++ d3 ++ d4).length)
+-- Stage 5 (`(gStep12W fx)`): `compiledDirectArith true` (mul) → Stage 6
+private theorem stage5_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        X ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
-          (c * portPhase (d1 ++ d2 ++ d3 ++ d4) oB read a) •
+          (c * portPhase ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-X)) ((-cy) + Y * X))))
-      ((gStep12 s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep12W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
-  rw [gStep12]
-  refine stepCatFn_sim (compiledDirectArith true) gStep13 read s refs h _ _ _
+  rw [gStep12W]
+  refine stepCatFn_sim (compiledDirectArith true) (gStep13W fx) read s refs h _ _ _
     (compiledDirectArith_ket_sim true s read h)
-    (fun c rs hh hrs => stage6_sim coeffs Q oB hoB c rs hh (hrs.trans hrefs))
+    (fun c rs hh hrs => stage6_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hX0 ha hcl hQ => ?_)
   have hcl_xy := setXY_cleanOutside bg X Y hcl
   have hvalid : DirectArithValid (setXY bg X Y) := ⟨X, Y, hX0, setXY_regValue_x bg X Y, setXY_regValue_y bg X Y, hcl_xy⟩
@@ -17526,31 +17964,31 @@ private theorem stage5_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
     hb₂ a bg X (Y * X) cx cy hC hX0 ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 4 (`gStep8..gStep11`): `ss2Triple → meas g4 → xAdd → meas cxWord` → Stage 5
-private theorem stage4_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (oB : List Bool) (hoB : oB.length = (d1 ++ d2).length)
+-- Stage 4 (`(gStep8W fx)..(gStep11W fx)`): `(ss2TripleW kw) → meas g4 → xAdd → meas cxWord` → Stage 5
+private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        3 * cx + X ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        3 * cx + X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
-          (c * portPhase (d1 ++ d2) oB read a) •
+          (c * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-(3 * cx + X))) ((-cy) + Y * (3 * cx + X)))))
-      ((gStep8 s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep8W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
-  have hlen12 : (d1 ++ d2).length = 1024 := by simp [d1_len, d2_len]
+  have hlen12 : ((d1W kw) ++ (d2W kw)).length = 1024 := by simp [(d1W_len hk_lo hk_hi), (d2W_len kw)]
   have h33_cx : (14833 : Wire) ∉ cxWord := fun hm => by simp only [cxWord, List.mem_range'_1] at hm; norm_num at hm
   have h33_g4 : (14833 : Wire) ∉ g4 := fun hm => by simp only [g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1] at hm; norm_num at hm
-  have hdisj : ∀ w ∈ portTargets ss2Triple.ports ++ ss2Triple.garb, w ≠ windowRoot ∧ w ≠ rootWire ∧ w ≠ guardWire := fun w hw => by
-    change w ∈ portTargets ports4 ++ g4 at hw; rw [ports4_targets] at hw
+  have hdisj : ∀ w ∈ portTargets (ss2TripleW kw).ports ++ (ss2TripleW kw).garb, w ≠ windowRoot ∧ w ≠ rootWire ∧ w ≠ guardWire := fun w hw => by
+    change w ∈ portTargets (ports4W kw) ++ g4 at hw; rw [(ports4W_targets kw)] at hw
     simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1, or_assoc] at hw
     rcases hw with h | h | h | h <;> exact ⟨by unfold windowRoot; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold rootWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold guardWire; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have hout : ∀ w ∈ portTargets ss2Triple.ports ++ ss2Triple.garb,
-      ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 872) := fun w hw => by
-    change w ∈ portTargets ports4 ++ g4 at hw; rw [ports4_targets] at hw
+  have hout : ∀ w ∈ portTargets (ss2TripleW kw).ports ++ (ss2TripleW kw).garb,
+      ¬(263 ≤ w ∧ w < 519) ∧ ¬(580 ≤ w ∧ w < 836) ∧ ¬(855 ≤ w ∧ w < 874) := fun w hw => by
+    change w ∈ portTargets (ports4W kw) ++ g4 at hw; rw [(ports4W_targets kw)] at hw
     simp only [cxWord, g4, g4_1, g4_2, g4_3, List.mem_append, List.mem_range'_1, or_assoc] at hw
     rcases hw with h | h | h | h <;> exact ⟨fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
   -- Step 11: measure cxWord
@@ -17559,27 +17997,27 @@ private theorem stage4_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
       ∃ cs : List ℂ, List.Forall₂
         (fun b k11 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
-          X ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxWord t = setXY bg X Y →
-          (∀ q ∈ d4, t q.target = decide (read (q.ref a) = q.value)) →
+          (∀ q ∈ (d4W kw), t q.target = decide (read (q.ref a) = q.value)) →
           b.kraus (Prep 14833 (ket t)) =
-            (k11 * (portPhase (d1 ++ d2) oB read a * portPhase d3 o3 read a)) •
+            (k11 * (portPhase ((d1W kw) ++ (d2W kw)) oB read a * portPhase (d3W kw) o3 read a)) •
               Prep 14833 (ket (setXY bg (cx + (-X)) ((-cy) + Y * X))))
-        ((gStep11 c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-    rw [gStep11]
-    refine CatProg.measureThen_sim gStep12 read cxWord c rs hh _ _
-      (fun o4 ho4 cur rs' hh' hrs' => stage5_sim coeffs Q (oB ++ o3 ++ o4)
-        (by simp only [List.length_append, hoB, d1_len, d2_len, d3_len, d4_len, ho3, ho4, cxWord_length])
+        (((gStep11W fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+    rw [gStep11W]
+    refine CatProg.measureThen_sim (gStep12W fx) read cxWord c rs hh _ _
+      (fun o4 ho4 cur rs' hh' hrs' => stage5_sim hk_lo hk_hi fx coeffs Q (oB ++ o3 ++ o4)
+        (by simp only [List.length_append, hoB, (d1W_len hk_lo hk_hi), (d2W_len kw), (d3W_len hk_lo hk_hi), (d4W_len kw), ho3, ho4, cxWord_length])
         cur rs' hh' (by rw [hrs', hrs, List.append_assoc]))
       (fun o4 ho4 b k11 hb a bg X Y cx cy hC t hX0 ha hcl hQ hclr hld => ?_)
-    have hpp : portPhase (d1 ++ d2 ++ d3 ++ d4) (oB ++ o3 ++ o4) read a =
-        portPhase (d1 ++ d2) oB read a * portPhase d3 o3 read a * portPhase d4 o4 read a := by
-      rw [portPhase_append (d1 ++ d2 ++ d3) d4 (oB ++ o3) o4
-            (by simp only [List.length_append, hoB, d1_len, d2_len, d3_len, ho3]),
-        portPhase_append (d1 ++ d2) d3 oB o3 hoB]
-    have hreg : registerXPhase cxWord o4 t = portPhase d4 o4 read a := by
-      rw [← d4_targets]; exact (portPhase_eq_registerXPhase d4 o4 read a t hld).symm
+    have hpp : portPhase ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) (oB ++ o3 ++ o4) read a =
+        portPhase ((d1W kw) ++ (d2W kw)) oB read a * portPhase (d3W kw) o3 read a * portPhase (d4W kw) o4 read a := by
+      rw [portPhase_append ((d1W kw) ++ (d2W kw) ++ (d3W kw)) (d4W kw) (oB ++ o3) o4
+            (by simp only [List.length_append, hoB, (d1W_len hk_lo hk_hi), (d2W_len kw), (d3W_len hk_lo hk_hi), ho3]),
+        portPhase_append ((d1W kw) ++ (d2W kw)) (d3W kw) oB o3 hoB]
+    have hreg : registerXPhase cxWord o4 t = portPhase (d4W kw) o4 read a := by
+      rw [← (d4W_targets kw)]; exact (portPhase_eq_registerXPhase (d4W kw) o4 read a t hld).symm
     dsimp only; rw [LinearMap.comp_apply,
       xResetRegisterKraus_prep_ket 14833 cxWord o4 t h33_cx ho4 cxWord_nodup, map_smul, hclr,
       hb a bg X Y cx cy hC hX0 ha hcl hQ, hpp, hreg, smul_smul]
@@ -17590,17 +18028,17 @@ private theorem stage4_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
       ∃ cs : List ℂ, List.Forall₂
         (fun b k10 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
-          3 * cx + X ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
+          3 * cx + X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxWord t = setXY bg X Y →
           ECDSAAdd.regValue cxWord t = (3 * cx).val →
-          (∀ q ∈ d4, t q.target = decide (read (q.ref a) = q.value)) →
+          (∀ q ∈ (d4W kw), t q.target = decide (read (q.ref a) = q.value)) →
           b.kraus (Prep 14833 (ket t)) =
-            (k10 * (portPhase (d1 ++ d2) oB read a * portPhase d3 o3 read a)) •
+            (k10 * (portPhase ((d1W kw) ++ (d2W kw)) oB read a * portPhase (d3W kw) o3 read a)) •
               Prep 14833 (ket (setXY bg (cx + (-(3 * cx + X))) ((-cy) + Y * (3 * cx + X)))))
-        ((gStep10 c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-    rw [gStep10]
-    refine stepCatFn_sim compiledXAdd gStep11 read c rs hh _ _ _
+        (((gStep10W fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+    rw [gStep10W]
+    refine stepCatFn_sim compiledXAdd (gStep11W fx) read c rs hh _ _ _
       (compiledXAdd_ket_sim c read hh)
       (fun c' rs' hh' hrs' => hs11 o3 ho3 c' rs' hh' (hrs'.trans hrs))
       (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC t hne0 ha hcl hQ hclr hcxv hld => ?_)
@@ -17633,10 +18071,10 @@ private theorem stage4_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
         · rw [clearRegister_clean cxWord t' w hwc]
           have := congrFun hclr w; rw [clearRegister_clean cxWord t w hwc, setXY_outside bg X Y w h1 h2] at this; exact this
         · rw [MeasuredClear.clearRegister_frame cxWord t' w hwc, hxc.2 w h1, ht_out w hwc, setXY_outside bg X Y w h1 h2]
-    have hout_ld : ∀ q ∈ d4, t' q.target = decide (read (q.ref a) = q.value) := fun q hq => by
+    have hout_ld : ∀ q ∈ (d4W kw), t' q.target = decide (read (q.ref a) = q.value) := fun q hq => by
       have hqt : q.target ∈ cxWord := by
-        have hm : q.target ∈ d4.map MeasuredClear.ClearPort.target := List.mem_map.mpr ⟨q, hq, rfl⟩
-        rwa [d4_targets] at hm
+        have hm : q.target ∈ (d4W kw).map MeasuredClear.ClearPort.target := List.mem_map.mpr ⟨q, hq, rfl⟩
+        rwa [(d4W_targets kw)] at hm
       rw [hxc.2 q.target (fun c => by simp only [cxWord, List.mem_range'_1] at hqt; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))), hld q hq]
     dsimp only [InstrumentBranch.seq]; rw [LinearMap.comp_apply, hb1_st, map_smul,
       hb₂ a bg (3 * cx + X) Y cx cy hC t' hne0 ha hcl hQ hout_clr hout_ld, smul_smul]
@@ -17646,16 +18084,16 @@ private theorem stage4_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
       ∃ cs : List ℂ, List.Forall₂
         (fun b k9 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
-          3 * cx + X ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-          constantPoint Q (coeffs (rows16 a)) = .some hC →
-          (∀ q ∈ d3, t q.target = decide (read (q.ref a) = q.value)) →
-          clearRegister g4 t = tableXorState (portMask read ports4 a) true (setXY bg X Y) →
+          3 * cx + X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
+          (∀ q ∈ (d3W kw), t q.target = decide (read (q.ref a) = q.value)) →
+          clearRegister g4 t = tableXorState (portMask read (ports4W kw) a) true (setXY bg X Y) →
           b.kraus (Prep 14833 (ket t)) =
-            (k9 * portPhase (d1 ++ d2) oB read a) •
+            (k9 * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
               Prep 14833 (ket (setXY bg (cx + (-(3 * cx + X))) ((-cy) + Y * (3 * cx + X)))))
-        ((gStep9 c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-    rw [gStep9]
-    refine CatProg.measureThen_sim gStep10 read g4 c rs hh _ _
+        (((gStep9W fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+    rw [gStep9W]
+    refine CatProg.measureThen_sim (gStep10W fx) read g4 c rs hh _ _
       (fun o3 ho3 cur rs' hh' hrs' => hs10 o3 (ho3.trans g4_length) cur rs' hh' (by rw [hrs', hrs]))
       (fun o3 ho3 b k9 hb a bg X Y cx cy hC t hne0 ha hcl hQ hgd hcg => ?_)
     set t1 := clearRegister g4 t
@@ -17663,53 +18101,53 @@ private theorem stage4_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
     have hcl_cx : Clean cxWord (setXY bg X Y) := fun w hw => by
       simp only [cxWord, List.mem_range'_1] at hw
       exact hcl_xy w (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (fun c => by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-    have hnd4 : (portTargets ports4).Nodup := by rw [ports4_targets]; exact cxWord_nodup
-    have hld1 : ∀ q ∈ d4, t1 q.target = decide (read (q.ref a) = q.value) := by
-      rw [d4]
-      exact clearData_loaded_of_xor read ports4 a (setXY bg X Y) t1 hnd4 (by rwa [ports4_targets]) (fun w _ => congrFun hcg w)
+    have hnd4 : (portTargets (ports4W kw)).Nodup := by rw [(ports4W_targets kw)]; exact cxWord_nodup
+    have hld1 : ∀ q ∈ (d4W kw), t1 q.target = decide (read (q.ref a) = q.value) := by
+      rw [d4W]
+      exact clearData_loaded_of_xor read (ports4W kw) a (setXY bg X Y) t1 hnd4 (by rwa [(ports4W_targets kw)]) (fun w _ => congrFun hcg w)
     have hclr1 : clearRegister cxWord t1 = setXY bg X Y := by
-      have h1 := clearRegister_eq_xor_of_loaded read ports4 a t1 hnd4 (by rwa [← d4])
-      rw [ports4_targets] at h1; rw [h1, hcg]
-      funext w; simp only [tableXorState]; by_cases hm : w ∈ portMask read ports4 a <;> simp [hm]
+      have h1 := clearRegister_eq_xor_of_loaded read (ports4W kw) a t1 hnd4 (by rwa [← d4W])
+      rw [(ports4W_targets kw)] at h1; rw [h1, hcg]
+      funext w; simp only [tableXorState]; by_cases hm : w ∈ portMask read (ports4W kw) a <;> simp [hm]
     have hcx1 : ECDSAAdd.regValue cxWord t1 = (3 * cx).val := by
-      rw [hcg, ports4, regValue_wordPorts_xor coeffs Q .tripleX cxWord cxWord_length cxWord_nodup a _ hcl_cx
+      rw [hcg, ports4W, regValue_wordPorts_xor coeffs Q .tripleX cxWord cxWord_length cxWord_nodup a _ hcl_cx
         (by rw [hQ]; exact (3 * cx).val_lt.trans (by decide +kernel)), hQ]; rfl
-    have hreg : registerXPhase g4 o3 t = portPhase d3 o3 read a := by
-      rw [← d3_targets]; exact (portPhase_eq_registerXPhase d3 o3 read a t hgd).symm
+    have hreg : registerXPhase g4 o3 t = portPhase (d3W kw) o3 read a := by
+      rw [← (d3W_targets hk_lo hk_hi)]; exact (portPhase_eq_registerXPhase (d3W kw) o3 read a t hgd).symm
     dsimp only; rw [LinearMap.comp_apply,
       xResetRegisterKraus_prep_ket 14833 g4 o3 t h33_g4 ho3 g4_nodup, map_smul,
       hb a bg X Y cx cy hC t1 hne0 ha hcl hQ hclr1 hcx1 hld1, hreg, smul_smul]
     rw [phase_cancel_prep _ _ _ _ (portPhase_mul_self _ _ _ _)]
-  -- Step 8: wrapSS ss2Triple
-  rw [gStep8]
-  refine stepCatFn_sim (wrapSS (ss2Triple.loadProg 0)) gStep9 read s refs h _ _ _
-    (wrapSS_SS2_sim ss2Triple ss2Triple_geo rfl rfl rfl ss2Triple_raw_support hdisj hout s read h)
+  -- Step 8: wrapSS (ss2TripleW kw)
+  rw [gStep8W]
+  refine stepCatFn_sim (wrapSS ((ss2TripleW kw).loadProg 0)) (gStep9W fx) read s refs h _ _ _
+    (wrapSS_SS2_sim hk_hi (ss2TripleW kw) (ss2TripleW_geo hk_lo hk_hi) rfl rfl rfl (ss2TripleW_raw_support hk_lo hk_hi) hdisj hout s read h)
     (fun c rs hh hrs => hs9 c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hne0 ha hcl hQ => ?_)
-  obtain ⟨bs', _, hgd, hcg, hkr⟩ := hb₁ a (setXY bg X Y) ((setXY_bits16 bg X Y).trans ha) (setXY_cleanOutside bg X Y hcl)
+  obtain ⟨bs', _, hgd, hcg, hkr⟩ := hb₁ a (setXY bg X Y) ((setXY_bitsW kw bg X Y).trans ha) (setXY_cleanOutside bg X Y hcl)
   dsimp only [InstrumentBranch.seq]; rw [LinearMap.comp_apply, hkr, map_smul,
-    hb₂ a bg X Y cx cy hC bs' hne0 ha hcl hQ (by rw [d3]; exact hgd) hcg, smul_smul]
+    hb₂ a bg X Y cx cy hC bs' hne0 ha hcl hQ (by rw [d3W]; exact hgd) hcg, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 3 (`gStep7`): `compiledSquare` → Stage 4
-private theorem stage3_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (oB : List Bool) (hoB : oB.length = (d1 ++ d2).length)
+-- Stage 3 (`(gStep7W fx)`): `compiledSquare` → Stage 4
+private theorem stage3_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        3 * cx + (X - Y * Y) ≠ 0 → tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        3 * cx + (X - Y * Y) ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
-          (c * portPhase (d1 ++ d2) oB read a) •
+          (c * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-(3 * cx + (X - Y * Y)))) ((-cy) + Y * (3 * cx + (X - Y * Y))))))
-      ((gStep7 s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep7W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
-  rw [gStep7]
-  refine stepCatFn_sim compiledSquare gStep8 read s refs h _ _ _
+  rw [gStep7W]
+  refine stepCatFn_sim compiledSquare (gStep8W fx) read s refs h _ _ _
     (compiledSquare_sim s read h)
-    (fun c rs hh hrs => stage4_sim coeffs Q oB hoB c rs hh (hrs.trans hrefs))
+    (fun c rs hh hrs => stage4_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hne0 ha hcl hQ => ?_)
   obtain ⟨bs', hx', hy', hfr', hkr⟩ := hb₁ X Y (setXY bg X Y) (setXY_regValue_x bg X Y) (setXY_regValue_y bg X Y) (setXY_cleanOutside bg X Y hcl)
   have hout_eq : bs' = setXY bg (X - Y * Y) Y :=
@@ -17718,27 +18156,27 @@ private theorem stage3_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
     hb₂ a bg (X - Y * Y) Y cx cy hC hne0 ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 2 (`gStep6`): `compiledDirectArith false` (div) → Stage 3
-private theorem stage2_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (oB : List Bool) (hoB : oB.length = (d1 ++ d2).length)
+-- Stage 2 (`(gStep6W fx)`): `compiledDirectArith false` (div) → Stage 3
+private theorem stage2_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
         X ≠ 0 → 3 * cx + (X - (Y / X) * (Y / X)) ≠ 0 →
-        tableAddressValue bits16 bg = a → CleanOutsideXYBank bg →
-        constantPoint Q (coeffs (rows16 a)) = .some hC →
+        tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
-          (c * portPhase (d1 ++ d2) oB read a) •
+          (c * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-(3 * cx + (X - (Y / X) * (Y / X)))))
               ((-cy) + (Y / X) * (3 * cx + (X - (Y / X) * (Y / X)))))))
-      ((gStep6 s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep6W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
-  rw [gStep6]
-  refine stepCatFn_sim (compiledDirectArith false) gStep7 read s refs h _ _ _
+  rw [gStep6W]
+  refine stepCatFn_sim (compiledDirectArith false) (gStep7W fx) read s refs h _ _ _
     (compiledDirectArith_ket_sim false s read h)
-    (fun c rs hh hrs => stage3_sim coeffs Q oB hoB c rs hh (hrs.trans hrefs))
+    (fun c rs hh hrs => stage3_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hX0 hne2 ha hcl hQ => ?_)
   have hcl_xy := setXY_cleanOutside bg X Y hcl
   have hvalid : DirectArithValid (setXY bg X Y) := ⟨X, Y, hX0, setXY_regValue_x bg X Y, setXY_regValue_y bg X Y, hcl_xy⟩
@@ -17755,56 +18193,56 @@ private theorem stage2_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Se
   exact congrArg (· • _) (by ring)
 
 -- Full core simulation: `compiledGenericCore` implements `R ↦ R + C` on all `GoodPoint R C`
-theorem compiledGenericCore_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (s : Nat) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (R : ShorECDLP.Secp256k1.Point) (bs : BasisState),
         CleanOutsideXYBank bs → HasFinitePoint R bs →
-        GoodPoint R (constantPoint Q (coeffs (rows16 (raw16 bs)))) →
+        GoodPoint R (constantPoint Q (coeffs ((rowsW kw) ((rawW kw) bs)))) →
         b.kraus (Prep 14833 (ket bs)) =
-          c • Prep 14833 (ket (pointWrite (R + constantPoint Q (coeffs (rows16 (raw16 bs)))) bs)))
-      ((compiledGenericCore s List.nil).prog.instantiate (readConstant coeffs Q) h).run cs ∧
+          c • Prep 14833 (ket (pointWrite (R + constantPoint Q (coeffs ((rowsW kw) ((rawW kw) bs)))) bs)))
+      ((compiledGenericCoreW fx s List.nil).prog.instantiate (readConstant coeffs Q) h).run cs ∧
     (cs.map Complex.normSq).sum = 1 := by
   let read := readConstant coeffs Q
   let T : Nat → BasisState → ECDSAAdd.Fp → ECDSAAdd.Fp → State := fun a bg X Y =>
-    match constantPoint Q (coeffs (rows16 a)) with
+    match constantPoint Q (coeffs ((rowsW kw) a)) with
     | .zero => 0
     | .some (x := cx) (y := cy) _ =>
       let cx' : ECDSAAdd.Fp := cx
       let cy' : ECDSAAdd.Fp := cy
       let d : ECDSAAdd.Fp := 3 * cx' + (X - (Y / X) * (Y / X))
       Prep 14833 (ket (setXY bg (cx' + (-d)) ((-cy') + (Y / X) * d)))
-  have hsim := ss1_addXY_clear_sim coeffs Q ss1Neg ss1Neg_geo .negX .negY rfl rfl rfl rfl (by change ports1 = _; rw [ports1])
-    ss1Neg_raw_support gStep6 List.nil List.nil rfl s List.nil h rfl
+  have hsim := ss1_addXY_clear_sim hk_hi coeffs Q (ss1NegW kw) (ss1NegW_geo hk_lo hk_hi) .negX .negY rfl rfl rfl rfl (by change ports1W kw = _; rw [ports1W])
+    (ss1NegW_raw_support hk_lo hk_hi) (gStep6W fx) List.nil List.nil rfl s List.nil h rfl
     (fun X Y cx _ => X ≠ 0 ∧ 3 * cx + (X - (Y / X) * (Y / X)) ≠ 0) T
     (fun o1 o2 ho1 ho2 cur rs hh hrs => by
-      obtain ⟨cs, al, hm⟩ := stage2_sim coeffs Q (o1 ++ o2) (by simp only [List.length_append, ho1, ho2, d1_len, d2_len]) cur rs hh (by simpa using hrs)
+      obtain ⟨cs, al, hm⟩ := stage2_sim hk_lo hk_hi fx coeffs Q (o1 ++ o2) (by simp only [List.length_append, ho1, ho2, (d1W_len hk_lo hk_hi), (d2W_len kw)]) cur rs hh (by simpa using hrs)
       refine ⟨cs, al.imp (fun b c hb a bg X Y cx cy hC ⟨hX0, hne2⟩ ha hcl hQ => ?_), hm⟩
-      have hpp : portPhase (d1 ++ d2) (o1 ++ o2) read a =
-          portPhase (List.nil : List (MeasuredClear.ClearPort 65536)) List.nil read a *
-          portPhase (clearData ss1Neg.garbPorts) o1 read a * portPhase (clearData ss1Neg.ports) o2 read a := by
-        rw [portPhase_append d1 d2 o1 o2 (by rw [ho1, d1_len]), d1, d2]; simp only [portPhase, one_mul]; rfl
+      have hpp : portPhase ((d1W kw) ++ (d2W kw)) (o1 ++ o2) read a =
+          portPhase (List.nil : List (MeasuredClear.ClearPort (2 ^ kw))) List.nil read a *
+          portPhase (clearData (ss1NegW kw).garbPorts) o1 read a * portPhase (clearData (ss1NegW kw).ports) o2 read a := by
+        rw [portPhase_append (d1W kw) (d2W kw) o1 o2 (by rw [ho1, (d1W_len hk_lo hk_hi)]), d1W, d2W]; simp only [portPhase, one_mul]; rfl
       have hT : T a bg X Y = Prep 14833 (ket (setXY bg (cx + (-(3 * cx + (X - (Y / X) * (Y / X)))))
           ((-cy) + (Y / X) * (3 * cx + (X - (Y / X) * (Y / X)))))) := by
         dsimp only [T]; rw [hQ]
       rw [hb a bg X Y cx cy hC hX0 hne2 ha hcl hQ, hpp, hT])
   obtain ⟨cs, al, hm⟩ := hsim
   refine ⟨cs, ?_, hm⟩
-  have hcat : compiledGenericCore s List.nil = stepCatFn (wrapSS (ss1Neg.loadProg 0))
+  have hcat : compiledGenericCoreW fx s List.nil = stepCatFn (wrapSS ((ss1NegW kw).loadProg 0))
       (fun c rs => CatProg.measureThen (fun c' rs' => stepCatFn compiledXAdd
-        (fun c'' rs'' => stepCatFn compiledYAdd (fun c3 rs3 => CatProg.measureThen gStep6 cxCy c3 rs3) c'' rs'')
+        (fun c'' rs'' => stepCatFn compiledYAdd (fun c3 rs3 => CatProg.measureThen (gStep6W fx) cxCy c3 rs3) c'' rs'')
         c' rs') g1_1 c rs) s List.nil := by
-    simp only [compiledGenericCore,
-      show gStep2 = fun c rs => CatProg.measureThen gStep3 g1_1 c rs from funext₂ fun c rs => by rw [gStep2],
-      show gStep3 = fun c' rs' => stepCatFn compiledXAdd gStep4 c' rs' from funext₂ fun c' rs' => by rw [gStep3],
-      show gStep4 = fun c'' rs'' => stepCatFn compiledYAdd gStep5 c'' rs'' from funext₂ fun c'' rs'' => by rw [gStep4],
-      show gStep5 = fun c3 rs3 => CatProg.measureThen gStep6 cxCy c3 rs3 from funext₂ fun c3 rs3 => by rw [gStep5]]
+    simp only [compiledGenericCoreW,
+      show gStep2W fx = fun c rs => CatProg.measureThen (gStep3W fx) g1_1 c rs from funext₂ fun c rs => by rw [gStep2W],
+      show gStep3W fx = fun c' rs' => stepCatFn compiledXAdd (gStep4W fx) c' rs' from funext₂ fun c' rs' => by rw [gStep3W],
+      show gStep4W fx = fun c'' rs'' => stepCatFn compiledYAdd (gStep5W fx) c'' rs'' from funext₂ fun c'' rs'' => by rw [gStep4W],
+      show gStep5W fx = fun c3 rs3 => CatProg.measureThen (gStep6W fx) cxCy c3 rs3 from funext₂ fun c3 rs3 => by rw [gStep5W]]
   rw [hcat]
   refine al.imp (fun b c hb R bs hcl hR hgp => ?_)
   obtain ⟨x, y, hnsR, rfl, hx, hy⟩ := hR
-  set a := raw16 bs
-  have hC0 : constantPoint Q (coeffs (rows16 a)) ≠ 0 := hn (rows16 a)
-  cases hCeq : constantPoint Q (coeffs (rows16 a)) with
+  set a := (rawW kw) bs
+  have hC0 : constantPoint Q (coeffs ((rowsW kw) a)) ≠ 0 := hn ((rowsW kw) a)
+  cases hCeq : constantPoint Q (coeffs ((rowsW kw) a)) with
   | zero => exact absurd hCeq hC0
   | @some cx₀ cy₀ hnsC =>
     let cx : ECDSAAdd.Fp := cx₀
@@ -17847,207 +18285,229 @@ theorem compiledGenericCore_sim (coeffs : Fin 65536 → PointCoeff) (Q : ShorECD
       · exact fun w h1 h2 => setXY_outside bs _ _ w h1 h2
     rw [hstep, hT, hpw]; simp [portPhase]
 
-/-! #### 9. Full signed 16-bit generic window (`compiledProgram`, `1,610` qubits, `2,238,256` Toffolis) -/
 
-def compiledProgramFn : CatFn 65536 :=
-  CatFn.seq (CatFn.lit flipAddr16)
-    (CatFn.seq compiledSign
-      (CatFn.seq (fun s => compiledGenericCore s List.nil)
-        (CatFn.seq compiledSign (CatFn.lit unflipAddr16))))
+/-! #### 9. Polymorphic full signed generic window (`compiledProgramW`) and concrete `16/17/18` wrappers -/
 
-attribute [local irreducible] compiledProgramFn
+def compiledProgramFnW {k : Nat} (fx : FixupSpec k) : CatFn (2 ^ k) :=
+  CatFn.seq (CatFn.lit (flipAddrW k))
+    (CatFn.seq (compiledSign (signBitW k))
+      (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil)
+        (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
 
-theorem compiledProgramFn_shiftFin : ShiftFin compiledProgramFn 3850000 := by
-  rw [compiledProgramFn]
-  exact (CatFn.seq_shiftFin _ _ (CatFn.lit_shiftFin flipAddr16)
-    (CatFn.seq_shiftFin _ _ compiledSign_shiftFin
-      (CatFn.seq_shiftFin _ _ compiledGenericCore_shiftFin
-        (CatFn.seq_shiftFin _ _ compiledSign_shiftFin (CatFn.lit_shiftFin unflipAddr16))))).mono (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+attribute [local irreducible] compiledProgramFnW
 
-def compiledProgram (start : Nat) : Straight 65536 start (start + (compiledProgramFn 0).finish) :=
-  castFinish (compiledProgramFn_shiftFin.1 start) (compiledProgramFn start).prog
+theorem compiledProgramFnW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) :
+    ShiftFin (compiledProgramFnW fx)
+      (3659735 + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin) := by
+  rw [compiledProgramFnW]
+  exact (CatFn.seq_shiftFin _ _ (CatFn.lit_shiftFin (flipAddrW k))
+    (CatFn.seq_shiftFin _ _ (compiledSign_shiftFin (signBitW k))
+      (CatFn.seq_shiftFin _ _ (compiledGenericCoreW_shiftFin hk_lo hk_hi fx)
+        (CatFn.seq_shiftFin _ _ (compiledSign_shiftFin (signBitW k)) (CatFn.lit_shiftFin (unflipAddrW k)))))).mono (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-attribute [local irreducible] compiledProgram
+def compiledProgramW {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
+    Straight (2 ^ k) start (start + (compiledProgramFnW fx 0).finish) :=
+  castFinish ((compiledProgramFnW_shiftFin hk_lo hk_hi fx).1 start) (compiledProgramFnW fx start).prog
 
-theorem compiledRec16_bound : (compiledProgramFn 0).finish ≤ 3850000 := compiledProgramFn_shiftFin.2
+attribute [local irreducible] compiledProgramW
 
-theorem compiled_removed18 (start : Nat) : removed 18 (compiledProgram start) = 0 := by
-  rw [compiledProgram, LocalFour.removed_castFinish, compiledProgramFn]
-  exact CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ flipAddr16_removed18)
-    (CatFn.seq_removed18 _ _ compiledSign_removed18
-      (CatFn.seq_removed18 _ _ (fun s => compiledGenericCore_removed18 s List.nil)
-        (CatFn.seq_removed18 _ _ compiledSign_removed18 (CatFn.lit_removed18 _ unflipAddr16_removed18)))) start
+theorem compiledRecW_bound {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) :
+    (compiledProgramFnW fx 0).finish ≤
+      3659735 + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin :=
+  (compiledProgramFnW_shiftFin hk_lo hk_hi fx).2
 
-theorem compiled_tCount (start : Nat) (read : ConstantBit 65536 → Bool) (h : Fin start → Bool) :
-    ((compiledProgram start).instantiate read h).tCount ≤ 4 * 2238256 := by
-  rw [compiledProgram, castFinish_instantiate, compiledProgramFn]
+theorem compiledW_removed18 {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
+    removed 18 (compiledProgramW hk_lo hk_hi fx start) = 0 := by
+  rw [compiledProgramW, LocalFour.removed_castFinish, compiledProgramFnW]
+  exact CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ (flipAddrW_removed18 k))
+    (CatFn.seq_removed18 _ _ (compiledSign_removed18 (signBitW k))
+      (CatFn.seq_removed18 _ _ (fun s => compiledGenericCoreW_removed18 fx s List.nil)
+        (CatFn.seq_removed18 _ _ (compiledSign_removed18 (signBitW k))
+          (CatFn.lit_removed18 _ (unflipAddrW_removed18 k))))) start
+
+theorem compiledW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (start : Nat) (read : ConstantBit (2 ^ k) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramW hk_lo hk_hi fx start).instantiate read h).tCount ≤
+      4 * (2154045 + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
+  rw [compiledProgramW, castFinish_instantiate, compiledProgramFnW]
   refine (b_seq_tCount_any _ _
-    (fun s r hh => le_of_eq ((CatFn.lit_tCount flipAddr16 s r hh).trans flipAddr16_tCount))
-    (b_seq_tCount_any _ _ compiledSign_tCount
-      (b_seq_tCount_any _ _ (fun s r hh => compiledGenericCore_tCount s List.nil r hh)
-        (b_seq_tCount_any _ _ compiledSign_tCount
-          (fun s r hh => le_of_eq ((CatFn.lit_tCount unflipAddr16 s r hh).trans unflipAddr16_tCount))))) start read h).trans ?_
+    (fun s r hh => le_of_eq ((CatFn.lit_tCount (flipAddrW k) s r hh).trans (flipAddrW_tCount k)))
+    (b_seq_tCount_any _ _ (compiledSign_tCount (signBitW k))
+      (b_seq_tCount_any _ _ (fun s r hh => compiledGenericCoreW_tCount hk_lo hk_hi fx s List.nil r hh)
+        (b_seq_tCount_any _ _ (compiledSign_tCount (signBitW k))
+          (fun s r hh => le_of_eq ((CatFn.lit_tCount (unflipAddrW k) s r hh).trans (unflipAddrW_tCount k)))))) start read h).trans ?_
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiled_wellFormed (start : Nat) : (compiledProgram start).WellFormed := by
-  rw [compiledProgram, castFinish_wellFormed, compiledProgramFn]
-  exact CatFn.seq_wellFormed _ _ (CatFn.lit_wellFormed _ flipAddr16_wellFormed)
-    (CatFn.seq_wellFormed _ _ compiledSign_wellFormed
-      (CatFn.seq_wellFormed _ _ (fun s => compiledGenericCore_wellFormed s List.nil)
-        (CatFn.seq_wellFormed _ _ compiledSign_wellFormed (CatFn.lit_wellFormed _ unflipAddr16_wellFormed)))) start
+theorem compiledW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
+    (compiledProgramW hk_lo hk_hi fx start).WellFormed := by
+  have hsb : 855 ≤ signBitW k ∧ signBitW k < 874 := ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  rw [compiledProgramW, castFinish_wellFormed, compiledProgramFnW]
+  exact CatFn.seq_wellFormed _ _ (CatFn.lit_wellFormed _ (flipAddrW_wellFormed k))
+    (CatFn.seq_wellFormed _ _ (compiledSign_wellFormed (signBitW k) hsb)
+      (CatFn.seq_wellFormed _ _ (fun s => compiledGenericCoreW_wellFormed hk_lo hk_hi fx s List.nil)
+        (CatFn.seq_wellFormed _ _ (compiledSign_wellFormed (signBitW k) hsb)
+          (CatFn.lit_wellFormed _ (unflipAddrW_wellFormed k))))) start
 
-theorem compiled_support (start : Nat) :
-    ChallengeMigration.straightWires (compiledProgram start) ⊆ support1610 := by
-  rw [compiledProgram, straightWires_castFinish, compiledProgramFn]
-  exact CatFn.seq_wires _ _ (CatFn.lit_wires _ flipAddr16_wires)
-    (CatFn.seq_wires _ _ compiledSign_wires
-      (CatFn.seq_wires _ _ (fun s => compiledGenericCore_wires s List.nil)
-        (CatFn.seq_wires _ _ compiledSign_wires (CatFn.lit_wires _ unflipAddr16_wires)))) start
+theorem compiledW_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
+    ChallengeMigration.straightWires (compiledProgramW hk_lo hk_hi fx start) ⊆ support1612 := by
+  have hsb : 855 ≤ signBitW k ∧ signBitW k < 874 := ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
+  rw [compiledProgramW, straightWires_castFinish, compiledProgramFnW]
+  exact CatFn.seq_wires _ _ (CatFn.lit_wires _ (flipAddrW_wires hk_hi))
+    (CatFn.seq_wires _ _ (compiledSign_wires (signBitW k) hsb)
+      (CatFn.seq_wires _ _ (fun s => compiledGenericCoreW_wires hk_lo hk_hi fx s List.nil)
+        (CatFn.seq_wires _ _ (compiledSign_wires (signBitW k) hsb)
+          (CatFn.lit_wires _ (unflipAddrW_wires hk_hi))))) start
 
-theorem compiled_packed_support (start : Nat) :
-    ChallengeMigration.straightWires (relabelStraight compact1610 (compiledProgram start)) ⊆ List.range 1610 := by
+theorem compiledW_packed_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramW hk_lo hk_hi fx start)) ⊆ List.range 1612 := by
   rw [straightWires_relabel]
   intro v hv; obtain ⟨u, hu, rfl⟩ := List.mem_map.mp hv
-  exact List.mem_range.mpr (compact1610_bound u (compiled_support start hu))
+  exact List.mem_range.mpr (compact1612_bound u (compiledW_support hk_lo hk_hi fx start hu))
 
-theorem compiled_slots (start : Nat) : (compiledProgram start).gateSlots ≤ 80000000000 := by
-  rw [compiledProgram, castFinish_gateSlots, compiledProgramFn]
-  have h1 := CatFn.seq_slots (CatFn.lit (n := 65536) flipAddr16)
-    (CatFn.seq compiledSign (CatFn.seq (fun s => compiledGenericCore s List.nil) (CatFn.seq compiledSign (CatFn.lit unflipAddr16))))
-    (CatFn.lit_slots flipAddr16)
-    (CatFn.seq_slots _ _ compiledSign_slots
-      (CatFn.seq_slots _ _ (fun s => compiledGenericCore_slots s List.nil)
-        (CatFn.seq_slots _ _ compiledSign_slots (CatFn.lit_slots unflipAddr16)))) start
-  rw [flipAddr16_length, unflipAddr16_length] at h1
+theorem compiledW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
+    (compiledProgramW hk_lo hk_hi fx start).gateSlots ≤ fx.slots + 10000000000 := by
+  rw [compiledProgramW, castFinish_gateSlots, compiledProgramFnW]
+  have h1 := CatFn.seq_slots (CatFn.lit (n := 2 ^ k) (flipAddrW k))
+    (CatFn.seq (compiledSign (signBitW k))
+      (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil)
+        (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
+    (CatFn.lit_slots (flipAddrW k))
+    (CatFn.seq_slots _ _ (compiledSign_slots (signBitW k))
+      (CatFn.seq_slots _ _ (fun s => compiledGenericCoreW_slots hk_lo hk_hi fx s List.nil)
+        (CatFn.seq_slots _ _ (compiledSign_slots (signBitW k)) (CatFn.lit_slots (unflipAddrW k))))) start
+  rw [flipAddrW_length, unflipAddrW_length] at h1
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
--- Helper: `compiledSign` as a `CatCoherent` map on clean finite-point states
-private noncomputable def signReflectState (bs : BasisState) : BasisState := by
+-- Helper: `compiledSign signBit` as a `CatCoherent` map on clean finite-point states
+private noncomputable def signReflectStateW (signBit : Wire) (bs : BasisState) : BasisState := by
   classical
   exact if h : ∃ R : ShorECDLP.Secp256k1.Point, pointStateCoordinates bs = fig14PointEncoding R then
-    pointWrite (if bs 870 then -(Classical.choose h) else Classical.choose h) bs
+    pointWrite (if bs signBit then -(Classical.choose h) else Classical.choose h) bs
   else bs
 
-private theorem signReflectState_eq {R : ShorECDLP.Secp256k1.Point} {bs : BasisState}
+private theorem signReflectStateW_eq {signBit : Wire} {R : ShorECDLP.Secp256k1.Point} {bs : BasisState}
     (hcl : CleanOutsideXYBank bs) (hR : HasFinitePoint R bs) :
-    signReflectState bs = pointWrite (if bs 870 then -R else R) bs := by
+    signReflectStateW signBit bs = pointWrite (if bs signBit then -R else R) bs := by
   have hco := hasFinitePoint_coords hcl hR
   have hex : ∃ P : ShorECDLP.Secp256k1.Point, pointStateCoordinates bs = fig14PointEncoding P := ⟨R, hco⟩
-  rw [signReflectState, dif_pos hex]
+  rw [signReflectStateW, dif_pos hex]
   have hch : Classical.choose hex = R := fig14PointEncoding_injective ((Classical.choose_spec hex).symm.trans hco)
   rw [hch]
 
-private theorem compiledSign_catCoherent (read : ConstantBit 65536 → Bool) (s : Nat) (h : Fin s → Bool) :
-    CatCoherent 14833 ((compiledSign s).prog.instantiate read h)
-      (Finsupp.lmapDomain ℂ ℂ signReflectState)
+private theorem compiledSign_catCoherent {n : Nat} (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874)
+    (read : ConstantBit n → Bool) (s : Nat) (h : Fin s → Bool) :
+    CatCoherent 14833 ((compiledSign (n := n) signBit s).prog.instantiate read h)
+      (Finsupp.lmapDomain ℂ ℂ (signReflectStateW signBit))
       (fun bs => CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs) := by
-  have hsim : CatLitSim 14833 ((compiledSign s).prog.instantiate read h) signProg
+  have hsim : CatLitSim 14833 ((compiledSign (n := n) signBit s).prog.instantiate read h) (signProg signBit)
       (fun bs => bs 14832 = false ∧ bs 14833 = false) := by
     rw [compiledSign]
-    exact CatFn.compileProg_catLitSim 14832 14833 signProg
-      signProg_avoid_14832_14833.1 signProg_avoid_14832_14833.2 (by decide) signProg_physical s read h
-  obtain ⟨cs, al, hm⟩ := catLitSim_to_ket_aux signProg ((compiledSign s).prog.instantiate read h)
+    exact CatFn.compileProg_catLitSim 14832 14833 (signProg signBit)
+      (signProg_avoid_14832_14833 signBit hsb).1 (signProg_avoid_14832_14833 signBit hsb).2 (by decide)
+      (signProg_physical signBit) s read h
+  obtain ⟨cs, al, hm⟩ := catLitSim_to_ket_aux (signProg signBit) ((compiledSign (n := n) signBit s).prog.instantiate read h)
     (fun bs => bs 14832 = false ∧ bs 14833 = false)
     (fun bs => CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs)
-    (fun bs bs' => bs' = signReflectState bs) hsim
+    (fun bs bs' => bs' = signReflectStateW signBit bs) hsim
     (fun bs ⟨hcl, _⟩ => ⟨hcl 14832 (by decide) (by decide) (by decide), hcl 14833 (by decide) (by decide) (by decide)⟩)
     (fun bs m ⟨hcl, R, hR⟩ => by
-      have hcorr := signProg_correct ⟨false, bs⟩ m R hR hcl
+      have hcorr := signProg_correct signBit hsb ⟨false, bs⟩ m R hR hcl
       exact ⟨hcorr.1, by
         dsimp only
-        rw [signReflectState_eq hcl hR]
+        rw [signReflectStateW_eq hcl hR]
         exact eq_pointWrite_of_hasFinitePoint hcl hcorr.2.1 (fun w _ h2 => hcorr.2.2 w h2)⟩)
   refine ⟨cs, al.imp (fun b c hb bs hvalid => ?_), hm⟩
   obtain ⟨bs', rfl, hkr⟩ := hb bs hvalid
-  have hlmap : Finsupp.lmapDomain ℂ ℂ signReflectState (ket bs) = ket (signReflectState bs) := by
+  have hlmap : Finsupp.lmapDomain ℂ ℂ (signReflectStateW signBit) (ket bs) = ket (signReflectStateW signBit bs) := by
     unfold ket; rw [Finsupp.lmapDomain_apply, Finsupp.mapDomain_single]
   rw [hkr, hlmap]
 
--- Helper: `compiledGenericCore` as a `CatCoherent` map on clean good states
-private noncomputable def coreAddState (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+private noncomputable def coreAddStateW (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (bs : BasisState) : BasisState := by
   classical
   exact if h : ∃ R : ShorECDLP.Secp256k1.Point, pointStateCoordinates bs = fig14PointEncoding R then
-    pointWrite (Classical.choose h + constantPoint Q (coeffs (rows16 (raw16 bs)))) bs
+    pointWrite (Classical.choose h + constantPoint Q (coeffs (rowsW k (rawW k bs)))) bs
   else bs
 
-private theorem coreAddState_eq {coeffs : Fin 65536 → PointCoeff} {Q R : ShorECDLP.Secp256k1.Point}
+private theorem coreAddStateW_eq {k : Nat} {coeffs : Fin (2 ^ k) → PointCoeff} {Q R : ShorECDLP.Secp256k1.Point}
     {bs : BasisState} (hcl : CleanOutsideXYBank bs) (hR : HasFinitePoint R bs) :
-    coreAddState coeffs Q bs = pointWrite (R + constantPoint Q (coeffs (rows16 (raw16 bs)))) bs := by
+    coreAddStateW k coeffs Q bs = pointWrite (R + constantPoint Q (coeffs (rowsW k (rawW k bs)))) bs := by
   have hco := hasFinitePoint_coords hcl hR
   have hex : ∃ P : ShorECDLP.Secp256k1.Point, pointStateCoordinates bs = fig14PointEncoding P := ⟨R, hco⟩
-  rw [coreAddState, dif_pos hex]
+  rw [coreAddStateW, dif_pos hex]
   have hch : Classical.choose hex = R := fig14PointEncoding_injective ((Classical.choose_spec hex).symm.trans hco)
   rw [hch]
 
-theorem compiled_good_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 14833 ((compiledProgram start).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (update16 coeffs Q)) (Good16 coeffs Q) := by
+    CatCoherent 14833 ((compiledProgramW hk_lo hk_hi fx start).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW k coeffs Q)) (GoodW k coeffs Q) := by
   let read := readConstant coeffs Q
+  have hsb : 855 ≤ signBitW k ∧ signBitW k < 874 := ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
   have hlmap (f : BasisState → BasisState) (bs : BasisState) :
       Finsupp.lmapDomain ℂ ℂ f (ket bs) = ket (f bs) := by
     unfold ket; rw [Finsupp.lmapDomain_apply, Finsupp.mapDomain_single]
   have hflip_coh (s : Nat) (hh : Fin s → Bool) :
-      CatCoherent 14833 ((CatFn.lit (n := 65536) flipAddr16 s).prog.instantiate read hh)
-        (Finsupp.lmapDomain ℂ ℂ flipAddrBasis) (Good16 coeffs Q) := by
+      CatCoherent 14833 ((CatFn.lit (n := 2 ^ k) (flipAddrW k) s).prog.instantiate read hh)
+        (Finsupp.lmapDomain ℂ ℂ (flipAddrBasisW k)) (GoodW k coeffs Q) := by
     refine ⟨[1], ?_, by simp⟩
     rw [CatFn.lit, CatProg.lit_run]
     refine .cons (fun bs _ => ?_) .nil
-    rw [one_smul, hlmap, prep_circuit 14833 flipAddr16 flipAddr16_no14833, flipAddr16_ket]
+    rw [one_smul, hlmap, prep_circuit 14833 (flipAddrW k) (flipAddrW_no14833 hk_hi), flipAddrW_ket]
   have hunflip_coh (s : Nat) (hh : Fin s → Bool) :
-      CatCoherent 14833 ((CatFn.lit (n := 65536) unflipAddr16 s).prog.instantiate read hh)
-        (Finsupp.lmapDomain ℂ ℂ unflipAddrBasis) (fun _ => True) := by
+      CatCoherent 14833 ((CatFn.lit (n := 2 ^ k) (unflipAddrW k) s).prog.instantiate read hh)
+        (Finsupp.lmapDomain ℂ ℂ (unflipAddrBasisW k)) (fun _ => True) := by
     refine ⟨[1], ?_, by simp⟩
     rw [CatFn.lit, CatProg.lit_run]
     refine .cons (fun bs _ => ?_) .nil
-    rw [one_smul, hlmap, prep_circuit 14833 unflipAddr16 unflipAddr16_no14833, unflipAddr16_ket]
+    rw [one_smul, hlmap, prep_circuit 14833 (unflipAddrW k) (unflipAddrW_no14833 hk_hi), unflipAddrW_ket]
   let CoreReady : BasisState → Prop := fun bs =>
-    CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs ∧ GoodPoint R (constantPoint Q (coeffs (rows16 (raw16 bs))))
+    CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs ∧ GoodPoint R (constantPoint Q (coeffs (rowsW k (rawW k bs))))
   have hcore_coh (s : Nat) (hh : Fin s → Bool) :
-      CatCoherent 14833 ((compiledGenericCore s List.nil).prog.instantiate read hh)
-        (Finsupp.lmapDomain ℂ ℂ (coreAddState coeffs Q)) CoreReady := by
-    obtain ⟨cs, al, hm⟩ := compiledGenericCore_sim coeffs Q hn s hh
+      CatCoherent 14833 ((compiledGenericCoreW fx s List.nil).prog.instantiate read hh)
+        (Finsupp.lmapDomain ℂ ℂ (coreAddStateW k coeffs Q)) CoreReady := by
+    obtain ⟨cs, al, hm⟩ := compiledGenericCoreW_sim hk_lo hk_hi fx coeffs Q hn s hh
     refine ⟨cs, al.imp (fun b c hb bs ⟨hcl, R, hR, hgp⟩ => ?_), hm⟩
-    rw [hb R bs hcl hR hgp, hlmap, coreAddState_eq hcl hR]
-  have h12 : ∀ bs, Good16 coeffs Q bs →
-      CleanOutsideXYBank (flipAddrBasis bs) ∧ ∃ R, HasFinitePoint R (flipAddrBasis bs) := by
+    rw [hb R bs hcl hR hgp, hlmap, coreAddStateW_eq hcl hR]
+  have h12 : ∀ bs, GoodW k coeffs Q bs →
+      CleanOutsideXYBank (flipAddrBasisW k bs) ∧ ∃ R, HasFinitePoint R (flipAddrBasisW k bs) := by
     rintro bs ⟨hcl, R, ⟨x, y, hns, rfl, hx, hy⟩, _⟩
-    have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasis bs w = bs w := by
-      have hnb : w ∉ bits16 := fun hm => by have h := mem_bits16.mp hm; rcases hw with hw | hw <;> rcases h with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-      simp [flipAddrBasis, show w ≠ 870 by rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
+    have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasisW k bs w = bs w := by
+      have hnb : w ∉ bitsW k := fun hm => by have h := mem_bitsW.mp hm; rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+      simp [flipAddrBasisW, show w ≠ signBitW k by unfold signBitW; rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
     refine ⟨cleanOutside_frame bs _ hcl (fun w h1 h2 h3 => by
-      have hnb : w ∉ bits16 := fun hm => h3 (mem_bank17.mp (List.mem_append_left _ hm))
-      simp [flipAddrBasis, show w ≠ 870 from fun e => h3 (e ▸ by decide), hnb]),
+      have hnb : w ∉ bitsW k := fun hm => h3 (by have hb := mem_bitsW.mp hm; exact ⟨hb.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩)
+      simp [flipAddrBasisW, show w ≠ signBitW k from fun e => h3 (e ▸ hsb), hnb]),
       .some hns, x, y, hns, rfl, ?_, ?_⟩
     · rw [← hx]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inl (List.mem_range'_1.mp hw)))
     · rw [← hy]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inr (List.mem_range'_1.mp hw)))
-  have h23 : ∀ bs, Good16 coeffs Q bs → CoreReady (signReflectState (flipAddrBasis bs)) := by
+  have h23 : ∀ bs, GoodW k coeffs Q bs → CoreReady (signReflectStateW (signBitW k) (flipAddrBasisW k bs)) := by
     rintro bs ⟨hcl, R, hR, hgp⟩
     obtain ⟨hcl1, R1, hR1⟩ := h12 bs ⟨hcl, R, hR, hgp⟩
     have hR_eq : R1 = R := by
       obtain ⟨x, y, hns, rfl, hx, hy⟩ := hR
       obtain ⟨x1, y1, hns1, rfl, hx1, hy1⟩ := hR1
-      have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasis bs w = bs w := by
-        have hnb : w ∉ bits16 := fun hm => by have h := mem_bits16.mp hm; rcases hw with hw | hw <;> rcases h with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-        simp [flipAddrBasis, show w ≠ 870 by rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
+      have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasisW k bs w = bs w := by
+        have hnb : w ∉ bitsW k := fun hm => by have h := mem_bitsW.mp hm; rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+        simp [flipAddrBasisW, show w ≠ signBitW k by unfold signBitW; rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
       have hx' : x1.val = x.val := by rw [← hx1, ← hx]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inl (List.mem_range'_1.mp hw)))
       have hy' : y1.val = y.val := by rw [← hy1, ← hy]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inr (List.mem_range'_1.mp hw)))
       have hxe : x1 = x := ZMod.val_injective ECDSAAdd.p hx'
       have hye : y1 = y := ZMod.val_injective ECDSAAdd.p hy'
       subst hxe; subst hye; rfl
     rw [hR_eq] at hR1
-    rw [signReflectState_eq hcl1 hR1]
-    have hpw_ne : (if flipAddrBasis bs 870 then -R else R) ≠ 0 := by
-      cases flipAddrBasis bs 870
+    rw [signReflectStateW_eq hcl1 hR1]
+    have hpw_ne : (if flipAddrBasisW k bs (signBitW k) then -R else R) ≠ 0 := by
+      cases flipAddrBasisW k bs (signBitW k)
       · exact hgp.1
       · exact neg_ne_zero.mpr hgp.1
-    have hpw_cl : CleanOutsideXYBank (pointWrite (if flipAddrBasis bs 870 then -R else R) (flipAddrBasis bs)) :=
-      cleanOutside_frame (flipAddrBasis bs) _ hcl1 (fun w h1 h2 h3 => by
+    have hpw_cl : CleanOutsideXYBank (pointWrite (if flipAddrBasisW k bs (signBitW k) then -R else R) (flipAddrBasisW k bs)) :=
+      cleanOutside_frame (flipAddrBasisW k bs) _ hcl1 (fun w h1 h2 h3 => by
         by_cases h8 : w = 838
         · subst h8
-          have hpw8 : pointWrite (if flipAddrBasis bs 870 then -R else R) (flipAddrBasis bs) 838 = false := by
-            cases hP : (if flipAddrBasis bs 870 then -R else R) with
+          have hpw8 : pointWrite (if flipAddrBasisW k bs (signBitW k) then -R else R) (flipAddrBasisW k bs) 838 = false := by
+            cases hP : (if flipAddrBasisW k bs (signBitW k) then -R else R) with
             | zero => exact absurd hP hpw_ne
             | some hns => exact congrArg Prod.fst (pointWrite_coordinates (.some hns) _)
           rw [hpw8, hcl1 838 (by decide) (by decide) (by decide)]
@@ -18058,35 +18518,34 @@ theorem compiled_good_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDL
             · exact h1 h
             · exact h2 h
             · exact h8 rfl))
-    have hpw_raw : raw16 (pointWrite (if flipAddrBasis bs 870 then -R else R) (flipAddrBasis bs)) = raw16 (flipAddrBasis bs) :=
+    have hpw_raw : rawW k (pointWrite (if flipAddrBasisW k bs (signBitW k) then -R else R) (flipAddrBasisW k bs)) = rawW k (flipAddrBasisW k bs) :=
       WEX.tableAddressValue_congr _ _ _ (fun w hw => by
-        have hwb := mem_bits16.mp hw
-        have hwge : 855 ≤ w := by rcases hwb with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+        have hwb := mem_bitsW.mp hw
         exact pointWrite_frame _ _ w (fun hm => by
           simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append, List.mem_cons,
             List.not_mem_nil, or_false, List.mem_range'_1, or_assoc] at hm
           rcases hm with h | h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))))
-    refine ⟨hpw_cl, if flipAddrBasis bs 870 then -R else R, hasFinitePoint_pointWrite _ hpw_ne _, ?_⟩
-    rw [hpw_raw, raw16_flipAddrBasis]
-    have h870 : flipAddrBasis bs 870 = !bs 870 := by simp [flipAddrBasis]
+    refine ⟨hpw_cl, if flipAddrBasisW k bs (signBitW k) then -R else R, hasFinitePoint_pointWrite _ hpw_ne _, ?_⟩
+    rw [hpw_raw, rawW_flipAddrBasisW]
+    have h870 : flipAddrBasisW k bs (signBitW k) = !bs (signBitW k) := by simp [flipAddrBasisW]
     rw [h870]
-    cases hb8 : bs 870 with
+    cases hb8 : bs (signBitW k) with
     | true =>
-      simpa only [Bool.not_true, Bool.false_eq_true, if_false, if_true, signedDelta16, hb8] using hgp
+      simpa only [Bool.not_true, Bool.false_eq_true, if_false, if_true, signedDeltaW, hb8] using hgp
     | false =>
-      have hneg := goodPoint_neg_iff (R := R) (Δ := -constantPoint Q (coeffs (rows16 (65535 - raw16 bs))))
+      have hneg := goodPoint_neg_iff (R := R) (Δ := -constantPoint Q (coeffs (rowsW k (2 ^ k - 1 - rawW k bs))))
       rw [neg_neg] at hneg
-      simpa only [Bool.not_false, if_true, Bool.false_eq_true, if_false, signedDelta16, hb8] using hneg.mpr (by simpa [signedDelta16, hb8] using hgp)
+      simpa only [Bool.not_false, if_true, Bool.false_eq_true, if_false, signedDeltaW, hb8] using hneg.mpr (by simpa [signedDeltaW, hb8] using hgp)
   have h34 : ∀ bs, CoreReady bs →
-      CleanOutsideXYBank (coreAddState coeffs Q bs) ∧ ∃ R, HasFinitePoint R (coreAddState coeffs Q bs) := by
+      CleanOutsideXYBank (coreAddStateW k coeffs Q bs) ∧ ∃ R, HasFinitePoint R (coreAddStateW k coeffs Q bs) := by
     rintro bs ⟨hcl, R, hR, hgp⟩
-    rw [coreAddState_eq hcl hR]
+    rw [coreAddStateW_eq hcl hR]
     have hne0 := goodPoint_add_ne_zero hgp
     refine ⟨cleanOutside_frame bs _ hcl (fun w h1 h2 h3 => by
       by_cases h8 : w = 838
       · subst h8
-        have hpw8 : pointWrite (R + constantPoint Q (coeffs (rows16 (raw16 bs)))) bs 838 = false := by
-          cases hP : R + constantPoint Q (coeffs (rows16 (raw16 bs))) with
+        have hpw8 : pointWrite (R + constantPoint Q (coeffs (rowsW k (rawW k bs)))) bs 838 = false := by
+          cases hP : R + constantPoint Q (coeffs (rowsW k (rawW k bs))) with
           | zero => exact absurd hP hne0
           | some hns => exact congrArg Prod.fst (pointWrite_coordinates (.some hns) _)
         rw [hpw8, hcl 838 (by decide) (by decide) (by decide)]
@@ -18098,27 +18557,27 @@ theorem compiled_good_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDL
           · exact h2 h
           · exact h8 rfl)),
       _, hasFinitePoint_pointWrite _ hne0 bs⟩
-  let FlippedGood : BasisState → Prop := fun bs1 => ∃ bs, Good16 coeffs Q bs ∧ bs1 = flipAddrBasis bs
+  let FlippedGood : BasisState → Prop := fun bs1 => ∃ bs, GoodW k coeffs Q bs ∧ bs1 = flipAddrBasisW k bs
   have hsign1_coh (s : Nat) (hh : Fin s → Bool) :
-      CatCoherent 14833 ((compiledSign s).prog.instantiate read hh)
-        (Finsupp.lmapDomain ℂ ℂ signReflectState) FlippedGood := by
-    obtain ⟨cs, al, hm⟩ := compiledSign_catCoherent read s hh
+      CatCoherent 14833 ((compiledSign (n := 2 ^ k) (signBitW k) s).prog.instantiate read hh)
+        (Finsupp.lmapDomain ℂ ℂ (signReflectStateW (signBitW k))) FlippedGood := by
+    obtain ⟨cs, al, hm⟩ := compiledSign_catCoherent (signBitW k) hsb read s hh
     exact ⟨cs, al.imp (fun b c hb bs1 ⟨bs, hgd, heq⟩ => hb bs1 (heq ▸ h12 bs hgd)), hm⟩
-  have hcomp := b_seq_catCoherent 14833 (CatFn.lit flipAddr16)
-    (CatFn.seq compiledSign (CatFn.seq (fun s => compiledGenericCore s List.nil) (CatFn.seq compiledSign (CatFn.lit unflipAddr16))))
-    read flipAddrBasis _ (Good16 coeffs Q) FlippedGood
+  have hcomp := b_seq_catCoherent 14833 (CatFn.lit (flipAddrW k))
+    (CatFn.seq (compiledSign (signBitW k)) (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil) (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
+    read (flipAddrBasisW k) _ (GoodW k coeffs Q) FlippedGood
     hflip_coh
-    (b_seq_catCoherent 14833 compiledSign
-      (CatFn.seq (fun s => compiledGenericCore s List.nil) (CatFn.seq compiledSign (CatFn.lit unflipAddr16)))
-      read signReflectState _ FlippedGood CoreReady
+    (b_seq_catCoherent 14833 (compiledSign (signBitW k))
+      (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil) (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k))))
+      read (signReflectStateW (signBitW k)) _ FlippedGood CoreReady
       hsign1_coh
-      (b_seq_catCoherent 14833 (fun s => compiledGenericCore s List.nil)
-        (CatFn.seq compiledSign (CatFn.lit unflipAddr16))
-        read (coreAddState coeffs Q) _ CoreReady (fun bs => CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs)
+      (b_seq_catCoherent 14833 (fun s => compiledGenericCoreW fx s List.nil)
+        (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))
+        read (coreAddStateW k coeffs Q) _ CoreReady (fun bs => CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs)
         hcore_coh
-        (b_seq_catCoherent 14833 compiledSign (CatFn.lit unflipAddr16)
-          read signReflectState unflipAddrBasis _ (fun _ => True)
-          (compiledSign_catCoherent read) hunflip_coh (fun _ _ => trivial))
+        (b_seq_catCoherent 14833 (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k))
+          read (signReflectStateW (signBitW k)) (unflipAddrBasisW k) _ (fun _ => True)
+          (compiledSign_catCoherent (signBitW k) hsb read) hunflip_coh (fun _ _ => trivial))
         h34)
       (fun bs1 ⟨bs, hgd, heq⟩ => heq ▸ h23 bs hgd))
     (fun bs hgd => ⟨bs, hgd, rfl⟩) start h
@@ -18142,59 +18601,59 @@ theorem compiled_good_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDL
         · exact h2 h
         · exact h8 rfl
       rw [pointWrite_frame P₂ _ w hnw, pointWrite_frame P₁ _ w hnw]
-  have hfinal_eq (bs : BasisState) (hgd : Good16 coeffs Q bs) :
-      unflipAddrBasis (signReflectState (coreAddState coeffs Q (signReflectState (flipAddrBasis bs)))) =
-        update16 coeffs Q bs := by
+  have hfinal_eq (bs : BasisState) (hgd : GoodW k coeffs Q bs) :
+      unflipAddrBasisW k (signReflectStateW (signBitW k) (coreAddStateW k coeffs Q (signReflectStateW (signBitW k) (flipAddrBasisW k bs)))) =
+        updateW k coeffs Q bs := by
     obtain ⟨hcl, R, hR, hgp⟩ := hgd
     obtain ⟨hcl1, R1, hR1⟩ := h12 bs ⟨hcl, R, hR, hgp⟩
     have hR_eq : R1 = R := by
       obtain ⟨x, y, hns, rfl, hx, hy⟩ := hR
       obtain ⟨x1, y1, hns1, rfl, hx1, hy1⟩ := hR1
-      have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasis bs w = bs w := by
-        have hnb : w ∉ bits16 := fun hm => by have h := mem_bits16.mp hm; rcases hw with hw | hw <;> rcases h with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-        simp [flipAddrBasis, show w ≠ 870 by rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
+      have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasisW k bs w = bs w := by
+        have hnb : w ∉ bitsW k := fun hm => by have h := mem_bitsW.mp hm; rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+        simp [flipAddrBasisW, show w ≠ signBitW k by unfold signBitW; rcases hw with hw | hw <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
       have hx' : x1.val = x.val := by rw [← hx1, ← hx]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inl (List.mem_range'_1.mp hw)))
       have hy' : y1.val = y.val := by rw [← hy1, ← hy]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inr (List.mem_range'_1.mp hw)))
       have hxe : x1 = x := ZMod.val_injective ECDSAAdd.p hx'
       have hye : y1 = y := ZMod.val_injective ECDSAAdd.p hy'
       subst hxe; subst hye; rfl
     rw [hR_eq] at hR1
-    set bs1 := flipAddrBasis bs
-    set b := bs1 870
+    set bs1 := flipAddrBasisW k bs
+    set b := bs1 (signBitW k)
     set R2 := if b then -R else R
-    set C := constantPoint Q (coeffs (rows16 (raw16 bs1)))
+    set C := constantPoint Q (coeffs (rowsW k (rawW k bs1)))
     have hR2_ne : R2 ≠ 0 := by
       cases hb : b with
       | false => simpa [R2, hb] using hgp.1
       | true => simpa [R2, hb] using neg_ne_zero.mpr hgp.1
     have hgp2 : GoodPoint R2 C := by
-      have hraw := raw16_flipAddrBasis bs
-      have hb_eq : b = !bs 870 := by simp [b, bs1, flipAddrBasis]
-      cases hb8 : bs 870 with
+      have hraw := rawW_flipAddrBasisW k bs
+      have hb_eq : b = !bs (signBitW k) := by simp [b, bs1, flipAddrBasisW]
+      cases hb8 : bs (signBitW k) with
       | true =>
         have hb' : b = false := by simp [hb_eq, hb8]
-        have hC' : C = signedDelta16 coeffs Q bs := by simp [C, bs1, hraw, hb8, signedDelta16]
+        have hC' : C = signedDeltaW k coeffs Q bs := by simp [C, bs1, hraw, hb8, signedDeltaW]
         simpa [R2, hb', hC'] using hgp
       | false =>
         have hb' : b = true := by simp [hb_eq, hb8]
-        have hC' : -C = signedDelta16 coeffs Q bs := by simp [C, bs1, hraw, hb8, signedDelta16]
+        have hC' : -C = signedDeltaW k coeffs Q bs := by simp [C, bs1, hraw, hb8, signedDeltaW]
         have hneg := goodPoint_neg_iff (R := R) (Δ := -C)
         rw [neg_neg] at hneg
         simpa [R2, hb', hC'] using hneg.mpr (by rwa [hC'])
     have hR3_ne : R2 + C ≠ 0 := goodPoint_add_ne_zero hgp2
-    have hR4_eq : (if b then -(R2 + C) else R2 + C) = R + signedDelta16 coeffs Q bs := by
-      have hraw := raw16_flipAddrBasis bs
-      have hb_eq : b = !bs 870 := by simp [b, bs1, flipAddrBasis]
-      cases hb8 : bs 870 with
+    have hR4_eq : (if b then -(R2 + C) else R2 + C) = R + signedDeltaW k coeffs Q bs := by
+      have hraw := rawW_flipAddrBasisW k bs
+      have hb_eq : b = !bs (signBitW k) := by simp [b, bs1, flipAddrBasisW]
+      cases hb8 : bs (signBitW k) with
       | true =>
         have hb' : b = false := by simp [hb_eq, hb8]
-        simp [R2, C, bs1, hb', hraw, hb8, signedDelta16]
+        simp [R2, C, bs1, hb', hraw, hb8, signedDeltaW]
       | false =>
         have hb' : b = true := by simp [hb_eq, hb8]
-        simp only [R2, C, bs1, hb', hraw, hb8, Bool.false_eq_true, if_false, if_true, signedDelta16]
+        simp only [R2, C, bs1, hb', hraw, hb8, Bool.false_eq_true, if_false, if_true, signedDeltaW]
         abel
-    have hR4_ne : R + signedDelta16 coeffs Q bs ≠ 0 := goodPoint_add_ne_zero hgp
-    have hs1 : signReflectState bs1 = pointWrite R2 bs1 := signReflectState_eq hcl1 hR1
+    have hR4_ne : R + signedDeltaW k coeffs Q bs ≠ 0 := goodPoint_add_ne_zero hgp
+    have hs1 : signReflectStateW (signBitW k) bs1 = pointWrite R2 bs1 := signReflectStateW_eq hcl1 hR1
     have hpw_cl (P : ShorECDLP.Secp256k1.Point) (hP : P ≠ 0) : CleanOutsideXYBank (pointWrite P bs1) :=
       cleanOutside_frame bs1 _ hcl1 (fun w h1 h2 h3 => by
         by_cases h8 : w = 838
@@ -18211,43 +18670,43 @@ theorem compiled_good_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDL
             · exact h1 h
             · exact h2 h
             · exact h8 rfl))
-    have hpw_bank (P : ShorECDLP.Secp256k1.Point) (w : Wire) (hw : 855 ≤ w ∧ w < 872) :
+    have hpw_bank (P : ShorECDLP.Secp256k1.Point) (w : Wire) (hw : 855 ≤ w ∧ w < 874) :
         pointWrite P bs1 w = bs1 w :=
       pointWrite_frame P bs1 w (fun hm => by
         simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append, List.mem_cons,
           List.not_mem_nil, or_false, List.mem_range'_1, or_assoc] at hm
         rcases hm with h | h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-    have hpw_raw : raw16 (pointWrite R2 bs1) = raw16 bs1 :=
-      WEX.tableAddressValue_congr _ _ _ (fun w hw => hpw_bank R2 w (mem_bank17.mp (List.mem_append_left _ hw)))
-    have hs2 : coreAddState coeffs Q (pointWrite R2 bs1) = pointWrite (R2 + C) bs1 := by
-      rw [coreAddState_eq (hpw_cl R2 hR2_ne) (hasFinitePoint_pointWrite R2 hR2_ne bs1), hpw_raw]
+    have hpw_raw : rawW k (pointWrite R2 bs1) = rawW k bs1 :=
+      WEX.tableAddressValue_congr _ _ _ (fun w hw => by have hb := mem_bitsW.mp hw; exact hpw_bank R2 w ⟨hb.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩)
+    have hs2 : coreAddStateW k coeffs Q (pointWrite R2 bs1) = pointWrite (R2 + C) bs1 := by
+      rw [coreAddStateW_eq (hpw_cl R2 hR2_ne) (hasFinitePoint_pointWrite R2 hR2_ne bs1), hpw_raw]
       exact hpw_pw R2 (R2 + C) hR2_ne hR3_ne bs1 hcl1
-    have hs3 : signReflectState (pointWrite (R2 + C) bs1) = pointWrite (R + signedDelta16 coeffs Q bs) bs1 := by
+    have hs3 : signReflectStateW (signBitW k) (pointWrite (R2 + C) bs1) = pointWrite (R + signedDeltaW k coeffs Q bs) bs1 := by
       dsimp only [b] at hR4_eq
-      rw [signReflectState_eq (hpw_cl (R2 + C) hR3_ne) (hasFinitePoint_pointWrite (R2 + C) hR3_ne bs1),
-        hpw_bank (R2 + C) 870 (by decide), hR4_eq]
-      exact hpw_pw (R2 + C) (R + signedDelta16 coeffs Q bs) hR3_ne hR4_ne bs1 hcl1
-    rw [hs1, hs2, hs3, update16_eq (hasFinitePoint_coords hcl hR)]
+      rw [signReflectStateW_eq (hpw_cl (R2 + C) hR3_ne) (hasFinitePoint_pointWrite (R2 + C) hR3_ne bs1),
+        hpw_bank (R2 + C) (signBitW k) hsb, hR4_eq]
+      exact hpw_pw (R2 + C) (R + signedDeltaW k coeffs Q bs) hR3_ne hR4_ne bs1 hcl1
+    rw [hs1, hs2, hs3, updateW_eq (hasFinitePoint_coords hcl hR)]
     apply eq_pointWrite_of_hasFinitePoint hcl
-    · obtain ⟨x4, y4, hns4, heq4, hx4, hy4⟩ := hasFinitePoint_pointWrite (R + signedDelta16 coeffs Q bs) hR4_ne bs1
+    · obtain ⟨x4, y4, hns4, heq4, hx4, hy4⟩ := hasFinitePoint_pointWrite (R + signedDeltaW k coeffs Q bs) hR4_ne bs1
       refine ⟨x4, y4, hns4, heq4, ?_, ?_⟩
       · rw [← hx4]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw; rw [List.mem_range'_1] at hw
-        have hnb : w ∉ bits16 := fun hm => by have h := mem_bits16.mp hm; rcases h with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-        simp [unflipAddrBasis, show w ≠ 870 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
+        have hnb : w ∉ bitsW k := fun hm => by have h := mem_bitsW.mp hm; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+        simp [unflipAddrBasisW, show w ≠ signBitW k by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
       · rw [← hy4]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw; rw [List.mem_range'_1] at hw
-        have hnb : w ∉ bits16 := fun hm => by have h := mem_bits16.mp hm; rcases h with h | rfl <;> (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
-        simp [unflipAddrBasis, show w ≠ 870 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
+        have hnb : w ∉ bitsW k := fun hm => by have h := mem_bitsW.mp hm; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+        simp [unflipAddrBasisW, show w ≠ signBitW k by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), hnb]
     · intro w h1 h2
-      by_cases hbk : 855 ≤ w ∧ w < 872
-      · have heq_u : unflipAddrBasis (pointWrite (R + signedDelta16 coeffs Q bs) bs1) w = unflipAddrBasis bs1 w := by
-          simp only [unflipAddrBasis, hpw_bank _ 870 (by decide), hpw_bank _ w hbk]
-        rw [heq_u, unflip_flipAddrBasis]
-      · have hnb : w ∉ bits16 := fun hm => hbk (mem_bank17.mp (List.mem_append_left _ hm))
-        have hn870 : w ≠ 870 := fun e => hbk (e ▸ by decide)
-        simp only [unflipAddrBasis, hn870, hnb, ↓reduceIte]
-        have hpw_cl4 := hpw_cl (R + signedDelta16 coeffs Q bs) hR4_ne w h1 h2 hbk
+      by_cases hbk : 855 ≤ w ∧ w < 874
+      · have heq_u : unflipAddrBasisW k (pointWrite (R + signedDeltaW k coeffs Q bs) bs1) w = unflipAddrBasisW k bs1 w := by
+          simp only [unflipAddrBasisW, hpw_bank _ (signBitW k) hsb, hpw_bank _ w hbk]
+        rw [heq_u, unflip_flipAddrBasisW]
+      · have hnb : w ∉ bitsW k := fun hm => hbk (by have hb := mem_bitsW.mp hm; exact ⟨hb.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩)
+        have hnsb : w ≠ signBitW k := fun e => hbk (e ▸ hsb)
+        simp only [unflipAddrBasisW, hnsb, hnb, ↓reduceIte]
+        have hpw_cl4 := hpw_cl (R + signedDeltaW k coeffs Q bs) hR4_ne w h1 h2 hbk
         rw [hpw_cl4, hcl w h1 h2 hbk]
-  rw [compiledProgram, castFinish_instantiate, compiledProgramFn]
+  rw [compiledProgramW, castFinish_instantiate, compiledProgramFnW]
   obtain ⟨cs, al, hm⟩ := hcomp
   refine ⟨cs, al.imp (fun b c hb bs hgd => ?_), hm⟩
   have h1 := hb bs hgd
@@ -18256,31 +18715,108 @@ theorem compiled_good_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDL
   rw [hlmap]
   exact h1
 
-theorem compiled_packed_coherent (coeffs : Fin 65536 → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+theorem compiledW_packed_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+    (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 1 ((relabelStraight compact1610 (compiledProgram start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (update16 coeffs Q)) (Good16 coeffs Q) := by
-  obtain ⟨cs, al, hm⟩ := compiled_good_coherent coeffs Q hn start h
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramW hk_lo hk_hi fx start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW k coeffs Q)) (GoodW k coeffs Q) := by
+  obtain ⟨cs, al, hm⟩ := compiledW_good_coherent hk_lo hk_hi fx coeffs Q hn start h
   refine ⟨cs, ?_, hm⟩
   rw [relabelStraight_instantiate, AdaptiveCircuit.run_relabel, List.forall₂_map_left_iff]
   refine al.imp (fun b c hb bs hgd => ?_)
   have hlmap (f : BasisState → BasisState) (t : BasisState) :
       Finsupp.lmapDomain ℂ ℂ f (ket t) = ket (f t) := by
     unfold ket; rw [Finsupp.lmapDomain_apply, Finsupp.mapDomain_single]
-  have hrel1 : relabelState compact1610.symm (Prep 1 (ket bs)) =
-      Prep 14833 (ket (relabelBasis compact1610 bs)) := by
-    rw [relabelState_prep, relabelState_ket, compact1610_symm]
-    have hinv : compact1610 1 = 14833 := by
-      have := congrArg compact1610 compact1610_14833
-      simpa [compact1610, compact1610Fn_invol] using this.symm
+  have hrel1 : relabelState compact1612.symm (Prep 1 (ket bs)) =
+      Prep 14833 (ket (relabelBasis compact1612 bs)) := by
+    rw [relabelState_prep, relabelState_ket, compact1612_symm]
+    have hinv : compact1612 1 = 14833 := by
+      have := congrArg compact1612 compact1612_14833
+      simpa [compact1612, compact1612Fn_invol] using this.symm
     rw [hinv]
-  have hinv_b (t : BasisState) : relabelBasis compact1610 (relabelBasis compact1610 t) = t := by
-    funext w; change t (compact1610 (compact1610 w)) = t w; exact congrArg t (compact1610Fn_invol w)
-  change relabelState compact1610 (b.kraus (relabelState compact1610.symm (Prep 1 (ket bs)))) = _
-  rw [hrel1, hb (relabelBasis compact1610 bs) (good16_relabel coeffs Q bs hgd), hlmap _ (relabelBasis compact1610 bs), map_smul,
-    relabelState_prep, compact1610_14833, relabelState_ket,
-    ← update16_relabel_good coeffs Q bs hgd, hinv_b, hlmap _ bs]
+  have hinv_b (t : BasisState) : relabelBasis compact1612 (relabelBasis compact1612 t) = t := by
+    funext w; change t (compact1612 (compact1612 w)) = t w; exact congrArg t (compact1612Fn_invol w)
+  change relabelState compact1612 (b.kraus (relabelState compact1612.symm (Prep 1 (ket bs)))) = _
+  rw [hrel1, hb (relabelBasis compact1612 bs) (goodW_relabel hk_hi coeffs Q bs hgd), hlmap _ (relabelBasis compact1612 bs), map_smul,
+    relabelState_prep, compact1612_14833, relabelState_ket,
+    ← updateW_relabel_good hk_hi coeffs Q bs hgd, hinv_b, hlmap _ bs]
+
+/-! #### 10. Concrete Wave 8B exports: `k = 16` (`2,238,256` Tof), `k = 17` (`2,320,431` Tof), `k = 18` (`2,484,527` Tof) -/
+
+def fixupSpec17 : FixupSpec 17 := fixupSpec9 17 (Or.inl rfl)
+def fixupSpec18 : FixupSpec 18 := fixupSpec9 18 (Or.inr rfl)
+
+def compiledProgram16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW fixupSpec16 0).finish) :=
+  compiledProgramW (by decide) (by decide) fixupSpec16 start
+def compiledProgram17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW fixupSpec17 0).finish) :=
+  compiledProgramW (by decide) (by decide) fixupSpec17 start
+def compiledProgram18 (start : Nat) : Straight (2 ^ 18) start (start + (compiledProgramFnW fixupSpec18 0).finish) :=
+  compiledProgramW (by decide) (by decide) fixupSpec18 start
+
+theorem compiledRec16_bound : (compiledProgramFnW fixupSpec16 0).finish ≤ 3850000 :=
+  (compiledRecW_bound (by decide) (by decide) fixupSpec16).trans (by decide)
+theorem compiledRec17_bound : (compiledProgramFnW fixupSpec17 0).finish ≤ 4000000 :=
+  (compiledRecW_bound (by decide) (by decide) fixupSpec17).trans (by decide)
+theorem compiledRec18_bound : (compiledProgramFnW fixupSpec18 0).finish ≤ 4350000 :=
+  (compiledRecW_bound (by decide) (by decide) fixupSpec18).trans (by decide)
+
+theorem compiled16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
+    ((compiledProgram16 start).instantiate read h).tCount ≤ 4 * 2238256 :=
+  (compiledW_tCount (by decide) (by decide) fixupSpec16 start read h).trans (by decide)
+theorem compiled17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
+    ((compiledProgram17 start).instantiate read h).tCount ≤ 4 * 2320431 :=
+  (compiledW_tCount (by decide) (by decide) fixupSpec17 start read h).trans (by decide)
+theorem compiled18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
+    ((compiledProgram18 start).instantiate read h).tCount ≤ 4 * 2484527 :=
+  (compiledW_tCount (by decide) (by decide) fixupSpec18 start read h).trans (by decide)
+
+theorem compiled16_slots (start : Nat) : (compiledProgram16 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) fixupSpec16 start).trans (by decide)
+theorem compiled17_slots (start : Nat) : (compiledProgram17 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) fixupSpec17 start).trans (by decide)
+theorem compiled18_slots (start : Nat) : (compiledProgram18 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) fixupSpec18 start).trans (by decide)
+
+theorem compiled16_wellFormed (start : Nat) : (compiledProgram16 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) fixupSpec16 start
+theorem compiled17_wellFormed (start : Nat) : (compiledProgram17 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) fixupSpec17 start
+theorem compiled18_wellFormed (start : Nat) : (compiledProgram18 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) fixupSpec18 start
+
+theorem compiled16_removed18 (start : Nat) : removed 18 (compiledProgram16 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) fixupSpec16 start
+theorem compiled17_removed18 (start : Nat) : removed 18 (compiledProgram17 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) fixupSpec17 start
+theorem compiled18_removed18 (start : Nat) : removed 18 (compiledProgram18 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) fixupSpec18 start
+
+theorem compiled16_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgram16 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) fixupSpec16 start
+theorem compiled17_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgram17 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) fixupSpec17 start
+theorem compiled18_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgram18 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) fixupSpec18 start
+
+theorem compiled16_packed_coherent (coeffs : Fin (2 ^ 16) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgram16 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodW 16 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) fixupSpec16 coeffs Q hn start h
+theorem compiled17_packed_coherent (coeffs : Fin (2 ^ 17) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgram17 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodW 17 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) fixupSpec17 coeffs Q hn start h
+theorem compiled18_packed_coherent (coeffs : Fin (2 ^ 18) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgram18 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 18 coeffs Q)) (GoodW 18 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) fixupSpec18 coeffs Q hn start h
 
 end
-end ShorECDLP.Entrant.Generic16
+end ShorECDLP.Entrant.GenericW
 end

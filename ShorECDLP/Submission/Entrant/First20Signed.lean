@@ -10022,3 +10022,1023 @@ theorem window_residue {n : Nat} (rows : Fin 524288 → Fin n) (start : Nat) :
 end
 end ShorECDLP.Entrant.First20Signed
 end
+
+/-! ### Wave 8B: 5-neighbor zero-T readout (`Readout5`) -/
+section
+namespace ShorECDLP.Entrant.Readout5
+open Quantum ShorECDLP.Challenge ShorECDLP.Entrant.RoundedReadout ShorECDLP.Entrant.NeighborReadout
+open ShorECDLP.Paper2607_13816 ShorECDLP.Paper2607_13816.ChallengeMigration
+noncomputable section
+set_option maxRecDepth 4096
+set_option maxHeartbeats 2000000
+
+def suffix5 (n start width : Nat) (bits : Vector (Fin start) width) :
+    Straight n start (start + 2 + 14 * width) :=
+  let c := initialCursor bits
+  let q := c.lift (2 * (2 * width))
+  castFinish (by omega)
+    ((constantStep n start).append
+      ((positiveWords n 2 (start + 2) width c).append
+        ((complementStep n q).append
+          (negativeWords n 2 (start + 2 + 2 * (2 * width) + 2 * width) width q.next))))
+
+def wordAt5 {start width : Nat} (bits : Vector (Fin start) width) (j : ℤ) : Vector Nat width :=
+  if j = 0 then bits.map Fin.val
+  else if j = 1 then sumPositions (start + 2) width
+  else if j = 2 then sumPositions (start + 2 + 2 * width) width
+  else if j = -1 then sumPositions (start + 2 + 8 * width) width
+  else if j = -2 then sumPositions (start + 2 + 12 * width) width
+  else bits.map Fin.val
+
+theorem wordAt5_lt {start width : Nat} (bits : Vector (Fin start) width) (j : ℤ)
+    (x : Nat) (hx : x ∈ (wordAt5 bits j).toList) : x < start + 2 + 14 * width := by
+  unfold wordAt5 at hx
+  split_ifs at hx
+  · simp only [Vector.toList_map, List.mem_map] at hx
+    obtain ⟨k, _, rfl⟩ := hx
+    have hk := k.isLt; omega
+  · have h := sumPositions_bound (start + 2) width x hx; omega
+  · have h := sumPositions_bound (start + 2 + 2 * width) width x hx; omega
+  · have h := sumPositions_bound (start + 2 + 8 * width) width x hx; omega
+  · have h := sumPositions_bound (start + 2 + 12 * width) width x hx; omega
+  · simp only [Vector.toList_map, List.mem_map] at hx
+    obtain ⟨k, _, rfl⟩ := hx
+    have hk := k.isLt; omega
+
+attribute [local irreducible] positiveWords negativeWords incrementStep complementStep
+
+theorem suffix5_wellFormed (n start width : Nat) (bits : Vector (Fin start) width) :
+    (suffix5 n start width bits).WellFormed := by
+  unfold suffix5
+  rw [castFinish_wellFormed]
+  apply straight_append_wellFormed _ _ (constantStep_wellFormed _ _)
+  apply straight_append_wellFormed _ _ (positiveWords_wellFormed _ _ _ _ _)
+  exact straight_append_wellFormed _ _ (complementStep_wellFormed _ _)
+    (negativeWords_wellFormed _ _ _ _ _)
+
+theorem suffix5_slots (n start width : Nat) (bits : Vector (Fin start) width) :
+    (suffix5 n start width bits).gateSlots = 7 + 49 * width := by
+  simp only [suffix5, castFinish_gateSlots, Straight.gateSlots_append,
+    constantStep_slots, positiveWords_slots, complementStep_slots, negativeWords_slots]
+  ring
+
+theorem suffix5_t (n start width : Nat) (bits : Vector (Fin start) width)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    ((suffix5 n start width bits).instantiate read history).tCount = 0 := by
+  unfold suffix5
+  rw [castFinish_instantiate]
+  apply Readout56.append_t_zero _ _ read (constantStep_t _ _ _)
+  intro h
+  apply Readout56.append_t_zero _ _ read (positiveWords_t _ _ _ _ _ _)
+  intro h
+  exact Readout56.append_t_zero _ _ read (complementStep_t _ _ _)
+    (negativeWords_t _ _ _ _ _ _) h
+
+theorem suffix5_support (n start width : Nat) (bits : Vector (Fin start) width)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool) :
+    ((suffix5 n start width bits).instantiate read history).wires ⊆ [0, 1] := by
+  unfold suffix5
+  rw [castFinish_instantiate]
+  apply outer_append_support _ _ read history ([0, 1] : List Wire) (constantStep_support _ _ _ _)
+  intro h
+  apply outer_append_support _ _ read h ([0, 1] : List Wire) (positiveWords_support _ _ _ _ _ _ _)
+  intro h
+  exact outer_append_support _ _ read h ([0, 1] : List Wire) (complementStep_support _ _ _ _)
+    (fun hh => negativeWords_support _ _ _ _ _ _ hh)
+
+theorem weight4_suffix5 (n start width : Nat) (bits : Vector (Fin start) width) :
+    ConditionalCatalyst.weight4 (suffix5 n start width bits) = 0 := by
+  simp [suffix5, ConditionalCatalyst.weight4_cast, ConditionalCatalyst.weight4_append,
+    ConditionalCatalyst.weight4_positive, ConditionalCatalyst.weight4_negative,
+    ConditionalCatalyst.weight4_complement]
+  rfl
+
+theorem residue_suffix5 (n start width : Nat) (bits : Vector (Fin start) width) :
+    AndGadget.residue (suffix5 n start width bits) = 0 := by
+  simp [suffix5, AndGadget.residue_cast, AndGadget.residue_append,
+    ApproximatePhase34.residue_positive, ApproximatePhase34.residue_negative,
+    ApproximatePhase34.residue_complement]
+  rfl
+
+theorem positive_word_mod_gen (w b i : Nat) :
+    (i + b) % 2 ^ w = ((((b : Nat) : ℤ) + (i : ℤ)) % (2 ^ w : Nat)).toNat := by
+  simp only [← Int.natCast_add, ← Int.natCast_mod, Int.toNat_natCast, Nat.add_comm]
+
+theorem negative_word_mod_gen (w b i : Nat) (hb : b < 2 ^ w) :
+    2 ^ w - 1 - (i + (2 ^ w - 1 - b)) % 2 ^ w =
+      ((((b : Nat) : ℤ) - (i : ℤ)) % (2 ^ w : Nat)).toNat := by
+  set N := 2 ^ w
+  have hN : 0 < N := pow_pos (by decide) w
+  set r := (i + (N - 1 - b)) % N
+  have hr : r < N := Nat.mod_lt _ hN
+  have hdiv : N * ((i + (N - 1 - b)) / N) + r = i + (N - 1 - b) := Nat.div_add_mod _ _
+  have hdivZ : (N : ℤ) * (((i + (N - 1 - b)) / N : Nat) : ℤ) + (r : ℤ) =
+      (i : ℤ) + ((N - 1 - b : Nat) : ℤ) := by exact_mod_cast hdiv
+  have hnb : ((N - 1 - b : Nat) : ℤ) = (N : ℤ) - 1 - (b : ℤ) := by omega
+  have hnr : ((N - 1 - r : Nat) : ℤ) = (N : ℤ) - 1 - (r : ℤ) := by omega
+  have hmod : ((b : ℤ) - (i : ℤ)) % (N : ℤ) = ((N - 1 - r : Nat) : ℤ) := by
+    have hsub : (b : ℤ) - (i : ℤ) =
+        ((N - 1 - r : Nat) : ℤ) + (N : ℤ) * (-(((i + (N - 1 - b)) / N : Nat) : ℤ)) := by
+      linarith
+    rw [hsub, Int.add_mul_emod_self_left, Int.emod_eq_of_lt (by omega) (by omega)]
+  rw [hmod, Int.toNat_natCast]
+
+theorem suffix5_branch (n start width : Nat) (bits : Vector (Fin start) width)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b ∈ ((suffix5 n start width bits).instantiate read history).run)
+    (hn : b.kraus ψ ≠ 0) :
+    b.kraus ψ = ψ ∧
+      (∀ i : Fin 2, readWord (List.ofFn history ++ b.history)
+        (sumPositions (start + 2 + i.val * (2 * width)) width).toList =
+        some ((i.val + 1 + inputValue bits history) % 2 ^ width)) ∧
+      (∀ i : Fin 2, readWord (List.ofFn history ++ b.history)
+        (sumPositions (start + 2 + 6 * width + i.val * (4 * width) + 2 * width) width).toList =
+        some (2 ^ width - 1 - ((i.val + 1 + (2 ^ width - 1 - inputValue bits history)) % 2 ^ width))) := by
+  unfold suffix5 at hb
+  rw [castFinish_instantiate] at hb
+  obtain ⟨h₁, a, u, ha, hu, he₁, rfl⟩ := straight_append_branch _ _ read history b hb
+  have han : a.kraus ψ ≠ 0 := by
+    intro h; apply hn; simp only [InstrumentBranch.seq, LinearMap.comp_apply, h, map_zero]
+  have hc := constantStep_branch n start read history ψ hψ a ha han
+  have hun : u.kraus ψ ≠ 0 := by
+    simpa only [InstrumentBranch.seq, LinearMap.comp_apply, hc.1] using hn
+  have hcarr := initial_carry bits history h₁ (he₁.trans (by rw [hc.2]))
+  have hval := initial_value bits history h₁ a.history he₁
+  obtain ⟨h₂, p, v, hp, hv, he₂, rfl⟩ := straight_append_branch _ _ read h₁ u hu
+  have hpn : p.kraus ψ ≠ 0 := by
+    intro h; apply hun; simp only [InstrumentBranch.seq, LinearMap.comp_apply, h, map_zero]
+  have hpos := positiveWords_branch n 2 (start + 2) width (initialCursor bits)
+    read h₁ hcarr ψ hψ p hp hpn
+  have hvn : v.kraus ψ ≠ 0 := by
+    simpa only [InstrumentBranch.seq, LinearMap.comp_apply, hpos.1] using hun
+  let q := (initialCursor bits).lift (2 * (2 * width))
+  have hqc : h₂ q.carry = true := (lift_carry (initialCursor bits) _ h₁ h₂ p.history he₂).trans hcarr
+  have hqv : cursorValue q h₂ = inputValue bits history :=
+    (lift_value (initialCursor bits) _ h₁ h₂ p.history he₂).trans hval
+  obtain ⟨h₃, c, t, hc', ht, he₃, rfl⟩ := straight_append_branch _ _ read h₂ v hv
+  have hcn : c.kraus ψ ≠ 0 := by
+    intro h; apply hvn; simp only [InstrumentBranch.seq, LinearMap.comp_apply, h, map_zero]
+  have hcomp := complementStep_post n q read h₂ hqc ψ hψ c hc' hcn h₃ he₃
+  have htn : t.kraus ψ ≠ 0 := by
+    simpa only [InstrumentBranch.seq, LinearMap.comp_apply, hcomp.1] using hvn
+  have hneg := negativeWords_branch n 2 (start + 2 + 2 * (2 * width) + 2 * width) width q.next
+    read h₃ hcomp.2.1 ψ hψ t ht htn
+  have hfull₁ : List.ofFn history ++ (a.seq (p.seq (c.seq t))).history =
+      List.ofFn h₁ ++ (p.seq (c.seq t)).history := by
+    rw [he₁]; simp only [InstrumentBranch.seq, List.append_assoc]
+  have hfull₂ : List.ofFn history ++ (a.seq (p.seq (c.seq t))).history =
+      List.ofFn h₂ ++ (c.seq t).history := by
+    rw [hfull₁, he₂]; simp only [InstrumentBranch.seq, List.append_assoc]
+  have hfull₃ : List.ofFn history ++ (a.seq (p.seq (c.seq t))).history =
+      List.ofFn h₃ ++ t.history := by
+    rw [hfull₂, he₃]; simp only [InstrumentBranch.seq, List.append_assoc]
+  refine ⟨by simp only [InstrumentBranch.seq, LinearMap.comp_apply, hc.1, hpos.1, hcomp.1, hneg.1], ?_, ?_⟩
+  · intro i
+    rw [hfull₂, readWord_append_left (List.ofFn h₂) (c.seq t).history _ (by
+      intro j hj
+      have hj' := sumPositions_bound (start + 2 + i.val * (2 * width)) width j hj
+      have hi := i.isLt
+      have hmul : i.val * (2 * width) ≤ 2 * width := by nlinarith
+      simp only [List.length_ofFn]
+      omega), he₂]
+    simpa only [hval] using hpos.2 i
+  · intro i
+    rw [hfull₃]
+    have hidx : start + 2 + 6 * width + i.val * (4 * width) + 2 * width =
+        start + 2 + 2 * (2 * width) + 2 * width + i.val * (4 * width) + 2 * width := by ring
+    rw [hidx]
+    simpa only [hcomp.2.2, hqv] using hneg.2 i
+
+theorem suffix5_reads (n start width : Nat) (bits : Vector (Fin start) width)
+    (read : ConstantBit n → Bool) (history : Fin start → Bool)
+    (ψ : State) (hψ : SupportedOn CleanReadout ψ) (b : InstrumentBranch)
+    (hb : b ∈ ((suffix5 n start width bits).instantiate read history).run)
+    (hn : b.kraus ψ ≠ 0) (j : ℤ) (hj : -2 ≤ j ∧ j ≤ 2) :
+    b.kraus ψ = ψ ∧
+      readWord (List.ofFn history ++ b.history) (wordAt5 bits j).toList =
+        some ((((inputValue bits history : Nat) : ℤ) + j) % (2 ^ width : Nat)).toNat := by
+  have hs := suffix5_branch n start width bits read history ψ hψ b hb hn
+  refine ⟨hs.1, ?_⟩
+  have hcases : j = 0 ∨ j = 1 ∨ j = 2 ∨ j = -1 ∨ j = -2 := by omega
+  rcases hcases with rfl | rfl | rfl | rfl | rfl
+  · simp only [wordAt5, ↓reduceIte]
+    rw [readWord_append_left (List.ofFn history) b.history _ (by
+      intro i hi
+      simp only [Vector.toList_map, List.mem_map] at hi
+      obtain ⟨k, _, rfl⟩ := hi
+      simpa only [List.length_ofFn] using k.isLt), input_read]
+    congr 1
+    simpa only [Nat.zero_add, Int.natCast_zero, Nat.mod_eq_of_lt (input_lt bits history)] using
+      (positive_word_mod_gen width (inputValue bits history) 0)
+  · simp only [wordAt5, show (1 : ℤ) ≠ 0 by decide, ↓reduceIte]
+    have h := hs.2.1 ⟨0, by decide⟩
+    simp only [Nat.zero_mul, Nat.add_zero] at h
+    rw [h, positive_word_mod_gen]
+    rfl
+  · simp only [wordAt5, show (2 : ℤ) ≠ 0 by decide, show (2 : ℤ) ≠ 1 by decide, ↓reduceIte]
+    have h := hs.2.1 ⟨1, by decide⟩
+    simp only [Nat.one_mul] at h
+    rw [h, positive_word_mod_gen]
+    rfl
+  · simp only [wordAt5, show (-1 : ℤ) ≠ 0 by decide, show (-1 : ℤ) ≠ 1 by decide,
+      show (-1 : ℤ) ≠ 2 by decide, ↓reduceIte]
+    have h := hs.2.2 ⟨0, by decide⟩
+    have hidx : start + 2 + 6 * width + 0 * (4 * width) + 2 * width = start + 2 + 8 * width := by ring
+    rw [hidx] at h
+    rw [h, negative_word_mod_gen width _ 1 (input_lt bits history)]
+    rfl
+  · simp only [wordAt5, show (-2 : ℤ) ≠ 0 by decide, show (-2 : ℤ) ≠ 1 by decide,
+      show (-2 : ℤ) ≠ 2 by decide, show (-2 : ℤ) ≠ -1 by decide, ↓reduceIte]
+    have h := hs.2.2 ⟨1, by decide⟩
+    have hidx : start + 2 + 6 * width + 1 * (4 * width) + 2 * width = start + 2 + 12 * width := by ring
+    rw [hidx] at h
+    rw [h, negative_word_mod_gen width _ 2 (input_lt bits history)]
+    rfl
+
+end
+end ShorECDLP.Entrant.Readout5
+end
+
+/-! ### Wave 8B: 13-trial `(L = 256, R = 206)` sine recovery lower bound (`≥ 9926 / 10000`) -/
+section
+namespace ShorECDLP.Entrant.SineBounds
+open Quantum ShorECDLP.Challenge ShorECDLP.Secp256k1
+open ShorECDLP.Entrant.SineCircuit ShorECDLP.Entrant.WindowMassSharpProof
+open ShorECDLP.Entrant.NeighborReadout ShorECDLP.Entrant.SinAverage ShorECDLP.Entrant.SinAverage261
+open ShorECDLP.Paper2607_13816 ShorECDLP.Quantum.OrderFinding ShorECDLP.Quantum.PhaseEstimation
+open Finset
+open scoped BigOperators
+noncomputable section
+set_option maxRecDepth 20000
+set_option maxHeartbeats 2000000
+set_option exponentiation.threshold 300
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
+set_option linter.unusedVariables false
+set_option linter.unnecessarySeqFocus false
+
+def neighborWord (m b : ℕ) (j : ℤ) : ℕ := ((((b : ℤ) + j) % (2 ^ m : ℕ))).toNat
+
+def goodNeighbor (m r radius : ℕ) (k : Fin r) (x : Fin (2 ^ m)) : Prop :=
+  ∃ j : ℤ, -(radius : ℤ) ≤ j ∧ j ≤ (radius : ℤ) ∧ neighborWord m x.val j = (reducedPeak r m k).val
+
+theorem goodNeighbor_mono {m r rad1 rad2 : ℕ} (hle : rad1 ≤ rad2) {k : Fin r} {x : Fin (2 ^ m)}
+    (h : goodNeighbor m r rad1 k x) : goodNeighbor m r rad2 k x := by
+  obtain ⟨j, h1, h2, hj⟩ := h
+  exact ⟨j, by omega, by omega, hj⟩
+
+theorem neighbor_coverage_gen (m r radius : ℕ) (hr : 0 < r) (k : Fin r) (x : Fin (2 ^ m))
+    (hc : phiR (2 ^ m) (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) x.val <
+        ((radius + 1 : ℕ) : ℝ) -
+          (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r) - round (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r))) ∨
+      phiL (2 ^ m) (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) x.val <
+        ((radius + 1 : ℕ) : ℝ) +
+          (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r) - round (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)))) :
+    goodNeighbor m r radius k x := by
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr
+  set c : ℝ := ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)
+  set mm : ℤ := round c
+  have hround := abs_le.mp (abs_sub_round c)
+  have hkr : (k.val : ℝ) / r < 1 := (div_lt_one hrR).mpr (by exact_mod_cast k.isLt)
+  have hc0 : 0 ≤ c := by positivity
+  have hcN : c < ((2 ^ m : ℕ) : ℝ) := by
+    have : (0 : ℝ) < ((2 ^ m : ℕ) : ℝ) := by positivity
+    dsimp only [c]; nlinarith
+  have hx0 : (0 : ℝ) ≤ (x.val : ℝ) := Nat.cast_nonneg _
+  have hxN : (x.val : ℝ) < ((2 ^ m : ℕ) : ℝ) := by exact_mod_cast x.isLt
+  have hrad : (1 : ℝ) ≤ ((radius + 1 : ℕ) : ℝ) := by
+    push_cast; linarith [Nat.cast_nonneg (α := ℝ) radius]
+  obtain ⟨z, hz1, hz2⟩ : ∃ z : ℤ, -((radius + 1 : ℕ) : ℝ) <
+      (mm : ℝ) - ((x.val : ℝ) + z * ((2 ^ m : ℕ) : ℝ)) ∧
+      (mm : ℝ) - ((x.val : ℝ) + z * ((2 ^ m : ℕ) : ℝ)) < ((radius + 1 : ℕ) : ℝ) := by
+    rcases hc with hc | hc
+    · unfold phiR at hc
+      split_ifs at hc with h
+      · exact ⟨0, by simp only [Int.cast_zero, zero_mul, add_zero]; linarith,
+          by simp only [Int.cast_zero, zero_mul, add_zero]; linarith [hround.1, hround.2, hrad]⟩
+      · exact ⟨1, by simp only [Int.cast_one, one_mul]; linarith,
+          by simp only [Int.cast_one, one_mul]; linarith [hround.1, hround.2, hrad]⟩
+    · unfold phiL at hc
+      split_ifs at hc with h
+      · exact ⟨0, by simp only [Int.cast_zero, zero_mul, add_zero]; linarith [hround.1, hround.2, hrad],
+          by simp only [Int.cast_zero, zero_mul, add_zero]; linarith⟩
+      · exact ⟨-1, by simp only [Int.cast_neg, Int.cast_one, neg_one_mul]; linarith [hround.1, hround.2, hrad],
+          by simp only [Int.cast_neg, Int.cast_one, neg_one_mul]; linarith⟩
+  set j : ℤ := mm - ((x.val : ℤ) + z * ((2 ^ m : ℕ) : ℤ))
+  have hjR : (j : ℝ) = (mm : ℝ) - ((x.val : ℝ) + z * ((2 ^ m : ℕ) : ℝ)) := by
+    dsimp only [j]; push_cast; ring
+  have hj1 : -((radius + 1 : ℕ) : ℤ) < j := by
+    exact_mod_cast (show -((radius + 1 : ℕ) : ℝ) < (j : ℝ) by rw [hjR]; exact hz1)
+  have hj2 : j < ((radius + 1 : ℕ) : ℤ) := by
+    exact_mod_cast (show (j : ℝ) < ((radius + 1 : ℕ) : ℝ) by rw [hjR]; exact hz2)
+  refine ⟨j, by omega, by omega, ?_⟩
+  have he : mm = (reducedPeakRaw r m k : ℤ) := by
+    have hc' : c = ((2 ^ m * k.val : ℕ) : ℝ) / r := by dsimp only [c]; push_cast; ring
+    rw [show mm = round c from rfl, hc', ShorECDLP.Entrant.RoundedReadout.round_nat_ratio _ r hr]
+    simp only [reducedPeakRaw, Nat.mul_assoc]
+  have hmod : (reducedPeakRaw r m k : ℤ) % (2 ^ m : ℕ) = ((x.val : ℤ) + j) % (2 ^ m : ℕ) := by
+    rw [← he]
+    dsimp only [j]
+    rw [show (x.val : ℤ) + (mm - ((x.val : ℤ) + z * ((2 ^ m : ℕ) : ℤ))) =
+      mm + (-z) * ((2 ^ m : ℕ) : ℤ) by ring, Int.add_mul_emod_self_right]
+  have ht := congrArg Int.toNat hmod
+  simpa only [neighborWord, reducedPeak, ← Int.natCast_mod, Int.toNat_natCast] using ht.symm
+
+def sineNeighborMass (m r radius : ℕ) (k : Fin r) : ℝ := by
+  classical
+  exact ∑ x : Fin (2 ^ m), if goodNeighbor m r radius k x then
+    Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) x.val) else 0
+
+theorem sineNeighborMass_mono (m r rad1 rad2 : ℕ) (hle : rad1 ≤ rad2) (k : Fin r) :
+    sineNeighborMass m r rad1 k ≤ sineNeighborMass m r rad2 k := by
+  classical
+  unfold sineNeighborMass
+  apply Finset.sum_le_sum; intro x _
+  split_ifs with h1 h2
+  · exact le_rfl
+  · exact (h2 (goodNeighbor_mono hle h1)).elim
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+theorem sineNeighborMass_le_one (m : ℕ) (hm : 10 ≤ m) (r radius : ℕ) (k : Fin r) :
+    sineNeighborMass m r radius k ≤ 1 := by
+  classical
+  unfold sineNeighborMass
+  calc ∑ x : Fin (2 ^ m), (if goodNeighbor m r radius k x then
+        Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) x.val) else 0)
+      ≤ ∑ x : Fin (2 ^ m), Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) x.val) := by
+        apply Finset.sum_le_sum; intro x _
+        split_ifs
+        · exact le_rfl
+        · exact Complex.normSq_nonneg _
+    _ = 1 := by
+        rw [Fin.sum_univ_eq_sum_range (fun a => Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) a))]
+        exact sinePhaseAmplitude_parseval m hm _
+
+theorem sine_neighbor_mass3_gen (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
+    1 - 136 / 100000 - (900 / 100000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2 -
+        12 / 1000000 ≤ sineNeighborMass m r 1 k := by
+  classical
+  set β : ℝ := (k.val : ℝ) / r
+  set c : ℝ := ((2 ^ m : ℕ) : ℝ) * β
+  set σ : ℝ := c - round c
+  have hσ := abs_le.mp (abs_sub_round c)
+  have hcos_eq : Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 = Real.cos (Real.pi * |σ|) ^ 2 := by
+    rw [mul_assoc]; exact cos_sq_eq_abs_round c
+  have hstep :
+      1 - 136 / 100000 - (900 / 100000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
+        12 / 1000000 ≤
+      ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) c b < 2 - σ ∨ phiL (2 ^ m) c b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 := by
+    by_cases hs : 0 ≤ σ
+    · have hcirc := sine_circular_mass_two m hm β (2 - σ) (2 + σ) 15 14
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := right_box_bound σ hs hσ.2
+      rw [hcos_eq, abs_of_nonneg hs] at hcirc ⊢
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) c b < 2 - σ ∨ phiL (2 ^ m) c b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+    · have hcirc := sine_circular_mass_two m hm β (2 - σ) (2 + σ) 14 15
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := right_box_bound (-σ) (by linarith) (by linarith)
+      rw [hcos_eq, abs_of_neg (lt_of_not_ge hs)] at hcirc ⊢
+      have he1 : 2 - -σ = 2 + σ := by ring
+      have he2 : 2 + -σ = 2 - σ := by ring
+      rw [he1, he2, add_comm (∑ j ∈ range 15, 1 / ((2 + σ + ↑j) ^ 2 - 1 / 4) ^ 2)] at hbox
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) c b < 2 - σ ∨ phiL (2 ^ m) c b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+  have hfin :
+      ∑ b ∈ range (2 ^ m),
+        (if phiR (2 ^ m) c b < 2 - σ ∨ phiL (2 ^ m) c b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0) =
+      ∑ b : Fin (2 ^ m),
+        if phiR (2 ^ m) c b.val < 2 - σ ∨ phiL (2 ^ m) c b.val < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b.val) else 0 :=
+    (Fin.sum_univ_eq_sum_range (fun b =>
+      if phiR (2 ^ m) c b < 2 - σ ∨ phiL (2 ^ m) c b < 2 + σ
+      then Complex.normSq (sinePhaseAmplitude m β b) else 0) (2 ^ m)).symm
+  rw [hfin] at hstep
+  refine hstep.trans (Finset.sum_le_sum (fun b _ => ?_))
+  dsimp only [sineNeighborMass]
+  split_ifs with hnear hgood
+  · exact le_rfl
+  · have hnear' : phiR (2 ^ m) c b.val < ((1 + 1 : ℕ) : ℝ) - σ ∨
+        phiL (2 ^ m) c b.val < ((1 + 1 : ℕ) : ℝ) + σ := by
+      rcases hnear with h | h
+      · exact Or.inl (by push_cast; linarith)
+      · exact Or.inr (by push_cast; linarith)
+    exact (hgood (neighbor_coverage_gen m r 1 hr k b hnear')).elim
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+theorem box5_sum (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
+    (508 / 10000 : ℝ) *
+      ((∑ k ∈ range 14, 1 / ((3 - t + k) ^ 2 - 1 / 4) ^ 2) +
+       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000 ≤ 314 / 100000 := by
+  have hA := smallSum_antitone 14 ((5 / 2 : ℚ) : ℝ) (3 - t) (by push_cast; norm_num) (by push_cast; linarith)
+  have hB := smallSum_antitone 13 ((3 : ℚ) : ℝ) (3 + t) (by push_cast; norm_num) (by push_cast; linarith)
+  rw [smallSum_cast] at hA hB
+  have hcheck : (508 / 10000 : ℚ) * (smallSumQ 14 (5 / 2) + smallSumQ 13 3) + 68 / 1000000 ≤ 314 / 100000 := by
+    norm_num [smallSumQ]
+  have hR : (508 / 10000 : ℝ) * (((smallSumQ 14 (5 / 2) : ℚ) : ℝ) + ((smallSumQ 13 3 : ℚ) : ℝ)) +
+      68 / 1000000 ≤ 314 / 100000 := by
+    have h := Rat.cast_le (K := ℝ).mpr hcheck; push_cast at h; exact h
+  linarith
+
+theorem sine_neighbor_mass5_gen (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
+    1 - (314 / 100000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2 -
+        12 / 1000000 ≤ sineNeighborMass m r 2 k := by
+  classical
+  set β : ℝ := (k.val : ℝ) / r
+  set c : ℝ := ((2 ^ m : ℕ) : ℝ) * β
+  set σ : ℝ := c - round c
+  have hσ := abs_le.mp (abs_sub_round c)
+  have hstep :
+      1 - (314 / 100000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
+        12 / 1000000 ≤
+      ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) c b < 3 - σ ∨ phiL (2 ^ m) c b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 := by
+    by_cases hs : 0 ≤ σ
+    · have hcirc := sine_circular_mass_two m hm β (3 - σ) (3 + σ) 14 13
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := box5_sum σ hs hσ.2
+      have hm0 := mul_le_mul_of_nonneg_left hbox (sq_nonneg (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β)))
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) c b < 3 - σ ∨ phiL (2 ^ m) c b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+    · have hcirc := sine_circular_mass_two m hm β (3 - σ) (3 + σ) 13 14
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := box5_sum (-σ) (by linarith) (by linarith)
+      have he1 : 3 - -σ = 3 + σ := by ring
+      have he2 : 3 + -σ = 3 - σ := by ring
+      rw [he1, he2, add_comm (∑ j ∈ range 14, 1 / ((3 + σ + ↑j) ^ 2 - 1 / 4) ^ 2)] at hbox
+      have hm0 := mul_le_mul_of_nonneg_left hbox (sq_nonneg (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β)))
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) c b < 3 - σ ∨ phiL (2 ^ m) c b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+  have hfin :
+      ∑ b ∈ range (2 ^ m),
+        (if phiR (2 ^ m) c b < 3 - σ ∨ phiL (2 ^ m) c b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0) =
+      ∑ b : Fin (2 ^ m),
+        if phiR (2 ^ m) c b.val < 3 - σ ∨ phiL (2 ^ m) c b.val < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b.val) else 0 :=
+    (Fin.sum_univ_eq_sum_range (fun b =>
+      if phiR (2 ^ m) c b < 3 - σ ∨ phiL (2 ^ m) c b < 3 + σ
+      then Complex.normSq (sinePhaseAmplitude m β b) else 0) (2 ^ m)).symm
+  rw [hfin] at hstep
+  refine hstep.trans (Finset.sum_le_sum (fun b _ => ?_))
+  dsimp only [sineNeighborMass]
+  split_ifs with hnear hgood
+  · exact le_rfl
+  · have hnear' : phiR (2 ^ m) c b.val < ((2 + 1 : ℕ) : ℝ) - σ ∨
+        phiL (2 ^ m) c b.val < ((2 + 1 : ℕ) : ℝ) + σ := by
+      rcases hnear with h | h
+      · exact Or.inl (by push_cast; linarith)
+      · exact Or.inr (by push_cast; linarith)
+    exact (hgood (neighbor_coverage_gen m r 2 hr k b hnear')).elim
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+/-- Elementary center-bin lower bound (`≥ 49 / 100`) whenever `|2^m β - (a + z * 2^m)| ≤ 1 / 2`. -/
+theorem sinePhaseAmplitude_peak_lower (m : ℕ) (hm : 10 ≤ m) (β : ℝ) (a : ℕ) (z : ℤ)
+    (hdist : |((2 ^ m : ℕ) : ℝ) * β - ((a : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ))| ≤ 1 / 2) :
+    (49 / 100 : ℝ) ≤ Complex.normSq (sinePhaseAmplitude m β a) := by
+  set N := 2 ^ m
+  set B := 2 ^ (m - 10)
+  have hNpos : 0 < N := pow_pos (by decide) m
+  have hBpos : 0 < B := pow_pos (by decide) _
+  have hNR : (0 : ℝ) < N := by exact_mod_cast hNpos
+  have hBR : (0 : ℝ) < B := by exact_mod_cast hBpos
+  have hNB : N = 1024 * B := by
+    have : 2 ^ m = 2 ^ 10 * 2 ^ (m - 10) := by rw [← pow_add, Nat.add_sub_cancel' hm]
+    simpa [N, B] using this
+  have hNBR : (N : ℝ) = 1024 * (B : ℝ) := by exact_mod_cast hNB
+  set δ : ℝ := β - (a : ℝ) / N - (z : ℝ)
+  have hNδ : |(N : ℝ) * δ| ≤ 1 / 2 := by
+    have heq : (N : ℝ) * δ = (N : ℝ) * β - ((a : ℝ) + (z : ℝ) * (N : ℝ)) := by
+      dsimp only [δ]; field_simp [hNR.ne']; ring
+    rw [heq]; exact hdist
+  have hω_eq : eigenvalue (β - (a : ℝ) / N) = eigenvalue δ := by
+    have heq : β - (a : ℝ) / N = δ + (z : ℝ) := by dsimp only [δ]; ring
+    rw [heq, eigenvalue_add_int]
+  set u₀ : ℂ := (-Complex.I) * eigenvalue (-(N : ℝ) * δ / 2)
+  have hu₀ : Complex.normSq u₀ = 1 := by
+    simp only [u₀, Complex.normSq_mul, Complex.normSq_neg, Complex.normSq_I, eigenvalue_normSq, mul_one]
+  have hre_le : (u₀ * sinePhaseAmplitude m β a).re ^ 2 ≤ Complex.normSq (sinePhaseAmplitude m β a) := by
+    have hns : Complex.normSq (u₀ * sinePhaseAmplitude m β a) = Complex.normSq (sinePhaseAmplitude m β a) := by
+      rw [Complex.normSq_mul, hu₀, one_mul]
+    rw [← hns, Complex.normSq_apply, ← sq]
+    nlinarith [sq_nonneg (u₀ * sinePhaseAmplitude m β a).im]
+  have hre_expr : (u₀ * sinePhaseAmplitude m β a).re =
+      (N : ℝ)⁻¹ * ∑ x ∈ range N,
+        Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) *
+          Real.cos (2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2))) := by
+    have hmul : u₀ * sinePhaseAmplitude m β a =
+        ((N : ℝ)⁻¹ : ℂ) * ∑ x ∈ range N,
+          (((Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ) *
+            eigenvalue (δ * ((x : ℝ) - (N : ℝ) / 2))) := by
+      unfold sinePhaseAmplitude
+      change u₀ * (((N : ℕ) : ℂ)⁻¹ * ∑ x ∈ range N, sineWeight 10 (x / B) * eigenvalue (β - (a : ℝ) / N) ^ x) = _
+      rw [← mul_assoc, mul_comm u₀ ((N : ℕ) : ℂ)⁻¹, mul_assoc, Finset.mul_sum]
+      simp only [Complex.ofReal_inv, Complex.ofReal_natCast]
+      congr 1
+      apply Finset.sum_congr rfl; intro x _
+      rw [hω_eq, sineWeight_eq_sin, eigenvalue_pow_eq_eigenvalue_mul]
+      have harg10 : Real.pi * ((x / B : ℕ) : ℝ) / (2 : ℝ) ^ 10 = Real.pi * ((x / B : ℕ) : ℝ) / 1024 := by
+        norm_num
+      rw [harg10]
+      have heig : eigenvalue (-(N : ℝ) * δ / 2) * eigenvalue ((x : ℝ) * δ) =
+          eigenvalue (δ * ((x : ℝ) - (N : ℝ) / 2)) := by
+        rw [← eigenvalue_add]; congr 1; ring
+      dsimp only [u₀]
+      have hI2 : (-Complex.I) * Complex.I = 1 := by simp [Complex.I_sq]
+      calc (-Complex.I) * eigenvalue (-(N : ℝ) * δ / 2) *
+            (((Real.sqrt 2 : ℝ) : ℂ) * Complex.I * ((Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ) *
+              eigenvalue ((x : ℝ) * δ))
+          = ((-Complex.I) * Complex.I) *
+              (((Real.sqrt 2 : ℝ) : ℂ) * ((Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ)) *
+              (eigenvalue (-(N : ℝ) * δ / 2) * eigenvalue ((x : ℝ) * δ)) := by ring
+        _ = (((Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ) *
+              eigenvalue (δ * ((x : ℝ) - (N : ℝ) / 2))) := by
+            rw [hI2, one_mul, heig, Complex.ofReal_mul]
+    rw [hmul, ← Complex.ofReal_inv, Complex.re_ofReal_mul, Complex.re_sum]
+    congr 1
+    apply Finset.sum_congr rfl; intro x _
+    rw [Complex.re_ofReal_mul]
+    congr 1
+    unfold eigenvalue
+    rw [show Complex.I * ((2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2)) : ℝ) : ℂ) =
+      ((2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2)) : ℝ) : ℂ) * Complex.I by ring,
+      Complex.exp_ofReal_mul_I_re]
+  have hcos_lb (x : ℕ) (hx : x ∈ range N) :
+      Real.sin (Real.pi * (x : ℝ) / N) ≤ Real.cos (2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2))) := by
+    have hxlt : (x : ℝ) < N := by exact_mod_cast (mem_range.mp hx)
+    have hx0 : (0 : ℝ) ≤ x := Nat.cast_nonneg x
+    set α : ℝ := 2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2))
+    set γ : ℝ := Real.pi * |(x : ℝ) / N - 1 / 2|
+    have hhalf : |(x : ℝ) / N - 1 / 2| ≤ 1 / 2 := by
+      rw [abs_le]
+      have h1 : 0 ≤ (x : ℝ) / N := by positivity
+      have h2 : (x : ℝ) / N ≤ 1 := (div_le_one hNR).mpr hxlt.le
+      constructor <;> linarith
+    have hγ0 : 0 ≤ γ := mul_nonneg Real.pi_pos.le (abs_nonneg _)
+    have hγpi : γ ≤ Real.pi / 2 := by dsimp only [γ]; nlinarith [Real.pi_pos]
+    have hα_le : |α| ≤ γ := by
+      have hα_eq : α = 2 * Real.pi * ((N : ℝ) * δ) * ((x : ℝ) / N - 1 / 2) := by
+        dsimp only [α]; field_simp [hNR.ne']
+      rw [hα_eq, abs_mul, abs_mul, abs_of_pos (mul_pos (by norm_num) Real.pi_pos)]
+      have h2 : 2 * Real.pi * |(N : ℝ) * δ| ≤ Real.pi := by nlinarith [Real.pi_pos]
+      exact mul_le_mul_of_nonneg_right h2 (abs_nonneg _)
+    have hanti : Real.cos γ ≤ Real.cos |α| := by
+      apply Real.strictAntiOn_cos.antitoneOn
+      · exact ⟨abs_nonneg _, hα_le.trans (by linarith [Real.pi_pos])⟩
+      · exact ⟨hγ0, by linarith [Real.pi_pos]⟩
+      · exact hα_le
+    rw [Real.cos_abs] at hanti
+    have hcos_γ : Real.cos γ = Real.sin (Real.pi * (x : ℝ) / N) := by
+      have h1 : Real.cos γ = Real.cos (Real.pi * ((x : ℝ) / N - 1 / 2)) := by
+        have habs : γ = |Real.pi * ((x : ℝ) / N - 1 / 2)| := by
+          dsimp only [γ]; rw [abs_mul, abs_of_pos Real.pi_pos]
+        rw [habs, Real.cos_abs]
+      rw [h1, show Real.pi * ((x : ℝ) / N - 1 / 2) = Real.pi * (x : ℝ) / N - Real.pi / 2 by ring,
+        Real.cos_sub, Real.cos_pi_div_two, Real.sin_pi_div_two]
+      ring
+    linarith
+  have hre_ge : Real.sqrt 2 * (508 / 1024 : ℝ) ≤ (u₀ * sinePhaseAmplitude m β a).re := by
+    have hreidx :
+        (∑ x ∈ range N,
+          Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2)))) =
+        ∑ u ∈ range 1024, ∑ j ∈ range B,
+          Real.sqrt 2 * Real.sin (Real.pi * (((u * B + j) / B : ℕ) : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (δ * (((u * B + j : ℕ) : ℝ) - (N : ℝ) / 2))) := by
+      rw [congrArg range hNB]
+      exact range_mul_sum 1024 B _
+    rw [hre_expr, hreidx]
+    have hinner (u : ℕ) (hu : u ∈ range 1024) :
+        (B : ℝ) * (Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+            (Real.sin (Real.pi * (u : ℝ) / 1024) - Real.pi / 1024)) ≤
+          ∑ j ∈ range B,
+            Real.sqrt 2 * Real.sin (Real.pi * (((u * B + j) / B : ℕ) : ℝ) / 1024) *
+              Real.cos (2 * Real.pi * (δ * (((u * B + j : ℕ) : ℝ) - (N : ℝ) / 2))) := by
+      have hult : u < 1024 := mem_range.mp hu
+      have hsin_nn : 0 ≤ Real.sin (Real.pi * (u : ℝ) / 1024) := by
+        apply Real.sin_nonneg_of_nonneg_of_le_pi (by positivity)
+        have : (u : ℝ) ≤ 1024 := by exact_mod_cast hult.le
+        nlinarith [Real.pi_pos]
+      have hterm (j : ℕ) (hj : j ∈ range B) :
+          Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+              (Real.sin (Real.pi * (u : ℝ) / 1024) - Real.pi / 1024) ≤
+            Real.sqrt 2 * Real.sin (Real.pi * (((u * B + j) / B : ℕ) : ℝ) / 1024) *
+              Real.cos (2 * Real.pi * (δ * (((u * B + j : ℕ) : ℝ) - (N : ℝ) / 2))) := by
+        have hjlt : j < B := mem_range.mp hj
+        have hdiv : (u * B + j) / B = u := by
+          rw [Nat.mul_comm u B, Nat.mul_add_div hBpos, Nat.div_eq_of_lt hjlt, Nat.add_zero]
+        rw [hdiv]
+        have hxmem : u * B + j ∈ range N := by
+          rw [mem_range, hNB]
+          have : u + 1 ≤ 1024 := hult
+          nlinarith
+        have hcos := hcos_lb (u * B + j) hxmem
+        have hlip := Real.abs_sin_sub_sin_le (Real.pi * ((u * B + j : ℕ) : ℝ) / N) (Real.pi * (u : ℝ) / 1024)
+        have hdiff : Real.pi * ((u * B + j : ℕ) : ℝ) / N - Real.pi * (u : ℝ) / 1024 =
+            Real.pi * (j : ℝ) / (1024 * (B : ℝ)) := by
+          rw [hNBR]; push_cast; field_simp [hBR.ne']; ring
+        have hdiff_abs : |Real.pi * ((u * B + j : ℕ) : ℝ) / N - Real.pi * (u : ℝ) / 1024| =
+            Real.pi * (j : ℝ) / (1024 * (B : ℝ)) := by
+          rw [hdiff, abs_of_nonneg (by positivity)]
+        have hdiff_le : Real.pi * (j : ℝ) / (1024 * (B : ℝ)) ≤ Real.pi / 1024 := by
+          have hjB : (j : ℝ) ≤ B := by exact_mod_cast hjlt.le
+          rw [div_le_div_iff₀ (by positivity) (by norm_num)]
+          nlinarith [Real.pi_pos]
+        have hsin_lb : Real.sin (Real.pi * (u : ℝ) / 1024) - Real.pi / 1024 ≤
+            Real.sin (Real.pi * ((u * B + j : ℕ) : ℝ) / N) := by
+          rw [hdiff_abs] at hlip
+          linarith [(abs_le.mp hlip).1]
+        have hcoef_nn : 0 ≤ Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) := by positivity
+        exact mul_le_mul_of_nonneg_left (hsin_lb.trans hcos) hcoef_nn
+      have hs := Finset.sum_le_sum hterm
+      simpa only [Finset.sum_const, Finset.card_range, nsmul_eq_mul] using hs
+    have hsum1 := Finset.sum_le_sum hinner
+    rw [← Finset.mul_sum] at hsum1
+    have hsin2 : ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ^ 2 = 512 := by
+      have h := sineWeight_sum_normSq
+      have hterm : ∀ u ∈ range 1024, Complex.normSq (sineWeight 10 u) =
+          2 * Real.sin (Real.pi * (u : ℝ) / 1024) ^ 2 := by
+        intro u _; rw [sineWeight_normSq]; norm_num
+      rw [Finset.sum_congr rfl hterm, ← Finset.mul_sum] at h
+      linarith
+    have hsin1 : ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ≤ 1024 := by
+      calc ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)
+          ≤ ∑ _u ∈ range 1024, (1 : ℝ) := Finset.sum_le_sum (fun u _ => Real.sin_le_one _)
+        _ = 1024 := by simp
+    have hpi4 : Real.pi < 4 := by linarith [Real.pi_lt_d6]
+    have hsum_eval : ∑ u ∈ range 1024,
+        Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+          (Real.sin (Real.pi * (u : ℝ) / 1024) - Real.pi / 1024) =
+        Real.sqrt 2 * ((∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ^ 2) -
+          (Real.pi / 1024) * ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) := by
+      rw [Finset.mul_sum, ← Finset.sum_sub_distrib, Finset.mul_sum]
+      apply Finset.sum_congr rfl; intro u _; ring
+    rw [hsum_eval, hsin2] at hsum1
+    have hmid : Real.sqrt 2 * 508 ≤
+        Real.sqrt 2 * (512 - Real.pi / 1024 * ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) := by
+      apply mul_le_mul_of_nonneg_left _ (Real.sqrt_nonneg 2)
+      have h1 : Real.pi / 1024 * ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ≤
+          Real.pi / 1024 * 1024 := mul_le_mul_of_nonneg_left hsin1 (by positivity)
+      linarith
+    have hscale := mul_le_mul_of_nonneg_left ((mul_le_mul_of_nonneg_left hmid hBR.le).trans hsum1) (inv_nonneg.mpr hNR.le)
+    have hlhs : (N : ℝ)⁻¹ * ((B : ℝ) * (Real.sqrt 2 * 508)) = Real.sqrt 2 * (508 / 1024 : ℝ) := by
+      rw [hNBR]; field_simp [hBR.ne']
+    linarith
+  have hsq : (Real.sqrt 2 * (508 / 1024 : ℝ)) ^ 2 ≤ (u₀ * sinePhaseAmplitude m β a).re ^ 2 :=
+    pow_le_pow_left₀ (by positivity) hre_ge 2
+  have hnum : (49 / 100 : ℝ) ≤ (Real.sqrt 2 * (508 / 1024 : ℝ)) ^ 2 := by
+    rw [mul_pow, Real.sq_sqrt (by norm_num)]; norm_num
+  linarith
+
+theorem sine_neighbor_mass1_gen (m : ℕ) (hm : 10 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
+    (49 / 100 : ℝ) ≤ sineNeighborMass m r 0 k := by
+  classical
+  set a : Fin (2 ^ m) := reducedPeak r m k
+  have hgood_a : goodNeighbor m r 0 k a := by
+    refine ⟨0, by omega, by omega, ?_⟩
+    simp only [neighborWord, Int.cast_zero, add_zero, ← Int.natCast_mod, Int.toNat_natCast,
+      Nat.mod_eq_of_lt a.isLt]
+    rfl
+  have hsingle : Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) a.val) ≤ sineNeighborMass m r 0 k := by
+    unfold sineNeighborMass
+    have hmem : a ∈ (Finset.univ : Finset (Fin (2 ^ m))) := Finset.mem_univ a
+    have hle := Finset.single_le_sum (f := fun x : Fin (2 ^ m) =>
+        if goodNeighbor m r 0 k x then Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) x.val) else 0)
+      (fun x _ => by dsimp only; split_ifs; exact Complex.normSq_nonneg _; exact le_rfl) hmem
+    simpa only [if_pos hgood_a] using hle
+  set z : ℤ := ((reducedPeakRaw r m k / 2 ^ m : ℕ) : ℤ)
+  have hdiv : reducedPeakRaw r m k = a.val + (reducedPeakRaw r m k / 2 ^ m) * 2 ^ m := by
+    have h := (Nat.div_add_mod (reducedPeakRaw r m k) (2 ^ m)).symm
+    dsimp only [a, reducedPeak]
+    linarith [Nat.mul_comm (2 ^ m) (reducedPeakRaw r m k / 2 ^ m)]
+  have hround : round (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) = (reducedPeakRaw r m k : ℤ) := by
+    have hc' : ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r) = ((2 ^ m * k.val : ℕ) : ℝ) / r := by push_cast; ring
+    rw [hc', ShorECDLP.Entrant.RoundedReadout.round_nat_ratio _ r hr]
+    simp only [reducedPeakRaw, Nat.mul_assoc]
+  have hdist : |((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r) - ((a.val : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ))| ≤ 1 / 2 := by
+    have hcast : ((a.val : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ)) =
+        (round (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) : ℝ) := by
+      rw [hround]
+      have hR : ((reducedPeakRaw r m k : ℕ) : ℝ) =
+          (a.val : ℝ) + ((reducedPeakRaw r m k / 2 ^ m : ℕ) : ℝ) * ((2 ^ m : ℕ) : ℝ) := by
+        exact_mod_cast hdiv
+      dsimp only [z]
+      rw [Int.cast_natCast, Int.cast_natCast]
+      linarith
+    rw [hcast]
+    exact abs_sub_round _
+  exact (sinePhaseAmplitude_peak_lower m hm ((k.val : ℝ) / r) a.val z hdist).trans hsingle
+
+theorem nearestNumerator_reducedPeak_256 (k : Fin order) :
+    ShorECDLP.Challenge.nearestNumerator order 256 (reducedPeak order 256 k).val = k.val := by
+  have hord_lt : order < 2 ^ 256 := by norm_num [order]
+  have hord_pos : 0 < order := order_prime.pos
+  have hk_lt : k.val < order := k.isLt
+  have hraw_lt : reducedPeakRaw order 256 k < 2 ^ 256 := by
+    unfold reducedPeakRaw
+    apply (Nat.div_lt_iff_lt_mul (by omega)).mpr
+    have : k.val + 1 ≤ order := hk_lt
+    nlinarith
+  have hval : (reducedPeak order 256 k).val = reducedPeakRaw order 256 k := by
+    simp only [reducedPeak, Nat.mod_eq_of_lt hraw_lt]
+  rw [hval]
+  set m := reducedPeakRaw order 256 k
+  have h1 : 2 * order * m ≤ 2 * 2 ^ 256 * k.val + order := by
+    have h := Nat.div_mul_le_self (2 * 2 ^ 256 * k.val + order) (2 * order)
+    dsimp only [m, reducedPeakRaw]
+    linarith
+  have h2 : 2 * 2 ^ 256 * k.val + order < 2 * order * (m + 1) := by
+    have h := Nat.lt_mul_div_succ (2 * 2 ^ 256 * k.val + order) (by omega : 0 < 2 * order)
+    dsimp only [m, reducedPeakRaw]
+    linarith
+  unfold ShorECDLP.Challenge.nearestNumerator
+  have hNpos : 0 < 2 * 2 ^ 256 := by positivity
+  have hlo : 2 * 2 ^ 256 * k.val ≤ 2 * order * m + 2 ^ 256 := by linarith
+  have hhi : 2 * order * m + 2 ^ 256 < 2 * 2 ^ 256 * (k.val + 1) := by linarith
+  have hd1 : k.val ≤ (2 * order * m + 2 ^ 256) / (2 * 2 ^ 256) :=
+    (Nat.le_div_iff_mul_le hNpos).mpr (by linarith)
+  have hd2 : (2 * order * m + 2 ^ 256) / (2 * 2 ^ 256) < k.val + 1 :=
+    (Nat.div_lt_iff_lt_mul hNpos).mpr (by linarith)
+  omega
+
+def params256 : DecoderParams := ⟨256, 206, by decide, by decide, by decide, by decide⟩
+
+def offsets13 : List (ℤ × ℤ) :=
+  [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 0), (0, 1), (1, -1), (1, 0), (1, 1),
+   (-2, 0), (2, 0), (0, -2), (0, 2)]
+
+theorem offsets13_length : offsets13.length = 13 := rfl
+
+theorem offsets13_bounds : ∀ p ∈ offsets13, (-2 ≤ p.1 ∧ p.1 ≤ 2) ∧ (-2 ≤ p.2 ∧ p.2 ≤ 2) := by
+  decide
+
+def pairRecovered256 (d a b : ℕ) : Bool :=
+  decide (∃ p ∈ offsets13, (d : ZMod order) ∈
+    fixedCandidates params256 (neighborWord 256 a p.1) (neighborWord 206 b p.2))
+
+theorem pairRecovered256_of_pair (d : ℕ) (k : Fin order) (hk : k.val ≠ 0)
+    (a : Fin (2 ^ 256)) (b : Fin (2 ^ 206)) (i j : ℤ)
+    (hp : (i, j) ∈ offsets13)
+    (ha : neighborWord 256 a.val i = (reducedPeak order 256 k).val)
+    (hb : neighborWord 206 b.val j = (reducedPeak order 206 ⟨d * k.val % order, Nat.mod_lt _ order_prime.pos⟩).val) :
+    pairRecovered256 d a.val b.val = true := by
+  classical
+  haveI : Fact (Nat.Prime order) := ⟨order_prime⟩
+  have hk0 : ((k.val : ℕ) : ZMod order) ≠ 0 := by
+    intro h
+    rw [ZMod.natCast_eq_zero_iff] at h
+    exact hk (Nat.eq_zero_of_dvd_of_lt h k.isLt)
+  apply decide_eq_true
+  refine ⟨(i, j), hp, ?_⟩
+  unfold fixedCandidates
+  apply Finset.mem_image.mpr
+  refine ⟨d * k.val % order, ?_, ?_⟩
+  · change d * k.val % order ∈ wrappedNumeratorCandidates order 206 (neighborWord 206 b.val j)
+    rw [hb]
+    exact reducedPeak_mem_candidates order 206 _
+  · change ((d * k.val % order : ℕ) : ZMod order) *
+        (ShorECDLP.Challenge.nearestNumerator order 256 (neighborWord 256 a.val i) : ZMod order)⁻¹ = d
+    rw [ha, nearestNumerator_reducedPeak_256 k]
+    simp only [ZMod.natCast_mod, Nat.cast_mul]
+    field_simp
+
+theorem cross13_lower (p1 p3 p5 q1 q3 q5 : ℝ)
+    (hp1 : 49 / 100 ≤ p1) (hp3 : p3 ≤ p5) (hp5 : p3 ≤ 1)
+    (hq1 : 49 / 100 ≤ q1) (hq3 : q3 ≤ q5) (hq5 : q3 ≤ 1) :
+    1 - (51 / 100 : ℝ) * ((1 - p3) + (1 - q3)) - (49 / 100 : ℝ) * ((1 - p5) + (1 - q5)) ≤
+      p3 * q3 + (p5 - p3) * q1 + p1 * (q5 - q3) := by
+  nlinarith
+
+/-- Main Wave 8B ideal recovery lower bound (`≥ 9924 / 10000`) for `(L = 256, R = 206, 13 trials)`. -/
+theorem sine_pair_success_256_206 (Q : Point) (d : ℕ) (hn : Q ≠ 0) (hd : Q = d • G) :
+    (9924 / 10000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+      if pairRecovered256 d a.val b.val then sinePairMass order 256 206 d (a, b) else 0 := by
+  classical
+  let r := order
+  have hr : r.Prime := order_prime
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr.pos
+  have hrinv : (0 : ℝ) ≤ (r : ℝ)⁻¹ := by positivity
+  let kR : Fin r → Fin r := fun k => ⟨d * k.val % r, Nat.mod_lt _ hr.pos⟩
+  let A : Fin r → Fin (2 ^ 256) → ℝ := fun k a =>
+    Complex.normSq (sinePhaseAmplitude 256 ((k.val : ℝ) / r) a.val)
+  let B : Fin r → Fin (2 ^ 206) → ℝ := fun k b =>
+    Complex.normSq (sinePhaseAmplitude 206 (((kR k).val : ℝ) / r) b.val)
+  let G1 : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    goodNeighbor 256 r 1 k a ∧ goodNeighbor 206 r 1 (kR k) b
+  let G2 : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    (goodNeighbor 256 r 2 k a ∧ ¬ goodNeighbor 256 r 1 k a) ∧ goodNeighbor 206 r 0 (kR k) b
+  let G3 : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    goodNeighbor 256 r 0 k a ∧ (goodNeighbor 206 r 2 (kR k) b ∧ ¬ goodNeighbor 206 r 1 (kR k) b)
+  let good : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    k.val ≠ 0 ∧ (G1 k a b ∨ G2 k a b ∨ G3 k a b)
+  let F : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → ℝ := fun k a b =>
+    if good k a b then A k a * B k b else 0
+  let cL : Fin r → ℝ := fun k => Real.cos (Real.pi * ((2 ^ 256 : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
+  let cR : Fin r → ℝ := fun k => Real.cos (Real.pi * ((2 ^ 206 : ℕ) : ℝ) * (((kR k).val : ℝ) / r)) ^ 2
+  have hrec : ∀ k a b, good k a b → pairRecovered256 d a.val b.val = true := by
+    intro k a b ⟨hk, h⟩
+    rcases h with ⟨⟨i, hi1, hi2, hi⟩, ⟨j, hj1, hj2, hj⟩⟩ |
+      ⟨⟨⟨i, hi1, hi2, hi⟩, _⟩, ⟨j, hj1, hj2, hj⟩⟩ |
+      ⟨⟨i, hi1, hi2, hi⟩, ⟨⟨j, hj1, hj2, hj⟩, _⟩⟩
+    · have hp : (i, j) ∈ offsets13 := by
+        have hi' : i = -1 ∨ i = 0 ∨ i = 1 := by omega
+        have hj' : j = -1 ∨ j = 0 ∨ j = 1 := by omega
+        rcases hi' with rfl | rfl | rfl <;> rcases hj' with rfl | rfl | rfl <;> decide
+      exact pairRecovered256_of_pair d k hk a b i j hp hi hj
+    · have hp : (i, j) ∈ offsets13 := by
+        have hi' : i = -2 ∨ i = -1 ∨ i = 0 ∨ i = 1 ∨ i = 2 := by omega
+        have hj' : j = 0 := by omega
+        subst hj'
+        rcases hi' with rfl | rfl | rfl | rfl | rfl <;> decide
+      exact pairRecovered256_of_pair d k hk a b i j hp hi hj
+    · have hp : (i, j) ∈ offsets13 := by
+        have hi' : i = 0 := by omega
+        have hj' : j = -2 ∨ j = -1 ∨ j = 0 ∨ j = 1 ∨ j = 2 := by omega
+        subst hi'
+        rcases hj' with rfl | rfl | rfl | rfl | rfl <;> decide
+      exact pairRecovered256_of_pair d k hk a b i j hp hi hj
+  have step1 :
+      ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b ≤
+        ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+          if pairRecovered256 d a.val b.val then sinePairMass r 256 206 d (a, b) else 0 := by
+    apply Finset.sum_le_sum; intro a _
+    apply Finset.sum_le_sum; intro b _
+    by_cases hp : pairRecovered256 d a.val b.val = true
+    · rw [if_pos hp]
+      unfold sinePairMass
+      apply mul_le_mul_of_nonneg_left _ hrinv
+      apply Finset.sum_le_sum; intro k _
+      dsimp only [F, A, B, kR]
+      split_ifs
+      · exact le_rfl
+      · exact mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _)
+    · rw [if_neg hp]
+      have hz : ∀ k, F k a b = 0 := by
+        intro k; dsimp only [F]; rw [if_neg]
+        intro hg; exact hp (hrec k a b hg)
+      simp [hz]
+  have step2 :
+      (r : ℝ)⁻¹ * ∑ k : Fin r, ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b =
+        ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b := by
+    simp_rw [Finset.mul_sum]
+    rw [Finset.sum_comm]
+    apply Finset.sum_congr rfl; intro a _
+    rw [Finset.sum_comm]
+  have step3 (k : Fin r) :
+      (if k.val = 0 then (0 : ℝ) else (1 - 24 / 1000000 - 13872 / 10000000 : ℝ)) -
+        cL k * (6129 / 1000000) - cR k * (6129 / 1000000) ≤
+      ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b := by
+    have hcL0 : 0 ≤ cL k := sq_nonneg _
+    have hcR0 : 0 ≤ cR k := sq_nonneg _
+    by_cases hk : k.val = 0
+    · rw [if_pos hk]
+      have h0 : 0 ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b :=
+        Finset.sum_nonneg (fun a _ => Finset.sum_nonneg (fun b _ => by
+          dsimp only [F, A, B]; split_ifs
+          · exact mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _)
+          · exact le_rfl))
+      linarith
+    · rw [if_neg hk]
+      have hsplit : ∀ a b, F k a b =
+          (if G1 k a b then A k a * B k b else 0) +
+          (if G2 k a b then A k a * B k b else 0) +
+          (if G3 k a b then A k a * B k b else 0) := by
+        intro a b
+        dsimp only [F, good]
+        by_cases h1 : G1 k a b
+        · have hn2 : ¬ G2 k a b := fun h => h.1.2 h1.1
+          have hn3 : ¬ G3 k a b := fun h => h.2.2 h1.2
+          simp [hk, h1, hn2, hn3]
+        · by_cases h2 : G2 k a b
+          · have hn3 : ¬ G3 k a b := fun h => h2.1.2 (goodNeighbor_mono (by decide) h.1)
+            simp [hk, h1, h2, hn3]
+          · by_cases h3 : G3 k a b <;> simp [hk, h1, h2, h3]
+      have hsum_eq : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b) =
+          sineNeighborMass 256 r 1 k * sineNeighborMass 206 r 1 (kR k) +
+          (sineNeighborMass 256 r 2 k - sineNeighborMass 256 r 1 k) * sineNeighborMass 206 r 0 (kR k) +
+          sineNeighborMass 256 r 0 k * (sineNeighborMass 206 r 2 (kR k) - sineNeighborMass 206 r 1 (kR k)) := by
+        simp_rw [hsplit, Finset.sum_add_distrib]
+        have hS1 : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), if G1 k a b then A k a * B k b else 0) =
+            sineNeighborMass 256 r 1 k * sineNeighborMass 206 r 1 (kR k) := by
+          rw [sineNeighborMass, sineNeighborMass, Finset.sum_mul_sum]
+          apply Finset.sum_congr rfl; intro a _
+          apply Finset.sum_congr rfl; intro b _
+          dsimp only [G1, A, B]; rw [ite_zero_mul_ite_zero]
+        have hdiffL : (∑ a : Fin (2 ^ 256), if goodNeighbor 256 r 2 k a ∧ ¬ goodNeighbor 256 r 1 k a then A k a else 0) =
+            sineNeighborMass 256 r 2 k - sineNeighborMass 256 r 1 k := by
+          rw [sineNeighborMass, sineNeighborMass, ← Finset.sum_sub_distrib]
+          apply Finset.sum_congr rfl; intro a _
+          dsimp only [A]
+          by_cases h1 : goodNeighbor 256 r 1 k a
+          · have h2 := goodNeighbor_mono (by decide : 1 ≤ 2) h1
+            simp [h1, h2]
+          · by_cases h2 : goodNeighbor 256 r 2 k a <;> simp [h1, h2]
+        have hdiffR : (∑ b : Fin (2 ^ 206), if goodNeighbor 206 r 2 (kR k) b ∧ ¬ goodNeighbor 206 r 1 (kR k) b then B k b else 0) =
+            sineNeighborMass 206 r 2 (kR k) - sineNeighborMass 206 r 1 (kR k) := by
+          rw [sineNeighborMass, sineNeighborMass, ← Finset.sum_sub_distrib]
+          apply Finset.sum_congr rfl; intro b _
+          dsimp only [B]
+          by_cases h1 : goodNeighbor 206 r 1 (kR k) b
+          · have h2 := goodNeighbor_mono (by decide : 1 ≤ 2) h1
+            simp [h1, h2]
+          · by_cases h2 : goodNeighbor 206 r 2 (kR k) b <;> simp [h1, h2]
+        have hS2 : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), if G2 k a b then A k a * B k b else 0) =
+            (sineNeighborMass 256 r 2 k - sineNeighborMass 256 r 1 k) * sineNeighborMass 206 r 0 (kR k) := by
+          rw [← hdiffL, sineNeighborMass, Finset.sum_mul_sum]
+          apply Finset.sum_congr rfl; intro a _
+          apply Finset.sum_congr rfl; intro b _
+          dsimp only [G2, A, B]; rw [ite_zero_mul_ite_zero]
+        have hS3 : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), if G3 k a b then A k a * B k b else 0) =
+            sineNeighborMass 256 r 0 k * (sineNeighborMass 206 r 2 (kR k) - sineNeighborMass 206 r 1 (kR k)) := by
+          rw [← hdiffR, sineNeighborMass, Finset.sum_mul_sum]
+          apply Finset.sum_congr rfl; intro a _
+          apply Finset.sum_congr rfl; intro b _
+          dsimp only [G3, A, B]; rw [ite_zero_mul_ite_zero]
+        rw [hS1, hS2, hS3]
+      rw [hsum_eq]
+      have hp1 := sine_neighbor_mass1_gen 256 (by decide) r hr.pos k
+      have hp3 := sine_neighbor_mass3_gen 256 (by decide) r hr.pos k
+      have hp5 := sine_neighbor_mass5_gen 256 (by decide) r hr.pos k
+      have hq1 := sine_neighbor_mass1_gen 206 (by decide) r hr.pos (kR k)
+      have hq3 := sine_neighbor_mass3_gen 206 (by decide) r hr.pos (kR k)
+      have hq5 := sine_neighbor_mass5_gen 206 (by decide) r hr.pos (kR k)
+      have hcross := cross13_lower
+        (sineNeighborMass 256 r 0 k) (sineNeighborMass 256 r 1 k) (sineNeighborMass 256 r 2 k)
+        (sineNeighborMass 206 r 0 (kR k)) (sineNeighborMass 206 r 1 (kR k)) (sineNeighborMass 206 r 2 (kR k))
+        hp1 (sineNeighborMass_mono 256 r 1 2 (by decide) k) (sineNeighborMass_le_one 256 (by decide) r 1 k)
+        hq1 (sineNeighborMass_mono 206 r 1 2 (by decide) (kR k)) (sineNeighborMass_le_one 206 (by decide) r 1 (kR k))
+      dsimp only [cL, cR] at *
+      linarith
+  have hsum := Finset.sum_le_sum (fun k (_ : k ∈ Finset.univ) => step3 k)
+  have hcount : (∑ k : Fin r, if k.val = 0 then (0 : ℝ) else (1 - 24 / 1000000 - 13872 / 10000000 : ℝ)) =
+      ((r : ℝ) - 1) * (1 - 24 / 1000000 - 13872 / 10000000) := by
+    have hz : (∑ k : Fin r, if k.val = 0 then (1 : ℝ) else 0) = 1 := by
+      rw [Fin.sum_univ_eq_sum_range (fun k => if k = 0 then (1 : ℝ) else 0)]
+      simp [hr.pos]
+    calc
+      _ = ∑ k : Fin r, ((1 - 24 / 1000000 - 13872 / 10000000 : ℝ) -
+            (1 - 24 / 1000000 - 13872 / 10000000) * (if k.val = 0 then 1 else 0)) := by
+        apply Finset.sum_congr rfl; intro k _; split_ifs <;> ring
+      _ = _ := by
+        rw [Finset.sum_sub_distrib, ← Finset.mul_sum, hz]
+        simp only [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul, mul_one]
+        ring
+  rw [Finset.sum_sub_distrib, Finset.sum_sub_distrib, hcount, ← Finset.sum_mul, ← Finset.sum_mul] at hsum
+  have hcL_sum : ∑ k : Fin r, cL k = (r : ℝ) / 2 := by
+    have h := sum_cos_sq_eq r (2 ^ 256) hr.pos (order_not_dvd_pow2 256)
+    simpa only [cL, mul_div_assoc] using h
+  have hcR_sum : ∑ k : Fin r, cR k = (r : ℝ) / 2 := by
+    have hndvd : ¬ r ∣ 2 ^ 206 * d := by
+      intro h
+      rcases hr.dvd_mul.mp h with h1 | h2
+      · exact order_not_dvd_pow2 206 h1
+      · exact order_not_dvd_of_ne_zero Q d hn hd h2
+    have h := sum_cos_sq_eq r (2 ^ 206 * d) hr.pos hndvd
+    rw [← h]
+    apply Finset.sum_congr rfl; intro k _
+    dsimp only [cR, kR]
+    rw [← mul_div_assoc, cos_sq_mod r (2 ^ 206) (d * k.val) hr.pos]
+    have harg : Real.pi * ((2 ^ 206 * d : ℕ) : ℝ) * (k.val : ℝ) / (r : ℝ) =
+        Real.pi * ((2 ^ 206 : ℕ) : ℝ) * ((d * k.val : ℕ) : ℝ) / (r : ℝ) := by
+      rw [Nat.cast_mul, Nat.cast_mul]; ring
+    rw [harg]
+  rw [hcL_sum, hcR_sum] at hsum
+  have hlower := mul_le_mul_of_nonneg_left hsum hrinv
+  have heval : (r : ℝ)⁻¹ * (((r : ℝ) - 1) * (1 - 24 / 1000000 - 13872 / 10000000) -
+      (r : ℝ) / 2 * (6129 / 1000000) - (r : ℝ) / 2 * (6129 / 1000000)) =
+      (1 - 1 / (r : ℝ)) * (1 - 24 / 1000000 - 13872 / 10000000) - 6129 / 1000000 := by
+    field_simp [hrR.ne']; ring
+  rw [heval, step2] at hlower
+  have hrbig_nat : 1000000 ≤ r := by dsimp only [r]; norm_num [order]
+  have hrbig : (1000000 : ℝ) ≤ (r : ℝ) := by exact_mod_cast hrbig_nat
+  have hinv : 1 / (r : ℝ) ≤ (1 : ℝ) / 1000000 := one_div_le_one_div_of_le (by norm_num) hrbig
+  have hnum : (9924 / 10000 : ℝ) ≤ (1 - 1 / (r : ℝ)) * (1 - 24 / 1000000 - 13872 / 10000000) -
+      6129 / 1000000 := by linarith
+  exact hnum.trans (hlower.trans step1)
+
+theorem decoder_budget256 : 13 * (2 * (order / 2 ^ 206 + 2)) ≤ 56 * (2 ^ 49 + 2) := by
+  norm_num [order]
+
+end
+end ShorECDLP.Entrant.SineBounds
+end

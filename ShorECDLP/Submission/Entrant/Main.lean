@@ -5,7 +5,7 @@ set_option Elab.async false
 
 /-! ### Consolidated from `Schedule26.lean` -/
 section
-/-! Certified 26-body-window `(258, 204)` sine-windowed Shor ECDLP schedule (`Windowed26`, Wave 8A):
+/-! Certified 25-body-window `(256, 206)` sine-windowed Shor ECDLP schedule (`Schedule25`, Wave 8B):
 - First window: signed 20-bit 5-pass SelectSwap loader (`First20Signed`, `193,625` Toffolis,
   `524,288` `G`-only rows — all frozen during specialization), locally compiled onto scratch wire `0`
   and catalyst wire `1` inside `List.range 1610`, with internal `X 836` bracketing.
@@ -122,6 +122,41 @@ theorem increment_offset (P : Point) (hr : order • P = 0)
   rw [hoff]
   simp only [hd] at hcalc
   exact hcalc.trans (mul_smul v (2^exponent) P).symm
+
+theorem increment_offset_ge1 (P : Point) (hr : order • P = 0)
+    (width exponent v : Nat) (hw : 1 ≤ width) :
+    increment P width exponent v + offsetScalar width exponent • P = (v * 2 ^ exponent) • P := by
+  have hh : halfOrder ≤ 2 ^ (width - 1) + order := by
+    have hl : halfOrder ≤ order := by
+      have horder : 0 < order := by norm_num [order]
+      dsimp [Single.halfOrder]
+      omega
+    exact hl.trans (Nat.le_add_left _ _)
+  have he : (2 ^ (width - 1) + order - halfOrder) • P + halfOrder • P = 2 ^ (width - 1) • P := by
+    rw [← add_nsmul, Nat.sub_add_cancel hh, add_nsmul, hr, add_zero]
+  have hoff : offsetScalar width exponent • P =
+      2 ^ (width - 1) • (2 ^ exponent • P) - (halfOrder * 2 ^ exponent) • P := by
+    unfold offsetScalar
+    rw [mul_smul, smul_comm (2 ^ (width - 1) + order - halfOrder) (2 ^ exponent),
+      eq_sub_iff_add_eq.mpr he, nsmul_sub]
+    simp only [mul_smul]
+    rw [smul_comm (2 ^ exponent) (2 ^ (width - 1)), smul_comm (2 ^ exponent) halfOrder]
+  let H := (halfOrder * 2 ^ exponent) • P
+  have hd : H + H = 2 ^ exponent • P := by
+    change (halfOrder * 2 ^ exponent) • P + (halfOrder * 2 ^ exponent) • P = _
+    rw [mul_smul, smul_comm halfOrder (2 ^ exponent), ← nsmul_add]
+    exact congrArg (fun R : Point => 2 ^ exponent • R)
+      (signedWindowHalfPoint_double P order (by decide +kernel) hr)
+  have hp_nat : 2 ^ width = 2 * 2 ^ (width - 1) := by
+    rw [← pow_succ', Nat.sub_add_cancel hw]
+  have hp : (2 : Int) ^ width = 2 * (2 ^ (width - 1) : Nat) := by
+    exact_mod_cast hp_nat
+  have hcalc : ((2 * (v : Int) - (2 : Int) ^ width + 1) • H) +
+      (2 ^ (width - 1) • (H + H) - H) = v • (H + H) := by rw [hp]; module
+  change ((2 * (v : Int) - (2 : Int) ^ width + 1) • H) + _ = _
+  rw [hoff]
+  simp only [hd] at hcalc
+  exact hcalc.trans (mul_smul v (2 ^ exponent) P).symm
 
 end
 end ShorECDLP.Entrant.Width16Schedule
@@ -970,6 +1005,31 @@ theorem joint_error18 : account18 258 0 + account18 204 0 ≤ 51 / 10000 := by
     unfold potential18 unit18
     rw [show max 19 (17 + 187 + 2) = 206 by decide]
     have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 206 := pow_le_pow_right₀ (by norm_num) (by decide)
+    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
+    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
+  have hp19 : potential18 (17 + 2) = unit18 := by norm_num [potential18, unit18]
+  rw [hp19] at h1 h2
+  norm_num only [Nat.cast_ofNat] at h1 h2
+  have hu : (425 : ℝ) * unit18 ≤ 51 / 10000 := by norm_num [unit18]
+  linarith
+
+theorem joint_error18_256_206 : account18 256 0 + account18 206 0 ≤ 51 / 10000 := by
+  have hz : account18 17 0 = 0 := by norm_num [account18, potential18, unit18]
+  rw [show 256 = 17 + 239 from rfl, show 206 = 17 + 189 from rfl,
+    account18_append, account18_append, hz]
+  norm_num only [zero_add]
+  have h1 := account18_geometric 239 17 (by decide)
+  have h2 := account18_geometric 189 17 (by decide)
+  have hp1 : potential18 (17 + 239 + 2) ≤ unit18 / 4 := by
+    unfold potential18 unit18
+    rw [show max 19 (17 + 239 + 2) = 258 by decide]
+    have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 258 := pow_le_pow_right₀ (by norm_num) (by decide)
+    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
+    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
+  have hp2 : potential18 (17 + 189 + 2) ≤ unit18 / 4 := by
+    unfold potential18 unit18
+    rw [show max 19 (17 + 189 + 2) = 208 by decide]
+    have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 208 := pow_le_pow_right₀ (by norm_num) (by decide)
     rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
     exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
   have hp19 : potential18 (17 + 2) = unit18 := by norm_num [potential18, unit18]
@@ -3846,9 +3906,9 @@ theorem selectedAxisDep_cons_exact {n : Nat} {y : Wire} {read : ConstantBit n �
 end
 end ShorECDLP.Entrant.ApproxCat
 
-/-! ### Part 3: Schedule26 geometry, coefficients, specialization, and physical program (Wave 8A) -/
+/-! ### Part 3: Schedule25 geometry, coefficients, specialization, and physical program (Wave 8B) -/
 
-namespace ShorECDLP.Entrant.Schedule26
+namespace ShorECDLP.Entrant.Schedule25
 open Quantum Challenge Secp256k1 AndGadget WEXCredit ConditionalCatalyst ApproximatePhase34
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
 open Single Single.Distribution Width16Schedule.Specialization
@@ -3864,230 +3924,276 @@ set_option linter.unnecessarySeqFocus false
 set_option linter.unusedSectionVars false
 attribute [local irreducible] List.ofFn fourierOutcomes Single.fixedEntry
 
-local instance bodyInst26 : Single.WindowBody := PathShare.bodyCF
-local instance resourceInst26 : Single.ProducerResources bodyInst26 :=
+local instance bodyInst25 : Single.WindowBody := PathShare.bodyCF
+local instance resourceInst25 : Single.ProducerResources bodyInst25 :=
   Single.ProducerResources.ofBody PathShare.bodyCF
     (by change resetWires.Nodup; exact resetWires_nodup)
     (by change (0 : Wire) ∈ resetWires; decide)
     (by change (1 : Wire) ∈ resetWires; decide)
 
-inductive Digit26 where
-  | left17 (index : Fin 14)
-  | right17 (index : Fin 12)
+inductive Digit25 where
+  | left18 (index : Fin 11)
+  | left19 (index : Fin 2)
+  | right17 (index : Fin 10)
+  | right18 (index : Fin 2)
 
-def Digit26.exponent : Digit26 → Nat
-  | .left17 j => 221 - 17 * j.val
-  | .right17 j => 187 - 17 * j.val
+def Digit25.k : Digit25 → Nat
+  | .left18 _ => 17
+  | .left19 _ => 18
+  | .right17 _ => 16
+  | .right18 _ => 17
 
-def Digit26.base (Q : Point) : Digit26 → Point
-  | .left17 _ => G
+def Digit25.width (d : Digit25) : Nat := d.k + 1
+
+def Digit25.bank (d : Digit25) : List Wire := GenericW.bankW d.k
+
+def Digit25.tof : Digit25 → Nat
+  | .left18 _ => 2320431
+  | .left19 _ => 2484527
+  | .right17 _ => 2238256
+  | .right18 _ => 2320431
+
+def Digit25.exponent : Digit25 → Nat
+  | .left18 j => 218 - 18 * j.val
+  | .left19 j => 19 - 19 * j.val
+  | .right17 j => 189 - 17 * j.val
+  | .right18 j => 18 - 18 * j.val
+
+def Digit25.base (Q : Point) : Digit25 → Point
+  | .left18 _ => G
+  | .left19 _ => G
   | .right17 _ => Q
+  | .right18 _ => Q
 
-def leftDigits26 : List Digit26 := List.ofFn (fun j : Fin 14 => .left17 j)
-def rightDigits26 : List Digit26 := List.ofFn (fun j : Fin 12 => .right17 j)
+theorem Digit25.k_lo (d : Digit25) : 16 ≤ d.k := by cases d <;> dsimp only [Digit25.k] <;> decide
+theorem Digit25.k_hi (d : Digit25) : d.k ≤ 18 := by cases d <;> dsimp only [Digit25.k] <;> decide
+theorem Digit25.width_ge1 (d : Digit25) : 1 ≤ d.width := by cases d <;> dsimp only [Digit25.width, Digit25.k] <;> decide
 
-def initialCoefficients26 (a : Nat) : PointCoeff :=
-  coefficients (oddScalar 238 a) 0
+def leftDigits25 : List Digit25 :=
+  List.ofFn (fun j : Fin 11 => .left18 j) ++ List.ofFn (fun j : Fin 2 => .left19 j)
 
-def signedCoefficients26 (w : Digit26) (a : Nat) : PointCoeff :=
+def rightDigits25 : List Digit25 :=
+  List.ofFn (fun j : Fin 10 => .right17 j) ++ List.ofFn (fun j : Fin 2 => .right18 j)
+
+def rightHeadDigit : Digit25 := .right17 ⟨0, by decide⟩
+
+def rightTailDigits25 : List Digit25 :=
+  List.ofFn (fun j : Fin 9 => .right17 ⟨j.val + 1, by omega⟩) ++ List.ofFn (fun j : Fin 2 => .right18 j)
+
+theorem rightDigits25_cons : rightDigits25 = rightHeadDigit :: rightTailDigits25 := by
+  simp [rightDigits25, rightHeadDigit, rightTailDigits25, List.ofFn_succ]
+
+def initialCoefficients25 (a : Nat) : PointCoeff :=
+  coefficients (oddScalar 236 a) 0
+
+def signedCoefficients25 (w : Digit25) (a : Nat) : PointCoeff :=
   match w with
-  | .left17 _ => coefficients (oddScalar w.exponent a) 0
+  | .left18 _ => coefficients (oddScalar w.exponent a) 0
+  | .left19 _ => coefficients (oddScalar w.exponent a) 0
   | .right17 _ => coefficients 0 (oddScalar w.exponent a)
+  | .right18 _ => coefficients 0 (oddScalar w.exponent a)
 
-/-- `2,228,224 = 524,288 + 14 * 65,536 + 12 * 65,536` raw rows.
-The first `1,441,792` rows (`First20Signed` + all `14` left body windows) have `b = 0` and freeze during specialization. -/
-def coefficientAt26 (i : Fin 2228224) : PointCoeff :=
-  if i.val < 524288 then initialCoefficients26 i.val
-  else if i.val < 1441792 then
-    coefficients (oddScalar (221 - 17 * ((i.val - 524288) / 65536)) ((i.val - 524288) % 65536)) 0
+/-- `3,407,872 = 524,288 + 11 * 131,072 + 2 * 262,144 + 10 * 65,536 + 2 * 131,072` raw rows.
+The first `2,490,368` rows (`First20Signed` + all `13` left body windows) have `b = 0` and freeze during specialization. -/
+def coefficientAt25 (i : Fin 3407872) : PointCoeff :=
+  if i.val < 524288 then initialCoefficients25 i.val
+  else if i.val < 1966080 then
+    coefficients (oddScalar (218 - 18 * ((i.val - 524288) / 131072)) ((i.val - 524288) % 131072)) 0
+  else if i.val < 2490368 then
+    coefficients (oddScalar (19 - 19 * ((i.val - 1966080) / 262144)) ((i.val - 1966080) % 262144)) 0
+  else if i.val < 3145728 then
+    coefficients 0 (oddScalar (189 - 17 * ((i.val - 2490368) / 65536)) ((i.val - 2490368) % 65536))
   else
-    coefficients 0 (oddScalar (187 - 17 * ((i.val - 1441792) / 65536)) ((i.val - 1441792) % 65536))
+    coefficients 0 (oddScalar (18 - 18 * ((i.val - 3145728) / 131072)) ((i.val - 3145728) % 131072))
 
-def firstRow26 (a : Fin 524288) : Fin 2228224 := ⟨a.val, by omega⟩
+def firstRow25 (a : Fin 524288) : Fin 3407872 := ⟨a.val, by omega⟩
 
-def row26 : Digit26 → Fin 65536 → Fin 2228224
-  | .left17 j, a => ⟨524288 + j.val * 65536 + a.val, by omega⟩
-  | .right17 j, a => ⟨1441792 + j.val * 65536 + a.val, by omega⟩
+def row25 : (d : Digit25) → Fin (2 ^ d.k) → Fin 3407872
+  | .left18 j, a => ⟨524288 + j.val * 131072 + a.val, by have := a.isLt; dsimp [Digit25.k] at this; omega⟩
+  | .left19 j, a => ⟨1966080 + j.val * 262144 + a.val, by have := a.isLt; dsimp [Digit25.k] at this; omega⟩
+  | .right17 j, a => ⟨2490368 + j.val * 65536 + a.val, by have := a.isLt; dsimp [Digit25.k] at this; omega⟩
+  | .right18 j, a => ⟨3145728 + j.val * 131072 + a.val, by have := a.isLt; dsimp [Digit25.k] at this; omega⟩
 
-theorem coefficientAt26_first (a : Fin 524288) :
-    coefficientAt26 (firstRow26 a) = initialCoefficients26 a.val := by
-  simp [coefficientAt26, firstRow26, a.isLt]
+theorem coefficientAt25_first (a : Fin 524288) :
+    coefficientAt25 (firstRow25 a) = initialCoefficients25 a.val := by
+  simp [coefficientAt25, firstRow25, a.isLt]
 
-theorem coefficientAt26_row (w : Digit26) (a : Fin 65536) :
-    coefficientAt26 (row26 w a) = signedCoefficients26 w a.val := by
+theorem coefficientAt25_row (w : Digit25) (a : Fin (2 ^ w.k)) :
+    coefficientAt25 (row25 w a) = signedCoefficients25 w a.val := by
   cases w with
-  | left17 j =>
-    have h0 : ¬ (row26 (.left17 j) a).val < 524288 := by simp only [row26]; omega
-    have h1 : (row26 (.left17 j) a).val < 1441792 := by simp only [row26]; omega
-    have hj : ((row26 (.left17 j) a).val - 524288) / 65536 = j.val := by simp only [row26]; omega
-    have ha : ((row26 (.left17 j) a).val - 524288) % 65536 = a.val := by simp only [row26]; omega
-    simp [coefficientAt26, h0, h1, hj, ha, signedCoefficients26, Digit26.exponent]
+  | left18 j =>
+    have haLt : a.val < 131072 := a.isLt
+    have h0 : ¬ (row25 (.left18 j) a).val < 524288 := by simp only [row25]; omega
+    have h1 : (row25 (.left18 j) a).val < 1966080 := by simp only [row25]; omega
+    have hj : ((row25 (.left18 j) a).val - 524288) / 131072 = j.val := by simp only [row25]; omega
+    have ha : ((row25 (.left18 j) a).val - 524288) % 131072 = a.val := by simp only [row25]; omega
+    simp [coefficientAt25, h0, h1, hj, ha, signedCoefficients25, Digit25.exponent]
+  | left19 j =>
+    have haLt : a.val < 262144 := a.isLt
+    have h0 : ¬ (row25 (.left19 j) a).val < 524288 := by simp only [row25]; omega
+    have h1 : ¬ (row25 (.left19 j) a).val < 1966080 := by simp only [row25]; omega
+    have h2 : (row25 (.left19 j) a).val < 2490368 := by simp only [row25]; omega
+    have hj : ((row25 (.left19 j) a).val - 1966080) / 262144 = j.val := by simp only [row25]; omega
+    have ha : ((row25 (.left19 j) a).val - 1966080) % 262144 = a.val := by simp only [row25]; omega
+    simp [coefficientAt25, h0, h1, h2, hj, ha, signedCoefficients25, Digit25.exponent]
   | right17 j =>
-    have h0 : ¬ (row26 (.right17 j) a).val < 524288 := by simp only [row26]; omega
-    have h1 : ¬ (row26 (.right17 j) a).val < 1441792 := by simp only [row26]; omega
-    have hj : ((row26 (.right17 j) a).val - 1441792) / 65536 = j.val := by simp only [row26]; omega
-    have ha : ((row26 (.right17 j) a).val - 1441792) % 65536 = a.val := by simp only [row26]; omega
-    simp [coefficientAt26, h0, h1, hj, ha, signedCoefficients26, Digit26.exponent]
+    have haLt : a.val < 65536 := a.isLt
+    have h0 : ¬ (row25 (.right17 j) a).val < 524288 := by simp only [row25]; omega
+    have h1 : ¬ (row25 (.right17 j) a).val < 1966080 := by simp only [row25]; omega
+    have h2 : ¬ (row25 (.right17 j) a).val < 2490368 := by simp only [row25]; omega
+    have h3 : (row25 (.right17 j) a).val < 3145728 := by simp only [row25]; omega
+    have hj : ((row25 (.right17 j) a).val - 2490368) / 65536 = j.val := by simp only [row25]; omega
+    have ha : ((row25 (.right17 j) a).val - 2490368) % 65536 = a.val := by simp only [row25]; omega
+    simp [coefficientAt25, h0, h1, h2, h3, hj, ha, signedCoefficients25, Digit25.exponent]
+  | right18 j =>
+    have haLt : a.val < 131072 := a.isLt
+    have h0 : ¬ (row25 (.right18 j) a).val < 524288 := by simp only [row25]; omega
+    have h1 : ¬ (row25 (.right18 j) a).val < 1966080 := by simp only [row25]; omega
+    have h2 : ¬ (row25 (.right18 j) a).val < 2490368 := by simp only [row25]; omega
+    have h3 : ¬ (row25 (.right18 j) a).val < 3145728 := by simp only [row25]; omega
+    have hj : ((row25 (.right18 j) a).val - 3145728) / 131072 = j.val := by simp only [row25]; omega
+    have ha : ((row25 (.right18 j) a).val - 3145728) % 131072 = a.val := by simp only [row25]; omega
+    simp [coefficientAt25, h0, h1, h2, h3, hj, ha, signedCoefficients25, Digit25.exponent]
 
-def initialPositivePoint26 (a : Nat) : Point :=
-  oddScalar 238 a • G
+def initialPositivePoint25 (a : Nat) : Point :=
+  oddScalar 236 a • G
 
-def initialPoint26 (_Q : Point) (v : Nat) : Point :=
-  Width16Schedule.increment G 20 238 v
+def initialPoint25 (_Q : Point) (v : Nat) : Point :=
+  Width16Schedule.increment G 20 236 v
 
-def positivePoint26 (Q : Point) (w : Digit26) (a : Nat) : Point :=
+def positivePoint25 (Q : Point) (w : Digit25) (a : Nat) : Point :=
   oddScalar w.exponent a • w.base Q
 
-theorem initialCoefficients26_point (Q : Point) (hQ : order • Q = 0) (a : Nat) :
-    constantPoint Q (initialCoefficients26 a) = initialPositivePoint26 a := by
-  unfold initialCoefficients26 initialPositivePoint26
-  simpa using coefficients_point (oddScalar 238 a) 0 Q hQ
+theorem initialCoefficients25_point (Q : Point) (hQ : order • Q = 0) (a : Nat) :
+    constantPoint Q (initialCoefficients25 a) = initialPositivePoint25 a := by
+  unfold initialCoefficients25 initialPositivePoint25
+  simpa using coefficients_point (oddScalar 236 a) 0 Q hQ
 
-theorem initialPositivePoint26_ne_zero (a : Nat) (ha : a < 524288) :
-    initialPositivePoint26 a ≠ 0 := by
+theorem initialPositivePoint25_ne_zero (a : Nat) (ha : a < 524288) :
+    initialPositivePoint25 a ≠ 0 := by
   have hl : 1048575 < order := by norm_num [order]
-  exact Width16Schedule.odd_scalar_ne_zero G generator_nsmul_eq_zero G_ne_zero 238 a (by omega)
+  exact Width16Schedule.odd_scalar_ne_zero G generator_nsmul_eq_zero G_ne_zero 236 a (by omega)
 
-theorem increment_offset_20 (P : Point) (hr : order • P = 0) (exponent v : Nat) :
-    Width16Schedule.increment P 20 exponent v + offsetScalar 20 exponent • P = (v * 2 ^ exponent) • P := by
-  have hh : halfOrder ≤ 2 ^ 19 + order := by
-    have hl : halfOrder ≤ order := by
-      have horder : 0 < order := by norm_num [order]
-      dsimp [Single.halfOrder]; omega
-    exact hl.trans (Nat.le_add_left _ _)
-  have he : (2 ^ 19 + order - halfOrder) • P + halfOrder • P = 2 ^ 19 • P := by
-    rw [← add_nsmul, Nat.sub_add_cancel hh, add_nsmul, hr, add_zero]
-  have hoff : offsetScalar 20 exponent • P =
-      2 ^ 19 • (2 ^ exponent • P) - (halfOrder * 2 ^ exponent) • P := by
-    unfold offsetScalar
-    change ((2 ^ 19 + order - halfOrder) * 2 ^ exponent) • P = _
-    rw [mul_smul, smul_comm (2 ^ 19 + order - halfOrder) (2 ^ exponent),
-      eq_sub_iff_add_eq.mpr he, nsmul_sub]
-    simp only [mul_smul]
-    rw [smul_comm (2 ^ exponent) (2 ^ 19), smul_comm (2 ^ exponent) halfOrder]
-  let H := (halfOrder * 2 ^ exponent) • P
-  have hd : H + H = 2 ^ exponent • P := by
-    change (halfOrder * 2 ^ exponent) • P + (halfOrder * 2 ^ exponent) • P = _
-    rw [mul_smul, smul_comm halfOrder (2 ^ exponent), ← nsmul_add]
-    exact congrArg (fun R : Point => 2 ^ exponent • R)
-      (signedWindowHalfPoint_double P order (by decide +kernel) hr)
-  have hp : (2 : Int) ^ 20 = 2 * (2 ^ 19 : Nat) := by norm_num
-  have hcalc : ((2 * (v : Int) - (2 : Int) ^ 20 + 1) • H) +
-      (2 ^ 19 • (H + H) - H) = v • (H + H) := by rw [hp]; module
-  change ((2 * (v : Int) - (2 : Int) ^ 20 + 1) • H) + _ = _
-  rw [hoff]
-  simp only [hd] at hcalc
-  exact hcalc.trans (mul_smul v (2 ^ exponent) P).symm
+theorem signedCoefficients25_point (Q : Point) (hQ : order • Q = 0) (w : Digit25) (a : Nat) :
+    constantPoint Q (signedCoefficients25 w a) = positivePoint25 Q w a := by
+  cases w <;> simp [signedCoefficients25, coefficients_point _ _ Q hQ, positivePoint25, Digit25.base]
 
-theorem signedCoefficients26_point (Q : Point) (hQ : order • Q = 0) (w : Digit26) (a : Nat) :
-    constantPoint Q (signedCoefficients26 w a) = positivePoint26 Q w a := by
-  cases w <;> simp [signedCoefficients26, coefficients_point _ _ Q hQ, positivePoint26, Digit26.base]
-
-theorem positivePoint26_ne_zero (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (w : Digit26) (a : Nat) (ha : a < 65536) : positivePoint26 Q w a ≠ 0 := by
-  have hp : w.base Q ≠ 0 := by cases w <;> [exact G_ne_zero; exact hn]
-  have hr : order • w.base Q = 0 := by cases w <;> [exact generator_nsmul_eq_zero; exact hQ]
-  have hl : 131071 < order := by norm_num [order]
+theorem positivePoint25_ne_zero (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (w : Digit25) (a : Nat) (ha : a < 2 ^ w.k) : positivePoint25 Q w a ≠ 0 := by
+  have hp : w.base Q ≠ 0 := by cases w <;> [exact G_ne_zero; exact G_ne_zero; exact hn; exact hn]
+  have hr : order • w.base Q = 0 := by
+    cases w <;> [exact generator_nsmul_eq_zero; exact generator_nsmul_eq_zero; exact hQ; exact hQ]
+  have hpow : 2 ^ w.k ≤ 262144 := by cases w <;> dsimp only [Digit25.k] <;> decide
+  have hl : 524287 < order := by norm_num [order]
   exact Width16Schedule.odd_scalar_ne_zero (w.base Q) hr hp w.exponent a (by omega)
 
-/-- Specialization table retaining only the `12 × 65,536 = 786,432` `Q`-rows plus one zero sentinel (`786,433 ≤ 983,040`). -/
-@[irreducible] def retainedAt26 (i : Fin 786433) : PointCoeff :=
-  if h : i.val < 786432 then coefficientAt26 ⟨1441792 + i.val, by omega⟩
+/-- Specialization table retaining only the `917,504` `Q`-rows (`10*65,536 + 2*131,072`) plus one zero sentinel (`917,505 ≤ 983,040`). -/
+@[irreducible] def retainedAt25 (i : Fin 917505) : PointCoeff :=
+  if h : i.val < 917504 then coefficientAt25 ⟨2490368 + i.val, by omega⟩
   else coefficients 0 0
 
-def sentinel26 : ConstantBit 786433 := ⟨⟨786432, by decide +kernel⟩, .x, 0⟩
+def sentinel25 : ConstantBit 917505 := ⟨⟨917504, by decide +kernel⟩, .x, 0⟩
 
-def classify26 (r : ConstantBit 2228224) : Bool ⊕ ConstantBit 786433 :=
-  if h : r.point.val < 1441792 then .inl (readConstant coefficientAt26 (0 : Point) r)
-  else .inr ⟨⟨r.point.val - 1441792, by have := r.point.isLt; omega⟩, r.field, r.bit⟩
+def classify25 (r : ConstantBit 3407872) : Bool ⊕ ConstantBit 917505 :=
+  if h : r.point.val < 2490368 then .inl (readConstant coefficientAt25 (0 : Point) r)
+  else .inr ⟨⟨r.point.val - 2490368, by have := r.point.isLt; omega⟩, r.field, r.bit⟩
 
-theorem fixed26_b_zero (i : Fin 2228224) (hhi : i.val < 1441792) :
-    (coefficientAt26 i).b.val = 0 := by
-  unfold coefficientAt26
-  split_ifs <;> simp [initialCoefficients26, coefficients]
+theorem fixed25_b_zero (i : Fin 3407872) (hhi : i.val < 2490368) :
+    (coefficientAt25 i).b.val = 0 := by
+  unfold coefficientAt25
+  split_ifs <;> simp [initialCoefficients25, coefficients]
 
-theorem sentinel26_false (Q : Point) : readConstant retainedAt26 Q sentinel26 = false := by
-  simp [sentinel26, retainedAt26, readConstant, coefficients, constantPoint, fieldValue, pointCoordinates]
+theorem sentinel25_false (Q : Point) : readConstant retainedAt25 Q sentinel25 = false := by
+  simp [sentinel25, retainedAt25, readConstant, coefficients, constantPoint, fieldValue, pointCoordinates]
 
-theorem retained26_agree (Q : Point) (r : ConstantBit 2228224) :
-    readConstant coefficientAt26 Q r = (classify26 r).elim id (readConstant retainedAt26 Q) := by
-  unfold classify26
+theorem retained25_agree (Q : Point) (r : ConstantBit 3407872) :
+    readConstant coefficientAt25 Q r = (classify25 r).elim id (readConstant retainedAt25 Q) := by
+  unfold classify25
   split
   next h =>
     simp only [Sum.elim_inl, id_eq]
-    exact generator_only_readConstant coefficientAt26 r (fixed26_b_zero _ h) Q 0
+    exact generator_only_readConstant coefficientAt25 r (fixed25_b_zero _ h) Q 0
   next h =>
     simp only [Sum.elim_inr, readConstant]
-    have hh : r.point.val - 1441792 < 786432 := by have := r.point.isLt; omega
-    have he : 1441792 + (r.point.val - 1441792) = r.point.val := by omega
-    simp only [retainedAt26, hh, ↓reduceDIte, he]
+    have hh : r.point.val - 2490368 < 917504 := by have := r.point.isLt; omega
+    have he : 2490368 + (r.point.val - 2490368) = r.point.val := by omega
+    simp only [retainedAt25, hh, ↓reduceDIte, he]
 
-def rawLimits26 : Limits := { officialLimits with coefficientRows := 2228224 }
+def rawLimits25 : Limits := { officialLimits with coefficientRows := 3407872 }
 
-def specializeProgram26 {s e : Nat} (p : Straight 2228224 s e) : Straight 786433 s e :=
-  specialize classify26 sentinel26 p
+def specializeProgram25 {s e : Nat} (p : Straight 3407872 s e) : Straight 917505 s e :=
+  specialize classify25 sentinel25 p
 
-def specializeEntry26 (e : StraightEntry)
-    (he : e.coefficients = List.ofFn coefficientAt26) : StraightEntry :=
-  Single.fixedEntry retainedAt26
-    (specializeProgram26 (Width16Schedule.canonicalProgram coefficientAt26 e he))
+def specializeEntry25 (e : StraightEntry)
+    (he : e.coefficients = List.ofFn coefficientAt25) : StraightEntry :=
+  Single.fixedEntry retainedAt25
+    (specializeProgram25 (Width16Schedule.canonicalProgram coefficientAt25 e he))
 
-theorem specializeEntry26_certificate (e : StraightEntry)
-    (he : e.coefficients = List.ofFn coefficientAt26)
-    (layout : DecodeLayout) (bounds : Bounds) (h : Certificate rawLimits26 layout e bounds) :
-    Certificate officialLimits layout (specializeEntry26 e he) bounds := by
-  have hc := Width16Schedule.canonical_certificate coefficientAt26 e he rawLimits26 layout bounds h
-  exact Width16Schedule.fixed_specialize_certificate coefficientAt26 retainedAt26 classify26 sentinel26
-    sentinel26_false retained26_agree (Width16Schedule.canonicalProgram coefficientAt26 e he)
-    officialLimits layout bounds hc (by change 786433 ≤ 983040; omega)
+theorem specializeEntry25_certificate (e : StraightEntry)
+    (he : e.coefficients = List.ofFn coefficientAt25)
+    (layout : DecodeLayout) (bounds : Bounds) (h : Certificate rawLimits25 layout e bounds) :
+    Certificate officialLimits layout (specializeEntry25 e he) bounds := by
+  have hc := Width16Schedule.canonical_certificate coefficientAt25 e he rawLimits25 layout bounds h
+  exact Width16Schedule.fixed_specialize_certificate coefficientAt25 retainedAt25 classify25 sentinel25
+    sentinel25_false retained25_agree (Width16Schedule.canonicalProgram coefficientAt25 e he)
+    officialLimits layout bounds hc (by change 917505 ≤ 983040; omega)
 
-/-! ### Physical windows (`Generic16` + `First20Signed`), models, and program (`1,610` qubits) -/
+/-! ### Physical windows (`GenericW` + `First20Signed`), models, and program (`1,612` qubits) -/
 
 attribute [local irreducible] First20Signed.program Single.axis resetProgram
-  Generic16.compiledProgram Generic16.compiledProgramFn
+  GenericW.compiledProgramW GenericW.compiledProgramFnW
+  GenericW.compiledProgram16 GenericW.compiledProgram17 GenericW.compiledProgram18
+  GenericW.fixupSpec16 GenericW.fixupSpec17 GenericW.fixupSpec18
+  GenericW.compiledFixup16 GenericW.compiledFixup9 GenericW.rawFixup16 GenericW.rawFixup9
+  GenericW.compact1612 Readout5.suffix5
   LocalFour.compileLower CatAxis.axisCat ConditionalCatalyst.compile
   AndGadget.added AndGadget.residue
 
 def top10Left : List Wire := First20Signed.bits.drop 10
-def bank17 : List Wire := Generic16.bank17
-def top10Right : List Wire := bank17.drop 7
+def top10Right : List Wire := (GenericW.bankW 16).drop 7
+
+private theorem range1610_sub_1612 : List.range 1610 ⊆ List.range 1612 := fun _ h =>
+  List.mem_range.mpr ((List.mem_range.mp h).trans (by decide))
 
 theorem top10Left_length : top10Left.length = 10 := by decide
 theorem top10Left_nodup : top10Left.Nodup := by decide
 theorem top10Left_sub_bits : top10Left ⊆ First20Signed.bits := List.drop_subset 10 First20Signed.bits
-theorem top10Left_sub_range : top10Left ⊆ List.range 1610 :=
-  top10Left_sub_bits.trans First20Signed.bits_subset_range
+theorem top10Left_sub_range : top10Left ⊆ List.range 1612 :=
+  (top10Left_sub_bits.trans First20Signed.bits_subset_range).trans range1610_sub_1612
 
-theorem bank17_length : bank17.length = 17 := Generic16.bank17_length
-theorem bank17_nodup : bank17.Nodup := Generic16.bank17_nodup
-theorem bank17_sub_range : bank17 ⊆ List.range 1610 := by
+theorem bankW_sub_range {k : Nat} (hk : k ≤ 18) : GenericW.bankW k ⊆ List.range 1612 := by
   intro v hv
-  have hb := Generic16.mem_bank17.mp hv
+  have hb := GenericW.mem_bankW.mp hv
   rw [List.mem_range]; dsimp only [Wire] at *; omega
-theorem bank17_not_point : ∀ v ∈ bank17, v ∉ pointLogicalWires := by
+
+theorem bankW_not_point {k : Nat} (hk : k ≤ 18) : ∀ v ∈ GenericW.bankW k, v ∉ pointLogicalWires := by
   intro v hv hm
-  have hb := Generic16.mem_bank17.mp hv
+  have hb := GenericW.mem_bankW.mp hv
   simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append, List.mem_cons,
     List.not_mem_nil, or_false, List.mem_range'_1] at hm
   dsimp only [Wire] at *; omega
+
 private theorem wire1_not_point : (1 : Wire) ∉ pointLogicalWires := by
   intro hm
   simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append, List.mem_cons,
     List.not_mem_nil, or_false, List.mem_range'_1] at hm
   dsimp only [Wire] at *; omega
+
 private theorem wire836_not_point : (836 : Wire) ∉ pointLogicalWires := by
   intro hm
   simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append, List.mem_cons,
     List.not_mem_nil, or_false, List.mem_range'_1] at hm
   dsimp only [Wire] at *; omega
+
 private theorem wire838_mem_point : (838 : Wire) ∈ pointLogicalWires := by
   simp only [pointLogicalWires, pointCorrectionX, pointCorrectionYInf, List.mem_append, List.mem_cons,
     or_true, true_or]
+
 theorem top10Right_length : top10Right.length = 10 := by decide
 theorem top10Right_nodup : top10Right.Nodup := by decide
-theorem top10Right_sub_bank : top10Right ⊆ bank17 := List.drop_subset 7 bank17
-theorem top10Right_sub_range : top10Right ⊆ List.range 1610 :=
-  top10Right_sub_bank.trans bank17_sub_range
+theorem top10Right_sub_bank : top10Right ⊆ GenericW.bankW 16 := List.drop_subset 7 (GenericW.bankW 16)
+theorem top10Right_sub_range : top10Right ⊆ List.range 1612 :=
+  top10Right_sub_bank.trans (bankW_sub_range (by decide))
 
 private theorem wire01_not_first20Bits :
     (0 : Wire) ∉ First20Signed.bits ∧ (1 : Wire) ∉ First20Signed.bits := by
@@ -4095,46 +4201,49 @@ private theorem wire01_not_first20Bits :
     (have := First20Signed.bits_subset_drop01 hm; simp only [List.mem_range'_1] at this; omega)
 
 private theorem wire836_not_first20Bits : (836 : Wire) ∉ First20Signed.bits := by decide
-private theorem wire1_not_bank17 : (1 : Wire) ∉ bank17 := by decide
+private theorem wire1_not_bankW {k : Nat} : (1 : Wire) ∉ GenericW.bankW k := fun hm => by
+  have hb := GenericW.mem_bankW.mp hm; dsimp only [Wire] at *; omega
 
-def first20RawWin : Window 2228224 := First20Signed.windowGeneric firstRow26
+def first20RawWin : Window 3407872 := First20Signed.windowGeneric firstRow25
 
-def rightHeadDigit : Digit26 := .right17 ⟨0, by decide⟩
-def rightTailDigits26 : List Digit26 := List.ofFn (fun j : Fin 11 => .right17 ⟨j.val + 1, by omega⟩)
+def wideCoeffs25 (d : Digit25) : Fin (2 ^ d.k) → PointCoeff := fun a => signedCoefficients25 d a.val
 
-theorem rightDigits26_cons : rightDigits26 = rightHeadDigit :: rightTailDigits26 := by
-  simp [rightDigits26, rightHeadDigit, rightTailDigits26, List.ofFn_succ]
-
-def wideCoeffs26 (d : Digit26) : Fin 65536 → PointCoeff := fun a => signedCoefficients26 d a.val
-
-theorem wide26_nonzero (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26)
-    (a : Fin 65536) : constantPoint Q (wideCoeffs26 d a) ≠ 0 := by
-  rw [wideCoeffs26, signedCoefficients26_point Q hQ]
-  exact positivePoint26_ne_zero Q hQ hn d a.val a.isLt
+theorem wide25_nonzero (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25)
+    (a : Fin (2 ^ d.k)) : constantPoint Q (wideCoeffs25 d a) ≠ 0 := by
+  rw [wideCoeffs25, signedCoefficients25_point Q hQ]
+  exact positivePoint25_ne_zero Q hQ hn d a.val a.isLt
 
 private theorem cFirst20_exists :
     ∃ n : Nat, n = AndGadget.Lowered.finish (LocalFour.compileLower 0 1 (first20RawWin.program 0) 0 Fin.elim0) :=
   ⟨_, rfl⟩
-
 def cFirst20 : Nat := Classical.choose cFirst20_exists
-
 theorem cFirst20_eq :
     cFirst20 = AndGadget.Lowered.finish (LocalFour.compileLower 0 1 (first20RawWin.program 0) 0 Fin.elim0) :=
   Classical.choose_spec cFirst20_exists
 
 private theorem cBody16_exists :
-    ∃ n : Nat, n = LocalFour.CatProg.finish (Generic16.compiledProgramFn 0) :=
-  ⟨_, rfl⟩
-
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.fixupSpec16 0) := ⟨_, rfl⟩
 def cBody16 : Nat := Classical.choose cBody16_exists
-
 theorem cBody16_eq :
-    cBody16 = LocalFour.CatProg.finish (Generic16.compiledProgramFn 0) :=
+    cBody16 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.fixupSpec16 0) :=
   Classical.choose_spec cBody16_exists
+theorem cBody16_le : cBody16 ≤ 3850000 := cBody16_eq ▸ GenericW.compiledRec16_bound
 
-theorem cBody16_le : cBody16 ≤ 3850000 := by
-  rw [cBody16_eq]
-  exact Generic16.compiledRec16_bound
+private theorem cBody17_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.fixupSpec17 0) := ⟨_, rfl⟩
+def cBody17 : Nat := Classical.choose cBody17_exists
+theorem cBody17_eq :
+    cBody17 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.fixupSpec17 0) :=
+  Classical.choose_spec cBody17_exists
+theorem cBody17_le : cBody17 ≤ 4000000 := cBody17_eq ▸ GenericW.compiledRec17_bound
+
+private theorem cBody18_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.fixupSpec18 0) := ⟨_, rfl⟩
+def cBody18 : Nat := Classical.choose cBody18_exists
+theorem cBody18_eq :
+    cBody18 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.fixupSpec18 0) :=
+  Classical.choose_spec cBody18_exists
+theorem cBody18_le : cBody18 ≤ 4350000 := cBody18_eq ▸ GenericW.compiledRec18_bound
 
 private theorem compileLower_finish_zero {n e : Nat} (q y : Wire) (p : Straight n 0 e) (start : Nat) :
     (LocalFour.compileLower q y p start Fin.elim0).finish =
@@ -4161,273 +4270,326 @@ theorem first20Cat_count_le : cFirst20 ≤ 387265 := by
     (by unfold first20RawWin First20Signed.windowGeneric; rw [added_reindex]; exact First20Signed.program_added 0)
     (by omega)
 
-def first20Core (start : Nat) : Straight 2228224 start (start + cFirst20) :=
+def first20Core (start : Nat) : Straight 3407872 start (start + cFirst20) :=
   ((literalProgram [.X 836]).append
     (castFinish (first20Cat_finish_eq start)
       (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)).append
     (literalProgram [.X 836])
 
-def first20CatWin : Window 2228224 :=
+def first20CatWin : Window 3407872 :=
   ⟨First20Signed.bits.reverse, cFirst20,
     fun start => (ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append
       (first20Core start)⟩
 
-def bodyCatWin (d : Digit26) : Window 2228224 :=
-  ⟨bank17.reverse, cBody16,
-    fun start => castFinish (congrArg (start + ·) cBody16_eq.symm)
-      (reindexStraight (row26 d)
-        (relabelStraight Generic16.compact1610 (Generic16.compiledProgram start)))⟩
+def bodyCatWin : Digit25 → Window 3407872
+  | .left18 j =>
+    ⟨(GenericW.bankW 17).reverse, cBody17,
+      fun start => castFinish (congrArg (start + ·) cBody17_eq.symm)
+        (reindexStraight (row25 (.left18 j))
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))⟩
+  | .left19 j =>
+    ⟨(GenericW.bankW 18).reverse, cBody18,
+      fun start => castFinish (congrArg (start + ·) cBody18_eq.symm)
+        (reindexStraight (row25 (.left19 j))
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))⟩
+  | .right17 j =>
+    ⟨(GenericW.bankW 16).reverse, cBody16,
+      fun start => castFinish (congrArg (start + ·) cBody16_eq.symm)
+        (reindexStraight (row25 (.right17 j))
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgram16 start)))⟩
+  | .right18 j =>
+    ⟨(GenericW.bankW 17).reverse, cBody17,
+      fun start => castFinish (congrArg (start + ·) cBody17_eq.symm)
+        (reindexStraight (row25 (.right18 j))
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))⟩
 
-def rightHeadCatWin : Window 2228224 :=
-  ⟨bank17.reverse, cBody16,
+theorem bodyCatWin_wires (d : Digit25) : (bodyCatWin d).wires = d.bank.reverse := by
+  cases d <;> rfl
+
+def rightHeadCatWin : Window 3407872 :=
+  ⟨(GenericW.bankW 16).reverse, cBody16,
     fun start => (ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
       ((bodyCatWin rightHeadDigit).program start)⟩
 
-def leftWins26Cat : List (Window 2228224) := first20CatWin :: leftDigits26.map bodyCatWin
-def rightWins26Cat : List (Window 2228224) := rightHeadCatWin :: rightTailDigits26.map bodyCatWin
+def leftWins25Cat : List (Window 3407872) := first20CatWin :: leftDigits25.map bodyCatWin
+def rightWins25Cat : List (Window 3407872) := rightHeadCatWin :: rightTailDigits25.map bodyCatWin
 
-def leftMeta26Cat : List (Nat × Nat) := (cFirst20, 20) :: List.replicate 14 (cBody16, 17)
-def rightMeta26Cat : List (Nat × Nat) := List.replicate 12 (cBody16, 17)
+def leftMeta25Cat : List (Nat × Nat) :=
+  (cFirst20, 20) :: List.replicate 11 (cBody17, 18) ++ List.replicate 2 (cBody18, 19)
 
-theorem leftWins26Cat_meta : leftWins26Cat.map (fun w => (w.count, w.wires.length)) = leftMeta26Cat := by
-  simp only [leftWins26Cat, leftMeta26Cat, List.map_cons, List.map_map, Function.comp_def,
-    first20CatWin, bodyCatWin, List.length_reverse, First20Signed.bits_length, bank17_length]
-  simp [leftDigits26, List.ofFn_succ, List.replicate]
+def rightMeta25Cat : List (Nat × Nat) :=
+  List.replicate 10 (cBody16, 17) ++ List.replicate 2 (cBody17, 18)
 
-theorem rightWins26Cat_meta : rightWins26Cat.map (fun w => (w.count, w.wires.length)) = rightMeta26Cat := by
-  simp only [rightWins26Cat, rightMeta26Cat, List.map_cons, List.map_map, Function.comp_def,
-    rightHeadCatWin, bodyCatWin, List.length_reverse, bank17_length]
-  simp [rightTailDigits26, List.ofFn_succ, List.replicate]
+theorem leftWins25Cat_meta : leftWins25Cat.map (fun w => (w.count, w.wires.length)) = leftMeta25Cat := by
+  simp only [leftWins25Cat, leftMeta25Cat, leftDigits25, List.map_cons, List.map_append,
+    List.map_map, Function.comp_def, first20CatWin, List.length_reverse, First20Signed.bits_length]
+  simp [List.ofFn_succ, List.replicate, bodyCatWin, GenericW.bankW_length]
 
-theorem leftWins26Cat_count_eq :
-    axisCount leftWins26Cat = cFirst20 + 20 + 14 * (cBody16 + 17) := by
-  rw [← recordCount_eq_axisCount, leftWins26Cat_meta]
-  simp only [leftMeta26Cat, List.replicate, recordCount]
+theorem rightWins25Cat_meta : rightWins25Cat.map (fun w => (w.count, w.wires.length)) = rightMeta25Cat := by
+  simp only [rightWins25Cat, rightMeta25Cat, rightTailDigits25, List.map_cons, List.map_append,
+    List.map_map, Function.comp_def, rightHeadCatWin, List.length_reverse, GenericW.bankW_length]
+  simp [List.ofFn_succ, List.replicate, bodyCatWin, GenericW.bankW_length]
+
+theorem leftWins25Cat_count_eq :
+    axisCount leftWins25Cat = cFirst20 + 20 + 11 * (cBody17 + 18) + 2 * (cBody18 + 19) := by
+  rw [← recordCount_eq_axisCount, leftWins25Cat_meta]
+  simp only [leftMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
 
-theorem rightWins26Cat_count_eq :
-    axisCount rightWins26Cat = 12 * (cBody16 + 17) := by
-  rw [← recordCount_eq_axisCount, rightWins26Cat_meta]
-  simp only [rightMeta26Cat, List.replicate, recordCount]
+theorem rightWins25Cat_count_eq :
+    axisCount rightWins25Cat = 10 * (cBody16 + 17) + 2 * (cBody17 + 18) := by
+  rw [← recordCount_eq_axisCount, rightWins25Cat_meta]
+  simp only [rightMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
 
-def leftPositions26Cat : List Nat := positions leftMeta26Cat 0
-def rightPositions26Cat : List Nat := positions rightMeta26Cat (axisCount leftWins26Cat)
+def leftPositions25Cat : List Nat := positions leftMeta25Cat 0
+def rightPositions25Cat : List Nat := positions rightMeta25Cat (axisCount leftWins25Cat)
 
-theorem leftPositions26Cat_length : leftPositions26Cat.length = 258 := by
-  simp only [leftPositions26Cat, positions_length, leftMeta26Cat, List.replicate,
-    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+theorem leftPositions25Cat_length : leftPositions25Cat.length = 256 := by
+  simp only [leftPositions25Cat, positions_length, leftMeta25Cat, List.replicate,
+    List.cons_append, List.nil_append, List.map_cons, List.map_nil,
+    List.sum_cons, List.sum_nil]
   rfl
 
-theorem rightPositions26Cat_length : rightPositions26Cat.length = 204 := by
-  simp only [rightPositions26Cat, positions_length, rightMeta26Cat, List.replicate,
-    List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]
+theorem rightPositions25Cat_length : rightPositions25Cat.length = 206 := by
+  simp only [rightPositions25Cat, positions_length, rightMeta25Cat, List.replicate,
+    List.cons_append, List.nil_append, List.map_cons, List.map_nil,
+    List.sum_cons, List.sum_nil]
   rfl
 
-def trialPositions26Cat : TrialPositions params258 where
-  left := ⟨leftPositions26Cat.toArray, by
-    simpa only [List.size_toArray, params258] using leftPositions26Cat_length⟩
-  right := ⟨rightPositions26Cat.toArray, by
-    simpa only [List.size_toArray, params258] using rightPositions26Cat_length⟩
+def trialPositions25Cat : TrialPositions params256 where
+  left := ⟨leftPositions25Cat.toArray, by
+    simpa only [List.size_toArray, params256] using leftPositions25Cat_length⟩
+  right := ⟨rightPositions25Cat.toArray, by
+    simpa only [List.size_toArray, params256] using rightPositions25Cat_length⟩
 
-theorem leftPositions26Cat_bound (i : Nat) (hi : i ∈ trialPositions26Cat.left.toList) :
-    i < axisCount leftWins26Cat := by
-  have hi' : i ∈ leftPositions26Cat := by simpa [trialPositions26Cat] using hi
-  have hb := positions_bounds leftMeta26Cat 0 i hi'
-  have hr : recordCount leftMeta26Cat = axisCount leftWins26Cat := by
-    rw [← leftWins26Cat_meta, recordCount_eq_axisCount]
+theorem leftPositions25Cat_bound (i : Nat) (hi : i ∈ trialPositions25Cat.left.toList) :
+    i < axisCount leftWins25Cat := by
+  have hi' : i ∈ leftPositions25Cat := by simpa [trialPositions25Cat] using hi
+  have hb := positions_bounds leftMeta25Cat 0 i hi'
+  have hr : recordCount leftMeta25Cat = axisCount leftWins25Cat := by
+    rw [← leftWins25Cat_meta, recordCount_eq_axisCount]
   omega
 
-theorem rightPositions26Cat_bound (i : Nat) (hi : i ∈ trialPositions26Cat.right.toList) :
-    i < axisCount leftWins26Cat + axisCount rightWins26Cat := by
-  have hi' : i ∈ rightPositions26Cat := by simpa [trialPositions26Cat] using hi
-  have hb := positions_bounds rightMeta26Cat (axisCount leftWins26Cat) i hi'
-  have hr : recordCount rightMeta26Cat = axisCount rightWins26Cat := by
-    rw [← rightWins26Cat_meta, recordCount_eq_axisCount]
+theorem rightPositions25Cat_bound (i : Nat) (hi : i ∈ trialPositions25Cat.right.toList) :
+    i < axisCount leftWins25Cat + axisCount rightWins25Cat := by
+  have hi' : i ∈ rightPositions25Cat := by simpa [trialPositions25Cat] using hi
+  have hb := positions_bounds rightMeta25Cat (axisCount leftWins25Cat) i hi'
+  have hr : recordCount rightMeta25Cat = axisCount rightWins25Cat := by
+    rw [← rightWins25Cat_meta, recordCount_eq_axisCount]
   omega
 
-def cursor26Cat : Nat := axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length
+def cursor25Cat : Nat := axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length
+def cursor25Mid : Nat := cursor25Cat + 3586
 
-def finePositions26Cat : List (Fin cursor26Cat) :=
-  trialPositions26Cat.right.toList.attach.map fun i =>
-    ⟨i.val, (rightPositions26Cat_bound i.val i.property).trans_le (by unfold cursor26Cat; omega)⟩
+def leftFinPositions25Cat : List (Fin cursor25Cat) :=
+  trialPositions25Cat.left.toList.attach.map fun i =>
+    ⟨i.val, (leftPositions25Cat_bound i.val i.property).trans_le (by unfold cursor25Cat; omega)⟩
 
-theorem finePositions26Cat_length : finePositions26Cat.length = 204 := by
-  simp [finePositions26Cat, params258]
+theorem leftFinPositions25Cat_length : leftFinPositions25Cat.length = 256 := by
+  simp [leftFinPositions25Cat, params256]
 
-def fineBits26Cat : Vector (Fin cursor26Cat) 204 :=
-  Vector.ofFn fun i => finePositions26Cat[i.val]'(by rw [finePositions26Cat_length]; exact i.isLt)
+def leftBits25Cat : Vector (Fin cursor25Cat) 256 :=
+  Vector.ofFn fun i => leftFinPositions25Cat[i.val]'(by rw [leftFinPositions25Cat_length]; exact i.isLt)
 
-theorem fineBits26Cat_vals : fineBits26Cat.map Fin.val = trialPositions26Cat.right := by
+theorem leftBits25Cat_vals : leftBits25Cat.map Fin.val = trialPositions25Cat.left := by
   apply Vector.ext; intro i hi
-  simp [fineBits26Cat, finePositions26Cat]; rfl
+  simp [leftBits25Cat, leftFinPositions25Cat]; rfl
 
-def readout26Cat : Straight 2228224 cursor26Cat (cursor26Cat + 1634) :=
-  castFinish (by omega) (Readout3.suffix3 2228224 cursor26Cat 204 fineBits26Cat)
+def rightFinPositions25Cat : List (Fin cursor25Cat) :=
+  trialPositions25Cat.right.toList.attach.map fun i =>
+    ⟨i.val, (rightPositions25Cat_bound i.val i.property).trans_le (by unfold cursor25Cat; omega)⟩
+
+theorem rightFinPositions25Cat_length : rightFinPositions25Cat.length = 206 := by
+  simp [rightFinPositions25Cat, params256]
+
+def rightBits25Cat : Vector (Fin cursor25Cat) 206 :=
+  Vector.ofFn fun i => rightFinPositions25Cat[i.val]'(by rw [rightFinPositions25Cat_length]; exact i.isLt)
+
+theorem rightBits25Cat_vals : rightBits25Cat.map Fin.val = trialPositions25Cat.right := by
+  apply Vector.ext; intro i hi
+  simp [rightBits25Cat, rightFinPositions25Cat]; rfl
+
+def rightBits25Mid : Vector (Fin cursor25Mid) 206 :=
+  rightBits25Cat.map fun i => ⟨i.val, i.isLt.trans_le (by unfold cursor25Mid; omega)⟩
+
+def readoutL25 : Straight 3407872 cursor25Cat cursor25Mid :=
+  castFinish (by unfold cursor25Mid; omega) (Readout5.suffix5 3407872 cursor25Cat 256 leftBits25Cat)
+
+def readoutR25 : Straight 3407872 cursor25Mid (cursor25Mid + 2886) :=
+  castFinish (by omega) (Readout5.suffix5 3407872 cursor25Mid 206 rightBits25Mid)
+
+def readout25Cat : Straight 3407872 cursor25Cat (cursor25Cat + 6472) :=
+  castFinish (by unfold cursor25Mid; omega) (readoutL25.append readoutR25)
 
 /-- Frame-free physical program: starts directly on `ket zeroBasisState`, prepares catalyst wire `1`,
     runs left and right catalyst axes, and resets `resetWires`. -/
-def program26Cat : Straight 2228224 0 cursor26Cat :=
+def program25Cat : Straight 3407872 0 cursor25Cat :=
   AndGadget.literals (Catalyst.prepare 1)
-    (castFinish (show 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat by unfold cursor26Cat; omega)
-      (((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
-        (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).append
-          (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)))
+    (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
+      (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
+        (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))
 
-def fullProgram26Cat : Straight 2228224 0 (cursor26Cat + 1634) :=
-  program26Cat.append readout26Cat
+def fullProgram25Cat : Straight 3407872 0 (cursor25Cat + 6472) :=
+  program25Cat.append readout25Cat
 
-def rawEntry26Cat : StraightEntry := Single.fixedEntry coefficientAt26 fullProgram26Cat
+def rawEntry25Cat : StraightEntry := Single.fixedEntry coefficientAt25 fullProgram25Cat
 
-def positionsFor26Cat (ps : Vector Nat 204) : TrialPositions params258 :=
-  { left := trialPositions26Cat.left, right := ps }
-
-def rawLayout26Cat : DecodeLayout :=
-  ⟨.wrappedShift, params258, (Readout3.rightWords3 fineBits26Cat).map positionsFor26Cat, by
-    simp only [List.length_map, Readout3.rightWords3_length]; decide⟩
+def rawLayout25Cat : DecodeLayout :=
+  ⟨.wrappedShift, params256,
+    offsets13.map (fun p => ⟨Readout5.wordAt5 leftBits25Cat p.1, Readout5.wordAt5 rightBits25Mid p.2⟩), by
+    simp only [List.length_map, offsets13_length]; decide⟩
 
 /-! ### Ideal window models on `root := zeroBasisState` -/
 
-def SignedWeights26 (Q P : Point) : List Digit26 → Prop
+def SignedWeights25 (Q P : Point) : List Digit25 → Prop
   | List.nil => True
-  | w :: ws => w.base Q = P ∧ w.exponent = (ws.map (fun _ => (17 : Nat))).sum ∧ SignedWeights26 Q P ws
+  | w :: ws => w.base Q = P ∧ w.exponent = (ws.map Digit25.width).sum ∧ SignedWeights25 Q P ws
 
-theorem left_signed_weights26 (Q : Point) : SignedWeights26 Q G leftDigits26 := by
-  norm_num [leftDigits26, List.ofFn_succ, SignedWeights26, Digit26.exponent, Digit26.base]
+theorem left_signed_weights25 (Q : Point) : SignedWeights25 Q G leftDigits25 := by
+  norm_num [leftDigits25, List.ofFn_succ, List.ofFn_zero, List.cons_append, List.nil_append,
+    SignedWeights25, Digit25.exponent, Digit25.base, Digit25.width, Digit25.k]
 
-theorem right_signed_weights26 (Q : Point) : SignedWeights26 Q Q rightDigits26 := by
-  norm_num [rightDigits26, List.ofFn_succ, SignedWeights26, Digit26.exponent, Digit26.base]
+theorem right_signed_weights25 (Q : Point) : SignedWeights25 Q Q rightDigits25 := by
+  norm_num [rightDigits25, List.ofFn_succ, List.ofFn_zero, List.cons_append, List.nil_append,
+    SignedWeights25, Digit25.exponent, Digit25.base, Digit25.width, Digit25.k]
 
-theorem modelWeights26 {n : Nat} {read : ConstantBit n → Bool}
-    (Q P : Point) (hr : order • P = 0) (f : Digit26 → WindowModel read)
-    (hwidth : ∀ w, (f w).physical.wires.length = 17)
-    (hpoint : ∀ w v, (f w).point v = Width16Schedule.increment (w.base Q) 17 w.exponent v)
-    (hbias : ∀ w, (f w).bias = offsetScalar 17 w.exponent • w.base Q)
-    (ws : List Digit26) (hw : SignedWeights26 Q P ws) : ModelWeights P (ws.map f) := by
+theorem modelWeights25 {n : Nat} {read : ConstantBit n → Bool}
+    (Q P : Point) (hr : order • P = 0) (f : Digit25 → WindowModel read)
+    (hwidth : ∀ w, (f w).physical.wires.length = w.width)
+    (hpoint : ∀ w v, (f w).point v = Width16Schedule.increment (w.base Q) w.width w.exponent v)
+    (hbias : ∀ w, (f w).bias = offsetScalar w.width w.exponent • w.base Q)
+    (ws : List Digit25) (hw : SignedWeights25 Q P ws) : ModelWeights P (ws.map f) := by
   induction ws with
   | nil => trivial
   | cons w ws ih =>
     constructor
     · intro v
       have hwidths : ((ws.map f).map (fun x => x.physical.wires.length)).sum =
-          (ws.map (fun _ => (17 : Nat))).sum := by simp only [List.map_map, Function.comp_def, hwidth]
+          (ws.map Digit25.width).sum := by simp only [List.map_map, Function.comp_def, hwidth]
       rw [hwidths, ← hw.2.1, hpoint, hbias, hw.1]
-      exact Width16Schedule.increment_offset P hr 17 w.exponent v (Or.inr rfl)
+      exact Width16Schedule.increment_offset_ge1 P hr w.width w.exponent v w.width_ge1
     · exact ih hw.2.2
 
 theorem first20_signed_eq (Q : Point) (hQ : order • Q = 0) (v : Nat) (hv : v < 1048576) :
-    First20Signed.signedPoint (fun a => coefficientAt26 (firstRow26 a)) Q v = initialPoint26 Q v := by
+    First20Signed.signedPoint (fun a => coefficientAt25 (firstRow25 a)) Q v = initialPoint25 Q v := by
   unfold First20Signed.signedPoint First20Signed.tablePoint
   have hpos (a : Nat) :
-      constantPoint Q (coefficientAt26 (firstRow26 ⟨a % 524288, Nat.mod_lt _ (by decide +kernel)⟩)) =
-        (2 * (a % 524288) + 1) • ((halfOrder * 2 ^ 238) • G) := by
-    rw [coefficientAt26_first, initialCoefficients26_point Q hQ]
-    unfold initialPositivePoint26 Single.oddScalar
-    rw [Nat.mul_assoc, Nat.mul_comm (2 ^ 238) halfOrder, mul_smul]
-  have hs := Width16Actual.signed_magnitude ((halfOrder * 2 ^ 238) • G) 524288 v (by decide) (by omega)
-  have hinc : Width16Schedule.increment G 20 238 v =
-      (2 * (v : Int) - 2 * (524288 : Nat) + 1) • ((halfOrder * 2 ^ 238) • G) := by
+      constantPoint Q (coefficientAt25 (firstRow25 ⟨a % 524288, Nat.mod_lt _ (by decide +kernel)⟩)) =
+        (2 * (a % 524288) + 1) • ((halfOrder * 2 ^ 236) • G) := by
+    rw [coefficientAt25_first, initialCoefficients25_point Q hQ]
+    unfold initialPositivePoint25 Single.oddScalar
+    rw [Nat.mul_assoc, Nat.mul_comm (2 ^ 236) halfOrder, mul_smul]
+  have hs := Width16Actual.signed_magnitude ((halfOrder * 2 ^ 236) • G) 524288 v (by decide) (by omega)
+  have hinc : Width16Schedule.increment G 20 236 v =
+      (2 * (v : Int) - 2 * (524288 : Nat) + 1) • ((halfOrder * 2 ^ 236) • G) := by
     unfold Width16Schedule.increment
     rw [show (2 : Int) ^ 20 = 2 * (524288 : Nat) by norm_num]
-  rw [initialPoint26, hinc, ← hs]
+  rw [initialPoint25, hinc, ← hs]
   simp only [hpos, show 524288 - 1 = 524287 from rfl]
 
-theorem first20Win_law : WindowLaw coefficientAt26 first20RawWin
-    (First20Signed.update initialPoint26) First20Signed.Input := by
+theorem first20Win_law : WindowLaw coefficientAt25 first20RawWin
+    (First20Signed.update initialPoint25) First20Signed.Input := by
   apply First20Signed.window_law_generic
   · intro Q hQ _ a
-    rw [coefficientAt26_first, initialCoefficients26_point Q hQ]
-    exact initialPositivePoint26_ne_zero a.val a.isLt
+    rw [coefficientAt25_first, initialCoefficients25_point Q hQ]
+    exact initialPositivePoint25_ne_zero a.val a.isLt
   · intro Q hQ _ v hv
     exact first20_signed_eq Q hQ v hv
 
-theorem signedDelta16_eq (Q : Point) (hQ : order • Q = 0) (d : Digit26) (bs : BasisState) :
-    Generic16.signedDelta16 (wideCoeffs26 d) Q bs =
-      Width16Schedule.increment (d.base Q) 17 d.exponent (Generic16.raw17 bs) := by
-  have hsplit := Generic16.raw17_split bs
-  have hlt16 := Generic16.raw16_lt bs
-  have hlt17 : Generic16.raw17 bs < 131072 := by
-    cases hb : bs 870 <;> simp [hb] at hsplit <;> omega
+theorem signedDeltaW_eq (Q : Point) (hQ : order • Q = 0) (d : Digit25) (bs : BasisState) :
+    GenericW.signedDeltaW d.k (wideCoeffs25 d) Q bs =
+      Width16Schedule.increment (d.base Q) d.width d.exponent (GenericW.rawBankW d.k bs) := by
+  have hsplit := GenericW.rawBankW_split d.k bs
+  have hltK := GenericW.rawW_lt d.k bs
+  have hltW : GenericW.rawBankW d.k bs < 2 * 2 ^ d.k := by
+    cases hb : bs (GenericW.signBitW d.k) <;> simp [hb] at hsplit <;> omega
   have hpos (a : Nat) :
-      constantPoint Q (wideCoeffs26 d (Generic16.rows16 a)) =
-        (2 * (a % 65536) + 1) • ((halfOrder * 2 ^ d.exponent) • d.base Q) := by
-    rw [wideCoeffs26, Generic16.rows16, signedCoefficients26_point Q hQ]
-    unfold positivePoint26 Single.oddScalar
+      constantPoint Q (wideCoeffs25 d (GenericW.rowsW d.k a)) =
+        (2 * (a % 2 ^ d.k) + 1) • ((halfOrder * 2 ^ d.exponent) • d.base Q) := by
+    rw [wideCoeffs25, GenericW.rowsW, signedCoefficients25_point Q hQ]
+    unfold positivePoint25 Single.oddScalar
     rw [Nat.mul_assoc, Nat.mul_comm (2 ^ d.exponent) halfOrder, mul_smul]
-  have hs := Width16Actual.signed_magnitude ((halfOrder * 2 ^ d.exponent) • d.base Q) 65536
-    (Generic16.raw17 bs) (by decide) (by omega)
-  have hinc : Width16Schedule.increment (d.base Q) 17 d.exponent (Generic16.raw17 bs) =
-      (2 * ((Generic16.raw17 bs : Nat) : Int) - 2 * (65536 : Nat) + 1) •
+  have hs := Width16Actual.signed_magnitude ((halfOrder * 2 ^ d.exponent) • d.base Q) (2 ^ d.k)
+    (GenericW.rawBankW d.k bs) (by positivity) hltW
+  have hpowZ : (2 : Int) ^ d.width = 2 * ((2 ^ d.k : Nat) : Int) := by
+    have hnat : 2 ^ d.width = 2 * 2 ^ d.k := by rw [Digit25.width, pow_succ']
+    exact_mod_cast hnat
+  have hinc : Width16Schedule.increment (d.base Q) d.width d.exponent (GenericW.rawBankW d.k bs) =
+      (2 * ((GenericW.rawBankW d.k bs : Nat) : Int) - 2 * ((2 ^ d.k : Nat) : Int) + 1) •
         ((halfOrder * 2 ^ d.exponent) • d.base Q) := by
-    unfold Width16Schedule.increment
-    rw [show (2 : Int) ^ 17 = 2 * (65536 : Nat) by norm_num]
-  rw [hinc, ← hs, Generic16.signedDelta16]
-  cases hb : bs 870 with
+    unfold Width16Schedule.increment; rw [hpowZ]
+  rw [hinc, ← hs, GenericW.signedDeltaW]
+  cases hb : bs (GenericW.signBitW d.k) with
   | false =>
     simp only [hb, Bool.toNat_false, mul_zero, add_zero] at hsplit
-    have hlt : Generic16.raw17 bs < 65536 := by omega
-    have hmod : (65535 - Generic16.raw16 bs) % 65536 = 65536 - 1 - Generic16.raw16 bs := by omega
-    simp only [Bool.false_eq_true, ↓reduceIte, hlt, hlt16, hpos, hsplit, hmod]
+    have hlt : GenericW.rawBankW d.k bs < 2 ^ d.k := by omega
+    have hmod : (2 ^ d.k - 1 - GenericW.rawW d.k bs) % 2 ^ d.k = 2 ^ d.k - 1 - GenericW.rawW d.k bs :=
+      Nat.mod_eq_of_lt (by omega)
+    simp only [Bool.false_eq_true, ↓reduceIte, hlt, hltK, hpos, hsplit, hmod]
   | true =>
     simp only [hb, Bool.toNat_true, mul_one] at hsplit
-    have hge : ¬ Generic16.raw17 bs < 65536 := by omega
-    have hsub : Generic16.raw17 bs - 65536 = Generic16.raw16 bs := by omega
-    have hmod : Generic16.raw16 bs % 65536 = Generic16.raw16 bs := by omega
+    have hge : ¬ GenericW.rawBankW d.k bs < 2 ^ d.k := by omega
+    have hsub : GenericW.rawBankW d.k bs - 2 ^ d.k = GenericW.rawW d.k bs := by omega
+    have hmod : GenericW.rawW d.k bs % 2 ^ d.k = GenericW.rawW d.k bs := Nat.mod_eq_of_lt hltK
     simp only [↓reduceIte, hge, hpos, hsub, hmod]
 
-theorem signedDelta16_phaseWord (Q : Point) (hQ : order • Q = 0) (d : Digit26)
-    (input : List Bool) (hlen : input.length = 17) (s : BasisState) :
-    Generic16.signedDelta16 (wideCoeffs26 d) Q (phaseWordState bank17 input s) =
-      Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input) := by
-  rw [signedDelta16_eq Q hQ d]
-  have hr : Generic16.raw17 (phaseWordState bank17 input s) = boolWordToNat input := by
-    rw [Generic16.raw17, WEX.tableAddress_word]
-    exact congrArg boolWordToNat (phaseWordState_word bank17 bank17_nodup input (by simpa [bank17_length] using hlen) s)
+theorem signedDeltaW_phaseWord (Q : Point) (hQ : order • Q = 0) (d : Digit25)
+    (input : List Bool) (hlen : input.length = d.width) (s : BasisState) :
+    GenericW.signedDeltaW d.k (wideCoeffs25 d) Q (phaseWordState d.bank input s) =
+      Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input) := by
+  rw [signedDeltaW_eq Q hQ d]
+  have hr : GenericW.rawBankW d.k (phaseWordState d.bank input s) = boolWordToNat input := by
+    rw [GenericW.rawBankW, WEX.tableAddress_word]
+    exact congrArg boolWordToNat
+      (phaseWordState_word d.bank (GenericW.bankW_nodup d.k) input (by simpa [Digit25.bank, Digit25.width, GenericW.bankW_length] using hlen) s)
   rw [hr]
 
 def first20Model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    WindowModel (readConstant coefficientAt26 Q) where
+    WindowModel (readConstant coefficientAt25 Q) where
   physical := ⟨First20Signed.bits.reverse, 0, fun _ => .done⟩
-  point := initialPoint26 Q
-  bias := offsetScalar 20 238 • G
-  ideal := (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)).comp
+  point := initialPoint25 Q
+  bias := offsetScalar 20 236 • G
+  ideal := (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)).comp
     (Quantum.run (sineFromPlus top10Left))
   valid := fun _ => False
   nodup := List.nodup_reverse.mpr First20Signed.bits_nodup
   coherent := fun _ _ => ⟨[1], .cons (fun _ h => False.elim h) .nil, by simp⟩
 
-def bodyModel (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26) :
-    WindowModel (readConstant coefficientAt26 Q) where
-  physical := ⟨bank17.reverse, 0, fun _ => .done⟩
-  point := Width16Schedule.increment (d.base Q) 17 d.exponent
-  bias := offsetScalar 17 d.exponent • d.base Q
-  ideal := Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)
+def bodyModel (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25) :
+    WindowModel (readConstant coefficientAt25 Q) where
+  physical := ⟨d.bank.reverse, 0, fun _ => .done⟩
+  point := Width16Schedule.increment (d.base Q) d.width d.exponent
+  bias := offsetScalar d.width d.exponent • d.base Q
+  ideal := Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
   valid := fun _ => False
-  nodup := List.nodup_reverse.mpr bank17_nodup
+  nodup := List.nodup_reverse.mpr (GenericW.bankW_nodup d.k)
   coherent := fun _ _ => ⟨[1], .cons (fun _ h => False.elim h) .nil, by simp⟩
 
 def rightHeadModel (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    WindowModel (readConstant coefficientAt26 Q) where
-  physical := ⟨bank17.reverse, 0, fun _ => .done⟩
+    WindowModel (readConstant coefficientAt25 Q) where
+  physical := ⟨rightHeadDigit.bank.reverse, 0, fun _ => .done⟩
   point := (bodyModel Q hQ hn rightHeadDigit).point
   bias := (bodyModel Q hQ hn rightHeadDigit).bias
-  ideal := (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 rightHeadDigit) Q)).comp
+  ideal := (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q)).comp
     (Quantum.run (sineFromPlus top10Right))
   valid := fun _ => False
-  nodup := List.nodup_reverse.mpr bank17_nodup
+  nodup := List.nodup_reverse.mpr (GenericW.bankW_nodup 16)
   coherent := fun _ _ => ⟨[1], .cons (fun _ h => False.elim h) .nil, by simp⟩
 
 theorem zeroBasisState_clean20 : Clean First20Signed.bits zeroBasisState := fun _ _ => rfl
 
-theorem pointWrite_zero_clean17 (P : Point) : Clean bank17 (pointWrite P zeroBasisState) := fun w hw => by
-  rw [pointWrite_frame P zeroBasisState w (bank17_not_point w hw)]; rfl
+theorem pointWrite_zero_cleanW {k : Nat} (hk : k ≤ 18) (P : Point) :
+    Clean (GenericW.bankW k) (pointWrite P zeroBasisState) := fun w hw => by
+  rw [pointWrite_frame P zeroBasisState w (bankW_not_point hk w hw)]; rfl
 
 theorem first20Model_rule (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     WindowedFirstRule zeroBasisState (ket zeroBasisState) (first20Model Q hQ hn) := by
   refine ⟨by change First20Signed.bits.reverse.length ≥ 10; simp [First20Signed.bits_length], ?_⟩
   intro prior output
   change fourierBranch .inverse First20Signed.bits.reverse prior output
-      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)
         (Quantum.run (sineFromPlus top10Left)
           (Quantum.run (First20Signed.bits.reverse.reverse.map Gate.H) (ket zeroBasisState)))) = _
   rw [List.reverse_reverse]
@@ -4441,23 +4603,23 @@ theorem first20Model_rule (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   congr 1; apply congrArg List.sum; apply List.map_congr_left
   intro input hi
   have hlen : input.length = First20Signed.bits.length := (fourierOutcomes_mem _ _).mp hi
-  have hupd : First20Signed.update initialPoint26 Q (phaseWordState First20Signed.bits input zeroBasisState) =
-      pointWrite (initialPoint26 Q (boolWordToNat input)) (phaseWordState First20Signed.bits input zeroBasisState) := by
+  have hupd : First20Signed.update initialPoint25 Q (phaseWordState First20Signed.bits input zeroBasisState) =
+      pointWrite (initialPoint25 Q (boolWordToNat input)) (phaseWordState First20Signed.bits input zeroBasisState) := by
     unfold First20Signed.update
     rw [WEX.tableAddress_word, phaseWordState_word First20Signed.bits First20Signed.bits_nodup input hlen]
-  have hket : Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)
+  have hket : Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)
       (ket (phaseWordState First20Signed.bits input zeroBasisState)) =
-      ket (pointWrite (initialPoint26 Q (boolWordToNat input))
+      ket (pointWrite (initialPoint25 Q (boolWordToNat input))
         (phaseWordState First20Signed.bits input zeroBasisState)) := by
     simp only [ket, Finsupp.lmapDomain_apply, Finsupp.mapDomain_single, hupd]
   rw [hket, fourierBranch_ket,
     Mixed.branchCoeff_amplitude' .inverse First20Signed.bits.reverse (List.nodup_reverse.mpr First20Signed.bits_nodup)]
   have hmap : First20Signed.bits.reverse.map
-      (pointWrite (initialPoint26 Q (boolWordToNat input))
+      (pointWrite (initialPoint25 Q (boolWordToNat input))
         (phaseWordState First20Signed.bits input zeroBasisState)) = input.reverse := by
     rw [List.map_reverse]; congr 1
     have hf : First20Signed.bits.map
-        (pointWrite (initialPoint26 Q (boolWordToNat input))
+        (pointWrite (initialPoint25 Q (boolWordToNat input))
           (phaseWordState First20Signed.bits input zeroBasisState)) =
         First20Signed.bits.map (phaseWordState First20Signed.bits input zeroBasisState) := by
       apply List.map_congr_left; intro v hv
@@ -4465,126 +4627,137 @@ theorem first20Model_rule (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     rw [hf]
     exact phaseWordState_word First20Signed.bits First20Signed.bits_nodup input hlen zeroBasisState
   have hclr : fourierClear First20Signed.bits.reverse
-      (pointWrite (initialPoint26 Q (boolWordToNat input))
+      (pointWrite (initialPoint25 Q (boolWordToNat input))
         (phaseWordState First20Signed.bits input zeroBasisState)) =
-      pointWrite (initialPoint26 Q (boolWordToNat input)) zeroBasisState :=
+      pointWrite (initialPoint25 Q (boolWordToNat input)) zeroBasisState :=
     clear_assigned_point First20Signed.bits input zeroBasisState zeroBasisState_clean20
-      (fun v hv hp => First20Signed.bits_not_point v hv hp) (initialPoint26 Q (boolWordToNat input))
+      (fun v hv hp => First20Signed.bits_not_point v hv hp) (initialPoint25 Q (boolWordToNat input))
   rw [hmap, hclr, smul_smul]; rfl
 
-theorem bodyModel_rule (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26) :
+theorem bodyModel_rule (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25) :
     PointRule zeroBasisState (bodyModel Q hQ hn d) := by
   intro prior output P
-  change fourierBranch .inverse bank17.reverse prior output
-      (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)
-        (Quantum.run (bank17.reverse.reverse.map Gate.H) (ket (pointWrite P zeroBasisState)))) = _
-  rw [List.reverse_reverse, phaseHadamards_uniform bank17 bank17_nodup _ (pointWrite_zero_clean17 P)]
+  have hnot := bankW_not_point d.k_hi
+  have hnd := GenericW.bankW_nodup d.k
+  have hblen : d.bank.length = d.width := GenericW.bankW_length d.k
+  change fourierBranch .inverse d.bank.reverse prior output
+      (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
+        (Quantum.run (d.bank.reverse.reverse.map Gate.H) (ket (pointWrite P zeroBasisState)))) = _
+  rw [List.reverse_reverse, phaseHadamards_uniform d.bank hnd _ (pointWrite_zero_cleanW d.k_hi P)]
   simp only [phaseUniformSum, map_smul, stateLinear_list_sum, List.map_map, Function.comp_def, List.length_reverse]
+  rw [show (bodyModel Q hQ hn d).physical.wires.length = d.bank.length by simp [bodyModel]]
   congr 1; apply congrArg List.sum; apply List.map_congr_left
   intro input hi
-  have hlen : input.length = 17 := by simpa [bank17_length] using (fourierOutcomes_mem _ _).mp hi
-  have hcoords : pointStateCoordinates (phaseWordState bank17 input (pointWrite P zeroBasisState)) =
+  have hlen : input.length = d.width := by simpa [hblen] using (fourierOutcomes_mem _ _).mp hi
+  have hcoords : pointStateCoordinates (phaseWordState d.bank input (pointWrite P zeroBasisState)) =
       fig14PointEncoding P := by
-    rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-  have hupd : Generic16.update16 (wideCoeffs26 d) Q (phaseWordState bank17 input (pointWrite P zeroBasisState)) =
+    rw [phaseWordState_pointWrite d.bank hnot, pointWrite_coordinates]
+  have hupd : GenericW.updateW d.k (wideCoeffs25 d) Q (phaseWordState d.bank input (pointWrite P zeroBasisState)) =
       pointWrite (P + (bodyModel Q hQ hn d).point (boolWordToNat input))
-        (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
-    rw [Generic16.update16_eq hcoords, signedDelta16_phaseWord Q hQ d input hlen]; rfl
+        (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
+    rw [GenericW.updateW_eq hcoords, signedDeltaW_phaseWord Q hQ d input hlen]; rfl
   rw [Mixed.lmap_ket', hupd, fourierBranch_ket,
-    Mixed.branchCoeff_amplitude' .inverse bank17.reverse (List.nodup_reverse.mpr bank17_nodup)]
-  have hmap : bank17.reverse.map
+    Mixed.branchCoeff_amplitude' .inverse d.bank.reverse (List.nodup_reverse.mpr hnd)]
+  have hmap : d.bank.reverse.map
       (pointWrite (P + (bodyModel Q hQ hn d).point (boolWordToNat input))
-        (phaseWordState bank17 input (pointWrite P zeroBasisState))) = input.reverse := by
+        (phaseWordState d.bank input (pointWrite P zeroBasisState))) = input.reverse := by
     rw [List.map_reverse]; congr 1
-    have hf : bank17.map
+    have hf : d.bank.map
         (pointWrite (P + (bodyModel Q hQ hn d).point (boolWordToNat input))
-          (phaseWordState bank17 input (pointWrite P zeroBasisState))) =
-        bank17.map (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
-      apply List.map_congr_left; intro v hv; exact pointWrite_frame _ _ _ (bank17_not_point v hv)
+          (phaseWordState d.bank input (pointWrite P zeroBasisState))) =
+        d.bank.map (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
+      apply List.map_congr_left; intro v hv; exact pointWrite_frame _ _ _ (hnot v hv)
     rw [hf]
-    exact phaseWordState_word bank17 bank17_nodup input (by simpa [bank17_length] using hlen) _
-  have hclr : fourierClear bank17.reverse
+    exact phaseWordState_word d.bank hnd input (by simpa [hblen] using hlen) _
+  have hclr : fourierClear d.bank.reverse
       (pointWrite (P + (bodyModel Q hQ hn d).point (boolWordToNat input))
-        (phaseWordState bank17 input (pointWrite P zeroBasisState))) =
+        (phaseWordState d.bank input (pointWrite P zeroBasisState))) =
       pointWrite (P + (bodyModel Q hQ hn d).point (boolWordToNat input)) zeroBasisState := by
-    rw [clear_assigned_point bank17 input (pointWrite P zeroBasisState) (pointWrite_zero_clean17 P)
-      bank17_not_point, pointWrite_overwrite]
+    rw [clear_assigned_point d.bank input (pointWrite P zeroBasisState) (pointWrite_zero_cleanW d.k_hi P)
+      hnot, pointWrite_overwrite]
   rw [hmap, hclr]
 
 theorem rightHeadModel_rule (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     WindowedPointRule zeroBasisState (rightHeadModel Q hQ hn) := by
-  refine ⟨by change bank17.reverse.length ≥ 10; simp [bank17_length], ?_⟩
+  have hnot := bankW_not_point (k := 16) (by decide)
+  have hnd := GenericW.bankW_nodup 16
+  refine ⟨by change (GenericW.bankW 16).reverse.length ≥ 10; simp [GenericW.bankW_length], ?_⟩
   intro prior output P
-  change fourierBranch .inverse bank17.reverse prior output
-      (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 rightHeadDigit) Q)
+  change fourierBranch .inverse (GenericW.bankW 16).reverse prior output
+      (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 rightHeadDigit) Q)
         (Quantum.run (sineFromPlus top10Right)
-          (Quantum.run (bank17.reverse.reverse.map Gate.H) (ket (pointWrite P zeroBasisState))))) = _
+          (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) (ket (pointWrite P zeroBasisState))))) = _
   rw [List.reverse_reverse]
-  have hdrop : bank17.drop (bank17.length - 10) = top10Right := by simp [top10Right, bank17_length]
-  have hsb := sineFromPlus_bank bank17 (by simp [bank17_length]) bank17_nodup
-    (pointWrite P zeroBasisState) (pointWrite_zero_clean17 P)
+  have hdrop : (GenericW.bankW 16).drop ((GenericW.bankW 16).length - 10) = top10Right := by
+    simp [top10Right, GenericW.bankW_length]
+  have hsb := sineFromPlus_bank (GenericW.bankW 16) (by simp [GenericW.bankW_length]) hnd
+    (pointWrite P zeroBasisState) (pointWrite_zero_cleanW (by decide) P)
   rw [hdrop] at hsb
   rw [hsb, map_smul, map_smul, stateLinear_list_sum, stateLinear_list_sum, List.map_map, List.map_map]
   simp only [Function.comp_def, map_smul, List.length_reverse]
   congr 1; apply congrArg List.sum; apply List.map_congr_left
   intro input hi
-  have hlen : input.length = 17 := by simpa [bank17_length] using (fourierOutcomes_mem _ _).mp hi
-  have hcoords : pointStateCoordinates (phaseWordState bank17 input (pointWrite P zeroBasisState)) =
+  have hlen : input.length = 17 := by simpa [GenericW.bankW_length] using (fourierOutcomes_mem _ _).mp hi
+  have hcoords : pointStateCoordinates (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState)) =
       fig14PointEncoding P := by
-    rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-  have hupd : Generic16.update16 (wideCoeffs26 rightHeadDigit) Q
-        (phaseWordState bank17 input (pointWrite P zeroBasisState)) =
+    rw [phaseWordState_pointWrite (GenericW.bankW 16) hnot, pointWrite_coordinates]
+  have hupd : GenericW.updateW 16 (wideCoeffs25 rightHeadDigit) Q
+        (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState)) =
       pointWrite (P + (rightHeadModel Q hQ hn).point (boolWordToNat input))
-        (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
-    rw [Generic16.update16_eq hcoords, signedDelta16_phaseWord Q hQ rightHeadDigit input hlen]; rfl
+        (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState)) := by
+    have hsd : GenericW.signedDeltaW 16 (wideCoeffs25 rightHeadDigit) Q
+        (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState)) =
+        (rightHeadModel Q hQ hn).point (boolWordToNat input) :=
+      signedDeltaW_phaseWord Q hQ rightHeadDigit input hlen (pointWrite P zeroBasisState)
+    rw [GenericW.updateW_eq hcoords, hsd]
   rw [Mixed.lmap_ket', hupd, fourierBranch_ket,
-    Mixed.branchCoeff_amplitude' .inverse bank17.reverse (List.nodup_reverse.mpr bank17_nodup)]
-  have hmap : bank17.reverse.map
+    Mixed.branchCoeff_amplitude' .inverse (GenericW.bankW 16).reverse (List.nodup_reverse.mpr hnd)]
+  have hmap : (GenericW.bankW 16).reverse.map
       (pointWrite (P + (rightHeadModel Q hQ hn).point (boolWordToNat input))
-        (phaseWordState bank17 input (pointWrite P zeroBasisState))) = input.reverse := by
+        (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState))) = input.reverse := by
     rw [List.map_reverse]; congr 1
-    have hf : bank17.map
+    have hf : (GenericW.bankW 16).map
         (pointWrite (P + (rightHeadModel Q hQ hn).point (boolWordToNat input))
-          (phaseWordState bank17 input (pointWrite P zeroBasisState))) =
-        bank17.map (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
-      apply List.map_congr_left; intro v hv; exact pointWrite_frame _ _ _ (bank17_not_point v hv)
+          (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState))) =
+        (GenericW.bankW 16).map (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState)) := by
+      apply List.map_congr_left; intro v hv; exact pointWrite_frame _ _ _ (hnot v hv)
     rw [hf]
-    exact phaseWordState_word bank17 bank17_nodup input (by simpa [bank17_length] using hlen) _
-  have hclr : fourierClear bank17.reverse
+    exact phaseWordState_word (GenericW.bankW 16) hnd input (by simpa [GenericW.bankW_length] using hlen) _
+  have hclr : fourierClear (GenericW.bankW 16).reverse
       (pointWrite (P + (rightHeadModel Q hQ hn).point (boolWordToNat input))
-        (phaseWordState bank17 input (pointWrite P zeroBasisState))) =
+        (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState))) =
       pointWrite (P + (rightHeadModel Q hQ hn).point (boolWordToNat input)) zeroBasisState := by
-    rw [clear_assigned_point bank17 input (pointWrite P zeroBasisState) (pointWrite_zero_clean17 P)
-      bank17_not_point, pointWrite_overwrite]
+    rw [clear_assigned_point (GenericW.bankW 16) input (pointWrite P zeroBasisState) (pointWrite_zero_cleanW (by decide) P)
+      hnot, pointWrite_overwrite]
   rw [hmap, hclr, smul_smul]; rfl
 
-def leftModels26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    List (WindowModel (readConstant coefficientAt26 Q)) :=
-  first20Model Q hQ hn :: leftDigits26.map (bodyModel Q hQ hn)
+def leftModels25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (WindowModel (readConstant coefficientAt25 Q)) :=
+  first20Model Q hQ hn :: leftDigits25.map (bodyModel Q hQ hn)
 
-def rightModels26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    List (WindowModel (readConstant coefficientAt26 Q)) :=
-  rightHeadModel Q hQ hn :: rightTailDigits26.map (bodyModel Q hQ hn)
+def rightModels25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (WindowModel (readConstant coefficientAt25 Q)) :=
+  rightHeadModel Q hQ hn :: rightTailDigits25.map (bodyModel Q hQ hn)
 
-theorem leftModels26_weights (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    ModelWeights G (leftModels26 Q hQ hn) := by
+theorem leftModels25_weights (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    ModelWeights G (leftModels25 Q hQ hn) := by
   constructor
   · intro v
-    have hw : ((leftDigits26.map (bodyModel Q hQ hn)).map (fun x => x.physical.wires.length)).sum = 238 := by
-      simp only [List.map_map, Function.comp_def, bodyModel, List.length_reverse, bank17_length]
-      simp [leftDigits26, List.ofFn_succ]
+    have hw : ((leftDigits25.map (bodyModel Q hQ hn)).map (fun x => x.physical.wires.length)).sum = 236 := by
+      simp only [List.map_map, Function.comp_def, bodyModel, List.length_reverse, Digit25.bank, GenericW.bankW_length]
+      simp [leftDigits25, List.ofFn_succ, Digit25.k]
     rw [hw]
-    exact increment_offset_20 G generator_nsmul_eq_zero 238 v
-  · exact modelWeights26 Q G generator_nsmul_eq_zero (bodyModel Q hQ hn)
-      (fun _ => by simp [bodyModel, bank17_length])
-      (fun _ _ => rfl) (fun _ => rfl) leftDigits26 (left_signed_weights26 Q)
+    exact Width16Schedule.increment_offset_ge1 G generator_nsmul_eq_zero 20 236 v (by decide)
+  · exact modelWeights25 Q G generator_nsmul_eq_zero (bodyModel Q hQ hn)
+      (fun w => by simp [bodyModel, Digit25.bank, Digit25.width, GenericW.bankW_length])
+      (fun _ _ => rfl) (fun _ => rfl) leftDigits25 (left_signed_weights25 Q)
 
-theorem rightModels26_weights (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    ModelWeights Q (rightModels26 Q hQ hn) := by
-  have hall := modelWeights26 Q Q hQ (bodyModel Q hQ hn)
-    (fun _ => by simp [bodyModel, bank17_length])
-    (fun _ _ => rfl) (fun _ => rfl) rightDigits26 (right_signed_weights26 Q)
-  rw [rightDigits26_cons, List.map_cons] at hall
+theorem rightModels25_weights (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    ModelWeights Q (rightModels25 Q hQ hn) := by
+  have hall := modelWeights25 Q Q hQ (bodyModel Q hQ hn)
+    (fun w => by simp [bodyModel, Digit25.bank, Digit25.width, GenericW.bankW_length])
+    (fun _ _ => rfl) (fun _ => rfl) rightDigits25 (right_signed_weights25 Q)
+  rw [rightDigits25_cons, List.map_cons] at hall
   exact hall
 
 /-! ### `ApproxCatWindow` instances (`first20`, `body`, `rightHead`) -/
@@ -4615,14 +4788,14 @@ private theorem first20_input_clean01 (s : BasisState) (hs : First20Signed.Input
   ⟨hs.2 0 (by decide) wire01_not_first20Bits.1, hs.2 1 (by decide) wire01_not_first20Bits.2⟩
 
 theorem first20Core_wellFormed (start : Nat) : (first20Core start).WellFormed := by
-  have hwfX : (literalProgram (n := 2228224) (s := start) [.X 836]).WellFormed :=
+  have hwfX : (literalProgram (n := 3407872) (s := start) [.X 836]).WellFormed :=
     literalProgram_wellFormed [.X 836] (fun g hg => by simp at hg; subst hg; trivial)
-  have hwfX2 : (literalProgram (n := 2228224) (s := start + cFirst20) [.X 836]).WellFormed :=
+  have hwfX2 : (literalProgram (n := 3407872) (s := start + cFirst20) [.X 836]).WellFormed :=
     literalProgram_wellFormed [.X 836] (fun g hg => by simp at hg; subst hg; trivial)
   apply straight_append_wellFormed _ _ _ hwfX2
   apply straight_append_wellFormed _ _ hwfX
   rw [castFinish_wellFormed]
-  have hsub := First20Signed.window_support_drop01 firstRow26 0
+  have hsub := First20Signed.window_support_drop01 firstRow25 0
   have hf0 : Fresh 0 (first20RawWin.program 0) :=
     LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
       have := hsub hm; simp only [List.mem_range'_1] at this; omega)
@@ -4630,7 +4803,7 @@ theorem first20Core_wellFormed (start : Nat) : (first20Core start).WellFormed :=
     LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
       have := hsub hm; simp only [List.mem_range'_1] at this; omega)
   exact LocalFour.compileLower_wellFormed 0 1 (first20RawWin.program 0) start Fin.elim0 hf0 hf1 (by decide)
-    (First20Signed.window_wellFormed firstRow26 0)
+    (First20Signed.window_wellFormed firstRow25 0)
 
 private theorem boolWordToNat_injective : ∀ {a b : List Bool},
     a.length = b.length → boolWordToNat a = boolWordToNat b → a = b
@@ -4697,18 +4870,18 @@ private theorem pointWrite_agree_on_point (P : Point) (s₁ s₂ : BasisState) (
   simpa [List.getElem?_map, List.getElem?_eq_getElem hi] using hgi
 
 private theorem surroundX836_catCoherent_aux {start fin : Nat}
-    (read : ConstantBit 2228224 → Bool) (mid : Straight 2228224 start fin)
+    (read : ConstantBit 3407872 → Bool) (mid : Straight 3407872 start fin)
     (Q : Point) (history : Fin start → Bool)
     (hmid : LocalFour.CatCoherent 1 (mid.instantiate read history)
-      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)) First20Signed.Input) :
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)) First20Signed.Input) :
     LocalFour.CatCoherent 1
-      ((((literalProgram (n := 2228224) (s := start) [.X 836]).append mid).append
-        (literalProgram (n := 2228224) (s := fin) [.X 836])).instantiate read history)
-      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)) First20Input0 := by
+      ((((literalProgram (n := 3407872) (s := start) [.X 836]).append mid).append
+        (literalProgram (n := 3407872) (s := fin) [.X 836])).instantiate read history)
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)) First20Input0 := by
   obtain ⟨cs, hal, hmass⟩ := hmid
   refine ⟨cs, ?_, hmass⟩
   have hlit_run (s : Nat) (h : Fin s → Bool) :
-      ((literalProgram (n := 2228224) (s := s) [.X 836]).instantiate read h).run =
+      ((literalProgram (n := 3407872) (s := s) [.X 836]).instantiate read h).run =
         [{ history := List.nil, kraus := Quantum.run [.X 836] }] := by
     rw [ChallengeMigration.literalProgram_run]
     change ([{ history := List.nil, kraus := LinearMap.id.comp (Quantum.run [.X 836]) }] : Instrument) = _
@@ -4724,7 +4897,7 @@ private theorem surroundX836_catCoherent_aux {start fin : Nat}
   have hrun_eq :
       ((mid.instantiate read history).run.map
         (fun b => ({ history := List.nil, kraus := Quantum.run [.X 836] } : InstrumentBranch).seq b)).flatMap
-        (fun a => ((literalProgram (n := 2228224) (s := fin) [.X 836]).instantiate
+        (fun a => ((literalProgram (n := 3407872) (s := fin) [.X 836]).instantiate
           read (Single.historyAfter fin history a.history)).run.map a.seq) =
       (mid.instantiate read history).run.map
         (fun b => (({ history := List.nil, kraus := Quantum.run [.X 836] } : InstrumentBranch).seq b).seq
@@ -4745,12 +4918,12 @@ private theorem surroundX836_catCoherent_aux {start fin : Nat}
       have hne : w ≠ 836 := fun e => wire836_not_first20Bits (e ▸ hw)
       simp [upd, hne])
   have h836_np : (836 : Wire) ∉ pointLogicalWires := wire836_not_point
-  have h836_upd : First20Signed.update initialPoint26 Q (s[836 ↦ true]) 836 = true := by
+  have h836_upd : First20Signed.update initialPoint25 Q (s[836 ↦ true]) 836 = true := by
     unfold First20Signed.update
     rw [pointWrite_frame _ _ 836 h836_np]
     simp [upd]
-  have hx2 : Quantum.run ([.X 836] : Circuit) (ket (First20Signed.update initialPoint26 Q (s[836 ↦ true]))) =
-      ket (First20Signed.update initialPoint26 Q s) := by
+  have hx2 : Quantum.run ([.X 836] : Circuit) (ket (First20Signed.update initialPoint25 Q (s[836 ↦ true]))) =
+      ket (First20Signed.update initialPoint25 Q s) := by
     rw [Quantum.run_singleton, applyGate_X_ket, h836_upd, Bool.not_true]
     apply congrArg ket; funext w
     unfold First20Signed.update; rw [haddr]
@@ -4764,9 +4937,9 @@ private theorem surroundX836_catCoherent_aux {start fin : Nat}
 
 theorem first20Core_catCoherent (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     (start : Nat) (history : Fin start → Bool) :
-    LocalFour.CatCoherent 1 ((first20Core start).instantiate (readConstant coefficientAt26 Q) history)
-      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)) First20Input0 := by
-  have hsub := First20Signed.window_support_drop01 firstRow26 0
+    LocalFour.CatCoherent 1 ((first20Core start).instantiate (readConstant coefficientAt25 Q) history)
+      (Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)) First20Input0 := by
+  have hsub := First20Signed.window_support_drop01 firstRow25 0
   have hf0 : Fresh 0 (first20RawWin.program 0) :=
     LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
       have := hsub hm; simp only [List.mem_range'_1] at this; omega)
@@ -4774,22 +4947,35 @@ theorem first20Core_catCoherent (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0
     LocalFour.fresh_of_not_mem_straightWires _ _ (fun hm => by
       have := hsub hm; simp only [List.mem_range'_1] at this; omega)
   have hlo := LocalFour.compileLower_catCoherent 0 1 (first20RawWin.program 0) start Fin.elim0
-    (readConstant coefficientAt26 Q) Fin.elim0 history (fun i => Fin.elim0 i)
-    (First20Signed.window_wellFormed firstRow26 0) hf0 hf1 (by decide)
+    (readConstant coefficientAt25 Q) Fin.elim0 history (fun i => Fin.elim0 i)
+    (First20Signed.window_wellFormed firstRow25 0) hf0 hf1 (by decide)
     _ First20Signed.Input first20_input_clean01 (first20Win_law Q hQ hn 0 Fin.elim0)
   unfold first20Core
-  exact surroundX836_catCoherent_aux (readConstant coefficientAt26 Q)
+  exact surroundX836_catCoherent_aux (readConstant coefficientAt25 Q)
     (castFinish (first20Cat_finish_eq start) (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)
     Q history (by rw [castFinish_instantiate]; exact hlo)
 
-theorem bodyCatWin_wellFormed (d : Digit26) (start : Nat) : ((bodyCatWin d).program start).WellFormed := by
-  change (castFinish _ (reindexStraight _ (relabelStraight _ (Generic16.compiledProgram start)))).WellFormed
-  rw [castFinish_wellFormed]
-  exact (reindexStraight_wellFormed _ _).mpr
-    ((relabelStraight_wellFormed _ _).mpr (Generic16.compiled_wellFormed start))
+theorem bodyCatWin_wellFormed (d : Digit25) (start : Nat) : ((bodyCatWin d).program start).WellFormed := by
+  cases d with
+  | left18 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).WellFormed
+    rw [castFinish_wellFormed]
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled17_wellFormed start))
+  | left19 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).WellFormed
+    rw [castFinish_wellFormed]
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled18_wellFormed start))
+  | right17 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram16 start)))).WellFormed
+    rw [castFinish_wellFormed]
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled16_wellFormed start))
+  | right18 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).WellFormed
+    rw [castFinish_wellFormed]
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled17_wellFormed start))
 
 def first20ApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    ApproxCatWindow 1 (readConstant coefficientAt26 Q) where
+    ApproxCatWindow 1 (readConstant coefficientAt25 Q) where
   model := first20Model Q hQ hn
   catPhys := first20CatWin
   pre := sineFromPlus top10Left
@@ -4797,7 +4983,7 @@ def first20ApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   prog_eq := fun _ => rfl
   pre_noY := fun hm => wire01_not_first20Bits.2 (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hm))
   pre_wf := sineFromPlus_wellFormed top10Left top10Left_length top10Left_nodup
-  core_ideal := Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)
+  core_ideal := Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)
   ideal_eq := rfl
   wires_eq := rfl
   noY := fun hm => wire01_not_first20Bits.2 (List.mem_reverse.mp hm)
@@ -4809,8 +4995,8 @@ def first20ApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     unfold First20Signed.update; rw [pointWrite_frame _ _ 1 wire1_not_point]; exact hs
   core_wf := first20Core_wellFormed
 
-def bodyApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26) :
-    ApproxCatWindow 1 (readConstant coefficientAt26 Q) where
+def bodyApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25) :
+    ApproxCatWindow 1 (readConstant coefficientAt25 Q) where
   model := bodyModel Q hQ hn d
   catPhys := bodyCatWin d
   pre := List.nil
@@ -4818,78 +5004,121 @@ def bodyApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26
   prog_eq := fun _ => by rw [CatAxis.compile_literalProgram_eq]; rfl
   pre_noY := by simp [circuitWires]
   pre_wf := fun g hg => by cases hg
-  core_ideal := Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)
+  core_ideal := Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
   ideal_eq := by simp [bodyModel, Quantum.run]
-  wires_eq := rfl
-  noY := fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
-  goodPred := Generic16.Good16 (wideCoeffs26 d) Q
+  wires_eq := bodyCatWin_wires d
+  noY := fun hm => wire1_not_bankW (List.mem_reverse.mp hm)
+  goodPred := GenericW.GoodW d.k (wideCoeffs25 d) Q
   catCoherent := fun start history => by
-    change LocalFour.CatCoherent 1
-      ((castFinish (congrArg (start + ·) cBody16_eq.symm)
-        (reindexStraight (row26 d)
-          (relabelStraight Generic16.compact1610 (Generic16.compiledProgram start)))).instantiate
-            (readConstant coefficientAt26 Q) history)
-      (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q))
-      (Generic16.Good16 (wideCoeffs26 d) Q)
-    rw [castFinish_instantiate, reindexStraight_instantiate,
-      readConstant_reindex (row26 d) (wideCoeffs26 d) coefficientAt26 Q (fun a => coefficientAt26_row d a)]
-    exact Generic16.compiled_packed_coherent (wideCoeffs26 d) Q (wide26_nonzero Q hQ hn d) start history
+    cases d with
+    | left18 j =>
+      change LocalFour.CatCoherent 1
+        ((castFinish (congrArg (start + ·) cBody17_eq.symm)
+          (reindexStraight (row25 (.left18 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))).instantiate
+              (readConstant coefficientAt25 Q) history)
+        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 17 (wideCoeffs25 (.left18 j)) Q))
+        (GenericW.GoodW 17 (wideCoeffs25 (.left18 j)) Q)
+      rw [castFinish_instantiate, reindexStraight_instantiate,
+        readConstant_reindex (row25 (.left18 j)) (wideCoeffs25 (.left18 j)) coefficientAt25 Q
+          (fun a => coefficientAt25_row (.left18 j) a)]
+      exact GenericW.compiled17_packed_coherent (wideCoeffs25 (.left18 j)) Q
+        (wide25_nonzero Q hQ hn (.left18 j)) start history
+    | left19 j =>
+      change LocalFour.CatCoherent 1
+        ((castFinish (congrArg (start + ·) cBody18_eq.symm)
+          (reindexStraight (row25 (.left19 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))).instantiate
+              (readConstant coefficientAt25 Q) history)
+        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 18 (wideCoeffs25 (.left19 j)) Q))
+        (GenericW.GoodW 18 (wideCoeffs25 (.left19 j)) Q)
+      rw [castFinish_instantiate, reindexStraight_instantiate,
+        readConstant_reindex (row25 (.left19 j)) (wideCoeffs25 (.left19 j)) coefficientAt25 Q
+          (fun a => coefficientAt25_row (.left19 j) a)]
+      exact GenericW.compiled18_packed_coherent (wideCoeffs25 (.left19 j)) Q
+        (wide25_nonzero Q hQ hn (.left19 j)) start history
+    | right17 j =>
+      change LocalFour.CatCoherent 1
+        ((castFinish (congrArg (start + ·) cBody16_eq.symm)
+          (reindexStraight (row25 (.right17 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram16 start)))).instantiate
+              (readConstant coefficientAt25 Q) history)
+        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 (.right17 j)) Q))
+        (GenericW.GoodW 16 (wideCoeffs25 (.right17 j)) Q)
+      rw [castFinish_instantiate, reindexStraight_instantiate,
+        readConstant_reindex (row25 (.right17 j)) (wideCoeffs25 (.right17 j)) coefficientAt25 Q
+          (fun a => coefficientAt25_row (.right17 j) a)]
+      exact GenericW.compiled16_packed_coherent (wideCoeffs25 (.right17 j)) Q
+        (wide25_nonzero Q hQ hn (.right17 j)) start history
+    | right18 j =>
+      change LocalFour.CatCoherent 1
+        ((castFinish (congrArg (start + ·) cBody17_eq.symm)
+          (reindexStraight (row25 (.right18 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))).instantiate
+              (readConstant coefficientAt25 Q) history)
+        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 17 (wideCoeffs25 (.right18 j)) Q))
+        (GenericW.GoodW 17 (wideCoeffs25 (.right18 j)) Q)
+      rw [castFinish_instantiate, reindexStraight_instantiate,
+        readConstant_reindex (row25 (.right18 j)) (wideCoeffs25 (.right18 j)) coefficientAt25 Q
+          (fun a => coefficientAt25_row (.right18 j) a)]
+      exact GenericW.compiled17_packed_coherent (wideCoeffs25 (.right18 j)) Q
+        (wide25_nonzero Q hQ hn (.right18 j)) start history
   core_idealY := fun ψ hψ => by
     refine Support.linear _ _ _ (fun s hs => ?_) ψ hψ
     rw [Mixed.lmap_ket']; apply supportedOn_ket
-    unfold Generic16.update16
+    unfold GenericW.updateW
     split_ifs
     · rw [pointWrite_frame _ _ 1 wire1_not_point]; exact hs
     · exact hs
   core_wf := bodyCatWin_wellFormed d
 
 def rightHeadApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    ApproxCatWindow 1 (readConstant coefficientAt26 Q) where
+    ApproxCatWindow 1 (readConstant coefficientAt25 Q) where
   model := rightHeadModel Q hQ hn
   catPhys := rightHeadCatWin
   pre := sineFromPlus top10Right
   core := (bodyCatWin rightHeadDigit).program
   prog_eq := fun _ => rfl
-  pre_noY := fun hm => wire1_not_bank17 (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length hm))
+  pre_noY := fun hm => wire1_not_bankW (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length hm))
   pre_wf := sineFromPlus_wellFormed top10Right top10Right_length top10Right_nodup
-  core_ideal := Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 rightHeadDigit) Q)
+  core_ideal := Finsupp.lmapDomain ℂ ℂ (GenericW.updateW rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q)
   ideal_eq := rfl
   wires_eq := rfl
-  noY := fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
-  goodPred := Generic16.Good16 (wideCoeffs26 rightHeadDigit) Q
+  noY := fun hm => wire1_not_bankW (List.mem_reverse.mp hm)
+  goodPred := GenericW.GoodW rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q
   catCoherent := (bodyApproxWin Q hQ hn rightHeadDigit).catCoherent
   core_idealY := (bodyApproxWin Q hQ hn rightHeadDigit).core_idealY
   core_wf := bodyCatWin_wellFormed rightHeadDigit
 
-def leftRestApprox26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    List (ApproxCatWindow 1 (readConstant coefficientAt26 Q)) :=
-  leftDigits26.map (bodyApproxWin Q hQ hn)
+def leftRestApprox25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+  leftDigits25.map (bodyApproxWin Q hQ hn)
 
-def leftApprox26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    List (ApproxCatWindow 1 (readConstant coefficientAt26 Q)) :=
-  first20ApproxWin Q hQ hn :: leftRestApprox26 Q hQ hn
+def leftApprox25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+  first20ApproxWin Q hQ hn :: leftRestApprox25 Q hQ hn
 
-def rightApprox26 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    List (ApproxCatWindow 1 (readConstant coefficientAt26 Q)) :=
-  rightHeadApproxWin Q hQ hn :: rightTailDigits26.map (bodyApproxWin Q hQ hn)
+def rightApprox25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+  rightHeadApproxWin Q hQ hn :: rightTailDigits25.map (bodyApproxWin Q hQ hn)
 
-theorem leftApprox26_model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    (leftApprox26 Q hQ hn).map ApproxCatWindow.model = leftModels26 Q hQ hn := by
-  simp [leftApprox26, leftRestApprox26, leftModels26, first20ApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
+theorem leftApprox25_model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (leftApprox25 Q hQ hn).map ApproxCatWindow.model = leftModels25 Q hQ hn := by
+  simp [leftApprox25, leftRestApprox25, leftModels25, first20ApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
 
-theorem rightApprox26_model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    (rightApprox26 Q hQ hn).map ApproxCatWindow.model = rightModels26 Q hQ hn := by
-  simp [rightApprox26, rightModels26, rightHeadApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
+theorem rightApprox25_model (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (rightApprox25 Q hQ hn).map ApproxCatWindow.model = rightModels25 Q hQ hn := by
+  simp [rightApprox25, rightModels25, rightHeadApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
 
-theorem leftApprox26_catPhys (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    (leftApprox26 Q hQ hn).map ApproxCatWindow.catPhys = leftWins26Cat := by
-  simp [leftApprox26, leftRestApprox26, leftWins26Cat, first20ApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
+theorem leftApprox25_catPhys (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys = leftWins25Cat := by
+  simp [leftApprox25, leftRestApprox25, leftWins25Cat, first20ApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
 
-theorem rightApprox26_catPhys (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    (rightApprox26 Q hQ hn).map ApproxCatWindow.catPhys = rightWins26Cat := by
-  simp [rightApprox26, rightWins26Cat, rightHeadApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
+theorem rightApprox25_catPhys (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    (rightApprox25 Q hQ hn).map ApproxCatWindow.catPhys = rightWins25Cat := by
+  simp [rightApprox25, rightWins25Cat, rightHeadApproxWin, bodyApproxWin, List.map_map, Function.comp_def]
 
-/-! ### Point-distribution propagation and exception bound (`≤ 52 / 2^240`) -/
+/-! ### Point-distribution propagation and exception bound (`≤ 52 / 2^236`) -/
 
 def PointSupported (φ : State) : Prop := SupportedOn (pointFamily zeroBasisState) φ
 
@@ -4903,31 +5132,36 @@ theorem pointSupported_y1 (φ : State) (hφ : PointSupported φ) :
   obtain ⟨P, rfl⟩ := hφ s hs
   rw [pointWrite_frame P zeroBasisState 1 wire1_not_point]; rfl
 
-theorem phaseWordState_bank17_inj {P₁ P₂ : Point} {in₁ in₂ : List Bool}
-    (h1 : in₁.length = 17) (h2 : in₂.length = 17)
-    (heq : phaseWordState bank17 in₁ (pointWrite P₁ zeroBasisState) =
-           phaseWordState bank17 in₂ (pointWrite P₂ zeroBasisState)) :
+theorem phaseWordState_bankW_inj {k : Nat} (hk : k ≤ 18) {P₁ P₂ : Point} {in₁ in₂ : List Bool}
+    (h1 : in₁.length = k + 1) (h2 : in₂.length = k + 1)
+    (heq : phaseWordState (GenericW.bankW k) in₁ (pointWrite P₁ zeroBasisState) =
+           phaseWordState (GenericW.bankW k) in₂ (pointWrite P₂ zeroBasisState)) :
     P₁ = P₂ ∧ in₁ = in₂ := by
+  have hnd := GenericW.bankW_nodup k
+  have hnot := bankW_not_point hk
   have hin : in₁ = in₂ := by
-    have w1 := phaseWordState_word bank17 bank17_nodup in₁ (by simpa [bank17_length] using h1) (pointWrite P₁ zeroBasisState)
-    have w2 := phaseWordState_word bank17 bank17_nodup in₂ (by simpa [bank17_length] using h2) (pointWrite P₂ zeroBasisState)
+    have w1 := phaseWordState_word (GenericW.bankW k) hnd in₁ (by simpa [GenericW.bankW_length] using h1) (pointWrite P₁ zeroBasisState)
+    have w2 := phaseWordState_word (GenericW.bankW k) hnd in₂ (by simpa [GenericW.bankW_length] using h2) (pointWrite P₂ zeroBasisState)
     rw [← w1, heq, w2]
   have hP : P₁ = P₂ := by
-    have c1 : pointStateCoordinates (phaseWordState bank17 in₁ (pointWrite P₁ zeroBasisState)) = fig14PointEncoding P₁ := by
-      rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-    have c2 : pointStateCoordinates (phaseWordState bank17 in₂ (pointWrite P₂ zeroBasisState)) = fig14PointEncoding P₂ := by
-      rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
+    have c1 : pointStateCoordinates (phaseWordState (GenericW.bankW k) in₁ (pointWrite P₁ zeroBasisState)) = fig14PointEncoding P₁ := by
+      rw [phaseWordState_pointWrite (GenericW.bankW k) hnot, pointWrite_coordinates]
+    have c2 : pointStateCoordinates (phaseWordState (GenericW.bankW k) in₂ (pointWrite P₂ zeroBasisState)) = fig14PointEncoding P₂ := by
+      rw [phaseWordState_pointWrite (GenericW.bankW k) hnot, pointWrite_coordinates]
     exact fig14PointEncoding_injective (c1.symm.trans (by rw [heq, c2]))
   exact ⟨hP, hin⟩
 
-theorem phaseWordState_bank17_good16 (Q : Point) (hQ : order • Q = 0) (d : Digit26)
-    (P : Point) (input : List Bool) (hlen : input.length = 17)
-    (hgood : Generic16.GoodPoint P (Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input))) :
-    Generic16.Good16 (wideCoeffs26 d) Q (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
-  have hcl : Generic16.CleanOutsideXYBank (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
+theorem phaseWordState_bankW_goodW (Q : Point) (hQ : order • Q = 0) (d : Digit25)
+    (P : Point) (input : List Bool) (hlen : input.length = d.width)
+    (hgood : GenericW.GoodPoint P (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input))) :
+    GenericW.GoodW d.k (wideCoeffs25 d) Q (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
+  have hkhi := d.k_hi
+  have hcl : GenericW.CleanOutsideXYBank (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
     intro w h1 h2 h3
-    have hnb : w ∉ bank17 := fun hm => h3 (Generic16.mem_bank17.mp hm)
-    rw [phaseWordState_frame bank17 input _ w hnb]
+    have hnb : w ∉ d.bank := fun hm => by
+      have hb := GenericW.mem_bankW.mp hm
+      exact h3 ⟨hb.1, by dsimp only [Wire] at *; omega⟩
+    rw [phaseWordState_frame d.bank input _ w hnb]
     by_cases h8 : w = 838
     · subst h8
       cases hP : P with
@@ -4940,51 +5174,56 @@ theorem phaseWordState_bank17_good16 (Q : Point) (hQ : order • Q = 0) (d : Dig
         · exact h1 hx
         · exact h2 hy
         · exact h8 rfl)]; rfl
-  have hfp : Generic16.HasFinitePoint P (phaseWordState bank17 input (pointWrite P zeroBasisState)) := by
-    obtain ⟨x, y, hns, hPeq, hx, hy⟩ := Generic16.hasFinitePoint_pointWrite P hgood.1 zeroBasisState
+  have hfp : GenericW.HasFinitePoint P (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
+    obtain ⟨x, y, hns, hPeq, hx, hy⟩ := GenericW.hasFinitePoint_pointWrite P hgood.1 zeroBasisState
     refine ⟨x, y, hns, hPeq, ?_, ?_⟩
     · rw [← hx]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw
       rw [List.mem_range'_1] at hw
-      exact phaseWordState_frame bank17 input _ w (fun hm => by have := Generic16.mem_bank17.mp hm; dsimp only [Wire] at *; omega)
+      exact phaseWordState_frame d.bank input _ w (fun hm => by
+        have := GenericW.mem_bankW.mp hm; dsimp only [Wire] at *; omega)
     · rw [← hy]; apply ECDSAAdd.Arithmetic.regValue_congr; intro w hw
       rw [List.mem_range'_1] at hw
-      exact phaseWordState_frame bank17 input _ w (fun hm => by have := Generic16.mem_bank17.mp hm; dsimp only [Wire] at *; omega)
+      exact phaseWordState_frame d.bank input _ w (fun hm => by
+        have := GenericW.mem_bankW.mp hm; dsimp only [Wire] at *; omega)
   refine ⟨hcl, P, hfp, ?_⟩
-  rwa [signedDelta16_phaseWord Q hQ d input hlen]
+  rwa [signedDeltaW_phaseWord Q hQ d input hlen]
 
-theorem update16_injOn_bankPoint (Q : Point) (hQ : order • Q = 0) (d : Digit26) :
-    Set.InjOn (Generic16.update16 (wideCoeffs26 d) Q) {s | BankPointFamily bank17 s} := by
+theorem updateW_injOn_bankPoint (Q : Point) (hQ : order • Q = 0) (d : Digit25) :
+    Set.InjOn (GenericW.updateW d.k (wideCoeffs25 d) Q) {s | BankPointFamily d.bank s} := by
+  have hnot := bankW_not_point d.k_hi
+  have hblen : d.bank.length = d.width := GenericW.bankW_length d.k
   rintro s₁ ⟨P₁, in₁, h1, rfl⟩ s₂ ⟨P₂, in₂, h2, rfl⟩ heq
-  have hc1 : pointStateCoordinates (phaseWordState bank17 in₁ (pointWrite P₁ zeroBasisState)) = fig14PointEncoding P₁ := by
-    rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-  have hc2 : pointStateCoordinates (phaseWordState bank17 in₂ (pointWrite P₂ zeroBasisState)) = fig14PointEncoding P₂ := by
-    rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-  have h1' : Generic16.update16 (wideCoeffs26 d) Q (phaseWordState bank17 in₁ (pointWrite P₁ zeroBasisState)) =
-      phaseWordState bank17 in₁ (pointWrite (P₁ + Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat in₁)) zeroBasisState) := by
-    rw [Generic16.update16_eq hc1, signedDelta16_phaseWord Q hQ d in₁ (by simpa [bank17_length] using h1)]
+  have hc1 : pointStateCoordinates (phaseWordState d.bank in₁ (pointWrite P₁ zeroBasisState)) = fig14PointEncoding P₁ := by
+    rw [phaseWordState_pointWrite d.bank hnot, pointWrite_coordinates]
+  have hc2 : pointStateCoordinates (phaseWordState d.bank in₂ (pointWrite P₂ zeroBasisState)) = fig14PointEncoding P₂ := by
+    rw [phaseWordState_pointWrite d.bank hnot, pointWrite_coordinates]
+  have h1' : GenericW.updateW d.k (wideCoeffs25 d) Q (phaseWordState d.bank in₁ (pointWrite P₁ zeroBasisState)) =
+      phaseWordState d.bank in₁ (pointWrite (P₁ + Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat in₁)) zeroBasisState) := by
+    rw [GenericW.updateW_eq hc1, signedDeltaW_phaseWord Q hQ d in₁ (by simpa [hblen] using h1)]
     funext w
-    by_cases hwb : w ∈ bank17
-    · rw [pointWrite_frame _ _ w (bank17_not_point w hwb)]
-      exact (phaseWordState_agree bank17 in₁ _ _ w (by simpa [bank17_length] using h1.symm) hwb).symm
-    · rw [phaseWordState_frame bank17 in₁ _ w hwb]
+    by_cases hwb : w ∈ d.bank
+    · rw [pointWrite_frame _ _ w (hnot w hwb)]
+      exact (phaseWordState_agree d.bank in₁ _ _ w (by simpa [hblen] using h1.symm) hwb).symm
+    · rw [phaseWordState_frame d.bank in₁ _ w hwb]
       by_cases hwp : w ∈ pointLogicalWires
       · exact pointWrite_agree_on_point _ _ _ w hwp
-      · rw [pointWrite_frame _ _ w hwp, phaseWordState_frame bank17 in₁ _ w hwb,
+      · rw [pointWrite_frame _ _ w hwp, phaseWordState_frame d.bank in₁ _ w hwb,
           pointWrite_frame _ _ w hwp, pointWrite_frame _ _ w hwp]
-  have h2' : Generic16.update16 (wideCoeffs26 d) Q (phaseWordState bank17 in₂ (pointWrite P₂ zeroBasisState)) =
-      phaseWordState bank17 in₂ (pointWrite (P₂ + Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat in₂)) zeroBasisState) := by
-    rw [Generic16.update16_eq hc2, signedDelta16_phaseWord Q hQ d in₂ (by simpa [bank17_length] using h2)]
+  have h2' : GenericW.updateW d.k (wideCoeffs25 d) Q (phaseWordState d.bank in₂ (pointWrite P₂ zeroBasisState)) =
+      phaseWordState d.bank in₂ (pointWrite (P₂ + Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat in₂)) zeroBasisState) := by
+    rw [GenericW.updateW_eq hc2, signedDeltaW_phaseWord Q hQ d in₂ (by simpa [hblen] using h2)]
     funext w
-    by_cases hwb : w ∈ bank17
-    · rw [pointWrite_frame _ _ w (bank17_not_point w hwb)]
-      exact (phaseWordState_agree bank17 in₂ _ _ w (by simpa [bank17_length] using h2.symm) hwb).symm
-    · rw [phaseWordState_frame bank17 in₂ _ w hwb]
+    by_cases hwb : w ∈ d.bank
+    · rw [pointWrite_frame _ _ w (hnot w hwb)]
+      exact (phaseWordState_agree d.bank in₂ _ _ w (by simpa [hblen] using h2.symm) hwb).symm
+    · rw [phaseWordState_frame d.bank in₂ _ w hwb]
       by_cases hwp : w ∈ pointLogicalWires
       · exact pointWrite_agree_on_point _ _ _ w hwp
-      · rw [pointWrite_frame _ _ w hwp, phaseWordState_frame bank17 in₂ _ w hwb,
+      · rw [pointWrite_frame _ _ w hwp, phaseWordState_frame d.bank in₂ _ w hwb,
           pointWrite_frame _ _ w hwp, pointWrite_frame _ _ w hwp]
   rw [h1', h2'] at heq
-  obtain ⟨hPsum, hin⟩ := phaseWordState_bank17_inj (by simpa [bank17_length] using h1) (by simpa [bank17_length] using h2) heq
+  obtain ⟨hPsum, hin⟩ := phaseWordState_bankW_inj d.k_hi (by simpa [Digit25.bank, GenericW.bankW_length] using h1)
+    (by simpa [Digit25.bank, GenericW.bankW_length] using h2) heq
   subst hin
   have hP : P₁ = P₂ := add_right_cancel hPsum
   subst hP; rfl
@@ -5029,19 +5268,19 @@ private theorem fourierOutcomes_nodup (k : Nat) : (fourierOutcomes k).Nodup := b
     obtain ⟨b, _, rfl⟩ := List.mem_map.mp hy
     simp
 
-private theorem bank17_prep_eval_aux (xs : List (List Bool)) (hnd : xs.Nodup)
-    (hmem : ∀ a, a ∈ xs ↔ a.length = 17)
+private theorem bankW_prep_eval_aux (k : Nat) (hk : k ≤ 18) (xs : List (List Bool)) (hnd : xs.Nodup)
+    (hmem : ∀ a, a ∈ xs ↔ a.length = k + 1)
     (pre : Circuit) (wpre : Nat → ℂ)
-    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
+    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run ((GenericW.bankW k).map Gate.H) (ket (pointWrite P zeroBasisState))) =
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (k + 1)) •
         (xs.map (fun input =>
-          wpre (boolWordToNat input) • ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum)
+          wpre (boolWordToNat input) • ket (phaseWordState (GenericW.bankW k) input (pointWrite P zeroBasisState)))).sum)
     (ψ : State) (hψ : PointSupported ψ) :
-    let χ := Quantum.run pre (Quantum.run (bank17.map Gate.H) ψ)
-    SupportedOn (BankPointFamily bank17) χ ∧
-    ∀ (P : Point) (input : List Bool), input.length = 17 →
-      χ (phaseWordState bank17 input (pointWrite P zeroBasisState)) =
-        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) * wpre (boolWordToNat input) * ψ (pointWrite P zeroBasisState) := by
+    let χ := Quantum.run pre (Quantum.run ((GenericW.bankW k).map Gate.H) ψ)
+    SupportedOn (BankPointFamily (GenericW.bankW k)) χ ∧
+    ∀ (P : Point) (input : List Bool), input.length = k + 1 →
+      χ (phaseWordState (GenericW.bankW k) input (pointWrite P zeroBasisState)) =
+        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (k + 1)) * wpre (boolWordToNat input) * ψ (pointWrite P zeroBasisState) := by
   dsimp only
   induction ψ using Finsupp.induction with
   | zero =>
@@ -5056,69 +5295,70 @@ private theorem bank17_prep_eval_aux (xs : List (List Bool)) (hnd : xs.Nodup)
     obtain ⟨ih_sup, ih_eval⟩ := ih hf
     have hket : Finsupp.single (pointWrite Q₀ zeroBasisState) c = c • ket (pointWrite Q₀ zeroBasisState) := by
       ext u; simp [ket]
-    have hexp : Quantum.run pre (Quantum.run (bank17.map Gate.H) (c • ket (pointWrite Q₀ zeroBasisState))) =
-        (c * ((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
+    have hexp : Quantum.run pre (Quantum.run ((GenericW.bankW k).map Gate.H) (c • ket (pointWrite Q₀ zeroBasisState))) =
+        (c * ((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (k + 1)) •
           (xs.map (fun input =>
-            wpre (boolWordToNat input) • ket (phaseWordState bank17 input (pointWrite Q₀ zeroBasisState)))).sum := by
+            wpre (boolWordToNat input) • ket (phaseWordState (GenericW.bankW k) input (pointWrite Q₀ zeroBasisState)))).sum := by
       rw [map_smul, map_smul, hpre Q₀, smul_smul]
-    have hsup1 : SupportedOn (BankPointFamily bank17)
-        (Quantum.run pre (Quantum.run (bank17.map Gate.H) (Finsupp.single (pointWrite Q₀ zeroBasisState) c))) := by
+    have hsup1 : SupportedOn (BankPointFamily (GenericW.bankW k))
+        (Quantum.run pre (Quantum.run ((GenericW.bankW k).map Gate.H) (Finsupp.single (pointWrite Q₀ zeroBasisState) c))) := by
       rw [hket, hexp]
       apply Support.smul; apply Support.list_sum; intro input hi
       apply Support.smul; apply supportedOn_ket
-      exact ⟨Q₀, input, by simpa [bank17_length] using (hmem input).mp hi, rfl⟩
+      exact ⟨Q₀, input, by simpa [GenericW.bankW_length] using (hmem input).mp hi, rfl⟩
     refine ⟨by rw [map_add, map_add]; exact Support.add hsup1 ih_sup, fun P input hlen => ?_⟩
     rw [map_add, map_add, Finsupp.add_apply, Finsupp.add_apply, hket, hexp, ih_eval P input hlen]
     rw [Finsupp.smul_apply, smul_eq_mul]
     have hinj : ∀ a ∈ xs, ∀ b ∈ xs,
-        phaseWordState bank17 a (pointWrite Q₀ zeroBasisState) =
-        phaseWordState bank17 b (pointWrite Q₀ zeroBasisState) → a = b :=
-      fun a ha b hb heq => (phaseWordState_bank17_inj ((hmem a).mp ha) ((hmem b).mp hb) heq).2
+        phaseWordState (GenericW.bankW k) a (pointWrite Q₀ zeroBasisState) =
+        phaseWordState (GenericW.bankW k) b (pointWrite Q₀ zeroBasisState) → a = b :=
+      fun a ha b hb heq => (phaseWordState_bankW_inj hk ((hmem a).mp ha) ((hmem b).mp hb) heq).2
     by_cases hP : P = Q₀
     · subst hP
       rw [list_sum_eval_ket_mem xs hnd (fun inp => wpre (boolWordToNat inp))
-        (fun inp => phaseWordState bank17 inp (pointWrite P zeroBasisState)) hinj input
+        (fun inp => phaseWordState (GenericW.bankW k) inp (pointWrite P zeroBasisState)) hinj input
         ((hmem input).mpr hlen)]
       simp only [Finsupp.smul_apply, ket, Finsupp.single_eq_same, smul_eq_mul, mul_one]
       ring
     · rw [list_sum_eval_ket_not_mem xs (fun inp => wpre (boolWordToNat inp))
-        (fun inp => phaseWordState bank17 inp (pointWrite Q₀ zeroBasisState)) _ (fun a ha hga =>
-          hP (phaseWordState_bank17_inj ((hmem a).mp ha) hlen hga).1.symm)]
+        (fun inp => phaseWordState (GenericW.bankW k) inp (pointWrite Q₀ zeroBasisState)) _ (fun a ha hga =>
+          hP (phaseWordState_bankW_inj hk ((hmem a).mp ha) hlen hga).1.symm)]
       have hne_s : pointWrite P zeroBasisState ≠ pointWrite Q₀ zeroBasisState :=
         fun e => hP (pointWrite_injective zeroBasisState e)
       simp only [Finsupp.smul_apply, ket, Finsupp.single_eq_of_ne hne_s, mul_zero, smul_zero, zero_add]
 
-theorem bank17_prep_eval (pre : Circuit) (wpre : Nat → ℂ)
-    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-        ((fourierOutcomes 17).map (fun input =>
-          wpre (boolWordToNat input) • ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum)
+theorem bankW_prep_eval (k : Nat) (hk : k ≤ 18) (pre : Circuit) (wpre : Nat → ℂ)
+    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run ((GenericW.bankW k).map Gate.H) (ket (pointWrite P zeroBasisState))) =
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (k + 1)) •
+        ((fourierOutcomes (k + 1)).map (fun input =>
+          wpre (boolWordToNat input) • ket (phaseWordState (GenericW.bankW k) input (pointWrite P zeroBasisState)))).sum)
     (ψ : State) (hψ : PointSupported ψ) :
-    let χ := Quantum.run pre (Quantum.run (bank17.map Gate.H) ψ)
-    SupportedOn (BankPointFamily bank17) χ ∧
-    ∀ (P : Point) (input : List Bool), input.length = 17 →
-      χ (phaseWordState bank17 input (pointWrite P zeroBasisState)) =
-        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) * wpre (boolWordToNat input) * ψ (pointWrite P zeroBasisState) :=
-  bank17_prep_eval_aux (fourierOutcomes 17) (fourierOutcomes_nodup 17) (fourierOutcomes_mem 17) pre wpre hpre ψ hψ
+    let χ := Quantum.run pre (Quantum.run ((GenericW.bankW k).map Gate.H) ψ)
+    SupportedOn (BankPointFamily (GenericW.bankW k)) χ ∧
+    ∀ (P : Point) (input : List Bool), input.length = k + 1 →
+      χ (phaseWordState (GenericW.bankW k) input (pointWrite P zeroBasisState)) =
+        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (k + 1)) * wpre (boolWordToNat input) * ψ (pointWrite P zeroBasisState) :=
+  bankW_prep_eval_aux k hk (fourierOutcomes (k + 1)) (fourierOutcomes_nodup (k + 1)) (fourierOutcomes_mem (k + 1)) pre wpre hpre ψ hψ
 
-theorem body_pre_expand (P : Point) :
-    Quantum.run ([] : Circuit) (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-        ((fourierOutcomes 17).map (fun input =>
-          (1 : ℂ) • ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum := by
-  rw [Quantum.run_nil, phaseHadamards_uniform bank17 bank17_nodup _ (pointWrite_zero_clean17 P)]
-  simp [phaseUniformSum, bank17_length]
+theorem body_pre_expandW (k : Nat) (hk : k ≤ 18) (P : Point) :
+    Quantum.run ([] : Circuit) (Quantum.run ((GenericW.bankW k).map Gate.H) (ket (pointWrite P zeroBasisState))) =
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ (k + 1)) •
+        ((fourierOutcomes (k + 1)).map (fun input =>
+          (1 : ℂ) • ket (phaseWordState (GenericW.bankW k) input (pointWrite P zeroBasisState)))).sum := by
+  rw [Quantum.run_nil, phaseHadamards_uniform (GenericW.bankW k) (GenericW.bankW_nodup k) _ (pointWrite_zero_cleanW hk P)]
+  simp [phaseUniformSum, GenericW.bankW_length]
 
 theorem rightHead_pre_expand (P : Point) :
-    Quantum.run (sineFromPlus top10Right) (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
+    Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).map Gate.H) (ket (pointWrite P zeroBasisState))) =
       (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
         ((fourierOutcomes 17).map (fun input =>
           sineWeight 10 (boolWordToNat input / 2 ^ 7) •
-            ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum := by
-  have hdrop : bank17.drop (bank17.length - 10) = top10Right := by simp [top10Right, bank17_length]
-  have hsb := sineFromPlus_bank bank17 (by simp [bank17_length]) bank17_nodup
-    (pointWrite P zeroBasisState) (pointWrite_zero_clean17 P)
-  rw [hdrop, bank17_length] at hsb
+            ket (phaseWordState (GenericW.bankW 16) input (pointWrite P zeroBasisState)))).sum := by
+  have hdrop : (GenericW.bankW 16).drop ((GenericW.bankW 16).length - 10) = top10Right := by
+    simp [top10Right, GenericW.bankW_length]
+  have hsb := sineFromPlus_bank (GenericW.bankW 16) (by simp [GenericW.bankW_length]) (GenericW.bankW_nodup 16)
+    (pointWrite P zeroBasisState) (pointWrite_zero_cleanW (by decide) P)
+  rw [hdrop, GenericW.bankW_length] at hsb
   exact hsb
 
 private theorem sqrt2_inv_normSq_pow (k : Nat) :
@@ -5142,57 +5382,57 @@ private theorem flatMap_sum_real {α β : Type} (xs : List α) (g : α → List 
   | nil => simp
   | cons x xs ih => simp only [List.flatMap_cons, List.map_append, List.sum_append, List.map_cons, List.sum_cons, ih]
 
-def badBound17 (wpre : Nat → ℂ) (delta : Nat → Point) (D : Point → ℝ) : ℝ :=
-  ((1 : ℝ) / (2 : ℝ) ^ 17) *
-    ((fourierOutcomes 17).map (fun input =>
+def badBoundW (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (D : Point → ℝ) : ℝ :=
+  ((1 : ℝ) / (2 : ℝ) ^ w) *
+    ((fourierOutcomes w).map (fun input =>
       let v := boolWordToNat input
       let Δ := delta v
       Complex.normSq (wpre v) * (D 0 + D Δ + D (-Δ) + D (-(Δ + Δ))))).sum
 
-def stepDist17 (wpre : Nat → ℂ) (delta : Nat → Point) (D : Point → ℝ) (P' : Point) : ℝ :=
-  ((1 : ℝ) / (2 : ℝ) ^ 17) *
-    ((fourierOutcomes 17).map (fun input =>
+def stepDistW (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (D : Point → ℝ) (P' : Point) : ℝ :=
+  ((1 : ℝ) / (2 : ℝ) ^ w) *
+    ((fourierOutcomes w).map (fun input =>
       let v := boolWordToNat input
       Complex.normSq (wpre v) * D (P' - delta v))).sum
 
-theorem badStep_le_badBound17 (Q : Point) (hQ : order • Q = 0) (d : Digit26)
+theorem badStep_le_badBoundW (Q : Point) (hQ : order • Q = 0) (d : Digit25)
     (pre : Circuit) (wpre : Nat → ℂ)
-    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-        ((fourierOutcomes 17).map (fun input =>
-          wpre (boolWordToNat input) • ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum)
+    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (d.bank.map Gate.H) (ket (pointWrite P zeroBasisState))) =
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ d.width) •
+        ((fourierOutcomes d.width).map (fun input =>
+          wpre (boolWordToNat input) • ket (phaseWordState d.bank input (pointWrite P zeroBasisState)))).sum)
     (ψ : State) (hψ : PointSupported ψ) :
-    let χ := Quantum.run pre (Quantum.run (bank17.map Gate.H) ψ)
-    normSq (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s) χ) ≤
-      badBound17 wpre (Width16Schedule.increment (d.base Q) 17 d.exponent) (pointMass ψ) := by
+    let χ := Quantum.run pre (Quantum.run (d.bank.map Gate.H) ψ)
+    normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s) χ) ≤
+      badBoundW d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) := by
   classical
   dsimp only
-  set χ := Quantum.run pre (Quantum.run (bank17.map Gate.H) ψ)
-  set χ_bad := restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s) χ
-  obtain ⟨hχ_sup, hχ_eval⟩ := bank17_prep_eval pre wpre hpre ψ hψ
+  set χ := Quantum.run pre (Quantum.run (d.bank.map Gate.H) ψ)
+  set χ_bad := restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s) χ
+  obtain ⟨hχ_sup, hχ_eval⟩ := bankW_prep_eval d.k d.k_hi pre wpre hpre ψ hψ
   let badList : List BasisState :=
-    (fourierOutcomes 17).flatMap (fun input =>
-      let Δ := Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input);
-      ([0, Δ, -Δ, -(Δ + Δ)] : List Point).map (fun P => phaseWordState bank17 input (pointWrite P zeroBasisState)))
+    (fourierOutcomes d.width).flatMap (fun input =>
+      let Δ := Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input);
+      ([0, Δ, -Δ, -(Δ + Δ)] : List Point).map (fun P => phaseWordState d.bank input (pointWrite P zeroBasisState)))
   have hsub : χ_bad.support ⊆ badList.toFinset := by
     intro s hs
     have hne : χ_bad s ≠ 0 := Finsupp.mem_support_iff.mp hs
     rw [restrictState_apply] at hne
-    have hng : ¬ Generic16.Good16 (wideCoeffs26 d) Q s := by
+    have hng : ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s := by
       by_contra hg; simp [hg] at hne
     have hχne : χ s ≠ 0 := by simpa [hng] using hne
     obtain ⟨P, input, hlen, rfl⟩ := hχ_sup s hχne
-    have hlen17 : input.length = 17 := by simpa [bank17_length] using hlen
-    have hnb : ¬ Generic16.GoodPoint P (Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input)) :=
-      fun hg => hng (phaseWordState_bank17_good16 Q hQ d P input hlen17 hg)
+    have hlenW : input.length = d.width := by simpa [Digit25.bank, Digit25.width, GenericW.bankW_length] using hlen
+    have hnb : ¬ GenericW.GoodPoint P (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input)) :=
+      fun hg => hng (phaseWordState_bankW_goodW Q hQ d P input hlenW hg)
     rw [List.mem_toFinset]
     apply List.mem_flatMap.mpr
-    refine ⟨input, (fourierOutcomes_mem 17 input).mpr hlen17, List.mem_map.mpr ⟨P, ?_, rfl⟩⟩
-    unfold Generic16.GoodPoint at hnb
+    refine ⟨input, (fourierOutcomes_mem d.width input).mpr hlenW, List.mem_map.mpr ⟨P, ?_, rfl⟩⟩
+    unfold GenericW.GoodPoint at hnb
     push_neg at hnb
     by_cases h0 : P = 0; · simp [h0]
-    by_cases h1 : P = Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input); · simp [h1]
-    by_cases h2 : P = -Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input); · simp [h2]
+    by_cases h1 : P = Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input); · simp [h1]
+    by_cases h2 : P = -Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input); · simp [h2]
     have h3 := hnb h0 h1 h2
     simp [h3]
   have hmass_eq : normSq χ_bad = ∑ s ∈ χ_bad.support, Complex.normSq (χ_bad s) := by
@@ -5214,9 +5454,9 @@ theorem badStep_le_badBound17 (Q : Point) (hQ : order • Q = 0) (d : Digit26)
   have hle2 : ∑ s ∈ badList.toFinset, Complex.normSq (χ s) ≤ (badList.map (fun s => Complex.normSq (χ s))).sum :=
     finset_sum_toFinset_le badList (fun s => Complex.normSq (χ s)) (fun _ => Complex.normSq_nonneg _)
   suffices hsum_eq : (badList.map (fun s => Complex.normSq (χ s))).sum =
-      badBound17 wpre (Width16Schedule.increment (d.base Q) 17 d.exponent) (pointMass ψ) by
+      badBoundW d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) by
     linarith
-  dsimp only [badList, badBound17]
+  dsimp only [badList, badBoundW]
   rw [flatMap_sum_real]
   have hmul : ∀ (xs : List (List Bool)) (r : ℝ) (f : List Bool → ℝ),
       r * (xs.map f).sum = (xs.map (fun x => r * f x)).sum := fun xs r f => by
@@ -5226,10 +5466,10 @@ theorem badStep_le_badBound17 (Q : Point) (hQ : order • Q = 0) (d : Digit26)
   rw [hmul]
   apply congrArg List.sum; apply List.map_congr_left
   intro input hi
-  have hlen17 : input.length = 17 := (fourierOutcomes_mem 17 input).mp hi
+  have hlenW : input.length = d.width := (fourierOutcomes_mem d.width input).mp hi
   simp only [List.map_map, Function.comp_def, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero]
   dsimp only [χ]
-  simp only [hχ_eval _ input hlen17, map_mul, sqrt2_inv_normSq_pow, pointMass]
+  simp only [Digit25.bank, Digit25.width, hχ_eval _ input hlenW, map_mul, sqrt2_inv_normSq_pow, pointMass]
   ring
 
 theorem projPoint_fourierBranch_comm (ws : List Wire) (hdisj : ∀ w ∈ ws, w ∉ pointLogicalWires)
@@ -5286,123 +5526,147 @@ theorem pointMass_eq_normSq_projPoint (φ : State) (hφ : PointSupported φ) (P'
       · rfl
   rw [heq, normSq_smul, normSq_ket, mul_one]; rfl
 
-theorem step_pointMass_sum17 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26)
-    (pre : Circuit) (wpre : Nat → ℂ) (m : WindowModel (readConstant coefficientAt26 Q))
-    (hm_wires : m.physical.wires = bank17.reverse)
-    (hm_ideal : m.ideal = (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)).comp (Quantum.run pre))
-    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
-      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-        ((fourierOutcomes 17).map (fun input =>
-          wpre (boolWordToNat input) • ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum)
+theorem step_pointMass_sumW (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25)
+    (pre : Circuit) (wpre : Nat → ℂ) (m : WindowModel (readConstant coefficientAt25 Q))
+    (hm_wires : m.physical.wires = d.bank.reverse)
+    (hm_ideal : m.ideal = (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)).comp (Quantum.run pre))
+    (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (d.bank.map Gate.H) (ket (pointWrite P zeroBasisState))) =
+      (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ d.width) •
+        ((fourierOutcomes d.width).map (fun input =>
+          wpre (boolWordToNat input) • ket (phaseWordState d.bank input (pointWrite P zeroBasisState)))).sum)
     (hm_pt : ∀ prior bits φ, PointSupported φ → PointSupported (m.step prior bits φ))
     (prior : List Bool) (ψ : State) (hψ : PointSupported ψ) (P' : Point) :
-    ((fourierOutcomes 17).map (fun bits => pointMass (m.step prior bits ψ) P')).sum =
-      stepDist17 wpre (Width16Schedule.increment (d.base Q) 17 d.exponent) (pointMass ψ) P' := by
+    ((fourierOutcomes d.width).map (fun bits => pointMass (m.step prior bits ψ) P')).sum =
+      stepDistW d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) P' := by
   classical
+  have hnot := bankW_not_point d.k_hi
+  have hblen : d.bank.length = d.width := GenericW.bankW_length d.k
   let φ_after := m.ideal (Quantum.run (m.physical.wires.reverse.map Gate.H) ψ)
-  have h1 : ((fourierOutcomes 17).map (fun bits => pointMass (m.step prior bits ψ) P')).sum =
+  have h1 : ((fourierOutcomes d.width).map (fun bits => pointMass (m.step prior bits ψ) P')).sum =
       normSq (restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ_after) := by
-    have hper : ∀ bits ∈ fourierOutcomes 17,
+    have hper : ∀ bits ∈ fourierOutcomes d.width,
         pointMass (m.step prior bits ψ) P' =
-          normSq (fourierBranch .inverse bank17.reverse prior bits
+          normSq (fourierBranch .inverse d.bank.reverse prior bits
             (restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ_after)) := by
       intro bits _
       rw [pointMass_eq_normSq_projPoint _ (hm_pt prior bits ψ hψ) P']
       change normSq (restrictState _ (fourierBranch .inverse m.physical.wires prior bits φ_after)) = _
-      rw [hm_wires, projPoint_fourierBranch_comm bank17.reverse
-        (fun w hw => bank17_not_point w (List.mem_reverse.mp hw))]
+      rw [hm_wires, projPoint_fourierBranch_comm d.bank.reverse (fun w hw => hnot w (List.mem_reverse.mp hw))]
     rw [List.map_congr_left hper]
-    simpa [bank17_length] using
-      normSq_list_sum_fourierBranch .inverse bank17.reverse prior
+    simpa [hblen] using
+      normSq_list_sum_fourierBranch .inverse d.bank.reverse prior
         (restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ_after)
   rw [h1]
-  let χ := Quantum.run pre (Quantum.run (bank17.map Gate.H) ψ)
-  have hφ_eq : φ_after = Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q) χ := by
-    dsimp only [φ_after, χ]; rw [hm_wires, List.reverse_reverse, hm_ideal]; rfl
-  obtain ⟨hχ_sup, hχ_eval⟩ := bank17_prep_eval pre wpre hpre ψ hψ
-  -- Explicitly compute `restrictState ... φ_after` parametrically in `xs` so kernel never unfolds `fourierOutcomes 17`
-  have hproj_eq_aux : ∀ (xs : List (List Bool)), xs.Nodup → (∀ a, a ∈ xs ↔ a.length = 17) →
-      restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ_after =
-        (xs.map (fun input =>
-          χ (phaseWordState bank17 input
-              (pointWrite (P' - Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input)) zeroBasisState)) •
-            ket (phaseWordState bank17 input (pointWrite P' zeroBasisState)))).sum := by
-    intro xs hnd hmem
+  let χ := Quantum.run pre (Quantum.run (d.bank.map Gate.H) ψ)
+  obtain ⟨hχ_sup, hχ_eval⟩ := bankW_prep_eval d.k d.k_hi pre wpre hpre ψ hψ
+  have hφ_eq : φ_after = Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q) χ := by
+    dsimp only [φ_after, χ]; rw [hm_ideal, hm_wires, List.reverse_reverse]; rfl
+  have hproj_eq : restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ_after =
+      Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
+        (restrictState (fun s => pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P') χ) := by
+    rw [hφ_eq]
+    induction χ using Finsupp.induction_linear with
+    | zero =>
+      have hz1 : restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') (0 : State) = 0 := by
+        ext s; simp [restrictState_apply]
+      have hz2 : restrictState (fun s => pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P') (0 : State) = 0 := by
+        ext s; simp [restrictState_apply]
+      simp [hz1, hz2]
+    | add a b ha hb => rw [map_add, restrictState_map_add, restrictState_map_add, map_add, ha, hb]
+    | single s c =>
+      have hk : Finsupp.single s c = c • ket s := by ext u; simp [ket]
+      rw [hk, map_smul, restrictState_map_smul, restrictState_map_smul, map_smul,
+        Mixed.lmap_ket', restrictState_ket, restrictState_ket]
+      split_ifs <;> simp [ket, Finsupp.mapDomain_single]
+  have hres_sup : SupportedOn (BankPointFamily d.bank)
+      (restrictState (fun s => pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P') χ) :=
+    restrictState_preserves _ _ _ hχ_sup
+  rw [hproj_eq, normSq_lmapDomain_injOn _ ((updateW_injOn_bankPoint Q hQ d).mono (fun s hs => hres_sup s (Finsupp.mem_support_iff.mp hs)))]
+  have hres_expand :
+      restrictState (fun s => pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P') χ =
+      ((fourierOutcomes d.width).map (fun input =>
+        let P₀ := P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input);
+        χ (phaseWordState d.bank input (pointWrite P₀ zeroBasisState)) •
+          ket (phaseWordState d.bank input (pointWrite P₀ zeroBasisState)))).sum := by
+    have hinj : ∀ a ∈ fourierOutcomes d.width, ∀ b ∈ fourierOutcomes d.width,
+        phaseWordState d.bank a (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat a)) zeroBasisState) =
+        phaseWordState d.bank b (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat b)) zeroBasisState) →
+        a = b := fun a ha b hb heq =>
+      (phaseWordState_bankW_inj d.k_hi ((fourierOutcomes_mem d.width a).mp ha) ((fourierOutcomes_mem d.width b).mp hb) heq).2
     ext s
     rw [restrictState_apply]
-    have hinj_t : ∀ a ∈ xs, ∀ b ∈ xs,
-        phaseWordState bank17 a (pointWrite P' zeroBasisState) =
-        phaseWordState bank17 b (pointWrite P' zeroBasisState) → a = b :=
-      fun a ha b hb heq => (phaseWordState_bank17_inj ((hmem a).mp ha) ((hmem b).mp hb) heq).2
-    have hupd_form (R : Point) (input : List Bool) (hlen : input.length = 17) :
-        Generic16.update16 (wideCoeffs26 d) Q (phaseWordState bank17 input (pointWrite R zeroBasisState)) =
-          phaseWordState bank17 input
-            (pointWrite (R + Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat input)) zeroBasisState) := by
-      have hc : pointStateCoordinates (phaseWordState bank17 input (pointWrite R zeroBasisState)) =
-          fig14PointEncoding R := by
-        rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-      rw [Generic16.update16_eq hc, signedDelta16_phaseWord Q hQ d input hlen]
-      funext w
-      by_cases hwb : w ∈ bank17
-      · rw [pointWrite_frame _ _ w (bank17_not_point w hwb)]
-        exact (phaseWordState_agree bank17 input _ _ w (by simpa [bank17_length] using hlen.symm) hwb).symm
-      · rw [phaseWordState_frame bank17 input _ w hwb]
-        by_cases hwp : w ∈ pointLogicalWires
-        · exact pointWrite_agree_on_point _ _ _ w hwp
-        · rw [pointWrite_frame _ _ w hwp, phaseWordState_frame bank17 input _ w hwb,
-            pointWrite_frame _ _ w hwp, pointWrite_frame _ _ w hwp]
-    by_cases hex : ∃ a ∈ xs, phaseWordState bank17 a (pointWrite P' zeroBasisState) = s
-    · obtain ⟨inp, hinp_mem, hs_eq⟩ := hex
-      have hinp_len : inp.length = 17 := (hmem inp).mp hinp_mem
-      rw [← hs_eq]
-      rw [list_sum_eval_ket_mem xs hnd _ _ hinj_t inp hinp_mem]
-      have hco_s : pointStateCoordinates (phaseWordState bank17 inp (pointWrite P' zeroBasisState)) = fig14PointEncoding P' := by
-        rw [phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-      rw [if_pos hco_s, hφ_eq]
-      set preS := phaseWordState bank17 inp
-        (pointWrite (P' - Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat inp)) zeroBasisState)
-      have hmap_pre : Generic16.update16 (wideCoeffs26 d) Q preS =
-          phaseWordState bank17 inp (pointWrite P' zeroBasisState) := by
-        rw [hupd_form _ inp hinp_len, sub_add_cancel]
-      rw [← hmap_pre]
-      exact lmapDomain_apply_injOn χ preS ((update16_injOn_bankPoint Q hQ d).mono (fun t ht => by
-        rcases Set.mem_insert_iff.mp ht with rfl | ht
-        · exact ⟨_, inp, by simpa [bank17_length] using hinp_len, rfl⟩
-        · exact hχ_sup t (Finsupp.mem_support_iff.mp ht)))
-    · rw [list_sum_eval_ket_not_mem xs _ _ s (fun a ha hga => hex ⟨a, ha, hga⟩)]
-      split_ifs with hco_s
-      · rw [hφ_eq]
-        apply lmapDomain_eval_zero_of_not_mem χ s
-        intro t ht hft
-        obtain ⟨R, inp, hlen, rfl⟩ := hχ_sup t (Finsupp.mem_support_iff.mp ht)
-        have hlen17 : inp.length = 17 := by simpa [bank17_length] using hlen
-        rw [hupd_form R inp hlen17] at hft
-        have hco' : pointStateCoordinates s =
-            fig14PointEncoding (R + Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat inp)) := by
-          rw [← hft, phaseWordState_pointWrite bank17 bank17_not_point, pointWrite_coordinates]
-        have hPeq : R + Width16Schedule.increment (d.base Q) 17 d.exponent (boolWordToNat inp) = P' :=
-          fig14PointEncoding_injective (hco'.symm.trans hco_s)
-        rw [hPeq] at hft
-        exact hex ⟨inp, (hmem inp).mpr hlen17, hft⟩
-      · rfl
-  rw [hproj_eq_aux (fourierOutcomes 17) (fourierOutcomes_nodup 17) (fourierOutcomes_mem 17)]
-  have hnorm_sum (xs : List (List Bool)) (hnd : xs.Nodup) (hxs : ∀ x ∈ xs, x.length = 17) (f : List Bool → ℂ) :
-      normSq ((xs.map (fun inp => f inp • ket (phaseWordState bank17 inp (pointWrite P' zeroBasisState)))).sum) =
-        (xs.map (fun inp => Complex.normSq (f inp))).sum := by
+    by_cases hcond : pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P' ∧ χ s ≠ 0
+    · obtain ⟨hco, hχne⟩ := hcond
+      rw [if_pos hco]
+      obtain ⟨P, input, hlen, rfl⟩ := hχ_sup s hχne
+      have hlenW : input.length = d.width := by rw [← hblen]; exact hlen
+      have hc0 : pointStateCoordinates (phaseWordState d.bank input (pointWrite P zeroBasisState)) = fig14PointEncoding P := by
+        rw [phaseWordState_pointWrite d.bank hnot, pointWrite_coordinates]
+      have hupd_co : pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q
+            (phaseWordState d.bank input (pointWrite P zeroBasisState))) =
+          fig14PointEncoding (P + Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input)) := by
+        rw [GenericW.updateW_eq hc0, signedDeltaW_phaseWord Q hQ d input hlenW, pointWrite_coordinates]
+      have hP_eq : P = P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input) := by
+        have hsum : P + Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input) = P' :=
+          fig14PointEncoding_injective (hupd_co.symm.trans hco)
+        exact eq_sub_of_add_eq hsum
+      subst hP_eq
+      symm
+      exact list_sum_eval_ket_mem (fourierOutcomes d.width) (fourierOutcomes_nodup d.width)
+        (fun inp => χ (phaseWordState d.bank inp (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat inp)) zeroBasisState)))
+        (fun inp => phaseWordState d.bank inp (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat inp)) zeroBasisState))
+        hinj input ((fourierOutcomes_mem d.width input).mpr hlenW)
+    · push_neg at hcond
+      have hlhs0 : (if pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P' then χ s else 0) = 0 := by
+        by_cases hco : pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q s) = fig14PointEncoding P'
+        · rw [if_pos hco, hcond hco]
+        · rw [if_neg hco]
+      rw [hlhs0]
+      symm
+      by_cases hex : ∃ inp ∈ fourierOutcomes d.width,
+          phaseWordState d.bank inp (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat inp)) zeroBasisState) = s
+      · obtain ⟨inp, hi, rfl⟩ := hex
+        have hlenW : inp.length = d.width := (fourierOutcomes_mem d.width inp).mp hi
+        have hc0 : pointStateCoordinates (phaseWordState d.bank inp (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat inp)) zeroBasisState)) =
+            fig14PointEncoding (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat inp)) := by
+          rw [phaseWordState_pointWrite d.bank hnot, pointWrite_coordinates]
+        have hco : pointStateCoordinates (GenericW.updateW d.k (wideCoeffs25 d) Q
+            (phaseWordState d.bank inp (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat inp)) zeroBasisState))) =
+            fig14PointEncoding P' := by
+          rw [GenericW.updateW_eq hc0, signedDeltaW_phaseWord Q hQ d inp hlenW, pointWrite_coordinates, sub_add_cancel]
+        rw [list_sum_eval_ket_mem (fourierOutcomes d.width) (fourierOutcomes_nodup d.width)
+          (fun x => χ (phaseWordState d.bank x (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat x)) zeroBasisState)))
+          (fun x => phaseWordState d.bank x (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat x)) zeroBasisState))
+          hinj inp hi, hcond hco]
+      · push_neg at hex
+        exact list_sum_eval_ket_not_mem (fourierOutcomes d.width) _ _ s hex
+  rw [hres_expand]
+  have hnorm_sum : ∀ (xs : List (List Bool)), xs.Nodup → (∀ x ∈ xs, x.length = d.width) →
+      normSq ((xs.map (fun input =>
+        let P₀ := P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input);
+        χ (phaseWordState d.bank input (pointWrite P₀ zeroBasisState)) •
+          ket (phaseWordState d.bank input (pointWrite P₀ zeroBasisState)))).sum) =
+      (xs.map (fun input =>
+        let P₀ := P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input);
+        Complex.normSq (χ (phaseWordState d.bank input (pointWrite P₀ zeroBasisState))))).sum := by
+    intro xs hnd hxsl
     induction xs with
     | nil => simp [normSq, Quantum.inner]
     | cons x xs ih =>
       have ⟨hxn, hnd'⟩ := List.nodup_cons.mp hnd
-      have hxl : x.length = 17 := hxs x List.mem_cons_self
-      have hxsl : ∀ y ∈ xs, y.length = 17 := fun y hy => hxs y (List.mem_cons_of_mem _ hy)
+      have hxl : x.length = d.width := hxsl x List.mem_cons_self
+      have hxsl' : ∀ y ∈ xs, y.length = d.width := fun y hy => hxsl y (List.mem_cons_of_mem _ hy)
       simp only [List.map_cons, List.sum_cons]
-      have hzero : ((xs.map (fun inp => f inp • ket (phaseWordState bank17 inp (pointWrite P' zeroBasisState)))).sum)
-          (phaseWordState bank17 x (pointWrite P' zeroBasisState)) = 0 := by
-        exact list_sum_eval_ket_not_mem xs f _ _ (fun a ha hga =>
-          hxn ((phaseWordState_bank17_inj (hxsl a ha) hxl hga).2 ▸ ha))
-      rw [normSq_add_ket _ _ _ hzero, ih hnd' hxsl]
-  rw [hnorm_sum (fourierOutcomes 17) (fourierOutcomes_nodup 17) (fun x hx => (fourierOutcomes_mem 17 x).mp hx)]
-  dsimp only [stepDist17]
+      have hzero : ((xs.map (fun input =>
+          let P₀ := P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input);
+          χ (phaseWordState d.bank input (pointWrite P₀ zeroBasisState)) •
+            ket (phaseWordState d.bank input (pointWrite P₀ zeroBasisState)))).sum)
+          (phaseWordState d.bank x (pointWrite (P' - Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat x)) zeroBasisState)) = 0 :=
+        list_sum_eval_ket_not_mem xs _ _ _ (fun a ha hga =>
+          hxn ((phaseWordState_bankW_inj d.k_hi (hxsl' a ha) hxl hga).2 ▸ ha))
+      rw [normSq_add_ket _ _ _ hzero, ih hnd' hxsl']
+  rw [hnorm_sum (fourierOutcomes d.width) (fourierOutcomes_nodup d.width) (fun x hx => (fourierOutcomes_mem d.width x).mp hx)]
+  dsimp only [stepDistW]
   have hmul : ∀ (xs : List (List Bool)) (r : ℝ) (f : List Bool → ℝ),
       r * (xs.map f).sum = (xs.map (fun x => r * f x)).sum := fun xs r f => by
     induction xs with
@@ -5411,8 +5675,9 @@ theorem step_pointMass_sum17 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (
   rw [hmul]
   apply congrArg List.sum; apply List.map_congr_left
   intro input hi
-  have hlen17 : input.length = 17 := (fourierOutcomes_mem 17 input).mp hi
-  rw [hχ_eval _ input hlen17, map_mul, map_mul, sqrt2_inv_normSq_pow]
+  have hlenW : input.length = d.width := (fourierOutcomes_mem d.width input).mp hi
+  simp only [χ, Digit25.bank, Digit25.width]
+  rw [hχ_eval _ input hlenW, map_mul, map_mul, sqrt2_inv_normSq_pow]
   dsimp only [pointMass]; ring
 
 theorem zsmul_halfPow_eq_zero (e : Nat) (m : ℤ) (hm : |m| < (order : ℤ))
@@ -5442,209 +5707,243 @@ theorem zsmul_halfPow_eq_zero (e : Nat) (m : ℤ) (hm : |m| < (order : ℤ))
     · exact (Nat.le_of_dvd hh.1 h1).not_gt hh.2
     · exact (Nat.le_of_dvd (by decide : 0 < 2) (order_prime.dvd_of_dvd_pow h2)).not_gt horder
 
-def OddSupport (k : Nat) (D : Point → ℝ) : Prop :=
+def OddSupport (acc exp : Nat) (D : Point → ℝ) : Prop :=
   (∀ P, 0 ≤ D P) ∧
-  (∀ P, D P ≤ 2 / (2 : ℝ) ^ (20 + 17 * k)) ∧
-  (∀ P, D P ≠ 0 → ∃ m : ℤ, Odd m ∧ |m| < (2 : ℤ) ^ (20 + 17 * k) ∧
-    P = m • ((halfOrder * 2 ^ (238 - 17 * k)) • G))
+  (∀ P, D P ≤ 2 / (2 : ℝ) ^ acc) ∧
+  (∀ P, D P ≠ 0 → ∃ m : ℤ, Odd m ∧ |m| < (2 : ℤ) ^ acc ∧
+    P = m • ((halfOrder * 2 ^ exp) • G))
 
 def MaxBound (M : ℝ) (D : Point → ℝ) : Prop :=
   (∀ P, 0 ≤ D P) ∧ (∀ P, D P ≤ M)
 
-private theorem halfPow_shift (e : Nat) :
-    ((halfOrder * 2 ^ (e + 17)) • G) = ((2 : ℤ) ^ 17) • ((halfOrder * 2 ^ e) • G) := by
-  have h : halfOrder * 2 ^ (e + 17) = 2 ^ 17 * (halfOrder * 2 ^ e) := by rw [pow_add]; ring
-  rw [h, mul_smul, show ((2 : ℤ) ^ 17) = ((2 ^ 17 : Nat) : ℤ) by norm_cast, natCast_zsmul]
+private theorem halfPow_shift (e w : Nat) :
+    ((halfOrder * 2 ^ (e + w)) • G) = ((2 : ℤ) ^ w) • ((halfOrder * 2 ^ e) • G) := by
+  have h : halfOrder * 2 ^ (e + w) = 2 ^ w * (halfOrder * 2 ^ e) := by rw [pow_add]; ring
+  rw [h, mul_smul, show ((2 : ℤ) ^ w) = ((2 ^ w : Nat) : ℤ) by norm_cast, natCast_zsmul]
 
-theorem oddSupport_badBound_zero (k : Nat) (hk : k ≤ 12) (D : Point → ℝ) (hD : OddSupport k D) :
-    badBound17 (fun _ => 1) (Width16Schedule.increment G 17 (221 - 17 * k)) D = 0 := by
-  unfold badBound17
-  have hzero : ∀ input ∈ fourierOutcomes 17,
+theorem oddSupport_badBound_zero (acc e w : Nat) (hw : 2 ≤ w) (hsum : acc + w ≤ 240)
+    (D : Point → ℝ) (hD : OddSupport acc (e + w) D) :
+    badBoundW w (fun _ => 1) (Width16Schedule.increment G w e) D = 0 := by
+  unfold badBoundW
+  have hzero : ∀ input ∈ fourierOutcomes w,
       let v := boolWordToNat input
-      let Δ := Width16Schedule.increment G 17 (221 - 17 * k) v
+      let Δ := Width16Schedule.increment G w e v
       Complex.normSq (1 : ℂ) * (D 0 + D Δ + D (-Δ) + D (-(Δ + Δ))) = 0 := by
     intro input hi
     set v := boolWordToNat input
-    have hvlt : v < 2 ^ 17 := by
-      have hlen : input.length = 17 := (fourierOutcomes_mem 17 input).mp hi
+    have hvlt : v < 2 ^ w := by
+      have hlen : input.length = w := (fourierOutcomes_mem w input).mp hi
       simpa [hlen] using boolWordToNat_lt_pow_two input
-    set e := 221 - 17 * k
-    have he17 : 238 - 17 * k = e + 17 := by omega
     set H := (halfOrder * 2 ^ e) • G
-    set r : ℤ := 2 * (v : ℤ) - (2 : ℤ) ^ 17 + 1
-    have hr_odd : Odd r := ⟨(v : ℤ) - 2 ^ 16, by dsimp [r]; ring⟩
-    have hr_abs : |r| < (2 : ℤ) ^ 17 := by
+    set r : ℤ := 2 * (v : ℤ) - (2 : ℤ) ^ w + 1
+    have hpow2 : (2 : ℤ) ^ w = 2 * (2 : ℤ) ^ (w - 1) := by
+      rw [← pow_succ', Nat.sub_add_cancel (by omega)]
+    have hpow4 : (2 : ℤ) ^ w = 4 * (2 : ℤ) ^ (w - 2) := by
+      have : w = (w - 2) + 2 := by omega
+      conv_lhs => rw [this]
+      rw [pow_add]; ring
+    have hr_odd : Odd r := ⟨(v : ℤ) - (2 : ℤ) ^ (w - 1), by dsimp [r]; rw [hpow2]; ring⟩
+    have hr_abs : |r| < (2 : ℤ) ^ w := by
+      have hvltZ : (v : ℤ) < (2 : ℤ) ^ w := by exact_mod_cast hvlt
       dsimp [r]; rw [abs_lt]; constructor <;> omega
-    have hΔ : Width16Schedule.increment G 17 e v = r • H := rfl
-    have hpow_lt : (2 : ℤ) ^ (20 + 17 * k) * (2 : ℤ) ^ 17 + 2 * (2 : ℤ) ^ 17 < (order : ℤ) := by
-      have h1 : (2 : ℤ) ^ (20 + 17 * k) ≤ (2 : ℤ) ^ 224 :=
-        pow_le_pow_right₀ (by decide) (by omega)
-      have hord : (2 : ℤ) ^ 242 < (order : ℤ) := by norm_num [order]
-      have h2 : (2 : ℤ) ^ 224 * (2 : ℤ) ^ 17 + 2 * (2 : ℤ) ^ 17 < (2 : ℤ) ^ 242 := by norm_num
-      nlinarith
-    have hD_eq_zero (c : ℤ) (hc_abs : |c| < 2 * (2 : ℤ) ^ 17) (hbad : ∀ m : ℤ, Odd m → m * (2 : ℤ) ^ 17 ≠ c) :
+    have hΔ : Width16Schedule.increment G w e v = r • H := rfl
+    have hpow_lt : (2 : ℤ) ^ acc * (2 : ℤ) ^ w + 2 * (2 : ℤ) ^ w < (order : ℤ) := by
+      rw [← pow_add]
+      have h1 : (2 : ℤ) ^ (acc + w) ≤ (2 : ℤ) ^ 240 := pow_le_pow_right₀ (by decide) hsum
+      have h2 : (2 : ℤ) ^ w ≤ (2 : ℤ) ^ 240 := pow_le_pow_right₀ (by decide) (by omega)
+      have hord : (2 : ℤ) ^ 243 < (order : ℤ) := by norm_num [order]
+      have h3 : (2 : ℤ) ^ 240 + 2 * (2 : ℤ) ^ 240 < (2 : ℤ) ^ 243 := by norm_num
+      linarith
+    have hD_eq_zero (c : ℤ) (hc_abs : |c| < 2 * (2 : ℤ) ^ w) (hbad : ∀ m : ℤ, Odd m → m * (2 : ℤ) ^ w ≠ c) :
         D (c • H) = 0 := by
       by_contra hne
       obtain ⟨m, hm_odd, hm_abs, hPm⟩ := hD.2.2 (c • H) hne
-      rw [he17, halfPow_shift e, ← mul_zsmul] at hPm
-      have hsub : (m * (2 : ℤ) ^ 17 - c) • H = 0 := by rw [sub_zsmul, ← hPm, add_neg_cancel]
-      have habs : |m * (2 : ℤ) ^ 17 - c| < (order : ℤ) := by
-        have htri := abs_sub (m * (2 : ℤ) ^ 17) c
-        rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ 17)] at htri
-        have hm1 : |m| * (2 : ℤ) ^ 17 ≤ (2 : ℤ) ^ (20 + 17 * k) * (2 : ℤ) ^ 17 :=
+      rw [halfPow_shift e w, ← mul_zsmul] at hPm
+      have hsub : (m * (2 : ℤ) ^ w - c) • H = 0 := by rw [sub_zsmul, ← hPm, add_neg_cancel]
+      have habs : |m * (2 : ℤ) ^ w - c| < (order : ℤ) := by
+        have htri := abs_sub (m * (2 : ℤ) ^ w) c
+        rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ w)] at htri
+        have hm1 : |m| * (2 : ℤ) ^ w ≤ (2 : ℤ) ^ acc * (2 : ℤ) ^ w :=
           mul_le_mul_of_nonneg_right hm_abs.le (by positivity)
         linarith
-      have h0 := zsmul_halfPow_eq_zero e (m * (2 : ℤ) ^ 17 - c) habs hsub
+      have h0 := zsmul_halfPow_eq_zero e (m * (2 : ℤ) ^ w - c) habs hsub
       exact hbad m hm_odd (sub_eq_zero.mp h0)
     have h0 : D 0 = 0 := by
-      simpa using hD_eq_zero 0 (by norm_num) (fun m ⟨j, hj⟩ he => by omega)
+      have hpw_pos : (0 : ℤ) < (2 : ℤ) ^ w := by positivity
+      simpa using hD_eq_zero 0 (by rw [abs_zero]; linarith) (fun m ⟨j, hj⟩ he => by
+        have hm0 : m = 0 := (mul_eq_zero.mp he).resolve_right (ne_of_gt hpw_pos)
+        omega)
     have h1 : D (r • H) = 0 :=
-      hD_eq_zero r (by linarith) (fun m _ he => by obtain ⟨j, hj⟩ := hr_odd; omega)
+      hD_eq_zero r (by linarith) (fun m _ he => by
+        obtain ⟨j, hj⟩ := hr_odd
+        have h2 : 2 * (m * (2 : ℤ) ^ (w - 1)) = r := by rw [← he, hpow2]; ring
+        omega)
     have h2 : D (-(r • H)) = 0 := by
       rw [← neg_zsmul]
-      exact hD_eq_zero (-r) (by rw [abs_neg]; linarith) (fun m _ he => by obtain ⟨j, hj⟩ := hr_odd; omega)
+      exact hD_eq_zero (-r) (by rw [abs_neg]; linarith) (fun m _ he => by
+        obtain ⟨j, hj⟩ := hr_odd
+        have h2 : 2 * (m * (2 : ℤ) ^ (w - 1)) = -r := by rw [← he, hpow2]; ring
+        omega)
     have h3 : D (-(r • H + r • H)) = 0 := by
       have hrew : -(r • H + r • H) = (-2 * r) • H := by
         rw [← add_zsmul, ← neg_zsmul]; congr 1; ring
       rw [hrew]
       exact hD_eq_zero (-2 * r) (by rw [abs_mul]; norm_num; linarith)
-        (fun m _ he => by obtain ⟨j, hj⟩ := hr_odd; omega)
+        (fun m _ he => by
+          obtain ⟨j, hj⟩ := hr_odd
+          have h4 : 2 * (m * (2 : ℤ) ^ (w - 2)) = -r := by
+            have : 2 * (2 * (m * (2 : ℤ) ^ (w - 2))) = -2 * r := by rw [← he, hpow4]; ring
+            linarith
+          omega)
     dsimp only; rw [hΔ, h0, h1, h2, h3]; ring
   rw [List.map_congr_left hzero]
-  have hsum0 : ((fourierOutcomes 17).map (fun _ => (0 : ℝ))).sum = 0 := by
-    induction (fourierOutcomes 17) with
+  have hsum0 : ((fourierOutcomes w).map (fun _ => (0 : ℝ))).sum = 0 := by
+    induction (fourierOutcomes w) with
     | nil => rfl
     | cons _ _ ih => simp [ih]
   rw [hsum0, mul_zero]
 
-theorem oddSupport_stepDist (k : Nat) (hk : k ≤ 12) (D : Point → ℝ) (hD : OddSupport k D) :
-    OddSupport (k + 1) (stepDist17 (fun _ => 1) (Width16Schedule.increment G 17 (221 - 17 * k)) D) := by
-  set e := 221 - 17 * k
-  have he17 : 238 - 17 * k = e + 17 := by omega
-  have he_next : 238 - 17 * (k + 1) = e := by omega
+theorem oddSupport_stepDist (acc e w : Nat) (hw : 2 ≤ w) (hsum : acc + w ≤ 240)
+    (D : Point → ℝ) (hD : OddSupport acc (e + w) D) :
+    OddSupport (acc + w) e (stepDistW w (fun _ => 1) (Width16Schedule.increment G w e) D) := by
   set H := (halfOrder * 2 ^ e) • G
-  have hnn : ∀ P', 0 ≤ stepDist17 (fun _ => 1) (Width16Schedule.increment G 17 e) D P' := fun P' => by
-    unfold stepDist17
+  have hpow2 : (2 : ℤ) ^ w = 2 * (2 : ℤ) ^ (w - 1) := by
+    rw [← pow_succ', Nat.sub_add_cancel (by omega)]
+  have hnn : ∀ P', 0 ≤ stepDistW w (fun _ => 1) (Width16Schedule.increment G w e) D P' := fun P' => by
+    unfold stepDistW
     apply mul_nonneg (by positivity)
     apply List.sum_nonneg; intro x hx
     obtain ⟨inp, _, rfl⟩ := List.mem_map.mp hx
     exact mul_nonneg (Complex.normSq_nonneg _) (hD.1 _)
   have huniq : ∀ (P' : Point) (in₁ in₂ : List Bool),
-      in₁ ∈ fourierOutcomes 17 → in₂ ∈ fourierOutcomes 17 →
-      D (P' - Width16Schedule.increment G 17 e (boolWordToNat in₁)) ≠ 0 →
-      D (P' - Width16Schedule.increment G 17 e (boolWordToNat in₂)) ≠ 0 →
+      in₁ ∈ fourierOutcomes w → in₂ ∈ fourierOutcomes w →
+      D (P' - Width16Schedule.increment G w e (boolWordToNat in₁)) ≠ 0 →
+      D (P' - Width16Schedule.increment G w e (boolWordToNat in₂)) ≠ 0 →
       in₁ = in₂ := by
     intro P' in₁ in₂ h1 h2 hne1 hne2
-    have hl1 : in₁.length = 17 := (fourierOutcomes_mem 17 in₁).mp h1
-    have hl2 : in₂.length = 17 := (fourierOutcomes_mem 17 in₂).mp h2
-    have hv1 : boolWordToNat in₁ < 2 ^ 17 := by simpa [hl1] using boolWordToNat_lt_pow_two in₁
-    have hv2 : boolWordToNat in₂ < 2 ^ 17 := by simpa [hl2] using boolWordToNat_lt_pow_two in₂
+    have hl1 : in₁.length = w := (fourierOutcomes_mem w in₁).mp h1
+    have hl2 : in₂.length = w := (fourierOutcomes_mem w in₂).mp h2
+    have hv1 : boolWordToNat in₁ < 2 ^ w := by simpa [hl1] using boolWordToNat_lt_pow_two in₁
+    have hv2 : boolWordToNat in₂ < 2 ^ w := by simpa [hl2] using boolWordToNat_lt_pow_two in₂
+    have hv1Z : (boolWordToNat in₁ : ℤ) < (2 : ℤ) ^ w := by exact_mod_cast hv1
+    have hv2Z : (boolWordToNat in₂ : ℤ) < (2 : ℤ) ^ w := by exact_mod_cast hv2
     obtain ⟨m₁, hm1_odd, hm1_abs, hP1⟩ := hD.2.2 _ hne1
     obtain ⟨m₂, hm2_odd, hm2_abs, hP2⟩ := hD.2.2 _ hne2
-    rw [he17, halfPow_shift e, ← mul_zsmul] at hP1 hP2
-    set r₁ : ℤ := 2 * (boolWordToNat in₁ : ℤ) - (2 : ℤ) ^ 17 + 1
-    set r₂ : ℤ := 2 * (boolWordToNat in₂ : ℤ) - (2 : ℤ) ^ 17 + 1
-    have hP1' : P' = (m₁ * (2 : ℤ) ^ 17 + r₁) • H := by
+    rw [halfPow_shift e w, ← mul_zsmul] at hP1 hP2
+    set r₁ : ℤ := 2 * (boolWordToNat in₁ : ℤ) - (2 : ℤ) ^ w + 1
+    set r₂ : ℤ := 2 * (boolWordToNat in₂ : ℤ) - (2 : ℤ) ^ w + 1
+    have hP1' : P' = (m₁ * (2 : ℤ) ^ w + r₁) • H := by
       rw [add_zsmul, ← hP1]; exact (sub_add_cancel P' (r₁ • H)).symm
-    have hP2' : P' = (m₂ * (2 : ℤ) ^ 17 + r₂) • H := by
+    have hP2' : P' = (m₂ * (2 : ℤ) ^ w + r₂) • H := by
       rw [add_zsmul, ← hP2]; exact (sub_add_cancel P' (r₂ • H)).symm
-    have hdiff : ((m₁ - m₂) * (2 : ℤ) ^ 17 + (r₁ - r₂)) • H = 0 := by
-      have : (m₁ - m₂) * (2 : ℤ) ^ 17 + (r₁ - r₂) = (m₁ * (2 : ℤ) ^ 17 + r₁) - (m₂ * (2 : ℤ) ^ 17 + r₂) := by ring
+    have hdiff : ((m₁ - m₂) * (2 : ℤ) ^ w + (r₁ - r₂)) • H = 0 := by
+      have : (m₁ - m₂) * (2 : ℤ) ^ w + (r₁ - r₂) = (m₁ * (2 : ℤ) ^ w + r₁) - (m₂ * (2 : ℤ) ^ w + r₂) := by ring
       rw [this, sub_zsmul, ← hP1', ← hP2', add_neg_cancel]
-    have habs : |(m₁ - m₂) * (2 : ℤ) ^ 17 + (r₁ - r₂)| < (order : ℤ) := by
-      have hm12 : |m₁ - m₂| < 2 * (2 : ℤ) ^ (20 + 17 * k) := by
+    have habs : |(m₁ - m₂) * (2 : ℤ) ^ w + (r₁ - r₂)| < (order : ℤ) := by
+      have hm12 : |m₁ - m₂| < 2 * (2 : ℤ) ^ acc := by
         have := abs_sub m₁ m₂; linarith
-      have hr12 : |r₁ - r₂| < (2 : ℤ) ^ 18 := by
+      have hr12 : |r₁ - r₂| < 2 * (2 : ℤ) ^ w := by
         dsimp [r₁, r₂]; rw [abs_lt]; constructor <;> omega
-      have htri := abs_add_le ((m₁ - m₂) * (2 : ℤ) ^ 17) (r₁ - r₂)
-      rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ 17)] at htri
-      have hbound : 2 * (2 : ℤ) ^ (20 + 17 * k) * (2 : ℤ) ^ 17 + (2 : ℤ) ^ 18 ≤ (order : ℤ) := by
-        have hp : (2 : ℤ) ^ (20 + 17 * k) ≤ (2 : ℤ) ^ 224 := pow_le_pow_right₀ (by decide) (by omega)
+      have htri := abs_add_le ((m₁ - m₂) * (2 : ℤ) ^ w) (r₁ - r₂)
+      rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ w)] at htri
+      have hbound : 2 * (2 : ℤ) ^ acc * (2 : ℤ) ^ w + 2 * (2 : ℤ) ^ w ≤ (order : ℤ) := by
+        have hpa : (2 : ℤ) ^ acc * (2 : ℤ) ^ w = (2 : ℤ) ^ (acc + w) := (pow_add _ _ _).symm
+        have hp1 : (2 : ℤ) ^ (acc + w) ≤ (2 : ℤ) ^ 240 := pow_le_pow_right₀ (by decide) hsum
+        have hp2 : (2 : ℤ) ^ w ≤ (2 : ℤ) ^ 240 := pow_le_pow_right₀ (by decide) (by omega)
         have hord : (2 : ℤ) ^ 243 < (order : ℤ) := by norm_num [order]
-        have h2 : 2 * (2 : ℤ) ^ 224 * (2 : ℤ) ^ 17 + (2 : ℤ) ^ 18 < (2 : ℤ) ^ 243 := by norm_num
+        have h3 : 2 * (2 : ℤ) ^ 240 + 2 * (2 : ℤ) ^ 240 < (2 : ℤ) ^ 243 := by norm_num
         nlinarith
+      have hmul : |m₁ - m₂| * (2 : ℤ) ^ w < 2 * (2 : ℤ) ^ acc * (2 : ℤ) ^ w :=
+        mul_lt_mul_of_pos_right hm12 (by positivity)
       linarith
     have h0 := zsmul_halfPow_eq_zero e _ habs hdiff
     obtain ⟨j₁, hj1⟩ := hm1_odd
     obtain ⟨j₂, hj2⟩ := hm2_odd
+    have hdiv_eq : (2 : ℤ) ^ w * (j₁ - j₂) + ((boolWordToNat in₁ : ℤ) - (boolWordToNat in₂ : ℤ)) = 0 := by
+      have hsub : (m₁ - m₂) * (2 : ℤ) ^ w + (r₁ - r₂) =
+          2 * ((2 : ℤ) ^ w * (j₁ - j₂) + ((boolWordToNat in₁ : ℤ) - (boolWordToNat in₂ : ℤ))) := by
+        dsimp [r₁, r₂]; rw [hj1, hj2]; ring
+      linarith
+    have hj_eq : j₁ - j₂ = 0 := by
+      by_contra hjne
+      have h1 : (1 : ℤ) ≤ |j₁ - j₂| := by rw [le_abs]; omega
+      have h2 : (2 : ℤ) ^ w ≤ |(2 : ℤ) ^ w * (j₁ - j₂)| := by
+        rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ w)]
+        nlinarith [pow_pos (by decide : (0 : ℤ) < 2) w]
+      have h3 : (2 : ℤ) ^ w * (j₁ - j₂) = -((boolWordToNat in₁ : ℤ) - (boolWordToNat in₂ : ℤ)) := by linarith
+      rw [h3, abs_neg] at h2
+      have h4 : |(boolWordToNat in₁ : ℤ) - (boolWordToNat in₂ : ℤ)| < (2 : ℤ) ^ w := by
+        rw [abs_lt]; constructor <;> omega
+      linarith
     have hv_eq : boolWordToNat in₁ = boolWordToNat in₂ := by
-      have : (2 : ℤ) ^ 18 * (j₁ - j₂) + 2 * ((boolWordToNat in₁ : ℤ) - (boolWordToNat in₂ : ℤ)) = 0 := by
-        have hsub : (m₁ - m₂) * (2 : ℤ) ^ 17 + (r₁ - r₂) =
-            (2 : ℤ) ^ 18 * (j₁ - j₂) + 2 * ((boolWordToNat in₁ : ℤ) - (boolWordToNat in₂ : ℤ)) := by
-          dsimp [r₁, r₂]; rw [hj1, hj2]; ring
-        linarith
-      omega
+      rw [hj_eq, mul_zero, zero_add] at hdiv_eq; omega
     exact boolWordToNat_injective (hl1.trans hl2.symm) hv_eq
   refine ⟨hnn, fun P' => ?_, fun P' hne => ?_⟩
-  · -- At most 1 nonzero term in `fourierOutcomes 17`
-    have hsum_le (xs : List (List Bool)) (hnd : xs.Nodup) (hsub : ∀ x ∈ xs, x ∈ fourierOutcomes 17) :
+  · have hsum_le (xs : List (List Bool)) (hnd : xs.Nodup) (hsub : ∀ x ∈ xs, x ∈ fourierOutcomes w) :
         (xs.map (fun inp => Complex.normSq (1 : ℂ) *
-          D (P' - Width16Schedule.increment G 17 e (boolWordToNat inp)))).sum ≤
-          2 / (2 : ℝ) ^ (20 + 17 * k) := by
+          D (P' - Width16Schedule.increment G w e (boolWordToNat inp)))).sum ≤
+          2 / (2 : ℝ) ^ acc := by
       induction xs with
       | nil => simp; positivity
       | cons x xs ih =>
         have ⟨hxn, hnd'⟩ := List.nodup_cons.mp hnd
         simp only [List.map_cons, List.sum_cons]
-        by_cases hdx : D (P' - Width16Schedule.increment G 17 e (boolWordToNat x)) = 0
+        by_cases hdx : D (P' - Width16Schedule.increment G w e (boolWordToNat x)) = 0
         · rw [hdx, mul_zero, zero_add]
           exact ih hnd' (fun y hy => hsub y (List.mem_cons_of_mem _ hy))
         · have hrest0 : ∀ y ∈ xs, Complex.normSq (1 : ℂ) *
-              D (P' - Width16Schedule.increment G 17 e (boolWordToNat y)) = 0 := by
+              D (P' - Width16Schedule.increment G w e (boolWordToNat y)) = 0 := by
             intro y hy
-            have hdy : D (P' - Width16Schedule.increment G 17 e (boolWordToNat y)) = 0 := by
+            have hdy : D (P' - Width16Schedule.increment G w e (boolWordToNat y)) = 0 := by
               by_contra hney
               exact hxn (huniq P' y x (hsub y (List.mem_cons_of_mem _ hy)) (hsub x List.mem_cons_self) hney hdx ▸ hy)
             rw [hdy, mul_zero]
           have hsum0 : (xs.map (fun inp => Complex.normSq (1 : ℂ) *
-              D (P' - Width16Schedule.increment G 17 e (boolWordToNat inp)))).sum = 0 := by
+              D (P' - Width16Schedule.increment G w e (boolWordToNat inp)))).sum = 0 := by
             rw [List.map_congr_left hrest0]
             clear hrest0 ih hnd' hsub; induction xs with
             | nil => rfl
             | cons _ _ ih' => simp [ih']
           rw [hsum0, add_zero, map_one, one_mul]
           exact hD.2.1 _
-    unfold stepDist17
-    have h1 := hsum_le (fourierOutcomes 17) (fourierOutcomes_nodup 17) (fun _ h => h)
-    have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ 17)
+    unfold stepDistW
+    have h1 := hsum_le (fourierOutcomes w) (fourierOutcomes_nodup w) (fun _ h => h)
+    have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ w)
     refine h2.trans_eq ?_
-    have hexp : 20 + 17 * (k + 1) = (20 + 17 * k) + 17 := by omega
-    rw [hexp, pow_add]; ring
-  · -- Extract witness `inp ∈ fourierOutcomes 17` with `D (P' - Δ) ≠ 0`
-    have hex : ∃ inp ∈ fourierOutcomes 17,
-        D (P' - Width16Schedule.increment G 17 e (boolWordToNat inp)) ≠ 0 := by
+    rw [pow_add]; ring
+  · have hex : ∃ inp ∈ fourierOutcomes w,
+        D (P' - Width16Schedule.increment G w e (boolWordToNat inp)) ≠ 0 := by
       by_contra hall
       push_neg at hall
-      apply hne; unfold stepDist17
-      have hz : ∀ inp ∈ fourierOutcomes 17,
-          Complex.normSq (1 : ℂ) * D (P' - Width16Schedule.increment G 17 e (boolWordToNat inp)) = 0 :=
+      apply hne; unfold stepDistW
+      have hz : ∀ inp ∈ fourierOutcomes w,
+          Complex.normSq (1 : ℂ) * D (P' - Width16Schedule.increment G w e (boolWordToNat inp)) = 0 :=
         fun inp hi => by rw [hall inp hi, mul_zero]
       rw [List.map_congr_left hz]
-      have hs0 : ((fourierOutcomes 17).map (fun _ => (0 : ℝ))).sum = 0 := by
-        induction (fourierOutcomes 17) with
+      have hs0 : ((fourierOutcomes w).map (fun _ => (0 : ℝ))).sum = 0 := by
+        induction (fourierOutcomes w) with
         | nil => rfl
         | cons _ _ ih => simp [ih]
       rw [hs0, mul_zero]
     obtain ⟨inp, hi, hdi⟩ := hex
-    have hl : inp.length = 17 := (fourierOutcomes_mem 17 inp).mp hi
-    have hv : boolWordToNat inp < 2 ^ 17 := by simpa [hl] using boolWordToNat_lt_pow_two inp
+    have hl : inp.length = w := (fourierOutcomes_mem w inp).mp hi
+    have hv : boolWordToNat inp < 2 ^ w := by simpa [hl] using boolWordToNat_lt_pow_two inp
+    have hvZ : (boolWordToNat inp : ℤ) < (2 : ℤ) ^ w := by exact_mod_cast hv
     obtain ⟨m, hm_odd, hm_abs, hPm⟩ := hD.2.2 _ hdi
-    rw [he17, halfPow_shift e, ← mul_zsmul] at hPm
-    set r : ℤ := 2 * (boolWordToNat inp : ℤ) - (2 : ℤ) ^ 17 + 1
-    refine ⟨m * (2 : ℤ) ^ 17 + r, ?_, ?_, ?_⟩
-    · refine ⟨m * (2 : ℤ) ^ 16 + (boolWordToNat inp : ℤ) - (2 : ℤ) ^ 16, ?_⟩
-      dsimp [r]; ring
-    · have hexp : (2 : ℤ) ^ (20 + 17 * (k + 1)) = (2 : ℤ) ^ (20 + 17 * k) * (2 : ℤ) ^ 17 := by
-        rw [show 20 + 17 * (k + 1) = (20 + 17 * k) + 17 by omega, pow_add]
-      rw [hexp]
-      have hr_abs : |r| < (2 : ℤ) ^ 17 := by dsimp [r]; rw [abs_lt]; constructor <;> omega
-      have htri := abs_add_le (m * (2 : ℤ) ^ 17) r
-      rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ 17)] at htri
-      have hm1 : |m| ≤ (2 : ℤ) ^ (20 + 17 * k) - 1 := by omega
-      have hmul : |m| * (2 : ℤ) ^ 17 ≤ ((2 : ℤ) ^ (20 + 17 * k) - 1) * (2 : ℤ) ^ 17 :=
+    rw [halfPow_shift e w, ← mul_zsmul] at hPm
+    set r : ℤ := 2 * (boolWordToNat inp : ℤ) - (2 : ℤ) ^ w + 1
+    refine ⟨m * (2 : ℤ) ^ w + r, ?_, ?_, ?_⟩
+    · refine ⟨m * (2 : ℤ) ^ (w - 1) + (boolWordToNat inp : ℤ) - (2 : ℤ) ^ (w - 1), ?_⟩
+      dsimp [r]; rw [hpow2]; ring
+    · rw [pow_add]
+      have hr_abs : |r| < (2 : ℤ) ^ w := by dsimp [r]; rw [abs_lt]; constructor <;> omega
+      have htri := abs_add_le (m * (2 : ℤ) ^ w) r
+      rw [abs_mul, abs_of_pos (by positivity : (0 : ℤ) < (2 : ℤ) ^ w)] at htri
+      have hm1 : |m| ≤ (2 : ℤ) ^ acc - 1 := by omega
+      have hmul : |m| * (2 : ℤ) ^ w ≤ ((2 : ℤ) ^ acc - 1) * (2 : ℤ) ^ w :=
         mul_le_mul_of_nonneg_right hm1 (by positivity)
       linarith
-    · rw [he_next, add_zsmul, ← hPm]
+    · rw [add_zsmul, ← hPm]
       exact (sub_add_cancel P' (r • H)).symm
 
 private theorem fourierOutcomes_length_eq (k : Nat) : (fourierOutcomes k).length = 2 ^ k := by
@@ -5652,10 +5951,10 @@ private theorem fourierOutcomes_length_eq (k : Nat) : (fourierOutcomes k).length
   | zero => simp [fourierOutcomes]
   | succ k ih => simp [fourierOutcomes, ih, pow_succ]; omega
 
-private theorem sum_fourierOutcomes17_one :
-    ((fourierOutcomes 17).map (fun _ => Complex.normSq (1 : ℂ))).sum = (2 : ℝ) ^ 17 := by
-  have hmap : (fourierOutcomes 17).map (fun _ => Complex.normSq (1 : ℂ)) =
-      List.replicate (fourierOutcomes 17).length (1 : ℝ) := by
+private theorem sum_fourierOutcomes_one (w : Nat) :
+    ((fourierOutcomes w).map (fun _ => Complex.normSq (1 : ℂ))).sum = (2 : ℝ) ^ w := by
+  have hmap : (fourierOutcomes w).map (fun _ => Complex.normSq (1 : ℂ)) =
+      List.replicate (fourierOutcomes w).length (1 : ℝ) := by
     simp [List.map_const']
   rw [hmap, List.sum_replicate, nsmul_eq_mul, mul_one, fourierOutcomes_length_eq]
   norm_cast
@@ -5677,9 +5976,8 @@ private theorem sum_fourierOutcomes17_sine :
         Nat.div_eq_of_lt (by simpa [hal] using boolWordToNat_lt_pow_two a), Nat.zero_add]
     rw [List.map_congr_left hcongr]
     have hfin : ((fourierOutcomes 10).map (fun b => Complex.normSq (sineWeight 10 (boolWordToNat b)))).sum =
-        ∑ u ∈ Finset.range 1024, Complex.normSq (sineWeight 10 u) := by
-      have hbi := list_sum_fourierOutcomes_eq_range 10 (fun u => Complex.normSq (sineWeight 10 u))
-      exact hbi
+        ∑ u ∈ Finset.range 1024, Complex.normSq (sineWeight 10 u) :=
+      list_sum_fourierOutcomes_eq_range 10 (fun u => Complex.normSq (sineWeight 10 u))
     rw [hfin, SineBounds.sineWeight_sum_normSq]
   simp only [List.map_map, Function.comp_def]
   rw [List.map_congr_left hinner]
@@ -5688,20 +5986,20 @@ private theorem sum_fourierOutcomes17_sine :
   rw [hrep, List.sum_replicate, nsmul_eq_mul, fourierOutcomes_length_eq]
   norm_num
 
-theorem maxBound_stepDist (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ) (hM : 0 ≤ M)
-    (hw : ((fourierOutcomes 17).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)))).sum = (2 : ℝ) ^ 17)
+theorem maxBound_stepDistW (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ) (hM : 0 ≤ M)
+    (hw : ((fourierOutcomes w).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)))).sum = (2 : ℝ) ^ w)
     (D : Point → ℝ) (hD : MaxBound M D) :
-    MaxBound M (stepDist17 wpre delta D) := by
+    MaxBound M (stepDistW w wpre delta D) := by
   refine ⟨fun P' => ?_, fun P' => ?_⟩
-  · unfold stepDist17
+  · unfold stepDistW
     apply mul_nonneg (by positivity)
     apply List.sum_nonneg; intro x hx
     obtain ⟨inp, _, rfl⟩ := List.mem_map.mp hx
     exact mul_nonneg (Complex.normSq_nonneg _) (hD.1 _)
-  · unfold stepDist17
-    have h1 : ((fourierOutcomes 17).map (fun inp =>
+  · unfold stepDistW
+    have h1 : ((fourierOutcomes w).map (fun inp =>
         Complex.normSq (wpre (boolWordToNat inp)) * D (P' - delta (boolWordToNat inp)))).sum ≤
-        ((fourierOutcomes 17).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)) * M)).sum := by
+        ((fourierOutcomes w).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)) * M)).sum := by
       apply list_sum_map_le; intro inp _
       exact mul_le_mul_of_nonneg_left (hD.2 _) (Complex.normSq_nonneg _)
     have hmr : ∀ (xs : List (List Bool)) (f : List Bool → ℝ) (r : ℝ),
@@ -5710,19 +6008,19 @@ theorem maxBound_stepDist (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ)
       | nil => simp
       | cons x xs ih => simp [ih, add_mul]
     rw [hmr, hw] at h1
-    have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ 17)
+    have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ w)
     refine h2.trans_eq ?_; field_simp
 
-theorem maxBound_badBound (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ) (hM : 0 ≤ M)
-    (hw : ((fourierOutcomes 17).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)))).sum = (2 : ℝ) ^ 17)
+theorem maxBound_badBoundW (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ) (hM : 0 ≤ M)
+    (hw : ((fourierOutcomes w).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)))).sum = (2 : ℝ) ^ w)
     (D : Point → ℝ) (hD : MaxBound M D) :
-    badBound17 wpre delta D ≤ 4 * M := by
-  unfold badBound17
-  have h1 : ((fourierOutcomes 17).map (fun inp =>
+    badBoundW w wpre delta D ≤ 4 * M := by
+  unfold badBoundW
+  have h1 : ((fourierOutcomes w).map (fun inp =>
       let v := boolWordToNat inp
       let Δ := delta v
       Complex.normSq (wpre v) * (D 0 + D Δ + D (-Δ) + D (-(Δ + Δ))))).sum ≤
-      ((fourierOutcomes 17).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)) * (4 * M))).sum := by
+      ((fourierOutcomes w).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)) * (4 * M))).sum := by
     apply list_sum_map_le; intro inp _
     apply mul_le_mul_of_nonneg_left _ (Complex.normSq_nonneg _)
     linarith [hD.2 0, hD.2 (delta (boolWordToNat inp)), hD.2 (-delta (boolWordToNat inp)),
@@ -5733,11 +6031,10 @@ theorem maxBound_badBound (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ)
     | nil => simp
     | cons x xs ih => simp [ih, add_mul]
   rw [hmr, hw] at h1
-  have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ 17)
+  have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ w)
   refine h2.trans_eq ?_; field_simp
 
-
-/-! ### Initial `First20` distribution (`OddSupport 0`) and full `52 / 2^240` exception bound -/
+/-! ### Initial `First20` distribution (`OddSupport 20 236`) and full `52 / 2^236` exception bound -/
 
 theorem first20Model_step_pointSupported (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     (prior bits : List Bool) :
@@ -5746,7 +6043,7 @@ theorem first20Model_step_pointSupported (Q : Point) (hQ : order • Q = 0) (hn 
   apply Support.smul; apply Support.list_sum; intro input _
   exact Support.smul _ (supportedOn_ket _ _ ⟨_, rfl⟩)
 
-theorem bodyModel_step_pointSupported (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit26)
+theorem bodyModel_step_pointSupported (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25)
     (prior bits : List Bool) (φ : State) (hφ : PointSupported φ) :
     PointSupported ((bodyModel Q hQ hn d).step prior bits φ) := by
   refine Support.linear (pointFamily zeroBasisState) (pointFamily zeroBasisState)
@@ -5767,7 +6064,7 @@ theorem rightHeadModel_step_pointSupported (Q : Point) (hQ : order • Q = 0) (h
   exact Support.smul _ (supportedOn_ket _ _ ⟨_, rfl⟩)
 
 theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    OddSupport 0 (fun P' =>
+    OddSupport 20 236 (fun P' =>
       ((fourierOutcomes 20).map (fun bits =>
         pointMass ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)) P')).sum) := by
   classical
@@ -5777,9 +6074,9 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
   have hφ₀_exp : φ₀ = (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 20) •
       ((fourierOutcomes 20).map (fun input =>
         sineWeight 10 (boolWordToNat input / 2 ^ 10) •
-          ket (pointWrite (initialPoint26 Q (boolWordToNat input))
+          ket (pointWrite (initialPoint25 Q (boolWordToNat input))
             (phaseWordState First20Signed.bits input zeroBasisState)))).sum := by
-    change Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint26 Q)
+    change Finsupp.lmapDomain ℂ ℂ (First20Signed.update initialPoint25 Q)
       (Quantum.run (sineFromPlus top10Left)
         (Quantum.run (First20Signed.bits.reverse.reverse.map Gate.H) (ket zeroBasisState))) = _
     rw [List.reverse_reverse]
@@ -5793,19 +6090,19 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
     have hlen : input.length = First20Signed.bits.length := by
       simpa [First20Signed.bits_length] using (fourierOutcomes_mem 20 input).mp hi
     simp only [Function.comp_def, map_smul, Mixed.lmap_ket']
-    have hupd : First20Signed.update initialPoint26 Q (phaseWordState First20Signed.bits input zeroBasisState) =
-        pointWrite (initialPoint26 Q (boolWordToNat input)) (phaseWordState First20Signed.bits input zeroBasisState) := by
+    have hupd : First20Signed.update initialPoint25 Q (phaseWordState First20Signed.bits input zeroBasisState) =
+        pointWrite (initialPoint25 Q (boolWordToNat input)) (phaseWordState First20Signed.bits input zeroBasisState) := by
       unfold First20Signed.update
       rw [WEX.tableAddress_word, phaseWordState_word First20Signed.bits First20Signed.bits_nodup input hlen]
     rw [hupd]
   have hinit_inj : ∀ (a b : List Bool), a ∈ fourierOutcomes 20 → b ∈ fourierOutcomes 20 →
-      initialPoint26 Q (boolWordToNat a) = initialPoint26 Q (boolWordToNat b) → a = b := by
+      initialPoint25 Q (boolWordToNat a) = initialPoint25 Q (boolWordToNat b) → a = b := by
     intro a b ha hb heq
     have hla : a.length = 20 := (fourierOutcomes_mem 20 a).mp ha
     have hlb : b.length = 20 := (fourierOutcomes_mem 20 b).mp hb
     have hva : boolWordToNat a < 2 ^ 20 := by simpa [hla] using boolWordToNat_lt_pow_two a
     have hvb : boolWordToNat b < 2 ^ 20 := by simpa [hlb] using boolWordToNat_lt_pow_two b
-    have hsub : (2 * ((boolWordToNat a : ℤ) - (boolWordToNat b : ℤ))) • ((halfOrder * 2 ^ 238) • G) = 0 := by
+    have hsub : (2 * ((boolWordToNat a : ℤ) - (boolWordToNat b : ℤ))) • ((halfOrder * 2 ^ 236) • G) = 0 := by
       have hc : (2 * (boolWordToNat a : ℤ) - (2 : ℤ) ^ 20 + 1) - (2 * (boolWordToNat b : ℤ) - (2 : ℤ) ^ 20 + 1) =
           2 * ((boolWordToNat a : ℤ) - (boolWordToNat b : ℤ)) := by ring
       rw [← hc, sub_zsmul]
@@ -5813,7 +6110,7 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
     have habs : |2 * ((boolWordToNat a : ℤ) - (boolWordToNat b : ℤ))| < (order : ℤ) := by
       have hord : (2 : ℤ) ^ 22 < (order : ℤ) := by norm_num [order]
       rw [abs_lt]; constructor <;> omega
-    have h0 := zsmul_halfPow_eq_zero 238 _ habs hsub
+    have h0 := zsmul_halfPow_eq_zero 236 _ habs hsub
     exact boolWordToNat_injective (hla.trans hlb.symm) (by omega)
   have hsum_eq (P' : Point) :
       ((fourierOutcomes 20).map (fun bits =>
@@ -5834,7 +6131,7 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
         (restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ₀)
   have hproj (P' : Point) :
       restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P') φ₀ =
-        if h : ∃ inp ∈ fourierOutcomes 20, initialPoint26 Q (boolWordToNat inp) = P' then
+        if h : ∃ inp ∈ fourierOutcomes 20, initialPoint25 Q (boolWordToNat inp) = P' then
           (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 20 * sineWeight 10 (boolWordToNat (Classical.choose h) / 2 ^ 10)) •
             ket (pointWrite P' (phaseWordState First20Signed.bits (Classical.choose h) zeroBasisState))
         else 0 := by
@@ -5843,10 +6140,10 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
         restrictState (fun s => pointStateCoordinates s = fig14PointEncoding P')
           ((xs.map (fun input =>
             sineWeight 10 (boolWordToNat input / 2 ^ 10) •
-              ket (pointWrite (initialPoint26 Q (boolWordToNat input))
+              ket (pointWrite (initialPoint25 Q (boolWordToNat input))
                 (phaseWordState First20Signed.bits input zeroBasisState)))).sum) =
         (xs.map (fun input =>
-          if initialPoint26 Q (boolWordToNat input) = P' then
+          if initialPoint25 Q (boolWordToNat input) = P' then
             sineWeight 10 (boolWordToNat input / 2 ^ 10) •
               ket (pointWrite P' (phaseWordState First20Signed.bits input zeroBasisState))
           else 0)).sum := by
@@ -5855,21 +6152,21 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
       | cons x xs ih =>
         simp only [List.map_cons, List.sum_cons, restrictState_map_add, ih, restrictState_map_smul,
           restrictState_ket, pointWrite_coordinates]
-        by_cases he : initialPoint26 Q (boolWordToNat x) = P'
+        by_cases he : initialPoint25 Q (boolWordToNat x) = P'
         · simp [he]
-        · have hne : fig14PointEncoding (initialPoint26 Q (boolWordToNat x)) ≠ fig14PointEncoding P' :=
+        · have hne : fig14PointEncoding (initialPoint25 Q (boolWordToNat x)) ≠ fig14PointEncoding P' :=
             fun h => he (fig14PointEncoding_injective h)
           simp [he, hne]
     rw [hmap_res]
-    by_cases hex : ∃ inp ∈ fourierOutcomes 20, initialPoint26 Q (boolWordToNat inp) = P'
+    by_cases hex : ∃ inp ∈ fourierOutcomes 20, initialPoint25 Q (boolWordToNat inp) = P'
     · rw [dif_pos hex]
       set inp₀ := Classical.choose hex
       have hinp₀_mem : inp₀ ∈ fourierOutcomes 20 := (Classical.choose_spec hex).1
-      have hinp₀_eq : initialPoint26 Q (boolWordToNat inp₀) = P' := (Classical.choose_spec hex).2
+      have hinp₀_eq : initialPoint25 Q (boolWordToNat inp₀) = P' := (Classical.choose_spec hex).2
       have hsingle : ∀ (xs : List (List Bool)), xs.Nodup → (∀ x ∈ xs, x ∈ fourierOutcomes 20) →
           inp₀ ∈ xs →
           (xs.map (fun input =>
-            if initialPoint26 Q (boolWordToNat input) = P' then
+            if initialPoint25 Q (boolWordToNat input) = P' then
               sineWeight 10 (boolWordToNat input / 2 ^ 10) •
                 ket (pointWrite P' (phaseWordState First20Signed.bits input zeroBasisState))
             else 0)).sum =
@@ -5883,7 +6180,7 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
           simp only [List.map_cons, List.sum_cons]
           rcases List.mem_cons.mp hmem with rfl | hm
           · have hrest : ∀ y ∈ xs,
-                (if initialPoint26 Q (boolWordToNat y) = P' then
+                (if initialPoint25 Q (boolWordToNat y) = P' then
                   sineWeight 10 (boolWordToNat y / 2 ^ 10) •
                     ket (pointWrite P' (phaseWordState First20Signed.bits y zeroBasisState))
                 else 0) = 0 := by
@@ -5896,7 +6193,7 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
             have hz : (xs.map (fun _ => (0 : State))).sum = 0 := by
               clear hrest ih hnd' hsub; induction xs with | nil => rfl | cons _ _ ih' => simp [ih']
             rw [hz, add_zero]
-          · have hne : initialPoint26 Q (boolWordToNat x) ≠ P' := by
+          · have hne : initialPoint25 Q (boolWordToNat x) ≠ P' := by
               intro he
               exact hxn (hinit_inj x inp₀ (hsub x List.mem_cons_self) hinp₀_mem (he.trans hinp₀_eq.symm) ▸ hm)
             rw [if_neg hne, zero_add]
@@ -5904,7 +6201,7 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
       rw [hsingle (fourierOutcomes 20) (fourierOutcomes_nodup 20) (fun _ h => h) hinp₀_mem, smul_smul]
     · rw [dif_neg hex]
       have hzero : ∀ input ∈ fourierOutcomes 20,
-          (if initialPoint26 Q (boolWordToNat input) = P' then
+          (if initialPoint25 Q (boolWordToNat input) = P' then
             sineWeight 10 (boolWordToNat input / 2 ^ 10) •
               ket (pointWrite P' (phaseWordState First20Signed.bits input zeroBasisState))
           else 0) = 0 := by
@@ -5922,31 +6219,31 @@ theorem first20_pointMass_sum_oddSupport (Q : Point) (hQ : order • Q = 0) (hn 
         Real.sin_sq_le_one _
       calc (1 : ℝ) / (2 : ℝ) ^ 20 * (2 * Real.sin (Real.pi * (boolWordToNat (Classical.choose hex) / 2 ^ 10 : Nat) / 2 ^ 10) ^ 2)
           ≤ (1 : ℝ) / (2 : ℝ) ^ 20 * 2 := mul_le_mul_of_nonneg_left (by linarith) (by positivity)
-        _ = 2 / (2 : ℝ) ^ (20 + 17 * 0) := by norm_num
+        _ = 2 / (2 : ℝ) ^ 20 := by ring
     · simp only [normSq, Quantum.inner, Finsupp.sum_zero_index, Complex.zero_re]; positivity
   · dsimp only at hne; rw [hsum_eq, hproj P'] at hne
-    by_cases hex : ∃ inp ∈ fourierOutcomes 20, initialPoint26 Q (boolWordToNat inp) = P'
+    by_cases hex : ∃ inp ∈ fourierOutcomes 20, initialPoint25 Q (boolWordToNat inp) = P'
     · obtain ⟨inp, hi, hPeq⟩ := hex
       have hl : inp.length = 20 := (fourierOutcomes_mem 20 inp).mp hi
       have hv : boolWordToNat inp < 2 ^ 20 := by simpa [hl] using boolWordToNat_lt_pow_two inp
       set m : ℤ := 2 * (boolWordToNat inp : ℤ) - (2 : ℤ) ^ 20 + 1
       refine ⟨m, ⟨(boolWordToNat inp : ℤ) - 2 ^ 19, by dsimp [m]; ring⟩, ?_, ?_⟩
-      · simp only [mul_zero, add_zero]; dsimp [m]; rw [abs_lt]; constructor <;> omega
-      · simp only [mul_zero, Nat.sub_zero]; exact hPeq.symm
+      · dsimp [m]; rw [abs_lt]; constructor <;> omega
+      · exact hPeq.symm
     · rw [dif_neg hex] at hne
       simp [normSq, Quantum.inner] at hne
 
-/-! ### List-sum propagation of `axisBad` over Phase 1 (`left 0..12`) and Phase 2 (`left 13` + `right 0..11`) -/
+/-! ### List-sum propagation of `axisBad` over Phase 1 (`left18 0..10` + `left19 0`) and Phase 2 (`left19 1` + `right 0..11`) -/
 
 private theorem list_map_map_congr {α β γ : Type} (xs : List α) (g : α → β) (f : β → γ)
     (h : α → γ) (heq : ∀ x, f (g x) = h x) :
     (xs.map g).map f = xs.map h := by
   induction xs with | nil => rfl | cons x xs ih => simp [heq, ih]
 
-private theorem badBound17_linear_sum (wpre : Nat → ℂ) (delta : Nat → Point)
+private theorem badBoundW_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hD : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
-    (S.map (fun x => badBound17 wpre delta (pointMass x.2))).sum ≤ badBound17 wpre delta D := by
+    (S.map (fun x => badBoundW w wpre delta (pointMass x.2))).sum ≤ badBoundW w wpre delta D := by
   have hsum_comm : ∀ (xs : List (List Bool × State)) (ys : List (List Bool)) (f : (List Bool × State) → List Bool → ℝ),
       (xs.map (fun x => (ys.map (fun y => f x y)).sum)).sum =
       (ys.map (fun y => (xs.map (fun x => f x y)).sum)).sum := by
@@ -5964,7 +6261,7 @@ private theorem badBound17_linear_sum (wpre : Nat → ℂ) (delta : Nat → Poin
   have hmul : ∀ (xs : List (List Bool × State)) (r : ℝ) (f : (List Bool × State) → ℝ),
       (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := fun xs r f => by
     induction xs with | nil => simp | cons _ _ ih => simp [ih, mul_add]
-  unfold badBound17
+  unfold badBoundW
   rw [hmul, hsum_comm]
   apply mul_le_mul_of_nonneg_left _ (by positivity)
   apply list_sum_map_le; intro inp _
@@ -5978,10 +6275,10 @@ private theorem badBound17_linear_sum (wpre : Nat → ℂ) (delta : Nat → Poin
   linarith [hD 0, hD (delta (boolWordToNat inp)), hD (-delta (boolWordToNat inp)),
     hD (-(delta (boolWordToNat inp) + delta (boolWordToNat inp)))]
 
-private theorem stepDist17_linear_sum (wpre : Nat → ℂ) (delta : Nat → Point)
+private theorem stepDistW_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hD : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) (P' : Point) :
-    (S.map (fun x => stepDist17 wpre delta (pointMass x.2) P')).sum ≤ stepDist17 wpre delta D P' := by
+    (S.map (fun x => stepDistW w wpre delta (pointMass x.2) P')).sum ≤ stepDistW w wpre delta D P' := by
   have hsum_comm : ∀ (xs : List (List Bool × State)) (ys : List (List Bool)) (f : (List Bool × State) → List Bool → ℝ),
       (xs.map (fun x => (ys.map (fun y => f x y)).sum)).sum =
       (ys.map (fun y => (xs.map (fun x => f x y)).sum)).sum := by
@@ -5999,7 +6296,7 @@ private theorem stepDist17_linear_sum (wpre : Nat → ℂ) (delta : Nat → Poin
   have hmul : ∀ (xs : List (List Bool × State)) (r : ℝ) (f : (List Bool × State) → ℝ),
       (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := fun xs r f => by
     induction xs with | nil => simp | cons _ _ ih => simp [ih, mul_add]
-  unfold stepDist17
+  unfold stepDistW
   rw [hmul, hsum_comm]
   apply mul_le_mul_of_nonneg_left _ (by positivity)
   apply list_sum_map_le; intro inp _
@@ -6007,7 +6304,7 @@ private theorem stepDist17_linear_sum (wpre : Nat → ℂ) (delta : Nat → Poin
   apply mul_le_mul_of_nonneg_left (hD _) (Complex.normSq_nonneg _)
 
 theorem bodyTail_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (ds : List Digit26) (baseBad : List Bool → State → ℝ) (M Btail : ℝ) (hM : 0 ≤ M)
+    (ds : List Digit25) (baseBad : List Bool → State → ℝ) (M Btail : ℝ) (hM : 0 ≤ M)
     (hbase : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → MaxBound M D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
@@ -6050,42 +6347,42 @@ theorem bodyTail_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠
           normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
             (Quantum.run (bodyApproxWin Q hQ hn d).pre
               (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-          (S.map (fun x => badBound17 (fun _ => 1) (Width16Schedule.increment (d.base Q) 17 d.exponent) (pointMass x.2))).sum := by
+          (S.map (fun x => badBoundW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2))).sum := by
         apply list_sum_map_le; intro x hx
-        change normSq (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-          (Quantum.run List.nil (Quantum.run (bank17.reverse.reverse.map Gate.H) x.2))) ≤ _
+        change normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+          (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
         rw [List.reverse_reverse]
-        exact badStep_le_badBound17 Q hQ d List.nil (fun _ => 1) body_pre_expand x.2 (hS x hx)
-      exact (h1.trans (badBound17_linear_sum _ _ S D hdom)).trans
-        (maxBound_badBound _ _ M hM sum_fourierOutcomes17_one D hD)
+        exact badStep_le_badBoundW Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
+      exact (h1.trans (badBoundW_linear_sum d.width _ _ S D hdom)).trans
+        (maxBound_badBoundW d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD)
     let S' : List (List Bool × State) := S.flatMap (fun x =>
-      (fourierOutcomes 17).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
+      (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
     have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
       intro y hy
       obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
       obtain ⟨bits, _, rfl⟩ := List.mem_map.mp hy
       exact bodyModel_step_pointSupported Q hQ hn d x.1 bits x.2 (hS x hx)
-    let D' := stepDist17 (fun _ => 1) (Width16Schedule.increment (d.base Q) 17 d.exponent) D
-    have hD' : MaxBound M D' := maxBound_stepDist _ _ M hM sum_fourierOutcomes17_one D hD
+    let D' := stepDistW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) D
+    have hD' : MaxBound M D' := maxBound_stepDistW d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD
     have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
       intro P'
       dsimp only [S']
       rw [flatMap_sum_real]
       have hper : ∀ x ∈ S,
-          (((fourierOutcomes 17).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
+          (((fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
             (fun y => pointMass y.2 P')).sum =
-          stepDist17 (fun _ => 1) (Width16Schedule.increment (d.base Q) 17 d.exponent) (pointMass x.2) P' := by
+          stepDistW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2) P' := by
         intro x hx
-        rw [list_map_map_congr (fourierOutcomes 17)
+        rw [list_map_map_congr (fourierOutcomes d.width)
           (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))
           (fun y => pointMass y.2 P')
           (fun bits => pointMass ((bodyModel Q hQ hn d).step x.1 bits x.2) P')
           (fun _ => rfl)]
-        exact step_pointMass_sum17 Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
-          (by simp [bodyModel, Quantum.run]) body_pre_expand
+        exact step_pointMass_sumW Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
+          (by simp [bodyModel, Quantum.run]) (body_pre_expandW d.k d.k_hi)
           (bodyModel_step_pointSupported Q hQ hn d) x.1 x.2 (hS x hx) P'
       rw [List.map_congr_left hper]
-      exact stepDist17_linear_sum _ _ S D hdom P'
+      exact stepDistW_linear_sum d.width _ _ S D hdom P'
     have htail_eq : (S.map (fun x =>
         ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
           axisBad (ds.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ x.1) baseBad
@@ -6094,8 +6391,8 @@ theorem bodyTail_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠
       dsimp only [S']
       rw [flatMap_sum_real]
       apply congrArg List.sum; apply List.map_congr_left; intro x _
-      have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = 17 := by
-        simp only [bodyApproxWin, bodyModel, List.length_reverse, bank17_length]
+      have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = d.width := by
+        simp only [bodyApproxWin, bodyModel, List.length_reverse, Digit25.bank, Digit25.width, GenericW.bankW_length]
       rw [hwl]
       apply congrArg List.sum; symm
       exact list_map_map_congr _ _ _ _ (fun _ => rfl)
@@ -6103,20 +6400,20 @@ theorem bodyTail_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠
     have h2 := ih S' D' hS'_pt hD' hdom'
     linarith
 
-theorem rightApprox26_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     (M : ℝ) (hM : 0 ≤ M)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound M D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
-    (S.map (fun x => axisBad (rightApprox26 Q hQ hn) List.nil (fun _ _ => 0) x.2)).sum ≤ 48 * M := by
-  unfold rightApprox26
+    (S.map (fun x => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2)).sum ≤ 48 * M := by
+  unfold rightApprox25
   simp only [axisBad]
   have hadd : (S.map (fun x =>
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
         (Quantum.run (rightHeadApproxWin Q hQ hn).pre
           (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))) +
       ((fourierOutcomes (rightHeadApproxWin Q hQ hn).model.physical.wires.length).map (fun bits =>
-        axisBad (rightTailDigits26.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
+        axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
           ((rightHeadApproxWin Q hQ hn).model.step List.nil bits x.2))).sum)).sum =
     (S.map (fun x =>
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
@@ -6124,12 +6421,11 @@ theorem rightApprox26_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
           (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum +
     (S.map (fun x =>
       ((fourierOutcomes (rightHeadApproxWin Q hQ hn).model.physical.wires.length).map (fun bits =>
-        axisBad (rightTailDigits26.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
+        axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
           ((rightHeadApproxWin Q hQ hn).model.step List.nil bits x.2))).sum)).sum := by
     clear hdom hS
     induction S with | nil => simp | cons _ _ ihs => simp [ihs]; ring
   rw [hadd]
-  let wpreR : Nat → ℂ := fun v => sineWeight 10 (v / 2 ^ 7)
   have hbad1 : (S.map (fun x =>
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
         (Quantum.run (rightHeadApproxWin Q hQ hn).pre
@@ -6139,14 +6435,16 @@ theorem rightApprox26_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
         normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
           (Quantum.run (rightHeadApproxWin Q hQ hn).pre
             (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (S.map (fun x => badBound17 wpreR (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) (pointMass x.2))).sum := by
+        (S.map (fun x => badBoundW 17 (fun v => sineWeight 10 (v / 2 ^ 7))
+          (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) (pointMass x.2))).sum := by
       apply list_sum_map_le; intro x hx
-      change normSq (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 rightHeadDigit) Q s)
-        (Quantum.run (sineFromPlus top10Right) (Quantum.run (bank17.reverse.reverse.map Gate.H) x.2))) ≤ _
+      change normSq (restrictState (fun s => ¬ GenericW.GoodW 16 (wideCoeffs25 rightHeadDigit) Q s)
+        (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) x.2))) ≤ _
       rw [List.reverse_reverse]
-      exact badStep_le_badBound17 Q hQ rightHeadDigit (sineFromPlus top10Right) wpreR rightHead_pre_expand x.2 (hS x hx)
-    exact (h1.trans (badBound17_linear_sum _ _ S D hdom)).trans
-      (maxBound_badBound wpreR _ M hM sum_fourierOutcomes17_sine D hD)
+      exact badStep_le_badBoundW Q hQ rightHeadDigit (sineFromPlus top10Right)
+        (fun v => sineWeight 10 (v / 2 ^ 7)) rightHead_pre_expand x.2 (hS x hx)
+    exact (h1.trans (badBoundW_linear_sum 17 _ _ S D hdom)).trans
+      (maxBound_badBoundW 17 _ _ M hM sum_fourierOutcomes17_sine D hD)
   let S' : List (List Bool × State) := S.flatMap (fun x =>
     (fourierOutcomes 17).map (fun bits => (bits.reverse ++ List.nil, (rightHeadModel Q hQ hn).step List.nil bits x.2)))
   have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -6154,8 +6452,9 @@ theorem rightApprox26_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
     obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
     obtain ⟨bits, _, rfl⟩ := List.mem_map.mp hy
     exact rightHeadModel_step_pointSupported Q hQ hn List.nil bits x.2 (hS x hx)
-  let D' := stepDist17 wpreR (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) D
-  have hD' : MaxBound M D' := maxBound_stepDist wpreR _ M hM sum_fourierOutcomes17_sine D hD
+  let D' := stepDistW 17 (fun v => sineWeight 10 (v / 2 ^ 7))
+    (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) D
+  have hD' : MaxBound M D' := maxBound_stepDistW 17 _ _ M hM sum_fourierOutcomes17_sine D hD
   have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
     intro P'
     dsimp only [S']
@@ -6163,55 +6462,56 @@ theorem rightApprox26_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
     have hper : ∀ x ∈ S,
         (((fourierOutcomes 17).map (fun bits => (bits.reverse ++ List.nil, (rightHeadModel Q hQ hn).step List.nil bits x.2))).map
           (fun y => pointMass y.2 P')).sum =
-        stepDist17 wpreR (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) (pointMass x.2) P' := by
+        stepDistW 17 (fun v => sineWeight 10 (v / 2 ^ 7))
+          (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) (pointMass x.2) P' := by
       intro x hx
       rw [list_map_map_congr (fourierOutcomes 17)
         (fun bits => (bits.reverse ++ List.nil, (rightHeadModel Q hQ hn).step List.nil bits x.2))
         (fun y => pointMass y.2 P')
         (fun bits => pointMass ((rightHeadModel Q hQ hn).step List.nil bits x.2) P')
         (fun _ => rfl)]
-      exact step_pointMass_sum17 Q hQ hn rightHeadDigit (sineFromPlus top10Right) wpreR (rightHeadModel Q hQ hn)
-        rfl rfl rightHead_pre_expand (rightHeadModel_step_pointSupported Q hQ hn) List.nil x.2 (hS x hx) P'
+      exact step_pointMass_sumW Q hQ hn rightHeadDigit (sineFromPlus top10Right)
+        (fun v => sineWeight 10 (v / 2 ^ 7)) (rightHeadModel Q hQ hn) rfl rfl
+        rightHead_pre_expand (rightHeadModel_step_pointSupported Q hQ hn) List.nil x.2 (hS x hx) P'
     rw [List.map_congr_left hper]
-    exact stepDist17_linear_sum _ _ S D hdom P'
+    exact stepDistW_linear_sum 17 _ _ S D hdom P'
   have htail_eq : (S.map (fun x =>
       ((fourierOutcomes (rightHeadApproxWin Q hQ hn).model.physical.wires.length).map (fun bits =>
-        axisBad (rightTailDigits26.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
+        axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
           ((rightHeadApproxWin Q hQ hn).model.step List.nil bits x.2))).sum)).sum =
-      (S'.map (fun y => axisBad (rightTailDigits26.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2)).sum := by
+      (S'.map (fun y => axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2)).sum := by
     dsimp only [S']
     rw [flatMap_sum_real]
     apply congrArg List.sum; apply List.map_congr_left; intro x _
     have hwl : (rightHeadApproxWin Q hQ hn).model.physical.wires.length = 17 := by
-      simp only [rightHeadApproxWin, rightHeadModel, List.length_reverse, bank17_length]
+      simp only [rightHeadApproxWin, rightHeadModel, rightHeadDigit, List.length_reverse, Digit25.bank, Digit25.k, GenericW.bankW_length]
     rw [hwl]
     apply congrArg List.sum; symm
     exact list_map_map_congr _ _ _ _ (fun _ => rfl)
   rw [htail_eq]
-  have htail := bodyTail_axisBad_maxBound Q hQ hn rightTailDigits26 (fun _ _ => 0) M 0 hM
-    (fun S0 _ _ _ _ => by
-      have hz : (S0.map (fun _ => (0 : ℝ))).sum = 0 := by
-        induction S0 with | nil => rfl | cons _ _ ih => simp [ih]
-      exact le_of_eq hz)
+  have h2 := bodyTail_axisBad_maxBound Q hQ hn rightTailDigits25 (fun _ _ => 0) M 0 hM
+    (fun S₀ _ _ _ _ => by
+      have hz : ∀ x ∈ S₀, (0 : ℝ) = 0 := fun _ _ => rfl
+      induction S₀ with | nil => simp | cons _ _ ih => simp [ih])
     S' D' hS'_pt hD' hdom'
-  have hlen11 : rightTailDigits26.length = 11 := by simp [rightTailDigits26]
-  rw [hlen11] at htail
-  norm_num at htail
+  have hlen11 : rightTailDigits25.length = 11 := by simp [rightTailDigits25]
+  rw [hlen11] at h2
+  norm_num only [Nat.cast_ofNat] at h2
   linarith
 
 theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (k : Nat) (hk : k ≤ 12) (rest : List (ApproxCatWindow 1 (readConstant coefficientAt26 Q)))
+    (d : Digit25) (hbaseG : d.base Q = G) (acc : Nat) (hsum : acc + d.width ≤ 240)
+    (rest : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)))
     (baseBad : List Bool → State → ℝ) (B : ℝ)
     (S : List (List Bool × State)) (D : Point → ℝ)
-    (hS : ∀ x ∈ S, PointSupported x.2) (hD : OddSupport k D)
+    (hS : ∀ x ∈ S, PointSupported x.2) (hD : OddSupport acc (d.exponent + d.width) D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P)
     (hnext : ∀ (S' : List (List Bool × State)) (D' : Point → ℝ),
-      (∀ x ∈ S', PointSupported x.2) → OddSupport (k + 1) D' →
+      (∀ x ∈ S', PointSupported x.2) → OddSupport (acc + d.width) d.exponent D' →
       (∀ P, (S'.map (fun x => pointMass x.2 P)).sum ≤ D' P) →
       (S'.map (fun x => axisBad rest x.1 baseBad x.2)).sum ≤ B) :
-    let d : Digit26 := .left17 ⟨k, by omega⟩
     (S.map (fun x => axisBad (bodyApproxWin Q hQ hn d :: rest) x.1 baseBad x.2)).sum ≤ B := by
-  intro d
+  have hw2 : 2 ≤ d.width := by cases d <;> dsimp only [Digit25.width, Digit25.k] <;> decide
   simp only [axisBad]
   have hadd : (S.map (fun x =>
       normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
@@ -6239,41 +6539,43 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
         normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
           (Quantum.run (bodyApproxWin Q hQ hn d).pre
             (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (S.map (fun x => badBound17 (fun _ => 1) (Width16Schedule.increment G 17 (221 - 17 * k)) (pointMass x.2))).sum := by
+        (S.map (fun x => badBoundW d.width (fun _ => 1) (Width16Schedule.increment G d.width d.exponent) (pointMass x.2))).sum := by
       apply list_sum_map_le; intro x hx
-      change normSq (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-        (Quantum.run List.nil (Quantum.run (bank17.reverse.reverse.map Gate.H) x.2))) ≤ _
-      rw [List.reverse_reverse]
-      exact badStep_le_badBound17 Q hQ d List.nil (fun _ => 1) body_pre_expand x.2 (hS x hx)
-    exact (h1.trans (badBound17_linear_sum _ _ S D hdom)).trans_eq (oddSupport_badBound_zero k hk D hD)
+      change normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+        (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
+      rw [List.reverse_reverse, ← hbaseG]
+      exact badStep_le_badBoundW Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
+    exact (h1.trans (badBoundW_linear_sum d.width _ _ S D hdom)).trans_eq
+      (oddSupport_badBound_zero acc d.exponent d.width hw2 hsum D hD)
   let S' : List (List Bool × State) := S.flatMap (fun x =>
-    (fourierOutcomes 17).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
+    (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
   have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
     intro y hy
     obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
     obtain ⟨bits, _, rfl⟩ := List.mem_map.mp hy
     exact bodyModel_step_pointSupported Q hQ hn d x.1 bits x.2 (hS x hx)
-  let D' := stepDist17 (fun _ => 1) (Width16Schedule.increment G 17 (221 - 17 * k)) D
-  have hD' : OddSupport (k + 1) D' := oddSupport_stepDist k hk D hD
+  let D' := stepDistW d.width (fun _ => 1) (Width16Schedule.increment G d.width d.exponent) D
+  have hD' : OddSupport (acc + d.width) d.exponent D' :=
+    oddSupport_stepDist acc d.exponent d.width hw2 hsum D hD
   have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
     intro P'
     dsimp only [S']
     rw [flatMap_sum_real]
     have hper : ∀ x ∈ S,
-        (((fourierOutcomes 17).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
+        (((fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
           (fun y => pointMass y.2 P')).sum =
-        stepDist17 (fun _ => 1) (Width16Schedule.increment G 17 (221 - 17 * k)) (pointMass x.2) P' := by
+        stepDistW d.width (fun _ => 1) (Width16Schedule.increment G d.width d.exponent) (pointMass x.2) P' := by
       intro x hx
-      rw [list_map_map_congr (fourierOutcomes 17)
+      rw [list_map_map_congr (fourierOutcomes d.width)
         (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))
         (fun y => pointMass y.2 P')
         (fun bits => pointMass ((bodyModel Q hQ hn d).step x.1 bits x.2) P')
-        (fun _ => rfl)]
-      exact step_pointMass_sum17 Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
-        (by simp [bodyModel, Quantum.run]) body_pre_expand
+        (fun _ => rfl), ← hbaseG]
+      exact step_pointMass_sumW Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
+        (by simp [bodyModel, Quantum.run]) (body_pre_expandW d.k d.k_hi)
         (bodyModel_step_pointSupported Q hQ hn d) x.1 x.2 (hS x hx) P'
     rw [List.map_congr_left hper]
-    exact stepDist17_linear_sum _ _ S D hdom P'
+    exact stepDistW_linear_sum d.width _ _ S D hdom P'
   have htail_eq : (S.map (fun x =>
       ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
         axisBad rest (bits.reverse ++ x.1) baseBad
@@ -6282,8 +6584,8 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     dsimp only [S']
     rw [flatMap_sum_real]
     apply congrArg List.sum; apply List.map_congr_left; intro x _
-    have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = 17 := by
-      simp only [bodyApproxWin, bodyModel, List.length_reverse, bank17_length]
+    have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = d.width := by
+      simp only [bodyApproxWin, bodyModel, List.length_reverse, Digit25.bank, Digit25.width, GenericW.bankW_length]
     rw [hwl]
     apply congrArg List.sum; symm
     exact list_map_map_congr _ _ _ _ (fun _ => rfl)
@@ -6291,14 +6593,14 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
   have h2 := hnext S' D' hS'_pt hD' hdom'
   linarith
 
-theorem totalBad26_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     ((fourierOutcomes 20).map (fun bits =>
-      axisBad (leftRestApprox26 Q hQ hn) bits.reverse
-        (fun _ φ => axisBad (rightApprox26 Q hQ hn) List.nil (fun _ _ => 0) φ)
+      axisBad (leftRestApprox25 Q hQ hn) bits.reverse
+        (fun _ φ => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ)
         ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))).sum ≤
-      (52 : ℝ) / (2 : ℝ) ^ 240 := by
+      (52 : ℝ) / (2 : ℝ) ^ 236 := by
   let baseR : List Bool → State → ℝ :=
-    fun _ φ => axisBad (rightApprox26 Q hQ hn) List.nil (fun _ _ => 0) φ
+    fun _ φ => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
   let S₀ : List (List Bool × State) := (fourierOutcomes 20).map (fun bits =>
     (bits.reverse, (first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
   have hS₀_pt : ∀ x ∈ S₀, PointSupported x.2 := by
@@ -6307,7 +6609,7 @@ theorem totalBad26_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   let D₀ : Point → ℝ := fun P' =>
     ((fourierOutcomes 20).map (fun bits =>
       pointMass ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)) P')).sum
-  have hD₀ : OddSupport 0 D₀ := first20_pointMass_sum_oddSupport Q hQ hn
+  have hD₀ : OddSupport 20 236 D₀ := first20_pointMass_sum_oddSupport Q hQ hn
   have hdom₀ : ∀ P, (S₀.map (fun x => pointMass x.2 P)).sum ≤ D₀ P := fun P => by
     dsimp only [S₀, D₀]
     rw [list_map_map_congr (fourierOutcomes 20)
@@ -6317,213 +6619,234 @@ theorem totalBad26_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (fun _ => rfl)]
   rw [← list_map_map_congr (fourierOutcomes 20)
     (fun bits => (bits.reverse, (first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
-    (fun x => axisBad (leftRestApprox26 Q hQ hn) x.1 baseR x.2)
-    (fun bits => axisBad (leftRestApprox26 Q hQ hn) bits.reverse baseR ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
+    (fun x => axisBad (leftRestApprox25 Q hQ hn) x.1 baseR x.2)
+    (fun bits => axisBad (leftRestApprox25 Q hQ hn) bits.reverse baseR ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
     (fun _ => rfl)]
-  change (S₀.map (fun x => axisBad (leftRestApprox26 Q hQ hn) x.1 baseR x.2)).sum ≤ (52 : ℝ) / (2 : ℝ) ^ 240
-  have hleft_eq : leftRestApprox26 Q hQ hn =
-      (List.ofFn (fun j : Fin 13 => Digit26.left17 ⟨j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++
-        [bodyApproxWin Q hQ hn (.left17 ⟨13, by decide⟩)] := by
-    simp [leftRestApprox26, leftDigits26, List.ofFn_succ]
-  -- Phase 2: starting at `k = 13` (before `left17 13`), `OddSupport 13 D` implies `MaxBound (1 / 2^240) D`.
+  change (S₀.map (fun x => axisBad (leftRestApprox25 Q hQ hn) x.1 baseR x.2)).sum ≤ (52 : ℝ) / (2 : ℝ) ^ 236
+  let tail2 : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+    [bodyApproxWin Q hQ hn (.left19 ⟨0, by decide⟩), bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)]
+  have hleft_eq : leftRestApprox25 Q hQ hn =
+      (List.ofFn (fun j : Fin 11 => Digit25.left18 j)).map (bodyApproxWin Q hQ hn) ++ tail2 := by
+    simp [leftRestApprox25, leftDigits25, tail2, List.ofFn_succ]
+  -- Phase 2: starting before `left19 1`, `OddSupport 237 19 D` implies `MaxBound (1 / 2^236) D`.
   have hphase2 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
-      (∀ x ∈ S, PointSupported x.2) → OddSupport 13 D →
+      (∀ x ∈ S, PointSupported x.2) → OddSupport 237 19 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => axisBad ([bodyApproxWin Q hQ hn (.left17 ⟨13, by decide⟩)]) x.1 baseR x.2)).sum ≤
-        (52 : ℝ) / (2 : ℝ) ^ 240 := by
+      (S.map (fun x => axisBad ([bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)]) x.1 baseR x.2)).sum ≤
+        (52 : ℝ) / (2 : ℝ) ^ 236 := by
     intro S D hS hD hdom
-    have hM : MaxBound ((1 : ℝ) / (2 : ℝ) ^ 240) D := by
+    have hM : MaxBound ((1 : ℝ) / (2 : ℝ) ^ 236) D := by
       refine ⟨hD.1, fun P => (hD.2.1 P).trans_eq ?_⟩
-      norm_num [show 20 + 17 * 13 = 241 by decide, pow_succ]
-    have h1 := bodyTail_axisBad_maxBound Q hQ hn ([.left17 ⟨13, by decide⟩]) baseR
-      ((1 : ℝ) / (2 : ℝ) ^ 240) (48 * ((1 : ℝ) / (2 : ℝ) ^ 240)) (by positivity)
-      (fun S' D' hS' hD' hdom' => rightApprox26_axisBad_maxBound Q hQ hn _ (by positivity) S' D' hS' hD' hdom')
+      norm_num [pow_succ]
+    have h1 := bodyTail_axisBad_maxBound Q hQ hn ([.left19 ⟨1, by decide⟩]) baseR
+      ((1 : ℝ) / (2 : ℝ) ^ 236) (48 * ((1 : ℝ) / (2 : ℝ) ^ 236)) (by positivity)
+      (fun S' D' hS' hD' hdom' => rightApprox25_axisBad_maxBound Q hQ hn _ (by positivity) S' D' hS' hD' hdom')
       S D hS hM hdom
     simp only [List.length_singleton, Nat.cast_one, one_mul, List.map_singleton] at h1
     exact h1.trans_eq (by ring)
-  -- Phase 1: induction over `m = 13 - k` steps `k = 0, 1, ..., 12`
-  have hphase1 : ∀ (m : Nat) (hm : m ≤ 13) (S : List (List Bool × State)) (D : Point → ℝ),
-      (∀ x ∈ S, PointSupported x.2) → OddSupport (13 - m) D →
+  -- Phase 1b: `left19 0` advances `OddSupport 218 38` to `OddSupport 237 19`
+  have hphase1b : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
+      (∀ x ∈ S, PointSupported x.2) → OddSupport 218 38 D →
+      (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
+      (S.map (fun x => axisBad tail2 x.1 baseR x.2)).sum ≤ (52 : ℝ) / (2 : ℝ) ^ 236 := by
+    intro S D hS hD hdom
+    exact leftPhase1_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl 218 (by decide)
+      ([bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)]) baseR _ S D hS hD hdom hphase2
+  -- Phase 1a: induction over `m = 11 - j` steps of `left18`
+  have hphase1a : ∀ (m : Nat) (hm : m ≤ 11) (S : List (List Bool × State)) (D : Point → ℝ),
+      (∀ x ∈ S, PointSupported x.2) → OddSupport (20 + 18 * (11 - m)) (236 - 18 * (11 - m)) D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       (S.map (fun x => axisBad
-        ((List.ofFn (fun j : Fin m => Digit26.left17 ⟨(13 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++
-          [bodyApproxWin Q hQ hn (.left17 ⟨13, by decide⟩)])
-        x.1 baseR x.2)).sum ≤ (52 : ℝ) / (2 : ℝ) ^ 240 := by
+        ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail2)
+        x.1 baseR x.2)).sum ≤ (52 : ℝ) / (2 : ℝ) ^ 236 := by
     intro m
     induction m with
     | zero =>
       intro _ S D hS hD hdom
-      simpa using hphase2 S D hS hD hdom
+      simpa using hphase1b S D hS hD hdom
     | succ m ih =>
       intro hm S D hS hD hdom
-      have hlist : (List.ofFn (fun j : Fin (m + 1) => Digit26.left17 ⟨(13 - (m + 1)) + j.val, by omega⟩)).map
-          (bodyApproxWin Q hQ hn) ++ [bodyApproxWin Q hQ hn (.left17 ⟨13, by decide⟩)] =
-        bodyApproxWin Q hQ hn (.left17 ⟨13 - (m + 1), by omega⟩) ::
-          ((List.ofFn (fun j : Fin m => Digit26.left17 ⟨(13 - m) + j.val, by omega⟩)).map
-            (bodyApproxWin Q hQ hn) ++ [bodyApproxWin Q hQ hn (.left17 ⟨13, by decide⟩)]) := by
+      have hlist : (List.ofFn (fun j : Fin (m + 1) => Digit25.left18 ⟨(11 - (m + 1)) + j.val, by omega⟩)).map
+          (bodyApproxWin Q hQ hn) ++ tail2 =
+        bodyApproxWin Q hQ hn (.left18 ⟨11 - (m + 1), by omega⟩) ::
+          ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map
+            (bodyApproxWin Q hQ hn) ++ tail2) := by
         rw [List.ofFn_succ, List.map_cons, List.cons_append]
         apply congrArg (List.cons _)
-        apply congrArg (fun l => l ++ [bodyApproxWin Q hQ hn (.left17 ⟨13, by decide⟩)])
+        apply congrArg (fun l => l ++ tail2)
         apply congrArg (List.map _)
         apply congrArg List.ofFn; funext j
-        apply congrArg Digit26.left17; apply Fin.ext; simp only [Fin.val_succ]; omega
+        apply congrArg Digit25.left18; apply Fin.ext; simp only [Fin.val_succ]; omega
       rw [hlist]
-      refine leftPhase1_step Q hQ hn (13 - (m + 1)) (by omega) _ baseR _ S D hS hD hdom ?_
+      have hexp_eq : 236 - 18 * (11 - (m + 1)) = (Digit25.left18 ⟨11 - (m + 1), by omega⟩).exponent + (Digit25.left18 ⟨11 - (m + 1), by omega⟩).width := by
+        simp only [Digit25.exponent, Digit25.width, Digit25.k]; omega
+      rw [hexp_eq] at hD
+      refine leftPhase1_step Q hQ hn (.left18 ⟨11 - (m + 1), by omega⟩) rfl (20 + 18 * (11 - (m + 1)))
+        (by simp only [Digit25.width, Digit25.k]; omega) _ baseR _ S D hS hD hdom ?_
       intro S' D' hS' hD' hdom'
-      have hk_eq : 13 - (m + 1) + 1 = 13 - m := by omega
-      rw [hk_eq] at hD'
+      have hacc_eq : 20 + 18 * (11 - (m + 1)) + (Digit25.left18 ⟨11 - (m + 1), by omega⟩).width = 20 + 18 * (11 - m) := by
+        simp only [Digit25.width, Digit25.k]; omega
+      have hexp_next : (Digit25.left18 ⟨11 - (m + 1), by omega⟩).exponent = 236 - 18 * (11 - m) := by
+        simp only [Digit25.exponent]; omega
+      rw [hacc_eq, hexp_next] at hD'
       exact ih (by omega) S' D' hS' hD' hdom'
   rw [hleft_eq]
-  have h13 := hphase1 13 (le_refl 13) S₀ D₀ hS₀_pt hD₀ hdom₀
-  simpa using h13
+  have h11 := hphase1a 11 (le_refl 11) S₀ D₀ hS₀_pt hD₀ hdom₀
+  simpa using h11
 
-/-! ### Physical program execution, lower bound (`≥ 99109 / 100000`), and readout -/
+/-! ### Physical program execution, lower bound (`≥ 99239 / 100000`), and dual `Readout5` readout -/
 
-def resetTerminal26 : Instrument :=
+def resetTerminal25 : Instrument :=
   (measureResetWithCorrection resetWires (fun _ => List.nil)).run
 
-theorem resetTerminal26_mass (ψ : State) : resetTerminal26.bornMass ψ = normSq ψ := by
-  have hr := resetProgram_run 2228224 0 resetWires (fun _ => false) Fin.elim0
-  rw [resetTerminal26, ← hr]
+theorem resetTerminal25_mass (ψ : State) : resetTerminal25.bornMass ψ = normSq ψ := by
+  have hr := resetProgram_run 3407872 0 resetWires (fun _ => false) Fin.elim0
+  rw [resetTerminal25, ← hr]
   exact AdaptiveCircuit.run_preservesBornMass _
-    ((resetProgram 2228224 0 resetWires).instantiate_wellFormed _ _ (resetProgram_wellFormed _ _ _)) ψ
+    ((resetProgram 3407872 0 resetWires).instantiate_wellFormed _ _ (resetProgram_wellFormed _ _ _)) ψ
 
-def fineEvent26Cat (accept : Nat → Nat → Bool) (history : List Bool) : Bool :=
-  pairAccept trialPositions26Cat.left.toList trialPositions26Cat.right.toList accept history
+def fineEvent25Cat (accept : Nat → Nat → Bool) (history : List Bool) : Bool :=
+  pairAccept trialPositions25Cat.left.toList trialPositions25Cat.right.toList accept history
 
 private theorem program_prep_append_reset_run {n mid fin : Nat} (hfin : mid + resetWires.length = fin)
     (body : Straight n 0 mid) (read : ConstantBit n → Bool) :
     ((AndGadget.literals (Catalyst.prepare 1)
         (castFinish hfin (body.append (resetProgram n mid resetWires)))).instantiate read Fin.elim0).run =
-      ((body.instantiate read Fin.elim0).run.seq resetTerminal26).map
+      ((body.instantiate read Fin.elim0).run.seq resetTerminal25).map
         (fun b => ({ history := List.nil, kraus := Quantum.run (Catalyst.prepare 1) } : InstrumentBranch).seq b) := by
   rw [LocalFour.literals_instantiate_run, castFinish_instantiate, Single.append_run_history]
   have hres : ∀ h : Fin mid → Bool,
-      ((resetProgram n mid resetWires).instantiate read h).run = resetTerminal26 := fun h =>
+      ((resetProgram n mid resetWires).instantiate read h).run = resetTerminal25 := fun h =>
     resetProgram_run n mid resetWires read h
   simp only [hres, Instrument.seq]
   apply List.map_congr_left; intro b _; rfl
 
-theorem program26Cat_run_data (read : ConstantBit 2228224 → Bool) :
-    (program26Cat.instantiate read Fin.elim0).run =
-      ((((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
-          (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).instantiate read Fin.elim0).run.seq
-        resetTerminal26).map
+theorem program25Cat_run_data (read : ConstantBit 3407872 → Bool) :
+    (program25Cat.instantiate read Fin.elim0).run =
+      ((((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
+          (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).instantiate read Fin.elim0).run.seq
+        resetTerminal25).map
         (fun b => ({ history := List.nil, kraus := Quantum.run (Catalyst.prepare 1) } : InstrumentBranch).seq b) :=
   program_prep_append_reset_run _ _ read
 
 private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (w : ApproxCatWindow 1 (readConstant coefficientAt26 Q))
-    (hw : w ∈ leftRestApprox26 Q hQ hn ∨ w ∈ rightApprox26 Q hQ hn)
+    (w : ApproxCatWindow 1 (readConstant coefficientAt25 Q))
+    (hw : w ∈ leftRestApprox25 Q hQ hn ∨ w ∈ rightApprox25 Q hQ hn)
     (φ : State) (hφ : PointSupported φ) :
     let χ := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) φ)
     normSq (w.core_ideal (restrictState (fun s => ¬ w.goodPred s) χ)) ≤
       normSq (restrictState (fun s => ¬ w.goodPred s) χ) := by
   dsimp only
-  have hfor (d : Digit26) (pre : Circuit) (wpre : Nat → ℂ)
-      (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (bank17.map Gate.H) (ket (pointWrite P zeroBasisState))) =
-        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ 17) •
-          ((fourierOutcomes 17).map (fun input =>
-            wpre (boolWordToNat input) • ket (phaseWordState bank17 input (pointWrite P zeroBasisState)))).sum) :
-      normSq (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)
-        (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-          (Quantum.run pre (Quantum.run (bank17.map Gate.H) φ)))) ≤
-      normSq (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-        (Quantum.run pre (Quantum.run (bank17.map Gate.H) φ))) := by
-    obtain ⟨hχ_sup, _⟩ := bank17_prep_eval pre wpre hpre φ hφ
-    have hbad_sup : SupportedOn (BankPointFamily bank17)
-        (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-          (Quantum.run pre (Quantum.run (bank17.map Gate.H) φ))) :=
+  have hfor (d : Digit25) (pre : Circuit) (wpre : Nat → ℂ)
+      (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (d.bank.map Gate.H) (ket (pointWrite P zeroBasisState))) =
+        (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ d.width) •
+          ((fourierOutcomes d.width).map (fun input =>
+            wpre (boolWordToNat input) • ket (phaseWordState d.bank input (pointWrite P zeroBasisState)))).sum) :
+      normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
+        (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+          (Quantum.run pre (Quantum.run (d.bank.map Gate.H) φ)))) ≤
+      normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+        (Quantum.run pre (Quantum.run (d.bank.map Gate.H) φ))) := by
+    obtain ⟨hχ_sup, _⟩ := bankW_prep_eval d.k d.k_hi pre wpre hpre φ hφ
+    have hbad_sup : SupportedOn (BankPointFamily d.bank)
+        (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+          (Quantum.run pre (Quantum.run (d.bank.map Gate.H) φ))) :=
       restrictState_preserves _ _ _ hχ_sup
-    exact le_of_eq (normSq_lmapDomain_injOn _ ((update16_injOn_bankPoint Q hQ d).mono
+    exact le_of_eq (normSq_lmapDomain_injOn _ ((updateW_injOn_bankPoint Q hQ d).mono
       (fun s hs => hbad_sup s (Finsupp.mem_support_iff.mp hs))))
   rcases hw with hwL | hwR
   · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hwL
-    change normSq (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)
-      (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-        (Quantum.run List.nil (Quantum.run (bank17.reverse.reverse.map Gate.H) φ)))) ≤ _
+    change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
+      (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+        (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) φ)))) ≤
+      normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+        (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) φ)))
     rw [List.reverse_reverse]
-    exact hfor d List.nil (fun _ => 1) body_pre_expand
+    exact hfor d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi)
   · rcases List.mem_cons.mp hwR with rfl | hwR
-    · change normSq (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 rightHeadDigit) Q)
-        (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 rightHeadDigit) Q s)
-          (Quantum.run (sineFromPlus top10Right) (Quantum.run (bank17.reverse.reverse.map Gate.H) φ)))) ≤ _
+    · change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 rightHeadDigit) Q)
+        (restrictState (fun s => ¬ GenericW.GoodW 16 (wideCoeffs25 rightHeadDigit) Q s)
+          (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) φ)))) ≤
+        normSq (restrictState (fun s => ¬ GenericW.GoodW 16 (wideCoeffs25 rightHeadDigit) Q s)
+          (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) φ)))
       rw [List.reverse_reverse]
       exact hfor rightHeadDigit (sineFromPlus top10Right) (fun v => sineWeight 10 (v / 2 ^ 7)) rightHead_pre_expand
     · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hwR
-      change normSq (Finsupp.lmapDomain ℂ ℂ (Generic16.update16 (wideCoeffs26 d) Q)
-        (restrictState (fun s => ¬ Generic16.Good16 (wideCoeffs26 d) Q s)
-          (Quantum.run List.nil (Quantum.run (bank17.reverse.reverse.map Gate.H) φ)))) ≤ _
+      change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
+        (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+          (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) φ)))) ≤
+        normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
+          (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) φ)))
       rw [List.reverse_reverse]
-      exact hfor d List.nil (fun _ => 1) body_pre_expand
+      exact hfor d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi)
 
-theorem program26Cat_event_mass_lower (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
-    windowedEventMass Q zeroBasisState 258 204 accept ≤
-      ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 26 *
-        Instrument.bornMass ((program26Cat.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
-          (fun b => fineEvent26Cat accept b.history)) (ket zeroBasisState) +
-      (((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 26 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8))) *
-        ((52 : ℝ) / (2 : ℝ) ^ 240) := by
+theorem program25Cat_event_mass_lower (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
+    windowedEventMass Q zeroBasisState 256 206 accept ≤
+      ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 25 *
+        Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
+          (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState) +
+      (((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 25 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8))) *
+        ((52 : ℝ) / (2 : ℝ) ^ 236) := by
   set eps : ℝ := 1 / 10 ^ 8
   set α : ℝ := (1 + eps) ^ 2
-  set B : ℝ := α ^ 26 * (2 + eps) * (1 + 1 / eps)
+  set B : ℝ := α ^ 25 * (2 + eps) * (1 + 1 / eps)
   have heps : 0 < eps := by dsimp [eps]; positivity
   have hα_ge : 1 ≤ α := by dsimp [α, eps]; norm_num
   have hB_nn : 0 ≤ B := by dsimp [B, α, eps]; positivity
   have hterm_sub : ∀ (lhs rhs : List Bool), SubUnital
-      (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil) :=
-    fun _ _ => subUnital_ite _ _ (fun φ => le_of_eq (resetTerminal26_mass φ))
-  have hlenR : (rightApprox26 Q hQ hn).length = 12 := by simp [rightApprox26, rightTailDigits26]
-  have hlenL : (leftRestApprox26 Q hQ hn).length = 14 := by simp [leftRestApprox26, leftDigits26]
-  have hR_step : ∀ w ∈ rightApprox26 Q hQ hn, ∀ pr bits φ, PointSupported φ → PointSupported (w.model.step pr bits φ) := by
+      (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil) :=
+    fun _ _ => subUnital_ite _ _ (fun φ => le_of_eq (resetTerminal25_mass φ))
+  have hlenR : (rightApprox25 Q hQ hn).length = 12 := by simp [rightApprox25, rightTailDigits25]
+  have hlenL : (leftRestApprox25 Q hQ hn).length = 13 := by simp [leftRestApprox25, leftDigits25]
+  have hR_step : ∀ w ∈ rightApprox25 Q hQ hn, ∀ pr bits φ, PointSupported φ → PointSupported (w.model.step pr bits φ) := by
     intro w hw pr bits φ hφ
     rcases List.mem_cons.mp hw with rfl | hw
     · exact rightHeadModel_step_pointSupported Q hQ hn pr bits φ hφ
     · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
       exact bodyModel_step_pointSupported Q hQ hn d pr bits φ hφ
-  have hL_step : ∀ w ∈ leftRestApprox26 Q hQ hn, ∀ pr bits φ, PointSupported φ → PointSupported (w.model.step pr bits φ) := by
+  have hL_step : ∀ w ∈ leftRestApprox25 Q hQ hn, ∀ pr bits φ, PointSupported φ → PointSupported (w.model.step pr bits φ) := by
     intro w hw pr bits φ hφ
     obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
     exact bodyModel_step_pointSupported Q hQ hn d pr bits φ hφ
-  -- Apply `selectedAxisDep_mass_lower` to `rightApprox26` (`12` windows, `A₀ = 1`)
+  -- Apply `selectedAxisDep_mass_lower` to `rightApprox25` (`12` windows, `A₀ = 1`)
   have hR_bound (lHist lhs : List Bool) (φ : State) (hφ : PointSupported φ) :
-      (idealAxis ((rightApprox26 Q hQ hn).map ApproxCatWindow.model) List.nil
-        (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil)).bornMass φ ≤
-      α ^ 12 * (selectedAxisDep (rightApprox26 Q hQ hn) (0 + axisCount ((leftApprox26 Q hQ hn).map ApproxCatWindow.catPhys))
+      (idealAxis ((rightApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil
+        (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)).bornMass φ ≤
+      α ^ 12 * (selectedAxisDep (rightApprox25 Q hQ hn) (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
         (Single.historyAfter _ Fin.elim0 lHist) List.nil
-        (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil)).bornMass (LocalFour.Prep 1 φ) +
-      B * axisBad (rightApprox26 Q hQ hn) List.nil (fun _ _ => 0) φ := by
-    have hB_R : 1 * α ^ (rightApprox26 Q hQ hn).length * (2 + eps) * (1 + 1 / eps) ≤ B := by
+        (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)).bornMass (LocalFour.Prep 1 φ) +
+      B * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ := by
+    have hB_R : 1 * α ^ (rightApprox25 Q hQ hn).length * (2 + eps) * (1 + 1 / eps) ≤ B := by
       rw [hlenR, one_mul]; dsimp only [B]
-      have hp : α ^ 12 ≤ α ^ 26 := pow_le_pow_right₀ hα_ge (by decide)
+      have hp : α ^ 12 ≤ α ^ 25 := pow_le_pow_right₀ hα_ge (by decide)
       have hc : 0 ≤ (2 + eps) * (1 + 1 / eps) := by positivity
       calc α ^ 12 * (2 + eps) * (1 + 1 / eps) = α ^ 12 * ((2 + eps) * (1 + 1 / eps)) := by ring
-        _ ≤ α ^ 26 * ((2 + eps) * (1 + 1 / eps)) := mul_le_mul_of_nonneg_right hp hc
-        _ = α ^ 26 * (2 + eps) * (1 + 1 / eps) := by ring
-    have h := selectedAxisDep_mass_lower (rightApprox26 Q hQ hn)
-      (0 + axisCount ((leftApprox26 Q hQ hn).map ApproxCatWindow.catPhys))
+        _ ≤ α ^ 25 * ((2 + eps) * (1 + 1 / eps)) := mul_le_mul_of_nonneg_right hp hc
+        _ = α ^ 25 * (2 + eps) * (1 + 1 / eps) := by ring
+    have h := selectedAxisDep_mass_lower (rightApprox25 Q hQ hn)
+      (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
       (Single.historyAfter _ Fin.elim0 lHist) List.nil
-      (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil)
-      (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil)
+      (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
+      (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
       (fun _ _ => 0) PointSupported eps 1 B heps (by norm_num) hB_R hR_step
       (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inr hw) φ' hφ')
       (fun _ rhs => hterm_sub lhs rhs)
       (fun _ rhs φ' _ _ => by
         simp only [one_mul, mul_zero, add_zero]
         split_ifs
-        · rw [resetTerminal26_mass, resetTerminal26_mass, LocalFour.normSq_prep]
+        · rw [resetTerminal25_mass, resetTerminal25_mass, LocalFour.normSq_prep]
         · simp [Instrument.bornMass])
       φ hφ (pointSupported_y1 φ hφ)
     simpa [hlenR] using h
-  -- Apply `selectedAxisDep_cons_exact` for `first20ApproxWin`, then `selectedAxisDep_mass_lower` for `leftRestApprox26` (`14` windows, `A₀ = α^12`)
+  -- Apply `selectedAxisDep_cons_exact` for `first20ApproxWin`, then `selectedAxisDep_mass_lower` for `leftRestApprox25` (`13` windows, `A₀ = α^12`)
   let physTermL : List Bool → List Bool → Instrument := fun lHist lhs =>
-    selectedAxisDep (rightApprox26 Q hQ hn)
-      (0 + axisCount ((leftApprox26 Q hQ hn).map ApproxCatWindow.catPhys))
+    selectedAxisDep (rightApprox25 Q hQ hn)
+      (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
       (Single.historyAfter _ Fin.elim0 lHist) List.nil
-      (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil)
+      (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
   let idealTermL : List Bool → Instrument := fun lhs =>
-    idealAxis ((rightApprox26 Q hQ hn).map ApproxCatWindow.model) List.nil
-      (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal26 else List.nil)
+    idealAxis ((rightApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil
+      (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
   have hfirst_good : SupportedOn First20Input0
       (Quantum.run (sineFromPlus top10Left)
         (Quantum.run (First20Signed.bits.reverse.reverse.map Gate.H) (ket zeroBasisState))) := by
@@ -6541,30 +6864,30 @@ theorem program26Cat_event_mass_lower (Q : Point) (hQ : order • Q = 0) (hn : Q
         (fun t w b hw ht => first20Input0_upd t w b
           (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hw)) ht) s hs)
       _ hH
-  have hmain := selectedAxisDep_cons_exact (first20ApproxWin Q hQ hn) (leftRestApprox26 Q hQ hn)
+  have hmain := selectedAxisDep_cons_exact (first20ApproxWin Q hQ hn) (leftRestApprox25 Q hQ hn)
     0 Fin.elim0 List.nil physTermL idealTermL
-    (fun bits => axisBad (leftRestApprox26 Q hQ hn) bits.reverse
-      (fun _ φ => axisBad (rightApprox26 Q hQ hn) List.nil (fun _ _ => 0) φ)
+    (fun bits => axisBad (leftRestApprox25 Q hQ hn) bits.reverse
+      (fun _ φ => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ)
       ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
-    (α ^ 26) B (ket zeroBasisState) (supportedOn_ket _ _ rfl) hfirst_good (by
+    (α ^ 25) B (ket zeroBasisState) (supportedOn_ket _ _ rfl) hfirst_good (by
       intro a bits ha_mem hb_mem
       have ha_len : a.history.length = cFirst20 := by
         change a.history.length = (first20ApproxWin Q hQ hn).catPhys.count
-        have h := straight_history_length _ (readConstant coefficientAt26 Q) Fin.elim0 a ha_mem; omega
+        have h := straight_history_length _ (readConstant coefficientAt25 Q) Fin.elim0 a ha_mem; omega
       have hnp : (nextPrior cFirst20 20 List.nil).map
           (Single.historyAfter (0 + cFirst20 + 20)
             (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits) = bits.reverse := by
         simpa using nextPrior_map cFirst20 20 List.nil Fin.elim0 a.history bits ha_len
           ((fourierOutcomes_mem 20 bits).mp hb_mem)
-      have hB_L : α ^ 12 * α ^ (leftRestApprox26 Q hQ hn).length * (2 + eps) * (1 + 1 / eps) ≤ B := by
+      have hB_L : α ^ 12 * α ^ (leftRestApprox25 Q hQ hn).length * (2 + eps) * (1 + 1 / eps) ≤ B := by
         rw [hlenL, ← pow_add]
-      have hL := selectedAxisDep_mass_lower (leftRestApprox26 Q hQ hn)
+      have hL := selectedAxisDep_mass_lower (leftRestApprox25 Q hQ hn)
         (0 + cFirst20 + First20Signed.bits.reverse.length)
         (Single.historyAfter (0 + cFirst20 + First20Signed.bits.reverse.length)
           (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits)
         (nextPrior cFirst20 First20Signed.bits.reverse.length List.nil)
         (fun hRest lhs => physTermL (a.history ++ bits ++ hRest) lhs)
-        idealTermL (fun _ φ => axisBad (rightApprox26 Q hQ hn) List.nil (fun _ _ => 0) φ)
+        idealTermL (fun _ φ => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ)
         PointSupported eps (α ^ 12) B heps (pow_nonneg (by linarith) _) hB_L hL_step
         (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl hw) φ' hφ')
         (fun hRest lhs => selectedAxisDep_subUnital _ _ _ _ _ (fun _ rhs => hterm_sub lhs rhs))
@@ -6578,186 +6901,272 @@ theorem program26Cat_event_mass_lower (Q : Point) (hQ : order • Q = 0) (hn : Q
         simpa [First20Signed.bits_length] using hnp
       rw [hnp', hlenL, ← pow_add] at hL
       simpa [List.append_nil] using hL)
-  -- Identify LHS = `windowedEventMass Q zeroBasisState 258 204 accept`
-  have hlhs : (idealAxis ((leftApprox26 Q hQ hn).map ApproxCatWindow.model) List.nil idealTermL).bornMass (ket zeroBasisState) =
-      windowedEventMass Q zeroBasisState 258 204 accept := by
+  -- Identify LHS = `windowedEventMass Q zeroBasisState 256 206 accept`
+  have hlhs : (idealAxis ((leftApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil idealTermL).bornMass (ket zeroBasisState) =
+      windowedEventMass Q zeroBasisState 256 206 accept := by
     have heq := windowed_idealTwoAxes_event_mass_anyBias Q zeroBasisState (ket zeroBasisState)
-      (first20Model Q hQ hn) (leftDigits26.map (bodyModel Q hQ hn))
-      (rightHeadModel Q hQ hn) (rightTailDigits26.map (bodyModel Q hQ hn))
+      (first20Model Q hQ hn) (leftDigits25.map (bodyModel Q hQ hn))
+      (rightHeadModel Q hQ hn) (rightTailDigits25.map (bodyModel Q hQ hn))
       (first20Model_rule Q hQ hn) (rightHeadModel_rule Q hQ hn)
       (fun w hw => by
         rcases List.mem_append.mp hw with hw | hw <;>
         · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw; exact bodyModel_rule Q hQ hn d)
-      (leftModels26_weights Q hQ hn) (rightModels26_weights Q hQ hn)
-      resetTerminal26 resetTerminal26_mass accept
-    have hpl : precision (leftModels26 Q hQ hn) = 258 := by
-      simp [precision, leftModels26, leftDigits26, List.ofFn_succ, first20Model, bodyModel,
-        First20Signed.bits_length, bank17_length]
-    have hpr : precision (rightModels26 Q hQ hn) = 204 := by
-      simp [precision, rightModels26, rightTailDigits26, List.ofFn_succ, rightHeadModel, bodyModel, bank17_length]
-    have hpl' : precision (first20Model Q hQ hn :: leftDigits26.map (bodyModel Q hQ hn)) = 258 := hpl
-    have hpr' : precision (rightHeadModel Q hQ hn :: rightTailDigits26.map (bodyModel Q hQ hn)) = 204 := hpr
+      (leftModels25_weights Q hQ hn) (rightModels25_weights Q hQ hn)
+      resetTerminal25 resetTerminal25_mass accept
+    have hpl : precision (leftModels25 Q hQ hn) = 256 := by
+      simp [precision, leftModels25, leftDigits25, List.ofFn_succ, first20Model, bodyModel,
+        First20Signed.bits_length, Digit25.bank, Digit25.k, GenericW.bankW_length]
+    have hpr : precision (rightModels25 Q hQ hn) = 206 := by
+      simp [precision, rightModels25, rightTailDigits25, List.ofFn_succ, rightHeadModel, rightHeadDigit, bodyModel,
+        Digit25.bank, Digit25.k, GenericW.bankW_length]
+    have hpl' : precision (first20Model Q hQ hn :: leftDigits25.map (bodyModel Q hQ hn)) = 256 := hpl
+    have hpr' : precision (rightHeadModel Q hQ hn :: rightTailDigits25.map (bodyModel Q hQ hn)) = 206 := hpr
     rw [hpl', hpr'] at heq
-    rw [leftApprox26_model]
-    dsimp only [idealTermL]; rw [rightApprox26_model]
-    simpa only [idealTwoAxes, leftModels26, rightModels26] using heq
-  -- Identify RHS physical mass = `program26Cat` filtered mass
-  have hrhs : (selectedAxisDep (leftApprox26 Q hQ hn) 0 Fin.elim0 List.nil physTermL).bornMass
+    rw [leftApprox25_model]
+    dsimp only [idealTermL]; rw [rightApprox25_model]
+    simpa only [idealTwoAxes, leftModels25, rightModels25] using heq
+  -- Identify RHS physical mass = `program25Cat` filtered mass
+  have hrhs : (selectedAxisDep (leftApprox25 Q hQ hn) 0 Fin.elim0 List.nil physTermL).bornMass
         (LocalFour.Prep 1 (ket zeroBasisState)) =
-      Instrument.bornMass ((program26Cat.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
-        (fun b => fineEvent26Cat accept b.history)) (ket zeroBasisState) := by
-    rw [program26Cat_run_data, prefix_filter_mass]
-    rw [← selectedTwoAxesApprox_expand (leftApprox26 Q hQ hn) (rightApprox26 Q hQ hn) 0 Fin.elim0]
-    rw [selectedTwoAxesApprox_fixed_filter (leftApprox26 Q hQ hn) (rightApprox26 Q hQ hn) resetTerminal26 accept]
+      Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
+        (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState) := by
+    rw [program25Cat_run_data, prefix_filter_mass]
+    rw [← selectedTwoAxesApprox_expand (leftApprox25 Q hQ hn) (rightApprox25 Q hQ hn) 0 Fin.elim0]
+    rw [selectedTwoAxesApprox_fixed_filter (leftApprox25 Q hQ hn) (rightApprox25 Q hQ hn) resetTerminal25 accept]
     unfold physicalAxesApprox
-    rw [leftApprox26_catPhys, rightApprox26_catPhys]
-    have hposL : Single.axisPositions leftWins26Cat 0 = leftPositions26Cat := by
-      rw [Single.axisPositions, leftWins26Cat_meta]; rfl
-    have hposR : Single.axisPositions rightWins26Cat (axisCount leftWins26Cat) = rightPositions26Cat := by
-      rw [Single.axisPositions, rightWins26Cat_meta]; rfl
+    rw [leftApprox25_catPhys, rightApprox25_catPhys]
+    have hposL : Single.axisPositions leftWins25Cat 0 = leftPositions25Cat := by
+      rw [Single.axisPositions, leftWins25Cat_meta]; rfl
+    have hposR : Single.axisPositions rightWins25Cat (axisCount leftWins25Cat) = rightPositions25Cat := by
+      rw [Single.axisPositions, rightWins25Cat_meta]; rfl
     rw [hposL, hposR]
     rfl
-  -- Combine with `totalBad26_bound`
-  have hbad := totalBad26_bound Q hQ hn
+  -- Combine with `totalBad25_bound`
+  have hbad := totalBad25_bound Q hQ hn
   have hmb := mul_le_mul_of_nonneg_left hbad hB_nn
-  change _ ≤ α ^ 26 * _ + B * _ at hmain
-  rw [show (first20ApproxWin Q hQ hn :: leftRestApprox26 Q hQ hn) = leftApprox26 Q hQ hn from rfl,
+  change _ ≤ α ^ 25 * _ + B * _ at hmain
+  rw [show (first20ApproxWin Q hQ hn :: leftRestApprox25 Q hQ hn) = leftApprox25 Q hQ hn from rfl,
     List.map_nil, hlhs, hrhs] at hmain
   have hlen20 : (first20ApproxWin Q hQ hn).model.physical.wires.length = 20 := by
     simp [first20ApproxWin, first20Model, First20Signed.bits_length]
   rw [hlen20] at hmain
-  change _ ≤ α ^ 26 * _ + B * _
+  change _ ≤ α ^ 25 * _ + B * _
   exact hmain.trans (add_le_add (le_refl _) hmb)
 
-theorem program26Cat_clean (read : ConstantBit 2228224 → Bool) (b : InstrumentBranch)
-    (hb : b ∈ (program26Cat.instantiate read Fin.elim0).run) (ψ : State) :
+theorem program25Cat_clean (read : ConstantBit 3407872 → Bool) (b : InstrumentBranch)
+    (hb : b ∈ (program25Cat.instantiate read Fin.elim0).run) (ψ : State) :
     SupportedOn RoundedReadout.CleanReadout (b.kraus ψ) := by
-  rw [program26Cat_run_data] at hb
+  rw [program25Cat_run_data] at hb
   obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hb
   obtain ⟨a, _, hx⟩ := List.mem_flatMap.mp hx
   obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hx
   have h := resetRegister_clean resetWires resetWires_nodup c hc
     (a.kraus (Quantum.run (Catalyst.prepare 1) ψ))
   intro s hs
-  exact ⟨h s hs 0 resourceInst26.reset_zero, h s hs 1 resourceInst26.reset_one⟩
+  exact ⟨h s hs 0 resourceInst25.reset_zero, h s hs 1 resourceInst25.reset_one⟩
 
-theorem verified_of_reads26Cat (ps : Vector Nat 204) (hps : ps ∈ Readout3.rightWords3 fineBits26Cat)
+theorem verified_of_reads25Cat (p : ℤ × ℤ) (hp : p ∈ offsets13)
     (Q : Point) (d : Nat) (hd : Q = d • G) (hist : List Bool) (a b : Nat)
-    (hl : readWord hist trialPositions26Cat.left.toList = some a)
-    (hr : readWord hist ps.toList = some b)
-    (hm : (d : ZMod order) ∈ fixedCandidates params258 a b) :
-    (verifiedCandidate rawLayout26Cat Q hist).isSome := by
+    (hl : readWord hist (Readout5.wordAt5 leftBits25Cat p.1).toList = some a)
+    (hr : readWord hist (Readout5.wordAt5 rightBits25Mid p.2).toList = some b)
+    (hm : (d : ZMod order) ∈ fixedCandidates params256 a b) :
+    (verifiedCandidate rawLayout25Cat Q hist).isSome := by
   classical
   apply List.find?_isSome.mpr
   refine ⟨(d : ZMod order), ?_, ?_⟩
   · unfold candidates
     apply List.mem_flatMap.mpr
-    refine ⟨positionsFor26Cat ps, List.mem_map.mpr ⟨ps, hps, rfl⟩, ?_⟩
-    simpa only [decodeTrial, trialCandidates, positionsFor26Cat, rawLayout26Cat, hl, hr,
+    refine ⟨⟨Readout5.wordAt5 leftBits25Cat p.1, Readout5.wordAt5 rightBits25Mid p.2⟩,
+      List.mem_map.mpr ⟨p, hp, rfl⟩, ?_⟩
+    simpa only [decodeTrial, trialCandidates, rawLayout25Cat, hl, hr,
       fixedCandidates_take, Finset.mem_toList] using hm
   · simp only [decide_eq_true_eq, ZMod.val_natCast]
     rw [hd]
     exact nsmul_eq_nsmul_iff_modEq.mpr (by rw [generator_order]; exact Nat.mod_mod _ _)
 
-theorem readout26Cat_wellFormed : readout26Cat.WellFormed := by
-  unfold readout26Cat
+theorem readout25Cat_wellFormed : readout25Cat.WellFormed := by
+  unfold readout25Cat readoutL25 readoutR25
   rw [castFinish_wellFormed]
-  exact Readout3.suffix3_wellFormed _ _ _ _
+  apply straight_append_wellFormed
+  · rw [castFinish_wellFormed]; exact Readout5.suffix5_wellFormed _ _ _ _
+  · rw [castFinish_wellFormed]; exact Readout5.suffix5_wellFormed _ _ _ _
 
-theorem suffix26Cat_accept (Q : Point) (d : Nat) (hd : Q = d • G)
-    (read : ConstantBit 2228224 → Bool) (history : Fin cursor26Cat → Bool)
+theorem suffix25Cat_accept (Q : Point) (d : Nat) (hd : Q = d • G)
+    (read : ConstantBit 3407872 → Bool) (history : Fin cursor25Cat → Bool)
     (ψ : State) (hψ : SupportedOn RoundedReadout.CleanReadout ψ)
-    (hf : fineEvent26Cat (pairRecovered258 d) (List.ofFn history) = true)
-    (b : InstrumentBranch) (hb : b ∈ (readout26Cat.instantiate read history).run)
+    (hf : fineEvent25Cat (pairRecovered256 d) (List.ofFn history) = true)
+    (b : InstrumentBranch) (hb : b ∈ (readout25Cat.instantiate read history).run)
     (hn : b.kraus ψ ≠ 0) :
-    (verifiedCandidate rawLayout26Cat Q (List.ofFn history ++ b.history)).isSome := by
-  have hr := NeighborReadout.input_read fineBits26Cat history
-  rw [fineBits26Cat_vals] at hr
-  obtain ⟨a, ha, hp⟩ := Rounded.pairAccept_value _ _ _ _ _ hr hf
-  obtain ⟨i, hi⟩ := of_decide_eq_true hp
-  obtain ⟨ps, hps, hread⟩ := Readout3.suffix3_reads 2228224 cursor26Cat fineBits26Cat
-    read history ψ hψ b (by simpa only [readout26Cat, castFinish_instantiate] using hb) hn
-    ((i.val : ℤ) - 1) (by have h := i.isLt; omega)
-  apply verified_of_reads26Cat ps hps Q d hd _ a _ _ hread hi
-  rw [NeighborReadout.readWord_append_left]
-  · exact ha
-  · intro j hj
-    have h := leftPositions26Cat_bound j hj
-    have hh : axisCount leftWins26Cat ≤ cursor26Cat := by unfold cursor26Cat; omega
-    simpa only [List.length_ofFn] using h.trans_le hh
+    (verifiedCandidate rawLayout25Cat Q (List.ofFn history ++ b.history)).isSome := by
+  have hrl := NeighborReadout.input_read leftBits25Cat history
+  have hrr := NeighborReadout.input_read rightBits25Cat history
+  rw [leftBits25Cat_vals] at hrl
+  rw [rightBits25Cat_vals] at hrr
+  obtain ⟨a, ha, hrec⟩ := Rounded.pairAccept_value _ _ _ _ _ hrr hf
+  have ha_eq : a = NeighborReadout.inputValue leftBits25Cat history := Option.some.inj (ha.symm.trans hrl)
+  rw [ha_eq] at hrec
+  unfold pairRecovered256 at hrec
+  obtain ⟨p, hp, hmem⟩ := of_decide_eq_true hrec
+  have hpb := offsets13_bounds p hp
+  unfold readout25Cat at hb
+  rw [castFinish_instantiate] at hb
+  obtain ⟨h₁, bL, bR, hbL, hbR, he₁, rfl⟩ := straight_append_branch readoutL25 readoutR25 read history b hb
+  have hbLn : bL.kraus ψ ≠ 0 := by
+    intro h; apply hn; simp only [InstrumentBranch.seq, LinearMap.comp_apply, h, map_zero]
+  have hreadL := Readout5.suffix5_reads 3407872 cursor25Cat 256 leftBits25Cat read history ψ hψ bL
+    (by simpa only [readoutL25, castFinish_instantiate] using hbL) hbLn p.1 hpb.1
+  have hbRn : bR.kraus ψ ≠ 0 := by
+    simpa only [InstrumentBranch.seq, LinearMap.comp_apply, hreadL.1] using hn
+  have hreadR := Readout5.suffix5_reads 3407872 cursor25Mid 206 rightBits25Mid read h₁ ψ hψ bR
+    (by simpa only [readoutR25, castFinish_instantiate] using hbR) hbRn p.2 hpb.2
+  have hfull : List.ofFn history ++ (bL.seq bR).history = List.ofFn h₁ ++ bR.history := by
+    simp only [InstrumentBranch.seq, ← List.append_assoc, ← he₁]
+  have hL_final : readWord (List.ofFn history ++ (bL.seq bR).history)
+      (Readout5.wordAt5 leftBits25Cat p.1).toList =
+      some (neighborWord 256 (NeighborReadout.inputValue leftBits25Cat history) p.1) := by
+    rw [hfull, NeighborReadout.readWord_append_left (List.ofFn h₁) bR.history _ (by
+      intro x hx
+      have hlt := Readout5.wordAt5_lt leftBits25Cat p.1 x hx
+      simp only [List.length_ofFn, cursor25Mid]; omega), he₁]
+    exact hreadL.2
+  have hvalR : NeighborReadout.inputValue rightBits25Mid h₁ =
+      NeighborReadout.inputValue rightBits25Cat history := by
+    have hbit : ∀ i : Fin 206, h₁ (rightBits25Mid[i.val]) = history (rightBits25Cat[i.val]) := by
+      intro i
+      have hidx : (rightBits25Mid[i.val]).val = (rightBits25Cat[i.val]).val := by
+        simp [rightBits25Mid]
+      have hget := congrArg (fun l : List Bool => l[(rightBits25Cat[i.val]).val]?) he₁
+      dsimp only at hget
+      have hlt1 : (rightBits25Cat[i.val]).val < cursor25Mid :=
+        (rightBits25Cat[i.val]).isLt.trans_le (by unfold cursor25Mid; omega)
+      have hlt0 : (rightBits25Cat[i.val]).val < cursor25Cat := (rightBits25Cat[i.val]).isLt
+      rw [List.getElem?_eq_getElem (by simpa only [List.length_ofFn] using hlt1),
+          List.getElem_ofFn,
+          List.getElem?_append_left (by simpa only [List.length_ofFn] using hlt0),
+          List.getElem?_eq_getElem (by simpa only [List.length_ofFn] using hlt0),
+          List.getElem_ofFn] at hget
+      have hfin : (⟨(rightBits25Cat[i.val]).val, hlt1⟩ : Fin cursor25Mid) = rightBits25Mid[i.val] :=
+        Fin.ext hidx.symm
+      rw [hfin] at hget
+      exact Option.some.inj hget
+    unfold NeighborReadout.inputValue
+    apply congrArg boolWordToNat
+    apply List.ext_getElem (by simp)
+    intro i hi1 hi2
+    simp only [List.getElem_map, Vector.getElem_toList]
+    have hi : i < 206 := by simpa using hi1
+    exact hbit ⟨i, hi⟩
+  have hR_final : readWord (List.ofFn history ++ (bL.seq bR).history)
+      (Readout5.wordAt5 rightBits25Mid p.2).toList =
+      some (neighborWord 206 (NeighborReadout.inputValue rightBits25Cat history) p.2) := by
+    rw [hfull, ← hvalR]
+    exact hreadR.2
+  exact verified_of_reads25Cat p hp Q d hd _ _ _ hL_final hR_final hmem
 
-theorem strong_success26Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
+theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
     (99109 / 100000 : ℝ) ≤ Instrument.bornMass
-      ((rawEntry26Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout26Cat Q b.history).isSome))
+      ((rawEntry25Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout25Cat Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
-  rw [rawEntry26Cat, Single.fixedEntry_instantiate]
+  rw [rawEntry25Cat, Single.fixedEntry_instantiate]
   have hneighbor : (99109 / 100000 : ℝ) ≤ Instrument.bornMass
-      ((program26Cat.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
-        (fun b => fineEvent26Cat (pairRecovered258 d) b.history)) (ket zeroBasisState) := by
-    have hideal : (9911 / 10000 : ℝ) ≤ windowedEventMass Q zeroBasisState 258 204 (pairRecovered258 d) := by
-      rw [windowedEventMass_distribution Q d hd zeroBasisState 258 204]
-      exact sine_pair_success Q d hn hd
-    have hlow := program26Cat_event_mass_lower Q hQ hn (pairRecovered258 d)
-    set M := Instrument.bornMass ((program26Cat.instantiate (readConstant coefficientAt26 Q) Fin.elim0).run.filter
-      (fun b => fineEvent26Cat (pairRecovered258 d) b.history)) (ket zeroBasisState)
+      ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
+        (fun b => fineEvent25Cat (pairRecovered256 d) b.history)) (ket zeroBasisState) := by
+    have hideal : (9924 / 10000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
+      rw [windowedEventMass_distribution Q d hd zeroBasisState 256 206]
+      exact sine_pair_success_256_206 Q d hn hd
+    have hlow := program25Cat_event_mass_lower Q hQ hn (pairRecovered256 d)
+    set M := Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
+      (fun b => fineEvent25Cat (pairRecovered256 d) b.history)) (ket zeroBasisState)
     have hM_nn : 0 ≤ M := instrument_bornMass_nonneg _ _
-    have hpow : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 26 ≤ 1 + 104 / 10 ^ 8 := by
+    have hpow : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 25 ≤ 1 + 100 / 10 ^ 8 := by
       rw [← pow_mul]
-      have h1 := one_add_pow_le (1 / 10 ^ 8 : ℝ) 52 (by positivity) (by norm_num)
+      have h1 := one_add_pow_le (1 / 10 ^ 8 : ℝ) 50 (by positivity) (by norm_num)
       linarith
-    have herr : (((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 26 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8))) *
-        ((52 : ℝ) / (2 : ℝ) ^ 240) ≤ 1 / 10 ^ 8 := by
-      have hB : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 26 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8)) ≤ 10 ^ 9 := by
+    have herr : (((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 25 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8))) *
+        ((52 : ℝ) / (2 : ℝ) ^ 236) ≤ 1 / 10 ^ 8 := by
+      have hB : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 25 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8)) ≤ 10 ^ 9 := by
         nlinarith
-      have h240 : (10 ^ 9 : ℝ) * ((52 : ℝ) / (2 : ℝ) ^ 240) ≤ 1 / 10 ^ 8 := by norm_num
+      have h236 : (10 ^ 9 : ℝ) * ((52 : ℝ) / (2 : ℝ) ^ 236) ≤ 1 / 10 ^ 8 := by norm_num
       nlinarith
     nlinarith
   apply hneighbor.trans
-  unfold fullProgram26Cat
+  unfold fullProgram25Cat
   rw [Single.append_run_history]
   apply Rounded.appended_mass_lower
   · intro a _
     exact AdaptiveCircuit.run_preservesBornMass _
-      (readout26Cat.instantiate_wellFormed _ _ readout26Cat_wellFormed) _
+      (readout25Cat.instantiate_wellFormed _ _ readout25Cat_wellFormed) _
   · intro a ha hf b hb hne
-    have hlen : a.history.length = cursor26Cat := by
-      have h := straight_history_length program26Cat (readConstant coefficientAt26 Q) Fin.elim0 a ha
+    have hlen : a.history.length = cursor25Cat := by
+      have h := straight_history_length program25Cat (readConstant coefficientAt25 Q) Fin.elim0 a ha
       simpa only [Nat.zero_add, Nat.sub_zero] using h
-    have hh : List.ofFn (Single.historyAfter cursor26Cat Fin.elim0 a.history) = a.history := by
+    have hh : List.ofFn (Single.historyAfter cursor25Cat Fin.elim0 a.history) = a.history := by
       simpa only [List.ofFn_zero, List.nil_append] using Single.historyAfter_list Fin.elim0 a.history
         (by simpa only [Nat.zero_add] using hlen)
-    have h := suffix26Cat_accept Q d hd (readConstant coefficientAt26 Q)
-      (Single.historyAfter cursor26Cat Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
-      (program26Cat_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
+    have h := suffix25Cat_accept Q d hd (readConstant coefficientAt25 Q)
+      (Single.historyAfter cursor25Cat Fin.elim0 a.history) (a.kraus (ket zeroBasisState))
+      (program25Cat_clean _ a ha _) (by simpa only [hh] using hf) b hb hne
     simpa only [hh, InstrumentBranch.seq] using h
 
 /-! ### Part 4: Static budgets (`wellFormed`, `slots`, `support`, `tCount`, `cost18`, `measurements`) -/
 
-def IsWin26Cat (w : Window 2228224) : Prop :=
+def IsWin25Cat (w : Window 3407872) : Prop :=
   w = first20CatWin ∨ w = rightHeadCatWin ∨ ∃ d, w = bodyCatWin d
 
-theorem bodyCatWin_support (d : Digit26) (start : Nat) :
-    straightWires ((bodyCatWin d).program start) ⊆ List.range 1610 := by
-  change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (Generic16.compiledProgram start)))) ⊆ _
-  rw [straightWires_castFinish, straightWires_reindex]
-  exact Generic16.compiled_packed_support start
+theorem bodyCatWin_support (d : Digit25) (start : Nat) :
+    straightWires ((bodyCatWin d).program start) ⊆ List.range 1612 := by
+  cases d with
+  | left18 j =>
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled17_packed_support start
+  | left19 j =>
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled18_packed_support start
+  | right17 j =>
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram16 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled16_packed_support start
+  | right18 j =>
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled17_packed_support start
 
-theorem bodyCatWin_slots (d : Digit26) (start : Nat) : ((bodyCatWin d).program start).gateSlots ≤ 80000000000 := by
-  change (castFinish _ (reindexStraight _ (relabelStraight _ (Generic16.compiledProgram start)))).gateSlots ≤ _
-  rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
-  exact Generic16.compiled_slots start
+theorem bodyCatWin_slots (d : Digit25) (start : Nat) : ((bodyCatWin d).program start).gateSlots ≤ 80000000000 := by
+  cases d with
+  | left18 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled17_slots start
+  | left19 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled18_slots start
+  | right17 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram16 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled16_slots start
+  | right18 j =>
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled17_slots start
 
-theorem bodyCatWin_tCount (d : Digit26) (start : Nat) (read : ConstantBit 2228224 → Bool) (h : Fin start → Bool) :
-    (((bodyCatWin d).program start).instantiate read h).tCount ≤ 4 * 2238256 := by
-  change ((castFinish _ (reindexStraight _ (relabelStraight _ (Generic16.compiledProgram start)))).instantiate read h).tCount ≤ _
-  rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-  exact Generic16.compiled_tCount start _ h
+theorem bodyCatWin_tCount (d : Digit25) (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
+    (((bodyCatWin d).program start).instantiate read h).tCount ≤ 4 * d.tof := by
+  cases d with
+  | left18 j =>
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).instantiate read h).tCount ≤ _
+    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+    exact GenericW.compiled17_tCount start _ h
+  | left19 j =>
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).instantiate read h).tCount ≤ _
+    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+    exact GenericW.compiled18_tCount start _ h
+  | right17 j =>
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram16 start)))).instantiate read h).tCount ≤ _
+    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+    exact GenericW.compiled16_tCount start _ h
+  | right18 j =>
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).instantiate read h).tCount ≤ _
+    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+    exact GenericW.compiled17_tCount start _ h
 
-theorem bodyCatWin_cost18 (d : Digit26) (start : Nat) : cost18 ((bodyCatWin d).program start) = 0 := by
+theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).program start) = 0 := by
   apply CatAxis.cost18_zero_of_removed18
-  change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (Generic16.compiledProgram start)))) = 0
-  rw [LocalFour.removed_castFinish, removed18_reindex]
   have hrel : ∀ {n s e} (f : Wire ≃ Wire) (p : Straight n s e), removed 18 (relabelStraight f p) = removed 18 p := by
     intro n s e f p
     induction p with
@@ -6768,8 +7177,19 @@ theorem bodyCatWin_cost18 (d : Digit26) (start : Nat) : cost18 ((bodyCatWin d).p
       cases g with
       | literal g => cases g <;> simp [relabelStraight, relabelTemplateGate, Gate.relabel, removed, largePhase, ih]
       | whenBit r v g => cases g <;> simp [relabelStraight, relabelTemplateGate, Gate.relabel, removed, largePhase, ih]
-  rw [hrel]
-  exact Generic16.compiled_removed18 start
+  cases d with
+  | left18 j =>
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled17_removed18 start
+  | left19 j =>
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled18_removed18 start
+  | right17 j =>
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram16 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled16_removed18 start
+  | right18 j =>
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled17_removed18 start
 
 theorem first20CatWin_wellFormed (start : Nat) : (first20CatWin.program start).WellFormed := by
   apply straight_append_wellFormed
@@ -6787,12 +7207,12 @@ theorem first20CatWin_slots (start : Nat) : (first20CatWin.program start).gateSl
   unfold first20Core
   rw [Straight.gateSlots_append, Straight.gateSlots_append, castFinish_gateSlots,
     ChallengeMigration.literalProgram_slots, ChallengeMigration.literalProgram_slots]
-  have hs1 := ConditionalCatalyst.compile_slots 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left))
-  have hs2 := ConditionalCatalyst.phaseTwos_le_slots (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left))
-  have hs3 : (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)).gateSlots = 52 := by
+  have hs1 := ConditionalCatalyst.compile_slots 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Left))
+  have hs2 := ConditionalCatalyst.phaseTwos_le_slots (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Left))
+  have hs3 : (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Left)).gateSlots = 52 := by
     rw [ChallengeMigration.literalProgram_slots, sineFromPlus_length top10Left top10Left_length]
   have hl1 := LocalFour.compileLower_slots 0 1 (first20RawWin.program 0) start Fin.elim0
-  have hl2 : (first20RawWin.program 0).gateSlots ≤ 13100000000 := First20Signed.window_slots firstRow26 0
+  have hl2 : (first20RawWin.program 0).gateSlots ≤ 13100000000 := First20Signed.window_slots firstRow25 0
   have hl3 : AndGadget.added (first20RawWin.program 0) ≤ 193625 := by
     unfold first20RawWin First20Signed.windowGeneric; rw [added_reindex]; exact First20Signed.program_added 0
   simp only [List.length_singleton]
@@ -6853,30 +7273,30 @@ theorem sineFromPlus_weight7_eq_weight4 {n s : Nat} (ws : List Wire) :
       rw [hgw, ih (fun x hx => hcs x (List.mem_cons_of_mem _ hx))]
   exact hgen _ hnoCCX
 
-theorem first20CatWin_tCount (start : Nat) (read : ConstantBit 2228224 → Bool) (h : Fin start → Bool) :
+theorem first20CatWin_tCount (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
     ((first20CatWin.program start).instantiate read h).tCount ≤ 4 * 193625 + 28 := by
   change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append
     (first20Core start)).instantiate read h).tCount ≤ _
   have hlitX_t : ∀ (s : Nat) (h' : Fin s → Bool),
-      ((literalProgram (n := 2228224) (s := s) [.X 836]).instantiate read h').tCount = 0 := fun s h' => by
+      ((literalProgram (n := 3407872) (s := s) [.X 836]).instantiate read h').tCount = 0 := fun s h' => by
     simp [literalProgram, gateProgram, Straight.instantiate, TemplateGate.instantiate,
       AdaptiveCircuit.tCount, ShorECDLP.tCount, tCost]
   have hcore_t : ∀ h' : Fin start → Bool, ((first20Core start).instantiate read h').tCount ≤ 4 * 193625 := by
     intro h'
     unfold first20Core
     have h1 := CatAxis.append_tCount_le
-      ((literalProgram (n := 2228224) (s := start) [.X 836]).append
+      ((literalProgram (n := 3407872) (s := start) [.X 836]).append
         (castFinish (first20Cat_finish_eq start)
           (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program))
       (literalProgram [.X 836]) read h' 0 (fun h'' => le_of_eq (hlitX_t _ h''))
     have h2 := CatAxis.append_tCount_le
-      (literalProgram (n := 2228224) (s := start) [.X 836])
+      (literalProgram (n := 3407872) (s := start) [.X 836])
       (castFinish (first20Cat_finish_eq start)
         (LocalFour.compileLower 0 1 (first20RawWin.program 0) start Fin.elim0).program)
       read h' (4 * 193625) (fun h'' => by
         rw [castFinish_instantiate]
         have hlo := LocalFour.compileLower_tCount 0 1 (first20RawWin.program 0) start Fin.elim0 read h''
-        have hz : residue (first20RawWin.program 0) = 0 := First20Signed.window_residue firstRow26 0
+        have hz : residue (first20RawWin.program 0) = 0 := First20Signed.window_residue firstRow25 0
         have ha : added (first20RawWin.program 0) ≤ 193625 := by
           unfold first20RawWin First20Signed.windowGeneric; rw [added_reindex]; exact First20Signed.program_added 0
         rw [weight4_zero _ hz] at hlo
@@ -6884,12 +7304,12 @@ theorem first20CatWin_tCount (start : Nat) (read : ConstantBit 2228224 → Bool)
     rw [hlitX_t] at h2
     omega
   have h1 := CatAxis.append_tCount_le
-    (ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)))
+    (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Left)))
     (first20Core start) read h (4 * 193625) hcore_t
-  have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start)
+  have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start)
       (sineFromPlus top10Left))).instantiate read h).tCount ≤ 28 := by
     have ht := ConditionalCatalyst.compile_t 1
-      (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)) read h
+      (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Left)) read h
     rw [sineFromPlus_weight7_eq_weight4, sineFromPlus_weight4 top10Left top10Left_length] at ht
     exact ht
   omega
@@ -6900,7 +7320,7 @@ theorem rightHeadCatWin_wellFormed (start : Nat) : (rightHeadCatWin.program star
       (literalProgram_wellFormed _ (sineFromPlus_wellFormed top10Right top10Right_length top10Right_nodup))
     apply LocalFour.fresh_of_not_mem_straightWires
     intro hm
-    exact wire1_not_bank17 (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length
+    exact wire1_not_bankW (top10Right_sub_bank (sineFromPlus_wires top10Right top10Right_length
       (literalProgram_straightWires _ hm)))
   · exact bodyCatWin_wellFormed rightHeadDigit start
 
@@ -6908,56 +7328,56 @@ theorem rightHeadCatWin_slots (start : Nat) : (rightHeadCatWin.program start).ga
   change ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
     ((bodyCatWin rightHeadDigit).program start)).gateSlots ≤ _
   rw [Straight.gateSlots_append]
-  have hs : (ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right))).gateSlots ≤ 400 := by
-    have hs1 := ConditionalCatalyst.compile_slots 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right))
-    have hs2 := ConditionalCatalyst.phaseTwos_le_slots (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right))
-    have hs3 : (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)).gateSlots = 52 := by
+  have hs : (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right))).gateSlots ≤ 400 := by
+    have hs1 := ConditionalCatalyst.compile_slots 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right))
+    have hs2 := ConditionalCatalyst.phaseTwos_le_slots (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right))
+    have hs3 : (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)).gateSlots = 52 := by
       rw [ChallengeMigration.literalProgram_slots, sineFromPlus_length top10Right top10Right_length]
     omega
   exact (Nat.add_le_add hs (bodyCatWin_slots rightHeadDigit start)).trans (by decide)
 
-theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 2228224 → Bool) (h : Fin start → Bool) :
+theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
     ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2238256 + 28 := by
   change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
     ((bodyCatWin rightHeadDigit).program start)).instantiate read h).tCount ≤ _
   have h1 := CatAxis.append_tCount_le
-    (ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)))
+    (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)))
     ((bodyCatWin rightHeadDigit).program start) read h (4 * 2238256)
     (fun h' => bodyCatWin_tCount rightHeadDigit start read h')
-  have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 2228224) (s := start)
+  have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start)
       (sineFromPlus top10Right))).instantiate read h).tCount ≤ 28 := by
     have ht := ConditionalCatalyst.compile_t 1
-      (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)) read h
+      (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)) read h
     rw [sineFromPlus_weight7_eq_weight4, sineFromPlus_weight4 top10Right top10Right_length] at ht
     exact ht
   exact h1.trans (Nat.add_le_add_right hsine_t _ |>.trans (by omega))
 
-theorem win26Cat_wellFormed (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat) :
+theorem win25Cat_wellFormed (w : Window 3407872) (hw : IsWin25Cat w) (start : Nat) :
     (w.program start).WellFormed := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
   · exact first20CatWin_wellFormed start
   · exact rightHeadCatWin_wellFormed start
   · exact bodyCatWin_wellFormed d start
 
-theorem win26Cat_bank_support (w : Window 2228224) (hw : IsWin26Cat w) : w.wires ⊆ List.range 1610 := by
+theorem win25Cat_bank_support (w : Window 3407872) (hw : IsWin25Cat w) : w.wires ⊆ List.range 1612 := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
-  · intro v hv; exact First20Signed.bits_subset_range (List.mem_reverse.mp hv)
-  · intro v hv; exact bank17_sub_range (List.mem_reverse.mp hv)
-  · intro v hv; exact bank17_sub_range (List.mem_reverse.mp hv)
+  · intro v hv; exact range1610_sub_1612 (First20Signed.bits_subset_range (List.mem_reverse.mp hv))
+  · intro v hv; exact bankW_sub_range (by decide) (List.mem_reverse.mp hv)
+  · intro v hv; rw [bodyCatWin_wires] at hv; exact bankW_sub_range d.k_hi (List.mem_reverse.mp hv)
 
-theorem win26Cat_noY (w : Window 2228224) (hw : IsWin26Cat w) : (1 : Wire) ∉ w.wires := by
+theorem win25Cat_noY (w : Window 3407872) (hw : IsWin25Cat w) : (1 : Wire) ∉ w.wires := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
   · exact fun hm => wire01_not_first20Bits.2 (List.mem_reverse.mp hm)
-  · exact fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
-  · exact fun hm => wire1_not_bank17 (List.mem_reverse.mp hm)
+  · exact fun hm => wire1_not_bankW (List.mem_reverse.mp hm)
+  · rw [bodyCatWin_wires]; exact fun hm => wire1_not_bankW (List.mem_reverse.mp hm)
 
-theorem win26Cat_support (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat)
-    (read : ConstantBit 2228224 → Bool) (history : Fin start → Bool) :
-    ((w.program start).instantiate read history).wires ⊆ List.range 1610 := by
+theorem win25Cat_support (w : Window 3407872) (hw : IsWin25Cat w) (start : Nat)
+    (read : ConstantBit 3407872 → Bool) (history : Fin start → Bool) :
+    ((w.program start).instantiate read history).wires ⊆ List.range 1612 := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
-  · apply outer_append_support _ _ read history (List.range 1610)
-    · have hw1 : Within (List.range 1610)
-          (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Left)) :=
+  · apply outer_append_support _ _ read history (List.range 1612)
+    · have hw1 : Within (List.range 1612)
+          (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Left)) :=
         LocalFour.within_of_straightWires _ _
           ((literalProgram_straightWires _).trans
             ((sineFromPlus_wires top10Left top10Left_length).trans top10Left_sub_range))
@@ -6969,23 +7389,23 @@ theorem win26Cat_support (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat)
     · intro h'
       unfold first20Core
       have hx_sup : ∀ (s : Nat) (hs : Fin s → Bool),
-          ((literalProgram (n := 2228224) (s := s) [.X 836]).instantiate read hs).wires ⊆ List.range 1610 := by
+          ((literalProgram (n := 3407872) (s := s) [.X 836]).instantiate read hs).wires ⊆ List.range 1612 := by
         intro s hs u hu
         have hm := literalProgram_straightWires [.X 836] (straight_instantiate_support _ read hs hu)
         simp only [circuitWires, gateWires, List.flatMap_cons, List.flatMap_nil, List.append_nil,
           List.mem_singleton] at hm
         subst hm; exact List.mem_range.mpr (by decide)
-      apply outer_append_support _ _ read h' (List.range 1610) _ (fun h'' => hx_sup _ h'')
-      apply outer_append_support _ _ read h' (List.range 1610) (hx_sup start h')
+      apply outer_append_support _ _ read h' (List.range 1612) _ (fun h'' => hx_sup _ h'')
+      apply outer_append_support _ _ read h' (List.range 1612) (hx_sup start h')
       intro h''
       rw [castFinish_instantiate]
       refine (straight_instantiate_support _ read h'').trans ?_
-      exact LocalFour.compileLower_straightWires 0 1 (first20RawWin.program 0) (List.range 1610)
-        (First20Signed.window_support firstRow26 0)
+      exact LocalFour.compileLower_straightWires 0 1 (first20RawWin.program 0) (List.range 1612)
+        ((First20Signed.window_support firstRow25 0).trans range1610_sub_1612)
         (List.mem_range.mpr (by decide)) (List.mem_range.mpr (by decide)) start Fin.elim0
-  · apply outer_append_support _ _ read history (List.range 1610)
-    · have hw1 : Within (List.range 1610)
-          (literalProgram (n := 2228224) (s := start) (sineFromPlus top10Right)) :=
+  · apply outer_append_support _ _ read history (List.range 1612)
+    · have hw1 : Within (List.range 1612)
+          (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)) :=
         LocalFour.within_of_straightWires _ _
           ((literalProgram_straightWires _).trans
             ((sineFromPlus_wires top10Right top10Right_length).trans top10Right_sub_range))
@@ -6998,7 +7418,7 @@ theorem win26Cat_support (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat)
       exact (straight_instantiate_support _ read h').trans (bodyCatWin_support rightHeadDigit start)
   · exact (straight_instantiate_support _ read history).trans (bodyCatWin_support d start)
 
-theorem win26Cat_cost18 (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat) :
+theorem win25Cat_cost18 (w : Window 3407872) (hw : IsWin25Cat w) (start : Nat) :
     cost18 (w.program start) = 0 := by
   rcases hw with rfl | rfl | ⟨d, rfl⟩
   · change cost18 ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append
@@ -7011,86 +7431,89 @@ theorem win26Cat_cost18 (w : Window 2228224) (hw : IsWin26Cat w) (start : Nat) :
       zero_add, add_zero, cost18_cast]
     apply CatAxis.cost18_zero_of_removed18
     rw [LocalFour.compileLower_removed18]
-    exact LocalFour.removed18_zero_of_residue _ (First20Signed.window_residue firstRow26 0)
+    exact LocalFour.removed18_zero_of_residue _ (First20Signed.window_residue firstRow25 0)
   · change cost18 ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append _) = 0
     rw [cost18_append, CatAxis.cost18_compile,
       cost18_literal_zero _ (sineFromPlus_largePhase_false top10Right 18 (by decide)), zero_add]
     exact bodyCatWin_cost18 rightHeadDigit start
   · exact bodyCatWin_cost18 d start
 
-theorem full26Cat_wellFormed : fullProgram26Cat.WellFormed := by
-  apply straight_append_wellFormed _ _ _ readout26Cat_wellFormed
-  unfold program26Cat
+theorem full25Cat_wellFormed : fullProgram25Cat.WellFormed := by
+  apply straight_append_wellFormed _ _ _ readout25Cat_wellFormed
+  unfold program25Cat
   apply Catalyst.literals_wellFormed _ _ (LocalFour.prepare_wellFormed 1)
   rw [castFinish_wellFormed]
   apply straight_append_wellFormed _ _ _ (resetProgram_wellFormed _ _ _)
   apply straight_append_wellFormed
-  · exact CatAxis.axisCat_wellFormed 1 leftWins26Cat
+  · exact CatAxis.axisCat_wellFormed 1 leftWins25Cat
       (fun w hw => by
         rcases List.mem_cons.mp hw with rfl | hw
-        · exact win26Cat_noY _ (Or.inl rfl)
+        · exact win25Cat_noY _ (Or.inl rfl)
         · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-          exact win26Cat_noY _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+          exact win25Cat_noY _ (Or.inr (Or.inr ⟨d, rfl⟩)))
       (fun w hw start => by
         rcases List.mem_cons.mp hw with rfl | hw
-        · exact win26Cat_wellFormed _ (Or.inl rfl) start
+        · exact win25Cat_wellFormed _ (Or.inl rfl) start
         · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-          exact win26Cat_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
-  · exact CatAxis.axisCat_wellFormed 1 rightWins26Cat
+          exact win25Cat_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
+  · exact CatAxis.axisCat_wellFormed 1 rightWins25Cat
       (fun w hw => by
         rcases List.mem_cons.mp hw with rfl | hw
-        · exact win26Cat_noY _ (Or.inr (Or.inl rfl))
+        · exact win25Cat_noY _ (Or.inr (Or.inl rfl))
         · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-          exact win26Cat_noY _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+          exact win25Cat_noY _ (Or.inr (Or.inr ⟨d, rfl⟩)))
       (fun w hw start => by
         rcases List.mem_cons.mp hw with rfl | hw
-        · exact win26Cat_wellFormed _ (Or.inr (Or.inl rfl)) start
+        · exact win25Cat_wellFormed _ (Or.inr (Or.inl rfl)) start
         · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-          exact win26Cat_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
+          exact win25Cat_wellFormed _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) _ _
 
-theorem full26Cat_slots : fullProgram26Cat.gateSlots ≤ 10000000000000 := by
-  have hL := CatAxis.axisCat_slots 1 leftWins26Cat 80000000400
+theorem full25Cat_slots : fullProgram25Cat.gateSlots ≤ 10000000000000 := by
+  have hL := CatAxis.axisCat_slots 1 leftWins25Cat 80000000400
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
       · exact (first20CatWin_slots start).trans (by omega)
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
         exact (bodyCatWin_slots d start).trans (by omega))
     0 List.nil
-  have hR := CatAxis.axisCat_slots 1 rightWins26Cat 80000000400
+  have hR := CatAxis.axisCat_slots 1 rightWins25Cat 80000000400
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
       · exact rightHeadCatWin_slots start
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
         exact (bodyCatWin_slots d start).trans (by omega))
-    (0 + axisCount leftWins26Cat) List.nil
-  rw [leftWins26Cat_meta, List.length_nil] at hL
-  rw [rightWins26Cat_meta, List.length_nil] at hR
-  have hLnum : metadataSlots 80000000400 leftMeta26Cat 0 ≤ 1300000000000 := by
-    simp only [leftMeta26Cat, List.replicate, metadataSlots, fourierSlots]
+    (0 + axisCount leftWins25Cat) List.nil
+  rw [leftWins25Cat_meta, List.length_nil] at hL
+  rw [rightWins25Cat_meta, List.length_nil] at hR
+  have hLnum : metadataSlots 80000000400 leftMeta25Cat 0 ≤ 1300000000000 := by
+    simp only [leftMeta25Cat, List.replicate, List.cons_append, List.nil_append,
+      metadataSlots, fourierSlots]
     omega
-  have hRnum : metadataSlots 80000000400 rightMeta26Cat 0 ≤ 1000000000000 := by
-    simp only [rightMeta26Cat, List.replicate, metadataSlots, fourierSlots]
+  have hRnum : metadataSlots 80000000400 rightMeta25Cat 0 ≤ 1100000000000 := by
+    simp only [rightMeta25Cat, List.replicate, List.cons_append, List.nil_append,
+      metadataSlots, fourierSlots]
     omega
-  have hro : readout26Cat.gateSlots = 5719 := by
-    unfold readout26Cat
-    rw [castFinish_gateSlots, Readout3.suffix3_slots]
-  unfold fullProgram26Cat program26Cat
+  have hro : readout25Cat.gateSlots = 22652 := by
+    unfold readout25Cat readoutL25 readoutR25
+    rw [castFinish_gateSlots, Straight.gateSlots_append, castFinish_gateSlots, castFinish_gateSlots,
+      Readout5.suffix5_slots, Readout5.suffix5_slots]
+  unfold fullProgram25Cat program25Cat
   rw [Straight.gateSlots_append, AndGadget.literals_slots, castFinish_gateSlots,
     Straight.gateSlots_append, Straight.gateSlots_append, resetProgram_gateSlots, hro]
   have hres : resetWires.length ≤ 2000 := by simp [resetWires]
   have hprep : (Catalyst.prepare 1).length = 2 := rfl
   omega
 
-theorem full26Cat_support (read : ConstantBit 2228224 → Bool) (history : Fin 0 → Bool) :
-    (fullProgram26Cat.instantiate read history).wires ⊆ List.range 1610 := by
-  apply outer_append_support _ _ read history (List.range 1610)
-  · unfold program26Cat
-    have hlit : Within (List.range 1610)
+theorem full25Cat_support (read : ConstantBit 3407872 → Bool) (history : Fin 0 → Bool) :
+    (fullProgram25Cat.instantiate read history).wires ⊆ List.range 1612 := by
+  apply outer_append_support _ _ read history (List.range 1612)
+  · unfold program25Cat
+    have hlit : Within (List.range 1612)
         (AndGadget.literals (Catalyst.prepare 1)
-          (castFinish (show 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat by unfold cursor26Cat; omega)
-            (((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
-              (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).append
-                (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)))) := by
+          (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
+            (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
+              (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
+                (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))) := by
       apply Catalyst.literals_within
       · intro u hu
         simp only [Catalyst.prepare, circuitWires, gateWires, List.flatMap_cons, List.flatMap_nil,
@@ -7099,113 +7522,126 @@ theorem full26Cat_support (read : ConstantBit 2228224 → Bool) (history : Fin 0
       · apply within_of_instantiate
         intro r h0
         rw [castFinish_instantiate]
-        apply outer_append_support _ _ r h0 (List.range 1610) _
-          (fun h2 => resetProgram_support _ _ _ _ r h2 Width16Actual.reset_range)
-        apply outer_append_support _ _ r h0 (List.range 1610)
-        · exact CatAxis.axisCat_support 1 leftWins26Cat (List.range 1610)
+        apply outer_append_support _ _ r h0 (List.range 1612) _
+          (fun h2 => resetProgram_support _ _ _ _ r h2 (Width16Actual.reset_range.trans range1610_sub_1612))
+        apply outer_append_support _ _ r h0 (List.range 1612)
+        · exact CatAxis.axisCat_support 1 leftWins25Cat (List.range 1612)
             (List.mem_range.mpr (by decide))
             (fun w hw => by
               rcases List.mem_cons.mp hw with rfl | hw
-              · exact win26Cat_bank_support _ (Or.inl rfl)
+              · exact win25Cat_bank_support _ (Or.inl rfl)
               · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-                exact win26Cat_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+                exact win25Cat_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
             (fun w hw start r' h' => by
               rcases List.mem_cons.mp hw with rfl | hw
-              · exact win26Cat_support _ (Or.inl rfl) start r' h'
+              · exact win25Cat_support _ (Or.inl rfl) start r' h'
               · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-                exact win26Cat_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r' h')
+                exact win25Cat_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r' h')
             0 List.nil r h0
         · intro h1
-          exact CatAxis.axisCat_support 1 rightWins26Cat (List.range 1610)
+          exact CatAxis.axisCat_support 1 rightWins25Cat (List.range 1612)
             (List.mem_range.mpr (by decide))
             (fun w hw => by
               rcases List.mem_cons.mp hw with rfl | hw
-              · exact win26Cat_bank_support _ (Or.inr (Or.inl rfl))
+              · exact win25Cat_bank_support _ (Or.inr (Or.inl rfl))
               · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-                exact win26Cat_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
+                exact win25Cat_bank_support _ (Or.inr (Or.inr ⟨d, rfl⟩)))
             (fun w hw start r' h' => by
               rcases List.mem_cons.mp hw with rfl | hw
-              · exact win26Cat_support _ (Or.inr (Or.inl rfl)) start r' h'
+              · exact win25Cat_support _ (Or.inr (Or.inl rfl)) start r' h'
               · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-                exact win26Cat_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r' h')
-            (0 + axisCount leftWins26Cat) List.nil r h1
+                exact win25Cat_support _ (Or.inr (Or.inr ⟨d, rfl⟩)) start r' h')
+            (0 + axisCount leftWins25Cat) List.nil r h1
     exact hlit.instantiate read history
   · intro h
-    unfold readout26Cat
+    unfold readout25Cat readoutL25 readoutR25
     rw [castFinish_instantiate]
-    exact (Readout3.suffix3_support _ _ _ _ read h).trans (by decide)
+    have h01 : ([0, 1] : List Wire) ⊆ List.range 1612 := fun w hw => by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hw
+      rcases hw with rfl | rfl <;> exact List.mem_range.mpr (by decide)
+    apply outer_append_support _ _ read h (List.range 1612)
+    · rw [castFinish_instantiate]; exact (Readout5.suffix5_support _ _ _ _ read h).trans h01
+    · intro h1; rw [castFinish_instantiate]; exact (Readout5.suffix5_support _ _ _ _ read h1).trans h01
 
-theorem source26Cat_within : Within (List.range 1610) rawEntry26Cat.program := by
-  unfold rawEntry26Cat Single.fixedEntry
+theorem source25Cat_within : Within (List.range 1612) rawEntry25Cat.program := by
+  unfold rawEntry25Cat Single.fixedEntry
   dsimp only
-  exact Width16Actual.within_reindex fullProgram26Cat _ (List.range 1610)
-    (within_of_instantiate fullProgram26Cat (List.range 1610) full26Cat_support)
+  exact Width16Actual.within_reindex fullProgram25Cat _ (List.range 1612)
+    (within_of_instantiate fullProgram25Cat (List.range 1612) full25Cat_support)
 
-def leftTCountMeta26Cat : List (Nat × Nat) :=
-  (4 * 193625 + 28, 20) :: List.replicate 14 (4 * 2238256, 17)
+def leftTCountMeta25Cat : List (Nat × Nat) :=
+  (4 * 193625 + 28, 20) :: List.replicate 11 (4 * 2320431, 18) ++ List.replicate 2 (4 * 2484527, 19)
 
-def rightTCountMeta26Cat : List (Nat × Nat) :=
-  (4 * 2238256 + 28, 17) :: List.replicate 11 (4 * 2238256, 17)
+def rightTCountMeta25Cat : List (Nat × Nat) :=
+  (4 * 2238256 + 28, 17) :: List.replicate 9 (4 * 2238256, 17) ++ List.replicate 2 (4 * 2320431, 18)
 
-theorem exact_trimmed_tCount26Cat :
-    CatAxis.metadataTrimmedWeight leftTCountMeta26Cat 0 +
-      CatAxis.metadataTrimmedWeight rightTCountMeta26Cat 0 = 233560268 := by
+theorem exact_trimmed_tCount25Cat :
+    CatAxis.metadataTrimmedWeight leftTCountMeta25Cat 0 +
+      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 230850512 := by
   decide +kernel
 
-theorem left26Cat_tCount_relation :
+theorem left25Cat_tCount_relation :
     List.Forall₂ (fun w k => w.wires.length = k.2 ∧
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
-      leftWins26Cat leftTCountMeta26Cat := by
+      leftWins25Cat leftTCountMeta25Cat := by
   refine .cons ⟨by simp [first20CatWin, First20Signed.bits_length], first20CatWin_tCount⟩ ?_
-  have hmap : List.replicate 14 (4 * 2238256, 17) = leftDigits26.map (fun _ => (4 * 2238256, 17)) := by
-    simp [leftDigits26, List.ofFn_succ, List.replicate]
+  have hmap : List.replicate 11 (4 * 2320431, 18) ++ List.replicate 2 (4 * 2484527, 19) =
+      leftDigits25.map (fun d => (4 * d.tof, d.width)) := by
+    simp [leftDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
+  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 11 (4 * 2320431, 18) ++ List.replicate 2 (4 * 2484527, 19))
   rw [hmap]
-  induction leftDigits26 with
+  induction leftDigits25 with
   | nil => exact .nil
   | cons d ds ih =>
-    exact .cons ⟨by simp [bodyCatWin, bank17_length], bodyCatWin_tCount d⟩ ih
+    exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
-theorem right26Cat_tCount_relation :
+theorem right25Cat_tCount_relation :
     List.Forall₂ (fun w k => w.wires.length = k.2 ∧
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
-      rightWins26Cat rightTCountMeta26Cat := by
-  refine .cons ⟨by simp [rightHeadCatWin, bank17_length], rightHeadCatWin_tCount⟩ ?_
-  have hmap : List.replicate 11 (4 * 2238256, 17) = rightTailDigits26.map (fun _ => (4 * 2238256, 17)) := by
-    simp [rightTailDigits26, List.ofFn_succ, List.replicate]
+      rightWins25Cat rightTCountMeta25Cat := by
+  refine .cons ⟨by simp [rightHeadCatWin, GenericW.bankW_length], rightHeadCatWin_tCount⟩ ?_
+  have hmap : List.replicate 9 (4 * 2238256, 17) ++ List.replicate 2 (4 * 2320431, 18) =
+      rightTailDigits25.map (fun d => (4 * d.tof, d.width)) := by
+    simp [rightTailDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
+  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 9 (4 * 2238256, 17) ++ List.replicate 2 (4 * 2320431, 18))
   rw [hmap]
-  induction rightTailDigits26 with
+  induction rightTailDigits25 with
   | nil => exact .nil
   | cons d ds ih =>
-    exact .cons ⟨by simp [bodyCatWin, bank17_length], bodyCatWin_tCount d⟩ ih
+    exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
-theorem full26Cat_trim18_tCount (read : ConstantBit 2228224 → Bool) (h : Fin 0 → Bool) :
-    ((trim 18 fullProgram26Cat).instantiate read h).tCount ≤ 233560269 := by
-  unfold fullProgram26Cat program26Cat
+theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0 → Bool) :
+    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 230850513 := by
+  unfold fullProgram25Cat program25Cat
   have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 18 g = false := by decide
   rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
-  have hro_t : ∀ h' : Fin cursor26Cat → Bool, ((trim 18 readout26Cat).instantiate read h').tCount ≤ 0 := by
+  have hro_t : ∀ h' : Fin cursor25Cat → Bool, ((trim 18 readout25Cat).instantiate read h').tCount ≤ 0 := by
     intro h'
-    have h1 := trim18_t readout26Cat read h'
-    have h2 : (readout26Cat.instantiate read h').tCount = 0 := by
-      unfold readout26Cat; rw [castFinish_instantiate]; exact Readout3.suffix3_t _ _ _ _ read h'
+    have h1 := trim18_t readout25Cat read h'
+    have h2 : (readout25Cat.instantiate read h').tCount = 0 := by
+      unfold readout25Cat readoutL25 readoutR25
+      rw [castFinish_instantiate]
+      apply Readout56.append_t_zero _ _ read
+      · intro h0; rw [castFinish_instantiate]; exact Readout5.suffix5_t _ _ _ _ read h0
+      · intro h1; rw [castFinish_instantiate]; exact Readout5.suffix5_t _ _ _ _ read h1
     omega
   have h1 := CatAxis.append_tCount_le
     (AndGadget.literals (Catalyst.prepare 1)
-      (trim 18 (castFinish (show 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat by unfold cursor26Cat; omega)
-        (((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
-          (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).append
-            (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)))))
-    (trim 18 readout26Cat) read h 0 hro_t
+      (trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
+        (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
+          (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
+            (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))))
+    (trim 18 readout25Cat) read h 0 hro_t
   rw [Catalyst.literals_t] at h1
   have hprep_t : ShorECDLP.tCount (Catalyst.prepare 1) = 1 := by decide
   rw [hprep_t] at h1
-  have hbody_t : ((trim 18 (castFinish (show 0 + axisCount leftWins26Cat + axisCount rightWins26Cat + resetWires.length = cursor26Cat by unfold cursor26Cat; omega)
-      (((CatAxis.axisCat 1 leftWins26Cat 0 List.nil).append
-        (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).append
-          (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)))).instantiate read h).tCount ≤ 233560268 := by
+  have hbody_t : ((trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
+      (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
+        (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 230850512 := by
     rw [CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append, CatAxis.trim18_append]
-    have hres_t : ∀ h' : Fin (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) → Bool,
-        ((trim 18 (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
+    have hres_t : ∀ h' : Fin (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) → Bool,
+        ((trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
       intro h'
       have hrt : ∀ (n start : Nat) (ws : List Wire) (r : ConstantBit n → Bool) (hist : Fin start → Bool),
           ((resetProgram n start ws).instantiate r hist).tCount = 0 := by
@@ -7217,125 +7653,129 @@ theorem full26Cat_trim18_tCount (read : ConstantBit 2228224 → Bool) (h : Fin 0
           simp only [resetProgram, castFinish_instantiate, Straight.instantiate, AdaptiveCircuit.tCount,
             ShorECDLP.tCount, tCost, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
             Nat.zero_add, ih, max_self]
-      have hle := trim18_t (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires) read h'
+      have hle := trim18_t (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires) read h'
       rw [hrt] at hle
       exact hle
     have hLR := CatAxis.append_tCount_le
-      ((trim 18 (CatAxis.axisCat 1 leftWins26Cat 0 List.nil)).append
-        (trim 18 (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)))
-      (trim 18 (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires))
+      ((trim 18 (CatAxis.axisCat 1 leftWins25Cat 0 List.nil)).append
+        (trim 18 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)))
+      (trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires))
       read h 0 hres_t
-    have hR_t : ∀ h' : Fin (0 + axisCount leftWins26Cat) → Bool,
-        ((trim 18 (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil)).instantiate read h').tCount ≤
-          CatAxis.metadataTrimmedWeight rightTCountMeta26Cat 0 := fun h' => by
-      have hax := CatAxis.axisCat_tCount_trim18 1 rightWins26Cat rightTCountMeta26Cat
-        right26Cat_tCount_relation (0 + axisCount leftWins26Cat) List.nil read h'
+    have hR_t : ∀ h' : Fin (0 + axisCount leftWins25Cat) → Bool,
+        ((trim 18 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).instantiate read h').tCount ≤
+          CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 := fun h' => by
+      have hax := CatAxis.axisCat_tCount_trim18 1 rightWins25Cat rightTCountMeta25Cat
+        right25Cat_tCount_relation (0 + axisCount leftWins25Cat) List.nil read h'
       rwa [List.length_nil] at hax
     have hL := CatAxis.append_tCount_le
-      (trim 18 (CatAxis.axisCat 1 leftWins26Cat 0 List.nil))
-      (trim 18 (CatAxis.axisCat 1 rightWins26Cat (0 + axisCount leftWins26Cat) List.nil))
+      (trim 18 (CatAxis.axisCat 1 leftWins25Cat 0 List.nil))
+      (trim 18 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil))
       read h _ hR_t
-    have hLax := CatAxis.axisCat_tCount_trim18 1 leftWins26Cat leftTCountMeta26Cat
-      left26Cat_tCount_relation 0 List.nil read h
+    have hLax := CatAxis.axisCat_tCount_trim18 1 leftWins25Cat leftTCountMeta25Cat
+      left25Cat_tCount_relation 0 List.nil read h
     rw [List.length_nil] at hLax
-    have hex := exact_trimmed_tCount26Cat
+    have hex := exact_trimmed_tCount25Cat
     omega
   omega
 
-theorem source26Cat_cost18 : cost18 rawEntry26Cat.program ≤ 51 / 10000 := by
-  have hL := CatAxis.axisCat_cost18_exact 1 leftWins26Cat
+theorem source25Cat_cost18 : cost18 rawEntry25Cat.program ≤ 51 / 10000 := by
+  have hL := CatAxis.axisCat_cost18_exact 1 leftWins25Cat
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
-      · exact win26Cat_cost18 _ (Or.inl rfl) start
+      · exact win25Cat_cost18 _ (Or.inl rfl) start
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact win26Cat_cost18 _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) 0 List.nil
-  have hR := CatAxis.axisCat_cost18_exact 1 rightWins26Cat
+        exact win25Cat_cost18 _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) 0 List.nil
+  have hR := CatAxis.axisCat_cost18_exact 1 rightWins25Cat
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
-      · exact win26Cat_cost18 _ (Or.inr (Or.inl rfl)) start
+      · exact win25Cat_cost18 _ (Or.inr (Or.inl rfl)) start
       · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
-        exact win26Cat_cost18 _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) (0 + axisCount leftWins26Cat) List.nil
-  have hlw : (leftWins26Cat.map (fun w => w.wires.length)).sum = 258 := by
-    have h := congrArg (fun l => (l.map Prod.snd).sum) leftWins26Cat_meta
+        exact win25Cat_cost18 _ (Or.inr (Or.inr ⟨d, rfl⟩)) start) (0 + axisCount leftWins25Cat) List.nil
+  have hlw : (leftWins25Cat.map (fun w => w.wires.length)).sum = 256 := by
+    have h := congrArg (fun l => (l.map Prod.snd).sum) leftWins25Cat_meta
     simp only [List.map_map, Function.comp_def] at h
-    rw [h]; simp only [leftMeta26Cat, List.replicate, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]; rfl
-  have hrw : (rightWins26Cat.map (fun w => w.wires.length)).sum = 204 := by
-    have h := congrArg (fun l => (l.map Prod.snd).sum) rightWins26Cat_meta
+    rw [h]; simp only [leftMeta25Cat, List.replicate, List.cons_append, List.nil_append,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]; rfl
+  have hrw : (rightWins25Cat.map (fun w => w.wires.length)).sum = 206 := by
+    have h := congrArg (fun l => (l.map Prod.snd).sum) rightWins25Cat_meta
     simp only [List.map_map, Function.comp_def] at h
-    rw [h]; simp only [rightMeta26Cat, List.replicate, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]; rfl
+    rw [h]; simp only [rightMeta25Cat, List.replicate, List.cons_append, List.nil_append,
+      List.map_cons, List.map_nil, List.sum_cons, List.sum_nil]; rfl
   rw [hlw, List.length_nil] at hL
   rw [hrw, List.length_nil] at hR
-  have hreset : cost18 (resetProgram 2228224 (0 + axisCount leftWins26Cat + axisCount rightWins26Cat) resetWires) = 0 := by
+  have hreset : cost18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires) = 0 := by
     apply cost18_zero_of_residue
     have hz : ∀ (n start : Nat) (ws : List Wire), residue (resetProgram n start ws) = 0 := by
       intro n start ws; induction ws generalizing start with
       | nil => simp [resetProgram, residue]
       | cons w ws ih => simpa [resetProgram, residue_cast, residue] using ih (start + 1)
     exact hz _ _ _
-  have hro : cost18 readout26Cat = 0 := by
+  have hro : cost18 readout25Cat = 0 := by
     apply cost18_zero_of_residue
-    simp only [readout26Cat, residue_cast, Readout3.residue_suffix3]
-  unfold rawEntry26Cat Single.fixedEntry
+    simp only [readout25Cat, readoutL25, readoutR25, residue_cast, residue_append, Readout5.residue_suffix5]
+  unfold rawEntry25Cat Single.fixedEntry
   dsimp only
   rw [cost18_reindex]
-  simp only [fullProgram26Cat, cost18_append, program26Cat]
+  simp only [fullProgram25Cat, cost18_append, program25Cat]
   rw [CatAxis.cost18_literals _ _ (by decide)]
   simp only [cost18_cast, cost18_append, zero_add, add_zero, hreset, hro, hL, hR]
-  exact joint_error18
+  exact joint_error18_256_206
 
-theorem source26Cat_cursor_le : rawEntry26Cat.finalCursor ≤ 105000000 := by
-  have hfc : rawEntry26Cat.finalCursor = cursor26Cat + 1634 := by
-    unfold rawEntry26Cat; rw [Single.fixedEntry_cursor]
+theorem source25Cat_cursor_le : rawEntry25Cat.finalCursor ≤ 100000000 := by
+  have hfc : rawEntry25Cat.finalCursor = cursor25Cat + 6472 := by
+    unfold rawEntry25Cat; rw [Single.fixedEntry_cursor]
   have h1 := first20Cat_count_le
-  have h2 := cBody16_le
-  have hL := leftWins26Cat_count_eq
-  have hR := rightWins26Cat_count_eq
+  have h16 := cBody16_le
+  have h17 := cBody17_le
+  have h18 := cBody18_le
+  have hL := leftWins25Cat_count_eq
+  have hR := rightWins25Cat_count_eq
   have hres : resetWires.length ≤ 2000 := by simp [resetWires]
-  unfold cursor26Cat at hfc
+  unfold cursor25Cat at hfc
   omega
 
-/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,610 × 233,560,269` certificate -/
+/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,612 × 230,850,513` certificate -/
 
-section Cert26
-attribute [local irreducible] rawEntry26Cat fullProgram26Cat program26Cat readout26Cat
+section Cert25
+attribute [local irreducible] rawEntry25Cat fullProgram25Cat program25Cat readout25Cat
 
-def rawBounds26Cat : Bounds := ⟨1610, 70000000000000, 105000000⟩
+def rawBounds25Cat : Bounds := ⟨1612, 70000000000000, 100000000⟩
 
-theorem raw_certificate26Cat : Certificate rawLimits26 rawLayout26Cat rawEntry26Cat rawBounds26Cat where
+theorem raw_certificate25Cat : Certificate rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat where
   gateBudget := by
-    rw [rawEntry26Cat, Single.fixedEntry_slots]
-    exact full26Cat_slots.trans (by unfold rawLimits26 officialLimits; dsimp only; omega)
-  recordBudget := source26Cat_cursor_le.trans (by unfold rawLimits26 officialLimits; dsimp only; omega)
-  tableBudget := by rw [rawEntry26Cat, Single.fixedEntry_rows]; unfold rawLimits26; exact le_rfl
+    rw [rawEntry25Cat, Single.fixedEntry_slots]
+    exact full25Cat_slots.trans (by unfold rawLimits25 officialLimits; dsimp only; omega)
+  recordBudget := source25Cat_cursor_le.trans (by unfold rawLimits25 officialLimits; dsimp only; omega)
+  tableBudget := by rw [rawEntry25Cat, Single.fixedEntry_rows]; unfold rawLimits25; exact le_rfl
   candidateBudget := by
-    change rawLayout26Cat.trials.length * (2 * (order / 2 ^ 204 + 2)) ≤ 56 * (2 ^ 49 + 2)
-    have hl : rawLayout26Cat.trials.length = 3 := by
-      simp only [rawLayout26Cat, List.length_map, Readout3.rightWords3_length]
+    change rawLayout25Cat.trials.length * (2 * (order / 2 ^ 206 + 2)) ≤ 56 * (2 ^ 49 + 2)
+    have hl : rawLayout25Cat.trials.length = 13 := by
+      simp only [rawLayout25Cat, List.length_map, offsets13_length]
     rw [hl]
-    exact decoder_budget258
-  wellFormed := by rw [rawEntry26Cat, Single.fixedEntry_wellFormed]; exact full26Cat_wellFormed
+    exact decoder_budget256
+  wellFormed := by rw [rawEntry25Cat, Single.fixedEntry_wellFormed]; exact full25Cat_wellFormed
   resources := by
     intro Q
-    have hs := source26Cat_within.instantiate (readConstant rawEntry26Cat.coefficients.get Q) Fin.elim0
-    have hq : (rawEntry26Cat.instantiate Q).qubitCount ≤ 1610 := by
-      have ht : (rawEntry26Cat.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1610).toFinset := by
+    have hs := source25Cat_within.instantiate (readConstant rawEntry25Cat.coefficients.get Q) Fin.elim0
+    have hq : (rawEntry25Cat.instantiate Q).qubitCount ≤ 1612 := by
+      have ht : (rawEntry25Cat.instantiate Q).wires.dedup.toFinset ⊆ (List.range 1612).toFinset := by
         intro v hv
         exact List.mem_toFinset.mpr (hs (by simpa only [List.mem_toFinset, List.mem_dedup] using hv))
       have hc := (Finset.card_le_card ht).trans (List.toFinset_card_le _)
       rw [List.toFinset_card_of_nodup (List.nodup_dedup _)] at hc
       simpa only [AdaptiveCircuit.qubitCount, List.length_range] using hc
     refine ⟨hq, ?_, ?_⟩
-    · have ht := Width16Actual.straight_t_bound rawEntry26Cat.program
-        (readConstant rawEntry26Cat.coefficients.get Q) Fin.elim0
-      have hb : rawEntry26Cat.program.gateSlots ≤ 10000000000000 := by
-        rw [rawEntry26Cat, Single.fixedEntry_slots]; exact full26Cat_slots
+    · have ht := Width16Actual.straight_t_bound rawEntry25Cat.program
+        (readConstant rawEntry25Cat.coefficients.get Q) Fin.elim0
+      have hb : rawEntry25Cat.program.gateSlots ≤ 10000000000000 := by
+        rw [rawEntry25Cat, Single.fixedEntry_slots]; exact full25Cat_slots
       exact ht.trans (by change _ ≤ 70000000000000; omega)
-    · have hm := source26Cat_cursor_le
-      change (rawEntry26Cat.program.instantiate _ _).measurementCount ≤ 105000000
+    · have hm := source25Cat_cursor_le
+      change (rawEntry25Cat.program.instantiate _ _).measurementCount ≤ 100000000
       rw [Straight.measurementCount]; omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99 / 100 : ℝ) ≤ 99109 / 100000).trans (strong_success26Cat Q d hn hd)
+    exact (by norm_num : (99 / 100 : ℝ) ≤ 99109 / 100000).trans (strong_success25Cat Q d hn hd)
 
 def entryTrim18 (e : StraightEntry) : StraightEntry where
   coefficients := e.coefficients
@@ -7398,9 +7838,9 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
     nlinarith
 
-theorem trimmed26Cat_coefficients :
-    (entryTrim18 rawEntry26Cat).coefficients = List.ofFn coefficientAt26 := by
-  unfold entryTrim18 rawEntry26Cat Single.fixedEntry; rfl
+theorem trimmed25Cat_coefficients :
+    (entryTrim18 rawEntry25Cat).coefficients = List.ofFn coefficientAt25 := by
+  unfold entryTrim18 rawEntry25Cat Single.fixedEntry; rfl
 
 theorem trim18_reindex {n m s e : Nat} (f : Fin n → Fin m) (p : Straight n s e) :
     trim 18 (reindexStraight f p) = reindexStraight f (trim 18 p) := by
@@ -7425,58 +7865,62 @@ private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCo
   rw [trim18_reindex, reindexStraight_instantiate]
   exact hp _
 
-theorem trimmed26Cat_tCount (Q : Point) :
-    ((entryTrim18 rawEntry26Cat).instantiate Q).tCount ≤ 233560269 := by
-  rw [rawEntry26Cat]
-  exact trim18_fixedEntry_tCount coefficientAt26 fullProgram26Cat Q 233560269
-    (fun r => full26Cat_trim18_tCount r Fin.elim0)
+theorem trimmed25Cat_tCount (Q : Point) :
+    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 230850513 := by
+  rw [rawEntry25Cat]
+  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 230850513
+    (fun r => full25Cat_trim18_tCount r Fin.elim0)
 
-theorem trim18_certificate26Cat :
-    Certificate rawLimits26 rawLayout26Cat (entryTrim18 rawEntry26Cat) ⟨1610, 233560269, 105000000⟩ := by
-  have hbase := trim18_certificate_generic rawLimits26 rawLayout26Cat rawEntry26Cat rawBounds26Cat
-    (List.range 1610) raw_certificate26Cat source26Cat_within source26Cat_cost18 strong_success26Cat
+theorem trim18_certificate25Cat :
+    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 230850513, 100000000⟩ := by
+  have hbase := trim18_certificate_generic rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat
+    (List.range 1612) raw_certificate25Cat source25Cat_within source25Cat_cost18 strong_success25Cat
   refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
     hbase.wellFormed, ?_, hbase.success⟩
   intro Q
-  have hq : ((entryTrim18 rawEntry26Cat).instantiate Q).qubitCount ≤ 1610 := by
+  have hq : ((entryTrim18 rawEntry25Cat).instantiate Q).qubitCount ≤ 1612 := by
     simpa only [List.length_range] using (hbase.resources Q).1
-  have hm : ((entryTrim18 rawEntry26Cat).instantiate Q).measurementCount ≤ 105000000 :=
-    (hbase.resources Q).2.2.trans source26Cat_cursor_le
-  exact ⟨hq, trimmed26Cat_tCount Q, hm⟩
+  have hm : ((entryTrim18 rawEntry25Cat).instantiate Q).measurementCount ≤ 100000000 :=
+    (hbase.resources Q).2.2.trans source25Cat_cursor_le
+  exact ⟨hq, trimmed25Cat_tCount Q, hm⟩
 
-end Cert26
+end Cert25
 
 end
-end ShorECDLP.Entrant.Schedule26
+end ShorECDLP.Entrant.Schedule25
 
-namespace ShorECDLP.Entrant.Schedule26Actual
+namespace ShorECDLP.Entrant.Schedule25Actual
 open Quantum Challenge Secp256k1 AndGadget WEXCredit ConditionalCatalyst ApproximatePhase34
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
-open Schedule26 Trim18
+open Schedule25 Trim18
 noncomputable section
 set_option maxHeartbeats 2000000
 set_option maxRecDepth 30000
 set_option linter.unusedSimpArgs false
 attribute [local irreducible] List.ofFn Single.axis Single.fixedEntry
-  Generic16.compiledProgram Generic16.compiledProgramFn
+  GenericW.compiledProgramW GenericW.compiledProgramFnW
+  GenericW.compiledProgram16 GenericW.compiledProgram17 GenericW.compiledProgram18
+  GenericW.fixupSpec16 GenericW.fixupSpec17 GenericW.fixupSpec18
+  GenericW.compiledFixup16 GenericW.compiledFixup9 GenericW.rawFixup16 GenericW.rawFixup9
+  GenericW.compact1612 Readout5.suffix5
   LocalFour.compileLower CatAxis.axisCat
-  Schedule26.rawEntry26Cat Schedule26.fullProgram26Cat Schedule26.program26Cat Schedule26.readout26Cat
-  Schedule26.entryTrim18 Schedule26.rawLayout26Cat Schedule26.specializeEntry26
+  Schedule25.rawEntry25Cat Schedule25.fullProgram25Cat Schedule25.program25Cat Schedule25.readout25Cat
+  Schedule25.entryTrim18 Schedule25.rawLayout25Cat Schedule25.specializeEntry25
   ConditionalCatalyst.compile
 
 def entry : StraightEntry :=
-  specializeEntry26 (entryTrim18 rawEntry26Cat) trimmed26Cat_coefficients
+  specializeEntry25 (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
 
-def layout : DecodeLayout := rawLayout26Cat
+def layout : DecodeLayout := rawLayout25Cat
 
-def bounds : Bounds := ⟨1610, 233560269, 105000000⟩
+def bounds : Bounds := ⟨1612, 230850513, 100000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
-  specializeEntry26_certificate (entryTrim18 rawEntry26Cat) trimmed26Cat_coefficients
-    rawLayout26Cat bounds trim18_certificate26Cat
+  specializeEntry25_certificate (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
+    rawLayout25Cat bounds trim18_certificate25Cat
 
 end
-end ShorECDLP.Entrant.Schedule26Actual
+end ShorECDLP.Entrant.Schedule25Actual
 end
 
 /-! ### Consolidated from `Main.lean` -/
@@ -7486,13 +7930,13 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1610, 233560269, 105000000⟩
-def entry : StraightEntry := Schedule26Actual.entry
-def layout : DecodeLayout := Schedule26Actual.layout
+def bounds : Bounds := ⟨1612, 230850513, 100000000⟩
+def entry : StraightEntry := Schedule25Actual.entry
+def layout : DecodeLayout := Schedule25Actual.layout
 set_option maxRecDepth 30000 in
 set_option maxHeartbeats 4000000 in
 theorem certificate : Certificate officialLimits layout entry bounds :=
-  Schedule26Actual.certificate
+  Schedule25Actual.certificate
 end
 end ShorECDLP.Entrant
 end
