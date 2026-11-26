@@ -6586,10 +6586,10 @@ def Digit25.width (d : Digit25) : Nat := d.k + 1
 def Digit25.bank (d : Digit25) : List Wire := GenericW.bankW d.k
 
 def Digit25.tof : Digit25 → Nat
-  | .left18 _ => 2320431
-  | .left19 _ => 2484527
-  | .right17 _ => 2172470
-  | .right18 _ => 2254645
+  | .left18 _ => 2319661
+  | .left19 _ => 2483757
+  | .right17 _ => 2171700
+  | .right18 _ => 2253875
 
 def Digit25.isRight : Digit25 → Bool
   | .left18 _ | .left19 _ => false
@@ -10668,12 +10668,12 @@ theorem rightHeadCatWin_slots (start : Nat) : (rightHeadCatWin.program start).ga
   exact (Nat.add_le_add hs (bodyCatWin_slots rightHeadDigit start)).trans (by decide)
 
 theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
-    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2172470 + 28 := by
+    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2171700 + 28 := by
   change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
     ((bodyCatWin rightHeadDigit).program start)).instantiate read h).tCount ≤ _
   have h1 := CatAxis.append_tCount_le
     (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)))
-    ((bodyCatWin rightHeadDigit).program start) read h (4 * 2172470)
+    ((bodyCatWin rightHeadDigit).program start) read h (4 * 2171700)
     (fun h' => bodyCatWin_tCount rightHeadDigit start read h')
   have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start)
       (sineFromPlus top10Right))).instantiate read h).tCount ≤ 28 := by
@@ -11048,14 +11048,14 @@ theorem source25Cat_within : Within (List.range 1612) rawEntry25Cat.program := b
     (within_of_instantiate fullProgram25Cat (List.range 1612) full25Cat_support)
 
 def leftTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 193625 + 28, 20) :: List.replicate 11 (4 * 2320431, 18) ++ List.replicate 2 (4 * 2484527, 19)
+  (4 * 193625 + 28, 20) :: List.replicate 11 (4 * 2319661, 18) ++ List.replicate 2 (4 * 2483757, 19)
 
 def rightTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 2172470 + 28, 17) :: List.replicate 9 (4 * 2172470, 17) ++ List.replicate 2 (4 * 2254645, 18)
+  (4 * 2171700 + 28, 17) :: List.replicate 9 (4 * 2171700, 17) ++ List.replicate 2 (4 * 2253875, 18)
 
 theorem exact_trimmed_tCount25Cat :
     CatAxis.metadataTrimmedWeight leftTCountMeta25Cat 0 +
-      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 227692784 := by
+      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 227615784 := by
   decide +kernel
 
 theorem left25Cat_tCount_relation :
@@ -11063,10 +11063,10 @@ theorem left25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       leftWins25Cat leftTCountMeta25Cat := by
   refine .cons ⟨by simp [first20CatWin, First20Signed.bits_length], first20CatWin_tCount⟩ ?_
-  have hmap : List.replicate 11 (4 * 2320431, 18) ++ List.replicate 2 (4 * 2484527, 19) =
+  have hmap : List.replicate 11 (4 * 2319661, 18) ++ List.replicate 2 (4 * 2483757, 19) =
       leftDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [leftDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 11 (4 * 2320431, 18) ++ List.replicate 2 (4 * 2484527, 19))
+  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 11 (4 * 2319661, 18) ++ List.replicate 2 (4 * 2483757, 19))
   rw [hmap]
   induction leftDigits25 with
   | nil => exact .nil
@@ -11078,10 +11078,10 @@ theorem right25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       rightWins25Cat rightTCountMeta25Cat := by
   refine .cons ⟨by simp [rightHeadCatWin, GenericW.bankW_length], rightHeadCatWin_tCount⟩ ?_
-  have hmap : List.replicate 9 (4 * 2172470, 17) ++ List.replicate 2 (4 * 2254645, 18) =
+  have hmap : List.replicate 9 (4 * 2171700, 17) ++ List.replicate 2 (4 * 2253875, 18) =
       rightTailDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [rightTailDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 9 (4 * 2172470, 17) ++ List.replicate 2 (4 * 2254645, 18))
+  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 9 (4 * 2171700, 17) ++ List.replicate 2 (4 * 2253875, 18))
   rw [hmap]
   induction rightTailDigits25 with
   | nil => exact .nil
@@ -11089,7 +11089,7 @@ theorem right25Cat_tCount_relation :
     exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
 theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0 → Bool) :
-    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 227692785 := by
+    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 227615785 := by
   unfold fullProgram25Cat program25Cat
   have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 18 g = false := by decide
   rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
@@ -11116,7 +11116,7 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
   have hbody_t : ((trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
       (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
         (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
-          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 227692784 := by
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 227615784 := by
     rw [CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append, CatAxis.trim18_append]
     have hres_t : ∀ h' : Fin (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) → Bool,
         ((trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
@@ -11345,13 +11345,13 @@ private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCo
   exact hp _
 
 theorem trimmed25Cat_tCount (Q : Point) :
-    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 227692785 := by
+    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 227615785 := by
   rw [rawEntry25Cat]
-  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 227692785
+  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 227615785
     (fun r => full25Cat_trim18_tCount r Fin.elim0)
 
 theorem trim18_certificate25Cat :
-    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 227692785, 99000000⟩ := by
+    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 227615785, 99000000⟩ := by
   have hbase := trim18_certificate_generic rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat
     (List.range 1612) raw_certificate25Cat source25Cat_within source25Cat_cost18 strong_success25Cat
   refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
@@ -11394,7 +11394,7 @@ def entry : StraightEntry :=
 
 def layout : DecodeLayout := rawLayout25Cat
 
-def bounds : Bounds := ⟨1612, 227692785, 99000000⟩
+def bounds : Bounds := ⟨1612, 227615785, 99000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
   specializeEntry25_certificate (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
@@ -11411,7 +11411,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1612, 227692785, 99000000⟩
+def bounds : Bounds := ⟨1612, 227615785, 99000000⟩
 def entry : StraightEntry := Schedule25Actual.entry
 def layout : DecodeLayout := Schedule25Actual.layout
 set_option maxRecDepth 30000 in

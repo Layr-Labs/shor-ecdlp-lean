@@ -13698,6 +13698,473 @@ end
 end ShorECDLP.Entrant.LocalKernel
 end
 
+section
+/-! ### Stripping a control wire that is known to be `true` -/
+namespace ShorECDLP.Entrant.StripCtl
+open ECDSAAdd
+set_option linter.unusedSimpArgs false
+
+def stripInstr (g : Wire) : Instr → Instr
+  | .CCX a b t => if a = g then .CX b t else if b = g then .CX a t else .CCX a b t
+  | i => i
+
+def stripCtl (g : Wire) (p : Program) : Program := p.map (stripInstr g)
+
+def target : Instr → Wire
+  | .X t => t
+  | .CX _ t => t
+  | .CCX _ _ t => t
+  | .measureX t _ _ => t
+
+def NoTarget (g : Wire) (p : Program) : Prop := ∀ i ∈ p, target i ≠ g
+
+theorem stripCtl_nil (g : Wire) : stripCtl g ([] : Program) = ([] : Program) := rfl
+
+@[simp] theorem stripCtl_append (g : Wire) (p q : Program) :
+    stripCtl g (p ++ q) = stripCtl g p ++ stripCtl g q := List.map_append
+
+theorem noTarget_append {g : Wire} {p q : Program} (hp : NoTarget g p) (hq : NoTarget g q) :
+    NoTarget g (p ++ q) := fun i hi => by
+  rcases List.mem_append.mp hi with h | h
+  · exact hp i h
+  · exact hq i h
+
+theorem run_stripCtl (g : Wire) (p : Program) (hp : NoTarget g p) (m : List Bool) (s : State)
+    (hs : s.basis g = true) : run (stripCtl g p) m s = run p m s := by
+  induction p generalizing m s with
+  | nil => rfl
+  | cons i p ih =>
+    have hi : target i ≠ g := hp i (List.mem_cons_self ..)
+    have hp' : NoTarget g p := fun j hj => hp j (List.mem_cons_of_mem _ hj)
+    cases i with
+    | X t =>
+      simp only [stripCtl, List.map_cons, stripInstr, run]
+      apply ih hp'
+      simp only [target] at hi
+      simp [writeBit, Function.update, Ne.symm hi, hs]
+    | CX c t =>
+      simp only [stripCtl, List.map_cons, stripInstr, run]
+      apply ih hp'
+      simp only [target] at hi
+      simp [writeBit, Function.update, Ne.symm hi, hs]
+    | CCX a b t =>
+      simp only [target] at hi
+      have hg : (writeBit s.basis t (s.basis t ^^ (s.basis a && s.basis b))) g = true := by
+        simp [writeBit, Function.update, Ne.symm hi, hs]
+      by_cases ha : a = g
+      · subst ha
+        have e : writeBit s.basis t (s.basis t ^^ s.basis b) =
+            writeBit s.basis t (s.basis t ^^ (s.basis a && s.basis b)) := by simp [hs]
+        simp only [stripCtl, List.map_cons, stripInstr, if_true, run]
+        rw [e]; exact ih hp' _ ⟨s.phase, _⟩ hg
+      · by_cases hb : b = g
+        · subst hb
+          have e : writeBit s.basis t (s.basis t ^^ s.basis a) =
+              writeBit s.basis t (s.basis t ^^ (s.basis a && s.basis b)) := by simp [hs]
+          simp only [stripCtl, List.map_cons, stripInstr, if_neg ha, if_true, run]
+          rw [e]; exact ih hp' _ ⟨s.phase, _⟩ hg
+        · simp only [stripCtl, List.map_cons, stripInstr, if_neg ha, if_neg hb, run]
+          exact ih hp' _ ⟨s.phase, _⟩ hg
+    | measureX t c₀ c₁ =>
+      simp only [stripCtl, List.map_cons, stripInstr, run]
+      apply ih hp'
+      simp only [target] at hi
+      simp [measureAndCorrect, writeBit, Function.update, Ne.symm hi, hs]
+
+theorem stripCtl_of_not_mem (g : Wire) (p : Program) (h : g ∉ wires p) : stripCtl g p = p := by
+  induction p with
+  | nil => rfl
+  | cons i p ih =>
+    have hi : g ∉ i.wires := fun x => h (Finset.mem_union_left _ x)
+    have hp : g ∉ wires p := fun x => h (Finset.mem_union_right _ x)
+    simp only [stripCtl, List.map_cons] at ih ⊢
+    rw [ih hp]
+    cases i with
+    | CCX a b t =>
+      simp only [Instr.wires, Finset.mem_insert, Finset.mem_singleton, not_or] at hi
+      simp [stripInstr, Ne.symm hi.1, Ne.symm hi.2.1]
+    | _ => rfl
+
+theorem noTarget_of_not_mem (g : Wire) (p : Program) (h : g ∉ wires p) : NoTarget g p := by
+  intro i hi e
+  apply h
+  induction p with
+  | nil => simp at hi
+  | cons j p ih =>
+    simp only [wires]
+    rcases List.mem_cons.mp hi with rfl | hi'
+    · apply Finset.mem_union_left
+      cases i <;> simp_all [target, Instr.wires]
+    · exact Finset.mem_union_right _ (ih (fun x => h (Finset.mem_union_right _ x)) hi')
+
+theorem renameInstr_strip (f : Wire → Wire) (hf : Function.Injective f) (g : Wire) (i : Instr) :
+    stripInstr (f g) (renameInstr f i) = renameInstr f (stripInstr g i) := by
+  cases i with
+  | CCX a b t =>
+    simp only [renameInstr, stripInstr]
+    by_cases ha : a = g
+    · subst ha; simp
+    · have ha' : f a ≠ f g := fun e => ha (hf e)
+      by_cases hb : b = g
+      · subst hb; simp [ha, ha', renameInstr]
+      · have hb' : f b ≠ f g := fun e => hb (hf e)
+        simp [ha, ha', hb, hb', renameInstr]
+  | _ => rfl
+
+theorem stripCtl_rename (f : Wire → Wire) (hf : Function.Injective f) (g : Wire) (p : Program) :
+    stripCtl (f g) (renameProgram f p) = renameProgram f (stripCtl g p) := by
+  simp only [stripCtl, renameProgram, List.map_map]
+  apply List.map_congr_left
+  intro i _
+  exact renameInstr_strip f hf g i
+
+theorem noTarget_rename (f : Wire → Wire) (hf : Function.Injective f) (g : Wire) (p : Program)
+    (h : NoTarget g p) : NoTarget (f g) (renameProgram f p) := by
+  intro i hi e
+  simp only [renameProgram, List.mem_map] at hi
+  obtain ⟨j, hj, rfl⟩ := hi
+  apply h j hj
+  apply hf
+  cases j <;> simpa [renameInstr, target] using e
+
+theorem measurementCount_stripCtl (g : Wire) (p : Program) :
+    measurementCount (stripCtl g p) = measurementCount p := by
+  induction p with
+  | nil => rfl
+  | cons i p ih =>
+    simp only [stripCtl, List.map_cons] at ih ⊢
+    cases i with
+    | CCX a b t =>
+      simp only [stripInstr]; split_ifs <;> simp [measurementCount, ih]
+    | _ => simp [stripInstr, measurementCount, ih]
+
+theorem toffoliCount_stripCtl_le (g : Wire) (p : Program) :
+    toffoliCount (stripCtl g p) ≤ toffoliCount p := by
+  induction p with
+  | nil => exact le_rfl
+  | cons i p ih =>
+    simp only [stripCtl, List.map_cons] at ih ⊢
+    cases i with
+    | CCX a b t =>
+      simp only [stripInstr]; split_ifs <;> simp [toffoliCount] <;> omega
+    | _ => simpa [stripInstr, toffoliCount] using ih
+
+theorem wires_stripCtl (g : Wire) (p : Program) : wires (stripCtl g p) ⊆ wires p := by
+  induction p with
+  | nil => exact Finset.Subset.refl _
+  | cons i p ih =>
+    simp only [stripCtl, List.map_cons, wires] at ih ⊢
+    apply Finset.union_subset_union _ ih
+    cases i with
+    | CCX a b t =>
+      simp only [stripInstr]; split_ifs <;> intro q hq <;> simp [Instr.wires] at hq ⊢ <;> tauto
+    | _ => exact Finset.Subset.refl _
+
+theorem gateSlots_stripCtl (g : Wire) (p : Program) :
+    Challenge.gateSlots (stripCtl g p) = Challenge.gateSlots p := by
+  induction p with
+  | nil => rfl
+  | cons i p ih =>
+    simp only [stripCtl, List.map_cons, Challenge.gateSlots, List.map_cons, List.sum_cons] at ih ⊢
+    rw [ih]
+    cases i with
+    | CCX a b t => simp only [stripInstr]; split_ifs <;> rfl
+    | _ => rfl
+
+theorem physical_stripCtl (g : Wire) (p : Program) (hp : Arithmetic.GatePhysical p) :
+    Arithmetic.GatePhysical (stripCtl g p) := by
+  intro i hi
+  simp only [stripCtl, List.mem_map] at hi
+  obtain ⟨j, hj, rfl⟩ := hi
+  have h := hp j hj
+  cases j with
+  | CCX a b t =>
+    simp only [RecordedQuantum.PhysicalInstr, ProperGate] at h
+    simp only [stripInstr]; split_ifs <;> simp [RecordedQuantum.PhysicalInstr, ProperGate, h.1, h.2]
+  | _ => simpa [stripInstr] using h
+
+/-- Stripping a controlled copy. -/
+theorem stripCtl_copyRegister (g : Wire) (src dst : List Wire) (hs : g ∉ src) :
+    stripCtl g (Arithmetic.copyRegister (some g) src dst) = Arithmetic.copyRegister none src dst := by
+  induction src generalizing dst with
+  | nil => cases dst <;> rfl
+  | cons a src ih =>
+    cases dst with
+    | nil => rfl
+    | cons b dst =>
+      have ha : a ≠ g := fun e => hs (e ▸ List.mem_cons_self ..)
+      have hs' : g ∉ src := fun x => hs (List.mem_cons_of_mem _ x)
+      simp only [Arithmetic.copyRegister, Arithmetic.copyGate, stripCtl_append, ih dst hs']
+      simp [stripCtl, stripInstr, ha]
+
+theorem toffoliCount_copyRegister_none (src dst : List Wire) :
+    toffoliCount (Arithmetic.copyRegister none src dst) = 0 := by
+  induction src generalizing dst with
+  | nil => cases dst <;> rfl
+  | cons a src ih =>
+    cases dst with
+    | nil => rfl
+    | cons b dst => simp [Arithmetic.copyRegister, Arithmetic.copyGate, toffoliCount, ih]
+
+theorem noTarget_copyRegister (c : Option Wire) (g : Wire) (src dst : List Wire) (hd : g ∉ dst) :
+    NoTarget g (Arithmetic.copyRegister c src dst) := by
+  induction src generalizing dst with
+  | nil => cases dst <;> intro i hi <;> simp [Arithmetic.copyRegister] at hi
+  | cons a src ih =>
+    cases dst with
+    | nil => intro i hi; simp [Arithmetic.copyRegister] at hi
+    | cons b dst =>
+      have hb : b ≠ g := fun e => hd (e ▸ List.mem_cons_self ..)
+      have hd' : g ∉ dst := fun x => hd (List.mem_cons_of_mem _ x)
+      simp only [Arithmetic.copyRegister]
+      apply noTarget_append _ (ih dst hd')
+      intro i hi
+      simp only [List.mem_singleton] at hi
+      subst hi
+      cases c <;> simpa [Arithmetic.copyGate, target] using hb
+
+theorem noTarget_eraseMask (c g : Wire) (src dst : List Wire) (hd : g ∉ dst) :
+    NoTarget g (Arithmetic.eraseMask c src dst) := by
+  induction src generalizing dst with
+  | nil => cases dst <;> intro i hi <;> simp [Arithmetic.eraseMask] at hi
+  | cons a src ih =>
+    cases dst with
+    | nil => intro i hi; simp [Arithmetic.eraseMask] at hi
+    | cons b dst =>
+      have hb : b ≠ g := fun e => hd (e ▸ List.mem_cons_self ..)
+      have hd' : g ∉ dst := fun x => hd (List.mem_cons_of_mem _ x)
+      intro i hi
+      simp only [Arithmetic.eraseMask, List.mem_cons] at hi
+      rcases hi with rfl | hi
+      · simpa [target] using hb
+      · exact ih dst hd' i hi
+
+theorem stripCtl_eraseMask (c g : Wire) (src dst : List Wire) :
+    stripCtl g (Arithmetic.eraseMask c src dst) = Arithmetic.eraseMask c src dst := by
+  induction src generalizing dst with
+  | nil => cases dst <;> rfl
+  | cons a src ih =>
+    cases dst with
+    | nil => rfl
+    | cons b dst =>
+      simp only [Arithmetic.eraseMask, stripCtl, List.map_cons] at ih ⊢
+      rw [ih]; rfl
+
+end ShorECDLP.Entrant.StripCtl
+
+namespace ShorECDLP.Entrant.StripCtl
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Frontier
+set_option linter.unusedSimpArgs false
+
+theorem toffoliCount_copyRegister_some (c : Wire) (src dst : List Wire) :
+    toffoliCount (copyRegister (some c) src dst) = min src.length dst.length := by
+  induction src generalizing dst with
+  | nil => cases dst <;> rfl
+  | cons a src ih =>
+    cases dst with
+    | nil => rfl
+    | cons b dst =>
+      simp [copyRegister, copyGate, toffoliCount, ih, Nat.succ_min_succ]; omega
+
+theorem toffoliCount_eraseMask (c : Wire) (src dst : List Wire) :
+    toffoliCount (eraseMask c src dst) = 0 := by
+  induction src generalizing dst with
+  | nil => cases dst <;> rfl
+  | cons a src ih =>
+    cases dst with
+    | nil => rfl
+    | cons b dst => simp [eraseMask, toffoliCount, ih]
+
+private theorem not_mem_of_sub {c : Wire} {X Y : Program} (h : wires X ⊆ wires Y) (hY : c ∉ wires Y) :
+    c ∉ wires X := fun x => hY (h x)
+
+/-- The controlled copies of `withLowK2` become plain copies once the control is stripped. -/
+theorem withLowK2_strip (S : CuccaroStreamedSquareWideLayout) (ext : List Wire) (c : Wire)
+    (src dst : List Wire) (body : Program)
+    (hsrc : c ∉ src) (hbank : c ∉ S.inputBank.take src.length)
+    (hmk : c ∉ wires (kg S ext src dst).make) (hcl : c ∉ wires (kg S ext src dst).clear)
+    (hb : c ∉ wires body) :
+    NoTarget c (withLowK2 S ext c src dst body) ∧
+    toffoliCount (stripCtl c (withLowK2 S ext c src dst body)) +
+        2 * min src.length (S.inputBank.take src.length).length =
+      toffoliCount (withLowK2 S ext c src dst body) := by
+  constructor
+  · simp only [withLowK2]
+    refine noTarget_append (noTarget_append (noTarget_append (noTarget_append (noTarget_append
+      (noTarget_append ?_ ?_) ?_) ?_) ?_) ?_) ?_
+    · exact noTarget_copyRegister _ c _ _ hbank
+    · exact noTarget_of_not_mem c _ hmk
+    · exact noTarget_eraseMask c c _ _ hbank
+    · exact noTarget_of_not_mem c _ hb
+    · exact noTarget_copyRegister _ c _ _ hbank
+    · exact noTarget_of_not_mem c _ hcl
+    · exact noTarget_eraseMask c c _ _ hbank
+  · simp only [withLowK2, stripCtl_append, stripCtl_copyRegister c _ _ hsrc, stripCtl_eraseMask,
+      stripCtl_of_not_mem c _ hmk, stripCtl_of_not_mem c _ hcl, stripCtl_of_not_mem c _ hb,
+      toffoliCount_append, toffoliCount_copyRegister_none, toffoliCount_copyRegister_some,
+      toffoliCount_eraseMask]
+    omega
+
+end ShorECDLP.Entrant.StripCtl
+
+namespace ShorECDLP.Entrant.StripCtl
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Frontier
+set_option linter.unusedSimpArgs false
+
+theorem accPrefixK_strip (S : CuccaroStreamedSquareWideLayout) (hw : S.Widths) (ext : List Wire)
+    (c : Wire) (hn : (c :: S.wires).Nodup) (he : ExtOK S c ext) :
+    NoTarget c (accPrefixK S ext c) ∧
+    toffoliCount (stripCtl c (accPrefixK S ext c)) + 770 = toffoliCount (accPrefixK S ext c) := by
+  have hnS : S.wires.Nodup := (List.nodup_cons.mp hn).2
+  have hcS : c ∉ S.wires := (List.nodup_cons.mp hn).1
+  have hext : c ∉ ext := fun h => (he.away c h) (List.mem_cons_self ..)
+  have supp := accPrefixK_support S hw hnS ext (c + 1) he.len
+  have hW : c ∉ wires (accPrefixK S ext (c + 1)) := fun h => by
+    have h' := supp h
+    simp only [List.mem_toFinset, List.mem_cons, List.mem_append, or_assoc] at h'
+    rcases h' with h1 | h1 | h1
+    · exact absurd h1 (Nat.ne_of_lt (Nat.lt_succ_self c))
+    · exact hcS h1
+    · exact hext h1
+  have piece {X : Program} (hX : wires X ⊆ wires (accPrefixK S ext (c + 1))) : c ∉ wires X :=
+    fun x => hW (hX x)
+  have inS {q : Wire} (h : q ∈ S.core.wires) : q ∈ S.wires := by
+    simp only [CuccaroStreamedSquareWideLayout.wires, List.mem_append]; exact Or.inl h
+  have hy {q : Wire} (h : q ∈ S.core.y) : q ∈ S.wires := inS (by
+    simp only [CuccaroStreamedSquareLayout.wires, List.mem_append]; tauto)
+  have hlow : c ∉ S.core.low := fun h => hcS (hy (List.mem_of_mem_take h))
+  have hhigh : c ∉ S.core.high := fun h =>
+    hcS (hy (List.mem_of_mem_drop (List.mem_of_mem_take h)))
+  have hsum : c ∉ S.core.sum := fun h => by
+    simp only [CuccaroStreamedSquareLayout.sum, List.mem_append, List.mem_singleton] at h
+    rcases h with h | h
+    · exact hhigh h
+    · apply hcS; apply inS; subst h
+      simp [CuccaroStreamedSquareLayout.wires]
+  have hbank (n : Nat) : c ∉ S.inputBank.take n := fun h => by
+    apply hcS; apply inS
+    have h1 := List.mem_of_mem_take (List.mem_of_mem_take h)
+    simp only [CuccaroStreamedSquareLayout.wires, List.mem_append]; tauto
+  have sub : ∀ {X : Program}, (∀ q, q ∈ wires X → q ∈ wires (accPrefixK S ext (c + 1))) →
+      c ∉ wires X := fun h => piece h
+  have hC := withLowK2_strip S ext c S.core.sum S.core.product (mixFoldsQ S false (accCMix S)) hsum
+    (hbank _)
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+  have hA := withLowK2_strip S ext c S.core.low (S.core.product.take 256) (mixFoldsQ S true (accAMixQ S))
+    hlow (hbank _)
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+  have hB := withLowK2_strip S ext c S.core.high (S.core.product.take 256) (mixFoldsQ S false (accBMixQ S))
+    hhigh (hbank _)
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+    (sub fun q hq => by simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK,
+      withLowK2, wires_append, Finset.mem_union, hq, true_or, or_true])
+  have hP : c ∉ wires (gPrep S) := sub fun q hq => by
+    simp only [accPrefixK, accBranchCK, wires_append, Finset.mem_union, hq, true_or, or_true]
+  have hQ : c ∉ wires (gClear S) := sub fun q hq => by
+    simp only [accPrefixK, accBranchCK, wires_append, Finset.mem_union, hq, true_or, or_true]
+  have sizes := S.measured_bank_widths hw
+  have lsum := S.core.sum_length hw.core
+  have llow := S.core.low_length hw.core
+  have lhigh := S.core.high_length hw.core
+  constructor
+  · simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK]
+    exact noTarget_append (noTarget_append (noTarget_append (noTarget_append
+      (noTarget_of_not_mem c _ hP) hC.1) (noTarget_of_not_mem c _ hQ)) hA.1) hB.1
+  · have eC := hC.2; have eA := hA.2; have eB := hB.2
+    simp only [List.length_take, sizes.1, lsum, llow, lhigh] at eC eA eB
+    simp only [accPrefixK, accBranchCK, accMiddleCK, accBranchAK, accBranchBK, stripCtl_append,
+      stripCtl_of_not_mem c _ hP, stripCtl_of_not_mem c _ hQ, toffoliCount_append]
+    omega
+
+end ShorECDLP.Entrant.StripCtl
+
+namespace ShorECDLP.Entrant.StripCtl
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Frontier ShorECDLP.Entrant.WEX
+set_option linter.unusedSimpArgs false
+
+private theorem pool_ne_generic (i : Nat) (hi : i < 5699) : streamLayout.core.poolWire i ≠ 14113 := by
+  rw [streamPool_at i hi]; intro h; have h' : i + 14115 = 14113 := h; omega
+
+private theorem blockPerm_generic (n : Nat) (hn : n ≤ 202) :
+    Square5Placement.blockPerm streamLayout n 14113 = 14113 := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+    simp only [Square5Placement.blockPerm, Equiv.trans_apply, ih (by omega)]
+    exact Equiv.swap_apply_of_ne_of_ne (pool_ne_generic _ (by omega)).symm (pool_ne_generic _ (by omega)).symm
+
+set_option maxRecDepth 20000 in
+/-- The square of `SquareOB5` with its generic-flag control stripped, as one renamed core. -/
+theorem squareOB5_strip :
+    NoTarget 14113 (SquareOB5.program streamLayout) ∧
+    toffoliCount (stripCtl 14113 (SquareOB5.program streamLayout)) + 770 =
+      toffoliCount (SquareOB5.program streamLayout) := by
+  let L := streamLayout
+  have hw := streamLayout_widths
+  have hn := streamLayout_nodup
+  have hg : L.core.generic = 14113 := rfl
+  have controlND : (L.core.generic :: L.dialogStreamedSquareWide.wires).Nodup := by
+    have nd := L.streamedSquare_control_nodup hw hn
+    apply List.nodup_iff_count.mpr
+    intro q
+    have h := List.nodup_iff_count.mp nd q
+    simp only [List.count_cons] at h ⊢
+    omega
+  have core := accPrefixK_strip L.dialogStreamedSquareWide (L.dialogStreamedSquareWide_widths hw)
+    (kext L) L.core.generic controlND (kext_ok L hw hn)
+  rw [hg] at core
+  have fP : OwnPlusSquare.swap L 14113 = 14113 :=
+    Equiv.swap_apply_of_ne_of_ne (pool_ne_generic _ (by omega)).symm (pool_ne_generic _ (by omega)).symm
+  have fG : OwnGuardSquare.swap L 14113 = 14113 :=
+    Equiv.swap_apply_of_ne_of_ne (pool_ne_generic _ (by omega)).symm (pool_ne_generic _ (by omega)).symm
+  have fQ : OwnQ4Square.swap L 14113 = 14113 :=
+    Equiv.swap_apply_of_ne_of_ne (pool_ne_generic _ (by omega)).symm (pool_ne_generic _ (by omega)).symm
+  have fB := blockPerm_generic 202 le_rfl
+  have unfold : SquareOB5.program L = renameProgram (OwnQ4Square.swap L) (renameProgram (OwnGuardSquare.swap L)
+      (renameProgram (OwnPlusSquare.swap L) (renameProgram (Square5Placement.blockPerm L 202)
+        (accPrefixK L.dialogStreamedSquareWide (kext L) 14113)))) := rfl
+  rw [unfold]
+  constructor
+  · have h1 := noTarget_rename _ (Square5Placement.blockPerm L 202).injective _ _ core.1
+    rw [fB] at h1
+    have h2 := noTarget_rename _ (OwnPlusSquare.swap L).injective _ _ h1
+    rw [fP] at h2
+    have h3 := noTarget_rename _ (OwnGuardSquare.swap L).injective _ _ h2
+    rw [fG] at h3
+    have h4 := noTarget_rename _ (OwnQ4Square.swap L).injective _ _ h3
+    rwa [fQ] at h4
+  · have e1 := stripCtl_rename _ (Square5Placement.blockPerm L 202).injective 14113
+      (accPrefixK L.dialogStreamedSquareWide (kext L) 14113)
+    have e2 := stripCtl_rename _ (OwnPlusSquare.swap L).injective 14113
+      (renameProgram (Square5Placement.blockPerm L 202) (accPrefixK L.dialogStreamedSquareWide (kext L) 14113))
+    have e3 := stripCtl_rename _ (OwnGuardSquare.swap L).injective 14113
+      (renameProgram (OwnPlusSquare.swap L) (renameProgram (Square5Placement.blockPerm L 202)
+        (accPrefixK L.dialogStreamedSquareWide (kext L) 14113)))
+    have e4 := stripCtl_rename _ (OwnQ4Square.swap L).injective 14113
+      (renameProgram (OwnGuardSquare.swap L) (renameProgram (OwnPlusSquare.swap L)
+        (renameProgram (Square5Placement.blockPerm L 202) (accPrefixK L.dialogStreamedSquareWide (kext L) 14113))))
+    rw [fB] at e1; rw [fP] at e2; rw [fG] at e3; rw [fQ] at e4
+    rw [e4, e3, e2, e1]
+    simp only [(renameProgram_counts _ _).1]
+    exact core.2
+
+end ShorECDLP.Entrant.StripCtl
+
+end
+
 /-! ### Polymorphic signed generic body windows (`GenericW`, `k ∈ {16, 17, 18}`, `1,612` qubits) -/
 section
 namespace ShorECDLP.Entrant.GenericW
@@ -17159,13 +17626,30 @@ theorem goodW_to_goodWA_full {k : Nat} {coeffs : Fin (2 ^ k) → PointCoeff}
 def sqSwap : Equiv.Perm Wire := Equiv.swap 14113 15651
 private theorem sqSwap_self (w : Wire) : sqSwap (sqSwap w) = w := Equiv.swap_apply_self _ _ w
 def sqProg : ECDSAAdd.Program := ECDSAAdd.renameProgram sqSwap (SquareOB5.program streamLayout)
+def sqProgU : ECDSAAdd.Program := StripCtl.stripCtl 15651 sqProg
 
 def compiledSquare {n : Nat} : CatFn n :=
   CatFn.swapSurround 14833 15653
-    (CatFn.seq (CatFn.seq (CatFn.lit [.X 15651]) (CatFn.compileProg 15652 15653 sqProg))
+    (CatFn.seq (CatFn.seq (CatFn.lit [.X 15651]) (CatFn.compileProg 15652 15653 sqProgU))
       (CatFn.lit [.X 15651]))
 
-attribute [local irreducible] sqProg compiledSquare
+theorem sqProg_noTarget : StripCtl.NoTarget 15651 sqProg := by
+  have h := StripCtl.noTarget_rename sqSwap sqSwap.injective 14113 _ StripCtl.squareOB5_strip.1
+  have e : sqSwap 14113 = 15651 := Equiv.swap_apply_left _ _
+  rw [e] at h
+  rw [sqProg]; exact h
+
+theorem sqProgU_run (m : List Bool) (st : ECDSAAdd.State) (hs : st.basis 15651 = true) :
+    ECDSAAdd.run sqProgU m st = ECDSAAdd.run sqProg m st :=
+  StripCtl.run_stripCtl 15651 sqProg sqProg_noTarget m st hs
+
+theorem sqProgU_eq : sqProgU = ECDSAAdd.renameProgram sqSwap (StripCtl.stripCtl 14113 (SquareOB5.program streamLayout)) := by
+  have h := StripCtl.stripCtl_rename sqSwap sqSwap.injective 14113 (SquareOB5.program streamLayout)
+  have e : sqSwap 14113 = 15651 := Equiv.swap_apply_left _ _
+  rw [e] at h
+  rw [sqProgU, sqProg]; exact h
+
+attribute [local irreducible] sqProg sqProgU compiledSquare
 
 private theorem squareOB5_wires_exact :
     ∀ w ∈ ECDSAAdd.wires (SquareOB5.program streamLayout),
@@ -17301,10 +17785,21 @@ theorem sqProg_counts : ECDSAAdd.toffoliCount sqProg = 52276 ∧ ECDSAAdd.measur
   have c := SquareOB5.counts streamLayout streamLayout_widths
   exact ⟨h.1.trans c.1, h.2.trans c.2⟩
 
+theorem sqProgU_counts : ECDSAAdd.toffoliCount sqProgU = 51506 ∧ ECDSAAdd.measurementCount sqProgU = 54440 := by
+  have c := SquareOB5.counts streamLayout streamLayout_widths
+  have st := StripCtl.squareOB5_strip.2
+  have h := ECDSAAdd.renameProgram_counts sqSwap (StripCtl.stripCtl 14113 (SquareOB5.program streamLayout))
+  rw [sqProgU_eq]
+  refine ⟨h.1.trans (by omega), ?_⟩
+  rw [h.2, StripCtl.measurementCount_stripCtl, c.2]
+
 theorem sqProg_physical : ECDSAAdd.Arithmetic.GatePhysical sqProg := by
   rw [sqProg]
   exact ECDSAAdd.Arithmetic.gatePhysical_rename sqSwap sqSwap.injective _
     (SquareOB5.physical streamLayout streamLayout_widths streamLayout_nodup)
+
+theorem sqProgU_physical : ECDSAAdd.Arithmetic.GatePhysical sqProgU := by
+  rw [sqProgU]; exact StripCtl.physical_stripCtl 15651 sqProg sqProg_physical
 
 theorem sqProg_wires_support1612 : ECDSAAdd.wires sqProg ⊆ support1612.toFinset := by
   rw [sqProg, ECDSAAdd.renameProgram_support]
@@ -17336,16 +17831,28 @@ theorem sqProg_avoid_15652_15653 :
     · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))] at heq; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
     · rw [sqSwap, Equiv.swap_apply_of_ne_of_ne (show u ≠ 14113 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))) (show u ≠ 15651 by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))] at heq; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledSquare_shiftFin {n : Nat} : ShiftFin (compiledSquare (n := n)) 106716 := by
+theorem sqProgU_wires_support1612 : ECDSAAdd.wires sqProgU ⊆ support1612.toFinset := by
+  rw [sqProgU]; exact (StripCtl.wires_stripCtl 15651 sqProg).trans sqProg_wires_support1612
+
+theorem sqProgU_avoid_15652_15653 :
+    (15652 : Wire) ∉ ECDSAAdd.wires sqProgU ∧ (15653 : Wire) ∉ ECDSAAdd.wires sqProgU := by
+  have hs : ECDSAAdd.wires sqProgU ⊆ ECDSAAdd.wires sqProg := by
+    rw [sqProgU]; exact StripCtl.wires_stripCtl 15651 sqProg
+  exact ⟨fun h => sqProg_avoid_15652_15653.1 (hs h), fun h => sqProg_avoid_15652_15653.2 (hs h)⟩
+
+theorem compiledSquare_shiftFin_exact {n : Nat} : ShiftFin (compiledSquare (n := n)) 105946 := by
   rw [compiledSquare]
   refine (CatFn.swapSurround_shiftFin _ _ _
     (CatFn.seq_shiftFin _ _
-      (CatFn.seq_shiftFin _ _ (CatFn.lit_shiftFin _) (CatFn.compileProg_shiftFin 15652 15653 sqProg))
+      (CatFn.seq_shiftFin _ _ (CatFn.lit_shiftFin _) (CatFn.compileProg_shiftFin 15652 15653 sqProgU))
       (CatFn.lit_shiftFin _))).mono ?_
-  rw [sqProg_counts.1, sqProg_counts.2]
+  rw [sqProgU_counts.1, sqProgU_counts.2]
+
+theorem compiledSquare_shiftFin {n : Nat} : ShiftFin (compiledSquare (n := n)) 106716 :=
+  compiledSquare_shiftFin_exact.mono (by norm_num)
 
 theorem compiledSquare_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
-    ((compiledSquare (n := n) s).prog.instantiate read h).tCount ≤ 4 * 52276 := by
+    ((compiledSquare (n := n) s).prog.instantiate read h).tCount ≤ 4 * 51506 := by
   rw [compiledSquare]
   refine CatFn.swapSurround_tCount_le 14833 15653 _
     (CatFn.seq_indep _ _ (CatFn.seq_indep _ _ (CatFn.lit_indep _) (CatFn.compileProg_indep _ _ _)) (CatFn.lit_indep _))
@@ -17354,7 +17861,7 @@ theorem compiledSquare_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool
     (b_seq_tCount_any _ _ (fun _ _ _ => le_of_eq (CatFn.lit_tCount _ _ _ _)) (b_catFn_compileProg_tCount _ _ _))
     (fun _ _ _ => le_of_eq (CatFn.lit_tCount _ _ _ _)) s' r' h').trans ?_
   have hlt : ShorECDLP.tCount [.X 15651] = 0 := rfl
-  rw [hlt, sqProg_counts.1]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+  rw [hlt, sqProgU_counts.1]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 theorem compiledSquare_removed18 {n : Nat} (s : Nat) : removed 18 (compiledSquare (n := n) s).prog = 0 := by
   rw [compiledSquare]
@@ -17368,7 +17875,7 @@ theorem compiledSquare_wellFormed {n : Nat} (s : Nat) : (compiledSquare (n := n)
   exact CatFn.swapSurround_wellFormed 14833 15653 _ (by decide)
     (CatFn.seq_wellFormed _ _
       (CatFn.seq_wellFormed _ _ (CatFn.lit_wellFormed [.X 15651] (circuitWF_X 15651))
-        (CatFn.compileProg_wellFormed _ _ _ sqProg_avoid_15652_15653.1 sqProg_avoid_15652_15653.2 (by decide) sqProg_physical))
+        (CatFn.compileProg_wellFormed _ _ _ sqProgU_avoid_15652_15653.1 sqProgU_avoid_15652_15653.2 (by decide) sqProgU_physical))
       (CatFn.lit_wellFormed [.X 15651] (circuitWF_X 15651))) s
 
 theorem compiledSquare_wires {n : Nat} (s : Nat) : ChallengeMigration.straightWires (compiledSquare (n := n) s).prog ⊆ support1612 := by
@@ -17378,21 +17885,21 @@ theorem compiledSquare_wires {n : Nat} (s : Nat) : ChallengeMigration.straightWi
   exact CatFn.swapSurround_wires 14833 15653 _ (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide))
     (CatFn.seq_wires _ _
       (CatFn.seq_wires _ _ (CatFn.lit_wires _ hx)
-        (CatFn.compileProg_wires _ _ _ sqProg_wires_support1612 (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide))))
+        (CatFn.compileProg_wires _ _ _ sqProgU_wires_support1612 (mem_support1612.mpr (by decide)) (mem_support1612.mpr (by decide))))
       (CatFn.lit_wires _ hx)) s
 
 theorem compiledSquare_slots {n : Nat} (s : Nat) : (compiledSquare (n := n) s).prog.gateSlots ≤ 120000000 := by
   rw [compiledSquare]
   have h1 := CatFn.swapSurround_slots 14833 15653
-    (CatFn.seq (CatFn.seq (CatFn.lit (n := n) [.X 15651]) (CatFn.compileProg 15652 15653 sqProg))
+    (CatFn.seq (CatFn.seq (CatFn.lit (n := n) [.X 15651]) (CatFn.compileProg 15652 15653 sqProgU))
       (CatFn.lit [.X 15651]))
     (CatFn.seq_slots _ _
-      (CatFn.seq_slots _ _ (CatFn.lit_slots [.X 15651]) (CatFn.compileProg_slots 15652 15653 sqProg))
+      (CatFn.seq_slots _ _ (CatFn.lit_slots [.X 15651]) (CatFn.compileProg_slots 15652 15653 sqProgU))
       (CatFn.lit_slots [.X 15651])) s
-  have h2 : ECDSAAdd.Challenge.gateSlots sqProg ≤ 8000000 := by
-    rw [sqProg, ECDSAAdd.Baselines.rename_gateSlots]
+  have h2 : ECDSAAdd.Challenge.gateSlots sqProgU ≤ 8000000 := by
+    rw [sqProgU, StripCtl.gateSlots_stripCtl, sqProg, ECDSAAdd.Baselines.rename_gateSlots]
     exact SquareOB5.gateSlots_le streamLayout streamLayout_widths
-  have h3 := sqProg_counts.1
+  have h3 := sqProgU_counts.1
   have hl : ([.X 15651] : Circuit).length = 1 := rfl
   rw [hl] at h1
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
@@ -17567,8 +18074,9 @@ theorem compiledSquare_sim {n : Nat} (s : Nat) (read : ConstantBit n → Bool) (
             b.kraus (Prep 14833 (ket bs)) = c • Prep 14833 (ket bs'))
       ((compiledSquare (n := n) s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   rw [compiledSquare]
-  exact compiledSquare_sim_aux sqProg sqProg_avoid_15652_15653.1 sqProg_avoid_15652_15653.2
-    sqProg_physical sqProg_run_flipped s read h
+  exact compiledSquare_sim_aux sqProgU sqProgU_avoid_15652_15653.1 sqProgU_avoid_15652_15653.2
+    sqProgU_physical (fun X Y st m hx hy hcl => by
+      rw [sqProgU_run m _ (by simp [upd])]; exact sqProg_run_flipped X Y st m hx hy hcl) s read h
 
 /-! #### 6. Trimmed x-negation (`compiledNegX`, `251` Toffolis, `506` records) -/
 
@@ -19382,7 +19890,7 @@ theorem compiledGenericCoreW_removed18 {k : Nat} (ax : ArithSpec) (fx : FixupSpe
 theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (s : Nat) (rs : List (Fin s)) (read : ConstantBit (2 ^ k) → Bool) (h : Fin s → Bool) :
     ((compiledGenericCoreW ax fx s rs).prog.instantiate read h).tCount ≤
-      4 * (57642 + ax.tofMul + ax.tofDiv + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
+      4 * (56872 + ax.tofMul + ax.tofDiv + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
   let t1 := 2 ^ (k - 1) - 1 + 512
   let t2 := 2 ^ (k - 2) - 1 + 768
   have h18 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep18W fx c r).prog.instantiate read hh).tCount ≤ 4 * fx.tof := by
@@ -19407,17 +19915,17 @@ theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 
     rw [gStep9W]; exact CatProg.measureThen_tCount_le _ _ read h10 _ c r hh
   have h8  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep8W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (3320 + ax.tofMul + t1 + t2 + fx.tof) := by
     rw [gStep8W]; exact (stepCatFn_tCount_le _ (gStep9W ax fx) (4 * t2) _ read (fun s' h' => wrapSS_tCount _ t2 ((ss2TripleW k).loadProg_residue 0) (ss2TripleW_tcount hk_lo hk_hi) s' read h') h9 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h7  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep7W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55596 + ax.tofMul + t1 + t2 + fx.tof) := by
-    rw [gStep7W]; exact (stepCatFn_tCount_le _ (gStep8W ax fx) (4 * 52276) _ read (fun s' h' => compiledSquare_tCount s' read h') h8 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h6  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep6W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55596 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+  have h7  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep7W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (54826 + ax.tofMul + t1 + t2 + fx.tof) := by
+    rw [gStep7W]; exact (stepCatFn_tCount_le _ (gStep8W ax fx) (4 * 51506) _ read (fun s' h' => compiledSquare_tCount s' read h') h8 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h6  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep6W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (54826 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep6W]; exact (stepCatFn_tCount_le _ (gStep7W ax fx) (4 * ax.tofDiv) _ read (fun s' h' => ax.tCount false s' read h') h7 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h5  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep5W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55596 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+  have h5  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep5W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (54826 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep5W]; exact CatProg.measureThen_tCount_le _ _ read h6 _ c r hh
-  have h4  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep4W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (56619 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+  have h4  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep4W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55849 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep4W]; exact (stepCatFn_tCount_le _ (gStep5W ax fx) (4 * 1023) _ read (fun s' h' => compiledYAdd_tCount s' read h') h5 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h3  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep3W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (57642 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+  have h3  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep3W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (56872 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep3W]; exact (stepCatFn_tCount_le _ (gStep4W ax fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h4 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h2  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep2W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (57642 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+  have h2  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep2W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (56872 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep2W]; exact CatProg.measureThen_tCount_le _ _ read h3 _ c r hh
   rw [compiledGenericCoreW]
   exact (stepCatFn_tCount_le _ (gStep2W ax fx) (4 * t1) _ read
@@ -20418,7 +20926,7 @@ theorem compiledW_removed18 {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax 
 theorem compiledW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (start : Nat) (read : ConstantBit (2 ^ k) → Bool) (h : Fin start → Bool) :
     ((compiledProgramW hk_lo hk_hi ax fx start).instantiate read h).tCount ≤
-      4 * (58144 + ax.tofMul + ax.tofDiv + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
+      4 * (57374 + ax.tofMul + ax.tofDiv + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
   rw [compiledProgramW, castFinish_instantiate, compiledProgramFnW]
   refine (b_seq_tCount_any _ _
     (fun s r hh => le_of_eq ((CatFn.lit_tCount (flipAddrW k) s r hh).trans (flipAddrW_tCount k)))
@@ -20851,13 +21359,13 @@ theorem compiledRec18_bound : (compiledProgramFnW arithSpecFull fixupSpec18 0).f
   (compiledRecW_bound (by decide) (by decide) arithSpecFull fixupSpec18).trans (by decide)
 
 theorem compiled16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
-    ((compiledProgram16 start).instantiate read h).tCount ≤ 4 * 2238256 :=
+    ((compiledProgram16 start).instantiate read h).tCount ≤ 4 * 2237486 :=
   (compiledW_tCount (by decide) (by decide) arithSpecFull fixupSpec16 start read h).trans (by decide)
 theorem compiled17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
-    ((compiledProgram17 start).instantiate read h).tCount ≤ 4 * 2320431 :=
+    ((compiledProgram17 start).instantiate read h).tCount ≤ 4 * 2319661 :=
   (compiledW_tCount (by decide) (by decide) arithSpecFull fixupSpec17 start read h).trans (by decide)
 theorem compiled18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
-    ((compiledProgram18 start).instantiate read h).tCount ≤ 4 * 2484527 :=
+    ((compiledProgram18 start).instantiate read h).tCount ≤ 4 * 2483757 :=
   (compiledW_tCount (by decide) (by decide) arithSpecFull fixupSpec18 start read h).trans (by decide)
 
 theorem compiled16_slots (start : Nat) : (compiledProgram16 start).gateSlots ≤ 80000000000 :=
@@ -20921,10 +21429,10 @@ theorem compiledRecTrunc17_bound : (compiledProgramFnW arithSpecTrunc96 fixupSpe
   (compiledRecW_bound (by decide) (by decide) arithSpecTrunc96 fixupSpec17).trans (by decide)
 
 theorem compiledTrunc16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramTrunc16 start).instantiate read h).tCount ≤ 4 * 2172470 :=
+    ((compiledProgramTrunc16 start).instantiate read h).tCount ≤ 4 * 2171700 :=
   (compiledW_tCount (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start read h).trans (by decide)
 theorem compiledTrunc17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramTrunc17 start).instantiate read h).tCount ≤ 4 * 2254645 :=
+    ((compiledProgramTrunc17 start).instantiate read h).tCount ≤ 4 * 2253875 :=
   (compiledW_tCount (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start read h).trans (by decide)
 
 theorem compiledTrunc16_slots (start : Nat) : (compiledProgramTrunc16 start).gateSlots ≤ 80000000000 :=
