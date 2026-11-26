@@ -4185,6 +4185,274 @@ theorem selectedAxisDep_mass_upper {n : Nat} {y : Wire} {read : ConstantBit n �
       rw [← hpow_succ, ← hpow_succB]; ring
     linarith
 
+/-- Split-axis upper bound: propagates `selectedAxisDep_mass_upper` across `ws₁ ++ ws₂` with separate prefix/suffix loss parameters. -/
+theorem selectedAxisDep_mass_upper_split {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws₁ ws₂ : List (ApproxCatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start))
+    (physTerm : List Bool → List Bool → Instrument) (idealTerm : List Bool → Instrument)
+    (baseBad : List Bool → State → ℝ)
+    (Inv : State → Prop) (eps A₀ B₀ : ℝ) (heps : 0 < eps) (hA₀ : 0 ≤ A₀) (hB₀_nn : 0 ≤ B₀)
+    (hB_step : (2 + eps) * (1 + 1 / eps) ≤ B₀)
+    (hstep_inv : ∀ w ∈ ws₁, ∀ pr bits φ, Inv φ → Inv (w.model.step pr bits φ))
+    (hbad_iso : ∀ w ∈ ws₁, ∀ φ, Inv φ →
+      let χ := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) φ)
+      normSq (w.core_ideal (restrictState (fun s => ¬ w.goodPred s) χ)) ≤
+        normSq (restrictState (fun s => ¬ w.goodPred s) χ))
+    (hphys_sub : ∀ h tag, SubUnital (physTerm h tag))
+    (hterm : ∀ st hist pr (hPref : List Bool) φ, Inv φ → SupportedOn (fun s => s y = false) φ →
+      (selectedAxisDep ws₂ st hist pr (fun hRest tag => physTerm (hPref ++ hRest) tag)).bornMass (Prep y φ) ≤
+        A₀ * (idealAxis (ws₂.map ApproxCatWindow.model) (pr.map hist) idealTerm).bornMass φ +
+        B₀ * baseBad (pr.map hist) φ)
+    (ψ : State) (hψ_inv : Inv ψ) (hψY : SupportedOn (fun s => s y = false) ψ) :
+    (selectedAxisDep (ws₁ ++ ws₂) start history prior physTerm).bornMass (Prep y ψ) ≤
+      (A₀ * ((1 + eps) ^ 2) ^ ws₁.length) *
+        (idealAxis ((ws₁ ++ ws₂).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ +
+      (B₀ * ((1 + eps) ^ 2) ^ ws₁.length) * axisBad ws₁ (prior.map history) baseBad ψ := by
+  induction ws₁ generalizing start physTerm ψ with
+  | nil =>
+    simp only [List.nil_append, List.length_nil, pow_zero, mul_one, axisBad]
+    simpa only [List.nil_append] using hterm start history prior List.nil ψ hψ_inv hψY
+  | cons w ws ih =>
+    set α₁ : ℝ := 1 + eps
+    set β₁ : ℝ := 1 + 1 / eps
+    set α : ℝ := α₁ ^ 2
+    have hα₁_pos : 0 < α₁ := by dsimp [α₁]; linarith
+    have hα₁_ge : 1 ≤ α₁ := by dsimp [α₁]; linarith
+    have hα_ge : 1 ≤ α := by dsimp [α]; nlinarith
+    have hβ₁_nonneg : 0 ≤ β₁ := by dsimp [β₁]; positivity
+    have hH_nw : y ∉ circuitWires (w.model.physical.wires.reverse.map Gate.H) := by
+      intro hm
+      simp only [circuitWires, List.mem_flatMap, List.mem_map] at hm
+      obtain ⟨g, ⟨v, hv, rfl⟩, hwg⟩ := hm
+      simp only [gateWires, List.mem_singleton] at hwg
+      exact w.noY (List.mem_reverse.mp (hwg ▸ hv))
+    let χ : State := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)
+    let χ_good : State := restrictState w.goodPred χ
+    let χ_bad : State := restrictState (fun s => ¬ w.goodPred s) χ
+    have hχ_split : χ = χ_good + χ_bad := (restrictState_add_compl w.goodPred χ).symm
+    have hχY : SupportedOn (fun s => s y = false) χ :=
+      LocalFour.circuit_frame y w.pre w.pre_noY _ (LocalFour.circuit_frame y _ hH_nw ψ hψY)
+    have hgoodY : SupportedOn (fun s => s y = false) χ_good :=
+      restrictState_preserves w.goodPred _ χ hχY
+    have hgood_sup : SupportedOn w.goodPred χ_good := restrictState_supportedOn w.goodPred χ
+    have hpreH_prep : Quantum.run (compileCircuit y w.pre)
+        (Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ)) = Prep y χ := by
+      rw [w.wires_eq, prep_circuit y _ hH_nw ψ,
+        compileCircuit_prep y w.pre w.pre_noY _ (LocalFour.circuit_frame y _ hH_nw ψ hψY)]
+    obtain ⟨cs, hal, hmass⟩ := w.catCoherent start history
+    let tailPhys (a : InstrumentBranch) (bits : List Bool) : Instrument :=
+      let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+      let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+      selectedAxisDep (ws ++ ws₂) _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+        (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)
+    let stepPhys : Instrument :=
+      (((w.core start).instantiate read history).run).flatMap (fun a =>
+        (fourierOutcomes w.catPhys.wires.length).flatMap (fun bits =>
+          (tailPhys a bits).map
+            (a.seq ⟨bits, compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits⟩).seq))
+    have hstepPhys_mass (φ : State) :
+        stepPhys.bornMass φ =
+          (((w.core start).instantiate read history).run.map (fun a =>
+            ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+              (tailPhys a bits).bornMass
+                (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                  (a.kraus φ)))).sum)).sum := by
+      simp only [stepPhys, flat_mass, prefixed_mass, List.flatMap_map, List.map_map,
+        Function.comp_def, InstrumentBranch.seq, LinearMap.comp_apply]
+    have hstepPhys_eq : (selectedAxisDep ((w :: ws) ++ ws₂) start history prior physTerm).bornMass (Prep y ψ) =
+        stepPhys.bornMass (Prep y χ) := by
+      rw [List.cons_append, selectedAxisDep_cons_mass, hstepPhys_mass, hpreH_prep]
+    have hstepPhys_sub : SubUnital stepPhys := by
+      intro φ
+      rw [hstepPhys_mass]
+      have h1 : ∀ a ∈ ((w.core start).instantiate read history).run,
+          ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus φ)))).sum ≤ normSq (a.kraus φ) := by
+        intro a _
+        have hle : ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus φ)))).sum ≤
+            ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+              normSq (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus φ)))).sum :=
+          list_sum_map_le _ _ _ (fun bits _ =>
+            selectedAxisDep_subUnital (ws ++ ws₂) _ _ _ _ (fun _ tag => hphys_sub _ tag) _)
+        exact hle.trans_eq (normSq_list_sum_compileFourierBranch y .inverse w.catPhys.wires
+          (w.wires_eq ▸ w.noY) (prior.map history) _)
+      exact (list_sum_map_le _ _ _ h1).trans_eq
+        (AdaptiveCircuit.run_preservesBornMass _ ((w.core start).instantiate_wellFormed read history (w.core_wf start)) φ)
+    have hfull_to_good : stepPhys.bornMass (Prep y χ) ≤
+        α₁ * stepPhys.bornMass (Prep y χ_good) + β₁ * normSq χ_bad := by
+      rw [hχ_split, map_add]
+      have hu := instrument_mass_upper stepPhys (Prep y χ_good) (Prep y χ_bad) eps heps
+      have hsub := hstepPhys_sub (Prep y χ_bad)
+      rw [LocalFour.normSq_prep] at hsub
+      have hm := mul_le_mul_of_nonneg_left hsub hβ₁_nonneg
+      linarith
+    have hgood_bound :
+        stepPhys.bornMass (Prep y χ_good) ≤
+          (A₀ * α ^ ws.length * α₁) *
+            (idealAxis (((w :: ws) ++ ws₂).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ +
+          (B₀ * α ^ ws.length * α₁) *
+            ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+              axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum +
+          β₁ * normSq χ_bad := by
+      have hper_a : ∀ a ∈ ((w.core start).instantiate read history).run, ∀ c : ℂ,
+          (∀ s, w.goodPred s → a.kraus (Prep y (ket s)) = c • Prep y (w.core_ideal (ket s))) →
+          ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus (Prep y χ_good))))).sum ≤
+          Complex.normSq c *
+            ((A₀ * α ^ ws.length * α₁) *
+              (idealAxis (((w :: ws) ++ ws₂).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ +
+            (B₀ * α ^ ws.length * α₁) *
+              ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+                axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum +
+            β₁ * normSq χ_bad) := by
+        intro a ha_mem c ha
+        have ha_len : a.history.length = w.catPhys.count := by
+          have h := straight_history_length _ read history a ha_mem; omega
+        have ha_good : a.kraus (Prep y χ_good) = c • Prep y (w.core_ideal χ_good) :=
+          catBranch_on_supported ha χ_good hgood_sup
+        have hper_bits : ∀ bits ∈ fourierOutcomes w.model.physical.wires.length,
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus (Prep y χ_good))) ≤
+            Complex.normSq c *
+              ((A₀ * α ^ ws.length * α₁) *
+                (idealAxis ((ws ++ ws₂).map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass
+                  (w.model.step (prior.map history) bits ψ) +
+               (B₀ * α ^ ws.length * α₁) *
+                axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ) +
+               β₁ * normSq (fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad))) := by
+          intro bits hb
+          let φ_full := w.model.step (prior.map history) bits ψ
+          let φ_good := fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_good)
+          let φ_bad := fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad)
+          have hφ_eq : φ_full = φ_good + φ_bad := by
+            change fourierBranch .inverse w.model.physical.wires (prior.map history) bits
+                (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)) = _
+            rw [w.ideal_eq]; change fourierBranch _ _ _ _ (w.core_ideal χ) = _
+            rw [hχ_split, map_add, map_add]
+          have hφY : SupportedOn (fun s => s y = false) φ_full := by
+            have h1 := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+              (prior.map history) bits (w.core_ideal χ) (w.core_idealY χ hχY)
+            change SupportedOn _ (fourierBranch _ _ _ _ (w.model.ideal _))
+            rw [w.ideal_eq]; exact h1.2
+          have hih := ih (start + w.catPhys.count + w.catPhys.wires.length)
+            (Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length)
+              (Single.historyAfter (start + w.catPhys.count) history a.history) bits)
+            (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+            (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)
+            (fun v hv => hstep_inv v (List.mem_cons_of_mem _ hv))
+            (fun v hv => hbad_iso v (List.mem_cons_of_mem _ hv))
+            (fun _ tag => hphys_sub _ tag)
+            (fun st hist pr hPref φ' hinv' hY' => by
+              have heq : (fun hRest tag => physTerm (a.history ++ bits ++ (hPref ++ hRest)) tag) =
+                  (fun hRest tag => physTerm ((a.history ++ bits ++ hPref) ++ hRest) tag) := by
+                funext hRest tag; simp only [List.append_assoc]
+              rw [heq]; exact hterm st hist pr (a.history ++ bits ++ hPref) φ' hinv' hY')
+            φ_full (hstep_inv w List.mem_cons_self _ bits ψ hψ_inv) hφY
+          have hnp : (nextPrior w.catPhys.count w.catPhys.wires.length prior).map
+              (Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length)
+                (Single.historyAfter (start + w.catPhys.count) history a.history) bits) =
+              bits.reverse ++ prior.map history :=
+            nextPrior_map _ _ _ _ _ _ ha_len (w.wires_eq ▸ (fourierOutcomes_mem _ _).mp hb)
+          rw [hnp] at hih
+          have hsplit_good : (tailPhys a bits).bornMass (Prep y φ_good) ≤
+              α₁ * (tailPhys a bits).bornMass (Prep y φ_full) + β₁ * normSq φ_bad := by
+            have hgs : φ_good = φ_full + (-φ_bad) := by rw [hφ_eq]; abel
+            rw [hgs, map_add, map_neg]
+            have hu := instrument_mass_upper (tailPhys a bits) (Prep y φ_full) (-(Prep y φ_bad)) eps heps
+            rw [instrument_mass_neg] at hu
+            have hsub : (tailPhys a bits).bornMass (Prep y φ_bad) ≤ normSq (Prep y φ_bad) :=
+              selectedAxisDep_subUnital (ws ++ ws₂) _ _ _ _ (fun _ tag => hphys_sub _ tag) (Prep y φ_bad)
+            rw [LocalFour.normSq_prep] at hsub
+            have hm := mul_le_mul_of_nonneg_left hsub hβ₁_nonneg
+            linarith
+          have hcfb : compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+              (a.kraus (Prep y χ_good)) = c • Prep y φ_good := by
+            rw [ha_good, map_smul, w.wires_eq]
+            have hfb := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+              (prior.map history) bits (w.core_ideal χ_good) (w.core_idealY χ_good hgoodY)
+            rw [hfb.1]
+          rw [hcfb, bornMass_smul_real]
+          have hcomb : (tailPhys a bits).bornMass (Prep y φ_good) ≤
+              (A₀ * α ^ ws.length * α₁) *
+                (idealAxis ((ws ++ ws₂).map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass φ_full +
+              (B₀ * α ^ ws.length * α₁) *
+                axisBad ws (bits.reverse ++ prior.map history) baseBad φ_full +
+              β₁ * normSq φ_bad := by
+            have hm := mul_le_mul_of_nonneg_left hih hα₁_pos.le
+            have heq1 : α₁ * (A₀ * α ^ ws.length *
+                (idealAxis ((ws ++ ws₂).map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass φ_full +
+                B₀ * α ^ ws.length * axisBad ws (bits.reverse ++ prior.map history) baseBad φ_full) =
+                (A₀ * α ^ ws.length * α₁) *
+                  (idealAxis ((ws ++ ws₂).map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass φ_full +
+                (B₀ * α ^ ws.length * α₁) *
+                  axisBad ws (bits.reverse ++ prior.map history) baseBad φ_full := by ring
+            linarith
+          exact mul_le_mul_of_nonneg_left hcomb (Complex.normSq_nonneg c)
+        have hsum_bits := list_sum_map_le _ _ _ hper_bits
+        simp only [List.cons_append, List.map_cons, idealAxis_cons_mass]
+        rw [list_sum_map_mul_left, list_sum_map_add, list_sum_map_add,
+          list_sum_map_mul_left, list_sum_map_mul_left, list_sum_map_mul_left] at hsum_bits
+        have hfb_bad : ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+            normSq (fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad)))).sum ≤
+            normSq χ_bad := by
+          rw [normSq_list_sum_fourierBranch]
+          exact hbad_iso w List.mem_cons_self ψ hψ_inv
+        have hmb : Complex.normSq c * (β₁ *
+            ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+              normSq (fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad)))).sum) ≤
+            Complex.normSq c * (β₁ * normSq χ_bad) :=
+          mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_left hfb_bad hβ₁_nonneg) (Complex.normSq_nonneg c)
+        rw [congrArg (fun l => fourierOutcomes l.length) w.wires_eq]
+        linarith
+      rw [hstepPhys_mass]
+      exact list_sum_forall2_normSq_ge _ cs _ _ hal hper_a hmass
+    have hpow_succ : α₁ * (A₀ * α ^ ws.length * α₁) = A₀ * α ^ (w :: ws).length := by
+      simp only [List.length_cons, pow_succ, α]; ring
+    have hpow_succB : α₁ * (B₀ * α ^ ws.length * α₁) = B₀ * α ^ (w :: ws).length := by
+      simp only [List.length_cons, pow_succ, α]; ring
+    have hpow_ge1 : (1 : ℝ) ≤ α ^ (w :: ws).length := one_le_pow₀ hα_ge
+    have hbad_coef : α₁ * β₁ + β₁ ≤ B₀ * α ^ (w :: ws).length := by
+      have h1 : α₁ * β₁ + β₁ = (2 + eps) * β₁ := by dsimp [α₁]; ring
+      have h2 : B₀ ≤ B₀ * α ^ (w :: ws).length := le_mul_of_one_le_right hB₀_nn hpow_ge1
+      linarith
+    have hnb_nn : 0 ≤ normSq χ_bad := ApproximatePhase34.mass_nonneg _
+    have hm_bad := mul_le_mul_of_nonneg_right hbad_coef hnb_nn
+    have hm_good := mul_le_mul_of_nonneg_left hgood_bound hα₁_pos.le
+    rw [hstepPhys_eq]
+    change _ ≤ (A₀ * α ^ (w :: ws).length) *
+        (idealAxis (((w :: ws) ++ ws₂).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ +
+      (B₀ * α ^ (w :: ws).length) * (normSq χ_bad + ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+        axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum)
+    have hmul_split : (B₀ * α ^ (w :: ws).length) * (normSq χ_bad + ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+        axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum) =
+        (B₀ * α ^ (w :: ws).length) * normSq χ_bad +
+        (B₀ * α ^ (w :: ws).length) * ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+          axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum :=
+      mul_add _ _ _
+    have heq_m : α₁ * ((A₀ * α ^ ws.length * α₁) *
+        (idealAxis (((w :: ws) ++ ws₂).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ +
+        (B₀ * α ^ ws.length * α₁) *
+          ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+            axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum +
+        β₁ * normSq χ_bad) =
+        (A₀ * α ^ (w :: ws).length) *
+          (idealAxis (((w :: ws) ++ ws₂).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ +
+        (B₀ * α ^ (w :: ws).length) *
+          ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+            axisBad ws (bits.reverse ++ prior.map history) baseBad (w.model.step (prior.map history) bits ψ))).sum +
+        (α₁ * β₁) * normSq χ_bad := by
+      rw [← hpow_succ, ← hpow_succB]; ring
+    linarith
+
 /-- Exact head step (`χ_bad = 0`, zero loss, upper-bound direction): used for `first20ApproxWin`. -/
 theorem selectedAxisDep_cons_exact_upper {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
     (w : ApproxCatWindow y read) (ws : List (ApproxCatWindow y read))
@@ -4272,7 +4540,7 @@ theorem selectedAxisDep_cons_exact_upper {n : Nat} {y : Wire} {read : ConstantBi
 end
 end ShorECDLP.Entrant.ApproxCat
 
-/-! ### Skywalk 485-step tail cardinality bound (`|Bad485| ≤ 15e-11 · 2^256`) -/
+/-! ### Skywalk adaptive-envelope tail cardinality bounds (`|BadStack env475|`, `|BadStack env490|`) -/
 
 namespace ShorECDLP.Entrant.SkywalkTail485
 open ECDSAAdd ECDSAAdd.SkywalkNat
@@ -4825,6 +5093,213 @@ theorem phiF_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
     unfold P_F Q_F; ring
   rw [hid]; positivity
 
+-- Generated Wave 10 polynomial definitions, contractions, and dyadic ladders
+def P_B7 (u v : ℝ) : ℝ :=
+      1000 * v ^ 6 + 34471 * u * v ^ 5 + 186254 * u ^ 2 * v ^ 4 +
+      395740 * u ^ 3 * v ^ 3 + 370904 * u ^ 4 * v ^ 2 + 132298 * u ^ 5 * v +
+      9552 * u ^ 6
+
+def psiB7 (u v : ℝ) : ℝ := P_B7 u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v)
+
+def P_F3 (C D : ℝ) : ℝ :=
+      1000 * D ^ 6 + 31500 * C * D ^ 5 + 146917 * C ^ 2 * D ^ 4 +
+      239494 * C ^ 3 * D ^ 3 + 176916 * C ^ 4 * D ^ 2 + 45544 * C ^ 5 * D +
+      2093 * C ^ 6
+
+def phiF3 (C D : ℝ) : ℝ := P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)
+
+def rhoB7 : ℝ := 1381 / 10000
+def rhoF3 : ℝ := 1273 / 2000
+def rhoEO3 : ℝ := 2557 / 5000
+
+theorem psiB7_pos {u v : ℝ} (hu : 0 < u) (hv : 0 < v) : 0 < psiB7 u v := by
+  unfold psiB7 P_B7 Q_B; positivity
+
+theorem phiF3_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF3 C D := by
+  unfold phiF3 P_F3 Q_F; positivity
+
+theorem phiB_div_uv_le_psiB7 {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    phiB u v / (u * v) ≤ (123 / 100 : ℝ) * psiB7 u v := by
+  unfold phiB psiB7
+  have hQ : 0 < Q_B u v := by unfold Q_B; positivity
+  have hden : 0 < u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v := by positivity
+  have hlhs : P_B u v / (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v) / (u * v) =
+      P_B u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v) := by
+    field_simp [hu.ne', hv.ne', (show 0 < u + v by positivity).ne', hQ.ne']
+  rw [hlhs, mul_div_assoc', div_le_div_iff₀ hden hden]
+  have hid : 123 * P_B7 u v - 100 * P_B u v =
+      23000 * v ^ 6 + 283733 * u * v ^ 5 + 10942 * u ^ 2 * v ^ 4 +
+      6766120 * u ^ 3 * v ^ 3 + 11910592 * u ^ 4 * v ^ 2 + 6273154 * u ^ 5 * v +
+      518696 * u ^ 6 := by
+    unfold P_B7 P_B; ring
+  have hnn : 0 ≤ 123 * P_B7 u v - 100 * P_B u v := by rw [hid]; positivity
+  nlinarith
+
+theorem phiF3_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    1000 * (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D := by
+  unfold phiF3
+  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
+  have hden : 0 < C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_F3 C D * (C ^ 2 * D ^ 2) - 1000 * (C + D) * (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D) =
+      (C ^ 2 * D ^ 2) * (
+      17500 * C * D ^ 5 + 99917 * C ^ 2 * D ^ 4 + 171494 * C ^ 3 * D ^ 3 +
+      129916 * C ^ 4 * D ^ 2 + 31544 * C ^ 5 * D + 1093 * C ^ 6) := by
+    unfold P_F3 Q_F; ring
+  have hnn : 0 ≤ P_F3 C D * (C ^ 2 * D ^ 2) - 1000 * (C + D) * (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D) := by
+    rw [hid]; positivity
+  linarith
+
+theorem psiB7_contract {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    psiB7 (2 * u) v + psiB7 (2 * u + v) v + psiB7 v (2 * u + v) ≤ rhoB7 * psiB7 u v := by
+  unfold psiB7 rhoB7
+  have hQ0 : 0 < Q_B u v := by unfold Q_B; positivity
+  have hQE : 0 < Q_B (2 * u) v := by unfold Q_B; positivity
+  have hQO0 : 0 < Q_B (2 * u + v) v := by unfold Q_B; positivity
+  have hQO1 : 0 < Q_B v (2 * u + v) := by unfold Q_B; positivity
+  have h2uv1 : 2 * u + v + v = 2 * (u + v) := by ring
+  have h2uv2 : v + (2 * u + v) = 2 * (u + v) := by ring
+  rw [h2uv1, h2uv2]
+  set M := 10000 * 32 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * (2 * u + v) ^ 5 *
+      Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * (1381 / 10000 * (P_B7 u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v)) -
+      (P_B7 (2 * u) v / ((2 * u) ^ 3 * v ^ 3 * (2 * u + v) ^ 5 * Q_B (2 * u) v) +
+       P_B7 (2 * u + v) v / ((2 * u + v) ^ 3 * v ^ 3 * (2 * (u + v)) ^ 5 * Q_B (2 * u + v) v) +
+       P_B7 v (2 * u + v) / (v ^ 3 * (2 * u + v) ^ 3 * (2 * (u + v)) ^ 5 * Q_B v (2 * u + v)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * (1381 / 10000 * (P_B7 u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v)) -
+      (P_B7 (2 * u) v / ((2 * u) ^ 3 * v ^ 3 * (2 * u + v) ^ 5 * Q_B (2 * u) v) +
+       P_B7 (2 * u + v) v / ((2 * u + v) ^ 3 * v ^ 3 * (2 * (u + v)) ^ 5 * Q_B (2 * u + v) v) +
+       P_B7 v (2 * u + v) / (v ^ 3 * (2 * u + v) ^ 3 * (2 * (u + v)) ^ 5 * Q_B v (2 * u + v)))) =
+      (u + v) ^ 2 * (
+        1381 * 32 * (2 * u + v) ^ 5 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 u v
+        - 10000 * (4 * (u + v) ^ 5 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 (2 * u) v
+                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B7 (2 * u + v) v
+                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B7 v (2 * u + v))) := by
+    dsimp only [M]
+    generalize Q_B u v = q0 at hQ0 ⊢
+    generalize Q_B (2 * u) v = qe at hQE ⊢
+    generalize Q_B (2 * u + v) v = qo0 at hQO0 ⊢
+    generalize Q_B v (2 * u + v) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (u + v) ^ 2 * (
+        1381 * 32 * (2 * u + v) ^ 5 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 u v
+        - 10000 * (4 * (u + v) ^ 5 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 (2 * u) v
+                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B7 (2 * u + v) v
+                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B7 v (2 * u + v))) =
+      2217568000 * v ^ 19 + 219234528 * u * v ^ 18 + 466398347840 * u ^ 2 * v ^ 17 +
+      2401752540864 * u ^ 3 * v ^ 16 + 870948416576 * u ^ 4 * v ^ 15 + 4934549147680 * u ^ 5 * v ^ 14 +
+      141277797008896 * u ^ 6 * v ^ 13 + 581458955143616 * u ^ 7 * v ^ 12 + 1032206623949696 * u ^ 8 * v ^ 11 +
+      847468739349376 * u ^ 9 * v ^ 10 + 283892828570112 * u ^ 10 * v ^ 9 + 288015060529152 * u ^ 11 * v ^ 8 +
+      659036660261888 * u ^ 12 * v ^ 7 + 559976824731648 * u ^ 13 * v ^ 6 + 178030290972672 * u ^ 14 * v ^ 5 +
+      12944198057984 * u ^ 15 * v ^ 4 + 2343591215104 * u ^ 16 * v ^ 3 + 998195331072 * u ^ 17 * v ^ 2 +
+      71481688064 * u ^ 18 * v + 343932928 * u ^ 19 := by
+    unfold P_B7 Q_B; ring
+  rw [hid]; positivity
+
+theorem phiF3_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    phiF3 (2 * C) D + phiF3 (2 * C) (C + D) + phiF3 (2 * D) (C + D) ≤ rhoF3 * phiF3 C D := by
+  unfold phiF3 rhoF3
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
+  rw [h31, h13]
+  set M := 2000 * 4 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * (1273 / 2000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
+      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)) +
+       P_F3 (2 * D) (C + D) / ((2 * D) ^ 2 * (C + D) ^ 2 * (C + 3 * D) ^ 3 * Q_F (2 * D) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * (1273 / 2000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
+      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)) +
+       P_F3 (2 * D) (C + D) / ((2 * D) ^ 2 * (C + D) ^ 2 * (C + 3 * D) ^ 3 * Q_F (2 * D) (C + D)))) =
+      (C + D) ^ 2 * (
+        1273 * 4 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 C D
+        - 2000 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 (2 * C) D
+                + (C + D) * D ^ 2 * (2 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F3 (2 * C) (C + D)
+                + (C + D) * C ^ 2 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 (2 * D) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (C + D) ^ 2 * (
+        1273 * 4 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 C D
+        - 2000 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 (2 * C) D
+                + (C + D) * D ^ 2 * (2 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F3 (2 * C) (C + D)
+                + (C + D) * C ^ 2 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 (2 * D) (C + D))) =
+      737100000 * D ^ 23 + 19493298000 * C * D ^ 22 + 95341624700 * C ^ 2 * D ^ 21 +
+      82778515616 * C ^ 3 * D ^ 20 + 1023957616600 * C ^ 4 * D ^ 19 + 16867757221392 * C ^ 5 * D ^ 18 +
+      97853319829184 * C ^ 6 * D ^ 17 + 328908922172568 * C ^ 7 * D ^ 16 + 790541421052552 * C ^ 8 * D ^ 15 +
+      1602593563840064 * C ^ 9 * D ^ 14 + 3075786368672200 * C ^ 10 * D ^ 13 + 5406627612632008 * C ^ 11 * D ^ 12 +
+      7612444367104200 * C ^ 12 * D ^ 11 + 7648198305351120 * C ^ 13 * D ^ 10 + 5083681571332608 * C ^ 14 * D ^ 9 +
+      2241166800761128 * C ^ 15 * D ^ 8 + 1000460775125656 * C ^ 16 * D ^ 7 + 759861296994512 * C ^ 17 * D ^ 6 +
+      492013897868860 * C ^ 18 * D ^ 5 + 180702789070680 * C ^ 19 * D ^ 4 + 33479786282592 * C ^ 20 * D ^ 3 +
+      2350815416512 * C ^ 21 * D ^ 2 + 4759674048 * C ^ 22 * D + 6168009600 * C ^ 23 := by
+    unfold P_F3 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF3_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
+    phiF3 (2 * C) D + phiF3 (2 * C) (C + D) ≤ rhoEO3 * phiF3 C D := by
+  have hC : 0 < C := lt_of_lt_of_le hD hCD
+  unfold phiF3 rhoEO3
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  rw [h31]
+  set M := 5000 * 4 * C ^ 2 * D ^ 2 * (C + D) ^ 3 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * (2557 / 5000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
+      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * (2557 / 5000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
+      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)))) =
+      2557 * 4 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 C D
+      - 5000 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * P_F3 (2 * C) D
+             + (C + D) * D ^ 2 * (2 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * P_F3 (2 * C) (C + D)) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  set t := C - D
+  have ht : 0 ≤ t := sub_nonneg.mpr hCD
+  have hCeq : C = t + D := by dsimp [t]; ring
+  rw [hCeq]
+  have hid : 2557 * 4 * (2 * (t + D) + D) ^ 3 * (3 * (t + D) + D) ^ 3 *
+        Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F3 (t + D) D
+      - 5000 * ((t + D + D) ^ 3 * (3 * (t + D) + D) ^ 3 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F3 (2 * (t + D)) D
+             + (t + D + D) * D ^ 2 * (2 * (t + D) + D) ^ 3 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F3 (2 * (t + D)) (t + D + D)) =
+      4731892531200 * D ^ 16 + 2073210521554944 * t * D ^ 15 + 19221348805951488 * t ^ 2 * D ^ 14 +
+      82589175657523200 * t ^ 3 * D ^ 13 + 216576396350153344 * t ^ 4 * D ^ 12 + 386476100428261440 * t ^ 5 * D ^ 11 +
+      495814804109460664 * t ^ 6 * D ^ 10 + 471028509607980088 * t ^ 7 * D ^ 9 + 336211149463668104 * t ^ 8 * D ^ 8 +
+      180957007431163132 * t ^ 9 * D ^ 7 + 72992789846946416 * t ^ 10 * D ^ 6 + 21700009043437780 * t ^ 11 * D ^ 5 +
+      4609960302278552 * t ^ 12 * D ^ 4 + 663036225065184 * t ^ 13 * D ^ 3 + 58313611152832 * t ^ 14 * D ^ 2 +
+      2455774535232 * t ^ 15 * D + 10307606400 * t ^ 16 := by
+    unfold P_F3 Q_F; ring
+  rw [hid]; positivity
+
 /-! ### 4. Path-list enumeration and tree-sum contraction lemmas -/
 
 def pathsOf (alphabet : List StepKind) : Nat → List (List StepKind)
@@ -4967,6 +5442,87 @@ theorem sum_pathsAll_phiB (n : Nat) (u v : Nat) (hu : 0 < u) (hv : 0 < v) :
       _ ≤ (rhoB * phiB u v) * rhoB ^ n := hmul
       _ = phiB u v * rhoB ^ (n + 1) := by rw [pow_succ']; ring
 
+theorem sum_pathsAll_psiB7 (n : Nat) (u v : Nat) (hu : 0 < u) (hv : 0 < v) :
+    ((pathsOf allKinds n).map (fun γ => psiB7 (runBL (u, v) γ).1 (runBL (u, v) γ).2)).sum ≤
+      psiB7 u v * rhoB7 ^ n := by
+  induction n generalizing u v with
+  | zero => simp [pathsOf, runBL]
+  | succ n ih =>
+    rw [pathsOf, list_sum_flatMap_real]
+    simp only [allKinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
+      List.map_map, Function.comp_def, runBL, List.foldl_cons, stepB]
+    have hE := ih (2 * u) v (by omega) hv
+    have hO0 := ih (2 * u + v) v (by omega) hv
+    have hO1 := ih v (2 * u + v) hv (by omega)
+    have hc := psiB7_contract (u := (u : ℝ)) (v := (v : ℝ)) (by exact_mod_cast hu) (by exact_mod_cast hv)
+    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoB7; positivity : 0 ≤ rhoB7 ^ n)
+    have hsum : psiB7 ((2 * u : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
+        (psiB7 ((2 * u + v : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
+         psiB7 (v : ℝ) ((2 * u + v : Nat) : ℝ) * rhoB7 ^ n) =
+        (psiB7 (2 * (u : ℝ)) (v : ℝ) + psiB7 (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
+         psiB7 (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * rhoB7 ^ n := by
+      push_cast; ring
+    calc _ ≤ psiB7 ((2 * u : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
+              (psiB7 ((2 * u + v : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
+               psiB7 (v : ℝ) ((2 * u + v : Nat) : ℝ) * rhoB7 ^ n) :=
+            add_le_add hE (add_le_add hO0 hO1)
+      _ = (psiB7 (2 * (u : ℝ)) (v : ℝ) + psiB7 (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
+           psiB7 (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * rhoB7 ^ n := hsum
+      _ ≤ (rhoB7 * psiB7 u v) * rhoB7 ^ n := hmul
+      _ = psiB7 u v * rhoB7 ^ (n + 1) := by rw [pow_succ']; ring
+
+theorem sum_pathsAll_phiF3 (n : Nat) (C D : Nat) (hC : 0 < C) (hD : 0 < D) :
+    ((pathsOf allKinds n).map (fun γ => phiF3 (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
+      phiF3 C D * rhoF3 ^ n := by
+  induction n generalizing C D with
+  | zero => simp [pathsOf, runF]
+  | succ n ih =>
+    rw [pathsOf, list_sum_flatMap_real]
+    simp only [allKinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
+      List.map_map, Function.comp_def, runF_cons, stepF]
+    have hE := ih (2 * C) D (by omega) hD
+    have hO0 := ih (2 * C) (C + D) (by omega) (by omega)
+    have hO1 := ih (2 * D) (C + D) (by omega) (by omega)
+    have hc := phiF3_contract (C := (C : ℝ)) (D := (D : ℝ)) (by exact_mod_cast hC) (by exact_mod_cast hD)
+    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoF3; positivity : 0 ≤ rhoF3 ^ n)
+    have hsum : phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoF3 ^ n +
+        (phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n +
+         phiF3 ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n) =
+        (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
+         phiF3 (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoF3 ^ n := by
+      push_cast; ring
+    calc _ ≤ phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoF3 ^ n +
+              (phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n +
+               phiF3 ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n) :=
+            add_le_add hE (add_le_add hO0 hO1)
+      _ = (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
+           phiF3 (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoF3 ^ n := hsum
+      _ ≤ (rhoF3 * phiF3 C D) * rhoF3 ^ n := hmul
+      _ = phiF3 C D * rhoF3 ^ (n + 1) := by rw [pow_succ']; ring
+
+theorem sum_pathsEO0_phiF3 (n : Nat) (C D : Nat) (hD : 0 < D) (hCD : D ≤ C) :
+    ((pathsOf eo0Kinds n).map (fun γ => phiF3 (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
+      phiF3 C D * rhoEO3 ^ n := by
+  induction n generalizing C D with
+  | zero => simp [pathsOf, runF]
+  | succ n ih =>
+    rw [pathsOf, list_sum_flatMap_real]
+    simp only [eo0Kinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
+      List.map_map, Function.comp_def, runF_cons, stepF]
+    have hE := ih (2 * C) D hD (by omega)
+    have hO0 := ih (2 * C) (C + D) (by omega) (by omega)
+    have hc := phiF3_eo0_contract (C := (C : ℝ)) (D := (D : ℝ)) (by exact_mod_cast hD) (by exact_mod_cast hCD)
+    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoEO3; positivity : 0 ≤ rhoEO3 ^ n)
+    have hsum : phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoEO3 ^ n +
+        phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoEO3 ^ n =
+        (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoEO3 ^ n := by
+      push_cast; ring
+    calc _ ≤ phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoEO3 ^ n +
+              phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoEO3 ^ n := add_le_add hE hO0
+      _ = (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoEO3 ^ n := hsum
+      _ ≤ (rhoEO3 * phiF3 C D) * rhoEO3 ^ n := hmul
+      _ = phiF3 C D * rhoEO3 ^ (n + 1) := by rw [pow_succ']; ring
+
 /-! ### 5. Exact trajectory decomposition for `x ∈ (0, p)` and `k₀ = v₂(x)` -/
 
 theorem p_pos : 0 < ECDSAAdd.p := by norm_num [ECDSAAdd.p]
@@ -4974,18 +5530,19 @@ theorem p_odd : ECDSAAdd.p % 2 = 1 := by norm_num [ECDSAAdd.p]
 theorem p_lt_256 : ECDSAAdd.p < 2 ^ 256 := by norm_num [ECDSAAdd.p]
 
 private theorem phi_consts :
-    phiF 2 1 ≤ 1215 ∧ phiF 1 1 ≤ 5411 ∧ phiB 1 1 ≤ 1539 := by
-  unfold phiF phiB P_F Q_F P_B Q_B; norm_num
+    phiF 2 1 ≤ 1215 ∧ phiF 1 1 ≤ 5411 ∧ phiB 1 1 ≤ 1539 ∧
+    psiB7 1 1 ≤ 1536 ∧ phiF3 2 1 ≤ 2589 ∧ phiF3 1 1 ≤ 6703 := by
+  unfold phiF phiB psiB7 phiF3 P_F Q_F P_B Q_B P_B7 P_F3; norm_num
 
-attribute [local irreducible] Nat.iterate pathsOf phiF phiB P_F Q_F P_B Q_B
+attribute [local irreducible] Nat.iterate pathsOf phiF phiB psiB7 phiF3 P_F Q_F P_B Q_B P_B7 P_F3
 
 theorem canonical_coprime_p {x : Nat} (hx0 : 0 < x) (hxp : x < ECDSAAdd.p) : x.Coprime ECDSAAdd.p :=
   (ECDSAAdd.Secp256k1.p_prime.coprime_iff_not_dvd.mpr
     (fun hd => (Nat.not_le_of_lt hxp) (Nat.le_of_dvd hx0 hd))).symm
 
-theorem exists_term_time {x : Nat} (hx0 : 0 < x) (hxp : x < ECDSAAdd.p)
-    (hbad : (SkywalkNat.step^[485] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0) :
-    ∃ L : Nat, 486 ≤ L ∧ L ≤ 512 ∧
+theorem exists_term_time (S : Nat) (hS : S ≤ 512) {x : Nat} (hx0 : 0 < x) (hxp : x < ECDSAAdd.p)
+    (hbad : (SkywalkNat.step^[S] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0) :
+    ∃ L : Nat, S + 1 ≤ L ∧ L ≤ 512 ∧
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
       (SkywalkNat.step^[L] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by
   have h512 := (SkywalkNat.terminates_2n ECDSAAdd.p x 256 p_pos hx0 p_odd p_lt_256 (hxp.trans p_lt_256)
@@ -4995,13 +5552,13 @@ theorem exists_term_time {x : Nat} (hx0 : 0 < x) (hxp : x < ECDSAAdd.p)
   let L := Nat.find hex
   have hPL : (SkywalkNat.step^[L] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := Nat.find_spec hex
   have hL_le : L ≤ 512 := Nat.find_min' hex h512
-  have hL_gt : 485 < L := by
+  have hL_gt : S < L := by
     by_contra hle
-    have h485 : (SkywalkNat.step^[485] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by
-      have hrew : 485 = (485 - L) + L := by omega
+    have hSt : (SkywalkNat.step^[S] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by
+      have hrew : S = (S - L) + L := by omega
       rw [hrew, Function.iterate_add_apply]
-      exact iter_of_u_zero hPL (485 - L)
-    exact hbad h485
+      exact iter_of_u_zero hPL (S - L)
+    exact hbad hSt
   have hprev_ne : (SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0 :=
     Nat.find_min hex (by omega)
   set z := SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p)
@@ -5387,14 +5944,14 @@ theorem forced_eo0_phase (x k0 : Nat) (hk0 : 1 ≤ k0) (hdiv : 2 ^ k0 ∣ x)
     push_cast at hcast; linarith
   exact ⟨hEO, hC2, hD2, hsum_real⟩
 
-/-! ### 7. Per-`k₀` 3-case bound (Case 1 + Case 2 + Case 3, geometric sum in `L ≥ 486`) -/
+/-! ### 7. Parameterized per-`k₀` 3-case bound (`BadS`) with `ψ_{B7}` and envelope drop bound (`BadDrop`) -/
 
-def Bad485 : Finset Nat :=
-  (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => (SkywalkNat.step^[485] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0)
+def BadS (S : Nat) : Finset Nat :=
+  (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => (SkywalkNat.step^[S] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0)
 
 def qL : ℝ := 38 / 100
 
-theorem geom_sum_le_inv {r : ℝ} (hr0 : 0 ≤ r) (hr1 : r < 1) (n : Nat) :
+theorem geom_sum_le_inv {{r : ℝ}} (hr0 : 0 ≤ r) (hr1 : r < 1) (n : Nat) :
     ∑ j ∈ Finset.range n, r ^ j ≤ 1 / (1 - r) := by
   have h1 : (1 - r) * ∑ j ∈ Finset.range n, r ^ j = 1 - r ^ n := by
     have := geom_sum_mul_neg r n
@@ -5403,37 +5960,46 @@ theorem geom_sum_le_inv {r : ℝ} (hr0 : 0 ≤ r) (hr1 : r < 1) (n : Nat) :
   rw [le_div_iff₀ (by linarith)]
   linarith
 
-theorem case3_card_bound (S : Finset Nat) (hS_sub : S ⊆ Bad485)
-    (t : Nat) (ht : t ≤ 485) (T0 : ℝ) (hT0 : 0 < T0)
+theorem geom_sum_gt1_le {{r : ℝ}} (hr1 : 1 < r) (n : Nat) :
+    ∑ j ∈ Finset.range n, r ^ j ≤ r ^ n / (r - 1) := by
+  have h1 : (r - 1) * ∑ j ∈ Finset.range n, r ^ j = r ^ n - 1 := by
+    have := mul_geom_sum r n
+    linarith
+  have h2 : r ^ n - 1 ≤ r ^ n := by linarith
+  rw [le_div_iff₀ (by linarith)]
+  linarith
+
+theorem case3_card_bound (S_step : Nat) (hS_le : S_step ≤ 512)
+    (S : Finset Nat) (hS_sub : S ⊆ BadS S_step)
+    (t : Nat) (ht : t ≤ S_step) (T0 : ℝ) (hT0 : 0 < T0)
     (hC_pos : ∀ x ∈ S, 0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1)
-    (hPhiB : ∀ x ∈ S, ∀ L, 486 ≤ L → L ≤ 512 →
+    (hPhiB : ∀ x ∈ S, ∀ L, S_step + 1 ≤ L → L ≤ 512 →
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
-      T0 * qL ^ (L - 486) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+      T0 * qL ^ (L - (S_step + 1)) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
         ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)) :
     (S.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      ((2 * phiB 1 1 * (rhoB / 2) ^ (485 - t) / (1 - (rhoB / 2) / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (485 - t) / (1 - rhoB / qL)) / T0) := by
+      (((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - t) / (1 - rhoB7 / qL) +
+        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - t) / (1 - rhoB / qL)) / T0) := by
   let SL : Nat → Finset Nat := fun j =>
-    S.filter (fun x => SkywalkNat.step^[485 + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
-      (SkywalkNat.step^[486 + j] (SkywalkNat.init x ECDSAAdd.p)).u = 0)
-  have hcov : S ⊆ (Finset.range 27).biUnion SL := by
+    S.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
+      (SkywalkNat.step^[S_step + 1 + j] (SkywalkNat.init x ECDSAAdd.p)).u = 0)
+  have hcov : S ⊆ (Finset.range (512 - S_step)).biUnion SL := by
     intro x hx
     have hbad := Finset.mem_filter.mp (hS_sub hx)
     obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
-    obtain ⟨L, hL1, hL2, hterm1, hterm0⟩ := exists_term_time hx0 hxp hbad.2
-    refine Finset.mem_biUnion.mpr ⟨L - 486, Finset.mem_range.mpr (by omega),
-      Finset.mem_filter.mpr ⟨hx, by rwa [show 485 + (L - 486) = L - 1 by omega],
-        by rwa [show 486 + (L - 486) = L by omega]⟩⟩
-  have hcard_sum : (S.card : ℝ) ≤ ∑ j ∈ Finset.range 27, ((SL j).card : ℝ) := by
-    have h1 := (Finset.card_le_card hcov).trans Finset.card_biUnion_le
-    exact_mod_cast h1
-  have hper_j : ∀ j ∈ Finset.range 27,
+    obtain ⟨L, hL1, hL2, hterm1, hterm0⟩ := exists_term_time S_step hS_le hx0 hxp hbad.2
+    refine Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
+      Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega],
+        by rwa [show S_step + 1 + (L - (S_step + 1)) = L by omega]⟩⟩
+  have hcard_sum : (S.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL j).card : ℝ) := by
+    exact_mod_cast (Finset.card_le_card hcov).trans Finset.card_biUnion_le
+  have hper_j : ∀ j ∈ Finset.range (512 - S_step),
       ((SL j).card : ℝ) ≤ (2 : ℝ) ^ 256 / T0 *
-        (2 * phiB 1 1 * (rhoB / 2) ^ (485 - t) * ((rhoB / 2) / qL) ^ j +
-         (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (485 - t) * (rhoB / qL) ^ j) := by
+        ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - t) * (rhoB7 / qL) ^ j +
+         (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - t) * (rhoB / qL) ^ j) := by
     intro j hj
-    have hjlt : j < 27 := Finset.mem_range.mp hj
-    set Lb := (485 - t) + j
+    have hjlt : j < 512 - S_step := Finset.mem_range.mp hj
+    set Lb := (S_step - t) + j
     let fB : Nat → List StepKind := fun x =>
       (traceKinds (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)) Lb).reverse
     have hfB_mem : ∀ x ∈ SL j, fB x ∈ pathsOf allKinds Lb := fun x _ =>
@@ -5441,11 +6007,16 @@ theorem case3_card_bound (S : Finset Nat) (hS_sub : S ⊆ Bad485)
     have hfib := card_le_list_sum_fiber (SL j) (pathsOf allKinds Lb) fB hfB_mem
     have hper_γ : ∀ γ ∈ pathsOf allKinds Lb,
         (((SL j).filter (fun x => fB x = γ)).card : ℝ) ≤
-          (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb + 2) / (T0 * qL ^ j) *
+          ((246 / 100 : ℝ) * (2 : ℝ) ^ 256 / (T0 * qL ^ j)) *
+            psiB7 ((runBL (1, 1) γ).1 : ℝ) ((runBL (1, 1) γ).2 : ℝ) +
+          (2 / (T0 * qL ^ j)) *
             phiB ((runBL (1, 1) γ).1 : ℝ) ((runBL (1, 1) γ).2 : ℝ) := by
       intro γ hγ
       have hγ_len : γ.length = Lb := (mem_pathsOf.mp hγ).1
       set F := (SL j).filter (fun x => fB x = γ)
+      have huv_pos := runBL_pos γ (by omega : 0 < 1) (by omega : 0 < 1)
+      have huR : (0 : ℝ) < ((runBL (1, 1) γ).1 : ℝ) := by exact_mod_cast huv_pos.1
+      have hvR : (0 : ℝ) < ((runBL (1, 1) γ).2 : ℝ) := by exact_mod_cast huv_pos.2
       by_cases hFne : F.Nonempty
       · obtain ⟨x0, hx0F⟩ := hFne
         have hx0SL : x0 ∈ SL j := (Finset.mem_filter.mp hx0F).1
@@ -5453,7 +6024,6 @@ theorem case3_card_bound (S : Finset Nat) (hS_sub : S ⊆ Bad485)
         have hbad0 := Finset.mem_filter.mp (hS_sub hx0S)
         obtain ⟨hx0_0, hx0_p⟩ := Finset.mem_Ioo.mp hbad0.1
         set uv := runBL (1, 1) γ
-        have huv_pos := runBL_pos γ (by omega : 0 < 1) (by omega : 0 < 1)
         have hstate_all : ∀ x ∈ F, SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p) = ⟨uv.1, uv.2⟩ := by
           intro x hxF
           have hxSL := (Finset.mem_filter.mp hxF).1
@@ -5463,9 +6033,9 @@ theorem case3_card_bound (S : Finset Nat) (hS_sub : S ⊆ Bad485)
           have halive : ∀ i < Lb, 0 < (SkywalkNat.step^[i] (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p))).u := by
             intro i hi
             rw [← Function.iterate_add_apply]
-            exact iter_alive_of_u_ne_zero _ (show i + t ≤ 485 + j by omega) (by rw [hterm]; decide)
+            exact iter_alive_of_u_ne_zero _ (show i + t ≤ S_step + j by omega) (by rw [hterm]; decide)
           have hB := runB_traceKinds (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)) Lb hval.1 hval.2.1 halive
-          have hadd : Lb + t = 485 + j := by omega
+          have hadd : Lb + t = S_step + j := by omega
           rw [← Function.iterate_add_apply, hadd, hterm] at hB
           have hrev : runB (1, 1) (traceKinds (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)) Lb) = uv := by
             dsimp only [uv]; rw [← hfx]; exact (runBL_reverse (1, 1) _).symm
@@ -5474,86 +6044,96 @@ theorem case3_card_bound (S : Finset Nat) (hS_sub : S ⊆ Bad485)
         have hcop_uv : uv.1.Coprime uv.2 := by
           have hval0 := SkywalkNat.iter_valid t (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
           have hg0 := hval0.2.2.trans (canonical_coprime_p hx0_0 hx0_p)
-          rw [hstate_all x0 hx0F] at hg0
-          exact hg0
+          rw [hstate_all x0 hx0F] at hg0; exact hg0
         have hcardF := backward_state_fiber_card F
           (fun x hx => Finset.mem_Ioo.mp (Finset.mem_filter.mp (hS_sub (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1)).1)
           t uv.1 uv.2 huv_pos.1 huv_pos.2 hcop_uv
           (fun x hx => ⟨hstate_all x hx, hC_pos x (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1⟩)
-        have hprod_lb : 2 ^ Lb ≤ uv.1 * uv.2 := by
-          have := runBL_prod γ 1 1; rw [hγ_len, mul_one, mul_one] at this; exact this
-        have hdiv_le : ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb := by
+        have hdiv_le : ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) ≤ (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) := by
           have h1 : ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((uv.1 * uv.2 : Nat) : ℝ) :=
             Nat.cast_div_le
           have h2 : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-          have h3 : (2 : ℝ) ^ Lb ≤ ((uv.1 * uv.2 : Nat) : ℝ) := by exact_mod_cast hprod_lb
-          exact h1.trans (div_le_div₀ (by positivity) h2 (by positivity) h3)
-        have hcardF_real : (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb + 2 := by
+          push_cast at h1
+          exact h1.trans (div_le_div_of_nonneg_right h2 (by positivity))
+        have hcardF_real : (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) + 2 := by
           have hcR : (F.card : ℝ) ≤ 2 * ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) + 2 := by
             have := Nat.cast_le (α := ℝ).mpr hcardF
             push_cast at this; linarith
           have h2div := mul_le_mul_of_nonneg_left hdiv_le (by norm_num : (0 : ℝ) ≤ 2)
-          linarith [show 2 * ((2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb) = 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb by ring]
+          linarith [show 2 * ((2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) = 2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) by ring]
         have hphi_gt : T0 * qL ^ j < phiB (uv.1 : ℝ) (uv.2 : ℝ) := by
-          have h1 := hPhiB x0 hx0S (486 + j) (by omega) (by omega) (by
-            simpa only [show 486 + j - 1 = 485 + j by omega] using (Finset.mem_filter.mp hx0SL).2.1)
-          rw [hstate_all x0 hx0F, show 486 + j - 486 = j by omega] at h1
+          have h1 := hPhiB x0 hx0S (S_step + 1 + j) (by omega) (by omega) (by
+            simpa only [show S_step + 1 + j - 1 = S_step + j by omega] using (Finset.mem_filter.mp hx0SL).2.1)
+          rw [hstate_all x0 hx0F, show S_step + 1 + j - (S_step + 1) = j by omega] at h1
           exact h1
         have hqpos : 0 < T0 * qL ^ j := by unfold qL; positivity
         have h1le : 1 ≤ phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j) := (one_le_div hqpos).mpr hphi_gt.le
         have hmul := mul_le_mul hcardF_real h1le (by norm_num) (by positivity)
+        have hpsi := phiB_div_uv_le_psiB7 huR hvR
+        have hfirst : (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) ≤
+            ((246 / 100 : ℝ) * (2 : ℝ) ^ 256 / (T0 * qL ^ j)) * psiB7 (uv.1 : ℝ) (uv.2 : ℝ) := by
+          have heq1 : (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) =
+              (2 * (2 : ℝ) ^ 256 / (T0 * qL ^ j)) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / ((uv.1 : ℝ) * (uv.2 : ℝ))) := by ring
+          rw [heq1]
+          exact (mul_le_mul_of_nonneg_left hpsi (by positivity)).trans_eq (by ring)
         calc (F.card : ℝ) = (F.card : ℝ) * 1 := (mul_one _).symm
-          _ ≤ (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb + 2) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) := hmul
-          _ = (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb + 2) / (T0 * qL ^ j) * phiB (uv.1 : ℝ) (uv.2 : ℝ) := by ring
+          _ ≤ (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) + 2) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) := hmul
+          _ = (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) +
+              (2 / (T0 * qL ^ j)) * phiB (uv.1 : ℝ) (uv.2 : ℝ) := by ring
+          _ ≤ _ := add_le_add hfirst le_rfl
       · rw [Finset.not_nonempty_iff_eq_empty.mp hFne, Finset.card_empty, Nat.cast_zero]
-        have huv_pos := runBL_pos γ (by omega : 0 < 1) (by omega : 0 < 1)
-        have hphi_pos := phiB_pos (u := ((runBL (1, 1) γ).1 : ℝ)) (v := ((runBL (1, 1) γ).2 : ℝ))
-          (by exact_mod_cast huv_pos.1) (by exact_mod_cast huv_pos.2)
+        have h1 := psiB7_pos huR hvR
+        have h2 := phiB_pos huR hvR
         unfold qL; positivity
     have hsum1 := hfib.trans (list_sum_map_le _ _ _ hper_γ)
-    rw [list_sum_mul_left] at hsum1
-    have htree := sum_pathsAll_phiB Lb 1 1 (by omega) (by omega)
-    have hcoef_nn : 0 ≤ (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ Lb + 2) / (T0 * qL ^ j) := by unfold qL; positivity
-    have hsum2 := hsum1.trans (mul_le_mul_of_nonneg_left htree hcoef_nn)
+    have hadd_map : ∀ (xs : List (List StepKind)) (f g : List StepKind → ℝ),
+        (xs.map (fun x => f x + g x)).sum = (xs.map f).sum + (xs.map g).sum := by
+      intro xs f g; induction xs with | nil => simp | cons _ _ ih => simp [ih]; ring
+    rw [hadd_map, list_sum_mul_left, list_sum_mul_left] at hsum1
+    have htree1 := sum_pathsAll_psiB7 Lb 1 1 (by omega) (by omega)
+    have htree2 := sum_pathsAll_phiB Lb 1 1 (by omega) (by omega)
+    have hsum2 := hsum1.trans (add_le_add
+      (mul_le_mul_of_nonneg_left htree1 (by unfold qL; positivity))
+      (mul_le_mul_of_nonneg_left htree2 (by unfold qL; positivity)))
     refine hsum2.trans_eq ?_
     dsimp only [Lb]
-    rw [pow_add (2 : ℝ), pow_add rhoB]
+    rw [pow_add rhoB7, pow_add rhoB]
     simp only [Nat.cast_one, div_pow]
     have hT0ne : T0 ≠ 0 := hT0.ne'
     have hq_ne : qL ≠ 0 := by unfold qL; norm_num
-    have h2_ne : (2 : ℝ) ≠ 0 := by norm_num
     field_simp
   have hsum_all := hcard_sum.trans (Finset.sum_le_sum hper_j)
   rw [← Finset.mul_sum, Finset.sum_add_distrib, ← Finset.mul_sum, ← Finset.mul_sum] at hsum_all
-  have hg1 := geom_sum_le_inv (r := (rhoB / 2) / qL) (by unfold rhoB qL; positivity) (by unfold rhoB qL; norm_num) 27
-  have hg2 := geom_sum_le_inv (r := rhoB / qL) (by unfold rhoB qL; positivity) (by unfold rhoB qL; norm_num) 27
+  have hg1 := geom_sum_le_inv (r := rhoB7 / qL) (by unfold rhoB7 qL; positivity) (by unfold rhoB7 qL; norm_num) (512 - S_step)
+  have hg2 := geom_sum_le_inv (r := rhoB / qL) (by unfold rhoB qL; positivity) (by unfold rhoB qL; norm_num) (512 - S_step)
+  have hpsiB_pos : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
   have hphiB_pos : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-  have hterm1 := mul_le_mul_of_nonneg_left hg1 (by unfold rhoB; positivity : 0 ≤ 2 * phiB 1 1 * (rhoB / 2) ^ (485 - t))
-  have hterm2 := mul_le_mul_of_nonneg_left hg2 (by unfold rhoB; positivity : 0 ≤ 2 / (2 : ℝ) ^ 256 * phiB 1 1 * rhoB ^ (485 - t))
+  have hterm1 := mul_le_mul_of_nonneg_left hg1 (by unfold rhoB7; positivity : 0 ≤ (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - t))
+  have hterm2 := mul_le_mul_of_nonneg_left hg2 (by unfold rhoB; positivity : 0 ≤ 2 / (2 : ℝ) ^ 256 * phiB 1 1 * rhoB ^ (S_step - t))
   have hcomb := mul_le_mul_of_nonneg_left (add_le_add hterm1 hterm2) (by positivity : 0 ≤ (2 : ℝ) ^ 256 / T0)
   refine (hsum_all.trans hcomb).trans_eq ?_
   ring
 
-def Bad485_k0 (k0 : Nat) : Finset Nat :=
-  Bad485.filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
+def BadS_k0 (S k0 : Nat) : Finset Nat :=
+  (BadS S).filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
 
-theorem bad485_k0_zero_bound :
-    ((Bad485_k0 0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
-      ((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoF ^ 240 +
-      ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 240 / (1 - qL)) / (2 : ℝ) ^ 624 +
-      (2 * phiB 1 1 * (rhoB / 2) ^ 244 / (1 - (rhoB / 2) / qL) +
-       (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 244 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624) := by
-  set S0 := Bad485_k0 0
-  set t : Nat := 241
-  set T0 : ℝ := 1 / (2 : ℝ) ^ 624
+theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 + m ≤ S_step) :
+    ((BadS_k0 S_step 0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
+      ((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoF ^ m +
+      ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e +
+      ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (1 + m)) / (1 - rhoB7 / qL) +
+       (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (1 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+  set S0 := BadS_k0 S_step 0
+  set t : Nat := 1 + m
+  set T0 : ℝ := 1 / (2 : ℝ) ^ e
   have hT0 : 0 < T0 := by dsimp [T0]; positivity
   let c1Pred : Nat → Prop := fun x =>
     let γ := traceKinds (SkywalkNat.init x ECDSAAdd.p) t
     (runF (0, 1) γ).1 * (runF (0, 1) γ).2 ≤ ECDSAAdd.p
   let c3Pred : Nat → Prop := fun x =>
-    ∀ L, 486 ≤ L → L ≤ 512 →
+    ∀ L, S_step + 1 ≤ L → L ≤ 512 →
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
-      T0 * qL ^ (L - 486) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+      T0 * qL ^ (L - (S_step + 1)) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
         ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
   set S1 := S0.filter c1Pred
   set S3 := S0.filter c3Pred
@@ -5573,7 +6153,7 @@ theorem bad485_k0_zero_bound :
   have hx_facts : ∀ x ∈ S0,
       0 < x ∧ x < ECDSAAdd.p ∧
       0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u ∧
-      traceKinds (SkywalkNat.init x ECDSAAdd.p) t = .O1 :: traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) 240 ∧
+      traceKinds (SkywalkNat.init x ECDSAAdd.p) t = .O1 :: traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m ∧
       0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
     intro x hx
     have hmem := Finset.mem_filter.mp hx
@@ -5582,21 +6162,20 @@ theorem bad485_k0_zero_bound :
     have hodd : (x / 2 ^ 0) % 2 = 1 := hmem.2.2
     obtain ⟨_, _, htr1, _⟩ := leading_E_steps x 0 (by simp) hodd hxp
     have hu_t : 0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u :=
-      iter_alive_of_u_ne_zero _ (by decide : t ≤ 485) hbad.2
+      iter_alive_of_u_ne_zero _ hm hbad.2
     have htr_t : traceKinds (SkywalkNat.init x ECDSAAdd.p) t =
-        .O1 :: traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) 240 := by
-      have := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 240
-      simpa only [show 1 + 240 = t from rfl, htr1, List.replicate_zero, List.nil_append, List.cons_append] using this
+        .O1 :: traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m := by
+      have := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 m
+      simpa only [htr1, List.replicate_zero, List.nil_append, List.cons_append] using this
     have hCpos : 0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
       rw [htr_t, runF_cons]
       exact (runF_pos _ (by omega : 0 < 2) (by omega : 0 < 1)).1
     exact ⟨hx0, hxp, hu_t, htr_t, hCpos⟩
-  -- Case 1 bound on `S1`:
-  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * (((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoF ^ 240) := by
-    let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) 240
-    have hfib := card_le_list_sum_fiber S1 (pathsOf allKinds 240) f1
+  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * (((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoF ^ m) := by
+    let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m
+    have hfib := card_le_list_sum_fiber S1 (pathsOf allKinds m) f1
       (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
-    have hper : ∀ γ ∈ pathsOf allKinds 240,
+    have hper : ∀ γ ∈ pathsOf allKinds m,
         ((S1.filter (fun x => f1 x = γ)).card : ℝ) ≤
           (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) * phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
       intro γ _
@@ -5659,33 +6238,31 @@ theorem bad485_k0_zero_bound :
     rw [list_sum_mul_left] at h1
     have hcoef_nn : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) :=
       mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))
-    have h2 := h1.trans (mul_le_mul_of_nonneg_left (sum_pathsAll_phiF 240 2 1 (by omega) (by omega)) hcoef_nn)
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left (sum_pathsAll_phiF m 2 1 (by omega) (by omega)) hcoef_nn)
     refine h2.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; generalize (2 : ℝ) ^ 384 = P384; ring
-  -- Case 2 bound on `S2`:
   have hS2 : (S2.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 240 / (1 - qL)) / (2 : ℝ) ^ 624) := by
+      (((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e) := by
     let SL2 : Nat → Finset Nat := fun j =>
-      S2.filter (fun x => SkywalkNat.step^[485 + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
+      S2.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
         phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
           ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * qL ^ j)
-    have hcov2 : S2 ⊆ (Finset.range 27).biUnion SL2 := by
+    have hcov2 : S2 ⊆ (Finset.range (512 - S_step)).biUnion SL2 := by
       intro x hx
       have hnc3 : ¬ c3Pred x := (Finset.mem_filter.mp hx).2.2
-      dsimp only [c3Pred] at hnc3
-      push_neg at hnc3
+      dsimp only [c3Pred] at hnc3; push_neg at hnc3
       obtain ⟨L, hL1, hL2, hterm, hle⟩ := hnc3
-      refine Finset.mem_biUnion.mpr ⟨L - 486, Finset.mem_range.mpr (by omega),
-        Finset.mem_filter.mpr ⟨hx, by rwa [show 485 + (L - 486) = L - 1 by omega], hle⟩⟩
-    have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range 27, ((SL2 j).card : ℝ) := by
+      refine Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
+        Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega], hle⟩⟩
+    have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL2 j).card : ℝ) := by
       exact_mod_cast (Finset.card_le_card hcov2).trans Finset.card_biUnion_le
-    have hper_j : ∀ j ∈ Finset.range 27,
+    have hper_j : ∀ j ∈ Finset.range (512 - S_step),
         ((SL2 j).card : ℝ) ≤
-          (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * (phiF 2 1 * rhoF ^ 240) := by
+          (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * (phiF 2 1 * rhoF ^ m) := by
       intro j _
-      let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) 240
-      have hfib := card_le_list_sum_fiber (SL2 j) (pathsOf allKinds 240) f1
+      let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m
+      have hfib := card_le_list_sum_fiber (SL2 j) (pathsOf allKinds m) f1
         (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
-      have hper_γ : ∀ γ ∈ pathsOf allKinds 240,
+      have hper_γ : ∀ γ ∈ pathsOf allKinds m,
           (((SL2 j).filter (fun x => f1 x = γ)).card : ℝ) ≤
             (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
         intro γ _
@@ -5757,43 +6334,41 @@ theorem bad485_k0_zero_bound :
       have h1 := hfib.trans (list_sum_map_le _ _ _ hper_γ)
       rw [list_sum_mul_left] at h1
       exact h1.trans (mul_le_mul_of_nonneg_left
-        (by simpa only [Nat.cast_ofNat, Nat.cast_one] using sum_pathsAll_phiF 240 2 1 (by omega) (by omega))
+        (by simpa only [Nat.cast_ofNat, Nat.cast_one] using sum_pathsAll_phiF m 2 1 (by omega) (by omega))
         (by unfold qL; positivity))
     have h1 := hsum2.trans (Finset.sum_le_sum hper_j)
-    have hfact : ∑ j ∈ Finset.range 27,
-        (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * (phiF 2 1 * rhoF ^ 240) =
-        ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * T0 * (phiF 2 1 * rhoF ^ 240)) *
-          ∑ j ∈ Finset.range 27, qL ^ j := by
+    have hfact : ∑ j ∈ Finset.range (512 - S_step),
+        (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * (phiF 2 1 * rhoF ^ m) =
+        ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * T0 * (phiF 2 1 * rhoF ^ m)) *
+          ∑ j ∈ Finset.range (512 - S_step), qL ^ j := by
       rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro j _; generalize (2 : ℝ) ^ 1280 = P1280; generalize T0 = T0'; ring
     rw [hfact] at h1
-    have hg := geom_sum_le_inv (r := qL) (by unfold qL; positivity) (by unfold qL; norm_num) 27
+    have hg := geom_sum_le_inv (r := qL) (by unfold qL; positivity) (by unfold qL; norm_num) (512 - S_step)
     have hphi21_pos : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
     have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by unfold rhoF; positivity))
     refine h2.trans_eq ?_
     dsimp only [T0]
     have hpow : (2 : ℝ) ^ 1280 = (2 : ℝ) ^ 256 * (2 : ℝ) ^ 1024 := by rw [← pow_add]
-    rw [hpow]; generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 624 = P624; ring
-  -- Case 3 bound on `S3`:
-  have hS3 := case3_card_bound S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t (by decide) T0 hT0
+    rw [hpow]; generalize (2 : ℝ) ^ 1024 = P1024; ring
+  have hS3 := case3_card_bound S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t hm T0 hT0
     (fun x hx => (hx_facts x (Finset.mem_filter.mp hx).1).2.2.2.2)
     (fun x hx => (Finset.mem_filter.mp hx).2)
   have hS3' : (S3.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      ((2 * phiB 1 1 * (rhoB / 2) ^ 244 / (1 - (rhoB / 2) / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 244 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624) := by
-    refine hS3.trans_eq ?_
-    have hsub : 485 - t = 244 := by decide
-    rw [hsub]; dsimp only [T0]; field_simp
+      (((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (1 + m)) / (1 - rhoB7 / qL) +
+        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (1 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+    refine hS3.trans_eq ?_; dsimp only [T0, t]; field_simp
   have hadd := add_le_add (add_le_add hS1 hS2) hS3'
   rw [← mul_add, ← mul_add] at hadd
   exact hsplit.trans hadd
 
-theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht : 2 * k0 + m ≤ 485) :
-    ((Bad485_k0 k0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
+theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
+    (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht : 2 * k0 + m ≤ S_step) :
+    ((BadS_k0 S_step k0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
       ((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoEO0 ^ (k0 - 1) * rhoF ^ m +
       ((16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 / (16 : ℝ) ^ k0 * phiF 1 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e +
-      (2 * phiB 1 1 * (rhoB / 2) ^ (485 - (2 * k0 + m)) / (1 - (rhoB / 2) / qL) +
-       (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (485 - (2 * k0 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
-  set Sk := Bad485_k0 k0
+      ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (2 * k0 + m)) / (1 - rhoB7 / qL) +
+       (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (2 * k0 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+  set Sk := BadS_k0 S_step k0
   set t : Nat := 2 * k0 + m
   set T0 : ℝ := 1 / (2 : ℝ) ^ e
   have hT0 : 0 < T0 := by dsimp [T0]; positivity
@@ -5801,9 +6376,9 @@ theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht 
     let γ := traceKinds (SkywalkNat.init x ECDSAAdd.p) t
     (runF (0, 1) γ).1 * (runF (0, 1) γ).2 ≤ ECDSAAdd.p
   let c3Pred : Nat → Prop := fun x =>
-    ∀ L, 486 ≤ L → L ≤ 512 →
+    ∀ L, S_step + 1 ≤ L → L ≤ 512 →
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
-      T0 * qL ^ (L - 486) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+      T0 * qL ^ (L - (S_step + 1)) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
         ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
   set S1 := Sk.filter c1Pred
   set S3 := Sk.filter c3Pred
@@ -5851,8 +6426,7 @@ theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht 
       iter_alive_of_u_ne_zero _ ht hbad.2
     have htr_2k : traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0) = pref ++ g1 x := by
       have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (k0 + 1) (k0 - 1)
-      rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1
-      exact h1
+      rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1; exact h1
     have htr_t : traceKinds (SkywalkNat.init x ECDSAAdd.p) t = pref ++ g1 x ++ g2 x := by
       have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m
       rw [htr_2k] at h1; exact h1
@@ -5867,7 +6441,6 @@ theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht 
   have hpair_mem : ∀ x ∈ Sk, (g1 x, g2 x) ∈ pairList := fun x hx => by
     have hf := hx_facts x hx
     exact List.mem_flatMap.mpr ⟨g1 x, hf.2.2.2.2.1, List.mem_map.mpr ⟨g2 x, hf.2.2.2.2.2.1, rfl⟩⟩
-  -- Case 1 bound on `S1`:
   have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * (((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoEO0 ^ (k0 - 1) * rhoF ^ m) := by
     have hfib := card_le_list_sum_fiber S1 pairList (fun x => (g1 x, g2 x))
       (fun x hx => hpair_mem x (Finset.mem_filter.mp hx).1)
@@ -5923,8 +6496,7 @@ theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht 
         refine hcardR.trans ?_
         calc 2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) = 2 * (2 : ℝ) ^ 256 * (1 / ((C : ℝ) * D)) := by ring
           _ ≤ 2 * (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 2000 * phiF C D) := hmul
-          _ = (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) * phiF C D := by
-            generalize (2 : ℝ) ^ 384 = P384; ring
+          _ = (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) * phiF C D := by generalize (2 : ℝ) ^ 384 = P384; ring
       · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
         have := phiF_pos hC_R hD_R
         exact mul_nonneg (mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))) this.le
@@ -5951,24 +6523,22 @@ theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht 
       mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))
     have h4 := h1.trans (mul_le_mul_of_nonneg_left h3 hcoef_nn)
     refine h4.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; generalize (2 : ℝ) ^ 384 = P384; ring
-  -- Case 2 bound on `S2`:
   have hS2 : (S2.card : ℝ) ≤ (2 : ℝ) ^ 256 *
       (((16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 / (16 : ℝ) ^ k0 * phiF 1 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e) := by
     let SL2 : Nat → Finset Nat := fun j =>
-      S2.filter (fun x => SkywalkNat.step^[485 + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
+      S2.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
         phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
           ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * qL ^ j)
-    have hcov2 : S2 ⊆ (Finset.range 27).biUnion SL2 := by
+    have hcov2 : S2 ⊆ (Finset.range (512 - S_step)).biUnion SL2 := by
       intro x hx
       have hnc3 : ¬ c3Pred x := (Finset.mem_filter.mp hx).2.2
-      dsimp only [c3Pred] at hnc3
-      push_neg at hnc3
+      dsimp only [c3Pred] at hnc3; push_neg at hnc3
       obtain ⟨L, hL1, hL2, hterm, hle⟩ := hnc3
-      refine Finset.mem_biUnion.mpr ⟨L - 486, Finset.mem_range.mpr (by omega),
-        Finset.mem_filter.mpr ⟨hx, by rwa [show 485 + (L - 486) = L - 1 by omega], hle⟩⟩
-    have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range 27, ((SL2 j).card : ℝ) := by
+      refine Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
+        Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega], hle⟩⟩
+    have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL2 j).card : ℝ) := by
       exact_mod_cast (Finset.card_le_card hcov2).trans Finset.card_biUnion_le
-    have hper_j : ∀ j ∈ Finset.range 27,
+    have hper_j : ∀ j ∈ Finset.range (512 - S_step),
         ((SL2 j).card : ℝ) ≤
           (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 / (16 : ℝ) ^ k0 * (T0 * qL ^ j) * (phiF 1 1 * rhoF ^ m) := by
       intro j _
@@ -6083,33 +6653,602 @@ theorem bad485_k0_pos_bound (k0 m e : Nat) (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht 
       field_simp [h2k_ne]
       rw [hk0_eq]; ring
     have h1 := hsum2.trans (Finset.sum_le_sum hper_j)
-    have hfact : ∑ j ∈ Finset.range 27,
+    have hfact : ∑ j ∈ Finset.range (512 - S_step),
         (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 / (16 : ℝ) ^ k0 * (T0 * qL ^ j) * (phiF 1 1 * rhoF ^ m) =
         ((16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 / (16 : ℝ) ^ k0 * T0 * (phiF 1 1 * rhoF ^ m)) *
-          ∑ j ∈ Finset.range 27, qL ^ j := by
+          ∑ j ∈ Finset.range (512 - S_step), qL ^ j := by
       rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro j _; generalize (2 : ℝ) ^ 1280 = P1280; ring
     rw [hfact] at h1
-    have hg := geom_sum_le_inv (r := qL) (by unfold qL; positivity) (by unfold qL; norm_num) 27
+    have hg := geom_sum_le_inv (r := qL) (by unfold qL; positivity) (by unfold qL; norm_num) (512 - S_step)
     have hphi11_pos : 0 ≤ phiF 1 1 := (phiF_pos (by norm_num) (by norm_num)).le
     have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by unfold rhoF; positivity))
     refine h2.trans_eq ?_
     dsimp only [T0]
     have hpow : (2 : ℝ) ^ 1280 = (2 : ℝ) ^ 256 * (2 : ℝ) ^ 1024 := by rw [← pow_add]
     rw [hpow]; generalize (2 : ℝ) ^ 1024 = P1024; ring
-  -- Case 3 bound on `S3`:
-  have hS3 := case3_card_bound S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t ht T0 hT0
+  have hS3 := case3_card_bound S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t ht T0 hT0
     (fun x hx => (hx_facts x (Finset.mem_filter.mp hx).1).2.2.2.2.2.2.2)
     (fun x hx => (Finset.mem_filter.mp hx).2)
   have hS3' : (S3.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      ((2 * phiB 1 1 * (rhoB / 2) ^ (485 - t) / (1 - (rhoB / 2) / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (485 - t) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
-    refine hS3.trans_eq ?_
-    dsimp only [T0]; field_simp
+      (((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (2 * k0 + m)) / (1 - rhoB7 / qL) +
+        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (2 * k0 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+    refine hS3.trans_eq ?_; dsimp only [T0, t]; field_simp
   have hadd := add_le_add (add_le_add hS1 hS2) hS3'
   rw [← mul_add, ← mul_add] at hadd
   exact hsplit.trans hadd
 
-/-! ### 8. Repeated-squaring numeric bounds and final `skywalk_bad485_card` theorem -/
+/-! ### 7b. Envelope width-drop tail bound (`BadDrop` and `badEnv_drop_bound`) -/
+
+private theorem skywalkNat_step_sum_le (z : SkywalkNat.State) (hv : z.v % 2 = 1) :
+    (SkywalkNat.step z).u + (SkywalkNat.step z).v ≤ z.u + z.v := by
+  unfold SkywalkNat.step
+  split_ifs with h0 h2 hge <;> (try dsimp only) <;> omega
+
+private theorem skywalkNat_iter_sum_le (x j i : Nat) (hji : j ≤ i) :
+    (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
+    (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v ≤
+    (SkywalkNat.step^[j] (SkywalkNat.init x ECDSAAdd.p)).u +
+    (SkywalkNat.step^[j] (SkywalkNat.init x ECDSAAdd.p)).v := by
+  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hji
+  clear hji
+  induction d with
+  | zero => simp
+  | succ d ih =>
+    have hval := SkywalkNat.iter_valid (j + d) (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+    have hstep := skywalkNat_step_sum_le _ hval.2.1
+    rw [show j + (d + 1) = (j + d) + 1 by omega, Function.iterate_succ_apply']
+    exact hstep.trans ih
+
+def BadDrop (i d K : Nat) : Finset Nat :=
+  (Finset.Ioo 0 ECDSAAdd.p).filter (fun x =>
+    ¬ 2 ^ K ∣ x ∧
+    2 ^ (256 - d) ≤ (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
+                    (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v)
+
+def BadDrop_k0 (i d K k0 : Nat) : Finset Nat :=
+  (BadDrop i d K).filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
+
+private theorem env_term1_le_phiF3 {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v)
+    (d : Nat) (hsum : (2 : ℝ) ^ (256 - d) ≤ u + v) (hdot : C * u + D * v ≤ (2 : ℝ) ^ 256) (hd : d ≤ 255) :
+    1 / (C * D) ≤ ((2 : ℝ) ^ d / 1000) * phiF3 C D := by
+  have hm : min C D ≤ (2 : ℝ) ^ d := by
+    have h1 : min C D * (u + v) ≤ C * u + D * v := by
+      have hC1 := mul_le_mul_of_nonneg_right (min_le_left C D) hu.le
+      have hD1 := mul_le_mul_of_nonneg_right (min_le_right C D) hv.le
+      linarith
+    have h2 : min C D * (2 : ℝ) ^ (256 - d) ≤ (2 : ℝ) ^ 256 := by
+      have hmn : 0 ≤ min C D := le_min hC.le hD.le
+      exact (mul_le_mul_of_nonneg_left hsum hmn).trans (h1.trans hdot)
+    have hpow : (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) := by
+      rw [← pow_add, show d + (256 - d) = 256 by omega]
+    rw [hpow] at h2
+    exact le_of_mul_le_mul_right h2 (by positivity)
+  have hCD : C * D / (C + D) ≤ min C D := by
+    rw [div_le_iff₀ (by positivity)]
+    rcases le_total C D with hle | hle
+    · rw [min_eq_left hle]; nlinarith
+    · rw [min_eq_right hle]; nlinarith
+  have hfl := phiF3_lower hC hD
+  have hid : 1 / (C * D) = (C * D / (C + D)) * ((C + D) / (C ^ 2 * D ^ 2)) := by
+    field_simp [hC.ne', hD.ne', (show 0 < C + D by positivity).ne']
+  rw [hid]
+  have h1 : (C * D / (C + D)) * ((C + D) / (C ^ 2 * D ^ 2)) ≤ (2 : ℝ) ^ d * ((C + D) / (C ^ 2 * D ^ 2)) :=
+    mul_le_mul_of_nonneg_right (hCD.trans hm) (by positivity)
+  have h2 : (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D / 1000 := by
+    have := div_le_div_of_nonneg_right hfl (by norm_num : (0 : ℝ) ≤ 1000)
+    exact (le_of_eq (by ring)).trans this
+  exact h1.trans ((mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring))
+
+private theorem env_term2_le_phiF3 {C D u v B : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 1 ≤ u) (hv : 1 ≤ v)
+    (d : Nat) (hsum : (2 : ℝ) ^ (256 - d) ≤ u + v) (hdot : C * u + D * v ≤ B) (hB : 0 < B) (_hd : d ≤ 255) :
+    (1 : ℝ) ≤ (B ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 / 1000) * phiF3 C D := by
+  have hm : min C D * (2 : ℝ) ^ (256 - d) ≤ B := by
+    have h1 : min C D * (u + v) ≤ C * u + D * v := by
+      have hC1 := mul_le_mul_of_nonneg_right (min_le_left C D) (by linarith : (0 : ℝ) ≤ u)
+      have hD1 := mul_le_mul_of_nonneg_right (min_le_right C D) (by linarith : (0 : ℝ) ≤ v)
+      linarith
+    have hmn : 0 ≤ min C D := le_min hC.le hD.le
+    exact (mul_le_mul_of_nonneg_left hsum hmn).trans (h1.trans hdot)
+  have hM : max C D ≤ B := by
+    have hC1 : C ≤ C * u := le_mul_of_one_le_right hC.le hu
+    have hD1 : D ≤ D * v := le_mul_of_one_le_right hD.le hv
+    exact max_le (by nlinarith) (by nlinarith)
+  have hCD : C ^ 2 * D ^ 2 / (C + D) ≤ (min C D) ^ 2 * max C D := by
+    rw [div_le_iff₀ (by positivity)]
+    rcases le_total C D with hle | hle
+    · rw [min_eq_left hle, max_eq_right hle]
+      have hpos : (0 : ℝ) ≤ C ^ 3 * D := by positivity
+      linarith [show C ^ 2 * D * (C + D) - C ^ 2 * D ^ 2 = C ^ 3 * D by ring]
+    · rw [min_eq_right hle, max_eq_left hle]
+      have hpos : (0 : ℝ) ≤ C * D ^ 3 := by positivity
+      linarith [show D ^ 2 * C * (C + D) - C ^ 2 * D ^ 2 = C * D ^ 3 by ring]
+  have hm_sq : (min C D) ^ 2 ≤ (B / (2 : ℝ) ^ (256 - d)) ^ 2 := by
+    have h1 : min C D ≤ B / (2 : ℝ) ^ (256 - d) := (le_div_iff₀ (by positivity)).mpr hm
+    exact pow_le_pow_left₀ (le_min hC.le hD.le) h1 2
+  have hprod : C ^ 2 * D ^ 2 / (C + D) ≤ B ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 := by
+    have h1 := hCD.trans (mul_le_mul hm_sq hM (le_max_of_le_left hC.le) (by positivity))
+    exact h1.trans_eq (by rw [div_pow]; ring)
+  have hfl := phiF3_lower hC hD
+  have h1 : (1 : ℝ) ≤ (B ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2) * ((C + D) / (C ^ 2 * D ^ 2)) := by
+    have hpos : 0 < C ^ 2 * D ^ 2 / (C + D) := by positivity
+    have hinv : (C ^ 2 * D ^ 2 / (C + D)) * ((C + D) / (C ^ 2 * D ^ 2)) = 1 := by
+      field_simp [hC.ne', hD.ne', (show 0 < C + D by positivity).ne']
+    rw [← hinv]
+    exact mul_le_mul_of_nonneg_right hprod (by positivity)
+  have h2 : (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D / 1000 := by
+    have := div_le_div_of_nonneg_right hfl (by norm_num : (0 : ℝ) ≤ 1000)
+    exact (le_of_eq (by ring)).trans this
+  exact h1.trans ((mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring))
+
+theorem badEnv_drop_bound (i d K : Nat) (hi1 : 1 ≤ i) (hd : d ≤ 255) (hK : 1 ≤ K) (hKi : 2 * (K - 1) < i) :
+    let rA : ℝ := rhoEO3 / rhoF3 ^ 2
+    let rB : ℝ := 1 / (4 * rhoF3 ^ 2)
+    let C0 : ℝ := (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3
+    let CA : ℝ := (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rA / (rA - 1))
+    let CB : ℝ := (4 / 1000 : ℝ) * phiF3 1 1 * (rB / (1 - rB))
+    ((BadDrop i d K).card : ℝ) ≤ (2 : ℝ) ^ 256 *
+      (CA * (2 * rA) ^ d * rhoF3 ^ i + (C0 + CB) * (4 : ℝ) ^ d * rhoF3 ^ i) := by
+  dsimp only
+  set rA : ℝ := rhoEO3 / rhoF3 ^ 2
+  set rB : ℝ := 1 / (4 * rhoF3 ^ 2)
+  set C0 : ℝ := (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3
+  set CA : ℝ := (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rA / (rA - 1))
+  set CB : ℝ := (4 / 1000 : ℝ) * phiF3 1 1 * (rB / (1 - rB))
+  have hrF3_pos : 0 < rhoF3 := by unfold rhoF3; norm_num
+  have hrEO3_pos : 0 < rhoEO3 := by unfold rhoEO3; norm_num
+  have hrA_gt1 : 1 < rA := by dsimp [rA]; unfold rhoEO3 rhoF3; norm_num
+  have hrB_nn : 0 ≤ rB := by dsimp [rB]; unfold rhoF3; positivity
+  have hrB_lt1 : rB < 1 := by dsimp [rB]; unfold rhoF3; norm_num
+  -- Every `x ∈ BadDrop i d K` has `u_i > 0`!
+  have halive_drop : ∀ x ∈ BadDrop i d K, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := by
+    intro x hx
+    have hmem := Finset.mem_filter.mp hx
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
+    by_contra hu0
+    have hzu : (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by omega
+    have hval := SkywalkNat.iter_valid i (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+    have hcop := hval.2.2.trans (canonical_coprime_p hx0 hxp)
+    rw [hzu, Nat.gcd_zero_left] at hcop
+    have hpow2 : 2 ≤ 2 ^ (256 - d) := by
+      have h1 : 1 ≤ 256 - d := by omega
+      have h2 := Nat.pow_le_pow_right (by decide : 1 ≤ 2) h1
+      simpa using h2
+    have hsum := hmem.2.2
+    omega
+  -- Cover `BadDrop i d K` by `k0 = 0` and `k0 ∈ Icc 1 d` (because monotonicity forces `k0 ≤ d`!)
+  have hcov : BadDrop i d K ⊆ BadDrop_k0 i d K 0 ∪ (Finset.Icc 1 d).biUnion (fun k0 => BadDrop_k0 i d K k0) := by
+    intro x hx
+    have hmem := Finset.mem_filter.mp hx
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
+    have hndivK : ¬ 2 ^ K ∣ x := hmem.2.1
+    have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨K - 1, by rwa [Nat.sub_add_cancel hK]⟩
+    let k0 := Nat.find hex
+    have hk0_lt : k0 < K := by
+      have hle := Nat.find_min' hex (show ¬ 2 ^ ((K - 1) + 1) ∣ x by rwa [Nat.sub_add_cancel hK])
+      omega
+    have hdiv : 2 ^ k0 ∣ x := by
+      cases hk : k0 with
+      | zero => simp
+      | succ j =>
+        have hnj := Nat.find_min hex (show j < k0 by omega)
+        push_neg at hnj; exact hnj
+    have hodd : (x / 2 ^ k0) % 2 = 1 := by
+      have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
+      by_contra he
+      apply hndiv
+      obtain ⟨q, hq⟩ := hdiv
+      have hq_even : q % 2 = 0 := by
+        have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
+        omega
+      refine ⟨q / 2, ?_⟩
+      rw [hq, pow_succ, mul_assoc]; congr 1; omega
+    have hmem_k0 : x ∈ BadDrop_k0 i d K k0 := Finset.mem_filter.mpr ⟨hx, hdiv, hodd⟩
+    by_cases hz : k0 = 0
+    · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
+    · have hk0_ge1 : 1 ≤ k0 := by omega
+      have hk0_le_d : k0 ≤ d := by
+        have h2k_le : 2 * k0 ≤ i := by omega
+        have hmono := skywalkNat_iter_sum_le x (2 * k0) i h2k_le
+        have hsum_le : 2 ^ (256 - d) ≤
+            (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+            (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v := hmem.2.2.trans hmono
+        have hfeo := (forced_eo0_phase x k0 hk0_ge1 hdiv hodd hxp).2.2.2
+        have hsum_R : ((2 : ℝ) ^ (256 - d)) < 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+          have h1 : (2 : ℝ) ^ (256 - d) ≤
+              ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
+              ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) := by exact_mod_cast hsum_le
+          have hp : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+          have h2 : 2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 ≤ 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 :=
+            div_le_div_of_nonneg_right (by linarith) (by positivity)
+          linarith
+        have hmul : (2 : ℝ) ^ (256 - d + k0) < (2 : ℝ) ^ 257 := by
+          have h1 := (lt_div_iff₀ (by positivity : (0 : ℝ) < (2 : ℝ) ^ k0)).mp hsum_R
+          rw [pow_add]
+          exact lt_of_lt_of_eq h1 (by rw [← pow_succ'])
+        have hnat : 2 ^ (256 - d + k0) < 2 ^ 257 := by exact_mod_cast hmul
+        by_contra hgt
+        have hle' : 257 ≤ 256 - d + k0 := by omega
+        have hpow_le := Nat.pow_le_pow_right (by decide : 1 ≤ 2) hle'
+        omega
+      exact Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨k0, Finset.mem_Icc.mpr ⟨hk0_ge1, hk0_le_d⟩, hmem_k0⟩)
+  have hcard_split : ((BadDrop i d K).card : ℝ) ≤
+      ((BadDrop_k0 i d K 0).card : ℝ) + ∑ k0 ∈ Finset.Icc 1 d, ((BadDrop_k0 i d K k0).card : ℝ) := by
+    have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
+    have h2 := Finset.card_biUnion_le (s := Finset.Icc 1 d) (t := fun k0 => BadDrop_k0 i d K k0)
+    have hnat : (BadDrop i d K).card ≤ (BadDrop_k0 i d K 0).card + ∑ k0 ∈ Finset.Icc 1 d, (BadDrop_k0 i d K k0).card := by omega
+    exact_mod_cast hnat
+  -- Bound `k0 = 0`:
+  have h0_bound : ((BadDrop_k0 i d K 0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (C0 * (4 : ℝ) ^ d * rhoF3 ^ i) := by
+    set S0 := BadDrop_k0 i d K 0
+    let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) (i - 1)
+    have hfib := card_le_list_sum_fiber S0 (pathsOf allKinds (i - 1)) f1
+      (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
+    have hper : ∀ γ ∈ pathsOf allKinds (i - 1),
+        ((S0.filter (fun x => f1 x = γ)).card : ℝ) ≤
+          (2 : ℝ) ^ 256 * ((2 / 1000 : ℝ) * (4 : ℝ) ^ d) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+      intro γ _
+      set F := S0.filter (fun x => f1 x = γ)
+      have hpos := runF_pos γ (by omega : 0 < 2) (by omega : 0 < 1)
+      have hC_R : (0 : ℝ) < ((runF (2, 1) γ).1 : ℝ) := by exact_mod_cast hpos.1
+      have hD_R : (0 : ℝ) < ((runF (2, 1) γ).2 : ℝ) := by exact_mod_cast hpos.2
+      by_cases hne : F.Nonempty
+      · obtain ⟨x0, hx0⟩ := hne
+        have hx0_S0 := (Finset.mem_filter.mp hx0).1
+        have hx0_D := (Finset.mem_filter.mp hx0_S0).1
+        have hfx0 : f1 x0 = γ := (Finset.mem_filter.mp hx0).2
+        obtain ⟨hx0_0, hx0_p⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp hx0_D).1
+        have hu0 := halive_drop x0 hx0_D
+        have hval0 := SkywalkNat.iter_valid i (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+        have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
+        have htr_all : ∀ x ∈ F, traceKinds (SkywalkNat.init x ECDSAAdd.p) i = .O1 :: γ ∧
+            0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := by
+          intro x hxF
+          have hxS0 := (Finset.mem_filter.mp hxF).1
+          have hxD := (Finset.mem_filter.mp hxS0).1
+          obtain ⟨hx_0, hx_p⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp hxD).1
+          obtain ⟨_, _, htr1, _⟩ := leading_E_steps x 0 (by simp) (Finset.mem_filter.mp hxS0).2.2 hx_p
+          have htr_i : traceKinds (SkywalkNat.init x ECDSAAdd.p) i = .O1 :: f1 x := by
+            have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 (i - 1)
+            rw [show 1 + (i - 1) = i by omega, htr1] at h1
+            simpa only [List.replicate_zero, List.nil_append, List.cons_append] using h1
+          exact ⟨htr_i.trans (congrArg (.O1 :: ·) (Finset.mem_filter.mp hxF).2), halive_drop x hxD⟩
+        have hcop := (runF_coprime_even_odd γ (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
+        have hcF := forward_prefix_fiber_card F
+          (fun x hx => Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1)
+          i (.O1 :: γ) htr_all hpos.1 hpos.2 hcop
+        rw [hF_eq] at hcF
+        have halive0 : ∀ j < i, 0 < (SkywalkNat.step^[j] (SkywalkNat.init x0 ECDSAAdd.p)).u := fun j hj =>
+          iter_alive_of_u_ne_zero _ hj.le (Nat.ne_of_gt hu0)
+        have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i p_pos p_odd halive0
+        rw [(htr_all x0 hx0).1] at hB0
+        have hdot0 := runF_runB_dot (.O1 :: γ) 0 1
+          (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u
+          (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
+        rw [hB0, hF_eq] at hdot0
+        simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
+        have hdotR : ((runF (2, 1) γ).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+            ((runF (2, 1) γ).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
+          exact_mod_cast hdot0.le.trans p_lt_256.le
+        have hsumR : (2 : ℝ) ^ (256 - d) ≤ ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+            ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by
+          exact_mod_cast (Finset.mem_filter.mp hx0_D).2.2
+        have ht1 := env_term1_le_phiF3 hC_R hD_R (by exact_mod_cast hu0) (by exact_mod_cast hval0.1) d hsumR hdotR hd
+        have ht2 := env_term2_le_phiF3 hC_R hD_R (by exact_mod_cast hu0) (by exact_mod_cast hval0.1) d hsumR hdotR (by positivity) hd
+        have hpow_t2 : ((2 : ℝ) ^ 256) ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 = (2 : ℝ) ^ 256 * (4 : ℝ) ^ d := by
+          have h1 : (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) := by
+            rw [← pow_add, show d + (256 - d) = 256 by omega]
+          have h4 : ((2 : ℝ) ^ d) ^ 2 = (4 : ℝ) ^ d := by
+            rw [← pow_mul, mul_comm, pow_mul]; norm_num
+          rw [pow_succ', h1, mul_pow, h4]; field_simp
+        rw [hpow_t2] at ht2
+        have hdiv : ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) : Nat) : ℝ) ≤
+            (2 : ℝ) ^ 256 * (1 / (((runF (2, 1) γ).1 : ℝ) * ((runF (2, 1) γ).2 : ℝ))) := by
+          have h1 : ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) : Nat) : ℝ) ≤
+              (ECDSAAdd.p : ℝ) / (((runF (2, 1) γ).1 : ℝ) * ((runF (2, 1) γ).2 : ℝ)) := by
+            simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := (runF (2, 1) γ).1 * (runF (2, 1) γ).2))
+          have h2 : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+          exact h1.trans ((div_le_div_of_nonneg_right h2 (by positivity)).trans_eq (by ring))
+        have h2le4 : (2 : ℝ) ^ d ≤ (4 : ℝ) ^ d := pow_le_pow_left₀ (by norm_num) (by norm_num) d
+        have hcR : (F.card : ℝ) ≤ ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) : Nat) : ℝ) + 1 := by
+          exact_mod_cast hcF
+        have hphi_nn : 0 ≤ phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := (phiF3_pos hC_R hD_R).le
+        have hterm1_b : (2 : ℝ) ^ 256 * (1 / (((runF (2, 1) γ).1 : ℝ) * ((runF (2, 1) γ).2 : ℝ))) ≤
+            (2 : ℝ) ^ 256 * ((4 : ℝ) ^ d / 1000) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+          have h1 := mul_le_mul_of_nonneg_left ht1 (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)
+          have h2 : (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d / 1000 * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2) ≤
+              (2 : ℝ) ^ 256 * ((4 : ℝ) ^ d / 1000) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+            have := mul_le_mul_of_nonneg_right (div_le_div_of_nonneg_right h2le4 (by norm_num : (0 : ℝ) ≤ 1000)) hphi_nn
+            exact (mul_le_mul_of_nonneg_left this (by positivity)).trans_eq (by ring)
+          exact h1.trans h2
+        have hterm2_b : (1 : ℝ) ≤ (2 : ℝ) ^ 256 * ((4 : ℝ) ^ d / 1000) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 :=
+          ht2.trans_eq (by ring)
+        linarith
+      · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
+        have := phiF3_pos hC_R hD_R; positivity
+    have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
+    rw [list_sum_mul_left] at h1
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left (sum_pathsAll_phiF3 (i - 1) 2 1 (by omega) (by omega)) (by positivity))
+    refine h2.trans_eq ?_
+    have hpow_i : rhoF3 ^ (i - 1) = rhoF3 ^ i / rhoF3 := by
+      have : rhoF3 ^ i = rhoF3 ^ (i - 1) * rhoF3 := by rw [← pow_succ, Nat.sub_add_cancel hi1]
+      rw [this, mul_div_cancel_right₀ _ hrF3_pos.ne']
+    simp only [Nat.cast_ofNat, Nat.cast_one, hpow_i, C0]; ring
+  -- Bound each `1 ≤ k0 ≤ d`:
+  have hpos_bound : ∀ k0 ∈ Finset.Icc 1 d,
+      ((BadDrop_k0 i d K k0).card : ℝ) ≤ (2 : ℝ) ^ 256 *
+        ((1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (2 : ℝ) ^ d * rA ^ k0 * rhoF3 ^ i +
+         (4 / 1000 : ℝ) * phiF3 1 1 * (4 : ℝ) ^ d * rB ^ k0 * rhoF3 ^ i) := by
+    intro k0 hk0_mem
+    obtain ⟨hk0_1, hk0_d⟩ := Finset.mem_Icc.mp hk0_mem
+    set Sk := BadDrop_k0 i d K k0
+    by_cases hk0_K : k0 < K
+    · set m : Nat := i - 2 * k0
+      have hm_add : 2 * k0 + m = i := by omega
+      let pref : List StepKind := List.replicate k0 .E ++ [.O1]
+      let g1 : Nat → List StepKind := fun x =>
+        traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1)
+      let g2 : Nat → List StepKind := fun x =>
+        traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m
+      have hrunF_pref : runF (0, 1) pref = (2, 1) := by
+        have hrep : ∀ n, runF (0, 1) (List.replicate n .E) = (0, 1) := by
+          intro n; induction n with | zero => rfl | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
+        rw [runF_append, hrep]; rfl
+      have hx_facts : ∀ x ∈ Sk,
+          0 < x ∧ x < ECDSAAdd.p ∧
+          0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u ∧
+          traceKinds (SkywalkNat.init x ECDSAAdd.p) i = pref ++ g1 x ++ g2 x ∧
+          g1 x ∈ pathsOf eo0Kinds (k0 - 1) ∧
+          g2 x ∈ pathsOf allKinds m ∧
+          ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
+            ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) <
+              2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 := by
+        intro x hx
+        have hmem := Finset.mem_filter.mp hx
+        have hD := Finset.mem_filter.mp hmem.1
+        obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hD.1
+        obtain ⟨_, _, htr1, _⟩ := leading_E_steps x k0 hmem.2.1 hmem.2.2 hxp
+        obtain ⟨hEO, _, _, hsumR⟩ := forced_eo0_phase x k0 hk0_1 hmem.2.1 hmem.2.2 hxp
+        have htr_2k : traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0) = pref ++ g1 x := by
+          have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (k0 + 1) (k0 - 1)
+          rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1; exact h1
+        have htr_i : traceKinds (SkywalkNat.init x ECDSAAdd.p) i = pref ++ g1 x ++ g2 x := by
+          have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m
+          rw [hm_add, htr_2k] at h1; exact h1
+        exact ⟨hx0, hxp, halive_drop x hmem.1, htr_i, mem_pathsOf.mpr ⟨traceKinds_length _ _, hEO⟩,
+          mem_pathsOf_all (traceKinds_length _ _), hsumR⟩
+      let pairList : List (List StepKind × List StepKind) :=
+        (pathsOf eo0Kinds (k0 - 1)).flatMap (fun γ1 => (pathsOf allKinds m).map (fun γ2 => (γ1, γ2)))
+      have hfib := card_le_list_sum_fiber Sk pairList (fun x => (g1 x, g2 x)) (fun x hx => by
+        have hf := hx_facts x hx
+        exact List.mem_flatMap.mpr ⟨g1 x, hf.2.2.2.2.1, List.mem_map.mpr ⟨g2 x, hf.2.2.2.2.2.1, rfl⟩⟩)
+      have hper : ∀ p12 ∈ pairList,
+          ((Sk.filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
+            (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d / 1000) *
+              phiF3 (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2 +
+            (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) *
+              phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2 := by
+        rintro ⟨γ1, γ2⟩ _
+        set F := Sk.filter (fun x => (g1 x, g2 x) = (γ1, γ2))
+        have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+        have hpos := runF_pos γ2 hpos1.1 hpos1.2
+        have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+        have hC_R : (0 : ℝ) < ((runF (runF (2, 1) γ1) γ2).1 : ℝ) := by exact_mod_cast hpos.1
+        have hD_R : (0 : ℝ) < ((runF (runF (2, 1) γ1) γ2).2 : ℝ) := by exact_mod_cast hpos.2
+        have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
+        have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+        by_cases hne : F.Nonempty
+        · obtain ⟨x0, hx0⟩ := hne
+          have hx0_Sk := (Finset.mem_filter.mp hx0).1
+          have hx0_D := (Finset.mem_filter.mp hx0_Sk).1
+          have hpair0 := (Finset.mem_filter.mp hx0).2
+          have hf0 := hx_facts x0 hx0_Sk
+          have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i = pref ++ γ1 ++ γ2 := by
+            rw [hf0.2.2.2.1, (Prod.mk.inj hpair0).1, (Prod.mk.inj hpair0).2]
+          have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by
+            rw [runF_append, runF_append, hrunF_pref]
+          have hcop := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
+          rw [runF_append] at hcop
+          have hcF := forward_prefix_fiber_card F
+            (fun x hx => let hf := hx_facts x (Finset.mem_filter.mp hx).1; ⟨hf.1, hf.2.1⟩)
+            i (pref ++ γ1 ++ γ2)
+            (fun x hx => by
+              have hxSk := (Finset.mem_filter.mp hx).1
+              have hp := (Finset.mem_filter.mp hx).2
+              have hf := hx_facts x hxSk
+              exact ⟨by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1⟩)
+            (by rw [hF_eq]; exact hpos.1) (by rw [hF_eq]; exact hpos.2) (by rw [hF_eq]; exact hcop)
+          rw [hF_eq] at hcF
+          have hval_i := SkywalkNat.iter_valid i (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+          have hval_2k := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+          have halive0 : ∀ j < i, 0 < (SkywalkNat.step^[j] (SkywalkNat.init x0 ECDSAAdd.p)).u := fun j hj =>
+            iter_alive_of_u_ne_zero _ hj.le (Nat.ne_of_gt hf0.2.2.1)
+          have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i p_pos p_odd halive0
+          rw [htr0] at hB0
+          have hdot0 := runF_runB_dot (pref ++ γ1 ++ γ2) 0 1
+            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u
+            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
+          rw [hB0, hF_eq] at hdot0
+          simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
+          have hdotR : ((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+              ((runF (runF (2, 1) γ1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
+            exact_mod_cast hdot0.le.trans p_lt_256.le
+          have hsumR : (2 : ℝ) ^ (256 - d) ≤ ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+              ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by
+            exact_mod_cast (Finset.mem_filter.mp hx0_D).2.2
+          have ht1 := env_term1_le_phiF3 hC_R hD_R (by exact_mod_cast hf0.2.2.1) (by exact_mod_cast hval_i.1) d hsumR hdotR hd
+          -- Term 2 from `z_{2*k0}`!
+          have halive_m : ∀ j < m, 0 < (SkywalkNat.step^[j] (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p))).u := by
+            intro j hj; rw [← Function.iterate_add_apply]
+            exact iter_alive_of_u_ne_zero _ (show j + 2 * k0 ≤ i by omega) (Nat.ne_of_gt hf0.2.2.1)
+          have hBm := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m hval_2k.1 hval_2k.2.1 halive_m
+          have hg2_eq : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m = γ2 := (Prod.mk.inj hpair0).2
+          rw [← Function.iterate_add_apply, show m + 2 * k0 = i by omega, hg2_eq] at hBm
+          have hdot' := runF_runB_dot γ2 1 1
+            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u
+            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
+          rw [hBm] at hdot'
+          simp only [one_mul] at hdot'
+          have hdotR' : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+              ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤
+              2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+            have heqR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+                ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) =
+                ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+                ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by exact_mod_cast hdot'
+            rw [heqR]
+            have hple : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+            have h2 := div_le_div_of_nonneg_right (by linarith : 2 * (ECDSAAdd.p : ℝ) ≤ 2 * (2 : ℝ) ^ 256) (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ k0)
+            linarith [hf0.2.2.2.2.2.2]
+          have ht2 := env_term2_le_phiF3 hC'_R hD'_R (by exact_mod_cast hf0.2.2.1) (by exact_mod_cast hval_i.1)
+            d hsumR hdotR' (by positivity) hd
+          have hpow_t2 : (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0) ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 =
+              (2 : ℝ) ^ 256 * (8 * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) := by
+            have h1 : (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) := by
+              rw [← pow_add, show d + (256 - d) = 256 by omega]
+            have h4 : ((2 : ℝ) ^ d) ^ 2 = (4 : ℝ) ^ d := by rw [← pow_mul, mul_comm, pow_mul]; norm_num
+            have h8 : ((2 : ℝ) ^ k0) ^ 3 = (8 : ℝ) ^ k0 := by rw [← pow_mul, mul_comm, pow_mul]; norm_num
+            rw [div_pow, mul_pow, h1, mul_pow, h8, ← h4]
+            have h2ne : (2 : ℝ) ^ (256 - d) ≠ 0 := by positivity
+            have h8ne : (8 : ℝ) ^ k0 ≠ 0 := by positivity
+            field_simp [h2ne, h8ne]; ring
+          rw [hpow_t2] at ht2
+          have hdiv : ((ECDSAAdd.p / ((runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2) : Nat) : ℝ) ≤
+              (2 : ℝ) ^ 256 * (1 / (((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((runF (runF (2, 1) γ1) γ2).2 : ℝ))) := by
+            have h1 : ((ECDSAAdd.p / ((runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2) : Nat) : ℝ) ≤
+                (ECDSAAdd.p : ℝ) / (((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((runF (runF (2, 1) γ1) γ2).2 : ℝ)) := by
+              simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := (runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2))
+            have h2 : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+            exact h1.trans ((div_le_div_of_nonneg_right h2 (by positivity)).trans_eq (by ring))
+          have hcR : (F.card : ℝ) ≤ ((ECDSAAdd.p / ((runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2) : Nat) : ℝ) + 1 := by
+            exact_mod_cast hcF
+          have ht1' : (2 : ℝ) ^ 256 * (1 / (((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((runF (runF (2, 1) γ1) γ2).2 : ℝ))) ≤
+              (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d / 1000) * phiF3 (runF (runF (2, 1) γ1) γ2).1 (runF (runF (2, 1) γ1) γ2).2 :=
+            (mul_le_mul_of_nonneg_left ht1 (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)).trans_eq (by ring)
+          have ht2' : (1 : ℝ) ≤ (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) *
+              phiF3 (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 :=
+            ht2.trans_eq (by ring)
+          linarith
+        · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
+          have h1 := phiF3_pos hC_R hD_R
+          have h2 := phiF3_pos hC'_R hD'_R
+          positivity
+      have hsum1 := hfib.trans (list_sum_map_le _ _ _ hper)
+      have hadd_map : ∀ (xs : List (List StepKind × List StepKind)) (f g : List StepKind × List StepKind → ℝ),
+          (xs.map (fun x => f x + g x)).sum = (xs.map f).sum + (xs.map g).sum := by
+        intro xs f g; induction xs with | nil => simp | cons _ _ ih => simp [ih]; ring
+      rw [hadd_map, list_sum_mul_left, list_sum_mul_left] at hsum1
+      -- Sum 1: `EO0` + `all` with `phiF3`:
+      have hS1_sum : (pairList.map (fun p12 =>
+          phiF3 (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
+          phiF3 2 1 * rhoEO3 ^ (k0 - 1) * rhoF3 ^ m := by
+        dsimp only [pairList]; rw [list_sum_flatMap_real]
+        have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+            (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+              (fun p12 => phiF3 (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
+            phiF3 (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * rhoF3 ^ m := fun γ1 _ => by
+          simp only [List.map_map, Function.comp_def]
+          have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+          simpa only [Prod.mk.eta] using sum_pathsAll_phiF3 m (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 hpos1.1 hpos1.2
+        have h2 := list_sum_map_le _ _ _ hinner
+        have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => phiF3 (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * rhoF3 ^ m)).sum =
+            rhoF3 ^ m * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => phiF3 (runF (2, 1) γ1).1 (runF (2, 1) γ1).2)).sum := by
+          rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
+        rw [hpull] at h2
+        have h3 := h2.trans (mul_le_mul_of_nonneg_left (sum_pathsEO0_phiF3 (k0 - 1) 2 1 (by omega) (by omega)) (by positivity))
+        refine h3.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; ring
+      -- Sum 2: `2^(k0 - 1) * phiF3 1 1 * rhoF3 ^ m`:
+      have hS2_sum : (pairList.map (fun p12 => phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤
+          (2 : ℝ) ^ (k0 - 1) * (phiF3 1 1 * rhoF3 ^ m) := by
+        dsimp only [pairList]; rw [list_sum_flatMap_real]
+        have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+            (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+              (fun p12 => phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤ phiF3 1 1 * rhoF3 ^ m := fun γ1 _ => by
+          simp only [List.map_map, Function.comp_def]
+          simpa only [Nat.cast_one] using sum_pathsAll_phiF3 m 1 1 (by omega) (by omega)
+        have h2 := list_sum_map_le _ _ _ hinner
+        have hconst : ((pathsOf eo0Kinds (k0 - 1)).map (fun _ => phiF3 1 1 * rhoF3 ^ m)).sum =
+            (2 : ℝ) ^ (k0 - 1) * (phiF3 1 1 * rhoF3 ^ m) := by
+          rw [List.map_const', List.sum_replicate, nsmul_eq_mul, pathsOf_length]
+          have hl : eo0Kinds.length = 2 := rfl; rw [hl]; norm_cast
+        rwa [hconst] at h2
+      have hcomb := hsum1.trans (add_le_add
+        (mul_le_mul_of_nonneg_left hS1_sum (by positivity))
+        (mul_le_mul_of_nonneg_left hS2_sum (by positivity)))
+      refine hcomb.trans_eq ?_
+      have hpow_m : rhoF3 ^ m = rhoF3 ^ i / (rhoF3 ^ 2) ^ k0 := by
+        have h1 : rhoF3 ^ i = (rhoF3 ^ 2) ^ k0 * rhoF3 ^ m := by
+          rw [← pow_mul, ← pow_add, hm_add]
+        rw [h1]; field_simp [hrF3_pos.ne']
+      have hpow_eo : rhoEO3 ^ (k0 - 1) = rhoEO3 ^ k0 / rhoEO3 := by
+        have h1 : rhoEO3 ^ k0 = rhoEO3 ^ (k0 - 1) * rhoEO3 := by rw [← pow_succ, Nat.sub_add_cancel hk0_1]
+        rw [h1, mul_div_cancel_right₀ _ hrEO3_pos.ne']
+      have hpow_2 : (2 : ℝ) ^ (k0 - 1) / (8 : ℝ) ^ k0 = 1 / (2 * (4 : ℝ) ^ k0) := by
+        have h8 : (8 : ℝ) ^ k0 = (2 : ℝ) ^ k0 * (4 : ℝ) ^ k0 := by rw [← mul_pow]; norm_num
+        have h2k : (2 : ℝ) ^ k0 = 2 * (2 : ℝ) ^ (k0 - 1) := by rw [← pow_succ', Nat.sub_add_cancel hk0_1]
+        rw [h8, h2k]; field_simp
+      have hrA_p : rA ^ k0 = rhoEO3 ^ k0 / (rhoF3 ^ 2) ^ k0 := div_pow _ _ _
+      have hrB_p : rB ^ k0 = 1 / ((4 : ℝ) ^ k0 * (rhoF3 ^ 2) ^ k0) := by dsimp [rB]; rw [one_div_pow, mul_pow, one_div]
+      rw [hpow_m, hpow_eo, hrA_p, hrB_p]
+      have h2eq : (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) *
+          ((2 : ℝ) ^ (k0 - 1) * (phiF3 1 1 * (rhoF3 ^ i / (rhoF3 ^ 2) ^ k0))) =
+          (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d * ((2 : ℝ) ^ (k0 - 1) / (8 : ℝ) ^ k0) *
+            (phiF3 1 1 * (rhoF3 ^ i / (rhoF3 ^ 2) ^ k0))) := by ring
+      rw [h2eq, hpow_2]
+      field_simp [hrF3_pos.ne', hrEO3_pos.ne']; ring
+    · -- `K ≤ k0`: `Sk` is empty because every element of `BadDrop i d K` satisfies `¬ 2^K ∣ x`!
+      have hempty : Sk = ∅ := by
+        ext x; simp only [Finset.notMem_empty, iff_false]
+        intro hx
+        have hmem := Finset.mem_filter.mp hx
+        have hndivK := (Finset.mem_filter.mp hmem.1).2.1
+        exact hndivK (dvd_trans (Nat.pow_dvd_pow 2 (by omega)) hmem.2.1)
+      rw [hempty, Finset.card_empty, Nat.cast_zero]
+      have h1 := phiF3_pos (by norm_num : (0 : ℝ) < 2) (by norm_num : (0 : ℝ) < 1)
+      have h2 := phiF3_pos (by norm_num : (0 : ℝ) < 1) (by norm_num : (0 : ℝ) < 1)
+      have hrA_nn : 0 ≤ rA := by linarith
+      positivity
+  -- Sum `hpos_bound` over `k0 ∈ Finset.Icc 1 d`:
+  have hsum_pos := Finset.sum_le_sum hpos_bound
+  have hsum_A : ∑ k0 ∈ Finset.Icc 1 d, rA ^ k0 ≤ (rA / (rA - 1)) * rA ^ d := by
+    have hshift : ∀ n, ∑ k0 ∈ Finset.Icc 1 n, rA ^ k0 = rA * ∑ j ∈ Finset.range n, rA ^ j := by
+      intro n; induction n with
+      | zero => simp
+      | succ n ih =>
+        rw [Finset.sum_Icc_succ_top (by omega), Finset.sum_range_succ, mul_add, ← ih, pow_succ']
+    rw [hshift d]
+    exact (mul_le_mul_of_nonneg_left (geom_sum_gt1_le hrA_gt1 d) (by linarith)).trans_eq (by ring)
+  have hsum_B : ∑ k0 ∈ Finset.Icc 1 d, rB ^ k0 ≤ rB / (1 - rB) := by
+    have hshift : ∀ n, ∑ k0 ∈ Finset.Icc 1 n, rB ^ k0 = rB * ∑ j ∈ Finset.range n, rB ^ j := by
+      intro n; induction n with
+      | zero => simp
+      | succ n ih =>
+        rw [Finset.sum_Icc_succ_top (by omega), Finset.sum_range_succ, mul_add, ← ih, pow_succ']
+    rw [hshift d]
+    exact (mul_le_mul_of_nonneg_left (geom_sum_le_inv hrB_nn hrB_lt1 d) hrB_nn).trans_eq (by ring)
+  have hpull : ∑ k0 ∈ Finset.Icc 1 d, (2 : ℝ) ^ 256 *
+      ((1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (2 : ℝ) ^ d * rA ^ k0 * rhoF3 ^ i +
+       (4 / 1000 : ℝ) * phiF3 1 1 * (4 : ℝ) ^ d * rB ^ k0 * rhoF3 ^ i) =
+      (2 : ℝ) ^ 256 * (
+        ((1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (2 : ℝ) ^ d * rhoF3 ^ i) * (∑ k0 ∈ Finset.Icc 1 d, rA ^ k0) +
+        ((4 / 1000 : ℝ) * phiF3 1 1 * (4 : ℝ) ^ d * rhoF3 ^ i) * (∑ k0 ∈ Finset.Icc 1 d, rB ^ k0)) := by
+    rw [← Finset.mul_sum, Finset.sum_add_distrib]
+    congr 1; congr 1
+    · rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
+    · rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
+  rw [hpull] at hsum_pos
+  have hphiF321_nn : 0 ≤ phiF3 2 1 := (phiF3_pos (by norm_num) (by norm_num)).le
+  have hphiF311_nn : 0 ≤ phiF3 1 1 := (phiF3_pos (by norm_num) (by norm_num)).le
+  have hpos_final : (∑ k0 ∈ Finset.Icc 1 d, ((BadDrop_k0 i d K k0).card : ℝ)) ≤
+      (2 : ℝ) ^ 256 * (CA * (2 * rA) ^ d * rhoF3 ^ i + CB * (4 : ℝ) ^ d * rhoF3 ^ i) := by
+    have h1 := hsum_pos.trans (mul_le_mul_of_nonneg_left (add_le_add
+      (mul_le_mul_of_nonneg_left hsum_A (by positivity))
+      (mul_le_mul_of_nonneg_left hsum_B (by positivity))) (by positivity))
+    refine h1.trans_eq ?_
+    dsimp only [CA, CB]; rw [mul_pow]; ring
+  have htot := hcard_split.trans (add_le_add h0_bound hpos_final)
+  exact htot.trans_eq (by ring)
+
+/-! ### 8. Repeated-squaring numeric bounds, `BadStack`, and final `env475` / `env490` bounds -/
 
 private theorem pow_step {x : ℝ} {n : Nat} {a b : ℝ} {e1 e2 : Int}
     (hx : 0 ≤ x) (h1 : x ^ n ≤ a * (2 : ℝ) ^ e1) (hsq : a ^ 2 * (2 : ℝ) ^ (2 * e1 - e2) ≤ b) :
@@ -6138,9 +7277,11 @@ private theorem pow_mul2 {x : ℝ} (hx : 0 ≤ x) (n1 n2 : Nat) (a1 a2 b : ℝ) 
         linear_combination a1 * a2 * h2
     _ ≤ b * (2 : ℝ) ^ e3 := mul_le_mul_of_nonneg_right hab (by positivity)
 
-private theorem rhoF_pow_239_240 :
-    rhoF ^ 239 ≤ (178057 / 100000 : ℝ) * (2 : ℝ) ^ (-431 : Int) ∧
-    rhoF ^ 240 ≤ (102277 / 100000 : ℝ) * (2 : ℝ) ^ (-432 : Int) := by
+private theorem rhoF_pows_w10 :
+    rhoF ^ 236 ≤ (117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int) ∧
+    rhoF ^ 237 ≤ (134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int) ∧
+    rhoF ^ 245 ≤ (102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int) ∧
+    rhoF ^ 246 ≤ (117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int) := by
   have h0 : 0 ≤ rhoF := by unfold rhoF; positivity
   have p1 : rhoF ^ 1 ≤ (114880 / 100000 : ℝ) * (2 : ℝ) ^ (-2 : Int) := by unfold rhoF; norm_num
   have p2 : rhoF ^ 2 ≤ (131975 / 100000 : ℝ) * (2 : ℝ) ^ (-4 : Int) := pow_step h0 p1 (by norm_num)
@@ -6150,18 +7291,22 @@ private theorem rhoF_pow_239_240 :
   have p32 : rhoF ^ 32 ≤ (132347 / 100000 : ℝ) * (2 : ℝ) ^ (-58 : Int) := pow_step h0 p16 (by norm_num)
   have p64 : rhoF ^ 64 ≤ (175158 / 100000 : ℝ) * (2 : ℝ) ^ (-116 : Int) := pow_step h0 p32 (by norm_num)
   have p128 : rhoF ^ 128 ≤ (153402 / 100000 : ℝ) * (2 : ℝ) ^ (-231 : Int) := pow_step h0 p64 (by norm_num)
-  have p192 := pow_mul2 h0 128 64 _ _ (134349 / 100000) _ _ (-346) p128 p64 (by norm_num) (by norm_num) (by norm_num)
-  have p224 := pow_mul2 h0 192 32 _ _ (177807 / 100000) _ _ (-404) p192 p32 (by norm_num) (by norm_num) (by norm_num)
-  have p240 := pow_mul2 h0 224 16 _ _ (102277 / 100000) _ _ (-432) p224 p16 (by norm_num) (by norm_num) (by norm_num)
-  have p3 := pow_mul2 h0 2 1 _ _ (151613 / 100000) _ _ (-6) p2 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p7 := pow_mul2 h0 4 3 _ _ (132036 / 100000) _ _ (-13) p4 p3 (by norm_num) (by norm_num) (by norm_num)
-  have p15 := pow_mul2 h0 8 7 _ _ (100140 / 100000) _ _ (-27) p8 p7 (by norm_num) (by norm_num) (by norm_num)
-  have p239 := pow_mul2 h0 224 15 _ _ (178057 / 100000) _ _ (-431) p224 p15 (by norm_num) (by norm_num) (by norm_num)
-  exact ⟨p239, p240⟩
+  have p192 := pow_mul2 h0 128 64 _ _ (134348 / 100000) _ _ (-346) p128 p64 (by norm_num) (by norm_num) (by norm_num)
+  have p224 := pow_mul2 h0 192 32 _ _ (177806 / 100000) _ _ (-404) p192 p32 (by norm_num) (by norm_num) (by norm_num)
+  have p232 := pow_mul2 h0 224 8 _ _ (134853 / 100000) _ _ (-418) p224 p8 (by norm_num) (by norm_num) (by norm_num)
+  have p236 := pow_mul2 h0 232 4 _ _ (117441 / 100000) _ _ (-425) p232 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p237 := pow_mul2 h0 236 1 _ _ (134917 / 100000) _ _ (-427) p236 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p240 := pow_mul2 h0 224 16 _ _ (102276 / 100000) _ _ (-432) p224 p16 (by norm_num) (by norm_num) (by norm_num)
+  have p244 := pow_mul2 h0 240 4 _ _ (178140 / 100000) _ _ (-440) p240 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p245 := pow_mul2 h0 244 1 _ _ (102324 / 100000) _ _ (-441) p244 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p246 := pow_mul2 h0 244 2 _ _ (117551 / 100000) _ _ (-443) p244 p2 (by norm_num) (by norm_num) (by norm_num)
+  exact ⟨p236, p237, p245, p246⟩
 
-private theorem rhoB_pow_244_246 :
-    rhoB ^ 244 ≤ (191022 / 100000 : ℝ) * (2 : ℝ) ^ (-439 : Int) ∧
-    rhoB ^ 246 ≤ (126842 / 100000 : ℝ) * (2 : ℝ) ^ (-442 : Int) := by
+private theorem rhoB_pows_w10 :
+    rhoB ^ 237 ≤ (141541 / 100000 : ℝ) * (2 : ℝ) ^ (-426 : Int) ∧
+    rhoB ^ 239 ≤ (187971 / 100000 : ℝ) * (2 : ℝ) ^ (-430 : Int) ∧
+    rhoB ^ 243 ≤ (165759 / 100000 : ℝ) * (2 : ℝ) ^ (-437 : Int) ∧
+    rhoB ^ 245 ≤ (110067 / 100000 : ℝ) * (2 : ℝ) ^ (-440 : Int) := by
   have h0 : 0 ≤ rhoB := by unfold rhoB; positivity
   have p1 : rhoB ^ 1 ≤ (115240 / 100000 : ℝ) * (2 : ℝ) ^ (-2 : Int) := by unfold rhoB; norm_num
   have p2 : rhoB ^ 2 ≤ (132803 / 100000 : ℝ) * (2 : ℝ) ^ (-4 : Int) := pow_step h0 p1 (by norm_num)
@@ -6173,185 +7318,779 @@ private theorem rhoB_pow_244_246 :
   have p128 : rhoB ^ 128 ≤ (114452 / 100000 : ℝ) * (2 : ℝ) ^ (-230 : Int) := pow_step h0 p64 (by norm_num)
   have p192 := pow_mul2 h0 128 64 _ _ (122444 / 100000) _ _ (-345) p128 p64 (by norm_num) (by norm_num) (by norm_num)
   have p224 := pow_mul2 h0 192 32 _ _ (179105 / 100000) _ _ (-403) p192 p32 (by norm_num) (by norm_num) (by norm_num)
+  have p232 := pow_mul2 h0 224 8 _ _ (139279 / 100000) _ _ (-417) p224 p8 (by norm_num) (by norm_num) (by norm_num)
+  have p236 := pow_mul2 h0 232 4 _ _ (122822 / 100000) _ _ (-424) p232 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p237 := pow_mul2 h0 236 1 _ _ (141541 / 100000) _ _ (-426) p236 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p238 := pow_mul2 h0 236 2 _ _ (163112 / 100000) _ _ (-428) p236 p2 (by norm_num) (by norm_num) (by norm_num)
+  have p239 := pow_mul2 h0 238 1 _ _ (187971 / 100000) _ _ (-430) p238 p1 (by norm_num) (by norm_num) (by norm_num)
   have p240 := pow_mul2 h0 224 16 _ _ (108309 / 100000) _ _ (-431) p224 p16 (by norm_num) (by norm_num) (by norm_num)
+  have p242 := pow_mul2 h0 240 2 _ _ (143838 / 100000) _ _ (-435) p240 p2 (by norm_num) (by norm_num) (by norm_num)
+  have p243 := pow_mul2 h0 242 1 _ _ (165759 / 100000) _ _ (-437) p242 p1 (by norm_num) (by norm_num) (by norm_num)
   have p244 := pow_mul2 h0 240 4 _ _ (191022 / 100000) _ _ (-439) p240 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p246 := pow_mul2 h0 244 2 _ _ (126842 / 100000) _ _ (-442) p244 p2 (by norm_num) (by norm_num) (by norm_num)
-  exact ⟨p244, p246⟩
+  have p245 := pow_mul2 h0 244 1 _ _ (110067 / 100000) _ _ (-440) p244 p1 (by norm_num) (by norm_num) (by norm_num)
+  exact ⟨p237, p239, p243, p245⟩
 
-private theorem tail_k0_ge_36 :
-    (((Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 36 ∣ x)).card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ 36 := by
-  set S := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 36 ∣ x)
-  have hinj : Set.InjOn (fun x => x / 2 ^ 36) (S : Set Nat) := by
+private theorem rhoB7_pows_w10 :
+    rhoB7 ^ 237 ≤ (105600 / 100000 : ℝ) * (2 : ℝ) ^ (-677 : Int) ∧
+    rhoB7 ^ 239 ≤ (128895 / 100000 : ℝ) * (2 : ℝ) ^ (-683 : Int) ∧
+    rhoB7 ^ 243 ≤ (192036 / 100000 : ℝ) * (2 : ℝ) ^ (-695 : Int) ∧
+    rhoB7 ^ 245 ≤ (117199 / 100000 : ℝ) * (2 : ℝ) ^ (-700 : Int) := by
+  have h0 : 0 ≤ rhoB7 := by unfold rhoB7; positivity
+  have p1 : rhoB7 ^ 1 ≤ (110480 / 100000 : ℝ) * (2 : ℝ) ^ (-3 : Int) := by unfold rhoB7; norm_num
+  have p2 : rhoB7 ^ 2 ≤ (122059 / 100000 : ℝ) * (2 : ℝ) ^ (-6 : Int) := pow_step h0 p1 (by norm_num)
+  have p4 : rhoB7 ^ 4 ≤ (148984 / 100000 : ℝ) * (2 : ℝ) ^ (-12 : Int) := pow_step h0 p2 (by norm_num)
+  have p8 : rhoB7 ^ 8 ≤ (110982 / 100000 : ℝ) * (2 : ℝ) ^ (-23 : Int) := pow_step h0 p4 (by norm_num)
+  have p16 : rhoB7 ^ 16 ≤ (123171 / 100000 : ℝ) * (2 : ℝ) ^ (-46 : Int) := pow_step h0 p8 (by norm_num)
+  have p32 : rhoB7 ^ 32 ≤ (151711 / 100000 : ℝ) * (2 : ℝ) ^ (-92 : Int) := pow_step h0 p16 (by norm_num)
+  have p64 : rhoB7 ^ 64 ≤ (115082 / 100000 : ℝ) * (2 : ℝ) ^ (-183 : Int) := pow_step h0 p32 (by norm_num)
+  have p128 : rhoB7 ^ 128 ≤ (132439 / 100000 : ℝ) * (2 : ℝ) ^ (-366 : Int) := pow_step h0 p64 (by norm_num)
+  have p192 := pow_mul2 h0 128 64 _ _ (152414 / 100000) _ _ (-549) p128 p64 (by norm_num) (by norm_num) (by norm_num)
+  have p224 := pow_mul2 h0 192 32 _ _ (115615 / 100000) _ _ (-640) p192 p32 (by norm_num) (by norm_num) (by norm_num)
+  have p232 := pow_mul2 h0 224 8 _ _ (128312 / 100000) _ _ (-663) p224 p8 (by norm_num) (by norm_num) (by norm_num)
+  have p236 := pow_mul2 h0 232 4 _ _ (191165 / 100000) _ _ (-675) p232 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p237 := pow_mul2 h0 236 1 _ _ (105600 / 100000) _ _ (-677) p236 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p238 := pow_mul2 h0 236 2 _ _ (116668 / 100000) _ _ (-680) p236 p2 (by norm_num) (by norm_num) (by norm_num)
+  have p239 := pow_mul2 h0 238 1 _ _ (128895 / 100000) _ _ (-683) p238 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p240 := pow_mul2 h0 224 16 _ _ (142405 / 100000) _ _ (-686) p224 p16 (by norm_num) (by norm_num) (by norm_num)
+  have p242 := pow_mul2 h0 240 2 _ _ (173819 / 100000) _ _ (-692) p240 p2 (by norm_num) (by norm_num) (by norm_num)
+  have p243 := pow_mul2 h0 242 1 _ _ (192036 / 100000) _ _ (-695) p242 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p244 := pow_mul2 h0 240 4 _ _ (106081 / 100000) _ _ (-697) p240 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p245 := pow_mul2 h0 244 1 _ _ (117199 / 100000) _ _ (-700) p244 p1 (by norm_num) (by norm_num) (by norm_num)
+  exact ⟨p237, p239, p243, p245⟩
+
+private theorem rhoF3_pows_w10 :
+    rhoF3 ^ 37 ≤ (184634 / 100000 : ℝ) * (2 : ℝ) ^ (-25 : Int) ∧
+    rhoF3 ^ 65 ≤ (155319 / 100000 : ℝ) * (2 : ℝ) ^ (-43 : Int) ∧
+    rhoF3 ^ 87 ≤ (122807 / 100000 : ℝ) * (2 : ℝ) ^ (-57 : Int) := by
+  have h0 : 0 ≤ rhoF3 := by unfold rhoF3; positivity
+  have p1 : rhoF3 ^ 1 ≤ (127300 / 100000 : ℝ) * (2 : ℝ) ^ (-1 : Int) := by unfold rhoF3; norm_num
+  have p2 : rhoF3 ^ 2 ≤ (162053 / 100000 : ℝ) * (2 : ℝ) ^ (-2 : Int) := pow_step h0 p1 (by norm_num)
+  have p4 : rhoF3 ^ 4 ≤ (131306 / 100000 : ℝ) * (2 : ℝ) ^ (-3 : Int) := pow_step h0 p2 (by norm_num)
+  have p8 : rhoF3 ^ 8 ≤ (172413 / 100000 : ℝ) * (2 : ℝ) ^ (-6 : Int) := pow_step h0 p4 (by norm_num)
+  have p16 : rhoF3 ^ 16 ≤ (148632 / 100000 : ℝ) * (2 : ℝ) ^ (-11 : Int) := pow_step h0 p8 (by norm_num)
+  have p32 : rhoF3 ^ 32 ≤ (110458 / 100000 : ℝ) * (2 : ℝ) ^ (-21 : Int) := pow_step h0 p16 (by norm_num)
+  have p64 : rhoF3 ^ 64 ≤ (122010 / 100000 : ℝ) * (2 : ℝ) ^ (-42 : Int) := pow_step h0 p32 (by norm_num)
+  have p36 := pow_mul2 h0 32 4 _ _ (145038 / 100000) _ _ (-24) p32 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p37 := pow_mul2 h0 36 1 _ _ (184634 / 100000) _ _ (-25) p36 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p65 := pow_mul2 h0 64 1 _ _ (155319 / 100000) _ _ (-43) p64 p1 (by norm_num) (by norm_num) (by norm_num)
+  have p80 := pow_mul2 h0 64 16 _ _ (181346 / 100000) _ _ (-53) p64 p16 (by norm_num) (by norm_num) (by norm_num)
+  have p84 := pow_mul2 h0 80 4 _ _ (119060 / 100000) _ _ (-55) p80 p4 (by norm_num) (by norm_num) (by norm_num)
+  have p86 := pow_mul2 h0 84 2 _ _ (192941 / 100000) _ _ (-57) p84 p2 (by norm_num) (by norm_num) (by norm_num)
+  have p87 := pow_mul2 h0 86 1 _ _ (122807 / 100000) _ _ (-57) p86 p1 (by norm_num) (by norm_num) (by norm_num)
+  exact ⟨p37, p65, p87⟩
+
+private theorem tail_k0_ge (K : Nat) (hK : K ≤ 256) :
+    (((Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)).card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ K := by
+  set S := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)
+  have hinj : Set.InjOn (fun x => x / 2 ^ K) (S : Set Nat) := by
     intro a ha b hb heq
     dsimp only at heq
     have ha' := Nat.mul_div_cancel' (Finset.mem_filter.mp (Finset.mem_coe.mp ha)).2
     have hb' := Nat.mul_div_cancel' (Finset.mem_filter.mp (Finset.mem_coe.mp hb)).2
     rw [← ha', ← hb', heq]
-  have hpow : 2 ^ 256 = 2 ^ 220 * 2 ^ 36 := by rw [← pow_add]
-  have h2_36 : 0 < 2 ^ 36 := Nat.two_pow_pos 36
-  generalize hM : (2 ^ 220 : Nat) = M at hpow
-  have hmap : Set.MapsTo (fun x => x / 2 ^ 36) (S : Set Nat) (Finset.range M : Set Nat) := by
+  have hpow : 2 ^ 256 = 2 ^ (256 - K) * 2 ^ K := by rw [← pow_add, show 256 - K + K = 256 by omega]
+  have h2K : 0 < 2 ^ K := Nat.two_pow_pos K
+  generalize hM : (2 ^ (256 - K) : Nat) = M at hpow
+  have hmap : Set.MapsTo (fun x => x / 2 ^ K) (S : Set Nat) (Finset.range M : Set Nat) := by
     intro x hx
     rw [Finset.mem_coe, Finset.mem_range]
     have hxp : x < 2 ^ 256 := (Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_coe.mp hx)).1).2.trans p_lt_256
-    exact (Nat.div_lt_iff_lt_mul h2_36).mpr (hpow ▸ hxp)
-  have hc := Finset.card_le_card_of_injOn (fun x => x / 2 ^ 36) hmap hinj
+    exact (Nat.div_lt_iff_lt_mul h2K).mpr (hpow ▸ hxp)
+  have hc := Finset.card_le_card_of_injOn (fun x => x / 2 ^ K) hmap hinj
   rw [Finset.card_range, ← hM] at hc
-  have hR : (S.card : ℝ) ≤ (2 : ℝ) ^ 220 := by exact_mod_cast hc
+  have hR : (S.card : ℝ) ≤ (2 : ℝ) ^ (256 - K) := by exact_mod_cast hc
   refine hR.trans_eq ?_
-  rw [show (2 : ℝ) ^ 256 = (2 : ℝ) ^ 220 * (2 : ℝ) ^ 36 by rw [← pow_add]]
+  rw [show (2 : ℝ) ^ 256 = (2 : ℝ) ^ (256 - K) * (2 : ℝ) ^ K by rw [← pow_add, show 256 - K + K = 256 by omega]]
   field_simp
 
-theorem skywalk_bad485_card :
-    (Bad485.card : ℝ) ≤ (15 : ℝ) / 10 ^ 11 * (2 : ℝ) ^ 256 := by
-  let Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 36 ∣ x)
-  let Smid := (Finset.range 7).biUnion (fun q => (Finset.Icc 1 5).biUnion (fun r => Bad485_k0 (5 * q + r)))
-  have hcov : Bad485 ⊆ Bad485_k0 0 ∪ Smid ∪ Stail := by
+def BadStack (E : LocalKernel.EnvSchedule) : Finset Nat :=
+  (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => ¬ LocalKernel.GoodStack E x)
+
+private theorem env_drop_consts :
+    let rA : ℝ := rhoEO3 / rhoF3 ^ 2
+    let rB : ℝ := 1 / (4 * rhoF3 ^ 2)
+    let C0 : ℝ := (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3
+    let CA : ℝ := (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rA / (rA - 1))
+    let CB : ℝ := (4 / 1000 : ℝ) * phiF3 1 1 * (rB / (1 - rB))
+    CA ≤ 244 / 10 ∧ C0 + CB ≤ 514 / 10 ∧
+    (2 * rA) ^ 12 * rhoF3 ^ 37 ≤ 37 / 10000 ∧
+    (4 : ℝ) ^ 12 * rhoF3 ^ 37 ≤ 924 / 1000 := by
+  dsimp only
+  obtain ⟨_, _, _, _, hF321, hF311⟩ := phi_consts
+  obtain ⟨hrF37, _, _⟩ := rhoF3_pows_w10
+  have hrF3_pos : (0 : ℝ) < rhoF3 := by unfold rhoF3; norm_num
+  have hrEO3_pos : (0 : ℝ) < rhoEO3 := by unfold rhoEO3; norm_num
+  have hrA_gt : (0 : ℝ) < rhoEO3 / rhoF3 ^ 2 - 1 := by unfold rhoEO3 rhoF3; norm_num
+  have hrB_lt : (0 : ℝ) < 1 - 1 / (4 * rhoF3 ^ 2) := by unfold rhoF3; norm_num
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · have h1 : (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rhoEO3 / rhoF3 ^ 2 / (rhoEO3 / rhoF3 ^ 2 - 1)) ≤
+        (1 / 1000 : ℝ) * 2589 / rhoEO3 * (rhoEO3 / rhoF3 ^ 2 / (rhoEO3 / rhoF3 ^ 2 - 1)) := by
+      have hnn : 0 ≤ rhoEO3 / rhoF3 ^ 2 / (rhoEO3 / rhoF3 ^ 2 - 1) := by positivity
+      gcongr
+    refine h1.trans ?_; unfold rhoEO3 rhoF3; norm_num
+  · have h1 : (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3 + (4 / 1000 : ℝ) * phiF3 1 1 * (1 / (4 * rhoF3 ^ 2) / (1 - 1 / (4 * rhoF3 ^ 2))) ≤
+        (2 / 1000 : ℝ) * 2589 / rhoF3 + (4 / 1000 : ℝ) * 6703 * (1 / (4 * rhoF3 ^ 2) / (1 - 1 / (4 * rhoF3 ^ 2))) := by
+      have hnn : 0 ≤ 1 / (4 * rhoF3 ^ 2) / (1 - 1 / (4 * rhoF3 ^ 2)) := by positivity
+      gcongr
+    refine h1.trans ?_; unfold rhoF3; norm_num
+  · have h1 : (2 * (rhoEO3 / rhoF3 ^ 2)) ^ 12 * rhoF3 ^ 37 ≤
+        (2 * (rhoEO3 / rhoF3 ^ 2)) ^ 12 * ((184634 / 100000 : ℝ) * (2 : ℝ) ^ (-25 : Int)) :=
+      mul_le_mul_of_nonneg_left hrF37 (by positivity)
+    refine h1.trans ?_; unfold rhoEO3 rhoF3; norm_num
+  · have h1 : (4 : ℝ) ^ 12 * rhoF3 ^ 37 ≤ (4 : ℝ) ^ 12 * ((184634 / 100000 : ℝ) * (2 : ℝ) ^ (-25 : Int)) :=
+      mul_le_mul_of_nonneg_left hrF37 (by positivity)
+    refine h1.trans ?_; norm_num
+
+private theorem env475_drop_formula (i : Nat) (h1 : 1 ≤ i) (h2 : i < 475)
+    (hdrop : LocalKernel.env475PostW i < (if i = 0 then 258 else LocalKernel.env475PostW (i - 1)))
+    (hramp : LocalKernel.env475PostW i < 475 - i + 1) :
+    let d := 257 - LocalKernel.env475PostW i
+    let q := d / 12
+    let r := d % 12
+    q < 7 ∧ r < 12 ∧ LocalKernel.env475PostW i ≤ 257 ∧
+    i = 37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0) := by
+  rw [if_neg (by omega)] at hdrop
+  unfold LocalKernel.env475PostW at hdrop hramp ⊢
+  dsimp only
+  split_ifs <;> omega
+
+private theorem env490_drop_formula (i : Nat) (h1 : 1 ≤ i) (h2 : i < 490)
+    (hdrop : LocalKernel.env490PostW i < (if i = 0 then 258 else LocalKernel.env490PostW (i - 1)))
+    (hramp : LocalKernel.env490PostW i < 490 - i + 1) :
+    let d := 257 - LocalKernel.env490PostW i
+    let q := d / 12
+    let r := d % 12
+    q < 6 ∧ r < 12 ∧ LocalKernel.env490PostW i ≤ 257 ∧
+    i = 37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0) := by
+  rw [if_neg (by omega)] at hdrop
+  unfold LocalKernel.env490PostW at hdrop hramp ⊢
+  dsimp only
+  split_ifs <;> omega
+
+theorem skywalk_badStack475_card :
+    ((BadStack LocalKernel.env475).card : ℝ) ≤ (47 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256 := by
+  let Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 31 ∣ x)
+  let Smid := (Finset.range 6).biUnion (fun q => (Finset.Icc 1 5).biUnion (fun r => BadS_k0 475 (5 * q + r)))
+  let Senv := (Finset.range 7).biUnion (fun q => (Finset.range 12).biUnion (fun r =>
+    BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31))
+  have hcov : BadStack LocalKernel.env475 ⊆ BadS_k0 475 0 ∪ Smid ∪ Stail ∪ Senv := by
     intro x hx
     have hxI := (Finset.mem_filter.mp hx).1
-    obtain ⟨_, _⟩ := Finset.mem_Ioo.mp hxI
-    by_cases h36 : 2 ^ 36 ∣ x
-    · exact Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hxI, h36⟩)
-    · apply Finset.mem_union_left
-      have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨35, h36⟩
-      let k0 := Nat.find hex
-      have hk0_lt : k0 < 36 := by have := Nat.find_min' hex h36; omega
-      have hdiv : 2 ^ k0 ∣ x := by
-        cases hk : k0 with
-        | zero => simp
-        | succ j =>
-          have hnj := Nat.find_min hex (show j < k0 by omega)
-          push_neg at hnj; exact hnj
-      have hodd : (x / 2 ^ k0) % 2 = 1 := by
-        have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
-        by_contra he
-        apply hndiv
-        obtain ⟨q, hq⟩ := hdiv
-        have hq_even : q % 2 = 0 := by
-          have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
-          omega
-        refine ⟨q / 2, ?_⟩
-        rw [hq, pow_succ, mul_assoc]; congr 1; omega
-      have hmem_k0 : x ∈ Bad485_k0 k0 := Finset.mem_filter.mpr ⟨hx, hdiv, hodd⟩
-      by_cases hz : k0 = 0
-      · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
-      · refine Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨(k0 - 1) / 5, Finset.mem_range.mpr (by omega),
-          Finset.mem_biUnion.mpr ⟨(k0 - 1) % 5 + 1, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩⟩)
-        rwa [show 5 * ((k0 - 1) / 5) + ((k0 - 1) % 5 + 1) = k0 by omega]
-  have hcard_total : (Bad485.card : ℝ) ≤
-      ((Bad485_k0 0).card : ℝ) +
-      (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5, ((Bad485_k0 (5 * q + r)).card : ℝ)) +
-      (Stail.card : ℝ) := by
+    have hng := (Finset.mem_filter.mp hx).2
+    by_cases h31 : 2 ^ 31 ∣ x
+    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hxI, h31⟩))
+    · by_cases hterm : (SkywalkNat.step^[475] (SkywalkNat.init x ECDSAAdd.p)).u = 0
+      · -- Must fail an envelope drop!
+        apply Finset.mem_union_right
+        have hne : ¬ ∀ i, 1 ≤ i → i < LocalKernel.env475.S →
+            LocalKernel.env475.postW i < LocalKernel.env475.preW i →
+            LocalKernel.env475.postW i < LocalKernel.env475.S - i + 1 →
+            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
+            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v < 2 ^ (LocalKernel.env475.postW i - 1) :=
+          fun hall => hng ⟨hterm, hall⟩
+        push_neg at hne
+        obtain ⟨i, hi1, hi2, hdrop, hramp, hge⟩ := hne
+        have hf := env475_drop_formula i hi1 hi2 hdrop hramp
+        set d := 257 - LocalKernel.env475PostW i
+        have hd_eq : 12 * (d / 12) + d % 12 = d := by omega
+        have hw_eq : LocalKernel.env475PostW i - 1 = 256 - (12 * (d / 12) + d % 12) := by omega
+        refine Finset.mem_biUnion.mpr ⟨d / 12, Finset.mem_range.mpr hf.1,
+          Finset.mem_biUnion.mpr ⟨d % 12, Finset.mem_range.mpr hf.2.1,
+            Finset.mem_filter.mpr ⟨hxI, h31, ?_⟩⟩⟩
+        rw [← hf.2.2.2, ← hw_eq]; exact hge
+      · -- In `BadS 475` with `¬ 2^31 ∣ x`, so `k0 ∈ 0..30`!
+        apply Finset.mem_union_left; apply Finset.mem_union_left
+        have hbad : x ∈ BadS 475 := Finset.mem_filter.mpr ⟨hxI, hterm⟩
+        have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨30, h31⟩
+        let k0 := Nat.find hex
+        have hk0_lt : k0 < 31 := by have := Nat.find_min' hex h31; omega
+        have hdiv : 2 ^ k0 ∣ x := by
+          cases hk : k0 with
+          | zero => simp
+          | succ j =>
+            have hnj := Nat.find_min hex (show j < k0 by omega)
+            push_neg at hnj; exact hnj
+        have hodd : (x / 2 ^ k0) % 2 = 1 := by
+          have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
+          by_contra he; apply hndiv
+          obtain ⟨q, hq⟩ := hdiv
+          have hq_even : q % 2 = 0 := by
+            have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
+            omega
+          refine ⟨q / 2, ?_⟩; rw [hq, pow_succ, mul_assoc]; congr 1; omega
+        have hmem_k0 : x ∈ BadS_k0 475 k0 := Finset.mem_filter.mpr ⟨hbad, hdiv, hodd⟩
+        by_cases hz : k0 = 0
+        · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
+        · refine Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨(k0 - 1) / 5, Finset.mem_range.mpr (by omega),
+            Finset.mem_biUnion.mpr ⟨(k0 - 1) % 5 + 1, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩⟩)
+          rwa [show 5 * ((k0 - 1) / 5) + ((k0 - 1) % 5 + 1) = k0 by omega]
+  have hcard_total : ((BadStack LocalKernel.env475).card : ℝ) ≤
+      ((BadS_k0 475 0).card : ℝ) +
+      (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 475 (5 * q + r)).card : ℝ)) +
+      (Stail.card : ℝ) +
+      (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
+        ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ)) := by
     have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
-    have h2 := Finset.card_union_le (Bad485_k0 0) Smid
-    have h3 : Smid.card ≤ ∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5, (Bad485_k0 (5 * q + r)).card :=
+    have h2 := Finset.card_union_le (BadS_k0 475 0 ∪ Smid) Stail
+    have h3 := Finset.card_union_le (BadS_k0 475 0) Smid
+    have h4 : Smid.card ≤ ∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 475 (5 * q + r)).card :=
       Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
-    have hnat : Bad485.card ≤ (Bad485_k0 0).card +
-        (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5, (Bad485_k0 (5 * q + r)).card) + Stail.card := by omega
+    have h5 : Senv.card ≤ ∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
+        (BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card :=
+      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
+    have hnat : (BadStack LocalKernel.env475).card ≤ (BadS_k0 475 0).card +
+        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 475 (5 * q + r)).card) + Stail.card +
+        (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
+          (BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card) := by omega
     exact_mod_cast hnat
-  obtain ⟨hrF239, hrF240⟩ := rhoF_pow_239_240
-  obtain ⟨hrB244, hrB246⟩ := rhoB_pow_244_246
-  obtain ⟨hphiF21, hphiF11, hphiB11⟩ := phi_consts
-  -- Piece 1: `k0 = 0` (`≤ 10^(-13) * 2^256`)
-  have h0_bound : ((Bad485_k0 0).card : ℝ) ≤ (1 / 10 ^ 13 : ℝ) * (2 : ℝ) ^ 256 := by
-    have hb0 := bad485_k0_zero_bound
-    have ht1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 240 ≤ (1 / 10 ^ 14 : ℝ) := by
-      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 240 ≤
-          (2 : ℝ) ^ 384 / 1000 * 1215 * ((102277 / 100000 : ℝ) * (2 : ℝ) ^ (-432 : Int)) :=
-        mul_le_mul (mul_le_mul_of_nonneg_left hphiF21 (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num)))
-          hrF240 (by unfold rhoF; positivity) (mul_nonneg (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num)) (by norm_num))
+  obtain ⟨hrF236, hrF237, _, _⟩ := rhoF_pows_w10
+  obtain ⟨hrB237, hrB239, _, _⟩ := rhoB_pows_w10
+  obtain ⟨hrB7237, hrB7239, _, _⟩ := rhoB7_pows_w10
+  obtain ⟨_, hrF365, _⟩ := rhoF3_pows_w10
+  obtain ⟨hphiF21, hphiF11, hphiB11, hpsiB711, _, _⟩ := phi_consts
+  -- Piece 1: `k0 = 0` (`m=237, e=624, Lb=237`) ≤ `2 / 10^12 * 2^256`
+  have h0_bound : ((BadS_k0 475 0).card : ℝ) ≤ (2 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
+    have hb0 := badS_k0_zero_bound 475 237 624 (by decide) (by decide)
+    rw [show 475 - (1 + 237) = 237 by decide] at hb0
+    have ht1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 237 ≤ 2 / 10 ^ 13 := by
+      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 237 ≤
+          (2 : ℝ) ^ 384 / 1000 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) := by
+        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
+        have hrF_nn : 0 ≤ rhoF ^ 237 := by unfold rhoF; positivity
+        gcongr
       refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-432 : Int) = (2 : ℝ) ^ (-48 : Int) := by
+      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-427 : Int) = (2 : ℝ) ^ (-43 : Int) := by
         rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((102277 / 100000 : ℝ) * (2 : ℝ) ^ (-432 : Int)) =
-          (1215 * 102277 / 100000000 : ℝ) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-432 : Int)) := by
+      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) =
+          (1215 * 134917 / 100000000 : ℝ) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-427 : Int)) := by
         generalize (2 : ℝ) ^ 384 = P384; ring
       rw [heq, hz]; norm_num
-    have ht2 : (108 / (3125 * 10 ^ 6 : ℝ) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 240 / (1 - qL)) / (2 : ℝ) ^ 624 ≤ (2 / 10 ^ 14 : ℝ) := by
-      have h1 : (108 / (3125 * 10 ^ 6 : ℝ) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 240 / (1 - qL)) / (2 : ℝ) ^ 624 ≤
-          (108 / (3125 * 10 ^ 6 : ℝ) * (2 : ℝ) ^ 1024 * 1215 * ((102277 / 100000 : ℝ) * (2 : ℝ) ^ (-432 : Int)) / (1 - qL)) / (2 : ℝ) ^ 624 := by
+    have ht2 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 237 / (1 - qL)) / (2 : ℝ) ^ 624 ≤ 7 / 10 ^ 13 := by
+      have h1 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 237 / (1 - qL)) / (2 : ℝ) ^ 624 ≤
+          ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) / (1 - qL)) / (2 : ℝ) ^ 624 := by
         have hq : 0 < 1 - qL := by unfold qL; norm_num
         have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hrF_nn : 0 ≤ rhoF ^ 240 := by unfold rhoF; positivity
+        have hrF_nn : 0 ≤ rhoF ^ 237 := by unfold rhoF; positivity
         gcongr
       refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-432 : Int) / (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-32 : Int) := by
+      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-427 : Int) / (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-27 : Int) := by
         rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 624,
             ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (108 / (3125 * 10 ^ 6 : ℝ) * (2 : ℝ) ^ 1024 * 1215 * ((102277 / 100000 : ℝ) * (2 : ℝ) ^ (-432 : Int)) / (1 - qL)) / (2 : ℝ) ^ 624 =
-          (108 / (3125 * 10 ^ 6 : ℝ) * 1215 * (102277 / 100000 : ℝ) / (1 - qL)) *
-            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-432 : Int) / (2 : ℝ) ^ 624) := by
+      have heq : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) / (1 - qL)) / (2 : ℝ) ^ 624 =
+          (108 / (3125 * 10 ^ 6 : ℝ) * 1215 * (134917 / 100000 : ℝ) / (1 - qL)) *
+            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-427 : Int) / (2 : ℝ) ^ 624) := by
         generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 624 = P624; ring
       rw [heq, hz]; unfold qL; norm_num
-    have ht3 : (2 * phiB 1 1 * (rhoB / 2) ^ 244 / (1 - (rhoB / 2) / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 244 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 ≤ (3 / 10 ^ 14 : ℝ) := by
-      rw [div_pow rhoB 2 244]
-      have h1 : (2 * phiB 1 1 * (rhoB ^ 244 / (2 : ℝ) ^ 244) / (1 - (rhoB / 2) / qL) +
-          (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 244 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 ≤
-          (2 * 1539 * ((191022 / 100000 : ℝ) * (2 : ℝ) ^ (-439 : Int) / (2 : ℝ) ^ 244) / (1 - (rhoB / 2) / qL) +
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((191022 / 100000 : ℝ) * (2 : ℝ) ^ (-439 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 := by
-        have hq1 : 0 < 1 - (rhoB / 2) / qL := by unfold rhoB qL; norm_num
+    have ht3 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 237 / (1 - rhoB7 / qL) +
+        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 237 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 ≤ 8 / 10 ^ 13 := by
+      have h1 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 237 / (1 - rhoB7 / qL) +
+          (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 237 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 ≤
+          ((246 / 100 : ℝ) * 1536 * ((105600 / 100000 : ℝ) * (2 : ℝ) ^ (-677 : Int)) / (1 - rhoB7 / qL) +
+          (2 / (2 : ℝ) ^ 256) * 1539 * ((141541 / 100000 : ℝ) * (2 : ℝ) ^ (-426 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 := by
+        have hq1 : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
         have hq2 : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
+        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
         have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-        have hrB_nn : 0 ≤ rhoB ^ 244 := by unfold rhoB; positivity
+        have hr1 : 0 ≤ rhoB7 ^ 237 := by unfold rhoB7; positivity
+        have hr2 : 0 ≤ rhoB ^ 237 := by unfold rhoB; positivity
         gcongr
       refine h1.trans ?_
-      have hz1 : (2 : ℝ) ^ (-439 : Int) / (2 : ℝ) ^ 244 * (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-59 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 244, ← zpow_natCast (2 : ℝ) 624,
-            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have hz2 : (2 : ℝ) ^ (-439 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-71 : Int) := by
+      have hz1 : (2 : ℝ) ^ (-677 : Int) * (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-53 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 624, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have hz2 : (2 : ℝ) ^ (-426 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-58 : Int) := by
         rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 624,
             ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 * 1539 * ((191022 / 100000 : ℝ) * (2 : ℝ) ^ (-439 : Int) / (2 : ℝ) ^ 244) / (1 - (rhoB / 2) / qL) +
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((191022 / 100000 : ℝ) * (2 : ℝ) ^ (-439 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 =
-          (2 * 1539 * (191022 / 100000 : ℝ) / (1 - (rhoB / 2) / qL)) * ((2 : ℝ) ^ (-439 : Int) / (2 : ℝ) ^ 244 * (2 : ℝ) ^ 624) +
-          (2 * 1539 * (191022 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-439 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 624) := by
+      have heq : ((246 / 100 : ℝ) * 1536 * ((105600 / 100000 : ℝ) * (2 : ℝ) ^ (-677 : Int)) / (1 - rhoB7 / qL) +
+          (2 / (2 : ℝ) ^ 256) * 1539 * ((141541 / 100000 : ℝ) * (2 : ℝ) ^ (-426 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 =
+          ((246 / 100 : ℝ) * 1536 * (105600 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-677 : Int) * (2 : ℝ) ^ 624) +
+          (2 * 1539 * (141541 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-426 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 624) := by
         generalize (2 : ℝ) ^ 624 = P624; ring
-      rw [heq, hz1, hz2]; unfold rhoB qL; norm_num
-    have hsum_t : _ + _ + _ ≤ (1 / 10 ^ 13 : ℝ) :=
-      (add_le_add (add_le_add ht1 ht2) ht3).trans (by norm_num)
+      rw [heq, hz1, hz2]; unfold rhoB7 rhoB qL; norm_num
+    have hsum_t : _ + _ + _ ≤ (2 / 10 ^ 12 : ℝ) := (add_le_add (add_le_add ht1 ht2) ht3).trans (by norm_num)
     exact hb0.trans ((mul_le_mul_of_nonneg_left hsum_t (by positivity)).trans_eq (mul_comm _ _))
-  -- Piece 2: separable `(q ∈ range 7, r ∈ Icc 1 5)` sum (`≤ 130 / 10^12 * 2^256`)
-  have hmid_bound : (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5, ((Bad485_k0 (5 * q + r)).card : ℝ)) ≤
-      (130 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
+  -- Piece 2: `1 ≤ k0 ≤ 30` (`q ∈ range 6, r ∈ Icc 1 5`, `m = 236 - 6q - r`, `e = 631 - 10q - 3r`) ≤ `3632 / 10^12 * 2^256`
+  have hmid_bound : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 475 (5 * q + r)).card : ℝ)) ≤
+      (3632 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
     have hrhoF_ne : rhoF ≠ 0 := by unfold rhoF; norm_num
     have hrhoB_ne : rhoB ≠ 0 := by unfold rhoB; norm_num
+    have hrhoB7_ne : rhoB7 ≠ 0 := by unfold rhoB7; norm_num
     have hrhoEO0_ne : rhoEO0 ≠ 0 := by unfold rhoEO0; norm_num
-    let b1 : ℝ := (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 239 / rhoEO0
+    let b1 : ℝ := (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 236 / rhoEO0
     let q1 : ℝ := rhoEO0 ^ 5 / rhoF ^ 6
     let r1 : ℝ := rhoEO0 / rhoF
-    let b2 : ℝ := (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 239 / (1 - qL) / (2 : ℝ) ^ 628
+    let b2 : ℝ := (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 236 / (1 - qL) / (2 : ℝ) ^ 631
     let q2 : ℝ := (2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)
-    let r2 : ℝ := 4 / (16 * rhoF)
-    let b3a : ℝ := 2 * phiB 1 1 * (rhoB / 2) ^ 246 / (1 - (rhoB / 2) / qL) * (2 : ℝ) ^ 628
-    let q3a : ℝ := 1 / ((2 : ℝ) ^ 10 * (rhoB / 2) ^ 4)
-    let r3a : ℝ := 1 / (4 * (rhoB / 2))
-    let b3b : ℝ := (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 246 / (1 - rhoB / qL) * (2 : ℝ) ^ 628
+    let r2 : ℝ := 8 / (16 * rhoF)
+    let b3a : ℝ := (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 239 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631
+    let q3a : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)
+    let r3a : ℝ := 1 / (8 * rhoB7)
+    let b3b : ℝ := (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 239 / (1 - rhoB / qL) * (2 : ℝ) ^ 631
     let q3b : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)
-    let r3b : ℝ := 1 / (4 * rhoB)
-    have hper_qr : ∀ q ∈ Finset.range 7, ∀ r ∈ Finset.Icc 1 5,
-        ((Bad485_k0 (5 * q + r)).card : ℝ) ≤
+    let r3b : ℝ := 1 / (8 * rhoB)
+    have hper_qr : ∀ q ∈ Finset.range 6, ∀ r ∈ Finset.Icc 1 5,
+        ((BadS_k0 475 (5 * q + r)).card : ℝ) ≤
           (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
             b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r) := by
       intro q hq r hr
-      have hq7 : q < 7 := Finset.mem_range.mp hq
+      have hq6 : q < 6 := Finset.mem_range.mp hq
       obtain ⟨hr1, hr5⟩ := Finset.mem_Icc.mp hr
       set k0 := 5 * q + r
-      set m := 239 - 6 * q - r
-      set e := 628 - 10 * q - 2 * r
-      have hcall := bad485_k0_pos_bound k0 m e (by omega) (by omega) (by omega)
+      set m := 236 - 6 * q - r
+      set e := 631 - 10 * q - 3 * r
+      have hcall := badS_k0_pos_bound 475 k0 m e (by decide) (by omega) (by omega) (by omega)
       refine hcall.trans_eq ?_
       apply congrArg ((2 : ℝ) ^ 256 * ·)
-      have hm_add : m + (6 * q + r) = 239 := by omega
-      have he_add : e + (10 * q + 2 * r) = 628 := by omega
-      have hLb_add : (485 - (2 * k0 + m)) + (4 * q + r) = 246 := by omega
+      have hm_add : m + (6 * q + r) = 236 := by omega
+      have he_add : e + (10 * q + 3 * r) = 631 := by omega
+      have hLb_add : (475 - (2 * k0 + m)) + (4 * q + r) = 239 := by omega
       have hk_sub : (k0 - 1) + 1 = 5 * q + r := by omega
-      have hpow_m : rhoF ^ m = rhoF ^ 239 / (rhoF ^ 6) ^ q / rhoF ^ r := by
-        have h1 : rhoF ^ 239 = rhoF ^ m * ((rhoF ^ 6) ^ q * rhoF ^ r) := by
+      have hpow_m : rhoF ^ m = rhoF ^ 236 / (rhoF ^ 6) ^ q / rhoF ^ r := by
+        have h1 : rhoF ^ 236 = rhoF ^ m * ((rhoF ^ 6) ^ q * rhoF ^ r) := by
           rw [← pow_mul, ← pow_add, ← pow_add, hm_add]
         rw [h1]; field_simp [hrhoF_ne]
-      have hpow_e : (2 : ℝ) ^ e = (2 : ℝ) ^ 628 / ((2 : ℝ) ^ 10) ^ q / (4 : ℝ) ^ r := by
-        have h1 : (2 : ℝ) ^ 628 = (2 : ℝ) ^ e * (((2 : ℝ) ^ 10) ^ q * (4 : ℝ) ^ r) := by
+      have hpow_e : (2 : ℝ) ^ e = (2 : ℝ) ^ 631 / ((2 : ℝ) ^ 10) ^ q / (8 : ℝ) ^ r := by
+        have h1 : (2 : ℝ) ^ 631 = (2 : ℝ) ^ e * (((2 : ℝ) ^ 10) ^ q * (8 : ℝ) ^ r) := by
+          rw [show (8 : ℝ) = (2 : ℝ) ^ 3 by norm_num, ← pow_mul, ← pow_mul, ← pow_add, ← pow_add, he_add]
+        rw [h1]; field_simp
+      have hpow_eo : rhoEO0 ^ (k0 - 1) = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r / rhoEO0 := by
+        have h1 : rhoEO0 ^ (k0 - 1) * rhoEO0 = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r := by
+          rw [← pow_succ, hk_sub, ← pow_mul, ← pow_add]
+        rw [← h1]; field_simp [hrhoEO0_ne]
+      have hpow_16 : (16 : ℝ) ^ k0 = ((16 : ℝ) ^ 5) ^ q * (16 : ℝ) ^ r := by
+        dsimp only [k0]; rw [pow_add, pow_mul]
+      have hpow_Lb1 : rhoB7 ^ (475 - (2 * k0 + m)) = rhoB7 ^ 239 / (rhoB7 ^ 4) ^ q / rhoB7 ^ r := by
+        have h1 : rhoB7 ^ 239 = rhoB7 ^ (475 - (2 * k0 + m)) * ((rhoB7 ^ 4) ^ q * rhoB7 ^ r) := by
+          rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
+        rw [h1]; field_simp [hrhoB7_ne]
+      have hpow_Lb2 : rhoB ^ (475 - (2 * k0 + m)) = rhoB ^ 239 / (rhoB ^ 4) ^ q / rhoB ^ r := by
+        have h1 : rhoB ^ 239 = rhoB ^ (475 - (2 * k0 + m)) * ((rhoB ^ 4) ^ q * rhoB ^ r) := by
+          rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
+        rw [h1]; field_simp [hrhoB_ne]
+      dsimp only [b1, q1, r1, b2, q2, r2, b3a, q3a, r3a, b3b, q3b, r3b]
+      rw [hpow_m, hpow_e, hpow_eo, hpow_16, hpow_Lb1, hpow_Lb2]
+      have hq1_p : (rhoEO0 ^ 5 / rhoF ^ 6) ^ q = (rhoEO0 ^ 5) ^ q / (rhoF ^ 6) ^ q := div_pow _ _ _
+      have hr1_p : (rhoEO0 / rhoF) ^ r = rhoEO0 ^ r / rhoF ^ r := div_pow _ _ _
+      have hq2_p : ((2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)) ^ q = ((2 : ℝ) ^ 10) ^ q / (((16 : ℝ) ^ 5) ^ q * (rhoF ^ 6) ^ q) := by
+        rw [div_pow, mul_pow]
+      have hr2_p : (8 / (16 * rhoF)) ^ r = (8 : ℝ) ^ r / ((16 : ℝ) ^ r * rhoF ^ r) := by rw [div_pow, mul_pow]
+      have hq3a_p : (1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB7 ^ 4) ^ q) := by
+        rw [one_div_pow, mul_pow, one_div]
+      have hr3a_p : (1 / (8 * rhoB7)) ^ r = 1 / ((8 : ℝ) ^ r * rhoB7 ^ r) := by rw [one_div_pow, mul_pow, one_div]
+      have hq3b_p : (1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB ^ 4) ^ q) := by
+        rw [one_div_pow, mul_pow, one_div]
+      have hr3b_p : (1 / (8 * rhoB)) ^ r = 1 / ((8 : ℝ) ^ r * rhoB ^ r) := by rw [one_div_pow, mul_pow, one_div]
+      rw [hq1_p, hr1_p, hq2_p, hr2_p, hq3a_p, hr3a_p, hq3b_p, hr3b_p]
+      have hqL1 : 1 - qL ≠ 0 := by unfold qL; norm_num
+      have hqLa : 1 - rhoB7 / qL ≠ 0 := by unfold rhoB7 qL; norm_num
+      have hqLb : 1 - rhoB / qL ≠ 0 := by unfold rhoB qL; norm_num
+      field_simp [hrhoF_ne, hrhoB_ne, hrhoB7_ne, hrhoEO0_ne, hqL1, hqLa, hqLb]
+      generalize (2 : ℝ) ^ 384 = P384; generalize (2 : ℝ) ^ 631 = P631; generalize (2 : ℝ) ^ 1024 = P1024; ring
+    have hsum_qr := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_qr q hq r hr))
+    have hsep : ∀ (b A B : ℝ),
+        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) =
+        b * (∑ q ∈ Finset.range 6, A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) := fun b A B => by
+      have h1 : ∀ q, (∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) = (b * A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) :=
+        fun q => by rw [Finset.mul_sum]
+      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
+    have hpull : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5,
+        (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
+          b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r)) =
+        (2 : ℝ) ^ 256 * (
+          b1 * (∑ q ∈ Finset.range 6, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) +
+          b2 * (∑ q ∈ Finset.range 6, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) +
+          b3a * (∑ q ∈ Finset.range 6, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) +
+          b3b * (∑ q ∈ Finset.range 6, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r)) := by
+      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
+    rw [hpull] at hsum_qr
+    have hG1q : ∑ q ∈ Finset.range 6, q1 ^ q ≤ 58 := by
+      dsimp only [q1]; unfold rhoEO0 rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hG1r : ∑ r ∈ Finset.Icc 1 5, r1 ^ r ≤ 36 / 10 := by
+      dsimp only [r1]; unfold rhoEO0 rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG2q : ∑ q ∈ Finset.range 6, q2 ^ q ≤ 362 / 10 := by
+      dsimp only [q2]; unfold rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hG2r : ∑ r ∈ Finset.Icc 1 5, r2 ^ r ≤ 353 / 10 := by
+      dsimp only [r2]; unfold rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG3aq : ∑ q ∈ Finset.range 6, q3a ^ q ≤ 222 := by
+      dsimp only [q3a]; unfold rhoB7; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hG3ar : ∑ r ∈ Finset.Icc 1 5, r3a ^ r ≤ 375 / 100 := by
+      dsimp only [r3a]; unfold rhoB7; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG3bq : ∑ q ∈ Finset.range 6, q3b ^ q ≤ 12 / 10 := by
+      dsimp only [q3b]; unfold rhoB; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hG3br : ∑ r ∈ Finset.Icc 1 5, r3b ^ r ≤ 8 / 10 := by
+      dsimp only [r3b]; unfold rhoB; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hb1 : b1 ≤ 2535 / 10 ^ 15 := by
+      dsimp only [b1]
+      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 236 / rhoEO0 ≤
+          (2 : ℝ) ^ 384 / 1000 * 1215 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / rhoEO0 := by
+        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
+        have heo : 0 < rhoEO0 := by unfold rhoEO0; norm_num
+        have hrF_nn : 0 ≤ rhoF ^ 236 := by unfold rhoF; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-425 : Int) = (2 : ℝ) ^ (-41 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / rhoEO0 =
+          (1215 * 117441 / 100000000 / rhoEO0) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-425 : Int)) := by
+        generalize (2 : ℝ) ^ 384 = P384; ring
+      rw [heq, hz]; unfold rhoEO0; norm_num
+    have hb2 : b2 ≤ 1320 / 10 ^ 15 := by
+      dsimp only [b2]
+      have h1 : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 236 / (1 - qL) / (2 : ℝ) ^ 631 ≤
+          (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / (1 - qL) / (2 : ℝ) ^ 631 := by
+        have hphi : 0 ≤ phiF 1 1 := (phiF_pos (by norm_num) (by norm_num)).le
+        have hq : 0 < 1 - qL := by unfold qL; norm_num
+        have hrF_nn : 0 ≤ rhoF ^ 236 := by unfold rhoF; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-425 : Int) / (2 : ℝ) ^ 631 = (2 : ℝ) ^ (-32 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 631,
+            ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / (1 - qL) / (2 : ℝ) ^ 631 =
+          (16 * 108 / (3125 * 10 ^ 6 : ℝ) * 5411 * (117441 / 100000 : ℝ) / (1 - qL)) *
+            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-425 : Int) / (2 : ℝ) ^ 631) := by
+        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 631 = P631; ring
+      rw [heq, hz]; unfold qL; norm_num
+    have hb3a : b3a ≤ 1699 / 10 ^ 15 := by
+      dsimp only [b3a]
+      have h1 : (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 239 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631 ≤
+          (246 / 100 : ℝ) * 1536 * ((128895 / 100000 : ℝ) * (2 : ℝ) ^ (-683 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631 := by
+        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
+        have hq : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
+        have hr_nn : 0 ≤ rhoB7 ^ 239 := by unfold rhoB7; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz : (2 : ℝ) ^ (-683 : Int) * (2 : ℝ) ^ 631 = (2 : ℝ) ^ (-52 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 631, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : (246 / 100 : ℝ) * 1536 * ((128895 / 100000 : ℝ) * (2 : ℝ) ^ (-683 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631 =
+          ((246 / 100 : ℝ) * 1536 * (128895 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-683 : Int) * (2 : ℝ) ^ 631) := by
+        generalize (2 : ℝ) ^ 631 = P631; ring
+      rw [heq, hz]; unfold rhoB7 qL; norm_num
+    have hb3b : b3b ≤ 665 / 10 ^ 15 := by
+      dsimp only [b3b]
+      have h1 : (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 239 / (1 - rhoB / qL) * (2 : ℝ) ^ 631 ≤
+          (2 / (2 : ℝ) ^ 256) * 1539 * ((187971 / 100000 : ℝ) * (2 : ℝ) ^ (-430 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 631 := by
+        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
+        have hq : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
+        have hr_nn : 0 ≤ rhoB ^ 239 := by unfold rhoB; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz : (2 : ℝ) ^ (-430 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 631 = (2 : ℝ) ^ (-55 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 631,
+            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : (2 / (2 : ℝ) ^ 256) * 1539 * ((187971 / 100000 : ℝ) * (2 : ℝ) ^ (-430 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 631 =
+          (2 * 1539 * (187971 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-430 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 631) := by
+        generalize (2 : ℝ) ^ 631 = P631; ring
+      rw [heq, hz]; unfold rhoB qL; norm_num
+    have hq1_nn : 0 ≤ ∑ q ∈ Finset.range 6, q1 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q1]; unfold rhoEO0 rhoF; positivity)
+    have hr1_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r1 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
+    have hq2_nn : 0 ≤ ∑ q ∈ Finset.range 6, q2 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q2]; unfold rhoF; positivity)
+    have hr2_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r2 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
+    have hq3a_nn : 0 ≤ ∑ q ∈ Finset.range 6, q3a ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3a]; unfold rhoB7; positivity)
+    have hr3a_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3a ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3a]; unfold rhoB7; positivity)
+    have hq3b_nn : 0 ≤ ∑ q ∈ Finset.range 6, q3b ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3b]; unfold rhoB; positivity)
+    have hr3b_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3b ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
+    have hterm1 := mul_le_mul (mul_le_mul hb1 hG1q hq1_nn (by norm_num)) hG1r hr1_nn (by norm_num)
+    have hterm2 := mul_le_mul (mul_le_mul hb2 hG2q hq2_nn (by norm_num)) hG2r hr2_nn (by norm_num)
+    have hterm3a := mul_le_mul (mul_le_mul hb3a hG3aq hq3a_nn (by norm_num)) hG3ar hr3a_nn (by norm_num)
+    have hterm3b := mul_le_mul (mul_le_mul hb3b hG3bq hq3b_nn (by norm_num)) hG3br hr3b_nn (by norm_num)
+    have htot_inner : _ ≤ (3632 / 10 ^ 12 : ℝ) :=
+      (add_le_add (add_le_add (add_le_add hterm1 hterm2) hterm3a) hterm3b).trans (by norm_num)
+    exact hsum_qr.trans ((mul_le_mul_of_nonneg_left htot_inner (by positivity)).trans_eq (mul_comm _ _))
+  -- Piece 3: `k0 ≥ 31` ≤ `466 / 10^12 * 2^256`
+  have htail : (Stail.card : ℝ) ≤ (466 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
+    have ht := tail_k0_ge 31 (by decide)
+    have h1 : (1 : ℝ) / (2 : ℝ) ^ 31 ≤ 466 / 10 ^ 12 := by norm_num
+    calc (Stail.card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ 31 := ht
+      _ = (1 / (2 : ℝ) ^ 31) * (2 : ℝ) ^ 256 := by ring
+      _ ≤ (466 / 10 ^ 12) * (2 : ℝ) ^ 256 := mul_le_mul_of_nonneg_right h1 (by positivity)
+  -- Piece 4: `BadEnv(475)` (`q ∈ range 7, r ∈ range 12`) ≤ `553 / 10^12 * 2^256`
+  have henv_bound : (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
+      ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ)) ≤
+      (553 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
+    obtain ⟨hCA, hC0B, hqA, hqB⟩ := env_drop_consts
+    set rA : ℝ := rhoEO3 / rhoF3 ^ 2
+    have hper_drop : ∀ q ∈ Finset.range 7, ∀ r ∈ Finset.range 12,
+        ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ) ≤
+        (2 : ℝ) ^ 256 * rhoF3 ^ 65 *
+          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
+           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)))) := by
+      intro q hq r hr
+      have hq7 : q < 7 := Finset.mem_range.mp hq
+      have hr12 : r < 12 := Finset.mem_range.mp hr
+      have hbd := badEnv_drop_bound (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31
+        (by omega) (by omega) (by decide) (by omega)
+      have hrho_split : rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) =
+          rhoF3 ^ 65 * (rhoF3 ^ 37) ^ q * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) := by
+        rw [← pow_mul, ← pow_add, ← pow_add]; congr 1; omega
+      have hA_split : (2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) =
+          rhoF3 ^ 65 * ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) := by
+        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
+      have hB_split : (4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) =
+          rhoF3 ^ 65 * ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) := by
+        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
+      have hqA_pow : ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q ≤ (37 / 10000 : ℝ) ^ q :=
+        pow_le_pow_left₀ (by dsimp [rA]; unfold rhoEO3 rhoF3; positivity) hqA q
+      have hqB_pow : ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q ≤ (924 / 1000 : ℝ) ^ q :=
+        pow_le_pow_left₀ (by unfold rhoF3; positivity) hqB q
+      have hF3_nn : 0 ≤ rhoF3 ^ 65 := by unfold rhoF3; positivity
+      have hrA_nn : 0 ≤ (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) := by dsimp [rA]; unfold rhoEO3 rhoF3; positivity
+      have hrB_nn : 0 ≤ (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) := by unfold rhoF3; positivity
+      have h1 : ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ) ≤
+          (2 : ℝ) ^ 256 *
+            ((244 / 10 : ℝ) * ((2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0))) +
+             (514 / 10 : ℝ) * ((4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)))) := by
+        refine hbd.trans (mul_le_mul_of_nonneg_left (add_le_add ?_ ?_) (by positivity))
+        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hCA (by unfold rhoEO3 rhoF3; positivity)
+        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hC0B (by unfold rhoF3; positivity)
+      rw [hA_split, hB_split] at h1
+      refine h1.trans ?_
+      have h2 := add_le_add
+        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqA_pow hF3_nn) hrA_nn) (by norm_num : (0 : ℝ) ≤ 244 / 10))
+        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqB_pow hF3_nn) hrB_nn) (by norm_num : (0 : ℝ) ≤ 514 / 10))
+      exact (mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring)
+    have hsum := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_drop q hq r hr))
+    have hsep : ∀ (c : ℝ) (f g : Nat → ℝ),
+        (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12, c * f q * g r) =
+        c * (∑ q ∈ Finset.range 7, f q) * (∑ r ∈ Finset.range 12, g r) := fun c f g => by
+      have h1 : ∀ q, (∑ r ∈ Finset.range 12, c * f q * g r) = (c * f q) * (∑ r ∈ Finset.range 12, g r) :=
+        fun q => by rw [Finset.mul_sum]
+      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
+    have hpull : (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
+        (2 : ℝ) ^ 256 * rhoF3 ^ 65 *
+          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
+           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))))) =
+        (2 : ℝ) ^ 256 * rhoF3 ^ 65 * (
+          (244 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q) *
+            (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
+          (514 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q) *
+            (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)))) := by
+      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
+    rw [hpull] at hsum
+    have hgA : ∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q ≤ 1004 / 1000 := by
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hgB : ∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q ≤ 560 / 100 := by
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hrSA : ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) ≤ 267 / 100 := by
+      dsimp only [rA]; unfold rhoEO3 rhoF3
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hrSB : ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) ≤ 1064 / 100 := by
+      unfold rhoF3
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hinner : (244 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q) *
+          (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
+        (514 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q) *
+          (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) ≤ 3130 := by
+      have h1 : 0 ≤ ∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
+      have h2 : 0 ≤ ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) :=
+        Finset.sum_nonneg (fun _ _ => by dsimp [rA]; unfold rhoEO3 rhoF3; positivity)
+      have h3 : 0 ≤ ∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
+      have h4 : 0 ≤ ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) :=
+        Finset.sum_nonneg (fun _ _ => by unfold rhoF3; positivity)
+      have hA := mul_le_mul (mul_le_mul_of_nonneg_left hgA (by norm_num : (0 : ℝ) ≤ 244 / 10)) hrSA h2 (by norm_num)
+      have hB := mul_le_mul (mul_le_mul_of_nonneg_left hgB (by norm_num : (0 : ℝ) ≤ 514 / 10)) hrSB h4 (by norm_num)
+      linarith [show (244 / 10 : ℝ) * (1004 / 1000) * (267 / 100) + (514 / 10) * (560 / 100) * (1064 / 100) ≤ 3130 by norm_num]
+    have hcomb : rhoF3 ^ 65 * 3130 ≤ 553 / 10 ^ 12 := by
+      have h1 := mul_le_mul_of_nonneg_right hrF365 (by norm_num : (0 : ℝ) ≤ 3130)
+      refine h1.trans ?_; norm_num
+    have hF3_nn : 0 ≤ rhoF3 ^ 65 := by unfold rhoF3; positivity
+    exact hsum.trans (by
+      have h1 := mul_le_mul_of_nonneg_left hinner (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * rhoF3 ^ 65)
+      have h2 : (2 : ℝ) ^ 256 * rhoF3 ^ 65 * 3130 = (rhoF3 ^ 65 * 3130) * (2 : ℝ) ^ 256 := by ring
+      rw [h2] at h1
+      exact h1.trans (mul_le_mul_of_nonneg_right hcomb (by positivity)))
+  have hfinal_const : (2 / 10 ^ 12 : ℝ) + (3632 / 10 ^ 12) + (466 / 10 ^ 12) + (553 / 10 ^ 12) ≤ 47 / 10 ^ 10 := by norm_num
+  have h256_pos : (0 : ℝ) ≤ (2 : ℝ) ^ 256 := by positivity
+  have htot := add_le_add (add_le_add (add_le_add h0_bound hmid_bound) htail) henv_bound
+  rw [← add_mul, ← add_mul, ← add_mul] at htot
+  exact hcard_total.trans (htot.trans (mul_le_mul_of_nonneg_right hfinal_const h256_pos))
+
+theorem skywalk_badStack490_card :
+    ((BadStack LocalKernel.env490).card : ℝ) ≤ (37 : ℝ) / 10 ^ 14 * (2 : ℝ) ^ 256 := by
+  let Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 44 ∣ x)
+  let Smid1 := (Finset.range 8).biUnion (fun q => (Finset.Icc 1 5).biUnion (fun r => BadS_k0 490 (5 * q + r)))
+  let Smid2 := (Finset.Icc 1 3).biUnion (fun r => BadS_k0 490 (40 + r))
+  let Senv := (Finset.range 6).biUnion (fun q => (Finset.range 12).biUnion (fun r =>
+    BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44))
+  have hcov : BadStack LocalKernel.env490 ⊆ BadS_k0 490 0 ∪ (Smid1 ∪ Smid2) ∪ Stail ∪ Senv := by
+    intro x hx
+    have hxI := (Finset.mem_filter.mp hx).1
+    have hng := (Finset.mem_filter.mp hx).2
+    by_cases h44 : 2 ^ 44 ∣ x
+    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hxI, h44⟩))
+    · by_cases hterm : (SkywalkNat.step^[490] (SkywalkNat.init x ECDSAAdd.p)).u = 0
+      · apply Finset.mem_union_right
+        have hne : ¬ ∀ i, 1 ≤ i → i < LocalKernel.env490.S →
+            LocalKernel.env490.postW i < LocalKernel.env490.preW i →
+            LocalKernel.env490.postW i < LocalKernel.env490.S - i + 1 →
+            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
+            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v < 2 ^ (LocalKernel.env490.postW i - 1) :=
+          fun hall => hng ⟨hterm, hall⟩
+        push_neg at hne
+        obtain ⟨i, hi1, hi2, hdrop, hramp, hge⟩ := hne
+        have hf := env490_drop_formula i hi1 hi2 hdrop hramp
+        set d := 257 - LocalKernel.env490PostW i
+        have hw_eq : LocalKernel.env490PostW i - 1 = 256 - (12 * (d / 12) + d % 12) := by omega
+        refine Finset.mem_biUnion.mpr ⟨d / 12, Finset.mem_range.mpr hf.1,
+          Finset.mem_biUnion.mpr ⟨d % 12, Finset.mem_range.mpr hf.2.1,
+            Finset.mem_filter.mpr ⟨hxI, h44, ?_⟩⟩⟩
+        rw [← hf.2.2.2, ← hw_eq]; exact hge
+      · apply Finset.mem_union_left; apply Finset.mem_union_left
+        have hbad : x ∈ BadS 490 := Finset.mem_filter.mpr ⟨hxI, hterm⟩
+        have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨43, h44⟩
+        let k0 := Nat.find hex
+        have hk0_lt : k0 < 44 := by have := Nat.find_min' hex h44; omega
+        have hdiv : 2 ^ k0 ∣ x := by
+          cases hk : k0 with
+          | zero => simp
+          | succ j =>
+            have hnj := Nat.find_min hex (show j < k0 by omega)
+            push_neg at hnj; exact hnj
+        have hodd : (x / 2 ^ k0) % 2 = 1 := by
+          have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
+          by_contra he; apply hndiv
+          obtain ⟨q, hq⟩ := hdiv
+          have hq_even : q % 2 = 0 := by
+            have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
+            omega
+          refine ⟨q / 2, ?_⟩; rw [hq, pow_succ, mul_assoc]; congr 1; omega
+        have hmem_k0 : x ∈ BadS_k0 490 k0 := Finset.mem_filter.mpr ⟨hbad, hdiv, hodd⟩
+        by_cases hz : k0 = 0
+        · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
+        · apply Finset.mem_union_right
+          by_cases hle40 : k0 ≤ 40
+          · refine Finset.mem_union_left _ (Finset.mem_biUnion.mpr ⟨(k0 - 1) / 5, Finset.mem_range.mpr (by omega),
+              Finset.mem_biUnion.mpr ⟨(k0 - 1) % 5 + 1, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩⟩)
+            rwa [show 5 * ((k0 - 1) / 5) + ((k0 - 1) % 5 + 1) = k0 by omega]
+          · refine Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨k0 - 40, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩)
+            rwa [show 40 + (k0 - 40) = k0 by omega]
+  have hcard_total : ((BadStack LocalKernel.env490).card : ℝ) ≤
+      ((BadS_k0 490 0).card : ℝ) +
+      ((∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 490 (5 * q + r)).card : ℝ)) +
+       (∑ r ∈ Finset.Icc 1 3, ((BadS_k0 490 (40 + r)).card : ℝ))) +
+      (Stail.card : ℝ) +
+      (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
+        ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ)) := by
+    have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
+    have h2 := Finset.card_union_le (BadS_k0 490 0 ∪ (Smid1 ∪ Smid2)) Stail
+    have h3 := Finset.card_union_le (BadS_k0 490 0) (Smid1 ∪ Smid2)
+    have h3' := Finset.card_union_le Smid1 Smid2
+    have h4 : Smid1.card ≤ ∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 490 (5 * q + r)).card :=
+      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
+    have h4' : Smid2.card ≤ ∑ r ∈ Finset.Icc 1 3, (BadS_k0 490 (40 + r)).card := Finset.card_biUnion_le
+    have h5 : Senv.card ≤ ∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
+        (BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card :=
+      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
+    have hnat : (BadStack LocalKernel.env490).card ≤ (BadS_k0 490 0).card +
+        ((∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 490 (5 * q + r)).card) +
+         (∑ r ∈ Finset.Icc 1 3, (BadS_k0 490 (40 + r)).card)) + Stail.card +
+        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
+          (BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card) := by omega
+    exact_mod_cast hnat
+  obtain ⟨_, _, hrF245, hrF246⟩ := rhoF_pows_w10
+  obtain ⟨_, _, hrB243, hrB245⟩ := rhoB_pows_w10
+  obtain ⟨_, _, hrB7243, hrB7245⟩ := rhoB7_pows_w10
+  obtain ⟨_, _, hrF387⟩ := rhoF3_pows_w10
+  obtain ⟨hphiF21, hphiF11, hphiB11, hpsiB711, _, _⟩ := phi_consts
+  -- Piece 1: `k0 = 0` (`m=246, e=623, Lb=243`) ≤ `1 / 10^16 * 2^256`
+  have h0_bound : ((BadS_k0 490 0).card : ℝ) ≤ (1 / 10 ^ 16 : ℝ) * (2 : ℝ) ^ 256 := by
+    have hb0 := badS_k0_zero_bound 490 246 623 (by decide) (by decide)
+    rw [show 490 - (1 + 246) = 243 by decide] at hb0
+    have ht1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 246 ≤ 1 / 10 ^ 17 := by
+      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 246 ≤
+          (2 : ℝ) ^ 384 / 1000 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) := by
+        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
+        have hrF_nn : 0 ≤ rhoF ^ 246 := by unfold rhoF; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-443 : Int) = (2 : ℝ) ^ (-59 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) =
+          (1215 * 117551 / 100000000 : ℝ) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-443 : Int)) := by
+        generalize (2 : ℝ) ^ 384 = P384; ring
+      rw [heq, hz]; norm_num
+    have ht2 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 246 / (1 - qL)) / (2 : ℝ) ^ 623 ≤ 2 / 10 ^ 17 := by
+      have h1 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 246 / (1 - qL)) / (2 : ℝ) ^ 623 ≤
+          ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) / (1 - qL)) / (2 : ℝ) ^ 623 := by
+        have hq : 0 < 1 - qL := by unfold qL; norm_num
+        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
+        have hrF_nn : 0 ≤ rhoF ^ 246 := by unfold rhoF; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-443 : Int) / (2 : ℝ) ^ 623 = (2 : ℝ) ^ (-42 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 623,
+            ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) / (1 - qL)) / (2 : ℝ) ^ 623 =
+          (108 / (3125 * 10 ^ 6 : ℝ) * 1215 * (117551 / 100000 : ℝ) / (1 - qL)) *
+            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-443 : Int) / (2 : ℝ) ^ 623) := by
+        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 623 = P623; ring
+      rw [heq, hz]; unfold qL; norm_num
+    have ht3 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 243 / (1 - rhoB7 / qL) +
+        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 243 / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 ≤ 3 / 10 ^ 17 := by
+      have h1 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 243 / (1 - rhoB7 / qL) +
+          (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 243 / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 ≤
+          ((246 / 100 : ℝ) * 1536 * ((192036 / 100000 : ℝ) * (2 : ℝ) ^ (-695 : Int)) / (1 - rhoB7 / qL) +
+          (2 / (2 : ℝ) ^ 256) * 1539 * ((165759 / 100000 : ℝ) * (2 : ℝ) ^ (-437 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 := by
+        have hq1 : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
+        have hq2 : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
+        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
+        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
+        have hr1 : 0 ≤ rhoB7 ^ 243 := by unfold rhoB7; positivity
+        have hr2 : 0 ≤ rhoB ^ 243 := by unfold rhoB; positivity
+        gcongr
+      refine h1.trans ?_
+      have hz1 : (2 : ℝ) ^ (-695 : Int) * (2 : ℝ) ^ 623 = (2 : ℝ) ^ (-72 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 623, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have hz2 : (2 : ℝ) ^ (-437 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 623 = (2 : ℝ) ^ (-70 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 623,
+            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : ((246 / 100 : ℝ) * 1536 * ((192036 / 100000 : ℝ) * (2 : ℝ) ^ (-695 : Int)) / (1 - rhoB7 / qL) +
+          (2 / (2 : ℝ) ^ 256) * 1539 * ((165759 / 100000 : ℝ) * (2 : ℝ) ^ (-437 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 =
+          ((246 / 100 : ℝ) * 1536 * (192036 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-695 : Int) * (2 : ℝ) ^ 623) +
+          (2 * 1539 * (165759 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-437 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 623) := by
+        generalize (2 : ℝ) ^ 623 = P623; ring
+      rw [heq, hz1, hz2]; unfold rhoB7 rhoB qL; norm_num
+    have hsum_t : _ + _ + _ ≤ (1 / 10 ^ 16 : ℝ) := (add_le_add (add_le_add ht1 ht2) ht3).trans (by norm_num)
+    exact hb0.trans ((mul_le_mul_of_nonneg_left hsum_t (by positivity)).trans_eq (mul_comm _ _))
+  -- Piece 2: `1 ≤ k0 ≤ 43` (`m = 245 - 6q - r`, `e = 627 - 10q - 2r`) ≤ `277 / 10^15 * 2^256`
+  have hmid_bound : ((∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 490 (5 * q + r)).card : ℝ)) +
+      (∑ r ∈ Finset.Icc 1 3, ((BadS_k0 490 (40 + r)).card : ℝ))) ≤ (277 / 10 ^ 15 : ℝ) * (2 : ℝ) ^ 256 := by
+    have hrhoF_ne : rhoF ≠ 0 := by unfold rhoF; norm_num
+    have hrhoB_ne : rhoB ≠ 0 := by unfold rhoB; norm_num
+    have hrhoB7_ne : rhoB7 ≠ 0 := by unfold rhoB7; norm_num
+    have hrhoEO0_ne : rhoEO0 ≠ 0 := by unfold rhoEO0; norm_num
+    let b1 : ℝ := (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 245 / rhoEO0
+    let q1 : ℝ := rhoEO0 ^ 5 / rhoF ^ 6
+    let r1 : ℝ := rhoEO0 / rhoF
+    let b2 : ℝ := (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 245 / (1 - qL) / (2 : ℝ) ^ 627
+    let q2 : ℝ := (2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)
+    let r2 : ℝ := 4 / (16 * rhoF)
+    let b3a : ℝ := (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 245 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627
+    let q3a : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)
+    let r3a : ℝ := 1 / (4 * rhoB7)
+    let b3b : ℝ := (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 245 / (1 - rhoB / qL) * (2 : ℝ) ^ 627
+    let q3b : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)
+    let r3b : ℝ := 1 / (4 * rhoB)
+    have hper_qr : ∀ q r, q ≤ 8 → 1 ≤ r → r ≤ 5 → 5 * q + r ≤ 43 →
+        ((BadS_k0 490 (5 * q + r)).card : ℝ) ≤
+          (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
+            b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r) := by
+      intro q r hq hr1 hr5 h43
+      set k0 := 5 * q + r
+      set m := 245 - 6 * q - r
+      set e := 627 - 10 * q - 2 * r
+      have hcall := badS_k0_pos_bound 490 k0 m e (by decide) (by omega) (by omega) (by omega)
+      refine hcall.trans_eq ?_
+      apply congrArg ((2 : ℝ) ^ 256 * ·)
+      have hm_add : m + (6 * q + r) = 245 := by omega
+      have he_add : e + (10 * q + 2 * r) = 627 := by omega
+      have hLb_add : (490 - (2 * k0 + m)) + (4 * q + r) = 245 := by omega
+      have hk_sub : (k0 - 1) + 1 = 5 * q + r := by omega
+      have hpow_m : rhoF ^ m = rhoF ^ 245 / (rhoF ^ 6) ^ q / rhoF ^ r := by
+        have h1 : rhoF ^ 245 = rhoF ^ m * ((rhoF ^ 6) ^ q * rhoF ^ r) := by
+          rw [← pow_mul, ← pow_add, ← pow_add, hm_add]
+        rw [h1]; field_simp [hrhoF_ne]
+      have hpow_e : (2 : ℝ) ^ e = (2 : ℝ) ^ 627 / ((2 : ℝ) ^ 10) ^ q / (4 : ℝ) ^ r := by
+        have h1 : (2 : ℝ) ^ 627 = (2 : ℝ) ^ e * (((2 : ℝ) ^ 10) ^ q * (4 : ℝ) ^ r) := by
           rw [show (4 : ℝ) = (2 : ℝ) ^ 2 by norm_num, ← pow_mul, ← pow_mul, ← pow_add, ← pow_add, he_add]
         rw [h1]; field_simp
       have hpow_eo : rhoEO0 ^ (k0 - 1) = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r / rhoEO0 := by
@@ -6360,12 +8099,12 @@ theorem skywalk_bad485_card :
         rw [← h1]; field_simp [hrhoEO0_ne]
       have hpow_16 : (16 : ℝ) ^ k0 = ((16 : ℝ) ^ 5) ^ q * (16 : ℝ) ^ r := by
         dsimp only [k0]; rw [pow_add, pow_mul]
-      have hpow_Lb1 : (rhoB / 2) ^ (485 - (2 * k0 + m)) = (rhoB / 2) ^ 246 / ((rhoB / 2) ^ 4) ^ q / (rhoB / 2) ^ r := by
-        have h1 : (rhoB / 2) ^ 246 = (rhoB / 2) ^ (485 - (2 * k0 + m)) * (((rhoB / 2) ^ 4) ^ q * (rhoB / 2) ^ r) := by
+      have hpow_Lb1 : rhoB7 ^ (490 - (2 * k0 + m)) = rhoB7 ^ 245 / (rhoB7 ^ 4) ^ q / rhoB7 ^ r := by
+        have h1 : rhoB7 ^ 245 = rhoB7 ^ (490 - (2 * k0 + m)) * ((rhoB7 ^ 4) ^ q * rhoB7 ^ r) := by
           rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
-        rw [h1]; field_simp [hrhoB_ne]
-      have hpow_Lb2 : rhoB ^ (485 - (2 * k0 + m)) = rhoB ^ 246 / (rhoB ^ 4) ^ q / rhoB ^ r := by
-        have h1 : rhoB ^ 246 = rhoB ^ (485 - (2 * k0 + m)) * ((rhoB ^ 4) ^ q * rhoB ^ r) := by
+        rw [h1]; field_simp [hrhoB7_ne]
+      have hpow_Lb2 : rhoB ^ (490 - (2 * k0 + m)) = rhoB ^ 245 / (rhoB ^ 4) ^ q / rhoB ^ r := by
+        have h1 : rhoB ^ 245 = rhoB ^ (490 - (2 * k0 + m)) * ((rhoB ^ 4) ^ q * rhoB ^ r) := by
           rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
         rw [h1]; field_simp [hrhoB_ne]
       dsimp only [b1, q1, r1, b2, q2, r2, b3a, q3a, r3a, b3b, q3b, r3b]
@@ -6375,169 +8114,273 @@ theorem skywalk_bad485_card :
       have hq2_p : ((2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)) ^ q = ((2 : ℝ) ^ 10) ^ q / (((16 : ℝ) ^ 5) ^ q * (rhoF ^ 6) ^ q) := by
         rw [div_pow, mul_pow]
       have hr2_p : (4 / (16 * rhoF)) ^ r = (4 : ℝ) ^ r / ((16 : ℝ) ^ r * rhoF ^ r) := by rw [div_pow, mul_pow]
-      have hq3a_p : (1 / ((2 : ℝ) ^ 10 * (rhoB / 2) ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * ((rhoB / 2) ^ 4) ^ q) := by
+      have hq3a_p : (1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB7 ^ 4) ^ q) := by
         rw [one_div_pow, mul_pow, one_div]
-      have hr3a_p : (1 / (4 * (rhoB / 2))) ^ r = 1 / ((4 : ℝ) ^ r * (rhoB / 2) ^ r) := by
-        rw [one_div_pow, mul_pow, one_div]
+      have hr3a_p : (1 / (4 * rhoB7)) ^ r = 1 / ((4 : ℝ) ^ r * rhoB7 ^ r) := by rw [one_div_pow, mul_pow, one_div]
       have hq3b_p : (1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB ^ 4) ^ q) := by
         rw [one_div_pow, mul_pow, one_div]
-      have hr3b_p : (1 / (4 * rhoB)) ^ r = 1 / ((4 : ℝ) ^ r * rhoB ^ r) := by
-        rw [one_div_pow, mul_pow, one_div]
+      have hr3b_p : (1 / (4 * rhoB)) ^ r = 1 / ((4 : ℝ) ^ r * rhoB ^ r) := by rw [one_div_pow, mul_pow, one_div]
       rw [hq1_p, hr1_p, hq2_p, hr2_p, hq3a_p, hr3a_p, hq3b_p, hr3b_p]
       have hqL1 : 1 - qL ≠ 0 := by unfold qL; norm_num
-      have hqLa : 1 - rhoB / 2 / qL ≠ 0 := by unfold rhoB qL; norm_num
+      have hqLa : 1 - rhoB7 / qL ≠ 0 := by unfold rhoB7 qL; norm_num
       have hqLb : 1 - rhoB / qL ≠ 0 := by unfold rhoB qL; norm_num
-      field_simp [hrhoF_ne, hrhoB_ne, hrhoEO0_ne, hqL1, hqLa, hqLb]
-      generalize (2 : ℝ) ^ 384 = P384; generalize (2 : ℝ) ^ 628 = P628; generalize (2 : ℝ) ^ 1024 = P1024; ring
-    have hsum_qr := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_qr q hq r hr))
-    have hsep : ∀ (b A B : ℝ),
-        (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) =
-        b * (∑ q ∈ Finset.range 7, A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) := fun b A B => by
+      field_simp [hrhoF_ne, hrhoB_ne, hrhoB7_ne, hrhoEO0_ne, hqL1, hqLa, hqLb]
+      generalize (2 : ℝ) ^ 384 = P384; generalize (2 : ℝ) ^ 627 = P627; generalize (2 : ℝ) ^ 1024 = P1024; ring
+    have hsum1 := Finset.sum_le_sum (s := Finset.range 8) (fun q hq => Finset.sum_le_sum (s := Finset.Icc 1 5) (fun r hr =>
+      hper_qr q r (by have := Finset.mem_range.mp hq; omega) (Finset.mem_Icc.mp hr).1 (Finset.mem_Icc.mp hr).2 (by have := Finset.mem_range.mp hq; have := Finset.mem_Icc.mp hr; omega)))
+    have hsum2 := Finset.sum_le_sum (s := Finset.Icc 1 3) (fun r hr =>
+      hper_qr 8 r (le_refl 8) (Finset.mem_Icc.mp hr).1 (by have := Finset.mem_Icc.mp hr; omega) (by have := Finset.mem_Icc.mp hr; omega))
+    have hsep1 : ∀ (b A B : ℝ),
+        (∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) =
+        b * (∑ q ∈ Finset.range 8, A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) := fun b A B => by
       have h1 : ∀ q, (∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) = (b * A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) :=
         fun q => by rw [Finset.mul_sum]
       simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
-    have hpull : (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5,
+    have hsep2 : ∀ (b A B : ℝ),
+        (∑ r ∈ Finset.Icc 1 3, b * A ^ 8 * B ^ r) = b * A ^ 8 * (∑ r ∈ Finset.Icc 1 3, B ^ r) := fun b A B => by
+      rw [Finset.mul_sum]
+    have hpull1 : (∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5,
         (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
           b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r)) =
         (2 : ℝ) ^ 256 * (
-          b1 * (∑ q ∈ Finset.range 7, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) +
-          b2 * (∑ q ∈ Finset.range 7, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) +
-          b3a * (∑ q ∈ Finset.range 7, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) +
-          b3b * (∑ q ∈ Finset.range 7, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r)) := by
-      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
-    rw [hpull] at hsum_qr
-    have hG1q : ∑ q ∈ Finset.range 7, q1 ^ q ≤ 115 := by
-      dsimp only [q1]; unfold rhoEO0 rhoF
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG1r : ∑ r ∈ Finset.Icc 1 5, r1 ^ r ≤ 36 / 10 := by
-      dsimp only [r1]; unfold rhoEO0 rhoF
-      rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]
-      simp; norm_num
-    have hG2q : ∑ q ∈ Finset.range 7, q2 ^ q ≤ 64 := by
-      dsimp only [q2]; unfold rhoF
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG2r : ∑ r ∈ Finset.Icc 1 5, r2 ^ r ≤ 34 / 10 := by
-      dsimp only [r2]; unfold rhoF
-      rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]
-      simp; norm_num
-    have hG3aq : ∑ q ∈ Finset.range 7, q3a ^ q ≤ 243 := by
-      dsimp only [q3a]; unfold rhoB
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG3ar : ∑ r ∈ Finset.Icc 1 5, r3a ^ r ≤ 35 := by
-      dsimp only [r3a]; unfold rhoB
-      rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]
-      simp; norm_num
-    have hG3bq : ∑ q ∈ Finset.range 7, q3b ^ q ≤ 2 := by
-      dsimp only [q3b]; unfold rhoB
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG3br : ∑ r ∈ Finset.Icc 1 5, r3b ^ r ≤ 4 := by
-      dsimp only [r3b]; unfold rhoB
-      rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]
-      simp; norm_num
-    have hb1 : b1 ≤ 61 / 10 ^ 15 := by
+          b1 * (∑ q ∈ Finset.range 8, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) +
+          b2 * (∑ q ∈ Finset.range 8, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) +
+          b3a * (∑ q ∈ Finset.range 8, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) +
+          b3b * (∑ q ∈ Finset.range 8, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r)) := by
+      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep1]
+    have hpull2 : (∑ r ∈ Finset.Icc 1 3,
+        (2 : ℝ) ^ 256 * (b1 * q1 ^ 8 * r1 ^ r + b2 * q2 ^ 8 * r2 ^ r +
+          b3a * q3a ^ 8 * r3a ^ r + b3b * q3b ^ 8 * r3b ^ r)) =
+        (2 : ℝ) ^ 256 * (
+          b1 * q1 ^ 8 * (∑ r ∈ Finset.Icc 1 3, r1 ^ r) +
+          b2 * q2 ^ 8 * (∑ r ∈ Finset.Icc 1 3, r2 ^ r) +
+          b3a * q3a ^ 8 * (∑ r ∈ Finset.Icc 1 3, r3a ^ r) +
+          b3b * q3b ^ 8 * (∑ r ∈ Finset.Icc 1 3, r3b ^ r)) := by
+      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep2]
+    rw [hpull1] at hsum1; rw [hpull2] at hsum2
+    have hG1q : ∑ q ∈ Finset.range 8, q1 ^ q ≤ 226 := by
+      dsimp only [q1]; unfold rhoEO0 rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hq1_8 : q1 ^ 8 ≤ 218 := by dsimp only [q1]; unfold rhoEO0 rhoF; norm_num
+    have hG1r5 : ∑ r ∈ Finset.Icc 1 5, r1 ^ r ≤ 36 / 10 := by
+      dsimp only [r1]; unfold rhoEO0 rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG1r3 : ∑ r ∈ Finset.Icc 1 3, r1 ^ r ≤ 24 / 10 := by
+      dsimp only [r1]; unfold rhoEO0 rhoF; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
+    have hG2q : ∑ q ∈ Finset.range 8, q2 ^ q ≤ 1123 / 10 := by
+      dsimp only [q2]; unfold rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hq2_8 : q2 ^ 8 ≤ 841 / 10 := by dsimp only [q2]; unfold rhoF; norm_num
+    have hG2r5 : ∑ r ∈ Finset.Icc 1 5, r2 ^ r ≤ 337 / 100 := by
+      dsimp only [r2]; unfold rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG2r3 : ∑ r ∈ Finset.Icc 1 3, r2 ^ r ≤ 229 / 100 := by
+      dsimp only [r2]; unfold rhoF; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
+    have hG3aq : ∑ q ∈ Finset.range 8, q3a ^ q ≤ 1603 := by
+      dsimp only [q3a]; unfold rhoB7; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hq3a_8 : q3a ^ 8 ≤ 2701 := by dsimp only [q3a]; unfold rhoB7; norm_num
+    have hG3ar5 : ∑ r ∈ Finset.Icc 1 5, r3a ^ r ≤ 413 / 10 := by
+      dsimp only [r3a]; unfold rhoB7; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG3ar3 : ∑ r ∈ Finset.Icc 1 3, r3a ^ r ≤ 111 / 10 := by
+      dsimp only [r3a]; unfold rhoB7; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
+    have hG3bq : ∑ q ∈ Finset.range 8, q3b ^ q ≤ 12 / 10 := by
+      dsimp only [q3b]; unfold rhoB; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hq3b_8 : q3b ^ 8 ≤ 1 / 100 := by dsimp only [q3b]; unfold rhoB; norm_num
+    have hG3br5 : ∑ r ∈ Finset.Icc 1 5, r3b ^ r ≤ 34 / 10 := by
+      dsimp only [r3b]; unfold rhoB; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
+    have hG3br3 : ∑ r ∈ Finset.Icc 1 3, r3b ^ r ≤ 23 / 10 := by
+      dsimp only [r3b]; unfold rhoB; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
+    have hb1 : b1 ≤ 337 / 10 ^ 19 := by
       dsimp only [b1]
-      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 239 / rhoEO0 ≤
-          (2 : ℝ) ^ 384 / 1000 * 1215 * ((178057 / 100000 : ℝ) * (2 : ℝ) ^ (-431 : Int)) / rhoEO0 := by
+      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 245 / rhoEO0 ≤
+          (2 : ℝ) ^ 384 / 1000 * 1215 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / rhoEO0 := by
         have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
         have heo : 0 < rhoEO0 := by unfold rhoEO0; norm_num
-        have hrF_nn : 0 ≤ rhoF ^ 239 := by unfold rhoF; positivity
+        have hrF_nn : 0 ≤ rhoF ^ 245 := by unfold rhoF; positivity
         gcongr
       refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-431 : Int) = (2 : ℝ) ^ (-47 : Int) := by
+      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-441 : Int) = (2 : ℝ) ^ (-57 : Int) := by
         rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((178057 / 100000 : ℝ) * (2 : ℝ) ^ (-431 : Int)) / rhoEO0 =
-          (1215 * 178057 / 100000000 / rhoEO0) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-431 : Int)) := by
+      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / rhoEO0 =
+          (1215 * 102324 / 100000000 / rhoEO0) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-441 : Int)) := by
         generalize (2 : ℝ) ^ 384 = P384; ring
       rw [heq, hz]; unfold rhoEO0; norm_num
-    have hb2 : b2 ≤ 255 / 10 ^ 15 := by
+    have hb2 : b2 ≤ 281 / 10 ^ 18 := by
       dsimp only [b2]
-      have h1 : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 239 / (1 - qL) / (2 : ℝ) ^ 628 ≤
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((178057 / 100000 : ℝ) * (2 : ℝ) ^ (-431 : Int)) / (1 - qL) / (2 : ℝ) ^ 628 := by
+      have h1 : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 245 / (1 - qL) / (2 : ℝ) ^ 627 ≤
+          (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / (1 - qL) / (2 : ℝ) ^ 627 := by
         have hphi : 0 ≤ phiF 1 1 := (phiF_pos (by norm_num) (by norm_num)).le
         have hq : 0 < 1 - qL := by unfold qL; norm_num
-        have hrF_nn : 0 ≤ rhoF ^ 239 := by unfold rhoF; positivity
+        have hrF_nn : 0 ≤ rhoF ^ 245 := by unfold rhoF; positivity
         gcongr
       refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-431 : Int) / (2 : ℝ) ^ 628 = (2 : ℝ) ^ (-35 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 628,
+      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-441 : Int) / (2 : ℝ) ^ 627 = (2 : ℝ) ^ (-44 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 627,
             ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((178057 / 100000 : ℝ) * (2 : ℝ) ^ (-431 : Int)) / (1 - qL) / (2 : ℝ) ^ 628 =
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ) * 5411 * (178057 / 100000 : ℝ) / (1 - qL)) *
-            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-431 : Int) / (2 : ℝ) ^ 628) := by
-        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 628 = P628; ring
+      have heq : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / (1 - qL) / (2 : ℝ) ^ 627 =
+          (16 * 108 / (3125 * 10 ^ 6 : ℝ) * 5411 * (102324 / 100000 : ℝ) / (1 - qL)) *
+            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-441 : Int) / (2 : ℝ) ^ 627) := by
+        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 627 = P627; ring
       rw [heq, hz]; unfold qL; norm_num
-    have hb3a : b3a ≤ 56 / 10 ^ 16 := by
+    have hb3a : b3a ≤ 737 / 10 ^ 21 := by
       dsimp only [b3a]
-      rw [div_pow rhoB 2 246]
-      have h1 : 2 * phiB 1 1 * (rhoB ^ 246 / (2 : ℝ) ^ 246) / (1 - rhoB / 2 / qL) * (2 : ℝ) ^ 628 ≤
-          2 * 1539 * ((126842 / 100000 : ℝ) * (2 : ℝ) ^ (-442 : Int) / (2 : ℝ) ^ 246) / (1 - rhoB / 2 / qL) * (2 : ℝ) ^ 628 := by
-        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - rhoB / 2 / qL := by unfold rhoB qL; norm_num
-        have hrB_nn : 0 ≤ rhoB ^ 246 := by unfold rhoB; positivity
+      have h1 : (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 245 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627 ≤
+          (246 / 100 : ℝ) * 1536 * ((117199 / 100000 : ℝ) * (2 : ℝ) ^ (-700 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627 := by
+        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
+        have hq : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
+        have hr_nn : 0 ≤ rhoB7 ^ 245 := by unfold rhoB7; positivity
         gcongr
       refine h1.trans ?_
-      have hz : (2 : ℝ) ^ (-442 : Int) / (2 : ℝ) ^ 246 * (2 : ℝ) ^ 628 = (2 : ℝ) ^ (-60 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 246, ← zpow_natCast (2 : ℝ) 628,
-            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : 2 * 1539 * ((126842 / 100000 : ℝ) * (2 : ℝ) ^ (-442 : Int) / (2 : ℝ) ^ 246) / (1 - rhoB / 2 / qL) * (2 : ℝ) ^ 628 =
-          (2 * 1539 * (126842 / 100000 : ℝ) / (1 - rhoB / 2 / qL)) * ((2 : ℝ) ^ (-442 : Int) / (2 : ℝ) ^ 246 * (2 : ℝ) ^ 628) := by
-        generalize (2 : ℝ) ^ 628 = P628; ring
-      rw [heq, hz]; unfold rhoB qL; norm_num
-    have hb3b : b3b ≤ 1 / 10 ^ 16 := by
+      have hz : (2 : ℝ) ^ (-700 : Int) * (2 : ℝ) ^ 627 = (2 : ℝ) ^ (-73 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 627, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
+      have heq : (246 / 100 : ℝ) * 1536 * ((117199 / 100000 : ℝ) * (2 : ℝ) ^ (-700 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627 =
+          ((246 / 100 : ℝ) * 1536 * (117199 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-700 : Int) * (2 : ℝ) ^ 627) := by
+        generalize (2 : ℝ) ^ 627 = P627; ring
+      rw [heq, hz]; unfold rhoB7 qL; norm_num
+    have hb3b : b3b ≤ 238 / 10 ^ 19 := by
       dsimp only [b3b]
-      have h1 : (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 246 / (1 - rhoB / qL) * (2 : ℝ) ^ 628 ≤
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((126842 / 100000 : ℝ) * (2 : ℝ) ^ (-442 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 628 := by
+      have h1 : (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 245 / (1 - rhoB / qL) * (2 : ℝ) ^ 627 ≤
+          (2 / (2 : ℝ) ^ 256) * 1539 * ((110067 / 100000 : ℝ) * (2 : ℝ) ^ (-440 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 627 := by
         have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
         have hq : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
-        have hrB_nn : 0 ≤ rhoB ^ 246 := by unfold rhoB; positivity
+        have hr_nn : 0 ≤ rhoB ^ 245 := by unfold rhoB; positivity
         gcongr
       refine h1.trans ?_
-      have hz : (2 : ℝ) ^ (-442 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 628 = (2 : ℝ) ^ (-70 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 628,
+      have hz : (2 : ℝ) ^ (-440 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 627 = (2 : ℝ) ^ (-69 : Int) := by
+        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 627,
             ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 / (2 : ℝ) ^ 256) * 1539 * ((126842 / 100000 : ℝ) * (2 : ℝ) ^ (-442 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 628 =
-          (2 * 1539 * (126842 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-442 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 628) := by
-        generalize (2 : ℝ) ^ 628 = P628; ring
+      have heq : (2 / (2 : ℝ) ^ 256) * 1539 * ((110067 / 100000 : ℝ) * (2 : ℝ) ^ (-440 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 627 =
+          (2 * 1539 * (110067 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-440 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 627) := by
+        generalize (2 : ℝ) ^ 627 = P627; ring
       rw [heq, hz]; unfold rhoB qL; norm_num
-    have hnn_sum : ∀ (f : Nat → ℝ) (S : Finset Nat), (∀ i ∈ S, 0 ≤ f i) → 0 ≤ ∑ i ∈ S, f i :=
-      fun _ _ hf => Finset.sum_nonneg hf
-    have hq1_nn : 0 ≤ ∑ q ∈ Finset.range 7, q1 ^ q := hnn_sum _ _ (fun _ _ => by dsimp [q1]; unfold rhoEO0 rhoF; positivity)
-    have hr1_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r1 ^ r := hnn_sum _ _ (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
-    have hq2_nn : 0 ≤ ∑ q ∈ Finset.range 7, q2 ^ q := hnn_sum _ _ (fun _ _ => by dsimp [q2]; unfold rhoF; positivity)
-    have hr2_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r2 ^ r := hnn_sum _ _ (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
-    have hq3a_nn : 0 ≤ ∑ q ∈ Finset.range 7, q3a ^ q := hnn_sum _ _ (fun _ _ => by dsimp [q3a]; unfold rhoB; positivity)
-    have hr3a_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3a ^ r := hnn_sum _ _ (fun _ _ => by dsimp [r3a]; unfold rhoB; positivity)
-    have hq3b_nn : 0 ≤ ∑ q ∈ Finset.range 7, q3b ^ q := hnn_sum _ _ (fun _ _ => by dsimp [q3b]; unfold rhoB; positivity)
-    have hr3b_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3b ^ r := hnn_sum _ _ (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
-    have hterm1 : b1 * (∑ q ∈ Finset.range 7, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) ≤ (61 / 10 ^ 15) * 115 * (36 / 10) :=
-      mul_le_mul (mul_le_mul hb1 hG1q hq1_nn (by norm_num)) hG1r hr1_nn (by norm_num)
-    have hterm2 : b2 * (∑ q ∈ Finset.range 7, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) ≤ (255 / 10 ^ 15) * 64 * (34 / 10) :=
-      mul_le_mul (mul_le_mul hb2 hG2q hq2_nn (by norm_num)) hG2r hr2_nn (by norm_num)
-    have hterm3a : b3a * (∑ q ∈ Finset.range 7, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) ≤ (56 / 10 ^ 16) * 243 * 35 :=
-      mul_le_mul (mul_le_mul hb3a hG3aq hq3a_nn (by norm_num)) hG3ar hr3a_nn (by norm_num)
-    have hterm3b : b3b * (∑ q ∈ Finset.range 7, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r) ≤ (1 / 10 ^ 16) * 2 * 4 :=
-      mul_le_mul (mul_le_mul hb3b hG3bq hq3b_nn (by norm_num)) hG3br hr3b_nn (by norm_num)
-    have htot_inner :
-        b1 * (∑ q ∈ Finset.range 7, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) +
-        b2 * (∑ q ∈ Finset.range 7, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) +
-        b3a * (∑ q ∈ Finset.range 7, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) +
-        b3b * (∑ q ∈ Finset.range 7, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r) ≤ 130 / 10 ^ 12 :=
-      (add_le_add (add_le_add (add_le_add hterm1 hterm2) hterm3a) hterm3b).trans (by norm_num)
-    calc (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.Icc 1 5, ((Bad485_k0 (5 * q + r)).card : ℝ))
-        ≤ (2 : ℝ) ^ 256 * _ := hsum_qr
-      _ ≤ (2 : ℝ) ^ 256 * (130 / 10 ^ 12) := mul_le_mul_of_nonneg_left htot_inner (by positivity)
-      _ = (130 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by ring
-  -- Piece 3: `k0 ≥ 36` (`≤ 15 / 10^12 * 2^256`)
-  have htail : (Stail.card : ℝ) ≤ (15 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
-    have ht := tail_k0_ge_36
-    have h1 : (1 : ℝ) / (2 : ℝ) ^ 36 ≤ 15 / 10 ^ 12 := by norm_num
-    calc (Stail.card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ 36 := ht
-      _ = (1 / (2 : ℝ) ^ 36) * (2 : ℝ) ^ 256 := by ring
-      _ ≤ (15 / 10 ^ 12) * (2 : ℝ) ^ 256 := mul_le_mul_of_nonneg_right h1 (by positivity)
-  have hfinal_const : (1 / 10 ^ 13 : ℝ) + (130 / 10 ^ 12) + (15 / 10 ^ 12) ≤ 15 / 10 ^ 11 := by norm_num
+    have hq1_nn : 0 ≤ ∑ q ∈ Finset.range 8, q1 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q1]; unfold rhoEO0 rhoF; positivity)
+    have hr15_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r1 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
+    have hr13_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r1 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
+    have hq2_nn : 0 ≤ ∑ q ∈ Finset.range 8, q2 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q2]; unfold rhoF; positivity)
+    have hr25_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r2 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
+    have hr23_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r2 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
+    have hq3a_nn : 0 ≤ ∑ q ∈ Finset.range 8, q3a ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3a]; unfold rhoB7; positivity)
+    have hr3a5_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3a ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3a]; unfold rhoB7; positivity)
+    have hr3a3_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r3a ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3a]; unfold rhoB7; positivity)
+    have hq3b_nn : 0 ≤ ∑ q ∈ Finset.range 8, q3b ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3b]; unfold rhoB; positivity)
+    have hr3b5_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3b ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
+    have hr3b3_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r3b ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
+    have ht1a := mul_le_mul (mul_le_mul hb1 hG1q hq1_nn (by norm_num)) hG1r5 hr15_nn (by norm_num)
+    have ht1b := mul_le_mul (mul_le_mul hb1 hq1_8 (by dsimp [q1]; unfold rhoEO0 rhoF; positivity) (by norm_num)) hG1r3 hr13_nn (by norm_num)
+    have ht2a := mul_le_mul (mul_le_mul hb2 hG2q hq2_nn (by norm_num)) hG2r5 hr25_nn (by norm_num)
+    have ht2b := mul_le_mul (mul_le_mul hb2 hq2_8 (by dsimp [q2]; unfold rhoF; positivity) (by norm_num)) hG2r3 hr23_nn (by norm_num)
+    have ht3aa := mul_le_mul (mul_le_mul hb3a hG3aq hq3a_nn (by norm_num)) hG3ar5 hr3a5_nn (by norm_num)
+    have ht3ab := mul_le_mul (mul_le_mul hb3a hq3a_8 (by dsimp [q3a]; unfold rhoB7; positivity) (by norm_num)) hG3ar3 hr3a3_nn (by norm_num)
+    have ht3ba := mul_le_mul (mul_le_mul hb3b hG3bq hq3b_nn (by norm_num)) hG3br5 hr3b5_nn (by norm_num)
+    have ht3bb := mul_le_mul (mul_le_mul hb3b hq3b_8 (by dsimp [q3b]; unfold rhoB; positivity) (by norm_num)) hG3br3 hr3b3_nn (by norm_num)
+    have hadd := add_le_add hsum1 hsum2
+    rw [← mul_add] at hadd
+    have htot_inner : _ ≤ (277 / 10 ^ 15 : ℝ) :=
+      (add_le_add
+        (add_le_add (add_le_add (add_le_add ht1a ht2a) ht3aa) ht3ba)
+        (add_le_add (add_le_add (add_le_add ht1b ht2b) ht3ab) ht3bb)).trans (by norm_num)
+    exact hadd.trans ((mul_le_mul_of_nonneg_left htot_inner (by positivity)).trans_eq (mul_comm _ _))
+  -- Piece 3: `k0 ≥ 44` ≤ `57 / 10^15 * 2^256`
+  have htail : (Stail.card : ℝ) ≤ (57 / 10 ^ 15 : ℝ) * (2 : ℝ) ^ 256 := by
+    have ht := tail_k0_ge 44 (by decide)
+    have h1 : (1 : ℝ) / (2 : ℝ) ^ 44 ≤ 57 / 10 ^ 15 := by norm_num
+    calc (Stail.card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ 44 := ht
+      _ = (1 / (2 : ℝ) ^ 44) * (2 : ℝ) ^ 256 := by ring
+      _ ≤ (57 / 10 ^ 15) * (2 : ℝ) ^ 256 := mul_le_mul_of_nonneg_right h1 (by positivity)
+  -- Piece 4: `BadEnv(490)` (`q ∈ range 6, r ∈ range 12`) ≤ `29 / 10^15 * 2^256`
+  have henv_bound : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
+      ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ)) ≤
+      (29 / 10 ^ 15 : ℝ) * (2 : ℝ) ^ 256 := by
+    obtain ⟨hCA, hC0B, hqA, hqB⟩ := env_drop_consts
+    set rA : ℝ := rhoEO3 / rhoF3 ^ 2
+    have hper_drop : ∀ q ∈ Finset.range 6, ∀ r ∈ Finset.range 12,
+        ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ) ≤
+        (2 : ℝ) ^ 256 * rhoF3 ^ 87 *
+          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
+           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)))) := by
+      intro q hq r hr
+      have hq6 : q < 6 := Finset.mem_range.mp hq
+      have hr12 : r < 12 := Finset.mem_range.mp hr
+      have hbd := badEnv_drop_bound (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44
+        (by omega) (by omega) (by decide) (by omega)
+      have hrho_split : rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) =
+          rhoF3 ^ 87 * (rhoF3 ^ 37) ^ q * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) := by
+        rw [← pow_mul, ← pow_add, ← pow_add]; congr 1; omega
+      have hA_split : (2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) =
+          rhoF3 ^ 87 * ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) := by
+        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
+      have hB_split : (4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) =
+          rhoF3 ^ 87 * ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) := by
+        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
+      have hqA_pow : ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q ≤ (37 / 10000 : ℝ) ^ q :=
+        pow_le_pow_left₀ (by dsimp [rA]; unfold rhoEO3 rhoF3; positivity) hqA q
+      have hqB_pow : ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q ≤ (924 / 1000 : ℝ) ^ q :=
+        pow_le_pow_left₀ (by unfold rhoF3; positivity) hqB q
+      have hF3_nn : 0 ≤ rhoF3 ^ 87 := by unfold rhoF3; positivity
+      have hrA_nn : 0 ≤ (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) := by dsimp [rA]; unfold rhoEO3 rhoF3; positivity
+      have hrB_nn : 0 ≤ (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) := by unfold rhoF3; positivity
+      have h1 : ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ) ≤
+          (2 : ℝ) ^ 256 *
+            ((244 / 10 : ℝ) * ((2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0))) +
+             (514 / 10 : ℝ) * ((4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)))) := by
+        refine hbd.trans (mul_le_mul_of_nonneg_left (add_le_add ?_ ?_) (by positivity))
+        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hCA (by unfold rhoEO3 rhoF3; positivity)
+        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hC0B (by unfold rhoF3; positivity)
+      rw [hA_split, hB_split] at h1
+      refine h1.trans ?_
+      have h2 := add_le_add
+        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqA_pow hF3_nn) hrA_nn) (by norm_num : (0 : ℝ) ≤ 244 / 10))
+        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqB_pow hF3_nn) hrB_nn) (by norm_num : (0 : ℝ) ≤ 514 / 10))
+      exact (mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring)
+    have hsum := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_drop q hq r hr))
+    have hsep : ∀ (c : ℝ) (f g : Nat → ℝ),
+        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12, c * f q * g r) =
+        c * (∑ q ∈ Finset.range 6, f q) * (∑ r ∈ Finset.range 12, g r) := fun c f g => by
+      have h1 : ∀ q, (∑ r ∈ Finset.range 12, c * f q * g r) = (c * f q) * (∑ r ∈ Finset.range 12, g r) :=
+        fun q => by rw [Finset.mul_sum]
+      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
+    have hpull : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
+        (2 : ℝ) ^ 256 * rhoF3 ^ 87 *
+          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
+           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))))) =
+        (2 : ℝ) ^ 256 * rhoF3 ^ 87 * (
+          (244 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q) *
+            (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
+          (514 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q) *
+            (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)))) := by
+      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
+    rw [hpull] at hsum
+    have hgA : ∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q ≤ 1004 / 1000 := by
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hgB : ∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q ≤ 497 / 100 := by
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hrSA : ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) ≤ 284 / 100 := by
+      dsimp only [rA]; unfold rhoEO3 rhoF3
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hrSB : ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) ≤ 1283 / 100 := by
+      unfold rhoF3
+      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
+    have hinner : (244 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q) *
+          (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
+        (514 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q) *
+          (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) ≤ 3350 := by
+      have h1 : 0 ≤ ∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
+      have h2 : 0 ≤ ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) :=
+        Finset.sum_nonneg (fun _ _ => by dsimp [rA]; unfold rhoEO3 rhoF3; positivity)
+      have h3 : 0 ≤ ∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
+      have h4 : 0 ≤ ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) :=
+        Finset.sum_nonneg (fun _ _ => by unfold rhoF3; positivity)
+      have hA := mul_le_mul (mul_le_mul_of_nonneg_left hgA (by norm_num : (0 : ℝ) ≤ 244 / 10)) hrSA h2 (by norm_num)
+      have hB := mul_le_mul (mul_le_mul_of_nonneg_left hgB (by norm_num : (0 : ℝ) ≤ 514 / 10)) hrSB h4 (by norm_num)
+      linarith [show (244 / 10 : ℝ) * (1004 / 1000) * (284 / 100) + (514 / 10) * (497 / 100) * (1283 / 100) ≤ 3350 by norm_num]
+    have hcomb : rhoF3 ^ 87 * 3350 ≤ 29 / 10 ^ 15 := by
+      have h1 := mul_le_mul_of_nonneg_right hrF387 (by norm_num : (0 : ℝ) ≤ 3350)
+      refine h1.trans ?_; norm_num
+    exact hsum.trans (by
+      have h1 := mul_le_mul_of_nonneg_left hinner (by unfold rhoF3; positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * rhoF3 ^ 87)
+      have h2 : (2 : ℝ) ^ 256 * rhoF3 ^ 87 * 3350 = (rhoF3 ^ 87 * 3350) * (2 : ℝ) ^ 256 := by ring
+      rw [h2] at h1
+      exact h1.trans (mul_le_mul_of_nonneg_right hcomb (by positivity)))
+  have hfinal_const : (1 / 10 ^ 16 : ℝ) + (277 / 10 ^ 15) + (57 / 10 ^ 15) + (29 / 10 ^ 15) ≤ 37 / 10 ^ 14 := by norm_num
   have h256_pos : (0 : ℝ) ≤ (2 : ℝ) ^ 256 := by positivity
-  have htot := add_le_add (add_le_add h0_bound hmid_bound) htail
-  rw [← add_mul, ← add_mul] at htot
+  have htot := add_le_add (add_le_add (add_le_add h0_bound hmid_bound) htail) henv_bound
+  rw [← add_mul, ← add_mul, ← add_mul] at htot
   exact hcard_total.trans (htot.trans (mul_le_mul_of_nonneg_right hfinal_const h256_pos))
 
 end
@@ -6586,10 +8429,10 @@ def Digit25.width (d : Digit25) : Nat := d.k + 1
 def Digit25.bank (d : Digit25) : List Wire := GenericW.bankW d.k
 
 def Digit25.tof : Digit25 → Nat
-  | .left18 _ => 2319661
-  | .left19 _ => 2483757
-  | .right17 _ => 2168906
-  | .right18 _ => 2251081
+  | .left18 _ => 2320431
+  | .left19 j => if j.val = 1 then 2346489 else 2484527
+  | .right17 _ => 2027056
+  | .right18 _ => 2109231
 
 def Digit25.isRight : Digit25 → Bool
   | .left18 _ | .left19 _ => false
@@ -6785,8 +8628,8 @@ theorem specializeEntry25_certificate (e : StraightEntry)
 attribute [local irreducible] First20Signed.program Single.axis resetProgram
   GenericW.compiledProgramW GenericW.compiledProgramFnW
   GenericW.compiledProgram16 GenericW.compiledProgram17 GenericW.compiledProgram18
-  GenericW.compiledProgramTrunc16 GenericW.compiledProgramTrunc17
-  GenericW.arithSpecFull GenericW.arithSpecTrunc96
+  GenericW.compiledProgramEnv475_16 GenericW.compiledProgramEnv475_17 GenericW.compiledProgramEnv490_18
+  GenericW.arithSpecFull GenericW.arithSpecEnv475 GenericW.arithSpecEnv490
   GenericW.fixupSpec16 GenericW.fixupSpec17 GenericW.fixupSpec18
   GenericW.compiledFixup16 GenericW.compiledFixup9 GenericW.rawFixup16 GenericW.rawFixup9
   GenericW.compact1612 Readout5.suffix5
@@ -6889,21 +8732,29 @@ theorem cBody18_eq :
   Classical.choose_spec cBody18_exists
 theorem cBody18_le : cBody18 ≤ 4350000 := cBody18_eq ▸ GenericW.compiledRec18_bound
 
-private theorem cBody16Trunc_exists :
-    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecTrunc96 GenericW.fixupSpec16 0) := ⟨_, rfl⟩
-def cBody16Trunc : Nat := Classical.choose cBody16Trunc_exists
-theorem cBody16Trunc_eq :
-    cBody16Trunc = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecTrunc96 GenericW.fixupSpec16 0) :=
-  Classical.choose_spec cBody16Trunc_exists
-theorem cBody16Trunc_le : cBody16Trunc ≤ 3730000 := cBody16Trunc_eq ▸ GenericW.compiledRecTrunc16_bound
+private theorem cBody16Env475_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec16 0) := ⟨_, rfl⟩
+def cBody16Env475 : Nat := Classical.choose cBody16Env475_exists
+theorem cBody16Env475_eq :
+    cBody16Env475 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec16 0) :=
+  Classical.choose_spec cBody16Env475_exists
+theorem cBody16Env475_le : cBody16Env475 ≤ 3510000 := cBody16Env475_eq ▸ GenericW.compiledRecEnv475_16_bound
 
-private theorem cBody17Trunc_exists :
-    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecTrunc96 GenericW.fixupSpec17 0) := ⟨_, rfl⟩
-def cBody17Trunc : Nat := Classical.choose cBody17Trunc_exists
-theorem cBody17Trunc_eq :
-    cBody17Trunc = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecTrunc96 GenericW.fixupSpec17 0) :=
-  Classical.choose_spec cBody17Trunc_exists
-theorem cBody17Trunc_le : cBody17Trunc ≤ 3880000 := cBody17Trunc_eq ▸ GenericW.compiledRecTrunc17_bound
+private theorem cBody17Env475_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec17 0) := ⟨_, rfl⟩
+def cBody17Env475 : Nat := Classical.choose cBody17Env475_exists
+theorem cBody17Env475_eq :
+    cBody17Env475 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec17 0) :=
+  Classical.choose_spec cBody17Env475_exists
+theorem cBody17Env475_le : cBody17Env475 ≤ 3660000 := cBody17Env475_eq ▸ GenericW.compiledRecEnv475_17_bound
+
+private theorem cBody18Env490_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv490 GenericW.fixupSpec18 0) := ⟨_, rfl⟩
+def cBody18Env490 : Nat := Classical.choose cBody18Env490_exists
+theorem cBody18Env490_eq :
+    cBody18Env490 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv490 GenericW.fixupSpec18 0) :=
+  Classical.choose_spec cBody18Env490_exists
+theorem cBody18Env490_le : cBody18Env490 ≤ 4120000 := cBody18Env490_eq ▸ GenericW.compiledRecEnv490_18_bound
 
 private theorem compileLower_finish_zero {n e : Nat} (q y : Wire) (p : Straight n 0 e) (start : Nat) :
     (LocalFour.compileLower q y p start Fin.elim0).finish =
@@ -6948,26 +8799,34 @@ def bodyCatWin : Digit25 → Window 3407872
         (reindexStraight (row25 (.left18 j))
           (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))⟩
   | .left19 j =>
-    ⟨(GenericW.bankW 18).reverse, cBody18,
-      fun start => castFinish (congrArg (start + ·) cBody18_eq.symm)
-        (reindexStraight (row25 (.left19 j))
-          (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))⟩
+    if j.val = 1 then
+      ⟨(GenericW.bankW 18).reverse, cBody18Env490,
+        fun start => castFinish (congrArg (start + ·) cBody18Env490_eq.symm)
+          (reindexStraight (row25 (.left19 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv490_18 start)))⟩
+    else
+      ⟨(GenericW.bankW 18).reverse, cBody18,
+        fun start => castFinish (congrArg (start + ·) cBody18_eq.symm)
+          (reindexStraight (row25 (.left19 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))⟩
   | .right17 j =>
-    ⟨(GenericW.bankW 16).reverse, cBody16Trunc,
-      fun start => castFinish (congrArg (start + ·) cBody16Trunc_eq.symm)
+    ⟨(GenericW.bankW 16).reverse, cBody16Env475,
+      fun start => castFinish (congrArg (start + ·) cBody16Env475_eq.symm)
         (reindexStraight (row25 (.right17 j))
-          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramTrunc16 start)))⟩
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_16 start)))⟩
   | .right18 j =>
-    ⟨(GenericW.bankW 17).reverse, cBody17Trunc,
-      fun start => castFinish (congrArg (start + ·) cBody17Trunc_eq.symm)
+    ⟨(GenericW.bankW 17).reverse, cBody17Env475,
+      fun start => castFinish (congrArg (start + ·) cBody17Env475_eq.symm)
         (reindexStraight (row25 (.right18 j))
-          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramTrunc17 start)))⟩
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_17 start)))⟩
 
 theorem bodyCatWin_wires (d : Digit25) : (bodyCatWin d).wires = d.bank.reverse := by
-  cases d <;> rfl
+  cases d with
+  | left19 j => simp only [bodyCatWin]; split_ifs <;> rfl
+  | _ => rfl
 
 def rightHeadCatWin : Window 3407872 :=
-  ⟨(GenericW.bankW 16).reverse, cBody16Trunc,
+  ⟨(GenericW.bankW 16).reverse, cBody16Env475,
     fun start => (ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
       ((bodyCatWin rightHeadDigit).program start)⟩
 
@@ -6975,10 +8834,10 @@ def leftWins25Cat : List (Window 3407872) := first20CatWin :: leftDigits25.map b
 def rightWins25Cat : List (Window 3407872) := rightHeadCatWin :: rightTailDigits25.map bodyCatWin
 
 def leftMeta25Cat : List (Nat × Nat) :=
-  (cFirst20, 20) :: List.replicate 11 (cBody17, 18) ++ List.replicate 2 (cBody18, 19)
+  (cFirst20, 20) :: List.replicate 11 (cBody17, 18) ++ [(cBody18, 19), (cBody18Env490, 19)]
 
 def rightMeta25Cat : List (Nat × Nat) :=
-  List.replicate 10 (cBody16Trunc, 17) ++ List.replicate 2 (cBody17Trunc, 18)
+  List.replicate 10 (cBody16Env475, 17) ++ List.replicate 2 (cBody17Env475, 18)
 
 theorem leftWins25Cat_meta : leftWins25Cat.map (fun w => (w.count, w.wires.length)) = leftMeta25Cat := by
   simp only [leftWins25Cat, leftMeta25Cat, leftDigits25, List.map_cons, List.map_append,
@@ -6991,13 +8850,13 @@ theorem rightWins25Cat_meta : rightWins25Cat.map (fun w => (w.count, w.wires.len
   simp [List.ofFn_succ, List.replicate, bodyCatWin, GenericW.bankW_length]
 
 theorem leftWins25Cat_count_eq :
-    axisCount leftWins25Cat = cFirst20 + 20 + 11 * (cBody17 + 18) + 2 * (cBody18 + 19) := by
+    axisCount leftWins25Cat = cFirst20 + 20 + 11 * (cBody17 + 18) + (cBody18 + 19) + (cBody18Env490 + 19) := by
   rw [← recordCount_eq_axisCount, leftWins25Cat_meta]
   simp only [leftMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
 
 theorem rightWins25Cat_count_eq :
-    axisCount rightWins25Cat = 10 * (cBody16Trunc + 17) + 2 * (cBody17Trunc + 18) := by
+    axisCount rightWins25Cat = 10 * (cBody16Env475 + 17) + 2 * (cBody17Env475 + 18) := by
   rw [← recordCount_eq_axisCount, rightWins25Cat_meta]
   simp only [rightMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
@@ -7622,21 +9481,30 @@ theorem bodyCatWin_wellFormed (d : Digit25) (start : Nat) : ((bodyCatWin d).prog
     rw [castFinish_wellFormed]
     exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled17_wellFormed start))
   | left19 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).WellFormed
-    rw [castFinish_wellFormed]
-    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled18_wellFormed start))
+    rcases j with ⟨_ | _ | n, hj⟩
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).WellFormed
+      rw [castFinish_wellFormed]
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled18_wellFormed start))
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))).WellFormed
+      rw [castFinish_wellFormed]
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv490_18_wellFormed start))
+    · omega
   | right17 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc16 start)))).WellFormed
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))).WellFormed
     rw [castFinish_wellFormed]
-    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledTrunc16_wellFormed start))
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv475_16_wellFormed start))
   | right18 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc17 start)))).WellFormed
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))).WellFormed
     rw [castFinish_wellFormed]
-    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledTrunc17_wellFormed start))
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv475_17_wellFormed start))
 
-def Digit25.goodPred (Q : Point) (d : Digit25) : BasisState → Prop :=
-  if d.isRight then GenericW.GoodW96 d.k (wideCoeffs25 d) Q
-  else GenericW.GoodW d.k (wideCoeffs25 d) Q
+def Digit25.goodPred (Q : Point) : Digit25 → BasisState → Prop
+  | .left18 j => GenericW.GoodW 17 (wideCoeffs25 (.left18 j)) Q
+  | .left19 j =>
+    if j.val = 1 then GenericW.GoodWEnv490 18 (wideCoeffs25 (.left19 j)) Q
+    else GenericW.GoodW 18 (wideCoeffs25 (.left19 j)) Q
+  | .right17 j => GenericW.GoodWEnv475 16 (wideCoeffs25 (.right17 j)) Q
+  | .right18 j => GenericW.GoodWEnv475 17 (wideCoeffs25 (.right18 j)) Q
 
 def first20ApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     ApproxCatWindow 1 (readConstant coefficientAt25 Q) where
@@ -7689,43 +9557,57 @@ def bodyApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25
       exact GenericW.compiled17_packed_coherent (wideCoeffs25 (.left18 j)) Q
         (wide25_nonzero Q hQ hn (.left18 j)) start history
     | left19 j =>
-      change LocalFour.CatCoherent 1
-        ((castFinish (congrArg (start + ·) cBody18_eq.symm)
-          (reindexStraight (row25 (.left19 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))).instantiate
-              (readConstant coefficientAt25 Q) history)
-        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 18 (wideCoeffs25 (.left19 j)) Q))
-        (GenericW.GoodW 18 (wideCoeffs25 (.left19 j)) Q)
-      rw [castFinish_instantiate, reindexStraight_instantiate,
-        readConstant_reindex (row25 (.left19 j)) (wideCoeffs25 (.left19 j)) coefficientAt25 Q
-          (fun a => coefficientAt25_row (.left19 j) a)]
-      exact GenericW.compiled18_packed_coherent (wideCoeffs25 (.left19 j)) Q
-        (wide25_nonzero Q hQ hn (.left19 j)) start history
+      rcases j with ⟨_ | _ | n, hj⟩
+      · change LocalFour.CatCoherent 1
+          ((castFinish (congrArg (start + ·) cBody18_eq.symm)
+            (reindexStraight (row25 (.left19 ⟨0, hj⟩))
+              (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))).instantiate
+                (readConstant coefficientAt25 Q) history)
+          (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 18 (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q))
+          (GenericW.GoodW 18 (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q)
+        rw [castFinish_instantiate, reindexStraight_instantiate,
+          readConstant_reindex (row25 (.left19 ⟨0, hj⟩)) (wideCoeffs25 (.left19 ⟨0, hj⟩)) coefficientAt25 Q
+            (fun a => coefficientAt25_row (.left19 ⟨0, hj⟩) a)]
+        exact GenericW.compiled18_packed_coherent (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q
+          (wide25_nonzero Q hQ hn (.left19 ⟨0, hj⟩)) start history
+      · change LocalFour.CatCoherent 1
+          ((castFinish (congrArg (start + ·) cBody18Env490_eq.symm)
+            (reindexStraight (row25 (.left19 ⟨1, hj⟩))
+              (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv490_18 start)))).instantiate
+                (readConstant coefficientAt25 Q) history)
+          (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 18 (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q))
+          (GenericW.GoodWEnv490 18 (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q)
+        rw [castFinish_instantiate, reindexStraight_instantiate,
+          readConstant_reindex (row25 (.left19 ⟨1, hj⟩)) (wideCoeffs25 (.left19 ⟨1, hj⟩)) coefficientAt25 Q
+            (fun a => coefficientAt25_row (.left19 ⟨1, hj⟩) a)]
+        exact GenericW.compiledEnv490_18_packed_coherent (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q
+          (wide25_nonzero Q hQ hn (.left19 ⟨1, hj⟩)) start history
+      · omega
     | right17 j =>
       change LocalFour.CatCoherent 1
-        ((castFinish (congrArg (start + ·) cBody16Trunc_eq.symm)
+        ((castFinish (congrArg (start + ·) cBody16Env475_eq.symm)
           (reindexStraight (row25 (.right17 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramTrunc16 start)))).instantiate
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_16 start)))).instantiate
               (readConstant coefficientAt25 Q) history)
         (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 (.right17 j)) Q))
-        (GenericW.GoodW96 16 (wideCoeffs25 (.right17 j)) Q)
+        (GenericW.GoodWEnv475 16 (wideCoeffs25 (.right17 j)) Q)
       rw [castFinish_instantiate, reindexStraight_instantiate,
         readConstant_reindex (row25 (.right17 j)) (wideCoeffs25 (.right17 j)) coefficientAt25 Q
           (fun a => coefficientAt25_row (.right17 j) a)]
-      exact GenericW.compiledTrunc16_packed_coherent (wideCoeffs25 (.right17 j)) Q
+      exact GenericW.compiledEnv475_16_packed_coherent (wideCoeffs25 (.right17 j)) Q
         (wide25_nonzero Q hQ hn (.right17 j)) start history
     | right18 j =>
       change LocalFour.CatCoherent 1
-        ((castFinish (congrArg (start + ·) cBody17Trunc_eq.symm)
+        ((castFinish (congrArg (start + ·) cBody17Env475_eq.symm)
           (reindexStraight (row25 (.right18 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramTrunc17 start)))).instantiate
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_17 start)))).instantiate
               (readConstant coefficientAt25 Q) history)
         (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 17 (wideCoeffs25 (.right18 j)) Q))
-        (GenericW.GoodW96 17 (wideCoeffs25 (.right18 j)) Q)
+        (GenericW.GoodWEnv475 17 (wideCoeffs25 (.right18 j)) Q)
       rw [castFinish_instantiate, reindexStraight_instantiate,
         readConstant_reindex (row25 (.right18 j)) (wideCoeffs25 (.right18 j)) coefficientAt25 Q
           (fun a => coefficientAt25_row (.right18 j) a)]
-      exact GenericW.compiledTrunc17_packed_coherent (wideCoeffs25 (.right18 j)) Q
+      exact GenericW.compiledEnv475_17_packed_coherent (wideCoeffs25 (.right18 j)) Q
         (wide25_nonzero Q hQ hn (.right18 j)) start history
   core_idealY := fun ψ hψ => by
     refine Support.linear _ _ _ (fun s hs => ?_) ψ hψ
@@ -7749,7 +9631,7 @@ def rightHeadApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   ideal_eq := rfl
   wires_eq := rfl
   noY := fun hm => wire1_not_bankW (List.mem_reverse.mp hm)
-  goodPred := GenericW.GoodW96 rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q
+  goodPred := GenericW.GoodWEnv475 rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q
   catCoherent := (bodyApproxWin Q hQ hn rightHeadDigit).catCoherent
   core_idealY := (bodyApproxWin Q hQ hn rightHeadDigit).core_idealY
   core_wf := bodyCatWin_wellFormed rightHeadDigit
@@ -7852,10 +9734,10 @@ theorem phaseWordState_bankW_goodW (Q : Point) (hQ : order • Q = 0) (d : Digit
   refine ⟨hcl, P, hfp, ?_⟩
   rwa [signedDeltaW_phaseWord Q hQ d input hlen]
 
-theorem phaseWordState_bankW_goodW96 (Q : Point) (hQ : order • Q = 0) (d : Digit25)
+theorem phaseWordState_bankW_goodWA (ax : GenericW.ArithSpec) (Q : Point) (hQ : order • Q = 0) (d : Digit25)
     (P : Point) (input : List Bool) (hlen : input.length = d.width)
-    (hgood : GenericW.GoodPoint96 P (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input))) :
-    GenericW.GoodW96 d.k (wideCoeffs25 d) Q (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
+    (hgood : GenericW.GoodPointA ax P (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input))) :
+    GenericW.GoodWA ax d.k (wideCoeffs25 d) Q (phaseWordState d.bank input (pointWrite P zeroBasisState)) := by
   obtain ⟨hcl, R, hfp, _⟩ := phaseWordState_bankW_goodW Q hQ d P input hlen hgood.1
   have hPR : R = P := by
     have hc1 := GenericW.hasFinitePoint_coords hcl hfp
@@ -8298,12 +10180,14 @@ private theorem goodPoint_gx_ne {x y cx cy : Fp}
     simp only [WeierstrassCurve.Affine.Point.some.injEq, WeierstrassCurve.Affine.negY, curve]
     exact ⟨haddX.trans hgx, by simp [hy2]⟩
 
-private theorem goodPoint96_not_both {x y cx cy : Fp}
+private theorem goodPointEnv_not_both {ax : GenericW.ArithSpec} {E : LocalKernel.EnvSchedule}
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    {x y cx cy : Fp}
     {hnsR : curve.toAffine.Nonsingular x y} {hnsC : curve.toAffine.Nonsingular cx cy}
     (hgp : GenericW.GoodPoint (.some hnsR) (.some hnsC))
-    (hnb : ¬ GenericW.GoodPoint96 (.some hnsR) (.some hnsC)) :
-    ¬ (LocalKernel.SkywalkFast485 (x - cx).val ∧
-      LocalKernel.SkywalkFast485 (cx - (((y - cy) * (x - cx)⁻¹) ^ 2 - x - cx)).val) := by
+    (hnb : ¬ GenericW.GoodPointA ax (.some hnsR) (.some hnsC)) :
+    ¬ (LocalKernel.GoodStack E (x - cx).val ∧
+      LocalKernel.GoodStack E (cx - (((y - cy) * (x - cx)⁻¹) ^ 2 - x - cx)).val) := by
   have hx_ne := goodPoint_x_ne hgp
   have hgx_ne := goodPoint_gx_ne hgp
   haveI : NeZero p := ⟨p_prime.ne_zero⟩
@@ -8329,12 +10213,13 @@ private theorem goodPoint96_not_both {x y cx cy : Fp}
     intro h0
     have h2 : (cx - (((y - cy) * (x - cx)⁻¹) ^ 2 - x - cx)).val = 0 := hv2.trans (by rw [h0]; rfl)
     exact sub_ne_zero.mpr hgx_ne.symm ((ZMod.val_eq_zero _).mp h2)
-  unfold GenericW.arithSpecTrunc96
-  exact ⟨⟨hne1', hv1 ▸ hf1⟩, ⟨hne2', hv2 ▸ hf2⟩⟩
+  exact ⟨hGoodX _ hne1' (hv1 ▸ hf1), hGoodX _ hne2' (hv2 ▸ hf2)⟩
 
-private theorem not_goodPoint96_mem_badListOf {B : List Nat}
-    (hB : ∀ b, 0 < b → b < ECDSAAdd.p → ¬ LocalKernel.SkywalkFast485 b → b ∈ B)
-    {R Δ : Point} (hnb : ¬ GenericW.GoodPoint96 R Δ) :
+private theorem not_goodPointEnv_mem_badListOf {ax : GenericW.ArithSpec} {E : LocalKernel.EnvSchedule}
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    {B : List Nat}
+    (hB : ∀ b, 0 < b → b < ECDSAAdd.p → ¬ LocalKernel.GoodStack E b → b ∈ B)
+    {R Δ : Point} (hnb : ¬ GenericW.GoodPointA ax R Δ) :
     R ∈ badListOf B Δ := by
   cases Δ with
   | zero =>
@@ -8356,15 +10241,15 @@ private theorem not_goodPoint96_mem_badListOf {B : List Nat}
       | @some x y hnsR =>
         let R' : Point := .some hnsR
         have hgp' : GenericW.GoodPoint R' Δ' := by dsimp only [R']; rwa [← hR]
-        have hnb' : ¬ GenericW.GoodPoint96 R' Δ' := by dsimp only [R']; rwa [← hR]
+        have hnb' : ¬ GenericW.GoodPointA ax R' Δ' := by dsimp only [R']; rwa [← hR]
         have hx_ne := goodPoint_x_ne hgp'
         have hgx_ne := goodPoint_gx_ne hgp'
-        have hnot_both := goodPoint96_not_both hgp' hnb'
+        have hnot_both := goodPointEnv_not_both hGoodX hgp' hnb'
         set gx : Fp := ((y - cy) * (x - cx)⁻¹) ^ 2 - x - cx
         have hne1 : x - cx ≠ 0 := sub_ne_zero.mpr hx_ne
         have hne2 : cx - gx ≠ 0 := sub_ne_zero.mpr hgx_ne.symm
-        by_cases hf1 : LocalKernel.SkywalkFast485 (x - cx).val
-        · have hnf2 : ¬ LocalKernel.SkywalkFast485 (cx - gx).val := fun hf2 => hnot_both ⟨hf1, hf2⟩
+        by_cases hf1 : LocalKernel.GoodStack E (x - cx).val
+        · have hnf2 : ¬ LocalKernel.GoodStack E (cx - gx).val := fun hf2 => hnot_both ⟨hf1, hf2⟩
           set b : Nat := (cx - gx).val
           have hb_pos : 0 < b := by
             haveI : NeZero p := ⟨p_prime.ne_zero⟩
@@ -8408,27 +10293,33 @@ private theorem not_goodPoint96_mem_badListOf {B : List Nat}
       have h3 := hgp h0 h1 h2
       subst h3; simp
 
-private def badList96 (Δ : Point) : List Point := badListOf SkywalkTail485.Bad485.toList Δ
+private def badListEnv (E : LocalKernel.EnvSchedule) (Δ : Point) : List Point :=
+  badListOf (SkywalkTail485.BadStack E).toList Δ
 
-private theorem badList96_length_le (Δ : Point) : (badList96 Δ).length ≤ 4 + 4 * SkywalkTail485.Bad485.card := by
-  simpa [badList96, Finset.length_toList] using badListOf_length_le SkywalkTail485.Bad485.toList Δ
+private theorem badListEnv_length_le (E : LocalKernel.EnvSchedule) (Δ : Point) :
+    (badListEnv E Δ).length ≤ 4 + 4 * (SkywalkTail485.BadStack E).card := by
+  simpa [badListEnv, Finset.length_toList] using badListOf_length_le (SkywalkTail485.BadStack E).toList Δ
 
-private theorem not_goodPoint96_mem_badList96 {R Δ : Point} (hnb : ¬ GenericW.GoodPoint96 R Δ) :
-    R ∈ badList96 Δ :=
-  not_goodPoint96_mem_badListOf
+private theorem not_goodPointEnv_mem_badListEnv {ax : GenericW.ArithSpec} {E : LocalKernel.EnvSchedule}
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    {R Δ : Point} (hnb : ¬ GenericW.GoodPointA ax R Δ) :
+    R ∈ badListEnv E Δ :=
+  not_goodPointEnv_mem_badListOf hGoodX
     (fun _ hpos hlt hnf => Finset.mem_toList.mpr (by
-      unfold SkywalkTail485.Bad485
+      unfold SkywalkTail485.BadStack
       exact Finset.mem_filter.mpr ⟨Finset.mem_Ioo.mpr ⟨hpos, hlt⟩, hnf⟩)) hnb
 
 end
 
-private def badBoundW96 (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (D : Point → ℝ) : ℝ :=
+private def badBoundWEnv (E : LocalKernel.EnvSchedule) (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (D : Point → ℝ) : ℝ :=
   ((1 : ℝ) / (2 : ℝ) ^ w) *
     ((fourierOutcomes w).map (fun input =>
       let v := boolWordToNat input
-      Complex.normSq (wpre v) * ((badList96 (delta v)).map D).sum)).sum
+      Complex.normSq (wpre v) * ((badListEnv E (delta v)).map D).sum)).sum
 
-private theorem badStep96_le_badBoundW96 (Q : Point) (hQ : order • Q = 0) (d : Digit25)
+private theorem badStepEnv_le_badBoundWEnv (ax : GenericW.ArithSpec) (E : LocalKernel.EnvSchedule)
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    (Q : Point) (hQ : order • Q = 0) (d : Digit25)
     (pre : Circuit) (wpre : Nat → ℂ)
     (hpre : ∀ P : Point, Quantum.run pre (Quantum.run (d.bank.map Gate.H) (ket (pointWrite P zeroBasisState))) =
       (((((Real.sqrt 2)⁻¹ : ℝ) : ℂ)) ^ d.width) •
@@ -8436,32 +10327,32 @@ private theorem badStep96_le_badBoundW96 (Q : Point) (hQ : order • Q = 0) (d :
           wpre (boolWordToNat input) • ket (phaseWordState d.bank input (pointWrite P zeroBasisState)))).sum)
     (ψ : State) (hψ : PointSupported ψ) :
     let χ := Quantum.run pre (Quantum.run (d.bank.map Gate.H) ψ)
-    normSq (restrictState (fun s => ¬ GenericW.GoodW96 d.k (wideCoeffs25 d) Q s) χ) ≤
-      badBoundW96 d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) := by
+    normSq (restrictState (fun s => ¬ GenericW.GoodWA ax d.k (wideCoeffs25 d) Q s) χ) ≤
+      badBoundWEnv E d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) := by
   classical
   dsimp only
   set χ := Quantum.run pre (Quantum.run (d.bank.map Gate.H) ψ)
-  set χ_bad := restrictState (fun s => ¬ GenericW.GoodW96 d.k (wideCoeffs25 d) Q s) χ
+  set χ_bad := restrictState (fun s => ¬ GenericW.GoodWA ax d.k (wideCoeffs25 d) Q s) χ
   obtain ⟨hχ_sup, hχ_eval⟩ := bankW_prep_eval d.k d.k_hi pre wpre hpre ψ hψ
   let badList : List BasisState :=
     (fourierOutcomes d.width).flatMap (fun input =>
       let Δ := Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input);
-      (badList96 Δ).map (fun P => phaseWordState d.bank input (pointWrite P zeroBasisState)))
+      (badListEnv E Δ).map (fun P => phaseWordState d.bank input (pointWrite P zeroBasisState)))
   have hsub : χ_bad.support ⊆ badList.toFinset := by
     intro s hs
     have hne : χ_bad s ≠ 0 := Finsupp.mem_support_iff.mp hs
     rw [restrictState_apply] at hne
-    have hng : ¬ GenericW.GoodW96 d.k (wideCoeffs25 d) Q s := by
+    have hng : ¬ GenericW.GoodWA ax d.k (wideCoeffs25 d) Q s := by
       by_contra hg; simp [hg] at hne
     have hχne : χ s ≠ 0 := by simpa [hng] using hne
     obtain ⟨P, input, hlen, rfl⟩ := hχ_sup s hχne
     have hlenW : input.length = d.width := by simpa [Digit25.bank, Digit25.width, GenericW.bankW_length] using hlen
-    have hnb : ¬ GenericW.GoodPoint96 P (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input)) :=
-      fun hg => hng (phaseWordState_bankW_goodW96 Q hQ d P input hlenW hg)
+    have hnb : ¬ GenericW.GoodPointA ax P (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input)) :=
+      fun hg => hng (phaseWordState_bankW_goodWA ax Q hQ d P input hlenW hg)
     rw [List.mem_toFinset]
     apply List.mem_flatMap.mpr
     refine ⟨input, (fourierOutcomes_mem d.width input).mpr hlenW,
-      List.mem_map.mpr ⟨P, not_goodPoint96_mem_badList96 hnb, rfl⟩⟩
+      List.mem_map.mpr ⟨P, not_goodPointEnv_mem_badListEnv hGoodX hnb, rfl⟩⟩
   have hmass_eq : normSq χ_bad = ∑ s ∈ χ_bad.support, Complex.normSq (χ_bad s) := by
     unfold normSq Quantum.inner
     rw [Finsupp.sum, Complex.re_sum]
@@ -8481,9 +10372,9 @@ private theorem badStep96_le_badBoundW96 (Q : Point) (hQ : order • Q = 0) (d :
   have hle2 : ∑ s ∈ badList.toFinset, Complex.normSq (χ s) ≤ (badList.map (fun s => Complex.normSq (χ s))).sum :=
     finset_sum_toFinset_le badList (fun s => Complex.normSq (χ s)) (fun _ => Complex.normSq_nonneg _)
   suffices hsum_eq : (badList.map (fun s => Complex.normSq (χ s))).sum =
-      badBoundW96 d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) by
+      badBoundWEnv E d.width wpre (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass ψ) by
     linarith
-  dsimp only [badList, badBoundW96]
+  dsimp only [badList, badBoundWEnv]
   rw [flatMap_sum_real]
   have hmul : ∀ (xs : List (List Bool)) (r : ℝ) (f : List Bool → ℝ),
       r * (xs.map f).sum = (xs.map (fun x => r * f x)).sum := fun xs r f => by
@@ -8500,13 +10391,13 @@ private theorem badStep96_le_badBoundW96 (Q : Point) (hQ : order • Q = 0) (d :
     induction ps with
     | nil => simp
     | cons _ _ ih => simp [ih, mul_add]
-  have hcongr : ∀ P ∈ badList96 (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input)),
+  have hcongr : ∀ P ∈ badListEnv E (Width16Schedule.increment (d.base Q) d.width d.exponent (boolWordToNat input)),
       Complex.normSq (χ (phaseWordState d.bank input (pointWrite P zeroBasisState))) =
         ((1 : ℝ) / (2 : ℝ) ^ d.width * Complex.normSq (wpre (boolWordToNat input))) * pointMass ψ P := by
     intro P _
     dsimp only [χ]
     simp only [Digit25.bank, Digit25.width, hχ_eval P input hlenW, map_mul, sqrt2_inv_normSq_pow, pointMass]
-  change ((badList96 _).map (fun P => Complex.normSq (χ (phaseWordState d.bank input (pointWrite P zeroBasisState))))).sum = _
+  change ((badListEnv E _).map (fun P => Complex.normSq (χ (phaseWordState d.bank input (pointWrite P zeroBasisState))))).sum = _
   rw [List.map_congr_left hcongr, hmulP]; ring
 
 theorem projPoint_fourierBranch_comm (ws : List Wire) (hdisj : ∀ w ∈ ws, w ∉ pointLogicalWires)
@@ -9220,27 +11111,27 @@ theorem maxBound_badBoundW (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point
   have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ (1 : ℝ) / (2 : ℝ) ^ w)
   refine h2.trans_eq ?_; field_simp
 
-private theorem maxBound_badBoundW96 (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ) (hM : 0 ≤ M)
+private theorem maxBound_badBoundWEnv (E : LocalKernel.EnvSchedule) (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point) (M : ℝ) (hM : 0 ≤ M)
     (hw : ((fourierOutcomes w).map (fun inp => Complex.normSq (wpre (boolWordToNat inp)))).sum = (2 : ℝ) ^ w)
     (D : Point → ℝ) (hD : MaxBound M D) :
-    badBoundW96 w wpre delta D ≤ (4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * M := by
-  unfold badBoundW96
+    badBoundWEnv E w wpre delta D ≤ (4 + 4 * ((SkywalkTail485.BadStack E).card : ℝ)) * M := by
+  unfold badBoundWEnv
   have hconst : ∀ (ps : List Point) (r : ℝ), (ps.map (fun _ => r)).sum = (ps.length : ℝ) * r := fun ps r => by
     induction ps with
     | nil => simp
     | cons _ ps ih => simp only [List.map_cons, List.sum_cons, List.length_cons, Nat.cast_add, Nat.cast_one, ih]; ring
   have h1 : ((fourierOutcomes w).map (fun inp =>
       let v := boolWordToNat inp
-      Complex.normSq (wpre v) * ((badList96 (delta v)).map D).sum)).sum ≤
+      Complex.normSq (wpre v) * ((badListEnv E (delta v)).map D).sum)).sum ≤
       ((fourierOutcomes w).map (fun inp =>
-        Complex.normSq (wpre (boolWordToNat inp)) * ((4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * M))).sum := by
+        Complex.normSq (wpre (boolWordToNat inp)) * ((4 + 4 * ((SkywalkTail485.BadStack E).card : ℝ)) * M))).sum := by
     apply list_sum_map_le; intro inp _
     apply mul_le_mul_of_nonneg_left _ (Complex.normSq_nonneg _)
-    have hsum : ((badList96 (delta (boolWordToNat inp))).map D).sum ≤
-        ((badList96 (delta (boolWordToNat inp))).length : ℝ) * M :=
+    have hsum : ((badListEnv E (delta (boolWordToNat inp))).map D).sum ≤
+        ((badListEnv E (delta (boolWordToNat inp))).length : ℝ) * M :=
       (list_sum_map_le _ D (fun _ => M) (fun P _ => hD.2 P)).trans_eq (hconst _ M)
-    have hcard : ((badList96 (delta (boolWordToNat inp))).length : ℝ) ≤ 4 + 4 * (SkywalkTail485.Bad485.card : ℝ) := by
-      exact_mod_cast badList96_length_le (delta (boolWordToNat inp))
+    have hcard : ((badListEnv E (delta (boolWordToNat inp))).length : ℝ) ≤ 4 + 4 * ((SkywalkTail485.BadStack E).card : ℝ) := by
+      exact_mod_cast badListEnv_length_le E (delta (boolWordToNat inp))
     exact hsum.trans (mul_le_mul_of_nonneg_right hcard hM)
   have hmr : ∀ (xs : List (List Bool)) (f : List Bool → ℝ) (r : ℝ),
       (xs.map (fun x => f x * r)).sum = (xs.map f).sum * r := fun xs f r => by
@@ -9504,10 +11395,10 @@ private theorem badBoundW_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : Nat
   linarith [hD 0, hD (delta (boolWordToNat inp)), hD (-delta (boolWordToNat inp)),
     hD (-(delta (boolWordToNat inp) + delta (boolWordToNat inp)))]
 
-private theorem badBoundW96_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point)
+private theorem badBoundWEnv_linear_sum (E : LocalKernel.EnvSchedule) (w : Nat) (wpre : Nat → ℂ) (delta : Nat → Point)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hD : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
-    (S.map (fun x => badBoundW96 w wpre delta (pointMass x.2))).sum ≤ badBoundW96 w wpre delta D := by
+    (S.map (fun x => badBoundWEnv E w wpre delta (pointMass x.2))).sum ≤ badBoundWEnv E w wpre delta D := by
   have hsum_comm : ∀ {β : Type} (xs : List (List Bool × State)) (ys : List β) (f : (List Bool × State) → β → ℝ),
       (xs.map (fun x => (ys.map (fun y => f x y)).sum)).sum =
       (ys.map (fun y => (xs.map (fun x => f x y)).sum)).sum := by
@@ -9525,7 +11416,7 @@ private theorem badBoundW96_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : N
   have hmul : ∀ (xs : List (List Bool × State)) (r : ℝ) (f : (List Bool × State) → ℝ),
       (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := fun xs r f => by
     induction xs with | nil => simp | cons _ _ ih => simp [ih, mul_add]
-  unfold badBoundW96
+  unfold badBoundWEnv
   rw [hmul, hsum_comm]
   apply mul_le_mul_of_nonneg_left _ (by positivity)
   apply list_sum_map_le; intro inp _
@@ -9561,7 +11452,13 @@ private theorem stepDistW_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : Nat
   rw [hmul]
   apply mul_le_mul_of_nonneg_left (hD _) (Complex.normSq_nonneg _)
 
-theorem bodyTail_axisBad_maxBound96 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+private theorem goodX_env475 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env475 X.val →
+    GenericW.arithSpecEnv475.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv475; exact ⟨h1, h2⟩
+
+private theorem goodX_env490 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env490 X.val →
+    GenericW.arithSpecEnv490.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv490; exact ⟨h1, h2⟩
+
+theorem bodyTail_axisBad_maxBoundEnv475 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     (ds : List Digit25) (hright : ∀ d ∈ ds, d.isRight = true)
     (baseBad : List Bool → State → ℝ) (M Btail : ℝ) (hM : 0 ≤ M)
     (hbase : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
@@ -9572,7 +11469,7 @@ theorem bodyTail_axisBad_maxBound96 (Q : Point) (hQ : order • Q = 0) (hn : Q �
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound M D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
     (S.map (fun x => axisBad (ds.map (bodyApproxWin Q hQ hn)) x.1 baseBad x.2)).sum ≤
-      (ds.length : ℝ) * ((4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * M) + Btail := by
+      (ds.length : ℝ) * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M) + Btail := by
   induction ds generalizing S D with
   | nil =>
     simp only [List.map_nil, axisBad, List.length_nil, Nat.cast_zero, zero_mul, zero_add]
@@ -9603,22 +11500,23 @@ theorem bodyTail_axisBad_maxBound96 (Q : Point) (hQ : order • Q = 0) (hn : Q �
         normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
           (Quantum.run (bodyApproxWin Q hQ hn d).pre
             (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * M := by
+        (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M := by
       have h1 : (S.map (fun x =>
           normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
             (Quantum.run (bodyApproxWin Q hQ hn d).pre
               (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-          (S.map (fun x => badBoundW96 d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2))).sum := by
+          (S.map (fun x => badBoundWEnv LocalKernel.env475 d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2))).sum := by
         apply list_sum_map_le; intro x hx
-        have hgp_eq : (bodyApproxWin Q hQ hn d).goodPred = GenericW.GoodW96 d.k (wideCoeffs25 d) Q := by
-          simp [bodyApproxWin, Digit25.goodPred, hd_r]
+        have hgp_eq : (bodyApproxWin Q hQ hn d).goodPred = GenericW.GoodWA GenericW.arithSpecEnv475 d.k (wideCoeffs25 d) Q := by
+          cases d <;> simp [Digit25.isRight] at hd_r <;> rfl
         rw [hgp_eq]
-        change normSq (restrictState (fun s => ¬ GenericW.GoodW96 d.k (wideCoeffs25 d) Q s)
+        change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv475 d.k (wideCoeffs25 d) Q s)
           (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
         rw [List.reverse_reverse]
-        exact badStep96_le_badBoundW96 Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
-      exact (h1.trans (badBoundW96_linear_sum d.width _ _ S D hdom)).trans
-        (maxBound_badBoundW96 d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD)
+        exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv475 LocalKernel.env475 goodX_env475
+          Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
+      exact (h1.trans (badBoundWEnv_linear_sum LocalKernel.env475 d.width _ _ S D hdom)).trans
+        (maxBound_badBoundWEnv LocalKernel.env475 d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD)
     let S' : List (List Bool × State) := S.flatMap (fun x =>
       (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
     have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -9670,7 +11568,7 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound M D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
     (S.map (fun x => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2)).sum ≤
-      12 * ((4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * M) := by
+      12 * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M) := by
   unfold rightApprox25
   simp only [axisBad]
   have hadd : (S.map (fun x =>
@@ -9695,21 +11593,22 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
         (Quantum.run (rightHeadApproxWin Q hQ hn).pre
           (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-      (4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * M := by
+      (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M := by
     have h1 : (S.map (fun x =>
         normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
           (Quantum.run (rightHeadApproxWin Q hQ hn).pre
             (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (S.map (fun x => badBoundW96 17 (fun v => sineWeight 10 (v / 2 ^ 7))
+        (S.map (fun x => badBoundWEnv LocalKernel.env475 17 (fun v => sineWeight 10 (v / 2 ^ 7))
           (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) (pointMass x.2))).sum := by
       apply list_sum_map_le; intro x hx
-      change normSq (restrictState (fun s => ¬ GenericW.GoodW96 16 (wideCoeffs25 rightHeadDigit) Q s)
+      change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv475 16 (wideCoeffs25 rightHeadDigit) Q s)
         (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) x.2))) ≤ _
       rw [List.reverse_reverse]
-      exact badStep96_le_badBoundW96 Q hQ rightHeadDigit (sineFromPlus top10Right)
+      exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv475 LocalKernel.env475 goodX_env475
+        Q hQ rightHeadDigit (sineFromPlus top10Right)
         (fun v => sineWeight 10 (v / 2 ^ 7)) rightHead_pre_expand x.2 (hS x hx)
-    exact (h1.trans (badBoundW96_linear_sum 17 _ _ S D hdom)).trans
-      (maxBound_badBoundW96 17 _ _ M hM sum_fourierOutcomes17_sine D hD)
+    exact (h1.trans (badBoundWEnv_linear_sum LocalKernel.env475 17 _ _ S D hdom)).trans
+      (maxBound_badBoundWEnv LocalKernel.env475 17 _ _ M hM sum_fourierOutcomes17_sine D hD)
   let S' : List (List Bool × State) := S.flatMap (fun x =>
     (fourierOutcomes 17).map (fun bits => (bits.reverse ++ List.nil, (rightHeadModel Q hQ hn).step List.nil bits x.2)))
   have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -9758,7 +11657,7 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
     intro d hd
     simp only [rightTailDigits25, List.mem_append, List.mem_ofFn] at hd
     rcases hd with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
-  have h2 := bodyTail_axisBad_maxBound96 Q hQ hn rightTailDigits25 hright_tail (fun _ _ => 0) M 0 hM
+  have h2 := bodyTail_axisBad_maxBoundEnv475 Q hQ hn rightTailDigits25 hright_tail (fun _ _ => 0) M 0 hM
     (fun S₀ _ _ _ _ => by
       induction S₀ with | nil => simp | cons _ _ ih => simp [ih])
     S' D' hS'_pt hD' hdom'
@@ -9768,7 +11667,7 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
   linarith
 
 theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (d : Digit25) (hbaseG : d.base Q = G) (hleft : d.isRight = false)
+    (d : Digit25) (hbaseG : d.base Q = G) (hfull : d.goodPred Q = GenericW.GoodW d.k (wideCoeffs25 d) Q)
     (acc : Nat) (hacc : 9 ≤ acc) (hsum : acc + d.width ≤ 240)
     (rest : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)))
     (baseBad : List Bool → State → ℝ) (B : ℝ)
@@ -9810,8 +11709,7 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
             (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
         (S.map (fun x => badBoundW d.width (fun _ => 1) (Width16Schedule.increment G d.width d.exponent) (pointMass x.2))).sum := by
       apply list_sum_map_le; intro x hx
-      have hgp_eq : (bodyApproxWin Q hQ hn d).goodPred = GenericW.GoodW d.k (wideCoeffs25 d) Q := by
-        simp [bodyApproxWin, Digit25.goodPred, hleft]
+      have hgp_eq : (bodyApproxWin Q hQ hn d).goodPred = GenericW.GoodW d.k (wideCoeffs25 d) Q := hfull
       rw [hgp_eq]
       change normSq (restrictState (fun s => ¬ GenericW.GoodW d.k (wideCoeffs25 d) Q s)
         (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
@@ -9865,14 +11763,36 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
   have h2 := hnext S' D' hS'_pt hD' hdom'
   linarith
 
-theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR : ℝ) (hcR : 0 ≤ cR) :
+def leftInitDigits25 : List Digit25 :=
+  List.ofFn (fun j : Fin 11 => .left18 j) ++ [.left19 ⟨0, by decide⟩]
+
+def leftInitApprox25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+  leftInitDigits25.map (bodyApproxWin Q hQ hn)
+
+theorem leftRestApprox25_split (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
+    leftRestApprox25 Q hQ hn =
+      leftInitApprox25 Q hQ hn ++ [bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)] := by
+  simp [leftRestApprox25, leftInitApprox25, leftInitDigits25, leftDigits25, List.ofFn_succ]
+
+theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cLast cR : ℝ)
+    (hcLast : 0 ≤ cLast) (hcR : 0 ≤ cR) :
+    let wLast := bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)
+    let baseR : List Bool → State → ℝ :=
+      fun _ φ => cR * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
+    let baseLast : List Bool → State → ℝ :=
+      fun tag φ => cLast * axisBad [wLast] tag baseR φ
     ((fourierOutcomes 20).map (fun bits =>
-      axisBad (leftRestApprox25 Q hQ hn) bits.reverse
-        (fun _ φ => cR * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ)
+      axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast
         ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))).sum ≤
-      (4 : ℝ) / (2 : ℝ) ^ 236 + cR * ((145 : ℝ) / 10 ^ 10) := by
+      cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
+  dsimp only
+  let dLast : Digit25 := .left19 ⟨1, by decide⟩
+  let wLast := bodyApproxWin Q hQ hn dLast
   let baseR : List Bool → State → ℝ :=
     fun _ φ => cR * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
+  let baseLast : List Bool → State → ℝ :=
+    fun tag φ => cLast * axisBad [wLast] tag baseR φ
   let S₀ : List (List Bool × State) := (fourierOutcomes 20).map (fun bits =>
     (bits.reverse, (first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
   have hS₀_pt : ∀ x ∈ S₀, PointSupported x.2 := by
@@ -9891,41 +11811,38 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR :
       (fun _ => rfl)]
   rw [← list_map_map_congr (fourierOutcomes 20)
     (fun bits => (bits.reverse, (first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
-    (fun x => axisBad (leftRestApprox25 Q hQ hn) x.1 baseR x.2)
-    (fun bits => axisBad (leftRestApprox25 Q hQ hn) bits.reverse baseR ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
+    (fun x => axisBad (leftInitApprox25 Q hQ hn) x.1 baseLast x.2)
+    (fun bits => axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
     (fun _ => rfl)]
-  change (S₀.map (fun x => axisBad (leftRestApprox25 Q hQ hn) x.1 baseR x.2)).sum ≤
-    (4 : ℝ) / (2 : ℝ) ^ 236 + cR * ((145 : ℝ) / 10 ^ 10)
-  let tail2 : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
-    [bodyApproxWin Q hQ hn (.left19 ⟨0, by decide⟩), bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)]
-  have hleft_eq : leftRestApprox25 Q hQ hn =
-      (List.ofFn (fun j : Fin 11 => Digit25.left18 j)).map (bodyApproxWin Q hQ hn) ++ tail2 := by
-    simp [leftRestApprox25, leftDigits25, tail2, List.ofFn_succ]
-  -- Phase 2: starting before `left19 1`, `OddSupport 237 19 D` gives `4 / 2^236` on `left19 1`
-  -- and tight `MaxBound (2 / 2^256)` after `left19 1` for the 12 truncated Right windows.
+  change (S₀.map (fun x => axisBad (leftInitApprox25 Q hQ hn) x.1 baseLast x.2)).sum ≤
+    cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9))
+  -- Phase 2: starting before `left19 1` (`env490`), `OddSupport 237 19 D` gives `156 / 10^8` on `left19 1`
+  -- and tight `MaxBound (2 / 2^256)` after `left19 1` for the 12 `env475` Right windows (`452 / 10^9`).
   have hphase2 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport 237 19 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => axisBad ([bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)]) x.1 baseR x.2)).sum ≤
-        (4 : ℝ) / (2 : ℝ) ^ 236 + cR * ((145 : ℝ) / 10 ^ 10) := by
+      (S.map (fun x => axisBad (List.nil : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q))) x.1 baseLast x.2)).sum ≤
+        cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
     intro S D hS hD hdom
-    let dLast : Digit25 := .left19 ⟨1, by decide⟩
-    simp only [axisBad]
+    have hmul : ∀ (xs : List (List Bool × State)) (r : ℝ) (f : (List Bool × State) → ℝ),
+        (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := fun xs r f => by
+      induction xs with | nil => simp | cons _ _ ih => simp [ih, mul_add]
+    simp only [axisBad, baseLast]
+    rw [hmul]
+    apply mul_le_mul_of_nonneg_left _ hcLast
     have hadd : (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
-          (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
-            (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))) +
-        ((fourierOutcomes (bodyApproxWin Q hQ hn dLast).model.physical.wires.length).map (fun bits =>
-          baseR (bits.reverse ++ x.1)
-            ((bodyApproxWin Q hQ hn dLast).model.step x.1 bits x.2))).sum)).sum =
+        normSq (restrictState (fun s => ¬ wLast.goodPred s)
+          (Quantum.run wLast.pre
+            (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))) +
+        ((fourierOutcomes wLast.model.physical.wires.length).map (fun bits =>
+          baseR (bits.reverse ++ x.1) (wLast.model.step x.1 bits x.2))).sum)).sum =
       (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
-          (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
-            (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))))).sum +
+        normSq (restrictState (fun s => ¬ wLast.goodPred s)
+          (Quantum.run wLast.pre
+            (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))))).sum +
       (S.map (fun x =>
-        ((fourierOutcomes (bodyApproxWin Q hQ hn dLast).model.physical.wires.length).map (fun bits =>
-          baseR (bits.reverse ++ x.1)
-            ((bodyApproxWin Q hQ hn dLast).model.step x.1 bits x.2))).sum)).sum := by
+        ((fourierOutcomes wLast.model.physical.wires.length).map (fun bits =>
+          baseR (bits.reverse ++ x.1) (wLast.model.step x.1 bits x.2))).sum)).sum := by
       clear hdom hS
       induction S with | nil => simp | cons _ _ ihs => simp [ihs]; ring
     rw [hadd]
@@ -9933,23 +11850,34 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR :
       refine ⟨hD.1, fun P => (hD.2.1 P).trans_eq ?_⟩
       norm_num [pow_succ]
     have hbad1 : (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
-          (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
-            (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (4 : ℝ) / (2 : ℝ) ^ 236 := by
+        normSq (restrictState (fun s => ¬ wLast.goodPred s)
+          (Quantum.run wLast.pre
+            (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+        (156 : ℝ) / 10 ^ 8 := by
       have h1 : (S.map (fun x =>
-          normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
-            (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
-              (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-          (S.map (fun x => badBoundW 19 (fun _ => 1) (Width16Schedule.increment G 19 0) (pointMass x.2))).sum := by
+          normSq (restrictState (fun s => ¬ wLast.goodPred s)
+            (Quantum.run wLast.pre
+              (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+          (S.map (fun x => badBoundWEnv LocalKernel.env490 19 (fun _ => 1) (Width16Schedule.increment G 19 0) (pointMass x.2))).sum := by
         apply list_sum_map_le; intro x hx
-        change normSq (restrictState (fun s => ¬ GenericW.GoodW 18 (wideCoeffs25 dLast) Q s)
+        change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv490 18 (wideCoeffs25 dLast) Q s)
           (Quantum.run List.nil (Quantum.run ((GenericW.bankW 18).reverse.reverse.map Gate.H) x.2))) ≤ _
         rw [List.reverse_reverse]
-        exact badStep_le_badBoundW Q hQ dLast List.nil (fun _ => 1) (body_pre_expandW 18 (by decide)) x.2 (hS x hx)
-      have h2 := (h1.trans (badBoundW_linear_sum 19 _ _ S D hdom)).trans
-        (maxBound_badBoundW 19 _ _ _ (by positivity) (sum_fourierOutcomes_one 19) D hM)
-      exact h2.trans_eq (by ring)
+        exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv490 LocalKernel.env490 goodX_env490
+          Q hQ dLast List.nil (fun _ => 1) (body_pre_expandW 18 (by decide)) x.2 (hS x hx)
+      have h2 := (h1.trans (badBoundWEnv_linear_sum LocalKernel.env490 19 _ _ S D hdom)).trans
+        (maxBound_badBoundWEnv LocalKernel.env490 19 _ _ _ (by positivity) (sum_fourierOutcomes_one 19) D hM)
+      have hcard := SkywalkTail485.skywalk_badStack490_card
+      have h3 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env490).card : ℝ)) * ((1 : ℝ) / (2 : ℝ) ^ 236) ≤
+          (4 + 4 * ((37 : ℝ) / 10 ^ 14 * (2 : ℝ) ^ 256)) * ((1 : ℝ) / (2 : ℝ) ^ 236) := by
+        apply mul_le_mul_of_nonneg_right _ (by positivity); linarith
+      have h4 : (4 + 4 * ((37 : ℝ) / 10 ^ 14 * (2 : ℝ) ^ 256)) * ((1 : ℝ) / (2 : ℝ) ^ 236) =
+          4 / (2 : ℝ) ^ 236 + 4 * (37 / 10 ^ 14) * (2 : ℝ) ^ 20 := by
+        have hp : (2 : ℝ) ^ 256 = (2 : ℝ) ^ 236 * (2 : ℝ) ^ 20 := by rw [← pow_add]
+        have hp0 : (2 : ℝ) ^ 236 ≠ 0 := by positivity
+        rw [hp]; field_simp [hp0]
+      have h5 : (4 : ℝ) / (2 : ℝ) ^ 236 + 4 * (37 / 10 ^ 14) * (2 : ℝ) ^ 20 ≤ 156 / 10 ^ 8 := by norm_num
+      linarith
     let S' : List (List Bool × State) := S.flatMap (fun x =>
       (fourierOutcomes 19).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn dLast).step x.1 bits x.2)))
     have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -9979,57 +11907,55 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR :
       rw [List.map_congr_left hper]
       exact stepDistW_linear_sum 19 _ _ S D hdom P'
     have htail_eq : (S.map (fun x =>
-        ((fourierOutcomes (bodyApproxWin Q hQ hn dLast).model.physical.wires.length).map (fun bits =>
-          baseR (bits.reverse ++ x.1)
-            ((bodyApproxWin Q hQ hn dLast).model.step x.1 bits x.2))).sum)).sum =
+        ((fourierOutcomes wLast.model.physical.wires.length).map (fun bits =>
+          baseR (bits.reverse ++ x.1) (wLast.model.step x.1 bits x.2))).sum)).sum =
         cR * (S'.map (fun y => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) y.2)).sum := by
-      have hmul : ∀ (xs : List (List Bool × State)) (r : ℝ) (f : (List Bool × State) → ℝ),
-          (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := fun xs r f => by
-        induction xs with | nil => simp | cons _ _ ih => simp [ih, mul_add]
       rw [← hmul]
       dsimp only [S', baseR]
       rw [flatMap_sum_real]
       apply congrArg List.sum; apply List.map_congr_left; intro x _
-      have hwl : (bodyApproxWin Q hQ hn dLast).model.physical.wires.length = 19 := by
-        simp only [bodyApproxWin, bodyModel, dLast, List.length_reverse, Digit25.bank, Digit25.k, GenericW.bankW_length]
+      have hwl : wLast.model.physical.wires.length = 19 := by
+        simp only [wLast, bodyApproxWin, bodyModel, dLast, List.length_reverse, Digit25.bank, Digit25.k, GenericW.bankW_length]
       rw [hwl]
       apply congrArg List.sum; symm
       exact list_map_map_congr _ _ _ _ (fun _ => rfl)
     rw [htail_eq]
     have hR := rightApprox25_axisBad_maxBound Q hQ hn (2 / (2 : ℝ) ^ 256) (by positivity) S' D' hS'_pt hD' hdom'
-    have hR_num : 12 * ((4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * (2 / (2 : ℝ) ^ 256)) ≤ (145 : ℝ) / 10 ^ 10 := by
-      have hcard := SkywalkTail485.skywalk_bad485_card
-      have h1 : 12 * ((4 + 4 * (SkywalkTail485.Bad485.card : ℝ)) * (2 / (2 : ℝ) ^ 256)) ≤
-          12 * ((4 + 4 * ((15 : ℝ) / 10 ^ 11 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256)) := by
+    have hR_num : 12 * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * (2 / (2 : ℝ) ^ 256)) ≤ (452 : ℝ) / 10 ^ 9 := by
+      have hcard := SkywalkTail485.skywalk_badStack475_card
+      have h1 : 12 * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * (2 / (2 : ℝ) ^ 256)) ≤
+          12 * ((4 + 4 * ((47 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256)) := by
         apply mul_le_mul_of_nonneg_left _ (by norm_num)
         apply mul_le_mul_of_nonneg_right _ (by positivity)
         linarith
-      have h2 : 12 * ((4 + 4 * ((15 : ℝ) / 10 ^ 11 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256)) =
-          96 / (2 : ℝ) ^ 256 + 144 / 10 ^ 10 := by
+      have h2 : 12 * ((4 + 4 * ((47 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256)) =
+          96 / (2 : ℝ) ^ 256 + 4512 / 10 ^ 10 := by
         have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
         field_simp [hp]; ring
-      have h3 : (96 : ℝ) / (2 : ℝ) ^ 256 + 144 / 10 ^ 10 ≤ 145 / 10 ^ 10 := by norm_num
+      have h3 : (96 : ℝ) / (2 : ℝ) ^ 256 + 4512 / 10 ^ 10 ≤ 452 / 10 ^ 9 := by norm_num
       linarith
     have htail_le : cR * (S'.map (fun y => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) y.2)).sum ≤
-        cR * ((145 : ℝ) / 10 ^ 10) :=
+        cR * ((452 : ℝ) / 10 ^ 9) :=
       mul_le_mul_of_nonneg_left (hR.trans hR_num) hcR
     linarith
-  -- Phase 1b: `left19 0` advances `OddSupport 218 38` to `OddSupport 237 19`
+  -- Phase 1b: `left19 0` (full 512-step `GoodW`) advances `OddSupport 218 38` to `OddSupport 237 19`
+  let tail1 : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+    [bodyApproxWin Q hQ hn (.left19 ⟨0, by decide⟩)]
   have hphase1b : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport 218 38 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => axisBad tail2 x.1 baseR x.2)).sum ≤
-        (4 : ℝ) / (2 : ℝ) ^ 236 + cR * ((145 : ℝ) / 10 ^ 10) := by
+      (S.map (fun x => axisBad tail1 x.1 baseLast x.2)).sum ≤
+        cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
     intro S D hS hD hdom
-    exact leftPhase1_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl rfl 218 (by decide) (by decide)
-      ([bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)]) baseR _ S D hS hD hdom hphase2
+    exact leftPhase1_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl (by simp [Digit25.goodPred, Digit25.k]) 218 (by decide) (by decide)
+      List.nil baseLast _ S D hS hD hdom hphase2
   -- Phase 1a: induction over `m = 11 - j` steps of `left18`
   have hphase1a : ∀ (m : Nat) (hm : m ≤ 11) (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport (20 + 18 * (11 - m)) (236 - 18 * (11 - m)) D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       (S.map (fun x => axisBad
-        ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail2)
-        x.1 baseR x.2)).sum ≤ (4 : ℝ) / (2 : ℝ) ^ 236 + cR * ((145 : ℝ) / 10 ^ 10) := by
+        ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail1)
+        x.1 baseLast x.2)).sum ≤ cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
     intro m
     induction m with
     | zero =>
@@ -10038,13 +11964,13 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR :
     | succ m ih =>
       intro hm S D hS hD hdom
       have hlist : (List.ofFn (fun j : Fin (m + 1) => Digit25.left18 ⟨(11 - (m + 1)) + j.val, by omega⟩)).map
-          (bodyApproxWin Q hQ hn) ++ tail2 =
+          (bodyApproxWin Q hQ hn) ++ tail1 =
         bodyApproxWin Q hQ hn (.left18 ⟨11 - (m + 1), by omega⟩) ::
           ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map
-            (bodyApproxWin Q hQ hn) ++ tail2) := by
+            (bodyApproxWin Q hQ hn) ++ tail1) := by
         rw [List.ofFn_succ, List.map_cons, List.cons_append]
         apply congrArg (List.cons _)
-        apply congrArg (fun l => l ++ tail2)
+        apply congrArg (fun l => l ++ tail1)
         apply congrArg (List.map _)
         apply congrArg List.ofFn; funext j
         apply congrArg Digit25.left18; apply Fin.ext; simp only [Fin.val_succ]; omega
@@ -10053,7 +11979,7 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR :
         simp only [Digit25.exponent, Digit25.width, Digit25.k]; omega
       rw [hexp_eq] at hD
       refine leftPhase1_step Q hQ hn (.left18 ⟨11 - (m + 1), by omega⟩) rfl rfl (20 + 18 * (11 - (m + 1))) (by omega)
-        (by simp only [Digit25.width, Digit25.k]; omega) _ baseR _ S D hS hD hdom ?_
+        (by simp only [Digit25.width, Digit25.k]; omega) _ baseLast _ S D hS hD hdom ?_
       intro S' D' hS' hD' hdom'
       have hacc_eq : 20 + 18 * (11 - (m + 1)) + (Digit25.left18 ⟨11 - (m + 1), by omega⟩).width = 20 + 18 * (11 - m) := by
         simp only [Digit25.width, Digit25.k]; omega
@@ -10061,7 +11987,10 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cR :
         simp only [Digit25.exponent]; omega
       rw [hacc_eq, hexp_next] at hD'
       exact ih (by omega) S' D' hS' hD' hdom'
-  rw [hleft_eq]
+  have hinit_eq : leftInitApprox25 Q hQ hn =
+      (List.ofFn (fun j : Fin 11 => Digit25.left18 j)).map (bodyApproxWin Q hQ hn) ++ tail1 := by
+    simp [leftInitApprox25, leftInitDigits25, tail1]
+  rw [hinit_eq]
   have h11 := hphase1a 11 (le_refl 11) S₀ D₀ hS₀_pt hD₀ hdom₀
   simpa using h11
 
@@ -10136,12 +12065,12 @@ private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     exact hfor d (d.goodPred Q) List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi)
   · rcases List.mem_cons.mp hwR with rfl | hwR
     · change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 rightHeadDigit) Q)
-        (restrictState (fun s => ¬ GenericW.GoodW96 16 (wideCoeffs25 rightHeadDigit) Q s)
+        (restrictState (fun s => ¬ GenericW.GoodWEnv475 16 (wideCoeffs25 rightHeadDigit) Q s)
           (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) φ)))) ≤
-        normSq (restrictState (fun s => ¬ GenericW.GoodW96 16 (wideCoeffs25 rightHeadDigit) Q s)
+        normSq (restrictState (fun s => ¬ GenericW.GoodWEnv475 16 (wideCoeffs25 rightHeadDigit) Q s)
           (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) φ)))
       rw [List.reverse_reverse]
-      exact hfor rightHeadDigit (GenericW.GoodW96 16 (wideCoeffs25 rightHeadDigit) Q)
+      exact hfor rightHeadDigit (GenericW.GoodWEnv475 16 (wideCoeffs25 rightHeadDigit) Q)
         (sineFromPlus top10Right) (fun v => sineWeight 10 (v / 2 ^ 7)) rightHead_pre_expand
     · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hwR
       change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
@@ -10155,27 +12084,33 @@ private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
 theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
     Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
       (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState) ≤
-      ((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 *
+      ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
         windowedEventMass Q zeroBasisState 256 206 accept +
-      (((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 * (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8))) *
-        ((4 : ℝ) / (2 : ℝ) ^ 236) +
-      (((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 * (2 + 1 / 3000) * (1 + 1 / (1 / 3000))) *
-        ((145 : ℝ) / 10 ^ 10) := by
-  set epsR : ℝ := 1 / 3000
+      ((1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 * (2 + 1 / 75) * (1 + 1 / (1 / 75))) *
+        ((156 : ℝ) / 10 ^ 8) +
+      (((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
+        (2 + 1 / 460) * (1 + 1 / (1 / 460))) * ((452 : ℝ) / 10 ^ 9) := by
+  set epsR : ℝ := 1 / 460
   set αR : ℝ := (1 + epsR) ^ 2
   set B0R : ℝ := (2 + epsR) * (1 + 1 / epsR)
-  set epsL : ℝ := 1 / 10 ^ 8
-  set αL : ℝ := (1 + epsL) ^ 2
-  set B0L : ℝ := (2 + epsL) * (1 + 1 / epsL)
+  set epsLast : ℝ := 1 / 75
+  set αLast : ℝ := (1 + epsLast) ^ 2
+  set B0Last : ℝ := (2 + epsLast) * (1 + 1 / epsLast)
+  set epsInit : ℝ := 1 / 10 ^ 8
+  set αInit : ℝ := (1 + epsInit) ^ 2
+  set B0Init : ℝ := (2 + epsInit) * (1 + 1 / epsInit)
   have hepsR : 0 < epsR := by dsimp [epsR]; positivity
-  have hepsL : 0 < epsL := by dsimp [epsL]; positivity
+  have hepsLast : 0 < epsLast := by dsimp [epsLast]; positivity
+  have hepsInit : 0 < epsInit := by dsimp [epsInit]; positivity
   have hB0R_nn : 0 ≤ B0R := by dsimp [B0R, epsR]; positivity
-  have hB0L_pos : 0 < B0L := by dsimp [B0L, epsL]; positivity
+  have hB0Last_pos : 0 < B0Last := by dsimp [B0Last, epsLast]; positivity
+  have hB0Init_pos : 0 < B0Init := by dsimp [B0Init, epsInit]; positivity
   have hterm_sub : ∀ (lhs rhs : List Bool), SubUnital
       (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil) :=
     fun _ _ => subUnital_ite _ _ (fun φ => le_of_eq (resetTerminal25_mass φ))
   have hlenR : (rightApprox25 Q hQ hn).length = 12 := by simp [rightApprox25, rightTailDigits25]
-  have hlenL : (leftRestApprox25 Q hQ hn).length = 13 := by simp [leftRestApprox25, leftDigits25]
+  have hlenInit : (leftInitApprox25 Q hQ hn).length = 12 := by simp [leftInitApprox25, leftInitDigits25]
+  let wLast := bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)
   have hR_step : ∀ w ∈ rightApprox25 Q hQ hn, ∀ pr bits φ, PointSupported φ → PointSupported (w.model.step pr bits φ) := by
     intro w hw pr bits φ hφ
     rcases List.mem_cons.mp hw with rfl | hw
@@ -10186,13 +12121,23 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
     intro w hw pr bits φ hφ
     obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
     exact bodyModel_step_pointSupported Q hQ hn d pr bits φ hφ
+  have hInit_sub : ∀ w ∈ leftInitApprox25 Q hQ hn, w ∈ leftRestApprox25 Q hQ hn := fun w hw => by
+    rw [leftRestApprox25_split]; exact List.mem_append_left _ hw
+  have hLast_mem : wLast ∈ leftRestApprox25 Q hQ hn := by
+    rw [leftRestApprox25_split]; exact List.mem_append_right _ List.mem_cons_self
+  let physTermL : List Bool → List Bool → Instrument := fun lHist lhs =>
+    selectedAxisDep (rightApprox25 Q hQ hn)
+      (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
+      (Single.historyAfter _ Fin.elim0 lHist) List.nil
+      (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
+  let idealTermL : List Bool → Instrument := fun lhs =>
+    idealAxis ((rightApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil
+      (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
+  -- Stage 1: Right 12 windows (`env475`, `epsR = 1/460`)
   have hR_bound (lHist lhs : List Bool) (φ : State) (hφ : PointSupported φ) :
-      (selectedAxisDep (rightApprox25 Q hQ hn) (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
-        (Single.historyAfter _ Fin.elim0 lHist) List.nil
-        (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)).bornMass (LocalFour.Prep 1 φ) ≤
-      αR ^ 12 * (idealAxis ((rightApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil
-        (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)).bornMass φ +
-      B0L * ((B0R * αR ^ 12 / B0L) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ) := by
+      (physTermL lHist lhs).bornMass (LocalFour.Prep 1 φ) ≤
+      αR ^ 12 * (idealTermL lhs).bornMass φ +
+      B0Last * ((B0R * αR ^ 12 / B0Last) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ) := by
     have h := selectedAxisDep_mass_upper (rightApprox25 Q hQ hn)
       (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
       (Single.historyAfter _ Fin.elim0 lHist) List.nil
@@ -10207,19 +12152,33 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
         · rw [resetTerminal25_mass, resetTerminal25_mass, LocalFour.normSq_prep]
         · simp [Instrument.bornMass])
       φ hφ (pointSupported_y1 φ hφ)
-    have hcancel : B0L * ((B0R * αR ^ 12 / B0L) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ) =
+    have hcancel : B0Last * ((B0R * αR ^ 12 / B0Last) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ) =
         (B0R * αR ^ 12) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ := by
-      field_simp [hB0L_pos.ne']
+      field_simp [hB0Last_pos.ne']
     rw [hcancel]
-    simpa [hlenR] using h
-  let physTermL : List Bool → List Bool → Instrument := fun lHist lhs =>
-    selectedAxisDep (rightApprox25 Q hQ hn)
-      (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
-      (Single.historyAfter _ Fin.elim0 lHist) List.nil
-      (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
-  let idealTermL : List Bool → Instrument := fun lhs =>
-    idealAxis ((rightApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil
-      (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
+    simpa [hlenR, physTermL, idealTermL] using h
+  -- Stage 2: Final Left window `left19 1` (`env490`, `epsLast = 1/75`)
+  let baseR : List Bool → State → ℝ :=
+    fun _ φ => (B0R * αR ^ 12 / B0Last) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
+  let baseLast : List Bool → State → ℝ :=
+    fun tag φ => (B0Last * αLast / B0Init) * axisBad [wLast] tag baseR φ
+  have hLast_bound (st : Nat) (hist : Fin st → Bool) (pr : List (Fin st)) (hPref : List Bool)
+      (φ : State) (hφ : PointSupported φ) (hφY : SupportedOn (fun s => s 1 = false) φ) :
+      (selectedAxisDep [wLast] st hist pr (fun hRest lhs => physTermL (hPref ++ hRest) lhs)).bornMass (LocalFour.Prep 1 φ) ≤
+      (αR ^ 12 * αLast) * (idealAxis ([wLast].map ApproxCatWindow.model) (pr.map hist) idealTermL).bornMass φ +
+      B0Init * baseLast (pr.map hist) φ := by
+    have h := selectedAxisDep_mass_upper [wLast] st hist pr
+      (fun hRest lhs => physTermL (hPref ++ hRest) lhs) idealTermL baseR
+      PointSupported epsLast (αR ^ 12) B0Last hepsLast (by positivity) hB0Last_pos.le le_rfl
+      (fun w hw => hL_step w (by rw [List.mem_singleton.mp hw]; exact hLast_mem))
+      (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl (by rw [List.mem_singleton.mp hw]; exact hLast_mem)) φ' hφ')
+      (fun _ lhs => selectedAxisDep_subUnital _ _ _ _ _ (fun _ rhs => hterm_sub lhs rhs))
+      (fun hRest lhs φ' hφ' _ => hR_bound (hPref ++ hRest) lhs φ' hφ')
+      φ hφ hφY
+    have hcancel : B0Init * baseLast (pr.map hist) φ = (B0Last * αLast) * axisBad [wLast] (pr.map hist) baseR φ := by
+      dsimp only [baseLast]; field_simp [hB0Init_pos.ne']
+    rw [hcancel]
+    simpa [List.length_singleton, pow_one] using h
   have hfirst_good : SupportedOn First20Input0
       (Quantum.run (sineFromPlus top10Left)
         (Quantum.run (First20Signed.bits.reverse.reverse.map Gate.H) (ket zeroBasisState))) := by
@@ -10237,12 +12196,12 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
         (fun t w b hw ht => first20Input0_upd t w b
           (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hw)) ht) s hs)
       _ hH
+  -- Stage 3: First 12 body Left windows (`leftInitApprox25`, full 512-step `GoodW`, `epsInit = 1/10^8`) via `selectedAxisDep_mass_upper_split`
   have hmain := selectedAxisDep_cons_exact_upper (first20ApproxWin Q hQ hn) (leftRestApprox25 Q hQ hn)
     0 Fin.elim0 List.nil physTermL idealTermL
-    (fun bits => axisBad (leftRestApprox25 Q hQ hn) bits.reverse
-      (fun _ φ => (B0R * αR ^ 12 / B0L) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ)
+    (fun bits => axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast
       ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
-    (αR ^ 12 * αL ^ 13) (B0L * αL ^ 13) (ket zeroBasisState) (supportedOn_ket _ _ rfl) hfirst_good (by
+    (αR ^ 12 * αLast * αInit ^ 12) (B0Init * αInit ^ 12) (ket zeroBasisState) (supportedOn_ket _ _ rfl) hfirst_good (by
       intro a bits ha_mem hb_mem
       have ha_len : a.history.length = cFirst20 := by
         change a.history.length = (first20ApproxWin Q hQ hn).catPhys.count
@@ -10252,17 +12211,22 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
             (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits) = bits.reverse := by
         simpa using nextPrior_map cFirst20 20 List.nil Fin.elim0 a.history bits ha_len
           ((fourierOutcomes_mem 20 bits).mp hb_mem)
-      have hL := selectedAxisDep_mass_upper (leftRestApprox25 Q hQ hn)
+      rw [leftRestApprox25_split]
+      have hL := selectedAxisDep_mass_upper_split (leftInitApprox25 Q hQ hn) (wLast :: List.nil)
         (0 + cFirst20 + First20Signed.bits.reverse.length)
         (Single.historyAfter (0 + cFirst20 + First20Signed.bits.reverse.length)
           (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits)
         (nextPrior cFirst20 First20Signed.bits.reverse.length List.nil)
         (fun hRest lhs => physTermL (a.history ++ bits ++ hRest) lhs)
-        idealTermL (fun _ φ => (B0R * αR ^ 12 / B0L) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ)
-        PointSupported epsL (αR ^ 12) B0L hepsL (by positivity) hB0L_pos.le le_rfl hL_step
-        (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl hw) φ' hφ')
-        (fun hRest lhs => selectedAxisDep_subUnital _ _ _ _ _ (fun _ rhs => hterm_sub lhs rhs))
-        (fun hRest lhs φ' hφ' _ => hR_bound (a.history ++ bits ++ hRest) lhs φ' hφ')
+        idealTermL baseLast PointSupported epsInit (αR ^ 12 * αLast) B0Init hepsInit (by positivity) hB0Init_pos.le le_rfl
+        (fun w hw => hL_step w (hInit_sub w hw))
+        (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl (hInit_sub w hw)) φ' hφ')
+        (fun _ lhs => selectedAxisDep_subUnital _ _ _ _ _ (fun _ rhs => hterm_sub lhs rhs))
+        (fun st hist pr hPref φ' hφ' hφY' => by
+          have heq : (fun hRest lhs => physTermL (a.history ++ bits ++ (hPref ++ hRest)) lhs) =
+              (fun hRest lhs => physTermL ((a.history ++ bits ++ hPref) ++ hRest) lhs) := by
+            funext hRest lhs; simp only [List.append_assoc]
+          rw [heq]; exact hLast_bound st hist pr (a.history ++ bits ++ hPref) φ' hφ' hφY')
         ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))
         (first20Model_step_pointSupported Q hQ hn List.nil bits)
         (pointSupported_y1 _ (first20Model_step_pointSupported Q hQ hn List.nil bits))
@@ -10270,7 +12234,7 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
           (Single.historyAfter (0 + cFirst20 + First20Signed.bits.reverse.length)
             (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits) = bits.reverse := by
         simpa [First20Signed.bits_length] using hnp
-      rw [hnp', hlenL] at hL
+      rw [hnp', hlenInit] at hL
       simpa [List.append_nil] using hL)
   have hlhs : (idealAxis ((leftApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil idealTermL).bornMass (ket zeroBasisState) =
       windowedEventMass Q zeroBasisState 256 206 accept := by
@@ -10310,25 +12274,34 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
       rw [Single.axisPositions, rightWins25Cat_meta]; rfl
     rw [hposL, hposR]
     rfl
-  have hbad := totalBad25_bound Q hQ hn (B0R * αR ^ 12 / B0L) (div_nonneg (mul_nonneg hB0R_nn (by positivity)) hB0L_pos.le)
-  have hB0L_aL_nn : 0 ≤ B0L * αL ^ 13 := mul_nonneg hB0L_pos.le (by positivity)
-  have hmb := mul_le_mul_of_nonneg_left hbad hB0L_aL_nn
-  have hsimp : (B0L * αL ^ 13) * ((4 : ℝ) / (2 : ℝ) ^ 236 + (B0R * αR ^ 12 / B0L) * ((145 : ℝ) / 10 ^ 10)) =
-      (αL ^ 13 * B0L) * ((4 : ℝ) / (2 : ℝ) ^ 236) + (αR ^ 12 * αL ^ 13 * B0R) * ((145 : ℝ) / 10 ^ 10) := by
-    field_simp [hB0L_pos.ne']
+  have hbad := totalBad25_bound Q hQ hn (B0Last * αLast / B0Init) (B0R * αR ^ 12 / B0Last)
+    (div_nonneg (mul_nonneg hB0Last_pos.le (by positivity)) hB0Init_pos.le)
+    (div_nonneg (mul_nonneg hB0R_nn (by positivity)) hB0Last_pos.le)
+  have hmb := mul_le_mul_of_nonneg_left hbad (mul_nonneg hB0Init_pos.le (by positivity) : 0 ≤ B0Init * αInit ^ 12)
+  have hsimp : (B0Init * αInit ^ 12) * ((B0Last * αLast / B0Init) *
+        ((156 : ℝ) / 10 ^ 8 + (B0R * αR ^ 12 / B0Last) * ((452 : ℝ) / 10 ^ 9))) =
+      (αLast * αInit ^ 12 * B0Last) * ((156 : ℝ) / 10 ^ 8) +
+      (αR ^ 12 * αLast * αInit ^ 12 * B0R) * ((452 : ℝ) / 10 ^ 9) := by
+    field_simp [hB0Init_pos.ne', hB0Last_pos.ne']
   rw [hsimp] at hmb
-  change _ ≤ αR ^ 12 * αL ^ 13 * _ + (B0L * αL ^ 13) * _ at hmain
+  change _ ≤ αR ^ 12 * αLast * αInit ^ 12 * _ + (B0Init * αInit ^ 12) * _ at hmain
   rw [show (first20ApproxWin Q hQ hn :: leftRestApprox25 Q hQ hn) = leftApprox25 Q hQ hn from rfl,
     List.map_nil, hlhs, hrhs] at hmain
   have hlen20 : (first20ApproxWin Q hQ hn).model.physical.wires.length = 20 := by
     simp [first20ApproxWin, first20Model, First20Signed.bits_length]
   rw [hlen20] at hmain
-  change _ ≤ αR ^ 12 * αL ^ 13 * _ + (αL ^ 13 * (2 + epsL) * (1 + 1 / epsL)) * _ +
-    (αR ^ 12 * αL ^ 13 * (2 + epsR) * (1 + 1 / epsR)) * _
-  have heq_f : αL ^ 13 * B0L = αL ^ 13 * (2 + epsL) * (1 + 1 / epsL) := by dsimp [B0L]; ring
-  have heq_r : αR ^ 12 * αL ^ 13 * B0R = αR ^ 12 * αL ^ 13 * (2 + epsR) * (1 + 1 / epsR) := by dsimp [B0R]; ring
-  rw [heq_f, heq_r] at hmb
-  linarith
+  change _ ≤ αR ^ 12 * αLast * αInit ^ 12 * _ +
+    (αLast * αInit ^ 12 * (2 + epsLast) * (1 + 1 / epsLast)) * _ +
+    (αR ^ 12 * αLast * αInit ^ 12 * (2 + epsR) * (1 + 1 / epsR)) * _
+  have heq_l : αLast * αInit ^ 12 * B0Last = αLast * αInit ^ 12 * (2 + epsLast) * (1 + 1 / epsLast) := by dsimp [B0Last]; ring
+  have heq_r : αR ^ 12 * αLast * αInit ^ 12 * B0R = αR ^ 12 * αLast * αInit ^ 12 * (2 + epsR) * (1 + 1 / epsR) := by dsimp [B0R]; ring
+  rw [heq_l, heq_r] at hmb
+  have hmb' : (B0Init * αInit ^ 12) * ((fourierOutcomes 20).map (fun bits =>
+      axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast
+        ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))).sum ≤
+      (αLast * αInit ^ 12 * (2 + epsLast) * (1 + 1 / epsLast)) * ((156 : ℝ) / 10 ^ 8) +
+      (αR ^ 12 * αLast * αInit ^ 12 * (2 + epsR) * (1 + 1 / epsR)) * ((452 : ℝ) / 10 ^ 9) := hmb
+  exact hmain.trans ((add_le_add (le_refl _) hmb').trans_eq (add_assoc _ _ _).symm)
 
 theorem program25Cat_clean (read : ConstantBit 3407872 → Bool) (b : InstrumentBranch)
     (hb : b ∈ (program25Cat.instantiate read Fin.elim0).run) (ψ : State) :
@@ -10452,14 +12425,18 @@ theorem bodyCatWin_support (d : Digit25) (start : Nat) :
     change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) ⊆ _
     rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled17_packed_support start
   | left19 j =>
-    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) ⊆ _
-    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled18_packed_support start
+    rcases j with ⟨_ | _ | n, hj⟩
+    · change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) ⊆ _
+      rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled18_packed_support start
+    · change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))) ⊆ _
+      rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv490_18_packed_support start
+    · omega
   | right17 j =>
-    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc16 start)))) ⊆ _
-    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledTrunc16_packed_support start
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv475_16_packed_support start
   | right18 j =>
-    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc17 start)))) ⊆ _
-    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledTrunc17_packed_support start
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv475_17_packed_support start
 
 theorem bodyCatWin_slots (d : Digit25) (start : Nat) : ((bodyCatWin d).program start).gateSlots ≤ 80000000000 := by
   cases d with
@@ -10467,14 +12444,18 @@ theorem bodyCatWin_slots (d : Digit25) (start : Nat) : ((bodyCatWin d).program s
     change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).gateSlots ≤ _
     rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled17_slots start
   | left19 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).gateSlots ≤ _
-    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled18_slots start
+    rcases j with ⟨_ | _ | n, hj⟩
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).gateSlots ≤ _
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled18_slots start
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))).gateSlots ≤ _
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv490_18_slots start
+    · omega
   | right17 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc16 start)))).gateSlots ≤ _
-    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledTrunc16_slots start
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv475_16_slots start
   | right18 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc17 start)))).gateSlots ≤ _
-    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledTrunc17_slots start
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv475_17_slots start
 
 theorem bodyCatWin_tCount (d : Digit25) (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
     (((bodyCatWin d).program start).instantiate read h).tCount ≤ 4 * d.tof := by
@@ -10484,17 +12465,22 @@ theorem bodyCatWin_tCount (d : Digit25) (start : Nat) (read : ConstantBit 340787
     rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
     exact GenericW.compiled17_tCount start _ h
   | left19 j =>
-    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).instantiate read h).tCount ≤ _
-    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-    exact GenericW.compiled18_tCount start _ h
+    rcases j with ⟨_ | _ | n, hj⟩
+    · change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).instantiate read h).tCount ≤ _
+      rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+      exact GenericW.compiled18_tCount start _ h
+    · change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))).instantiate read h).tCount ≤ _
+      rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+      exact GenericW.compiledEnv490_18_tCount start _ h
+    · omega
   | right17 j =>
-    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc16 start)))).instantiate read h).tCount ≤ _
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))).instantiate read h).tCount ≤ _
     rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-    exact GenericW.compiledTrunc16_tCount start _ h
+    exact GenericW.compiledEnv475_16_tCount start _ h
   | right18 j =>
-    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc17 start)))).instantiate read h).tCount ≤ _
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))).instantiate read h).tCount ≤ _
     rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-    exact GenericW.compiledTrunc17_tCount start _ h
+    exact GenericW.compiledEnv475_17_tCount start _ h
 
 theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).program start) = 0 := by
   apply CatAxis.cost18_zero_of_removed18
@@ -10513,14 +12499,18 @@ theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).p
     change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) = 0
     rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled17_removed18 start
   | left19 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) = 0
-    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled18_removed18 start
+    rcases j with ⟨_ | _ | n, hj⟩
+    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) = 0
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled18_removed18 start
+    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))) = 0
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv490_18_removed18 start
+    · omega
   | right17 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc16 start)))) = 0
-    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledTrunc16_removed18 start
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv475_16_removed18 start
   | right18 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramTrunc17 start)))) = 0
-    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledTrunc17_removed18 start
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv475_17_removed18 start
 
 theorem first20CatWin_wellFormed (start : Nat) : (first20CatWin.program start).WellFormed := by
   apply straight_append_wellFormed
@@ -10668,12 +12658,12 @@ theorem rightHeadCatWin_slots (start : Nat) : (rightHeadCatWin.program start).ga
   exact (Nat.add_le_add hs (bodyCatWin_slots rightHeadDigit start)).trans (by decide)
 
 theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
-    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2168906 + 28 := by
+    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2027056 + 28 := by
   change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
     ((bodyCatWin rightHeadDigit).program start)).instantiate read h).tCount ≤ _
   have h1 := CatAxis.append_tCount_le
     (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)))
-    ((bodyCatWin rightHeadDigit).program start) read h (4 * 2168906)
+    ((bodyCatWin rightHeadDigit).program start) read h (4 * 2027056)
     (fun h' => bodyCatWin_tCount rightHeadDigit start read h')
   have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start)
       (sineFromPlus top10Right))).instantiate read h).tCount ≤ 28 := by
@@ -10802,12 +12792,12 @@ theorem full25Cat_wellFormed : fullProgram25Cat.WellFormed :=
   straight_append_wellFormed _ _ program25Cat_wellFormed readout25Cat_wellFormed
 
 theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (9922 / 10000 : ℝ) ≤ Instrument.bornMass
+    (99107 / 100000 : ℝ) ≤ Instrument.bornMass
       ((rawEntry25Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout25Cat Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
   rw [rawEntry25Cat, Single.fixedEntry_instantiate]
-  have hneighbor : (9922 / 10000 : ℝ) ≤ Instrument.bornMass
+  have hneighbor : (99107 / 100000 : ℝ) ≤ Instrument.bornMass
       ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
         (fun b => fineEvent25Cat (pairRecovered256 d) b.history)) (ket zeroBasisState) := by
     have hideal_succ : (9924 / 10000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
@@ -10896,14 +12886,19 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
         (ket zeroBasisState)
       simpa only [runL, normSq_ket] using hp
     have hup := program25Cat_event_mass_upper Q hQ hn (fun a b => !pairRecovered256 d a b)
-    have hpowR : ((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 ≤ 10081 / 10000 := by norm_num
-    have hpowL : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 ≤ 1 + 52 / 10 ^ 8 := by
+    have hpowR : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 ≤ 10535 / 10000 := by norm_num
+    have hpowLast : (1 + (1 / 75 : ℝ)) ^ 2 ≤ 102685 / 100000 := by norm_num
+    have hpowInit : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 ≤ 1 + 48 / 10 ^ 8 := by
       rw [← pow_mul]
-      have h1 := one_add_pow_le (1 / 10 ^ 8 : ℝ) 26 (by positivity) (by norm_num)
+      have h1 := one_add_pow_le (1 / 10 ^ 8 : ℝ) 24 (by positivity) (by norm_num)
       linarith
-    have hpowLR : ((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 ≤ 10082 / 10000 := by
-      have h0 : 0 ≤ ((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 := by positivity
-      have h1 : 0 ≤ ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 := by positivity
+    have hpowRL : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 ≤ 108179 / 100000 := by
+      have h0 : 0 ≤ ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 := by positivity
+      have h1 : 0 ≤ (1 + (1 / 75 : ℝ)) ^ 2 := by positivity
+      nlinarith
+    have hpowAll : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 ≤ 108180 / 100000 := by
+      have h0 : 0 ≤ ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 := by positivity
+      have h1 : 0 ≤ ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 := by positivity
       nlinarith
     have hF_nn : 0 ≤ windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) := by
       rw [windowedEventMass_distribution Q d hd zeroBasisState 256 206]
@@ -10915,16 +12910,18 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
         apply Finset.sum_nonneg; intro k _
         exact mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _)
       · exact le_rfl
-    have herrL : (((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 *
-        (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8))) * ((4 : ℝ) / (2 : ℝ) ^ 236) ≤ 1 / 10 ^ 6 := by
-      have hBL : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 *
-          (2 + 1 / 10 ^ 8) * (1 + 1 / (1 / 10 ^ 8)) ≤ 10 ^ 9 := by nlinarith
-      have h236 : (10 ^ 9 : ℝ) * ((4 : ℝ) / (2 : ℝ) ^ 236) ≤ 1 / 10 ^ 6 := by norm_num
+    have herrLast : ((1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
+        (2 + 1 / 75) * (1 + 1 / (1 / 75))) * ((156 : ℝ) / 10 ^ 8) ≤ 247 / 10 ^ 6 := by
+      have h0 : 0 ≤ (1 + (1 / 75 : ℝ)) ^ 2 := by positivity
+      have h1 : 0 ≤ ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 := by positivity
+      have hpowLI : (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 ≤ 102686 / 100000 := by nlinarith
+      have hBL : (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
+          (2 + 1 / 75) * (1 + 1 / (1 / 75)) ≤ 158 := by nlinarith
       nlinarith
-    have herrR : (((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 *
-        (2 + 1 / 3000) * (1 + 1 / (1 / 3000))) * ((145 : ℝ) / 10 ^ 10) ≤ 9 / 10 ^ 5 := by
-      have hBR : ((1 + (1 / 3000 : ℝ)) ^ 2) ^ 12 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 13 *
-          (2 + 1 / 3000) * (1 + 1 / (1 / 3000)) ≤ 6100 := by nlinarith
+    have herrR : (((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
+        (2 + 1 / 460) * (1 + 1 / (1 / 460))) * ((452 : ℝ) / 10 ^ 9) ≤ 452 / 10 ^ 6 := by
+      have hBR : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
+          (2 + 1 / 460) * (1 + 1 / (1 / 460)) ≤ 999 := by nlinarith
       nlinarith
     nlinarith
   apply hneighbor.trans
@@ -11048,14 +13045,14 @@ theorem source25Cat_within : Within (List.range 1612) rawEntry25Cat.program := b
     (within_of_instantiate fullProgram25Cat (List.range 1612) full25Cat_support)
 
 def leftTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 193625 + 28, 20) :: List.replicate 11 (4 * 2319661, 18) ++ List.replicate 2 (4 * 2483757, 19)
+  (4 * 193625 + 28, 20) :: List.replicate 11 (4 * 2320431, 18) ++ [(4 * 2484527, 19), (4 * 2346489, 19)]
 
 def rightTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 2168906 + 28, 17) :: List.replicate 9 (4 * 2168906, 17) ++ List.replicate 2 (4 * 2251081, 18)
+  (4 * 2027056 + 28, 17) :: List.replicate 9 (4 * 2027056, 17) ++ List.replicate 2 (4 * 2109231, 18)
 
 theorem exact_trimmed_tCount25Cat :
     CatAxis.metadataTrimmedWeight leftTCountMeta25Cat 0 +
-      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 227481672 := by
+      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 220160760 := by
   decide +kernel
 
 theorem left25Cat_tCount_relation :
@@ -11063,10 +13060,10 @@ theorem left25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       leftWins25Cat leftTCountMeta25Cat := by
   refine .cons ⟨by simp [first20CatWin, First20Signed.bits_length], first20CatWin_tCount⟩ ?_
-  have hmap : List.replicate 11 (4 * 2319661, 18) ++ List.replicate 2 (4 * 2483757, 19) =
+  have hmap : List.replicate 11 (4 * 2320431, 18) ++ [(4 * 2484527, 19), (4 * 2346489, 19)] =
       leftDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [leftDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 11 (4 * 2319661, 18) ++ List.replicate 2 (4 * 2483757, 19))
+  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 11 (4 * 2320431, 18) ++ [(4 * 2484527, 19), (4 * 2346489, 19)])
   rw [hmap]
   induction leftDigits25 with
   | nil => exact .nil
@@ -11078,10 +13075,10 @@ theorem right25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       rightWins25Cat rightTCountMeta25Cat := by
   refine .cons ⟨by simp [rightHeadCatWin, GenericW.bankW_length], rightHeadCatWin_tCount⟩ ?_
-  have hmap : List.replicate 9 (4 * 2168906, 17) ++ List.replicate 2 (4 * 2251081, 18) =
+  have hmap : List.replicate 9 (4 * 2027056, 17) ++ List.replicate 2 (4 * 2109231, 18) =
       rightTailDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [rightTailDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 9 (4 * 2168906, 17) ++ List.replicate 2 (4 * 2251081, 18))
+  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 9 (4 * 2027056, 17) ++ List.replicate 2 (4 * 2109231, 18))
   rw [hmap]
   induction rightTailDigits25 with
   | nil => exact .nil
@@ -11089,7 +13086,7 @@ theorem right25Cat_tCount_relation :
     exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
 theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0 → Bool) :
-    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 227481673 := by
+    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 220160761 := by
   unfold fullProgram25Cat program25Cat
   have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 18 g = false := by decide
   rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
@@ -11116,7 +13113,7 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
   have hbody_t : ((trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
       (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
         (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
-          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 227481672 := by
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 220160760 := by
     rw [CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append, CatAxis.trim18_append]
     have hres_t : ∀ h' : Fin (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) → Bool,
         ((trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
@@ -11203,17 +13200,18 @@ theorem source25Cat_cursor_le : rawEntry25Cat.finalCursor ≤ 99000000 := by
   have hfc : rawEntry25Cat.finalCursor = cursor25Cat + 6472 := by
     unfold rawEntry25Cat; rw [Single.fixedEntry_cursor]
   have h1 := first20Cat_count_le
-  have h16t := cBody16Trunc_le
+  have h16e := cBody16Env475_le
   have h17 := cBody17_le
-  have h17t := cBody17Trunc_le
+  have h17e := cBody17Env475_le
   have h18 := cBody18_le
+  have h18e := cBody18Env490_le
   have hL := leftWins25Cat_count_eq
   have hR := rightWins25Cat_count_eq
   have hres : resetWires.length ≤ 2000 := by simp [resetWires]
   unfold cursor25Cat at hfc
   omega
 
-/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,612 × 227,692,785` certificate -/
+/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,612 × 220,160,761` certificate -/
 
 section Cert25
 attribute [local irreducible] rawEntry25Cat fullProgram25Cat program25Cat readout25Cat
@@ -11254,7 +13252,7 @@ theorem raw_certificate25Cat : Certificate rawLimits25 rawLayout25Cat rawEntry25
       rw [Straight.measurementCount]; omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99 / 100 : ℝ) ≤ 9922 / 10000).trans (strong_success25Cat Q d hn hd)
+    exact (by norm_num : (99 / 100 : ℝ) ≤ 99107 / 100000).trans (strong_success25Cat Q d hn hd)
 
 def entryTrim18 (e : StraightEntry) : StraightEntry where
   coefficients := e.coefficients
@@ -11265,7 +13263,7 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
     (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
     (hs : Within ws entry.program) (hcost : cost18 entry.program ≤ 51 / 10000)
     (hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
-      (9922 / 10000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      (99107 / 100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
     Certificate limits layout (entryTrim18 entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
   gateBudget := (trim18_slots entry.program).trans cert.gateBudget
@@ -11304,12 +13302,12 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
     rw [expectation_verified, normSq_ket] at hA hB
     rw [normSq_ket] at h
     have hS := hstrong Q d hn hd
-    change 9922 / 10000 ≤ Instrument.bornMass
+    change 99107 / 100000 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) at hS
     have hf : expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤
-        1 - 9922 / 10000 := by linarith
+        1 - 99107 / 100000 := by linarith
     have hm := mul_le_mul_of_nonneg_left hf
       (show 0 ≤ 1 + (106 / 10) * cost18 entry.program by positivity)
     change 99 / 100 ≤ Instrument.bornMass
@@ -11345,13 +13343,13 @@ private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCo
   exact hp _
 
 theorem trimmed25Cat_tCount (Q : Point) :
-    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 227481673 := by
+    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 220160761 := by
   rw [rawEntry25Cat]
-  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 227481673
+  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 220160761
     (fun r => full25Cat_trim18_tCount r Fin.elim0)
 
 theorem trim18_certificate25Cat :
-    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 227481673, 99000000⟩ := by
+    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 220160761, 99000000⟩ := by
   have hbase := trim18_certificate_generic rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat
     (List.range 1612) raw_certificate25Cat source25Cat_within source25Cat_cost18 strong_success25Cat
   refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
@@ -11379,8 +13377,8 @@ set_option linter.unusedSimpArgs false
 attribute [local irreducible] List.ofFn Single.axis Single.fixedEntry
   GenericW.compiledProgramW GenericW.compiledProgramFnW
   GenericW.compiledProgram16 GenericW.compiledProgram17 GenericW.compiledProgram18
-  GenericW.compiledProgramTrunc16 GenericW.compiledProgramTrunc17
-  GenericW.arithSpecFull GenericW.arithSpecTrunc96
+  GenericW.compiledProgramEnv475_16 GenericW.compiledProgramEnv475_17 GenericW.compiledProgramEnv490_18
+  GenericW.arithSpecFull GenericW.arithSpecEnv475 GenericW.arithSpecEnv490
   GenericW.fixupSpec16 GenericW.fixupSpec17 GenericW.fixupSpec18
   GenericW.compiledFixup16 GenericW.compiledFixup9 GenericW.rawFixup16 GenericW.rawFixup9
   GenericW.compact1612 Readout5.suffix5
@@ -11394,7 +13392,7 @@ def entry : StraightEntry :=
 
 def layout : DecodeLayout := rawLayout25Cat
 
-def bounds : Bounds := ⟨1612, 227481673, 99000000⟩
+def bounds : Bounds := ⟨1612, 220160761, 99000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
   specializeEntry25_certificate (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
@@ -11411,7 +13409,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1612, 227481673, 99000000⟩
+def bounds : Bounds := ⟨1612, 220160761, 99000000⟩
 def entry : StraightEntry := Schedule25Actual.entry
 def layout : DecodeLayout := Schedule25Actual.layout
 set_option maxRecDepth 30000 in
