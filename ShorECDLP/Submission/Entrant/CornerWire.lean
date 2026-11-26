@@ -4147,6 +4147,594 @@ end ShorECDLP.Entrant.LocalFour
 end
 
 /-! ### Local 4-T Kernel Compiler (`LocalKernel`, Part 1: Ripple Adders, Comparators, and Cell Kernels) -/
+
+/-! ## Walk-tail shortcut layer (inert bitmask simulation of forward ticks 486..511) -/
+section
+
+/-! ### A bitmask simulator certifying phase-inert runs on one fixed input pattern -/
+namespace ShorECDLP.Entrant.InertRun
+open ECDSAAdd
+
+def flipN (n w : Nat) : Nat := n ^^^ 2 ^ w
+
+def clrN (n t : Nat) : Nat := if n.testBit t then flipN n t else n
+
+def corrN (n : Nat) : List Correction → Bool
+  | [] => false
+  | .Z q :: cs => n.testBit q ^^ corrN n cs
+  | .CZ a b :: cs => (n.testBit a && n.testBit b) ^^ corrN n cs
+
+def stepN (n : Nat) : Instr → Option Nat
+  | .X t => some (flipN n t)
+  | .CX c t => some (if n.testBit c then flipN n t else n)
+  | .CCX a b t => some (if n.testBit a && n.testBit b then flipN n t else n)
+  | .measureX t c₀ c₁ =>
+      if corrN (clrN n t) c₀ = false ∧ (n.testBit t ^^ corrN (clrN n t) c₁) = false
+      then some (clrN n t) else none
+
+def runN : Program → Nat → Option Nat
+  | [], n => some n
+  | i :: p, n => match stepN n i with
+    | some n' => runN p n'
+    | none => none
+
+theorem testBit_flipN (n w q : Nat) : (flipN n w).testBit q = (n.testBit q ^^ decide (w = q)) := by
+  simp [flipN, Nat.testBit_xor, Nat.testBit_two_pow]
+
+def Agree (S : Finset Wire) (b : BasisState) (n : Nat) : Prop := ∀ w ∈ S, b w = n.testBit w
+
+theorem corr_agree (cs : List Correction) (S : Finset Wire) (b : BasisState) (n : Nat)
+    (hs : correctionWires cs ⊆ S) (ha : Agree S b n) (ph : Bool) :
+    correct cs ⟨ph, b⟩ = ⟨ph ^^ corrN n cs, b⟩ := by
+  induction cs generalizing ph with
+  | nil => simp [correct, corrN]
+  | cons c cs ih =>
+    cases c with
+    | Z q =>
+      have hq : q ∈ S := hs (by simp [correctionWires])
+      have hr : correctionWires cs ⊆ S := fun x hx => hs (by simp [correctionWires, hx])
+      simp only [correct, corrN]
+      rw [ih hr, ha q hq]; simp
+    | CZ a c' =>
+      have hq : a ∈ S := hs (by simp [correctionWires])
+      have hq' : c' ∈ S := hs (by simp [correctionWires])
+      have hr : correctionWires cs ⊆ S := fun x hx => hs (by simp [correctionWires, hx])
+      simp only [correct, corrN]
+      rw [ih hr, ha a hq, ha c' hq']; simp
+
+/-- One step: phase is preserved, agreement is kept on any superset of the instruction's wires,
+and wires outside the instruction are unchanged on both sides. -/
+theorem step_sound (i : Instr) (n n₁ : Nat) (h : stepN n i = some n₁) (S : Finset Wire)
+    (hS : i.wires ⊆ S) (s : State) (ha : Agree S s.basis n) (v : Bool) :
+    ∃ s₁ : State, run ([i] : Program) ([v] : List Bool) s = s₁ ∧ s₁.phase = s.phase ∧ Agree S s₁.basis n₁ ∧
+      (∀ w, w ∉ i.wires → s₁.basis w = s.basis w ∧ n₁.testBit w = n.testBit w) := by
+  cases i with
+  | X t =>
+    simp only [stepN, Option.some.injEq] at h; subst h
+    have ht : t ∈ S := hS (by simp [Instr.wires])
+    refine ⟨⟨s.phase, writeBit s.basis t (!s.basis t)⟩, rfl, rfl, ?_, ?_⟩
+    · intro w hw
+      simp only [writeBit, Function.update, testBit_flipN]
+      by_cases e : w = t
+      · subst e; simp [ha w hw]
+      · simp [e, Ne.symm e, ha w hw]
+    · intro w hw
+      have e : w ≠ t := fun e => hw (by simp [Instr.wires, e])
+      simp [writeBit, Function.update, e, testBit_flipN, Ne.symm e]
+  | CX c t =>
+    simp only [stepN, Option.some.injEq] at h; subst h
+    have ht : t ∈ S := hS (by simp [Instr.wires])
+    have hc : c ∈ S := hS (by simp [Instr.wires])
+    refine ⟨⟨s.phase, writeBit s.basis t (s.basis t ^^ s.basis c)⟩, rfl, rfl, ?_, ?_⟩
+    · intro w hw
+      simp only [writeBit, Function.update]
+      by_cases e : w = t
+      · subst e; rw [ha c hc, ha w hw]
+        by_cases hb : n.testBit c <;> simp [hb, testBit_flipN]
+      · simp only [e, dite_false]; rw [ha w hw]
+        by_cases hb : n.testBit c <;> simp [hb, testBit_flipN, Ne.symm e]
+    · intro w hw
+      have e : w ≠ t := fun e => hw (by simp [Instr.wires, e])
+      refine ⟨by simp [writeBit, Function.update, e], ?_⟩
+      by_cases hb : n.testBit c <;> simp [hb, testBit_flipN, Ne.symm e]
+  | CCX a b t =>
+    simp only [stepN, Option.some.injEq] at h; subst h
+    have ht : t ∈ S := hS (by simp [Instr.wires])
+    have hA : a ∈ S := hS (by simp [Instr.wires])
+    have hB : b ∈ S := hS (by simp [Instr.wires])
+    refine ⟨⟨s.phase, writeBit s.basis t (s.basis t ^^ (s.basis a && s.basis b))⟩, rfl, rfl, ?_, ?_⟩
+    · intro w hw
+      simp only [writeBit, Function.update]
+      by_cases e : w = t
+      · subst e; rw [ha a hA, ha b hB, ha w hw]
+        by_cases hb : (n.testBit a && n.testBit b) <;> simp [hb, testBit_flipN]
+      · simp only [e, dite_false]; rw [ha w hw]
+        by_cases hb : (n.testBit a && n.testBit b) <;> simp [hb, testBit_flipN, Ne.symm e]
+    · intro w hw
+      have e : w ≠ t := fun e => hw (by simp [Instr.wires, e])
+      refine ⟨by simp [writeBit, Function.update, e], ?_⟩
+      by_cases hb : (n.testBit a && n.testBit b) <;> simp [hb, testBit_flipN, Ne.symm e]
+  | measureX t c₀ c₁ =>
+    simp only [stepN] at h
+    by_cases hok : corrN (clrN n t) c₀ = false ∧ (n.testBit t ^^ corrN (clrN n t) c₁) = false
+    swap; · rw [if_neg hok] at h; exact absurd h (by simp)
+    rw [if_pos hok, Option.some.injEq] at h; subst h
+    have ht : t ∈ S := hS (by simp [Instr.wires])
+    have hc₀ : correctionWires c₀ ⊆ S := fun x hx => hS (by simp [Instr.wires, hx])
+    have hc₁ : correctionWires c₁ ⊆ S := fun x hx => hS (by simp [Instr.wires, hx])
+    set n' := clrN n t with hn'
+    have hcl : ∀ q, n'.testBit q = if q = t then false else n.testBit q := by
+      intro q
+      by_cases e : q = t
+      · subst e; by_cases hb : n.testBit q <;> simp [hn', clrN, hb, testBit_flipN]
+      · by_cases hb : n.testBit t <;> simp [hn', clrN, hb, testBit_flipN, e, Ne.symm e]
+    have ha' : Agree S (writeBit s.basis t false) n' := by
+      intro w hw
+      rw [hcl w]
+      by_cases e : w = t
+      · subst e; simp [writeBit]
+      · simp [writeBit, Function.update, e, ha w hw]
+    refine ⟨measureAndCorrect t c₀ c₁ v s, rfl, ?_, ?_, ?_⟩
+    · simp only [measureAndCorrect]
+      cases v
+      · rw [if_neg (by simp), corr_agree c₀ S _ n' hc₀ ha']; simp [hok.1]
+      · rw [if_pos rfl, corr_agree c₁ S _ n' hc₁ ha']
+        have h2 := hok.2; rw [ha t ht]
+        show (s.phase ^^ (true && n.testBit t) ^^ corrN n' c₁) = s.phase
+        rw [Bool.true_and, Bool.xor_assoc, h2, Bool.xor_false]
+    · simp only [measureAndCorrect]
+      cases v
+      · rw [if_neg (by simp), corr_agree c₀ S _ n' hc₀ ha']; exact ha'
+      · rw [if_pos rfl, corr_agree c₁ S _ n' hc₁ ha']; exact ha'
+    · intro w hw
+      have e : w ≠ t := fun e => hw (by simp [Instr.wires, e])
+      refine ⟨?_, by rw [hcl w, if_neg e]⟩
+      simp only [measureAndCorrect]
+      cases v
+      · rw [if_neg (by simp), corr_agree c₀ S _ n' hc₀ ha']; simp [writeBit, Function.update, e]
+      · rw [if_pos rfl, corr_agree c₁ S _ n' hc₁ ha']; simp [writeBit, Function.update, e]
+
+theorem runN_frame (P : Program) (n n' : Nat) (h : runN P n = some n') :
+    ∀ w, w ∉ wires P → n'.testBit w = n.testBit w := by
+  induction P generalizing n with
+  | nil => simp [runN] at h; subst h; intro w _; rfl
+  | cons i p ih =>
+    simp only [runN] at h
+    split at h
+    · rename_i n₁ h₁
+      intro w hw
+      have hwp : w ∉ wires p := fun x => hw (Finset.mem_union_right _ x)
+      have hwi : w ∉ i.wires := fun x => hw (Finset.mem_union_left _ x)
+      rw [ih n₁ h w hwp]
+      obtain ⟨_, _, _, _, hfr⟩ := step_sound i n n₁ h₁ i.wires (Finset.Subset.refl _) ⟨false, fun q => n.testBit q⟩
+        (fun _ _ => rfl) false
+      exact (hfr w hwi).2
+    · exact absurd h (by simp)
+
+theorem run_cons_split (i : Instr) (p : Program) (m : List Bool) (s : State) :
+    ∃ m', run (i :: p) m s = run p m' (run ([i] : Program) ([m.headD false] : List Bool) s) := by
+  cases i <;> simp only [run, List.headD_cons] <;> exact ⟨_, rfl⟩
+
+/-- Soundness: an inert bitmask run fixes the whole program run, for every record. -/
+theorem runN_sound (P : Program) (n n' : Nat) (h : runN P n = some n') (s : State) (m : List Bool)
+    (ha : Agree (wires P) s.basis n) :
+    run P m s = ⟨s.phase, fun w => if w ∈ wires P then n'.testBit w else s.basis w⟩ := by
+  induction P generalizing n s m with
+  | nil =>
+    simp [runN] at h; subst h
+    cases s; simp [run, wires]
+  | cons i p ih =>
+    simp only [runN] at h
+    split at h
+    · rename_i n₁ h₁
+      have hS : i.wires ⊆ wires (i :: p) := Finset.subset_union_left
+      obtain ⟨s₁, hr, hph, ha₁, hfr⟩ := step_sound i n n₁ h₁ (wires (i :: p)) hS s ha (m.headD false)
+      obtain ⟨m', hsplit⟩ := run_cons_split i p m s
+      rw [hr] at hsplit
+      have hap : Agree (wires p) s₁.basis n₁ := fun w hw => ha₁ w (Finset.mem_union_right _ hw)
+      rw [hsplit, ih n₁ h s₁ m' hap, hph]
+      congr 1
+      funext w
+      by_cases hwp : w ∈ wires p
+      · have : w ∈ wires (i :: p) := Finset.mem_union_right _ hwp
+        simp [hwp, this]
+      · simp only [hwp, if_false]
+        by_cases hwi : w ∈ i.wires
+        · have hw : w ∈ wires (i :: p) := Finset.mem_union_left _ hwi
+          rw [if_pos hw, ha₁ w hw, runN_frame p n₁ n' h w hwp]
+        · have hw : w ∉ wires (i :: p) := by simp [wires, hwi, hwp]
+          rw [if_neg hw, (hfr w hwi).1]
+    · exact absurd h (by simp)
+
+end ShorECDLP.Entrant.InertRun
+
+namespace ShorECDLP.Entrant.WalkTail
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.MappedCompressed ECDSAAdd.Frontier InertRun
+
+/-- Forward walk ticks `486..511` of `stackForwardT`. -/
+def tailF : Program := (TickRanges.forward 486 23) ++ renameProgram (OB5.sig 509) (tick509F ++ History5.packAfter base 509) ++
+  renameProgram (OB5.sig 510) (tick510F ++ History5.packAfter base 510) ++ renameProgram (OB5.sig 511) tickF
+/-- Reverse walk ticks `511..486` of `stackReverseT`. -/
+def tailR : Program := renameProgram (OB5.sig 511) tickR ++ renameProgram (OB5.sig 510) (History5.decodeBefore base 510 ++ tick510R) ++
+  TickGapReverse.reverse 486 24
+
+def flips : List Wire := [502, 503, 505, 506, 507, 508, 510, 511, 512, 513, 515, 516, 517, 518, 520, 521, 522, 523,
+  525, 526, 527, 1561, 1563, 1566, 1568, 1571, 1573, 1576, 1578, 1581, 1583]
+def v0 : Nat := 2 ^ 501 + 2 ^ 786
+def v1 : Nat := flips.foldl (fun n w => n ^^^ 2 ^ w) v0
+
+/-- The Clifford shortcut: one `X` per flipped wire. -/
+def shortcut : Program := flips.map Instr.X
+
+set_option maxRecDepth 100000 in
+theorem tailF_runN : runN tailF v0 = some v1 := by decide +kernel
+set_option maxRecDepth 100000 in
+theorem tailR_runN : runN tailR v1 = some v0 := by decide +kernel
+
+attribute [local irreducible] tailF tailR
+
+theorem testBit_foldl_xor (l : List Nat) (n q : Nat) (hl : l.Nodup) :
+    (l.foldl (fun n w => n ^^^ 2 ^ w) n).testBit q = (n.testBit q ^^ decide (q ∈ l)) := by
+  induction l generalizing n with
+  | nil => simp
+  | cons a l ih =>
+    rw [List.foldl_cons, ih _ (List.nodup_cons.mp hl).2]
+    simp only [Nat.testBit_xor, Nat.testBit_two_pow, List.mem_cons]
+    by_cases e : a = q
+    · subst e; simp [(List.nodup_cons.mp hl).1]
+    · simp [e, Ne.symm e]
+
+theorem run_Xs (l : List Wire) (hl : l.Nodup) (m : List Bool) (s : State) :
+    run (l.map Instr.X) m s = ⟨s.phase, fun w => s.basis w ^^ decide (w ∈ l)⟩ := by
+  induction l generalizing s with
+  | nil => cases s; simp [run]
+  | cons a l ih =>
+    simp only [List.map_cons, run]
+    rw [ih (List.nodup_cons.mp hl).2]
+    congr 1; funext w
+    simp only [writeBit, Function.update, List.mem_cons]
+    by_cases e : w = a
+    · subst e; simp [(List.nodup_cons.mp hl).1]
+    · simp [e]
+
+theorem flips_nodup : flips.Nodup := by decide
+
+theorem testBit_v1 (q : Nat) : v1.testBit q = (v0.testBit q ^^ decide (q ∈ flips)) :=
+  testBit_foldl_xor flips v0 q flips_nodup
+
+attribute [local irreducible] v0 v1
+
+/-- On any state carrying the terminal pattern `v0` on its wires, the forward tail is the shortcut. -/
+theorem tailF_eq (s : State) (m : List Bool) (ha : Agree (wires tailF) s.basis v0) :
+    run tailF m s = run shortcut ([] : List Bool) s := by
+  rw [runN_sound tailF v0 v1 tailF_runN s m ha, shortcut, run_Xs flips flips_nodup]
+  congr 1; funext w
+  by_cases hw : w ∈ wires tailF
+  · rw [if_pos hw, testBit_v1, ha w hw]
+  · rw [if_neg hw]
+    have hf := runN_frame tailF v0 v1 tailF_runN w hw
+    rw [testBit_v1] at hf
+    have : decide (w ∈ flips) = false := by
+      cases h : decide (w ∈ flips) <;> simp_all
+    rw [this, Bool.xor_false]
+
+/-- On any state carrying the pattern `v1`, the reverse tail is the same shortcut. -/
+theorem tailR_eq (s : State) (m : List Bool) (ha : Agree (wires tailR) s.basis v1) :
+    run tailR m s = run shortcut ([] : List Bool) s := by
+  rw [runN_sound tailR v1 v0 tailR_runN s m ha, shortcut, run_Xs flips flips_nodup]
+  congr 1; funext w
+  by_cases hw : w ∈ wires tailR
+  · rw [if_pos hw, ha w hw, testBit_v1]; cases v0.testBit w <;> cases decide (w ∈ flips) <;> rfl
+  · rw [if_neg hw]
+    have hf := runN_frame tailR v1 v0 tailR_runN w hw
+    rw [testBit_v1] at hf
+    have : decide (w ∈ flips) = false := by
+      cases h : decide (w ∈ flips) <;> simp_all
+    rw [this, Bool.xor_false]
+
+end ShorECDLP.Entrant.WalkTail
+
+namespace ECDSAAdd.Frontier.WalkTail
+open Arithmetic MappedCompressed Secp256k1 History5 OB5
+set_option maxRecDepth 8192
+
+def SkywalkFast485 (x : Nat) : Prop :=
+  (ECDSAAdd.SkywalkNat.step^[485] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).u = 0
+
+theorem retainedA486 :
+    (W.compactSkywalkSignPoolA base 486).retained = (List.range' 486 27).map base := by decide +kernel
+theorem retainedB486 :
+    (W.compactSkywalkSignPoolB base 486).retained = (List.range' 770 27).map base := by decide +kernel
+theorem releasedA486 : base 513 ∈ (W.compactSkywalkSignPoolA base 486).released := by decide +kernel
+
+theorem signed_small (r : List Wire) (s : BasisState) (v : Nat)
+    (h : signedRegValue r s = (v : Int)) : regValue r s = v := by
+  have hl := regValue_lt r s
+  unfold signedRegValue signedDecode at h
+  split_ifs at h with hc
+  · exact_mod_cast h
+  · exfalso
+    have h' : ((regValue r s : Nat) : Int) = (v : Int) + ((2 ^ r.length : Nat) : Int) := by omega
+    have h'' : regValue r s = v + 2 ^ r.length := by exact_mod_cast h'
+    omega
+
+theorem regValue_one (w : Wire) (ws : List Wire) (s : BasisState) (h : regValue (w :: ws) s = 1) :
+    s w = true ∧ regValue ws s = 0 := by
+  change (if s w then 1 else 0) + 2 * regValue ws s = 1 at h
+  cases hw : s w <;> simp [hw] at h ⊢; omega
+
+theorem terminal_485 {x : Nat} (hx0 : 0 < x) (hx : x < p) (hfast : SkywalkFast485 x) :
+    (SkywalkNat.step^[485] (SkywalkNat.init x p)).v = 1 := by
+  have hp0 : 0 < p := by norm_num [p]
+  have hpodd : p % 2 = 1 := by norm_num [p]
+  have hval := SkywalkNat.iter_valid 485 (SkywalkNat.init x p) hp0 hpodd
+  have hcop : x.Coprime p :=
+    (Secp256k1.p_prime.coprime_iff_not_dvd.mpr
+      (fun hd => (Nat.not_le_of_lt hx) (Nat.le_of_dvd hx0 hd))).symm
+  have hg := hval.2.2.trans hcop
+  unfold SkywalkFast485 at hfast
+  rw [hfast, Nat.gcd_zero_left] at hg
+  exact hg
+
+attribute [local irreducible] run wires History5.encodePrefix Nat.iterate
+
+/-- The 85 logical tail sites at stage 486 carry a fixed pattern for fast-walk inputs. -/
+theorem stage486_bits (x : Nat) (hx0 : 0 < x) (hx : x < p) (hfast : SkywalkFast485 x)
+    (b : BasisState) (stage : W.CompressedCompactStage5 base x p 486 b) (j : Nat)
+    (hj : (485 ≤ j ∧ j ≤ 513) ∨ (770 ≤ j ∧ j ≤ 796) ∨ j = 1513 ∨ (1540 ≤ j ∧ j ≤ 1567)) :
+    b (base j) = decide (j = 485 ∨ j = 770) := by
+  have hp0 : 0 < p := by norm_num [p]
+  have hpo : p % 2 = 1 := by norm_num [p]
+  obtain ⟨raw, hraw, rfl⟩ := stage
+  have keep : (run (History5.encodePrefix base 486) ([] : List Bool) raw).basis (base j) = raw.basis (base j) := by
+    apply run_preserves_outside
+    intro hm
+    obtain ⟨j', hj', hr⟩ := StackOB5.encodePrefix_mem 486 (by omega) _ hm
+    have := base_injective hj'
+    omega
+  rw [keep]
+  have fields := (W.compactSkywalkStage_fields_iff base _ 486 (by omega) base_pool_nodup raw.basis).mp hraw
+  obtain ⟨readA, readB, prev, past, -, carry, -, cleanA, -⟩ := fields
+  obtain ⟨G, S, henc⟩ := SkywalkTrace.iter_encoded 485 false false (SkywalkNat.init x p) hp0 hpo
+  change SkywalkTrace.next^[485] (SkywalkRails.encode false false (x : Int) (p : Int)) =
+    SkywalkRails.encode G S ((SkywalkNat.step^[485] (SkywalkNat.init x p)).u : Int)
+      ((SkywalkNat.step^[485] (SkywalkNat.init x p)).v : Int) at henc
+  rw [hfast, terminal_485 hx0 hx hfast] at henc
+  have h486 : SkywalkTrace.next^[486] (SkywalkRails.encode false false (x : Int) (p : Int)) = ⟨0, 1, true⟩ := by
+    rw [Function.iterate_succ_apply', henc]
+    simp only [SkywalkTrace.next, Nat.cast_zero, Nat.cast_one]
+    rw [SkywalkRails.terminal_step G S 1 (by norm_num) (by norm_num)]
+    rfl
+  have hcode : SkywalkTrace.code (SkywalkTrace.next^[485] (SkywalkRails.encode false false (x : Int) (p : Int))) =
+      (true, false) := by
+    rw [henc]; exact_mod_cast SkywalkTrace.code_terminal G S
+  simp only [h486, retainedA486, retainedB486] at readA readB prev
+  have pst := past 485 (by omega)
+  rw [hcode] at pst
+  have zA := signed_small _ _ 0 (by simpa using readA)
+  have oB := signed_small _ _ 1 (by simpa using readB)
+  rw [show List.range' 770 27 = 770 :: List.range' 771 26 from rfl, List.map_cons] at oB
+  obtain ⟨b770, zB⟩ := regValue_one _ _ _ oB
+  rcases hj with hj | hj | hj | hj
+  · by_cases e485 : j = 485
+    · subst e485; simpa using pst.1
+    by_cases e513 : j = 513
+    · subst e513; simpa using cleanA _ releasedA486
+    have : raw.basis (base j) = false :=
+      (regValue_zero _ _).mp zA _ (List.mem_map.mpr ⟨j, List.mem_range'_1.mpr ⟨by omega, by omega⟩, rfl⟩)
+    rw [this]; simp; omega
+  · by_cases e770 : j = 770
+    · subst e770; simpa using b770
+    have : raw.basis (base j) = false :=
+      (regValue_zero _ _).mp zB _ (List.mem_map.mpr ⟨j, List.mem_range'_1.mpr ⟨by omega, by omega⟩, rfl⟩)
+    rw [this]; simp; omega
+  · subst hj; simpa using pst.2
+  · have : raw.basis (base j) = false :=
+      (regValue_zero _ _).mp carry _ (List.mem_map.mpr ⟨j, List.mem_range'_1.mpr ⟨by omega, by omega⟩, rfl⟩)
+    rw [this]; simp; omega
+
+end ECDSAAdd.Frontier.WalkTail
+
+namespace ShorECDLP.Entrant.WalkTail
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.MappedCompressed ECDSAAdd.Frontier InertRun
+
+def L85 : List Nat := List.range' 485 29 ++ List.range' 770 27 ++ [1513] ++ List.range' 1540 28
+
+def corrAll (f : Wire → Bool) : List Correction → Bool
+  | [] => true
+  | .Z t :: cs => f t && corrAll f cs
+  | .CZ a b :: cs => f a && f b && corrAll f cs
+
+def instrAll (f : Wire → Bool) : Instr → Bool
+  | .X t => f t
+  | .CX c t => f c && f t
+  | .CCX a b t => f a && f b && f t
+  | .measureX t c₀ c₁ => f t && corrAll f c₀ && corrAll f c₁
+
+def progAll (f : Wire → Bool) : Program → Bool
+  | [] => true
+  | i :: p => instrAll f i && progAll f p
+
+theorem corrAll_sound (f : Wire → Bool) (cs : List Correction) (h : corrAll f cs = true) :
+    ∀ q ∈ correctionWires cs, f q = true := by
+  induction cs with
+  | nil => simp [correctionWires]
+  | cons c cs ih =>
+    cases c <;> simp_all [corrAll, correctionWires]
+
+theorem progAll_sound (f : Wire → Bool) (P : Program) (h : progAll f P = true) :
+    ∀ q ∈ wires P, f q = true := by
+  induction P with
+  | nil => simp [wires]
+  | cons i p ih =>
+    simp only [progAll, Bool.and_eq_true] at h
+    intro q hq
+    simp only [wires, Finset.mem_union] at hq
+    rcases hq with hq | hq
+    · have hi := h.1
+      cases i with
+      | X t => simp_all [instrAll, Instr.wires]
+      | CX c t => simp only [instrAll, Bool.and_eq_true, Instr.wires] at hi hq; simp at hq; rcases hq with rfl | rfl <;> simp_all
+      | CCX a b t => simp only [instrAll, Bool.and_eq_true, Instr.wires] at hi hq; simp at hq; rcases hq with rfl | rfl | rfl <;> simp_all
+      | measureX t c₀ c₁ =>
+        simp only [instrAll, Bool.and_eq_true, Instr.wires, Finset.mem_union, Finset.mem_singleton] at hi hq
+        rcases hq with (rfl | hq) | hq
+        · exact hi.1.1
+        · exact corrAll_sound f c₀ hi.1.2 q hq
+        · exact corrAll_sound f c₁ hi.2 q hq
+    · exact ih h.2 q hq
+
+def siteOK (q : Wire) : Bool :=
+  L85.any (fun j => OB5.sig 485 q == base j && v0.testBit q == (j == 485 || j == 770))
+
+set_option maxRecDepth 100000 in
+theorem tail_sites_check : progAll siteOK tailF = true := by
+  unfold tailF; decide +kernel
+
+theorem tail_sites : ∀ q ∈ wires tailF, ∃ j ∈ L85, OB5.sig 485 q = base j ∧ v0.testBit q = decide (j = 485 ∨ j = 770) := by
+  intro q hq
+  have h := progAll_sound siteOK tailF tail_sites_check q hq
+  simp only [siteOK, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨j, hj, h1, h2⟩ := h
+  refine ⟨j, hj, h1, ?_⟩
+  rw [h2]; simp [Bool.beq_eq_decide_eq]
+
+end ShorECDLP.Entrant.WalkTail
+
+namespace ShorECDLP.Entrant.InertRun
+open ECDSAAdd
+
+theorem run_pad (p : Program) (l : List Bool) (k : Nat) (s : State) :
+    run p (l ++ List.replicate k false) s = run p l s := by
+  induction p generalizing l k s with
+  | nil => rfl
+  | cons i p ih =>
+    cases i with
+    | X t => exact ih _ _ _
+    | CX c t => exact ih _ _ _
+    | CCX a b t => exact ih _ _ _
+    | measureX t c₀ c₁ =>
+      cases l with
+      | nil =>
+        cases k with
+        | zero => rfl
+        | succ k =>
+          simp only [run, List.nil_append, List.replicate_succ, List.headD_cons, List.tail_cons, List.headD_nil,
+            List.tail_nil]
+          have := ih [] k (measureAndCorrect t c₀ c₁ false s)
+          simpa using this
+      | cons b l =>
+        simp only [run, List.cons_append, List.headD_cons, List.tail_cons]
+        exact ih _ _ _
+
+def padTo (l : List Bool) (n : Nat) : List Bool := l ++ List.replicate (n - l.length) false
+
+theorem padTo_length (m : List Bool) (n : Nat) : (padTo (m.take n) n).length = n := by
+  simp [padTo, List.length_take]
+
+/-- Replacing a record-independent block `T` by a measurement-free `S` with the same action. -/
+theorem splice (A T S B : Program) (hS : measurementCount S = 0) (s : State)
+    (hT : ∀ mA mT, run T mT (run A mA s) = run S ([] : List Bool) (run A mA s)) (m : List Bool) :
+    run (A ++ (S ++ B)) m s =
+      run (A ++ (T ++ B)) (padTo (m.take (measurementCount A)) (measurementCount A) ++
+        (List.replicate (measurementCount T) false ++ m.drop (measurementCount A))) s := by
+  rw [run_append A (S ++ B), run_append S B, hS, List.drop_zero, List.take_zero]
+  rw [run_append A (T ++ B), run_append T B]
+  have hl := padTo_length m (measurementCount A)
+  rw [List.take_left' hl, List.drop_left' hl, List.take_left' (List.length_replicate ..),
+    List.drop_left' (List.length_replicate ..), hT]
+  congr 1
+  simp only [padTo]
+  rw [run_pad]
+
+end ShorECDLP.Entrant.InertRun
+
+namespace ECDSAAdd.Frontier.WalkTail
+open Arithmetic MappedCompressed Secp256k1 History5 OB5 ShorECDLP.Entrant.WalkTail ShorECDLP.Entrant.InertRun
+
+theorem forward_add (a b : Nat) : ∀ i, TickRanges.forward i (a + b) = TickRanges.forward i a ++ TickRanges.forward (i + a) b := by
+  induction a with
+  | zero => intro i; simp [TickRanges.forward]
+  | succ a ih =>
+    intro i
+    rw [show a + 1 + b = (a + b) + 1 by omega, TickRanges.forward, TickRanges.forward, ih, List.append_assoc,
+      show i + 1 + a = i + (a + 1) by omega]
+
+theorem stackForwardT_split : stackForwardT = TickRanges.forward 1 485 ++ tailF := by
+  have h := forward_add 485 23 1
+  rw [show (485 : Nat) + 23 = 508 by norm_num, show (1 : Nat) + 485 = 486 by norm_num] at h
+  rw [stackForwardT, stackForward510, stackForward509, h]
+  unfold tailF
+  simp only [List.append_assoc]
+
+/-- After the first 485 forward ticks a fast-walk input carries `v0` on the tail wires. -/
+theorem pullState_basis' (f : Wire → Wire) (t : State) (q : Wire) :
+    (pullState f t).basis q = t.basis (f q) := rfl
+
+theorem pre_tail_agree (x : Nat) (hx0 : 0 < x) (hx : x < p) (hfast : SkywalkFast485 x) (s : State) (r : List Bool)
+    (first : W.CompactSkywalkStage base (SkywalkRails.encode false false (x:Int) (p:Int)) 1 s.basis) :
+    Agree (wires tailF) (run (TickRanges.forward 1 485) r s).basis v0 := by
+  have e0 : pullState (OB5.sig (1-1)) s = s := by
+    apply State.extensionality
+    · rfl
+    · funext q; show s.basis (OB5.sig 0 q)=s.basis q; rw [OB5.sig_zero]
+  have pref := TickRanges.forward_gen x hx0 hx 485 1 (by omega) (by omega) s r (StackOB5.stage_one x s first)
+  rw [e0] at pref
+  obtain ⟨hp0,hpo,hp,cop⟩ := StackOB5.prime_facts x hx0 hx
+  have hpGap : p+2^32 ≤ 2^256 := by norm_num [p]
+  have stage := ((Stack5.forward_spec base base_pool_nodup StackOB5.historyAbove x p 1 485
+    hp0 hx0 hpo hp hpGap hx cop (by omega)) s r (StackOB5.stage_one x s first)).2
+  have key : ∀ q ∈ wires tailF, (run (Stack5.forward5 base 1 485) r s).basis (OB5.sig 485 q) = v0.testBit q := by
+    intro q hq
+    obtain ⟨j, hjL, hsig, hbit⟩ := tail_sites q hq
+    rw [hsig, hbit]
+    exact stage486_bits x hx0 hx hfast _ stage j (by simp only [L85, List.mem_append, List.mem_range'_1, List.mem_singleton] at hjL; omega)
+  rw [show (1:Nat) + 485 - 1 = 485 by norm_num] at pref
+  intro q hq
+  rw [pref, pullState_basis']
+  exact key q hq
+
+end ECDSAAdd.Frontier.WalkTail
+
+namespace ShorECDLP.Entrant.WalkTail
+open ECDSAAdd ECDSAAdd.Arithmetic ECDSAAdd.Arithmetic.MappedCompressed ECDSAAdd.Frontier InertRun
+
+set_option maxRecDepth 100000 in
+theorem tail_counts : toffoliCount tailF = 692 ∧ measurementCount tailF = 370 ∧
+    toffoliCount shortcut = 0 ∧ measurementCount shortcut = 0 ∧
+    ECDSAAdd.Challenge.gateSlots shortcut ≤ ECDSAAdd.Challenge.gateSlots tailF := by
+  unfold tailF shortcut; decide +kernel
+
+theorem shortcut_wires_sub : wires shortcut ⊆ wires tailF := by
+  have h : ∀ q ∈ flips, q ∈ wires tailF := by
+    intro q hq
+    have hb : v0.testBit q ≠ v1.testBit q := by
+      rw [testBit_v1]; simp [hq]
+    by_contra hn
+    exact hb (runN_frame tailF v0 v1 tailF_runN q hn).symm
+  have gen : ∀ (l : List Wire) q, q ∈ wires (l.map Instr.X) → q ∈ l := by
+    intro l q hq
+    induction l with
+    | nil => simp [wires] at hq
+    | cons a l ih =>
+      simp only [List.map_cons, wires, Instr.wires, Finset.mem_union, Finset.mem_singleton] at hq
+      rcases hq with rfl | hq
+      · simp
+      · exact List.mem_cons_of_mem _ (ih hq)
+  intro q hq
+  have : q ∈ flips := gen flips q (by unfold shortcut at hq; exact hq)
+  exact h q this
+
+theorem shortcut_physical : ECDSAAdd.Arithmetic.GatePhysical shortcut := by
+  intro i hi
+  unfold shortcut at hi
+  obtain ⟨q, -, rfl⟩ := List.mem_map.mp hi
+  trivial
+
+end ShorECDLP.Entrant.WalkTail
+
+end
+
 section
 namespace ShorECDLP.Entrant.LocalKernel
 open Quantum Challenge AndGadget ConditionalCatalyst ApproximatePhase34 LocalFour
@@ -13689,6 +14277,346 @@ theorem compiledKernelS96_catLitSim {n : Nat} (divide : Bool) (s : Nat)
     _ (kernelSTrunc96 divide) KernelInput96 hfr2400 (selKernelTrunc96_sel divide).away h2400_in read h
     (compiledKernelS96_catLitSim_2400 divide s read h)
 
+
+/-! ### 7. Walk-tail shortcut: forward ticks `486..511` become 31 `X` gates on fast-walk inputs -/
+
+def kernelPreW : ECDSAAdd.Program :=
+  NativeFirstDirect.forward base ++ (TickRanges.forward 1 485 ++ ShorECDLP.Entrant.WalkTail.shortcut) ++
+    skywalkArithmeticClear base
+
+def kernelSTruncW (divide : Bool) : ECDSAAdd.Program :=
+  (kernelPreW ++ segHSTrunc96 divide) ++ kernelSuf
+
+def arithSTruncW (L : ControlledPointLayout) (multiply : Bool) : ECDSAAdd.Program :=
+  ECDSAAdd.renameProgram (wireFn2 L) (kernelSTruncW (!multiply))
+
+theorem kernelPre_eq_tail : kernelPre = NativeFirstDirect.forward base ++
+    (TickRanges.forward 1 485 ++ ShorECDLP.Entrant.WalkTail.tailF) ++ skywalkArithmeticClear base := by
+  rw [kernelPre, ECDSAAdd.Frontier.WalkTail.stackForwardT_split]
+
+theorem kernelPreW_wires_sub : ECDSAAdd.wires kernelPreW ⊆ ECDSAAdd.wires kernelPre := by
+  rw [kernelPreW, kernelPre_eq_tail]
+  simp only [ECDSAAdd.wires_append]
+  exact Finset.union_subset_union (Finset.union_subset_union Finset.Subset.rfl
+    (Finset.union_subset_union Finset.Subset.rfl ShorECDLP.Entrant.WalkTail.shortcut_wires_sub)) Finset.Subset.rfl
+
+theorem kernelPreW_counts :
+    ECDSAAdd.toffoliCount kernelPreW + 692 = ECDSAAdd.toffoliCount kernelPre ∧
+    ECDSAAdd.measurementCount kernelPreW + 370 = ECDSAAdd.measurementCount kernelPre ∧
+    ECDSAAdd.Challenge.gateSlots kernelPreW ≤ ECDSAAdd.Challenge.gateSlots kernelPre := by
+  obtain ⟨t1, t2, t3, t4, t5⟩ := ShorECDLP.Entrant.WalkTail.tail_counts
+  rw [kernelPreW, kernelPre_eq_tail]
+  simp only [ECDSAAdd.toffoliCount_append, ECDSAAdd.measurementCount_append,
+    ECDSAAdd.Challenge.gateSlots_append, t1, t2, t3, t4]
+  refine ⟨by omega, by omega, by omega⟩
+
+theorem kernelPreW_physical : ECDSAAdd.Arithmetic.GatePhysical kernelPreW := by
+  have hkph := KernelOB5.program_physical true
+  have hk0 : KernelOB5.program true = (kernelPre ++ KernelOB5.segH true) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  rw [hk0, gatePhysical_append, gatePhysical_append, kernelPre_eq_tail, gatePhysical_append,
+    gatePhysical_append, gatePhysical_append] at hkph
+  rw [kernelPreW, gatePhysical_append, gatePhysical_append, gatePhysical_append]
+  exact ⟨⟨hkph.1.1.1.1, hkph.1.1.1.2.1, ShorECDLP.Entrant.WalkTail.shortcut_physical⟩, hkph.1.1.2⟩
+
+private theorem kernelPreW_avoid (q : Nat) (hq : q = 717 ∨ q = 718 ∨ q = 2400) :
+    base q ∉ ECDSAAdd.wires kernelPreW := fun h => (kernelPreSuf_avoid q hq).1 (kernelPreW_wires_sub h)
+
+theorem kernelSTruncW_wires_sub (divide : Bool) :
+    ECDSAAdd.wires (kernelSTruncW divide) ⊆ ECDSAAdd.wires (kernelSTrunc96 divide) := by
+  rw [kernelSTruncW, kernelSTrunc96]
+  simp only [ECDSAAdd.wires_append]
+  exact Finset.union_subset_union (Finset.union_subset_union kernelPreW_wires_sub Finset.Subset.rfl) Finset.Subset.rfl
+
+/-- On a fast-walk kernel input, any run through `kernelPreW` equals a run through `kernelPre`. -/
+theorem kernelPreW_run (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p)
+    (hfast : SkywalkFast485 x) (st : ECDSAAdd.State)
+    (hin : SkywalkArithmeticInput base x Y.val st.basis) (B : ECDSAAdd.Program) (m : List Bool) :
+    ∃ m', ECDSAAdd.run (kernelPreW ++ B) m st = ECDSAAdd.run (kernelPre ++ B) m' st := by
+  have cfg := MappedCompressed.LaneA.laneLogical_config
+  have hT : ∀ mA mT, ECDSAAdd.run ShorECDLP.Entrant.WalkTail.tailF mT
+      (ECDSAAdd.run (NativeFirstDirect.forward base ++ TickRanges.forward 1 485) mA st) =
+      ECDSAAdd.run ShorECDLP.Entrant.WalkTail.shortcut ([] : List Bool)
+      (ECDSAAdd.run (NativeFirstDirect.forward base ++ TickRanges.forward 1 485) mA st) := by
+    intro mA mT
+    apply ShorECDLP.Entrant.WalkTail.tailF_eq
+    rw [ECDSAAdd.run_append]
+    have first := NativeFirstDirect.caller_first_stage base cfg.1 x Y.val hx0 hx st
+      (mA.take (ECDSAAdd.measurementCount (NativeFirstDirect.forward base))) hin
+    have firstW := (W.compactSkywalkStage_one base _ _).mpr first
+    exact ECDSAAdd.Frontier.WalkTail.pre_tail_agree x hx0 hx hfast _ _ firstW
+  have e1 : kernelPreW ++ B = (NativeFirstDirect.forward base ++ TickRanges.forward 1 485) ++
+      (ShorECDLP.Entrant.WalkTail.shortcut ++ (skywalkArithmeticClear base ++ B)) := by
+    simp only [kernelPreW, List.append_assoc]
+  have e2 : kernelPre ++ B = (NativeFirstDirect.forward base ++ TickRanges.forward 1 485) ++
+      (ShorECDLP.Entrant.WalkTail.tailF ++ (skywalkArithmeticClear base ++ B)) := by
+    simp only [kernelPre_eq_tail, List.append_assoc]
+  rw [e1, e2]
+  exact ⟨_, ShorECDLP.Entrant.InertRun.splice _ _ _ _ ShorECDLP.Entrant.WalkTail.tail_counts.2.2.2.1 st hT m⟩
+
+private theorem kernelPre_out_factsW (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p)
+    (hfast : SkywalkFast485 x) (st : ECDSAAdd.State) (m : List Bool)
+    (hin : SkywalkArithmeticInput base x Y.val st.basis)
+    (hg0 : st.basis (base 2409) = false) (hs0 : st.basis (base 2410) = false) (h24 : st.basis (base 2400) = true) :
+    AnySegHInput96 (ECDSAAdd.run kernelPreW m st).basis ∧
+    (ECDSAAdd.run kernelPreW m st).basis (base 717) = false ∧
+    (ECDSAAdd.run kernelPreW m st).basis (base 718) = false := by
+  obtain ⟨m', hm⟩ := kernelPreW_run x Y hx0 hx hfast st hin ([] : ECDSAAdd.Program) m
+  rw [List.append_nil, List.append_nil] at hm
+  rw [hm]
+  exact kernelPre_out_facts96 x Y hx0 hx hfast st m' hin hg0 hs0 h24
+
+theorem kernelSTruncW_spec (divide : Bool)
+    (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x)
+    (s : ECDSAAdd.State) (m : List Bool)
+    (hin : SkywalkArithmeticInput base x Y.val s.basis)
+    (hg0 : s.basis (base 2409) = false) (hs0 : s.basis (base 2410) = false) :
+    (ECDSAAdd.run (kernelSTruncW divide) m s).phase = s.phase ∧
+    ECDSAAdd.regValue (skywalkArithmeticNumerator base) (ECDSAAdd.run (kernelSTruncW divide) m s).basis =
+      (skywalkArithmeticResult divide x Y).val ∧
+    ∀ q, q ∉ skywalkArithmeticNumerator base →
+      (ECDSAAdd.run (kernelSTruncW divide) m s).basis q = s.basis q := by
+  obtain ⟨m', hm⟩ := kernelPreW_run x Y hx0 hx hfast s hin (segHSTrunc96 divide ++ kernelSuf) m
+  have e1 : kernelSTruncW divide = kernelPreW ++ (segHSTrunc96 divide ++ kernelSuf) := by
+    rw [kernelSTruncW, List.append_assoc]
+  have e2 : kernelSTrunc96 divide = kernelPre ++ (segHSTrunc96 divide ++ kernelSuf) := by
+    rw [kernelSTrunc96, List.append_assoc]
+  rw [e1, hm, ← e2]
+  exact kernelSTrunc96_spec divide x Y hx0 hx hfast s m' hin hg0 hs0
+
+theorem arithSTruncW_sites (multiply : Bool) :
+    ECDSAAdd.wires (kernelSTruncW (!multiply)) ⊆ OB5Support.logicalSites :=
+  (kernelSTruncW_wires_sub (!multiply)).trans (arithSTrunc96_sites multiply)
+
+theorem arithSTruncW_correct (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
+    (multiply : Bool) (X Y : Nat) (hX : X < ECDSAAdd.p) (hX0 : 0 < X) (hY : Y < ECDSAAdd.p)
+    (hfast : SkywalkFast485 X)
+    (s : ECDSAAdd.State) (m : List Bool)
+    (hx : ECDSAAdd.regValue L.point.x s.basis = X) (hy : ECDSAAdd.regValue L.point.y s.basis = Y)
+    (hc : ECDSAAdd.regValue L.dialogPool s.basis = 0) :
+    (ECDSAAdd.run (arithSTruncW L multiply) m s).phase = s.phase ∧
+    ECDSAAdd.regValue L.point.y (ECDSAAdd.run (arithSTruncW L multiply) m s).basis =
+      (if multiply then ((Y : ECDSAAdd.Fp) * (X : ECDSAAdd.Fp)).val else ((Y : ECDSAAdd.Fp) / (X : ECDSAAdd.Fp)).val) ∧
+    ∀ q, q ∉ L.point.y → (ECDSAAdd.run (arithSTruncW L multiply) m s).basis q = s.basis q := by
+  have yValue : (Y : ECDSAAdd.Fp).val = Y := ZMod.val_natCast_of_lt hY
+  rcases placement2 L hw hn with ⟨injective, divisorMap, numeratorMap, _, sharedWork, selectorG, selectorS, _⟩
+  have dx : (wireBlock base 770 256).toFinset ⊆ OB5Support.logicalSites := by
+    intro q hq; obtain ⟨i, hi, rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp hq)
+    apply List.mem_toFinset.mpr; apply List.mem_map.mpr; refine ⟨i, ?_, rfl⟩
+    simp only [wireBlock, List.mem_range'_1] at hi
+    simp only [OB5Support.logicalIndices, List.mem_append, List.mem_range'_1, List.mem_cons, List.not_mem_nil, or_false]; omega
+  have dy : (wireBlock base 2056 256).toFinset ⊆ OB5Support.logicalSites := by
+    intro q hq; obtain ⟨i, hi, rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp hq)
+    apply List.mem_toFinset.mpr; apply List.mem_map.mpr; refine ⟨i, ?_, rfl⟩
+    simp only [wireBlock, List.mem_range'_1] at hi
+    simp only [OB5Support.logicalIndices, List.mem_append, List.mem_range'_1, List.mem_cons, List.not_mem_nil, or_false]; omega
+  have result := selTransfer L (wireFn2 L) OB5Support.logicalSites
+    (fun a ha b hb eq => injective a (ArithmeticOB5.logical_sub_old ha) b (ArithmeticOB5.logical_sub_old hb) eq)
+    divisorMap numeratorMap
+    (fun q hq used hx hy => sharedWork q hq (ArithmeticOB5.logical_sub_old used) hx hy)
+    selectorG selectorS dx dy X (Y : ECDSAAdd.Fp) (skywalkArithmeticResult (!multiply) X (Y : ECDSAAdd.Fp))
+    s m hx (hy.trans yValue.symm) hc
+    (kernelSTruncW (!multiply)) (arithSTruncW_sites multiply)
+    (fun t records input hg hs => kernelSTruncW_spec (!multiply) X (Y : ECDSAAdd.Fp) hX0 hX hfast t records input hg hs)
+  cases multiply <;>
+    simpa only [arithSTruncW, skywalkArithmeticResult, Bool.not_false, Bool.not_true, Bool.false_eq_true, if_false, if_true] using result
+
+theorem arithSTruncW_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSTruncW L false) = 1014366 ∧
+    ECDSAAdd.measurementCount (arithSTruncW L false) = 694024 ∧
+    ECDSAAdd.toffoliCount (arithSTruncW L true) = 1014365 ∧
+    ECDSAAdd.measurementCount (arithSTruncW L true) = 694280 := by
+  obtain ⟨a1, a2, a3, a4⟩ := arithSTrunc96_counts L
+  obtain ⟨k1, k2, -⟩ := kernelPreW_counts
+  have h1 := ECDSAAdd.renameProgram_counts (wireFn2 L) (kernelSTruncW true)
+  have h2 := ECDSAAdd.renameProgram_counts (wireFn2 L) (kernelSTruncW false)
+  have h3 := ECDSAAdd.renameProgram_counts (wireFn2 L) (kernelSTrunc96 true)
+  have h4 := ECDSAAdd.renameProgram_counts (wireFn2 L) (kernelSTrunc96 false)
+  simp only [arithSTruncW, arithSTrunc96, Bool.not_false, Bool.not_true, h1.1, h1.2, h2.1, h2.2, h3.1, h3.2,
+    h4.1, h4.2] at a1 a2 a3 a4 ⊢
+  simp only [kernelSTruncW, kernelSTrunc96, ECDSAAdd.toffoliCount_append, ECDSAAdd.measurementCount_append] at a1 a2 a3 a4 ⊢
+  refine ⟨by omega, by omega, by omega, by omega⟩
+
+/-! #### Compiled walk-shortcut kernel -/
+
+def compiledKernelSW {n : Nat} (divide : Bool) : CatFn n :=
+  CatFn.seq
+    (CatFn.seq (CatFn.compileProg (base 717) (base 718) kernelPreW)
+      (CatFn.swapSurround (base 718) (base 1542) (compiledSegHS96 divide)))
+    (CatFn.compileProg (base 717) (base 718) kernelSuf)
+
+attribute [local irreducible] kernelPreW kernelSTruncW arithSTruncW compiledKernelSW
+
+theorem compiledKernelSW_indep {n : Nat} (divide : Bool) (s : Nat) :
+    Indep (compiledKernelSW (n := n) divide s).prog := by
+  rw [compiledKernelSW]
+  exact CatFn.seq_indep _ _
+    (CatFn.seq_indep _ _ (CatFn.compileProg_indep _ _ _)
+      (CatFn.swapSurround_indep _ _ _ (compiledSegHS96_indep divide)))
+    (CatFn.compileProg_indep _ _ _) s
+
+theorem compiledKernelSW_removed18 {n : Nat} (divide : Bool) (s : Nat) :
+    removed 18 (compiledKernelSW (n := n) divide s).prog = 0 := by
+  rw [compiledKernelSW]
+  exact CatFn.seq_removed18 _ _
+    (CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
+      (CatFn.swapSurround_removed18 _ _ _ (compiledSegHS96_removed18 divide)))
+    (CatFn.compileProg_removed18 _ _ _) s
+
+theorem compiledKernelSW_shiftFin {n : Nat} (divide : Bool) :
+    ShiftFin (compiledKernelSW (n := n) divide)
+      (ECDSAAdd.measurementCount (kernelSTruncW divide) + ECDSAAdd.toffoliCount (kernelSTruncW divide)) := by
+  rw [compiledKernelSW, kernelSTruncW]
+  refine (CatFn.seq_shiftFin _ _
+    (CatFn.seq_shiftFin _ _ (CatFn.compileProg_shiftFin _ _ _)
+      (CatFn.swapSurround_shiftFin _ _ _ (compiledSegHS96_shiftFin divide)))
+    (CatFn.compileProg_shiftFin _ _ _)).mono ?_
+  simp only [ECDSAAdd.measurementCount_append, ECDSAAdd.toffoliCount_append]; omega
+
+theorem compiledKernelSW_tCount {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledKernelSW (n := n) divide s).prog.instantiate read h).tCount ≤
+      4 * ECDSAAdd.toffoliCount (kernelSTruncW divide) := by
+  rw [compiledKernelSW, kernelSTruncW]
+  refine (CatFn.seq_tCount_le _ _ (CatFn.compileProg_indep _ _ _)
+    (CatFn.seq_tCount_le _ _ (CatFn.swapSurround_indep _ _ _ (compiledSegHS96_indep divide))
+      (CatFn.compileProg_tCount _ _ _)
+      (CatFn.swapSurround_tCount_le _ _ _ (compiledSegHS96_indep divide) (compiledSegHS96_tCount divide)))
+    (CatFn.compileProg_tCount _ _ _) s read h).trans ?_
+  simp only [ECDSAAdd.toffoliCount_append]; omega
+
+theorem compiledKernelSW_slots {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledKernelSW (n := n) divide s).prog.gateSlots ≤ 1000000000 := by
+  have hk : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  have hsl := KernelOB5.program_gateSlots_le divide
+  have htc := (KernelOB5.program_counts divide).1
+  rw [hk, ECDSAAdd.Challenge.gateSlots_append, ECDSAAdd.Challenge.gateSlots_append] at hsl
+  rw [hk, ECDSAAdd.toffoliCount_append, ECDSAAdd.toffoliCount_append] at htc
+  obtain ⟨k1, -, k3⟩ := kernelPreW_counts
+  have htb : ECDSAAdd.toffoliCount kernelPreW + ECDSAAdd.toffoliCount kernelSuf ≤ 1100000 := by
+    cases divide <;> simp only [Bool.false_eq_true, if_false, if_true] at htc <;> omega
+  have hsb : ECDSAAdd.Challenge.gateSlots kernelPreW + ECDSAAdd.Challenge.gateSlots kernelSuf ≤ 21000000 := by omega
+  rw [compiledKernelSW]
+  refine (CatFn.seq_slots _ _
+    (CatFn.seq_slots _ _ (CatFn.compileProg_slots _ _ _)
+      (CatFn.swapSurround_slots _ _ _ (compiledSegHS96_slots divide)))
+    (CatFn.compileProg_slots _ _ _) s).trans ?_
+  omega
+
+theorem compiledKernelSW_wires {n : Nat} (divide : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledKernelSW (n := n) divide s).prog ⊆ logicalNo2400.toList := by
+  have hpre0 : ECDSAAdd.wires kernelPre ⊆ logicalNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => (kernelPreSuf_avoid 2400 (Or.inr (Or.inr rfl))).1 (e ▸ hq), ?_⟩
+    simp only [kernelPre, ECDSAAdd.wires_append, Finset.mem_union] at hq
+    rcases hq with (h | h) | h
+    · exact OB5Support.prefixSites_sub_logical ((NativeFirstDirect.prefix_support base).1 h)
+    · exact OB5Support.integer_sub_logical (StackOB5.forward_support (stackForwardT_subset h))
+    · exact OB5Support.clear_support_logical h
+  have hpre : ECDSAAdd.wires kernelPreW ⊆ logicalNo2400.toList.toFinset := kernelPreW_wires_sub.trans hpre0
+  have hsuf : ECDSAAdd.wires kernelSuf ⊆ logicalNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => (kernelPreSuf_avoid 2400 (Or.inr (Or.inr rfl))).2 (e ▸ hq), ?_⟩
+    simp only [kernelSuf, ECDSAAdd.wires_append, Finset.mem_union] at hq
+    rcases hq with (h | h) | h
+    · exact OB5Support.clear_support_logical h
+    · exact OB5Support.integer_sub_logical (StackOB5.reverse_support (stackReverseT_subset h))
+    · exact OB5Support.prefixSites_sub_logical (NativeFirstKnown.inverse_support base h)
+  have m717 := logicalNo2400_mem 717 (Or.inr (Or.inl rfl))
+  have m718 := logicalNo2400_mem 718 (Or.inr (Or.inr (Or.inl rfl)))
+  have m1542 := logicalNo2400_mem 1542 (Or.inr (Or.inr (Or.inr rfl)))
+  rw [compiledKernelSW]
+  exact CatFn.seq_wires _ _
+    (CatFn.seq_wires _ _ (CatFn.compileProg_wires _ _ _ hpre m717 m718)
+      (CatFn.swapSurround_wires _ _ _ m718 m1542 (compiledSegHS96_wires divide)))
+    (CatFn.compileProg_wires _ _ _ hsuf m717 m718) s
+
+theorem compiledKernelSW_wellFormed {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledKernelSW (n := n) divide s).prog.WellFormed := by
+  have hkph := KernelOB5.program_physical divide
+  have hk : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  rw [hk, gatePhysical_append, gatePhysical_append] at hkph
+  have ha7 := kernelPreSuf_avoid 717 (Or.inl rfl)
+  have ha8 := kernelPreSuf_avoid 718 (Or.inr (Or.inl rfl))
+  rw [compiledKernelSW]
+  exact CatFn.seq_wellFormed _ _
+    (CatFn.seq_wellFormed _ _ (CatFn.compileProg_wellFormed _ _ _ (kernelPreW_avoid 717 (Or.inl rfl))
+      (kernelPreW_avoid 718 (Or.inr (Or.inl rfl))) (base_ne 717 718 (by omega)) kernelPreW_physical)
+      (CatFn.swapSurround_wellFormed _ _ _ (base_ne 718 1542 (by omega)) (compiledSegHS96_wellFormed divide)))
+    (CatFn.compileProg_wellFormed _ _ _ ha7.2 ha8.2 (base_ne 717 718 (by omega)) hkph.2) s
+
+private theorem compiledKernelSW_catLitSim_2400 {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 718) ((compiledKernelSW (n := n) divide s).prog.instantiate read h)
+      (kernelSTruncW divide) (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) := by
+  have hkph := KernelOB5.program_physical divide
+  have hk0 : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  rw [hk0, gatePhysical_append, gatePhysical_append] at hkph
+  have ha7 := kernelPreSuf_avoid 717 (Or.inl rfl)
+  have ha8 := kernelPreSuf_avoid 718 (Or.inr (Or.inl rfl))
+  let MidPred : BasisState → Prop := fun bs => AnySegHInput96 bs ∧ bs (base 718) = false
+  have h1 : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+      CatLitSim (base 718) ((CatFn.compileProg (base 717) (base 718) kernelPreW s').prog.instantiate r' h')
+        kernelPreW (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) := fun s' r' h' =>
+    catLitSim_weaken (CatFn.compileProg_catLitSim (base 717) (base 718) kernelPreW
+      (kernelPreW_avoid 717 (Or.inl rfl)) (kernelPreW_avoid 718 (Or.inr (Or.inl rfl)))
+      (base_ne 717 718 (by omega)) kernelPreW_physical s' r' h')
+      (fun bs ⟨⟨x, Y, _, _, _, hin, _, _⟩, _⟩ => skywalkInput_at_717_718 x Y.val bs hin)
+  have hsw : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+      CatLitSim (base 718) ((CatFn.swapSurround (base 718) (base 1542) (compiledSegHS96 divide) s').prog.instantiate r' h')
+        (segHSTrunc96 divide) MidPred :=
+    CatFn.swapSurround_catLitSim (base_ne 718 1542 (by omega)) (compiledSegHS96 divide)
+      (compiledSegHS96_indep divide) (segHSTrunc96 divide) MidPred
+      (fun s' r' h' => catLitSim_weaken (compiledSegHS96_catLitSim divide s' r' h') (fun _ hv => hv.1))
+      (fun bs ⟨⟨_, _, h1542⟩, h718⟩ => ⟨h718, h1542⟩)
+      (fun st m hv _ => let ho := segHS96_out_clean divide st m hv.1; ⟨ho.2.1, ho.2.2⟩)
+  have h12 := CatFn.seq_catLitSim _ _ (CatFn.swapSurround_indep _ _ _ (compiledSegHS96_indep divide))
+    kernelPreW (segHSTrunc96 divide) (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) MidPred h1 hsw
+    (fun st m ⟨⟨x, Y, hx0, hx, hfast, hin, hg0, hs0⟩, h24⟩ _ =>
+      let ho := kernelPre_out_factsW x Y hx0 hx hfast st m hin hg0 hs0 h24
+      ⟨ho.1, ho.2.2⟩)
+  rw [compiledKernelSW, kernelSTruncW]
+  exact CatFn.seq_catLitSim _ _ (CatFn.compileProg_indep _ _ _) (kernelPreW ++ segHSTrunc96 divide) kernelSuf
+    (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) (fun bs => bs (base 717) = false ∧ bs (base 718) = false)
+    h12 (CatFn.compileProg_catLitSim (base 717) (base 718) kernelSuf ha7.2 ha8.2
+      (base_ne 717 718 (by omega)) hkph.2)
+    (fun st m ⟨⟨x, Y, hx0, hx, hfast, hin, hg0, hs0⟩, h24⟩ _ => by
+      rw [ECDSAAdd.run_append]
+      have ho1 := kernelPre_out_factsW x Y hx0 hx hfast st (m.take (ECDSAAdd.measurementCount kernelPreW)) hin hg0 hs0 h24
+      have ho2 := segHS96_out_clean divide _ (m.drop (ECDSAAdd.measurementCount kernelPreW)) ho1.1
+      exact ⟨ho2.1, ho2.2.1⟩) s read h
+
+theorem compiledKernelSW_catLitSim {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 718) ((compiledKernelSW (n := n) divide s).prog.instantiate read h)
+      (kernelSTruncW divide) KernelInput96 := by
+  have hfr2400 : Fresh (base 2400) (compiledKernelSW (n := n) divide s).prog :=
+    fresh_of_not_mem_straightWires (base 2400) _ (fun hm =>
+      (Finset.mem_erase.mp (Finset.mem_toList.mp (compiledKernelSW_wires divide s hm))).1 rfl)
+  have h2400_in : ∀ bs, KernelInput96 bs → KernelInput96 (bs[base 2400 ↦ true]) := by
+    rintro bs ⟨x, Y, hx0, hx, hfast, hin, hg0, hs0⟩
+    have cfg := MappedCompressed.LaneA.laneLogical_config
+    have bShared : base 2400 ∉ skywalkSharedWires base := cfg.2.1 _ (by simp)
+    have bDiv : base 2400 ∉ skywalkArithmeticDivisor base := fun h =>
+      bShared (arith_block_subset_shared base 770 256 (by omega) h)
+    have bNum : base 2400 ∉ skywalkArithmeticNumerator base := fun h =>
+      bShared (arith_block_subset_shared base 2056 256 (by omega) h)
+    refine ⟨x, Y, hx0, hx, hfast, ⟨?_, ?_, ?_⟩, ?_, ?_⟩
+    · rw [← hin.1]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun q hq => by simp [upd, show q ≠ base 2400 from fun e => bDiv (e ▸ hq)])
+    · rw [← hin.2.1]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun q hq => by simp [upd, show q ≠ base 2400 from fun e => bNum (e ▸ hq)])
+    · intro q hq hdx hdy
+      have hne : q ≠ base 2400 := fun e => bShared (e ▸ hq)
+      simpa [upd, hne] using hin.2.2 q hq hdx hdy
+    · simpa [upd, base_ne 2409 2400 (by omega)] using hg0
+    · simpa [upd, base_ne 2410 2400 (by omega)] using hs0
+  exact catLitSim_drop_bit (x := base 2400) (y := base 718) (base_ne 2400 718 (by omega))
+    _ (kernelSTruncW divide) KernelInput96 hfr2400
+    (fun hm => (selKernelTrunc96_sel divide).away (kernelSTruncW_wires_sub divide hm)) h2400_in read h
+    (compiledKernelSW_catLitSim_2400 divide s read h)
+
 end Trunc96
 
 end KernelCompiler
@@ -15362,6 +16290,8 @@ private theorem compiledKernelS_avoid4_both {n : Nat} (divide : Bool) :
     (∀ (s : Nat) (w : Wire), w ∈ ChallengeMigration.straightWires (compiledKernelS (n := n) divide s).prog →
       w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312) ∧
     (∀ (s : Nat) (w : Wire), w ∈ ChallengeMigration.straightWires (compiledKernelS96 (n := n) divide s).prog →
+      w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312) ∧
+    (∀ (s : Nat) (w : Wire), w ∈ ChallengeMigration.straightWires (compiledKernelSW (n := n) divide s).prog →
       w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312) := by
   have hpi_fix (j : Nat) (hj : j < 102) (k : Nat) (hk : k = 765 ∨ k = 766 ∨ k = 767 ∨ k = 2312) :
       MappedCompressed.shifted (Placement5.pi j) (base k) = base k := by
@@ -15601,6 +16531,14 @@ private theorem compiledKernelS_avoid4_both {n : Nat} (divide : Bool) :
       (catFn_seq_avoid4 _ _
         (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hpre4)
         (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 718 (by omega)) (base_avoid4 1542 (by omega)) hsegH96))
+      (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hsuf4) s w hw,
+    fun s w hw => by
+    rw [compiledKernelSW] at hw
+    exact catFn_seq_avoid4 _ _
+      (catFn_seq_avoid4 _ _
+        (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega))
+          (fun q hq => hpre4 q (kernelPreW_wires_sub hq)))
+        (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 718 (by omega)) (base_avoid4 1542 (by omega)) hsegH96))
       (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hsuf4) s w hw⟩
 
 theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
@@ -15611,7 +16549,12 @@ theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
 theorem compiledKernelS96_avoid4 {n : Nat} (divide : Bool) (s : Nat)
     (w : Wire) (hw : w ∈ ChallengeMigration.straightWires (compiledKernelS96 (n := n) divide s).prog) :
     w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312 :=
-  (compiledKernelS_avoid4_both (n := n) divide).2 s w hw
+  (compiledKernelS_avoid4_both (n := n) divide).2.1 s w hw
+
+theorem compiledKernelSW_avoid4 {n : Nat} (divide : Bool) (s : Nat)
+    (w : Wire) (hw : w ∈ ChallengeMigration.straightWires (compiledKernelSW (n := n) divide s).prog) :
+    w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312 :=
+  (compiledKernelS_avoid4_both (n := n) divide).2.2 s w hw
 
 
 -- Universal `Straight.append` T-count upper bound (works even when continuation `q` depends on history!)
@@ -17471,6 +18414,164 @@ private theorem compiledDirectArith96_ket_sim {n : Nat} (mul : Bool) (s : Nat) (
   exact ⟨by cases mul <;> simpa only [↓reduceIte] using hy1,
     fun w hw => har.2.2 w (by rw [streamLayout_point_y_eq, List.mem_range'_1]; exact hw)⟩
 
+def compiledDirectArithW {n : Nat} (multiply : Bool) : CatFn n :=
+  CatFn.map (wireFn2 streamLayout) (compiledKernelSW (!multiply))
+
+attribute [local irreducible] compiledDirectArithW
+
+theorem compiledDirectArithW_indep {n : Nat} (multiply : Bool) (s : Nat) :
+    Indep (compiledDirectArithW (n := n) multiply s).prog := by
+  rw [compiledDirectArithW]
+  exact CatFn.map_indep _ _ (compiledKernelSW_indep (!multiply))
+    (fun s' a ha b hb => wireFn2_inj_logical a (Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s' ha))
+      b (Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s' hb))) s
+
+theorem compiledDirectArithW_removed18 {n : Nat} (multiply : Bool) (s : Nat) :
+    removed 18 (compiledDirectArithW (n := n) multiply s).prog = 0 := by
+  rw [compiledDirectArithW]
+  exact CatFn.map_removed18 _ _ (compiledKernelSW_removed18 (!multiply)) s
+
+theorem compiledDirectArithW_shiftFin {n : Nat} (multiply : Bool) :
+    ShiftFin (compiledDirectArithW (n := n) multiply)
+      (if multiply then 1709707 else 1709452) := by
+  have hc := arithSTruncW_counts streamLayout
+  have hren_m : ECDSAAdd.measurementCount (arithSTruncW streamLayout multiply) =
+      ECDSAAdd.measurementCount (kernelSTruncW (!multiply)) := by
+    rw [arithSTruncW]; exact (ECDSAAdd.renameProgram_counts (wireFn2 streamLayout) (kernelSTruncW (!multiply))).2
+  have hren_t : ECDSAAdd.toffoliCount (arithSTruncW streamLayout multiply) =
+      ECDSAAdd.toffoliCount (kernelSTruncW (!multiply)) := by
+    rw [arithSTruncW]; exact (ECDSAAdd.renameProgram_counts (wireFn2 streamLayout) (kernelSTruncW (!multiply))).1
+  rw [compiledDirectArithW]
+  refine (CatFn.map_shiftFin _ _ (compiledKernelSW_shiftFin (!multiply))).mono ?_
+  cases multiply <;> simp only [Bool.false_eq_true, if_false, if_true] at hren_m hren_t ⊢ <;>
+    (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+theorem compiledDirectArithW_tCount {n : Nat} (multiply : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledDirectArithW (n := n) multiply s).prog.instantiate read h).tCount ≤
+      4 * (if multiply then 1014365 else 1014366) := by
+  have hc := arithSTruncW_counts streamLayout
+  have hren_t : ECDSAAdd.toffoliCount (arithSTruncW streamLayout multiply) =
+      ECDSAAdd.toffoliCount (kernelSTruncW (!multiply)) := by
+    rw [arithSTruncW]; exact (ECDSAAdd.renameProgram_counts (wireFn2 streamLayout) (kernelSTruncW (!multiply))).1
+  rw [compiledDirectArithW]
+  refine (CatFn.map_tCount_le _ _ (compiledKernelSW_tCount (!multiply)) s read h).trans ?_
+  cases multiply <;> simp only [Bool.false_eq_true, if_false, if_true] at hren_t ⊢ <;>
+    (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+theorem compiledDirectArithW_slots {n : Nat} (multiply : Bool) (s : Nat) :
+    (compiledDirectArithW (n := n) multiply s).prog.gateSlots ≤ 1000000000 := by
+  rw [compiledDirectArithW]
+  exact CatFn.map_slots _ _ (compiledKernelSW_slots (!multiply)) s
+
+theorem compiledDirectArithW_wires {n : Nat} (multiply : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledDirectArithW (n := n) multiply s).prog ⊆ support1612 := by
+  intro w hw
+  rw [compiledDirectArithW] at hw
+  obtain ⟨u, hu, rfl⟩ := catFn_map_mem (wireFn2 streamLayout) (compiledKernelSW (n := n) (!multiply)) s hw
+  exact wireFn2_mem_support1612 u (Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s hu))
+    (compiledKernelSW_avoid4 (!multiply) s u hu)
+
+theorem compiledDirectArithW_wellFormed {n : Nat} (multiply : Bool) (s : Nat) :
+    (compiledDirectArithW (n := n) multiply s).prog.WellFormed := by
+  rw [compiledDirectArithW]
+  exact CatFn.map_wellFormed _ _ (compiledKernelSW_wellFormed (!multiply))
+    (fun s' a ha b hb => wireFn2_inj_logical a (Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s' ha))
+      b (Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s' hb))) s
+
+theorem compiledDirectArithW_catLitSim {n : Nat} (multiply : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim 14833 ((compiledDirectArithW (n := n) multiply s).prog.instantiate read h)
+      (arithSTruncW streamLayout multiply) DirectArithValid96 := by
+  have hker_sites : ECDSAAdd.wires (kernelSTruncW (!multiply)) ⊆ logicalNo2400 := fun q hq =>
+    Finset.mem_erase.mpr ⟨fun e => (selKernelTrunc96_sel (!multiply)).away (kernelSTruncW_wires_sub (!multiply) (by subst e; exact hq)), arithSTruncW_sites multiply hq⟩
+  have h718_mem : base 718 ∈ logicalNo2400 := by
+    rw [logicalNo2400, Finset.mem_erase]
+    exact ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨718, by decide, rfl⟩)⟩
+  have hrestr : ∀ (s'' : Nat) (r'' : ConstantBit n → Bool) (h'' : Fin s'' → Bool),
+      CatLitSim (base 718) ((compiledKernelSW (n := n) (!multiply) s'').prog.instantiate r'' h'') (kernelSTruncW (!multiply))
+        (fun bs => ∃ bs', KernelInput96 bs' ∧ ∀ w ∈ logicalNo2400, bs w = bs' w) := fun s'' r'' h'' =>
+    catLitSim_restrict_S logicalNo2400 (base 718) _ (kernelSTruncW (!multiply)) KernelInput96
+      (fun w hw => Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s'' hw))
+      hker_sites h718_mem r'' h'' (compiledKernelSW_catLitSim (!multiply) s'' r'' h'')
+  have hmap := CatFn.map_catLitSim (wireFn2 streamLayout) (base 718) logicalNo2400
+    (compiledKernelSW (n := n) (!multiply)) (kernelSTruncW (!multiply)) _
+    (fun s'' w hw => Finset.mem_toList.mp (compiledKernelSW_wires (!multiply) s'' hw))
+    hker_sites h718_mem wireFn2_inj_logical hrestr s read h
+  rw [wireFn2_base718] at hmap
+  rw [compiledDirectArithW]
+  have harith_eq : ECDSAAdd.renameProgram (wireFn2 streamLayout) (kernelSTruncW (!multiply)) = arithSTruncW streamLayout multiply := by
+    rw [arithSTruncW]
+  rw [harith_eq] at hmap
+  refine catLitSim_weaken hmap ?_
+  rintro bs ⟨X, Y, ⟨hX0, hfast⟩, hx, hy, hcl⟩ bs0 hag
+  let bs' : BasisState := fun w => if w ∈ logicalNo2400 then bs (wireFn2 streamLayout w) else false
+  refine ⟨bs', ?_, fun w hw => by simp only [bs', if_pos hw]; exact hag w hw⟩
+  have hpl := placement2 streamLayout streamLayout_widths streamLayout_nodup
+  have hdx_sub : ∀ q ∈ wireBlock base 770 256, q ∈ logicalNo2400 := fun q hq => by
+    obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hq; simp only [List.mem_range'_1] at hi
+    rw [logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨i, ?_, rfl⟩)⟩
+    exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ (List.mem_range'_1.mpr ⟨hi.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))))
+  have hdy_sub : ∀ q ∈ wireBlock base 2056 256, q ∈ logicalNo2400 := fun q hq => by
+    obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hq; simp only [List.mem_range'_1] at hi
+    rw [logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨i, ?_, rfl⟩)⟩
+    exact List.mem_append_left _ (List.mem_append_right _ (List.mem_range'_1.mpr ⟨hi.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
+  have h2409_n : base 2409 ∉ logicalNo2400 := fun hm =>
+    (OB5Support.logical_nosel _ (Finset.mem_erase.mp hm).2).1 rfl
+  have h2410_n : base 2410 ∉ logicalNo2400 := fun hm =>
+    (OB5Support.logical_nosel _ (Finset.mem_erase.mp hm).2).2 rfl
+  have hpool0 : ∀ w ∈ streamLayout.dialogPool, bs w = false :=
+    (ECDSAAdd.Arithmetic.regValue_zero _ _).mp (cleanOutside_dialogPool bs hcl)
+  refine ⟨X.val, Y, Nat.pos_of_ne_zero (fun h0 => hX0 ((ZMod.val_eq_zero X).mp h0)), X.val_lt, hfast, ⟨?_, ?_, ?_⟩,
+    by simp only [bs', if_neg h2409_n], by simp only [bs', if_neg h2410_n]⟩
+  · change ECDSAAdd.regValue (wireBlock base 770 256) bs' = X.val
+    rw [selRegMap (wireFn2 streamLayout) _ bs' bs (fun q hq => by simp only [bs', if_pos (hdx_sub q hq)]),
+      hpl.divisorMap, streamLayout_point_x_eq, hx]
+  · change ECDSAAdd.regValue (wireBlock base 2056 256) bs' = Y.val
+    rw [selRegMap (wireFn2 streamLayout) _ bs' bs (fun q hq => by simp only [bs', if_pos (hdy_sub q hq)]),
+      hpl.numeratorMap, streamLayout_point_y_eq, hy]
+  · intro q hq hdx hdy
+    by_cases hmem : q ∈ logicalNo2400
+    · simp only [bs', if_pos hmem]
+      exact hpool0 _ (hpl.sharedWork q hq (ArithmeticOB5.logical_sub_old (Finset.mem_erase.mp hmem).2) hdx hdy)
+    · simp only [bs', if_neg hmem]
+
+private theorem compiledDirectArithW_ket_sim {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ∃ cs : List ℂ, List.Forall₂
+      (fun b k => ∀ (t : BasisState), DirectArithValid96 t →
+        ∃ t' : BasisState,
+          (∀ (X Y : ECDSAAdd.Fp), (X ≠ 0 ∧ SkywalkFast485 X.val) →
+            ECDSAAdd.regValue (List.range' 263 256) t = X.val →
+            ECDSAAdd.regValue (List.range' 580 256) t = Y.val →
+            CleanOutsideXYBank t →
+            ECDSAAdd.regValue (List.range' 580 256) t' = (if mul then Y * X else Y / X).val ∧
+            (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
+          b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
+      ((compiledDirectArithW (n := n) mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  refine catLitSim_to_ket_aux (arithSTruncW streamLayout mul) ((compiledDirectArithW mul s).prog.instantiate read h)
+    DirectArithValid96 DirectArithValid96 _ (compiledDirectArithW_catLitSim mul s read h) (fun _ h => h) ?_
+  rintro bs m ⟨X₀, Y₀, ⟨hX₀, hfast₀⟩, hx₀, hy₀, hcl₀⟩
+  have hpos₀ : 0 < X₀.val := Nat.pos_of_ne_zero (fun h0 => hX₀ ((ZMod.val_eq_zero X₀).mp h0))
+  have har₀ := arithSTruncW_correct streamLayout streamLayout_widths streamLayout_nodup mul X₀.val Y₀.val
+    X₀.val_lt hpos₀ Y₀.val_lt hfast₀ ⟨false, bs⟩ m
+    (by rw [streamLayout_point_x_eq]; exact hx₀)
+    (by rw [streamLayout_point_y_eq]; exact hy₀)
+    (cleanOutside_dialogPool bs hcl₀)
+  refine ⟨har₀.1, fun X Y ⟨hX0, hfast⟩ hx hy hcl => ?_⟩
+  have hpos : 0 < X.val := Nat.pos_of_ne_zero (fun h0 => hX0 ((ZMod.val_eq_zero X).mp h0))
+  have har := arithSTruncW_correct streamLayout streamLayout_widths streamLayout_nodup mul X.val Y.val
+    X.val_lt hpos Y.val_lt hfast ⟨false, bs⟩ m
+    (by rw [streamLayout_point_x_eq]; exact hx)
+    (by rw [streamLayout_point_y_eq]; exact hy)
+    (cleanOutside_dialogPool bs hcl)
+  have hy1 := har.2.1
+  simp only [streamLayout_point_y_eq, ZMod.natCast_zmod_val] at hy1
+  exact ⟨by cases mul <;> simpa only [↓reduceIte] using hy1,
+    fun w hw => har.2.2 w (by rw [streamLayout_point_y_eq, List.mem_range'_1]; exact hw)⟩
+
+
 /-- Polymorphic arithmetic kernel spec shared by full (`n = 101 + end`) and truncated (`n = 96`) body windows. -/
 structure ArithSpec where
   prog : ∀ {n : Nat}, Bool → CatFn n
@@ -17521,20 +18622,20 @@ def arithSpecFull : ArithSpec where
   ket_sim := fun mul s read h => compiledDirectArith_ket_sim mul s read h
 
 def arithSpecTrunc96 : ArithSpec where
-  prog := fun mul => compiledDirectArith96 mul
+  prog := fun mul => compiledDirectArithW mul
   GoodX := fun X => X ≠ 0 ∧ SkywalkFast485 X.val
   good_ne_zero := fun _ h => h.1
   finDiv := 1709452
   finMul := 1709707
-  tofDiv := 1015058
-  tofMul := 1015057
-  removed18 := fun mul s => compiledDirectArith96_removed18 mul s
-  shiftFin := fun mul => compiledDirectArith96_shiftFin mul
-  tCount := fun mul s read h => compiledDirectArith96_tCount mul s read h
-  slots := fun mul s => compiledDirectArith96_slots mul s
-  wires := fun mul s => compiledDirectArith96_wires mul s
-  wellFormed := fun mul s => compiledDirectArith96_wellFormed mul s
-  ket_sim := fun mul s read h => compiledDirectArith96_ket_sim mul s read h
+  tofDiv := 1014366
+  tofMul := 1014365
+  removed18 := fun mul s => compiledDirectArithW_removed18 mul s
+  shiftFin := fun mul => compiledDirectArithW_shiftFin mul
+  tCount := fun mul s read h => compiledDirectArithW_tCount mul s read h
+  slots := fun mul s => compiledDirectArithW_slots mul s
+  wires := fun mul s => compiledDirectArithW_wires mul s
+  wellFormed := fun mul s => compiledDirectArithW_wellFormed mul s
+  ket_sim := fun mul s read h => compiledDirectArithW_ket_sim mul s read h
 
 def GoodPointA (ax : ArithSpec) (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
   GoodPoint R Δ ∧
@@ -21429,10 +22530,10 @@ theorem compiledRecTrunc17_bound : (compiledProgramFnW arithSpecTrunc96 fixupSpe
   (compiledRecW_bound (by decide) (by decide) arithSpecTrunc96 fixupSpec17).trans (by decide)
 
 theorem compiledTrunc16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramTrunc16 start).instantiate read h).tCount ≤ 4 * 2171700 :=
+    ((compiledProgramTrunc16 start).instantiate read h).tCount ≤ 4 * 2170316 :=
   (compiledW_tCount (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start read h).trans (by decide)
 theorem compiledTrunc17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramTrunc17 start).instantiate read h).tCount ≤ 4 * 2253875 :=
+    ((compiledProgramTrunc17 start).instantiate read h).tCount ≤ 4 * 2252491 :=
   (compiledW_tCount (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start read h).trans (by decide)
 
 theorem compiledTrunc16_slots (start : Nat) : (compiledProgramTrunc16 start).gateSlots ≤ 80000000000 :=
