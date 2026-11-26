@@ -11974,6 +11974,1723 @@ theorem compiledKernelS_catLitSim {n : Nat} (divide : Bool) (s : Nat)
     _ (SW.kernelS divide) KernelInput hfr2400 (SW.selKernel_sel divide).away h2400_in read h
     (compiledKernelS_catLitSim_2400 divide s read h)
 
+section Trunc96
+
+open ECDSAAdd.Arithmetic.ControlledPointLayout ECDSAAdd.Arithmetic.CompressedPointDialog
+open ECDSAAdd.ShorPort ECDSAAdd.Entrant MappedCompressed.LaneA
+
+attribute [local irreducible] Nat.iterate
+  ECDSAAdd.run ECDSAAdd.wires ECDSAAdd.toffoliCount ECDSAAdd.measurementCount ECDSAAdd.renameProgram
+  OwnQ4Endpoint.centerT OwnQ4Endpoint.canonT KernelOB5.segH ECDSAAdd.Frontier.arithS
+
+/-! ### 1. Exact 3-line truncated replay equivalence under `SkywalkFast485` -/
+
+def SkywalkFast485 (x : Nat) : Prop :=
+  (ECDSAAdd.SkywalkNat.step^[485] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).u = 0
+
+private theorem skywalk_two_ne : (2 : ECDSAAdd.Fp) ≠ 0 := by decide
+
+private theorem skywalkNat_step_u0 {z : ECDSAAdd.SkywalkNat.State} (h : z.u = 0) :
+    ECDSAAdd.SkywalkNat.step z = z := by
+  unfold ECDSAAdd.SkywalkNat.step; rw [if_pos h]
+
+private theorem skywalkNat_terminal_tail {x k : Nat} (hx0 : 0 < x) (hx : x < ECDSAAdd.p)
+    (hfast : SkywalkFast485 x) (hk : 485 ≤ k) :
+    (ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).u = 0 ∧
+    (ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).v = 1 := by
+  have hfix : ∀ d, (ECDSAAdd.SkywalkNat.step^[d] (ECDSAAdd.SkywalkNat.step^[485] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p))).u = 0 := by
+    intro d; induction d with
+    | zero => rw [Function.iterate_zero_apply]; exact hfast
+    | succ d ih => rw [Function.iterate_succ_apply', skywalkNat_step_u0 ih]; exact ih
+  have hu : (ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).u = 0 := by
+    have hk' : k = (k - 485) + 485 := by omega
+    rw [hk', Function.iterate_add_apply]; exact hfix (k - 485)
+  have hp0 : 0 < ECDSAAdd.p := by norm_num [ECDSAAdd.p]
+  have hpodd : ECDSAAdd.p % 2 = 1 := by norm_num [ECDSAAdd.p]
+  have hval := ECDSAAdd.SkywalkNat.iter_valid k (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p) hp0 hpodd
+  have hcop : x.Coprime ECDSAAdd.p :=
+    (ECDSAAdd.Secp256k1.p_prime.coprime_iff_not_dvd.mpr
+      (fun hd => (Nat.not_le_of_lt hx) (Nat.le_of_dvd hx0 hd))).symm
+  have hg : (ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).u.gcd
+      (ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).v = 1 :=
+    hval.2.2.trans hcop
+  rw [hu, Nat.gcd_zero_left] at hg
+  exact ⟨hu, hg⟩
+
+private theorem skywalk_tail_bit {origin : BasisState} {x k : Nat}
+    (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (hk1 : 485 ≤ k) (hk2 : k < 512) :
+    origin (base k) = true ∧ origin (base (1028 + k)) = false := by
+  have hp0 : 0 < ECDSAAdd.p := by norm_num [ECDSAAdd.p]
+  have hpodd : ECDSAAdd.p % 2 = 1 := by norm_num [ECDSAAdd.p]
+  have hterm := skywalkNat_terminal_tail hx0 hx hfast hk1
+  obtain ⟨G, S, henc⟩ := SkywalkTrace.iter_encoded k false false (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p) hp0 hpodd
+  change SkywalkTrace.next^[k] (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)) =
+    SkywalkRails.encode G S ((ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).u : Int)
+      ((ECDSAAdd.SkywalkNat.step^[k] (ECDSAAdd.SkywalkNat.init x ECDSAAdd.p)).v : Int) at henc
+  rw [hterm.1, hterm.2] at henc
+  have hcode : (SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int))).getD k (false, false) =
+      (true, false) := by
+    rw [SkywalkTrace.trace_getD_code 512 _ k hk2 (false, false), henc]
+    exact SkywalkTrace.code_terminal G S
+  rw [← trace] at hcode
+  have hget : (skywalkTapeControls origin (skywalkSharedTape base)).getD k (false, false) =
+      (origin (base k), origin (base (1028 + k))) := by
+    rw [skywalkTapeControls, skywalkSharedTape,
+      List.getD_eq_getElem _ _ (by simp only [List.length_map, List.length_range]; omega)]
+    simp only [List.getElem_map, List.getElem_range]
+  rw [hget] at hcode
+  exact ⟨(Prod.mk.inj hcode).1, (Prod.mk.inj hcode).2⟩
+
+private theorem skywalk_tail_controls_true_false {origin : BasisState} {x : Nat}
+    (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x)
+    (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int))) :
+    ∀ c ∈ mixedTranscriptControls origin (base 2400) (MappedCompressed.indexedLetters 485 25), c = (true, false) := by
+  intro c hc
+  simp only [mixedTranscriptControls, MappedCompressed.indexedLetters, List.mem_map, List.mem_range] at hc
+  obtain ⟨l, ⟨j, hj, rfl⟩, rfl⟩ := hc
+  have hlt : 485 + j < 512 := by omega
+  have hl := MappedCompressed.mixedTape_base_getD (485 + j) hlt
+  have hbit := skywalk_tail_bit (k := 485 + j) hx0 hx hfast trace (by omega) (by omega)
+  change (mixedTranscriptBit origin (base 2400) (MappedCompressed.tapeLetter (485 + j)).1.1 (MappedCompressed.tapeLetter (485 + j)).2.1,
+    mixedTranscriptBit origin (base 2400) (MappedCompressed.tapeLetter (485 + j)).1.2 (MappedCompressed.tapeLetter (485 + j)).2.2) = (true, false)
+  rw [show MappedCompressed.tapeLetter (485 + j) = ((base (485 + j), base (1028 + (485 + j))),
+    mixedTranscriptUnitTrace.getD (485 + j) (false, false)) from hl]
+  simp only [mixedTranscriptBit, h24, ↓reduceIte, hbit.1, hbit.2]
+
+private theorem payloadCell_tf (Z : ECDSAAdd.Fp) : skywalkPayloadCell true false (Z, Z) = (Z, Z) := by
+  letI : Fact (Nat.Prime ECDSAAdd.p) := ⟨ECDSAAdd.Secp256k1.p_prime⟩
+  simp only [skywalkPayloadCell, ↓reduceIte, Bool.false_eq_true]
+  apply Prod.ext
+  · change (Z + Z) / 2 = Z; rw [← two_mul, mul_div_cancel_left₀ Z skywalk_two_ne]
+  · rfl
+
+private theorem payloadUncell_tf (Z : ECDSAAdd.Fp) : skywalkPayloadUncell true false (Z, Z) = (Z, Z) := by
+  have hc := skywalkPayloadUncell_cell true false (Z, Z)
+  rwa [payloadCell_tf Z] at hc
+
+private theorem payloadReplay_tf (cs : List (Bool × Bool)) (hcs : ∀ c ∈ cs, c = (true, false)) (Z : ECDSAAdd.Fp) :
+    skywalkPayloadReplay cs (Z, Z) = (Z, Z) := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    rcases c with ⟨g, s⟩
+    rcases Prod.mk.inj (hcs (g, s) List.mem_cons_self) with ⟨rfl, rfl⟩
+    rw [skywalkPayloadReplay, payloadCell_tf]
+    exact ih (fun x hx => hcs x (List.mem_cons_of_mem _ hx))
+
+private theorem payloadReplayInverse_tf (cs : List (Bool × Bool)) (hcs : ∀ c ∈ cs, c = (true, false)) (Z : ECDSAAdd.Fp) :
+    skywalkPayloadReplayInverse cs (Z, Z) = (Z, Z) := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    rcases c with ⟨g, s⟩
+    rcases Prod.mk.inj (hcs (g, s) List.mem_cons_self) with ⟨rfl, rfl⟩
+    rw [skywalkPayloadReplayInverse, ih (fun x hx => hcs x (List.mem_cons_of_mem _ hx)), payloadUncell_tf]
+
+private theorem replay_append (a b : List (Bool × Bool)) (Q : ECDSAAdd.Fp × ECDSAAdd.Fp) :
+    skywalkPayloadReplay (a ++ b) Q = skywalkPayloadReplay b (skywalkPayloadReplay a Q) := by
+  induction a generalizing Q with
+  | nil => rfl
+  | cons c cs ih => rcases c with ⟨g, s⟩; simp only [List.cons_append, skywalkPayloadReplay, ih]
+
+private theorem replayInverse_append (a b : List (Bool × Bool)) (Q : ECDSAAdd.Fp × ECDSAAdd.Fp) :
+    skywalkPayloadReplayInverse (a ++ b) Q = skywalkPayloadReplayInverse a (skywalkPayloadReplayInverse b Q) := by
+  induction a with
+  | nil => rfl
+  | cons c cs ih => rcases c with ⟨g, s⟩; simp only [List.cons_append, skywalkPayloadReplayInverse, ih]
+
+theorem forward_payload_trunc96 (origin : BasisState) (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p)
+    (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int))) :
+    let Z := if origin (base 2400) then Y / (x : ECDSAAdd.Fp) else Y
+    Replay5.groupsPayload true origin 1 96 (Replay5.firstPayload true origin (Y, 0)) = (Z, Z) := by
+  let Z := if origin (base 2400) then Y / (x : ECDSAAdd.Fp) else Y
+  have hfull := Replay5.forward_payload origin x Y hx0 hx trace
+  have h510 := (skywalk_tail_bit (k := 510) hx0 hx hfast trace (by decide) (by decide)).1
+  have hG510 : mixedTranscriptBit origin (base 2400) (base 510) (mixedTranscriptUnitTrace.getD 510 (false, false)).1 = true := by
+    simp only [mixedTranscriptBit, h24, ↓reduceIte, h510]
+  have hend_eq : ∀ Q, Replay5.endPayload true origin Q = skywalkPayloadCell true false Q := fun Q => by
+    simp only [Replay5.endPayload, ↓reduceIte, skywalkPayloadCell, Bool.false_eq_true]
+    apply Prod.ext
+    · change (Q.1 + if mixedTranscriptBit origin (base 2400) (base 510) (mixedTranscriptUnitTrace.getD 510 (false, false)).1 then Q.2 else -Q.2) / 2 = _
+      rw [hG510]; rfl
+    · rfl
+  have htail_tf := skywalk_tail_controls_true_false hx0 hx hfast h24 trace
+  let tail := mixedTranscriptControls origin (base 2400) (MappedCompressed.indexedLetters 485 25)
+  have hmp : ∀ a b, mixedTranscriptControls origin (base 2400) (a ++ b) =
+      mixedTranscriptControls origin (base 2400) a ++ mixedTranscriptControls origin (base 2400) b :=
+    fun a b => List.map_append
+  have hsplit : Replay5.groupsPayload true origin 1 101 (Replay5.firstPayload true origin (Y, 0)) =
+      skywalkPayloadReplay tail (Replay5.groupsPayload true origin 1 96 (Replay5.firstPayload true origin (Y, 0))) := by
+    rw [Replay5.forward_groups_payload, Replay5.forward_groups_payload]
+    have hidx : MappedCompressed.indexedLetters (5 * 1) (5 * 101) =
+        MappedCompressed.indexedLetters (5 * 1) (5 * 96) ++ MappedCompressed.indexedLetters 485 25 := by
+      simpa only [Nat.reduceMul, Nat.reduceAdd] using MappedCompressed.indexedLetters_append 5 480 25
+    rw [hidx, hmp, replay_append]
+  rw [hend_eq, hsplit] at hfull
+  have hrep : skywalkPayloadReplay (tail ++ [(true, false)])
+      (Replay5.groupsPayload true origin 1 96 (Replay5.firstPayload true origin (Y, 0))) = (Z, Z) := by
+    simpa only [replay_append, skywalkPayloadReplay] using hfull
+  have hrepZ : skywalkPayloadReplay (tail ++ [(true, false)]) (Z, Z) = (Z, Z) :=
+    payloadReplay_tf _ (fun c hc => by
+      rcases List.mem_append.mp hc with h | h
+      · exact htail_tf c h
+      · exact List.mem_singleton.mp h) Z
+  have hinv := congrArg (skywalkPayloadReplayInverse (tail ++ [(true, false)])) (hrep.trans hrepZ.symm)
+  rwa [skywalkPayloadReplayInverse_replay, skywalkPayloadReplayInverse_replay] at hinv
+
+theorem inverse_payload_trunc96 (origin : BasisState) (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p)
+    (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int))) :
+    let Z := if origin (base 2400) then Y * (x : ECDSAAdd.Fp) else Y
+    Replay5.firstPayload false origin (Replay5.groupsPayload false origin 1 96 (Y, Y)) = (Z, 0) := by
+  have hfull := Replay5.inverse_payload origin x Y hx0 hx trace
+  have h510 := (skywalk_tail_bit (k := 510) hx0 hx hfast trace (by decide) (by decide)).1
+  have hG510 : mixedTranscriptBit origin (base 2400) (base 510) (mixedTranscriptUnitTrace.getD 510 (false, false)).1 = true := by
+    simp only [mixedTranscriptBit, h24, ↓reduceIte, h510]
+  have hend_eq : Replay5.endPayload false origin (Y, Y) = (Y, Y) := by
+    have h1 : Replay5.endPayload false origin (Y, Y) = skywalkPayloadUncell true false (Y, Y) := by
+      simp only [Replay5.endPayload, Bool.false_eq_true, ↓reduceIte, skywalkPayloadUncell]
+      apply Prod.ext
+      · change 2 * Y + (if mixedTranscriptBit origin (base 2400) (base 510) (mixedTranscriptUnitTrace.getD 510 (false, false)).1 then -Y else Y) = _
+        rw [hG510]; rfl
+      · rfl
+    exact h1.trans (payloadUncell_tf Y)
+  have htail_tf := skywalk_tail_controls_true_false hx0 hx hfast h24 trace
+  let tail := mixedTranscriptControls origin (base 2400) (MappedCompressed.indexedLetters 485 25)
+  have hmp : ∀ a b, mixedTranscriptControls origin (base 2400) (a ++ b) =
+      mixedTranscriptControls origin (base 2400) a ++ mixedTranscriptControls origin (base 2400) b :=
+    fun a b => List.map_append
+  have hsplit : Replay5.groupsPayload false origin 1 101 (Y, Y) =
+      Replay5.groupsPayload false origin 1 96 (Y, Y) := by
+    rw [Replay5.inverse_groups_payload, Replay5.inverse_groups_payload]
+    have hidx : MappedCompressed.indexedLetters (5 * 1) (5 * 101) =
+        MappedCompressed.indexedLetters (5 * 1) (5 * 96) ++ MappedCompressed.indexedLetters 485 25 := by
+      simpa only [Nat.reduceMul, Nat.reduceAdd] using MappedCompressed.indexedLetters_append 5 480 25
+    rw [hidx, hmp, replayInverse_append]
+    exact congrArg _ (payloadReplayInverse_tf tail htail_tf Y)
+  rw [hend_eq, hsplit] at hfull
+  exact hfull
+
+/-! ### 2. Truncated OB5 and SW programs (`n = 96` full packets, dropping `endPacket`) -/
+
+def logicalReplayOB5Trunc96 (divide : Bool) : ECDSAAdd.Program :=
+  if divide then OneBankReplay5.firstPacket true ++ OneBankReplay5.groups true 1 96
+  else OneBankReplay5.groups false 1 96 ++ OneBankReplay5.firstPacket false
+
+def replayOB5Trunc96 (divide : Bool) : ECDSAAdd.Program :=
+  ECDSAAdd.renameProgram (OB5.sig 511) (logicalReplayOB5Trunc96 divide)
+
+def segmentOB5Trunc96 (divide : Bool) : ECDSAAdd.Program :=
+  if divide then OwnQ4Endpoint.centerT ++ (replayOB5Trunc96 true ++ (HalfFieldOB5.copyN ++ OwnQ4Endpoint.canonT))
+  else OwnQ4Endpoint.centerT ++ (HalfFieldOB5.copyN ++ (replayOB5Trunc96 false ++ OwnQ4Endpoint.canonT))
+
+def segHOB5Trunc96 (divide : Bool) : ECDSAAdd.Program :=
+  [.X (base 511)] ++ (ECDSAAdd.renameProgram HostOB5.hostSwap (segmentOB5Trunc96 divide) ++ [.X (base 511)])
+
+def kernelOB5Trunc96 (divide : Bool) : ECDSAAdd.Program :=
+  (kernelPre ++ segHOB5Trunc96 divide) ++ kernelSuf
+
+def logicalReplaySTrunc96 (divide : Bool) : ECDSAAdd.Program :=
+  if divide then SW.firstPacketS true ++ SW.groupsS true 1 96
+  else SW.groupsS false 1 96 ++ SW.firstPacketS false
+
+def replaySTrunc96 (divide : Bool) : ECDSAAdd.Program :=
+  ECDSAAdd.renameProgram (OB5.sig 511) (logicalReplaySTrunc96 divide)
+
+def segmentSTrunc96 (divide : Bool) : ECDSAAdd.Program :=
+  if divide then OwnQ4Endpoint.centerT ++ (replaySTrunc96 true ++ (HalfFieldOB5.copyN ++ OwnQ4Endpoint.canonT))
+  else OwnQ4Endpoint.centerT ++ (HalfFieldOB5.copyN ++ (replaySTrunc96 false ++ OwnQ4Endpoint.canonT))
+
+def segHSTrunc96 (divide : Bool) : ECDSAAdd.Program :=
+  [.X (base 511)] ++ (ECDSAAdd.renameProgram HostOB5.hostSwap (segmentSTrunc96 divide) ++ [.X (base 511)])
+
+def kernelSTrunc96 (divide : Bool) : ECDSAAdd.Program :=
+  (kernelPre ++ segHSTrunc96 divide) ++ kernelSuf
+
+def arithSTrunc96 (L : ControlledPointLayout) (multiply : Bool) : ECDSAAdd.Program :=
+  ECDSAAdd.renameProgram (wireFn2 L) (kernelSTrunc96 (!multiply))
+
+attribute [local irreducible] logicalReplayOB5Trunc96 replayOB5Trunc96 segmentOB5Trunc96
+  segHOB5Trunc96 kernelOB5Trunc96 logicalReplaySTrunc96 replaySTrunc96 segmentSTrunc96
+  segHSTrunc96 kernelSTrunc96 arithSTrunc96
+
+-- Exact wire inclusion: `wires (logicalReplayOB5Trunc96 divide) ⊆ wires (OneBankReplay5.logicalReplay divide)`!
+private theorem groups_wires_sub (divide : Bool) (j n m : Nat) (hnm : n ≤ m) :
+    ECDSAAdd.wires (OneBankReplay5.groups divide j n) ⊆ ECDSAAdd.wires (OneBankReplay5.groups divide j m) := by
+  induction n generalizing j m with
+  | zero => simp [OneBankReplay5.groups, PacketSequence.program, ECDSAAdd.wires]
+  | succ n ih =>
+    cases m with
+    | zero => omega
+    | succ m =>
+      have hrest := ih (j + 1) m (by omega)
+      cases divide <;> simp only [OneBankReplay5.groups, PacketSequence.program, Bool.false_eq_true, if_false, if_true,
+        ECDSAAdd.wires_append] at hrest ⊢
+      · exact Finset.union_subset_union hrest Finset.Subset.rfl
+      · exact Finset.union_subset_union Finset.Subset.rfl hrest
+
+theorem logicalReplayOB5Trunc96_wires_sub (divide : Bool) :
+    ECDSAAdd.wires (logicalReplayOB5Trunc96 divide) ⊆ ECDSAAdd.wires (OneBankReplay5.logicalReplay divide) := by
+  have hg := groups_wires_sub divide 1 96 101 (by decide)
+  cases divide <;> simp only [logicalReplayOB5Trunc96, OneBankReplay5.logicalReplay, Bool.false_eq_true,
+    if_false, if_true, ECDSAAdd.wires_append]
+  · intro q hq; rcases Finset.mem_union.mp hq with h | h
+    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (hg h))
+    · exact Finset.mem_union_right _ h
+  · intro q hq; rcases Finset.mem_union.mp hq with h | h
+    · exact Finset.mem_union_left _ (Finset.mem_union_left _ h)
+    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (hg h))
+
+theorem segmentOB5Trunc96_wires_sub (divide : Bool) :
+    ECDSAAdd.wires (segmentOB5Trunc96 divide) ⊆ ECDSAAdd.wires (SegmentOB5.program divide) := by
+  have hr : ECDSAAdd.wires (replayOB5Trunc96 divide) ⊆ ECDSAAdd.wires (OneBankReplay5.replay divide) := by
+    simp only [replayOB5Trunc96, OneBankReplay5.replay, ECDSAAdd.renameProgram_support]
+    exact Finset.image_subset_image (logicalReplayOB5Trunc96_wires_sub divide)
+  cases divide <;> simp only [segmentOB5Trunc96, SegmentOB5.program, Bool.false_eq_true, if_false, if_true, ECDSAAdd.wires_append]
+  · exact Finset.union_subset_union Finset.Subset.rfl (Finset.union_subset_union Finset.Subset.rfl (Finset.union_subset_union hr Finset.Subset.rfl))
+  · exact Finset.union_subset_union Finset.Subset.rfl (Finset.union_subset_union hr Finset.Subset.rfl)
+
+theorem kernelOB5Trunc96_wires_sub (divide : Bool) :
+    ECDSAAdd.wires (kernelOB5Trunc96 divide) ⊆ ECDSAAdd.wires (KernelOB5.program divide) := by
+  have hs : ECDSAAdd.wires (segHOB5Trunc96 divide) ⊆ ECDSAAdd.wires (KernelOB5.segH divide) := by
+    simp only [segHOB5Trunc96, KernelOB5.segH, ECDSAAdd.wires_append, ECDSAAdd.renameProgram_support]
+    exact Finset.union_subset_union Finset.Subset.rfl
+      (Finset.union_subset_union (Finset.image_subset_image (segmentOB5Trunc96_wires_sub divide)) Finset.Subset.rfl)
+  have hk : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  rw [kernelOB5Trunc96, hk]
+  simp only [ECDSAAdd.wires_append]
+  exact Finset.union_subset_union (Finset.union_subset_union Finset.Subset.rfl hs) Finset.Subset.rfl
+
+-- `Sel` lifts (`969 = 9 + 960`)
+theorem selLogicalTrunc96_sel (divide : Bool) :
+    SW.Sel (base 2400) 969 (logicalReplaySTrunc96 divide) (logicalReplayOB5Trunc96 divide) := by
+  have g := SW.selGroups_sel divide 1 96 (by omega)
+  have f := SW.selFirstPacket_sel divide
+  cases divide
+  · exact (g.append f).cast (by norm_num) (by rw [logicalReplaySTrunc96]; rfl) (by rw [logicalReplayOB5Trunc96]; rfl)
+  · exact (f.append g).cast (by norm_num) (by rw [logicalReplaySTrunc96]; rfl) (by rw [logicalReplayOB5Trunc96]; rfl)
+
+theorem selReplayTrunc96_sel (divide : Bool) :
+    SW.Sel (base 2400) 969 (replaySTrunc96 divide) (replayOB5Trunc96 divide) := by
+  rw [replaySTrunc96, replayOB5Trunc96]
+  exact ((selLogicalTrunc96_sel divide).rename_inj (OB5.sig 511) (OB5.sig_injective 511 (by decide))).castb SW.selSig_2400
+
+theorem selSegmentTrunc96_sel (divide : Bool) :
+    SW.Sel (base 2400) 969 (segmentSTrunc96 divide) (segmentOB5Trunc96 divide) := by
+  have old := SW.selCenter_away
+  have fix : OwnPlusEndpoint.swap (base 2400) = base 2400 := by decide +kernel
+  have previous := And.intro
+    (OwnPlusHost.rename_avoid _ _ _ fix old.1)
+    (And.intro (OwnPlusHost.rename_avoid _ _ _ fix old.2.1) old.2.2)
+  have fixGuard : OwnGuardEndpoint.swap (base 2400) = base 2400 := by decide +kernel
+  have guard := And.intro (OwnPlusHost.rename_avoid _ _ _ fixGuard previous.1)
+    (And.intro (OwnPlusHost.rename_avoid _ _ _ fixGuard previous.2.1) previous.2.2)
+  have fixMinus : OwnQ4Endpoint.swap (base 2400) = base 2400 := by decide +kernel
+  have a := And.intro (OwnPlusHost.rename_avoid _ _ _ fixMinus guard.1)
+    (And.intro (OwnPlusHost.rename_avoid _ _ _ fixMinus guard.2.1) guard.2.2)
+  have r := selReplayTrunc96_sel divide
+  cases divide
+  · exact ((SW.Sel.refl _ _ a.1).append ((SW.Sel.refl _ _ a.2.2).append
+      (r.append (SW.Sel.refl _ _ a.2.1)))).cast (by norm_num)
+      (by rw [segmentSTrunc96, OwnQ4Endpoint.centerT, OwnQ4Endpoint.canonT]; rfl)
+      (by rw [segmentOB5Trunc96, OwnQ4Endpoint.centerT, OwnQ4Endpoint.canonT]; rfl)
+  · exact ((SW.Sel.refl _ _ a.1).append (r.append ((SW.Sel.refl _ _ a.2.2).append
+      (SW.Sel.refl _ _ a.2.1)))).cast (by norm_num)
+      (by rw [segmentSTrunc96, OwnQ4Endpoint.centerT, OwnQ4Endpoint.canonT]; rfl)
+      (by rw [segmentOB5Trunc96, OwnQ4Endpoint.centerT, OwnQ4Endpoint.canonT]; rfl)
+
+theorem selSegHTrunc96_sel (divide : Bool) :
+    SW.Sel (base 2400) 969 (segHSTrunc96 divide) (segHOB5Trunc96 divide) := by
+  have r := ((selSegmentTrunc96_sel divide).rename_inj HostOB5.hostSwap HostOB5.hostSwap_injective).castb SW.selHost_fix
+  exact ((SW.Sel.refl _ _ SW.selX511_away).append (r.append (SW.Sel.refl _ _ SW.selX511_away))).cast (by norm_num)
+    (by rw [segHSTrunc96]) (by rw [segHOB5Trunc96])
+
+theorem selKernelTrunc96_sel (divide : Bool) :
+    SW.Sel (base 2400) 969 (kernelSTrunc96 divide) (kernelOB5Trunc96 divide) := by
+  have native := NativeFirstDirect.prefix_support base
+  have known := NativeFirstKnown.inverse_support base
+  have fw : base 2400 ∉ ECDSAAdd.wires (NativeFirstDirect.forward base) := fun h => SW.selPrefix_away (native.1 h)
+  have iv : base 2400 ∉ ECDSAAdd.wires (NativeFirstKnown.inverse base) := fun h => SW.selPrefix_away (known h)
+  have ints := SW.selInt_away
+  have hpre : base 2400 ∉ ECDSAAdd.wires kernelPre := by
+    simp only [kernelPre, ECDSAAdd.wires_append, Finset.mem_union]
+    rintro ((h | h) | h)
+    · exact fw h
+    · exact ints.1 h
+    · exact SW.selClear_away h
+  have hsuf : base 2400 ∉ ECDSAAdd.wires kernelSuf := by
+    simp only [kernelSuf, ECDSAAdd.wires_append, Finset.mem_union]
+    rintro ((h | h) | h)
+    · exact SW.selClear_away h
+    · exact ints.2 h
+    · exact iv h
+  exact (((SW.Sel.refl _ _ hpre).append (selSegHTrunc96_sel divide)).append (SW.Sel.refl _ _ hsuf)).cast
+    (by norm_num) (by rw [kernelSTrunc96]) (by rw [kernelOB5Trunc96])
+
+-- Frame correctness for `logicalReplayOB5Trunc96`, `replayOB5Trunc96`, `segmentOB5Trunc96`, `kernelOB5Trunc96`, `arithSTrunc96`:
+theorem logical_forward_frame_trunc96 (origin : BasisState) (ctx : OneBankReplay5.Context origin)
+    (x : Nat) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (Y : ECDSAAdd.Fp) (s : ECDSAAdd.State) (m : List Bool)
+    (input : History5.EncodedFieldFrame5 base (base 2409) origin Y 0 s) :
+    let Z := if origin (base 2400) then Y / (x : ECDSAAdd.Fp) else Y
+    (ECDSAAdd.run (logicalReplayOB5Trunc96 true) m s).phase = s.phase ∧
+      History5.EncodedFieldFrame5 base (base 2409) origin Z Z (ECDSAAdd.run (logicalReplayOB5Trunc96 true) m s) := by
+  let Z := if origin (base 2400) then Y / (x : ECDSAAdd.Fp) else Y
+  have hdef : logicalReplayOB5Trunc96 true = OneBankReplay5.firstPacket true ++ OneBankReplay5.groups true 1 96 := by
+    rw [logicalReplayOB5Trunc96]; rfl
+  rw [hdef, ECDSAAdd.run_append]
+  have first := OneBankReplay5.firstPacket_frame true origin ctx Y 0 s
+    (m.take (ECDSAAdd.measurementCount (OneBankReplay5.firstPacket true))) input
+    ⟨fun e => absurd e (by decide), fun _ => rfl⟩
+  have mid := OneBankReplay5.groups_frame true 1 96 (by decide) origin ctx _ _ _
+    (m.drop (ECDSAAdd.measurementCount (OneBankReplay5.firstPacket true))) first.2
+  have fp := forward_payload_trunc96 origin x Y hx0 hx hfast h24 trace
+  refine ⟨mid.1.trans first.1, ?_⟩
+  simpa only [Prod.mk.eta, fp] using mid.2
+
+theorem logical_inverse_frame_trunc96 (origin : BasisState) (ctx : OneBankReplay5.Context origin)
+    (x : Nat) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (Y : ECDSAAdd.Fp) (s : ECDSAAdd.State) (m : List Bool)
+    (input : History5.EncodedFieldFrame5 base (base 2409) origin Y Y s) :
+    let Z := if origin (base 2400) then Y * (x : ECDSAAdd.Fp) else Y
+    (ECDSAAdd.run (logicalReplayOB5Trunc96 false) m s).phase = s.phase ∧
+      History5.EncodedFieldFrame5 base (base 2409) origin Z 0 (ECDSAAdd.run (logicalReplayOB5Trunc96 false) m s) := by
+  let Z := if origin (base 2400) then Y * (x : ECDSAAdd.Fp) else Y
+  have hdef : logicalReplayOB5Trunc96 false = OneBankReplay5.groups false 1 96 ++ OneBankReplay5.firstPacket false := by
+    rw [logicalReplayOB5Trunc96]; rfl
+  rw [hdef, ECDSAAdd.run_append]
+  have mid := OneBankReplay5.groups_frame false 1 96 (by decide) origin ctx Y Y s
+    (m.take (ECDSAAdd.measurementCount (OneBankReplay5.groups false 1 96))) input
+  have ip := inverse_payload_trunc96 origin x Y hx0 hx hfast h24 trace
+  have last := OneBankReplay5.firstPacket_frame false origin ctx _ _ _
+    (m.drop (ECDSAAdd.measurementCount (OneBankReplay5.groups false 1 96))) mid.2
+    ⟨fun _ => by simpa only [Prod.mk.eta] using congrArg Prod.snd ip, fun e => absurd e (by decide)⟩
+  refine ⟨last.1.trans mid.1, ?_⟩
+  simpa only [Prod.mk.eta, ip] using last.2
+
+theorem replayOB5Trunc96_forward_frame (origin : BasisState) (ctx : OneBankReplay5.Context origin)
+    (x : Nat) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (Y : ECDSAAdd.Fp) (s : ECDSAAdd.State) (m : List Bool) (input : FieldFrameOB5.EncodedFieldFrame origin Y 0 s) :
+    let Z := if origin (base 2400) then Y / (x : ECDSAAdd.Fp) else Y
+    (ECDSAAdd.run (replayOB5Trunc96 true) m s).phase = s.phase ∧
+      FieldFrameOB5.EncodedFieldFrame origin Z Z (ECDSAAdd.run (replayOB5Trunc96 true) m s) := by
+  rw [replayOB5Trunc96]
+  exact FieldFrameOB5.placed_step (logicalReplayOB5Trunc96 true) origin Y 0 _ _
+    (logical_forward_frame_trunc96 origin ctx x hx0 hx hfast h24 trace Y) s m input
+
+theorem replayOB5Trunc96_inverse_frame (origin : BasisState) (ctx : OneBankReplay5.Context origin)
+    (x : Nat) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (Y : ECDSAAdd.Fp) (s : ECDSAAdd.State) (m : List Bool) (input : FieldFrameOB5.EncodedFieldFrame origin Y Y s) :
+    let Z := if origin (base 2400) then Y * (x : ECDSAAdd.Fp) else Y
+    (ECDSAAdd.run (replayOB5Trunc96 false) m s).phase = s.phase ∧
+      FieldFrameOB5.EncodedFieldFrame origin Z 0 (ECDSAAdd.run (replayOB5Trunc96 false) m s) := by
+  rw [replayOB5Trunc96]
+  exact FieldFrameOB5.placed_step (logicalReplayOB5Trunc96 false) origin Y Y _ _
+    (logical_inverse_frame_trunc96 origin ctx x hx0 hx hfast h24 trace Y) s m input
+
+theorem segmentOB5Trunc96_spec (divide : Bool) (origin : BasisState) (ctx : OneBankReplay5.Context origin)
+    (ha : ECDSAAdd.regValue (skywalkSharedField base).a origin = 0)
+    (x : Nat) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (Y : ECDSAAdd.Fp) (s : ECDSAAdd.State) (m : List Bool) (input : FieldFrameOB5.EncodedCanonicalFrame origin Y 0 s) :
+    let out := ECDSAAdd.run (segmentOB5Trunc96 divide) m s
+    out.phase = s.phase ∧ FieldFrameOB5.EncodedCanonicalFrame origin (MappedCompressed.fieldResult divide origin x Y) 0 out := by
+  letI : Fact (Nat.Prime ECDSAAdd.p) := ⟨ECDSAAdd.Secp256k1.p_prime⟩
+  have hd2 : ∀ W : ECDSAAdd.Fp, 2 * (Y / 2 * W) = Y * W := fun W => by
+    rw [← mul_assoc, mul_div_cancel₀ Y skywalk_two_ne]
+  have hd2d : ∀ W : ECDSAAdd.Fp, 2 * (Y / 2 / W) = Y / W := fun W => by
+    rw [div_eq_mul_inv (Y / 2), ← mul_assoc, mul_div_cancel₀ Y skywalk_two_ne, ← div_eq_mul_inv]
+  dsimp only
+  cases divide
+  · have hdef : segmentOB5Trunc96 false = OwnQ4Endpoint.centerT ++ (HalfFieldOB5.copyN ++ (replayOB5Trunc96 false ++ OwnQ4Endpoint.canonT)) := by
+      rw [segmentOB5Trunc96]; rfl
+    rw [hdef, ECDSAAdd.run_append, ECDSAAdd.run_append, ECDSAAdd.run_append]
+    let m1 := m.take (ECDSAAdd.measurementCount OwnQ4Endpoint.centerT)
+    let m234 := m.drop (ECDSAAdd.measurementCount OwnQ4Endpoint.centerT)
+    let m2 := m234.take (ECDSAAdd.measurementCount HalfFieldOB5.copyN)
+    let m34 := m234.drop (ECDSAAdd.measurementCount HalfFieldOB5.copyN)
+    let m3 := m34.take (ECDSAAdd.measurementCount (replayOB5Trunc96 false))
+    let m4 := m34.drop (ECDSAAdd.measurementCount (replayOB5Trunc96 false))
+    have c1 := OwnQ4Endpoint.center_frame ctx.hn (ctx.hp _ (by simp)) origin ctx.env ctx.legal ctx.parity ha Y s m1 input
+    have c2 := HalfFieldOB5.copy_fill ctx.hn origin (Y / 2) _ m2 c1.2
+    have c3 := replayOB5Trunc96_inverse_frame origin ctx x hx0 hx hfast h24 trace (Y / 2) _ m3 c2.2
+    have c4 := OwnQ4Endpoint.canon_frame ctx.hn (ctx.hp _ (by simp)) origin ctx.env ctx.legal ctx.parity ha _ _ m4 c3.2
+    refine ⟨c4.1.trans (c3.1.trans (c2.1.trans c1.1)), ?_⟩
+    have heq : 2 * (if origin (base 2400) then Y / 2 * (x : ECDSAAdd.Fp) else Y / 2) = MappedCompressed.fieldResult false origin x Y := by
+      simp only [MappedCompressed.fieldResult, Bool.false_eq_true, if_false, h24, ↓reduceIte, hd2]
+    rw [← heq]; exact c4.2
+  · have hdef : segmentOB5Trunc96 true = OwnQ4Endpoint.centerT ++ (replayOB5Trunc96 true ++ (HalfFieldOB5.copyN ++ OwnQ4Endpoint.canonT)) := by
+      rw [segmentOB5Trunc96]; rfl
+    rw [hdef, ECDSAAdd.run_append, ECDSAAdd.run_append, ECDSAAdd.run_append]
+    let m1 := m.take (ECDSAAdd.measurementCount OwnQ4Endpoint.centerT)
+    let m234 := m.drop (ECDSAAdd.measurementCount OwnQ4Endpoint.centerT)
+    let m2 := m234.take (ECDSAAdd.measurementCount (replayOB5Trunc96 true))
+    let m34 := m234.drop (ECDSAAdd.measurementCount (replayOB5Trunc96 true))
+    let m3 := m34.take (ECDSAAdd.measurementCount HalfFieldOB5.copyN)
+    let m4 := m34.drop (ECDSAAdd.measurementCount HalfFieldOB5.copyN)
+    have c1 := OwnQ4Endpoint.center_frame ctx.hn (ctx.hp _ (by simp)) origin ctx.env ctx.legal ctx.parity ha Y s m1 input
+    have c2 := replayOB5Trunc96_forward_frame origin ctx x hx0 hx hfast h24 trace (Y / 2) _ m2 c1.2
+    have c3 := HalfFieldOB5.copy_clear ctx.hn origin _ _ m3 c2.2
+    have c4 := OwnQ4Endpoint.canon_frame ctx.hn (ctx.hp _ (by simp)) origin ctx.env ctx.legal ctx.parity ha _ _ m4 c3.2
+    refine ⟨c4.1.trans (c3.1.trans (c2.1.trans c1.1)), ?_⟩
+    have heq : 2 * (if origin (base 2400) then Y / 2 / (x : ECDSAAdd.Fp) else Y / 2) = MappedCompressed.fieldResult true origin x Y := by
+      simp only [MappedCompressed.fieldResult, if_true, h24, ↓reduceIte, hd2d]
+    rw [← heq]; exact c4.2
+
+-- Exact state equality between `segHOB5Trunc96` and `KernelOB5.segH` under `SkywalkFast485` and `base 2400 = true`!
+theorem segHOB5Trunc96_eq_full (divide : Bool) (origin : BasisState) (ctx : OneBankReplay5.Context origin)
+    (ha : ECDSAAdd.regValue (skywalkSharedField base).a origin = 0)
+    (x : Nat) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x) (h24 : origin (base 2400) = true)
+    (trace : skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)))
+    (Y : ECDSAAdd.Fp) (s : ECDSAAdd.State) (m1 m2 : List Bool)
+    (input : FieldFrameOB5.EncodedCanonicalFrame origin Y 0 s)
+    (h511 : s.basis (base 511) = true) (h1542 : s.basis (base 1542) = false) :
+    ECDSAAdd.run (segHOB5Trunc96 divide) m1 s = ECDSAAdd.run (KernelOB5.segH divide) m2 s := by
+  have hfree_full := KernelOB5.seg_free divide
+  have hfree_tr : base 511 ∉ ECDSAAdd.wires (segmentOB5Trunc96 divide) ∧
+      base 1542 ∉ ECDSAAdd.wires (segmentOB5Trunc96 divide) :=
+    ⟨fun h => hfree_full.1 (segmentOB5Trunc96_wires_sub divide h),
+     fun h => hfree_full.2 (segmentOB5Trunc96_wires_sub divide h)⟩
+  have h910_of : ∀ (X : ECDSAAdd.Fp) (t : ECDSAAdd.State), FieldFrameOB5.EncodedCanonicalFrame origin X 0 t →
+      t.basis (base 2409) = false ∧ t.basis (base 2410) = false := fun X t hf => by
+    have inF := HalfField5.encodedCanonical_caller_frame5 ctx.hn origin ha X _ hf
+    have zAway (i : Nat) (hi : i = 2409 ∨ i = 2410) : base i ∉ (skywalkSharedField base).z := by
+      intro hm; rw [show (skywalkSharedField base).z = wireBlock base 2056 257 from skywalkShared_field_z base] at hm
+      obtain ⟨j, hj, he⟩ := List.mem_map.mp hm; have := MappedCompressed.base_injective he
+      simp only [List.mem_range'_1] at hj; omega
+    have hsig9 : OB5.sig 511 (base 2409) = base 2409 := by decide +kernel
+    have hsig10 : OB5.sig 511 (base 2410) = base 2410 := by decide +kernel
+    have h9 := inF.2 (base 2409) (zAway 2409 (Or.inl rfl)) (ctx.hp _ (by simp))
+    have h10 := inF.2 (base 2410) (zAway 2410 (Or.inr rfl)) (ctx.hp _ (by simp))
+    change t.basis (OB5.sig 511 (base 2409)) = _ at h9
+    change t.basis (OB5.sig 511 (base 2410)) = _ at h10
+    rw [hsig9] at h9; rw [hsig10] at h10
+    exact ⟨h9.trans ctx.hg0, h10.trans ctx.hs0⟩
+  have h910_in := h910_of Y s input
+  have hs_tr := segmentOB5Trunc96_spec divide origin ctx ha x hx0 hx hfast h24 trace Y s m1 input
+  have hs_fl := SegmentOB5.program_spec divide ctx.hn ctx.ho ctx.hp ctx.hf origin ctx.hg0 ctx.hs0
+    ctx.env ctx.legal ctx.parity ha x hx0 hx trace Y s m2 input
+  have h910_tr := h910_of _ _ hs_tr.2
+  have h910_fl := h910_of _ _ hs_fl.2
+  have hh_tr := HostOB5.hosted_run (segmentOB5Trunc96 divide) s m1 hfree_tr.1 hfree_tr.2
+    h910_in.1 h511 h910_in.2 h1542 h910_tr.1 h910_tr.2
+  have hh_fl := HostOB5.hosted_run (SegmentOB5.program divide) s m2 hfree_full.1 hfree_full.2
+    h910_in.1 h511 h910_in.2 h1542 h910_fl.1 h910_fl.2
+  rw [segHOB5Trunc96, KernelOB5.segH, hh_tr, hh_fl]
+  have hpull := History5.encoded_canonical_unique origin (MappedCompressed.fieldResult divide origin x Y) 0
+    (ECDSAAdd.pullState (OB5.sig 511) (ECDSAAdd.run (segmentOB5Trunc96 divide) m1 s))
+    (ECDSAAdd.pullState (OB5.sig 511) (ECDSAAdd.run (SegmentOB5.program divide) m2 s))
+    hs_tr.2 hs_fl.2 (hs_tr.1.trans hs_fl.1.symm)
+  have hinv := congrArg (ECDSAAdd.pullState (OB5.sig 511)) hpull
+  simpa only [OB5.pull_invol 511 (by decide)] using hinv
+
+theorem kernelSTrunc96_spec (divide : Bool)
+    (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p) (hfast : SkywalkFast485 x)
+    (s : ECDSAAdd.State) (m : List Bool)
+    (hin : SkywalkArithmeticInput base x Y.val s.basis)
+    (hg0 : s.basis (base 2409) = false) (hs0 : s.basis (base 2410) = false) :
+    (ECDSAAdd.run (kernelSTrunc96 divide) m s).phase = s.phase ∧
+    ECDSAAdd.regValue (skywalkArithmeticNumerator base) (ECDSAAdd.run (kernelSTrunc96 divide) m s).basis =
+      (skywalkArithmeticResult divide x Y).val ∧
+    ∀ q, q ∉ skywalkArithmeticNumerator base →
+      (ECDSAAdd.run (kernelSTrunc96 divide) m s).basis q = s.basis q := by
+  have cfg := MappedCompressed.LaneA.laneLogical_config
+  have hlo : History5.HistoryAbove base := OB5.historyAbove
+  -- Switch `base 2400` to `true` via `(selKernelTrunc96_sel divide).away` and compare with `KernelOB5.program_states`!
+  let s1 : ECDSAAdd.State := ⟨s.phase, Function.update s.basis (base 2400) true⟩
+  have hsel := selKernelTrunc96_sel divide
+  have h24_away := hsel.away
+  have hupd_eq : ∀ q ∈ ECDSAAdd.wires (kernelSTrunc96 divide), s1.basis q = s.basis q := fun q hq => by
+    have hne : q ≠ base 2400 := fun e => h24_away (e ▸ hq)
+    simp [s1, Function.update_of_ne hne]
+  have hrun_s1 := ECDSAAdd.Arithmetic.pool_run_agrees (kernelSTrunc96 divide)
+    (ECDSAAdd.wires (kernelSTrunc96 divide)) Finset.Subset.rfl m s1 s rfl hupd_eq
+  have h24_s1 : s1.basis (base 2400) = true := by simp [s1]
+  have hsel_eq := (hsel.eq m s1 h24_s1).1
+  -- `s1` satisfies `SkywalkArithmeticInput`, `hg0`, `hs0`:
+  have h24_not_shared : base 2400 ∉ skywalkSharedWires base := cfg.2.1 _ (by simp)
+  have h24_not_div : base 2400 ∉ skywalkArithmeticDivisor base := fun h =>
+    h24_not_shared (DirectSkywalk.arith_block_subset_shared base 770 256 (by omega) h)
+  have h24_not_num : base 2400 ∉ skywalkArithmeticNumerator base := fun h =>
+    h24_not_shared (DirectSkywalk.arith_block_subset_shared base 2056 256 (by omega) h)
+  have hin1 : SkywalkArithmeticInput base x Y.val s1.basis := by
+    refine ⟨?_, ?_, ?_⟩
+    · rw [← hin.1]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun q hq => by
+        simp [s1, Function.update_of_ne (show q ≠ base 2400 from fun e => h24_not_div (e ▸ hq))])
+    · rw [← hin.2.1]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun q hq => by
+        simp [s1, Function.update_of_ne (show q ≠ base 2400 from fun e => h24_not_num (e ▸ hq))])
+    · intro q hq hdx hdy
+      have hne : q ≠ base 2400 := fun e => h24_not_shared (e ▸ hq)
+      simpa [s1, Function.update_of_ne hne] using hin.2.2 q hq hdx hdy
+  have hg1 : s1.basis (base 2409) = false := by
+    simpa [s1, Function.update_of_ne (show base 2409 ≠ base 2400 from fun e => by have := MappedCompressed.base_injective e; omega)] using hg0
+  have hs1 : s1.basis (base 2410) = false := by
+    simpa [s1, Function.update_of_ne (show base 2410 ≠ base 2400 from fun e => by have := MappedCompressed.base_injective e; omega)] using hs0
+  -- Split `kernelOB5Trunc96` into 7 stages matching `KernelOB5.program_states`, abstracting intermediate states!
+  let mPreS := m.take (ECDSAAdd.measurementCount (kernelPre ++ segHOB5Trunc96 divide))
+  let mPre := mPreS.take (ECDSAAdd.measurementCount kernelPre)
+  let m4 := mPreS.drop (ECDSAAdd.measurementCount kernelPre)
+  let m12 := mPre.take (ECDSAAdd.measurementCount (NativeFirstDirect.forward base ++ stackForwardT))
+  let m1 := m12.take (ECDSAAdd.measurementCount (NativeFirstDirect.forward base))
+  let m2 := m12.drop (ECDSAAdd.measurementCount (NativeFirstDirect.forward base))
+  let m3 := mPre.drop (ECDSAAdd.measurementCount (NativeFirstDirect.forward base ++ stackForwardT))
+  let mSuf := m.drop (ECDSAAdd.measurementCount (kernelPre ++ segHOB5Trunc96 divide))
+  let m56 := mSuf.take (ECDSAAdd.measurementCount (skywalkArithmeticClear base ++ stackReverseT))
+  let m5 := m56.take (ECDSAAdd.measurementCount (skywalkArithmeticClear base))
+  let m6 := m56.drop (ECDSAAdd.measurementCount (skywalkArithmeticClear base))
+  let m7 := mSuf.drop (ECDSAAdd.measurementCount (skywalkArithmeticClear base ++ stackReverseT))
+  have hrun_split : ECDSAAdd.run (kernelOB5Trunc96 divide) m s1 =
+      ECDSAAdd.run (NativeFirstKnown.inverse base) m7
+        (ECDSAAdd.run stackReverseT m6
+          (ECDSAAdd.run (skywalkArithmeticClear base) m5
+            (ECDSAAdd.run (segHOB5Trunc96 divide) m4
+              (ECDSAAdd.run (skywalkArithmeticClear base) m3
+                (ECDSAAdd.run stackForwardT m2
+                  (ECDSAAdd.run (NativeFirstDirect.forward base) m1 s1)))))) := by
+    simp only [kernelOB5Trunc96, kernelPre, kernelSuf, ECDSAAdd.run_append,
+      m1, m2, m3, m4, m5, m6, m7, m12, mPre, mPreS, m56, mSuf]
+  clear_value m1 m2 m3 m4 m5 m6 m7
+  generalize hst1 : ECDSAAdd.run (NativeFirstDirect.forward base) m1 s1 = st1 at hrun_split
+  generalize hst2 : ECDSAAdd.run stackForwardT m2 st1 = st2 at hrun_split
+  generalize hst3 : ECDSAAdd.run (skywalkArithmeticClear base) m3 st2 = st3 at hrun_split
+  generalize hst4 : ECDSAAdd.run (segHOB5Trunc96 divide) m4 st3 = st4 at hrun_split
+  generalize hst5 : ECDSAAdd.run (skywalkArithmeticClear base) m5 st4 = st5 at hrun_split
+  generalize hst6 : ECDSAAdd.run stackReverseT m6 st5 = st6 at hrun_split
+  generalize hst7 : ECDSAAdd.run (NativeFirstKnown.inverse base) m7 st6 = st7 at hrun_split
+  -- Show `st4 = ECDSAAdd.run (KernelOB5.segH divide) [] st3` using `segHOB5Trunc96_eq_full`:
+  have hfirst := NativeFirstDirect.caller_first_stage base cfg.1 x Y.val hx0 hx s1 m1 hin1
+  rw [hst1] at hfirst
+  obtain ⟨hp0, hpo, hpp, cop⟩ := OB5.prime_facts x hx0 hx
+  have hpGap : ECDSAAdd.p + 2 ^ 32 ≤ 2 ^ 256 := by norm_num [ECDSAAdd.p]
+  have pool := skywalkShared_integer_nodup base cfg.1
+  have firstW := (W.compactSkywalkStage_one base _ st1.basis).mpr hfirst
+  generalize ht2 : ECDSAAdd.run (History5.compactForward5 base 1 511) m2 st1 = t2
+  generalize ht3 : ECDSAAdd.run (skywalkArithmeticClear base) m3 t2 = t3
+  have wEq : ECDSAAdd.run (Stack5.forward5 base 1 511) m2 st1 = t2 :=
+    (Stack5.forward_old_eq base pool hlo x ECDSAAdd.p hp0 hx0 hpo hpp hpGap hx cop st1 m2 m2 hfirst).trans ht2
+  have h2old : ECDSAAdd.run (StackOB5.forward 1 511) m2 st1 = st2 :=
+    (stackForwardT_run cfg.1 hlo x hx0 hx st1 m2 firstW).symm.trans hst2
+  have fwd := StackOB5.forward_run x hx0 hx st1 m2 firstW
+  rw [h2old, wEq] at fwd
+  have e3 : st3 = ECDSAAdd.pullState (OB5.sig 511) t3 := by
+    rw [← hst3, fwd, KernelOB5.clear_placed, ht3]
+  obtain ⟨origin, facts, legal, _, encEq, entry⟩ := Kernel5.preparation_facts5 cfg.1 hlo cfg.2.1
+    x Y hx0 hx s1 m1 m2 m3 hin1 st1 t2 t3 hst1 ht2 ht3 hfirst
+  have hp : ∀ q ∈ [base 2400, base 2409, base 2410], q ∉ skywalkPoolWires base := fun q hq bad =>
+    cfg.2.1 q hq (DirectSkywalk.arith_block_subset_shared base 0 1798 (by omega) bad)
+  have hg_o : origin.basis (base 2409) = false := (facts.controls _ (by simp)).trans hg1
+  have hs_o : origin.basis (base 2410) = false := (facts.controls _ (by simp)).trans hs1
+  have h24_o : origin.basis (base 2400) = true := (facts.controls _ (by simp)).trans h24_s1
+  let ctx : OneBankReplay5.Context origin.basis :=
+    ⟨cfg.1, cfg.2.1, hp, cfg.2.2, hg_o, hs_o, facts.env, legal, facts.targetHigh⟩
+  have placedInput : FieldFrameOB5.EncodedCanonicalFrame origin.basis Y 0 st3 := by
+    change History5.EncodedCanonicalFrame5 origin.basis Y 0 (ECDSAAdd.pullState (OB5.sig 511) st3)
+    rw [e3, OB5.pull_invol 511 (by decide)]; exact entry
+  have tr : (skywalkTapeControls origin.basis (skywalkSharedTape base)).getD 511 (false, false) = (true, false) := by
+    rw [facts.trace]; exact SkywalkTrace.trace512_last x hx0 hx _
+  have codes : origin.basis (base 511) = true ∧ origin.basis (base (1028 + 511)) = false := by
+    have e : (skywalkTapeControls origin.basis (skywalkSharedTape base)).getD 511 (false, false) =
+        (origin.basis (base 511), origin.basis (base (1028 + 511))) := by
+      rw [skywalkTapeControls, skywalkSharedTape,
+        List.getD_eq_getElem _ _ (by simp only [List.length_map, List.length_range]; omega)]
+      simp only [List.getElem_map, List.getElem_range]
+    rw [e] at tr; exact ⟨(Prod.mk.inj tr).1, (Prod.mk.inj tr).2⟩
+  have sig511 : OB5.sig 511 (base 511) = base 511 := by decide +kernel
+  have sig1542 : OB5.sig 511 (base 1542) = base 1539 := by decide +kernel
+  have in511 : st3.basis (base 511) = true := by
+    rw [e3]; change t3.basis (OB5.sig 511 (base 511)) = true
+    rw [sig511, encEq, ECDSAAdd.run_preserves_outside _ List.nil origin _ (HostOB5.enc_free 102 (le_refl _) 511 (Or.inl rfl))]
+    exact codes.1
+  have in1542 : st3.basis (base 1542) = false := by
+    rw [e3]; change t3.basis (OB5.sig 511 (base 1542)) = false
+    rw [sig1542, encEq, ECDSAAdd.run_preserves_outside _ List.nil origin _ (HostOB5.enc_free 102 (le_refl _) 1539 (Or.inr rfl))]
+    exact codes.2
+  have h4_eq : ECDSAAdd.run (KernelOB5.segH divide) List.nil st3 = st4 := by
+    rw [← hst4]
+    exact (segHOB5Trunc96_eq_full divide origin.basis ctx facts.sourceZero x hx0 hx hfast h24_o facts.trace Y st3 m4 List.nil placedInput in511 in1542).symm
+  have hstrong := KernelOB5.program_states divide cfg.1 hlo cfg.2.1 cfg.2.2 x Y hx0 hx s1
+    m1 m2 m3 List.nil m5 m6 m7 hin1 hg1 hs1 st1 st2 st3 st4 st5 st6 st7 hst1 hst2 hst3 h4_eq hst5 hst6 hst7
+  -- Transfer `hstrong` back from `s1` to `s`!
+  have hphase : (ECDSAAdd.run (kernelSTrunc96 divide) m s).phase = s.phase := by
+    rw [← hrun_s1.1, hsel_eq, hrun_split]; exact hstrong.1
+  have hnum : ECDSAAdd.regValue (skywalkArithmeticNumerator base) (ECDSAAdd.run (kernelSTrunc96 divide) m s).basis =
+      (skywalkArithmeticResult divide x Y).val := by
+    have hreg : ECDSAAdd.regValue (skywalkArithmeticNumerator base) (ECDSAAdd.run (kernelSTrunc96 divide) m s).basis =
+        ECDSAAdd.regValue (skywalkArithmeticNumerator base) st7.basis := by
+      apply ECDSAAdd.Arithmetic.regValue_congr; intro q hq
+      by_cases hw : q ∈ ECDSAAdd.wires (kernelSTrunc96 divide)
+      · rw [← hrun_s1.2 q hw, hsel_eq, hrun_split]
+      · rw [ECDSAAdd.run_preserves_outside _ m s q hw]
+        have hne : q ≠ base 2400 := fun e => h24_not_num (e ▸ hq)
+        have hfr1 := ECDSAAdd.run_preserves_outside _ m s1 q hw
+        rw [hsel_eq, hrun_split] at hfr1
+        rw [hfr1]; simp [s1, Function.update_of_ne hne]
+    rw [hreg]; simpa only [h24_s1, if_true] using hstrong.2.1
+  refine ⟨hphase, hnum, fun q hq => ?_⟩
+  by_cases hw : q ∈ ECDSAAdd.wires (kernelSTrunc96 divide)
+  · have hne : q ≠ base 2400 := fun e => h24_away (e ▸ hw)
+    rw [← hrun_s1.2 q hw, hsel_eq, hrun_split, hstrong.2.2 q hq]
+    simp [s1, Function.update_of_ne hne]
+  · exact ECDSAAdd.run_preserves_outside _ m s q hw
+
+theorem arithSTrunc96_sites (multiply : Bool) :
+    ECDSAAdd.wires (kernelSTrunc96 (!multiply)) ⊆ OB5Support.logicalSites :=
+  ((selKernelTrunc96_sel (!multiply)).sub.wires_sub.trans (kernelOB5Trunc96_wires_sub (!multiply))).trans
+    (KernelOB5.program_support_logical (!multiply))
+
+theorem arithSTrunc96_correct (L : ControlledPointLayout) (hw : L.Widths) (hn : L.wires.Nodup)
+    (multiply : Bool) (X Y : Nat) (hX : X < ECDSAAdd.p) (hX0 : 0 < X) (hY : Y < ECDSAAdd.p)
+    (hfast : SkywalkFast485 X)
+    (s : ECDSAAdd.State) (m : List Bool)
+    (hx : ECDSAAdd.regValue L.point.x s.basis = X) (hy : ECDSAAdd.regValue L.point.y s.basis = Y)
+    (hc : ECDSAAdd.regValue L.dialogPool s.basis = 0) :
+    (ECDSAAdd.run (arithSTrunc96 L multiply) m s).phase = s.phase ∧
+    ECDSAAdd.regValue L.point.y (ECDSAAdd.run (arithSTrunc96 L multiply) m s).basis =
+      (if multiply then ((Y : ECDSAAdd.Fp) * (X : ECDSAAdd.Fp)).val else ((Y : ECDSAAdd.Fp) / (X : ECDSAAdd.Fp)).val) ∧
+    ∀ q, q ∉ L.point.y → (ECDSAAdd.run (arithSTrunc96 L multiply) m s).basis q = s.basis q := by
+  have yValue : (Y : ECDSAAdd.Fp).val = Y := ZMod.val_natCast_of_lt hY
+  rcases placement2 L hw hn with ⟨injective, divisorMap, numeratorMap, _, sharedWork, selectorG, selectorS, _⟩
+  have dx : (wireBlock base 770 256).toFinset ⊆ OB5Support.logicalSites := by
+    intro q hq; obtain ⟨i, hi, rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp hq)
+    apply List.mem_toFinset.mpr; apply List.mem_map.mpr; refine ⟨i, ?_, rfl⟩
+    simp only [wireBlock, List.mem_range'_1] at hi
+    simp only [OB5Support.logicalIndices, List.mem_append, List.mem_range'_1, List.mem_cons, List.not_mem_nil, or_false]; omega
+  have dy : (wireBlock base 2056 256).toFinset ⊆ OB5Support.logicalSites := by
+    intro q hq; obtain ⟨i, hi, rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp hq)
+    apply List.mem_toFinset.mpr; apply List.mem_map.mpr; refine ⟨i, ?_, rfl⟩
+    simp only [wireBlock, List.mem_range'_1] at hi
+    simp only [OB5Support.logicalIndices, List.mem_append, List.mem_range'_1, List.mem_cons, List.not_mem_nil, or_false]; omega
+  have result := selTransfer L (wireFn2 L) OB5Support.logicalSites
+    (fun a ha b hb eq => injective a (ArithmeticOB5.logical_sub_old ha) b (ArithmeticOB5.logical_sub_old hb) eq)
+    divisorMap numeratorMap
+    (fun q hq used hx hy => sharedWork q hq (ArithmeticOB5.logical_sub_old used) hx hy)
+    selectorG selectorS dx dy X (Y : ECDSAAdd.Fp) (skywalkArithmeticResult (!multiply) X (Y : ECDSAAdd.Fp))
+    s m hx (hy.trans yValue.symm) hc
+    (kernelSTrunc96 (!multiply)) (arithSTrunc96_sites multiply)
+    (fun t records input hg hs => kernelSTrunc96_spec (!multiply) X (Y : ECDSAAdd.Fp) hX0 hX hfast t records input hg hs)
+  cases multiply <;>
+    simpa only [arithSTrunc96, skywalkArithmeticResult, Bool.not_false, Bool.not_true, Bool.false_eq_true, if_false, if_true] using result
+
+theorem arithSTrunc96_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSTrunc96 L false) = 1015058 ∧
+    ECDSAAdd.measurementCount (arithSTrunc96 L false) = 694394 ∧
+    ECDSAAdd.toffoliCount (arithSTrunc96 L true) = 1015057 ∧
+    ECDSAAdd.measurementCount (arithSTrunc96 L true) = 694650 := by
+  have cfg := MappedCompressed.LaneA.laneLogical_config
+  have ho10 : base 2410 ∉ skywalkSharedWires base := cfg.2.1 _ (by simp)
+  have hdiff : ∀ divide : Bool,
+      ECDSAAdd.toffoliCount (kernelOB5Trunc96 divide) + (5 * 6410 + (if divide then 767 else 1021)) =
+        ECDSAAdd.toffoliCount (KernelOB5.program divide) ∧
+      ECDSAAdd.measurementCount (kernelOB5Trunc96 divide) + (5 * 5121 + 1022) =
+        ECDSAAdd.measurementCount (KernelOB5.program divide) := by
+    intro divide
+    have hk : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+      simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+    have hg96 := OneBankReplay5.groups_counts divide 1 96 cfg.1 ho10
+    have hg101 := OneBankReplay5.groups_counts divide 1 101 cfg.1 ho10
+    have hend := OneBankReplay5.endPacket_counts divide
+    have hren_s1 := ECDSAAdd.renameProgram_counts HostOB5.hostSwap (segmentOB5Trunc96 divide)
+    have hren_s2 := ECDSAAdd.renameProgram_counts HostOB5.hostSwap (SegmentOB5.program divide)
+    have hren_r1 := ECDSAAdd.renameProgram_counts (OB5.sig 511) (logicalReplayOB5Trunc96 divide)
+    have hren_r2 := ECDSAAdd.renameProgram_counts (OB5.sig 511) (OneBankReplay5.logicalReplay divide)
+    rw [kernelOB5Trunc96, hk]
+    simp only [segHOB5Trunc96, KernelOB5.segH, ECDSAAdd.toffoliCount_append, ECDSAAdd.measurementCount_append,
+      hren_s1.1, hren_s1.2, hren_s2.1, hren_s2.2]
+    cases divide <;> (
+      simp only [segmentOB5Trunc96, SegmentOB5.program, replayOB5Trunc96, OneBankReplay5.replay,
+        Bool.false_eq_true, if_false, if_true, ECDSAAdd.toffoliCount_append, ECDSAAdd.measurementCount_append,
+        hren_r1.1, hren_r1.2, hren_r2.1, hren_r2.2]
+      simp only [logicalReplayOB5Trunc96, OneBankReplay5.logicalReplay, Bool.false_eq_true, if_false, if_true,
+        ECDSAAdd.toffoliCount_append, ECDSAAdd.measurementCount_append, base] at hg96 hg101 hend ⊢
+      omega)
+  obtain ⟨hdT1, hdT2⟩ := hdiff true
+  obtain ⟨hdF1, hdF2⟩ := hdiff false
+  simp only [Bool.false_eq_true, if_false, if_true] at hdT1 hdF1
+  obtain ⟨ha1, ha2, ha3, ha4⟩ := arithS_counts L
+  have ht1 := (selKernelTrunc96_sel true).tc; have hm1 := (selKernelTrunc96_sel true).mc
+  have ht2 := (selKernelTrunc96_sel false).tc; have hm2 := (selKernelTrunc96_sel false).mc
+  have ht3 := (SW.selKernel_sel true).tc; have hm3 := (SW.selKernel_sel true).mc
+  have ht4 := (SW.selKernel_sel false).tc; have hm4 := (SW.selKernel_sel false).mc
+  have h1 := ECDSAAdd.renameProgram_counts (wireFn2 L) (kernelSTrunc96 true)
+  have h2 := ECDSAAdd.renameProgram_counts (wireFn2 L) (kernelSTrunc96 false)
+  have h3 := ECDSAAdd.renameProgram_counts (wireFn2 L) (SW.kernelS true)
+  have h4 := ECDSAAdd.renameProgram_counts (wireFn2 L) (SW.kernelS false)
+  simp only [arithSTrunc96, arithS, Bool.not_false, Bool.not_true,
+    h1.1, h1.2, h2.1, h2.2, h3.1, h3.2, h4.1, h4.2] at ha1 ha2 ha3 ha4 ⊢
+  refine ⟨by omega, by omega, by omega, by omega⟩
+
+/-! #### 6. Truncated `n = 96` compiled kernel (`compiledLogicalReplayS96`..`compiledKernelS96`) -/
+
+def compiledLogicalReplayS96 {n : Nat} (divide : Bool) : CatFn n :=
+  if divide then
+    CatFn.seq (compiledFirstPacket true) (compiledGroups true 1 96)
+  else
+    CatFn.seq (compiledGroups false 1 96) (compiledFirstPacket false)
+
+def compiledReplayS96 {n : Nat} (divide : Bool) : CatFn n :=
+  CatFn.map (OB5.sig 511) (compiledLogicalReplayS96 divide)
+
+def compiledSegmentS96 {n : Nat} (divide : Bool) : CatFn n :=
+  if divide then
+    CatFn.seq (CatFn.compileProg (base 2409) (base 2410) OwnQ4Endpoint.centerT)
+      (CatFn.seq (CatFn.swapSurround (base 2410) (base 1026) (compiledReplayS96 true))
+        (CatFn.seq (CatFn.noT HalfFieldOB5.copyN)
+          (CatFn.compileProg (base 2409) (base 2410) OwnQ4Endpoint.canonT)))
+  else
+    CatFn.seq (CatFn.compileProg (base 2409) (base 2410) OwnQ4Endpoint.centerT)
+      (CatFn.seq (CatFn.noT HalfFieldOB5.copyN)
+        (CatFn.seq (CatFn.swapSurround (base 2410) (base 1026) (compiledReplayS96 false))
+          (CatFn.compileProg (base 2409) (base 2410) OwnQ4Endpoint.canonT)))
+
+def compiledSegHS96 {n : Nat} (divide : Bool) : CatFn n :=
+  CatFn.seq (CatFn.noT [.X (base 511)])
+    (CatFn.seq (CatFn.map HostOB5.hostSwap (compiledSegmentS96 divide))
+      (CatFn.noT [.X (base 511)]))
+
+def compiledKernelS96 {n : Nat} (divide : Bool) : CatFn n :=
+  CatFn.seq
+    (CatFn.seq (CatFn.compileProg (base 717) (base 718) kernelPre)
+      (CatFn.swapSurround (base 718) (base 1542) (compiledSegHS96 divide)))
+    (CatFn.compileProg (base 717) (base 718) kernelSuf)
+
+attribute [local irreducible] compiledLogicalReplayS96 compiledReplayS96
+  compiledSegmentS96 compiledSegHS96 compiledKernelS96
+
+-- Indep
+theorem compiledLogicalReplayS96_indep {n : Nat} (divide : Bool) (s : Nat) :
+    Indep (compiledLogicalReplayS96 (n := n) divide s).prog := by
+  rw [compiledLogicalReplayS96]; cases divide
+  · exact CatFn.seq_indep _ _ (compiledGroups_indep false 1 96) (compiledFirstPacket_indep false) s
+  · exact CatFn.seq_indep _ _ (compiledFirstPacket_indep true) (compiledGroups_indep true 1 96) s
+
+theorem compiledReplayS96_indep {n : Nat} (divide : Bool) (s : Nat) :
+    Indep (compiledReplayS96 (n := n) divide s).prog := by
+  rw [compiledReplayS96]
+  exact CatFn.map_indep _ _ (compiledLogicalReplayS96_indep divide)
+    (fun _ _ _ _ _ e => OB5.sig_injective 511 (by decide) e) s
+
+theorem compiledSegmentS96_indep {n : Nat} (divide : Bool) (s : Nat) :
+    Indep (compiledSegmentS96 (n := n) divide s).prog := by
+  rw [compiledSegmentS96]; cases divide
+  · exact CatFn.seq_indep _ _ (CatFn.compileProg_indep _ _ _)
+      (CatFn.seq_indep _ _ (CatFn.noT_indep _)
+        (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep false))
+          (CatFn.compileProg_indep _ _ _))) s
+  · exact CatFn.seq_indep _ _ (CatFn.compileProg_indep _ _ _)
+      (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep true))
+        (CatFn.seq_indep _ _ (CatFn.noT_indep _) (CatFn.compileProg_indep _ _ _))) s
+
+theorem compiledSegHS96_indep {n : Nat} (divide : Bool) (s : Nat) :
+    Indep (compiledSegHS96 (n := n) divide s).prog := by
+  rw [compiledSegHS96]
+  exact CatFn.seq_indep _ _ (CatFn.noT_indep _)
+    (CatFn.seq_indep _ _ (CatFn.map_indep _ _ (compiledSegmentS96_indep divide)
+      (fun _ _ _ _ _ e => HostOB5.hostSwap_injective e)) (CatFn.noT_indep _)) s
+
+theorem compiledKernelS96_indep {n : Nat} (divide : Bool) (s : Nat) :
+    Indep (compiledKernelS96 (n := n) divide s).prog := by
+  rw [compiledKernelS96]
+  exact CatFn.seq_indep _ _
+    (CatFn.seq_indep _ _ (CatFn.compileProg_indep _ _ _)
+      (CatFn.swapSurround_indep _ _ _ (compiledSegHS96_indep divide)))
+    (CatFn.compileProg_indep _ _ _) s
+
+-- Removed18
+theorem compiledLogicalReplayS96_removed18 {n : Nat} (divide : Bool) (s : Nat) :
+    removed 18 (compiledLogicalReplayS96 (n := n) divide s).prog = 0 := by
+  rw [compiledLogicalReplayS96]; cases divide
+  · exact CatFn.seq_removed18 _ _ (compiledGroups_removed18 false 1 96) (compiledFirstPacket_removed18 false) s
+  · exact CatFn.seq_removed18 _ _ (compiledFirstPacket_removed18 true) (compiledGroups_removed18 true 1 96) s
+
+theorem compiledReplayS96_removed18 {n : Nat} (divide : Bool) (s : Nat) :
+    removed 18 (compiledReplayS96 (n := n) divide s).prog = 0 := by
+  rw [compiledReplayS96]
+  exact CatFn.map_removed18 _ _ (compiledLogicalReplayS96_removed18 divide) s
+
+theorem compiledSegmentS96_removed18 {n : Nat} (divide : Bool) (s : Nat) :
+    removed 18 (compiledSegmentS96 (n := n) divide s).prog = 0 := by
+  rw [compiledSegmentS96]; cases divide
+  · exact CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
+      (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _)
+        (CatFn.seq_removed18 _ _ (CatFn.swapSurround_removed18 _ _ _ (compiledReplayS96_removed18 false))
+          (CatFn.compileProg_removed18 _ _ _))) s
+  · exact CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
+      (CatFn.seq_removed18 _ _ (CatFn.swapSurround_removed18 _ _ _ (compiledReplayS96_removed18 true))
+        (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) (CatFn.compileProg_removed18 _ _ _))) s
+
+theorem compiledSegHS96_removed18 {n : Nat} (divide : Bool) (s : Nat) :
+    removed 18 (compiledSegHS96 (n := n) divide s).prog = 0 := by
+  rw [compiledSegHS96]
+  exact CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _)
+    (CatFn.seq_removed18 _ _ (CatFn.map_removed18 _ _ (compiledSegmentS96_removed18 divide))
+      (CatFn.noT_removed18 _)) s
+
+theorem compiledKernelS96_removed18 {n : Nat} (divide : Bool) (s : Nat) :
+    removed 18 (compiledKernelS96 (n := n) divide s).prog = 0 := by
+  rw [compiledKernelS96]
+  exact CatFn.seq_removed18 _ _
+    (CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
+      (CatFn.swapSurround_removed18 _ _ _ (compiledSegHS96_removed18 divide)))
+    (CatFn.compileProg_removed18 _ _ _) s
+
+-- ShiftFin
+theorem compiledLogicalReplayS96_shiftFin {n : Nat} (divide : Bool) :
+    ShiftFin (compiledLogicalReplayS96 (n := n) divide)
+      (ECDSAAdd.measurementCount (logicalReplaySTrunc96 divide) + ECDSAAdd.toffoliCount (logicalReplaySTrunc96 divide)) := by
+  rw [compiledLogicalReplayS96]; cases divide
+  · refine (CatFn.seq_shiftFin _ _ (compiledGroups_shiftFin false 1 96) (compiledFirstPacket_shiftFin false)).mono ?_
+    simp only [logicalReplaySTrunc96, Bool.false_eq_true, if_false, ECDSAAdd.measurementCount_append,
+      ECDSAAdd.toffoliCount_append]; omega
+  · refine (CatFn.seq_shiftFin _ _ (compiledFirstPacket_shiftFin true) (compiledGroups_shiftFin true 1 96)).mono ?_
+    simp only [logicalReplaySTrunc96, if_true, ECDSAAdd.measurementCount_append,
+      ECDSAAdd.toffoliCount_append]; omega
+
+theorem compiledReplayS96_shiftFin {n : Nat} (divide : Bool) :
+    ShiftFin (compiledReplayS96 (n := n) divide)
+      (ECDSAAdd.measurementCount (replaySTrunc96 divide) + ECDSAAdd.toffoliCount (replaySTrunc96 divide)) := by
+  rw [compiledReplayS96]
+  refine (CatFn.map_shiftFin _ _ (compiledLogicalReplayS96_shiftFin divide)).mono ?_
+  have hc := ECDSAAdd.renameProgram_counts (OB5.sig 511) (logicalReplaySTrunc96 divide)
+  simp only [replaySTrunc96, hc.1, hc.2]; omega
+
+theorem compiledSegmentS96_shiftFin {n : Nat} (divide : Bool) :
+    ShiftFin (compiledSegmentS96 (n := n) divide)
+      (ECDSAAdd.measurementCount (segmentSTrunc96 divide) + ECDSAAdd.toffoliCount (segmentSTrunc96 divide)) := by
+  rw [compiledSegmentS96]; cases divide
+  · refine (CatFn.seq_shiftFin _ _ (CatFn.compileProg_shiftFin _ _ _)
+      (CatFn.seq_shiftFin _ _ (CatFn.noT_shiftFin _)
+        (CatFn.seq_shiftFin _ _ (CatFn.swapSurround_shiftFin _ _ _ (compiledReplayS96_shiftFin false))
+          (CatFn.compileProg_shiftFin _ _ _)))).mono ?_
+    simp only [segmentSTrunc96, Bool.false_eq_true, if_false, ECDSAAdd.measurementCount_append,
+      ECDSAAdd.toffoliCount_append]; omega
+  · refine (CatFn.seq_shiftFin _ _ (CatFn.compileProg_shiftFin _ _ _)
+      (CatFn.seq_shiftFin _ _ (CatFn.swapSurround_shiftFin _ _ _ (compiledReplayS96_shiftFin true))
+        (CatFn.seq_shiftFin _ _ (CatFn.noT_shiftFin _) (CatFn.compileProg_shiftFin _ _ _)))).mono ?_
+    simp only [segmentSTrunc96, if_true, ECDSAAdd.measurementCount_append, ECDSAAdd.toffoliCount_append]; omega
+
+theorem compiledSegHS96_shiftFin {n : Nat} (divide : Bool) :
+    ShiftFin (compiledSegHS96 (n := n) divide)
+      (ECDSAAdd.measurementCount (segHSTrunc96 divide) + ECDSAAdd.toffoliCount (segHSTrunc96 divide)) := by
+  rw [compiledSegHS96]
+  refine (CatFn.seq_shiftFin _ _ (CatFn.noT_shiftFin _)
+    (CatFn.seq_shiftFin _ _ (CatFn.map_shiftFin _ _ (compiledSegmentS96_shiftFin divide))
+      (CatFn.noT_shiftFin _))).mono ?_
+  have hc := ECDSAAdd.renameProgram_counts HostOB5.hostSwap (segmentSTrunc96 divide)
+  have hx : ECDSAAdd.measurementCount [.X (base 511)] = 0 := by simp only [ECDSAAdd.measurementCount]
+  simp only [segHSTrunc96, ECDSAAdd.measurementCount_append, ECDSAAdd.toffoliCount_append, hc.1, hc.2, hx]; omega
+
+theorem compiledKernelS96_shiftFin {n : Nat} (divide : Bool) :
+    ShiftFin (compiledKernelS96 (n := n) divide)
+      (ECDSAAdd.measurementCount (kernelSTrunc96 divide) + ECDSAAdd.toffoliCount (kernelSTrunc96 divide)) := by
+  rw [compiledKernelS96, kernelSTrunc96]
+  refine (CatFn.seq_shiftFin _ _
+    (CatFn.seq_shiftFin _ _ (CatFn.compileProg_shiftFin _ _ _)
+      (CatFn.swapSurround_shiftFin _ _ _ (compiledSegHS96_shiftFin divide)))
+    (CatFn.compileProg_shiftFin _ _ _)).mono ?_
+  simp only [ECDSAAdd.measurementCount_append, ECDSAAdd.toffoliCount_append]; omega
+
+-- tCount
+theorem compiledLogicalReplayS96_tCount {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledLogicalReplayS96 (n := n) divide s).prog.instantiate read h).tCount ≤
+      4 * ECDSAAdd.toffoliCount (logicalReplaySTrunc96 divide) := by
+  rw [compiledLogicalReplayS96]; cases divide
+  · refine (CatFn.seq_tCount_le _ _ (compiledFirstPacket_indep false)
+      (compiledGroups_tCount false 1 96) (compiledFirstPacket_tCount false) s read h).trans ?_
+    simp only [logicalReplaySTrunc96, Bool.false_eq_true, if_false, ECDSAAdd.toffoliCount_append]; omega
+  · refine (CatFn.seq_tCount_le _ _ (compiledGroups_indep true 1 96)
+      (compiledFirstPacket_tCount true) (compiledGroups_tCount true 1 96) s read h).trans ?_
+    simp only [logicalReplaySTrunc96, if_true, ECDSAAdd.toffoliCount_append]; omega
+
+theorem compiledReplayS96_tCount {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledReplayS96 (n := n) divide s).prog.instantiate read h).tCount ≤
+      4 * ECDSAAdd.toffoliCount (replaySTrunc96 divide) := by
+  rw [compiledReplayS96]
+  refine (CatFn.map_tCount_le _ _ (compiledLogicalReplayS96_tCount divide) s read h).trans ?_
+  have hc := (ECDSAAdd.renameProgram_counts (OB5.sig 511) (logicalReplaySTrunc96 divide)).1
+  simp only [replaySTrunc96, hc]; omega
+
+theorem compiledSegmentS96_tCount {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledSegmentS96 (n := n) divide s).prog.instantiate read h).tCount ≤
+      4 * ECDSAAdd.toffoliCount (segmentSTrunc96 divide) := by
+  have hcp0 : ECDSAAdd.toffoliCount HalfFieldOB5.copyN = 0 := by
+    have len : (balancedSharedPorts base (base 2409)).r.length =
+        (balancedSharedPorts base (base 2409)).y.length := by
+      rw [balancedSharedPorts_r, balancedSharedPorts_y]; simp [wireBlock_length]
+    have k := copyRegister_counts none (balancedSharedPorts base (base 2409)).r
+      (balancedSharedPorts base (base 2409)).y len
+    simpa only [HalfFieldOB5.copyN, HalfField5.copyN, HalfField.copyN, HalfField.ports,
+      Option.isSome_none, Bool.false_eq_true, if_false] using k.1
+  rw [compiledSegmentS96]; cases divide
+  · refine (CatFn.seq_tCount_le _ _
+      (CatFn.seq_indep _ _ (CatFn.noT_indep _)
+        (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep false))
+          (CatFn.compileProg_indep _ _ _)))
+      (CatFn.compileProg_tCount _ _ _)
+      (CatFn.seq_tCount_le _ _
+        (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep false))
+          (CatFn.compileProg_indep _ _ _))
+        (CatFn.noT_tCount _ hcp0)
+        (CatFn.seq_tCount_le _ _ (CatFn.compileProg_indep _ _ _)
+          (CatFn.swapSurround_tCount_le _ _ _ (compiledReplayS96_indep false) (compiledReplayS96_tCount false))
+          (CatFn.compileProg_tCount _ _ _))) s read h).trans ?_
+    simp only [segmentSTrunc96, Bool.false_eq_true, if_false, ECDSAAdd.toffoliCount_append, hcp0]; omega
+  · refine (CatFn.seq_tCount_le _ _
+      (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep true))
+        (CatFn.seq_indep _ _ (CatFn.noT_indep _) (CatFn.compileProg_indep _ _ _)))
+      (CatFn.compileProg_tCount _ _ _)
+      (CatFn.seq_tCount_le _ _
+        (CatFn.seq_indep _ _ (CatFn.noT_indep _) (CatFn.compileProg_indep _ _ _))
+        (CatFn.swapSurround_tCount_le _ _ _ (compiledReplayS96_indep true) (compiledReplayS96_tCount true))
+        (CatFn.seq_tCount_le _ _ (CatFn.compileProg_indep _ _ _) (CatFn.noT_tCount _ hcp0)
+          (CatFn.compileProg_tCount _ _ _))) s read h).trans ?_
+    simp only [segmentSTrunc96, if_true, ECDSAAdd.toffoliCount_append, hcp0]; omega
+
+theorem compiledSegHS96_tCount {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledSegHS96 (n := n) divide s).prog.instantiate read h).tCount ≤
+      4 * ECDSAAdd.toffoliCount (segHSTrunc96 divide) := by
+  have hx : ECDSAAdd.toffoliCount [.X (base 511)] = 0 := by simp only [ECDSAAdd.toffoliCount]
+  rw [compiledSegHS96]
+  refine (CatFn.seq_tCount_le _ _
+    (CatFn.seq_indep _ _ (CatFn.map_indep _ _ (compiledSegmentS96_indep divide)
+      (fun _ _ _ _ _ e => HostOB5.hostSwap_injective e)) (CatFn.noT_indep _))
+    (CatFn.noT_tCount [.X (base 511)] hx)
+    (CatFn.seq_tCount_le _ _ (CatFn.noT_indep _)
+      (CatFn.map_tCount_le _ _ (compiledSegmentS96_tCount divide))
+      (CatFn.noT_tCount [.X (base 511)] hx)) s read h).trans ?_
+  have hc := (ECDSAAdd.renameProgram_counts HostOB5.hostSwap (segmentSTrunc96 divide)).1
+  simp only [segHSTrunc96, ECDSAAdd.toffoliCount_append, hc, hx]; omega
+
+theorem compiledKernelS96_tCount {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledKernelS96 (n := n) divide s).prog.instantiate read h).tCount ≤
+      4 * ECDSAAdd.toffoliCount (kernelSTrunc96 divide) := by
+  rw [compiledKernelS96, kernelSTrunc96]
+  refine (CatFn.seq_tCount_le _ _ (CatFn.compileProg_indep _ _ _)
+    (CatFn.seq_tCount_le _ _ (CatFn.swapSurround_indep _ _ _ (compiledSegHS96_indep divide))
+      (CatFn.compileProg_tCount _ _ _)
+      (CatFn.swapSurround_tCount_le _ _ _ (compiledSegHS96_indep divide) (compiledSegHS96_tCount divide)))
+    (CatFn.compileProg_tCount _ _ _) s read h).trans ?_
+  simp only [ECDSAAdd.toffoliCount_append]; omega
+
+-- Slots
+theorem compiledReplayS96_slots {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledReplayS96 (n := n) divide s).prog.gateSlots ≤ 482000000 := by
+  rw [compiledReplayS96]
+  refine CatFn.map_slots _ _ (fun s' => ?_) s
+  rw [compiledLogicalReplayS96]; cases divide
+  · exact (CatFn.seq_slots _ _ (compiledGroups_slots false 1 96) (compiledFirstPacket_slots false) s').trans (by omega)
+  · exact (CatFn.seq_slots _ _ (compiledFirstPacket_slots true) (compiledGroups_slots true 1 96) s').trans (by omega)
+
+theorem compiledSegmentS96_slots {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledSegmentS96 (n := n) divide s).prog.gateSlots ≤ 483000000 := by
+  have hec := OwnQ4Endpoint.endpoint_counts
+  have hes := OwnQ4Endpoint.endpoint_gateSlots_le
+  have h1 (s' : Nat) : (CatFn.compileProg (n := n) (base 2409) (base 2410) OwnQ4Endpoint.centerT s').prog.gateSlots ≤ 100000 :=
+    (CatFn.compileProg_slots _ _ _ s').trans (by omega)
+  have h2 (s' : Nat) : (CatFn.compileProg (n := n) (base 2409) (base 2410) OwnQ4Endpoint.canonT s').prog.gateSlots ≤ 100000 :=
+    (CatFn.compileProg_slots _ _ _ s').trans (by omega)
+  have hcp (s' : Nat) : (CatFn.noT (n := n) HalfFieldOB5.copyN s').prog.gateSlots ≤ 1000 :=
+    (CatFn.noT_slots _ s').trans (by omega)
+  rw [compiledSegmentS96]; cases divide
+  · exact (CatFn.seq_slots _ _ h1 (CatFn.seq_slots _ _ hcp
+      (CatFn.seq_slots _ _ (CatFn.swapSurround_slots _ _ _ (compiledReplayS96_slots false)) h2)) s).trans (by omega)
+  · exact (CatFn.seq_slots _ _ h1 (CatFn.seq_slots _ _
+      (CatFn.swapSurround_slots _ _ _ (compiledReplayS96_slots true)) (CatFn.seq_slots _ _ hcp h2)) s).trans (by omega)
+
+theorem compiledSegHS96_slots {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledSegHS96 (n := n) divide s).prog.gateSlots ≤ 483000010 := by
+  have hx : ECDSAAdd.Challenge.gateSlots [.X (base 511)] = 1 := rfl
+  rw [compiledSegHS96]
+  exact (CatFn.seq_slots _ _ (CatFn.noT_slots _)
+    (CatFn.seq_slots _ _ (CatFn.map_slots _ _ (compiledSegmentS96_slots divide)) (CatFn.noT_slots _)) s).trans
+    (by rw [hx]; omega)
+
+theorem compiledKernelS96_slots {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledKernelS96 (n := n) divide s).prog.gateSlots ≤ 1000000000 := by
+  have hk : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  have hsl := KernelOB5.program_gateSlots_le divide
+  have htc := (KernelOB5.program_counts divide).1
+  rw [hk, ECDSAAdd.Challenge.gateSlots_append, ECDSAAdd.Challenge.gateSlots_append] at hsl
+  rw [hk, ECDSAAdd.toffoliCount_append, ECDSAAdd.toffoliCount_append] at htc
+  have htb : ECDSAAdd.toffoliCount kernelPre + ECDSAAdd.toffoliCount kernelSuf ≤ 1100000 := by
+    cases divide <;> simp only [Bool.false_eq_true, if_false, if_true] at htc <;> omega
+  have hsb : ECDSAAdd.Challenge.gateSlots kernelPre + ECDSAAdd.Challenge.gateSlots kernelSuf ≤ 21000000 := by omega
+  rw [compiledKernelS96]
+  refine (CatFn.seq_slots _ _
+    (CatFn.seq_slots _ _ (CatFn.compileProg_slots _ _ _)
+      (CatFn.swapSurround_slots _ _ _ (compiledSegHS96_slots divide)))
+    (CatFn.compileProg_slots _ _ _) s).trans ?_
+  omega
+
+-- Wires
+theorem compiledReplayS96_wires {n : Nat} (divide : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledReplayS96 (n := n) divide s).prog ⊆ segNo2400.toList := by
+  have hpkt_pre (j : Nat) (hj : j < 102) (s' : Nat) :
+      ∀ w ∈ ChallengeMigration.straightWires (compiledPacket (n := n) divide j s').prog,
+        OB5.sig 511 w ∈ segNo2400.toList := by
+    intro w hw
+    rw [compiledPacket, catFn_map_wires_eq] at hw
+    obtain ⟨u, hu, rfl⟩ := List.mem_map.mp hw
+    exact readNo2400_placed_segNo2400 j hj u (compiledBasePacket_wires divide j hj s' hu)
+  have hgrp_pre (j m : Nat) (hb : j + m ≤ 102) (s' : Nat) :
+      ∀ w ∈ ChallengeMigration.straightWires (compiledGroups (n := n) divide j m s').prog,
+        OB5.sig 511 w ∈ segNo2400.toList := by
+    induction m generalizing j s' with
+    | zero =>
+      intro w hw; exact absurd (CatFn.noT_wires (S := List.nil) List.nil (by simp [ECDSAAdd.wires]) s' hw) (by simp)
+    | succ m ih =>
+      cases divide
+      · intro w hw
+        change w ∈ ChallengeMigration.straightWires (CatFn.seq (compiledGroups false (j + 1) m) (compiledPacket false j) s').prog at hw
+        rw [catFn_seq_wires_eq, List.mem_append] at hw
+        rcases hw with h | h
+        · exact ih (j + 1) (by omega) s' w h
+        · exact hpkt_pre j (by omega) _ w h
+      · intro w hw
+        change w ∈ ChallengeMigration.straightWires (CatFn.seq (compiledPacket true j) (compiledGroups true (j + 1) m) s').prog at hw
+        rw [catFn_seq_wires_eq, List.mem_append] at hw
+        rcases hw with h | h
+        · exact hpkt_pre j (by omega) s' w h
+        · exact ih (j + 1) (by omega) _ w h
+  have hfirst_pre (s' : Nat) :
+      ∀ w ∈ ChallengeMigration.straightWires (compiledFirstPacket (n := n) divide s').prog,
+        OB5.sig 511 w ∈ segNo2400.toList := by
+    intro w hw
+    rw [compiledFirstPacket, catFn_map_wires_eq] at hw
+    obtain ⟨u, hu, rfl⟩ := List.mem_map.mp hw
+    exact readNo2400_placed_segNo2400 0 (by omega) u (compiledBaseFirstPacket_wires divide s' hu)
+  intro w hw
+  rw [compiledReplayS96, catFn_map_wires_eq] at hw
+  obtain ⟨u, hu, rfl⟩ := List.mem_map.mp hw
+  rw [compiledLogicalReplayS96] at hu; cases divide
+  · change u ∈ ChallengeMigration.straightWires (CatFn.seq (compiledGroups false 1 96) (compiledFirstPacket false) s).prog at hu
+    rw [catFn_seq_wires_eq, List.mem_append] at hu
+    rcases hu with h | h
+    · exact hgrp_pre 1 96 (by decide) s u h
+    · exact hfirst_pre _ u h
+  · change u ∈ ChallengeMigration.straightWires (CatFn.seq (compiledFirstPacket true) (compiledGroups true 1 96) s).prog at hu
+    rw [catFn_seq_wires_eq, List.mem_append] at hu
+    rcases hu with h | h
+    · exact hfirst_pre s u h
+    · exact hgrp_pre 1 96 (by decide) _ u h
+
+theorem compiledSegmentS96_wires {n : Nat} (divide : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledSegmentS96 (n := n) divide s).prog ⊆ segNo2400.toList := by
+  have hce : ECDSAAdd.wires OwnQ4Endpoint.centerT ⊆ segNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, segNo2400, Finset.mem_erase]
+    exact ⟨fun e => (ownQ4_avoid_2409_2410_2400 2400 (Or.inl rfl)).1 (e ▸ hq), OwnQ4Endpoint.support.1 hq⟩
+  have hca : ECDSAAdd.wires OwnQ4Endpoint.canonT ⊆ segNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, segNo2400, Finset.mem_erase]
+    exact ⟨fun e => (ownQ4_avoid_2409_2410_2400 2400 (Or.inl rfl)).2 (e ▸ hq), OwnQ4Endpoint.support.2 hq⟩
+  have hcp : ECDSAAdd.wires HalfFieldOB5.copyN ⊆ segNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, segNo2400, Finset.mem_erase]
+    exact ⟨fun e => copyN_avoid_2400_2410 2400 (Or.inl rfl) (e ▸ hq), HalfFieldOB5Support.copy_support hq⟩
+  have m2409 := segNo2400_mem 2409 (Or.inl rfl)
+  have m2410 := segNo2400_mem 2410 (Or.inr (Or.inl rfl))
+  have m1026 := segNo2400_mem 1026 (Or.inr (Or.inr rfl))
+  rw [compiledSegmentS96]; cases divide
+  · exact CatFn.seq_wires _ _ (CatFn.compileProg_wires _ _ _ hce m2409 m2410)
+      (CatFn.seq_wires _ _ (CatFn.noT_wires _ hcp)
+        (CatFn.seq_wires _ _ (CatFn.swapSurround_wires _ _ _ m2410 m1026 (compiledReplayS96_wires false))
+          (CatFn.compileProg_wires _ _ _ hca m2409 m2410))) s
+  · exact CatFn.seq_wires _ _ (CatFn.compileProg_wires _ _ _ hce m2409 m2410)
+      (CatFn.seq_wires _ _ (CatFn.swapSurround_wires _ _ _ m2410 m1026 (compiledReplayS96_wires true))
+        (CatFn.seq_wires _ _ (CatFn.noT_wires _ hcp) (CatFn.compileProg_wires _ _ _ hca m2409 m2410))) s
+
+theorem compiledSegHS96_wires {n : Nat} (divide : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledSegHS96 (n := n) divide s).prog ⊆ logicalNo2400.toList := by
+  have hx : ECDSAAdd.wires [.X (base 511)] ⊆ logicalNo2400.toList.toFinset := by
+    intro q hq
+    simp only [ECDSAAdd.wires, ECDSAAdd.Instr.wires, Finset.mem_union, Finset.mem_singleton,
+      Finset.notMem_empty, or_false] at hq
+    subst hq; exact List.mem_toFinset.mpr (logicalNo2400_mem 511 (Or.inl rfl))
+  have hmap : ∀ w ∈ segNo2400.toList, HostOB5.hostSwap w ∈ logicalNo2400.toList := by
+    intro w hw
+    rw [Finset.mem_toList, segNo2400, Finset.mem_erase] at hw
+    rw [Finset.mem_toList, logicalNo2400, Finset.mem_erase]
+    have hne : HostOB5.hostSwap w ≠ base 2400 := fun e => hw.1 (HostOB5.hostSwap_injective (e.trans SW.selHost_fix.symm))
+    refine ⟨hne, ?_⟩
+    obtain ⟨i, hi, rfl⟩ := List.mem_map.mp (List.mem_toFinset.mp hw.2)
+    unfold HostOB5.hostSwap
+    split_ifs with c d e f
+    · exact (Finset.mem_erase.mp (Finset.mem_toList.mp (logicalNo2400_mem 511 (Or.inl rfl)))).2
+    · exfalso; have := MappedCompressed.base_injective d; subst this
+      simp only [OB5Support.segIndices, List.mem_append, List.mem_range'_1, List.mem_cons, List.not_mem_nil, or_false] at hi; omega
+    · exact (Finset.mem_erase.mp (Finset.mem_toList.mp (logicalNo2400_mem 1542 (Or.inr (Or.inr (Or.inr rfl)))))).2
+    · exfalso; have := MappedCompressed.base_injective f; subst this
+      simp only [OB5Support.segIndices, List.mem_append, List.mem_range'_1, List.mem_cons, List.not_mem_nil, or_false] at hi; omega
+    · apply List.mem_toFinset.mpr; apply List.mem_map.mpr; refine ⟨i, ?_, rfl⟩
+      have c' : i ≠ 2409 := fun h => c (by rw [h])
+      have e' : i ≠ 2410 := fun h => e (by rw [h])
+      simp only [OB5Support.segIndices, OB5Support.logicalIndices, List.mem_append, List.mem_range'_1,
+        List.mem_cons, List.not_mem_nil, or_false] at hi ⊢; omega
+  rw [compiledSegHS96]
+  exact CatFn.seq_wires _ _ (CatFn.noT_wires _ hx)
+    (CatFn.seq_wires _ _ (CatFn.map_wires _ _ (compiledSegmentS96_wires divide) hmap) (CatFn.noT_wires _ hx)) s
+
+theorem compiledKernelS96_wires {n : Nat} (divide : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledKernelS96 (n := n) divide s).prog ⊆ logicalNo2400.toList := by
+  have hpre : ECDSAAdd.wires kernelPre ⊆ logicalNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => (kernelPreSuf_avoid 2400 (Or.inr (Or.inr rfl))).1 (e ▸ hq), ?_⟩
+    simp only [kernelPre, ECDSAAdd.wires_append, Finset.mem_union] at hq
+    rcases hq with (h | h) | h
+    · exact OB5Support.prefixSites_sub_logical ((NativeFirstDirect.prefix_support base).1 h)
+    · exact OB5Support.integer_sub_logical (StackOB5.forward_support (stackForwardT_subset h))
+    · exact OB5Support.clear_support_logical h
+  have hsuf : ECDSAAdd.wires kernelSuf ⊆ logicalNo2400.toList.toFinset := by
+    intro q hq; rw [List.mem_toFinset, Finset.mem_toList, logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => (kernelPreSuf_avoid 2400 (Or.inr (Or.inr rfl))).2 (e ▸ hq), ?_⟩
+    simp only [kernelSuf, ECDSAAdd.wires_append, Finset.mem_union] at hq
+    rcases hq with (h | h) | h
+    · exact OB5Support.clear_support_logical h
+    · exact OB5Support.integer_sub_logical (StackOB5.reverse_support (stackReverseT_subset h))
+    · exact OB5Support.prefixSites_sub_logical (NativeFirstKnown.inverse_support base h)
+  have m717 := logicalNo2400_mem 717 (Or.inr (Or.inl rfl))
+  have m718 := logicalNo2400_mem 718 (Or.inr (Or.inr (Or.inl rfl)))
+  have m1542 := logicalNo2400_mem 1542 (Or.inr (Or.inr (Or.inr rfl)))
+  rw [compiledKernelS96]
+  exact CatFn.seq_wires _ _
+    (CatFn.seq_wires _ _ (CatFn.compileProg_wires _ _ _ hpre m717 m718)
+      (CatFn.swapSurround_wires _ _ _ m718 m1542 (compiledSegHS96_wires divide)))
+    (CatFn.compileProg_wires _ _ _ hsuf m717 m718) s
+
+-- WellFormed
+theorem compiledReplayS96_wellFormed {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledReplayS96 (n := n) divide s).prog.WellFormed := by
+  rw [compiledReplayS96]
+  refine CatFn.map_wellFormed _ _ (fun s' => ?_) (fun _ _ _ _ _ e => OB5.sig_injective 511 (by decide) e) s
+  rw [compiledLogicalReplayS96]; cases divide
+  · exact CatFn.seq_wellFormed _ _ (compiledGroups_wellFormed false 1 96 (by decide)) (compiledFirstPacket_wellFormed false) s'
+  · exact CatFn.seq_wellFormed _ _ (compiledFirstPacket_wellFormed true) (compiledGroups_wellFormed true 1 96 (by decide)) s'
+
+theorem compiledSegmentS96_wellFormed {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledSegmentS96 (n := n) divide s).prog.WellFormed := by
+  have hph := OwnQ4Endpoint.endpoint_physical MappedCompressed.LaneA.laneLogical_config.1
+  have ha9 := ownQ4_avoid_2409_2410_2400 2409 (Or.inr (Or.inl rfl))
+  have ha10 := ownQ4_avoid_2409_2410_2400 2410 (Or.inr (Or.inr rfl))
+  rw [compiledSegmentS96]; cases divide
+  · exact CatFn.seq_wellFormed _ _
+      (CatFn.compileProg_wellFormed _ _ _ ha9.1 ha10.1 (base_ne 2409 2410 (by omega)) hph.1)
+      (CatFn.seq_wellFormed _ _ (CatFn.noT_wellFormed _ hph.2.2)
+        (CatFn.seq_wellFormed _ _ (CatFn.swapSurround_wellFormed _ _ _ (base_ne 2410 1026 (by omega))
+          (compiledReplayS96_wellFormed false))
+          (CatFn.compileProg_wellFormed _ _ _ ha9.2 ha10.2 (base_ne 2409 2410 (by omega)) hph.2.1))) s
+  · exact CatFn.seq_wellFormed _ _
+      (CatFn.compileProg_wellFormed _ _ _ ha9.1 ha10.1 (base_ne 2409 2410 (by omega)) hph.1)
+      (CatFn.seq_wellFormed _ _ (CatFn.swapSurround_wellFormed _ _ _ (base_ne 2410 1026 (by omega))
+        (compiledReplayS96_wellFormed true))
+        (CatFn.seq_wellFormed _ _ (CatFn.noT_wellFormed _ hph.2.2)
+          (CatFn.compileProg_wellFormed _ _ _ ha9.2 ha10.2 (base_ne 2409 2410 (by omega)) hph.2.1))) s
+
+theorem compiledSegHS96_wellFormed {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledSegHS96 (n := n) divide s).prog.WellFormed := by
+  have hx : ECDSAAdd.Arithmetic.GatePhysical [.X (base 511)] := by
+    intro i hi; simp only [List.mem_cons, List.not_mem_nil, or_false] at hi; subst hi; trivial
+  rw [compiledSegHS96]
+  exact CatFn.seq_wellFormed _ _ (CatFn.noT_wellFormed _ hx)
+    (CatFn.seq_wellFormed _ _ (CatFn.map_wellFormed _ _ (compiledSegmentS96_wellFormed divide)
+      (fun _ _ _ _ _ e => HostOB5.hostSwap_injective e)) (CatFn.noT_wellFormed _ hx)) s
+
+theorem compiledKernelS96_wellFormed {n : Nat} (divide : Bool) (s : Nat) :
+    (compiledKernelS96 (n := n) divide s).prog.WellFormed := by
+  have hkph := KernelOB5.program_physical divide
+  have hk : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  rw [hk, gatePhysical_append, gatePhysical_append] at hkph
+  have ha7 := kernelPreSuf_avoid 717 (Or.inl rfl)
+  have ha8 := kernelPreSuf_avoid 718 (Or.inr (Or.inl rfl))
+  rw [compiledKernelS96]
+  exact CatFn.seq_wellFormed _ _
+    (CatFn.seq_wellFormed _ _ (CatFn.compileProg_wellFormed _ _ _ ha7.1 ha8.1 (base_ne 717 718 (by omega)) hkph.1.1)
+      (CatFn.swapSurround_wellFormed _ _ _ (base_ne 718 1542 (by omega)) (compiledSegHS96_wellFormed divide)))
+    (CatFn.compileProg_wellFormed _ _ _ ha7.2 ha8.2 (base_ne 717 718 (by omega)) hkph.2) s
+
+-- CatLitSim for `compiledLogicalReplayS96`..`compiledKernelS96`
+theorem compiledLogicalReplayS96_catLitSim {n : Nat} (divide : Bool)
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 1026) ((compiledLogicalReplayS96 (n := n) divide s).prog.instantiate read h)
+      (logicalReplaySTrunc96 divide) (if divide then AnyEncFieldY0 else AnyEncField) := by
+  rw [compiledLogicalReplayS96, logicalReplaySTrunc96]
+  cases divide
+  · simp only [Bool.false_eq_true, if_false]
+    exact CatFn.seq_catLitSim _ _ (compiledFirstPacket_indep false)
+      (SW.groupsS false 1 96) (SW.firstPacketS false) AnyEncField ReplayValid
+      (compiledGroups_catLitSim false 1 96 (by decide))
+      (fun s' r' h' => by simpa only [Bool.false_eq_true, if_false] using compiledFirstPacket_catLitSim false s' r' h')
+      (fun st m ⟨origin, ctx, X, Y, h24, hfr0⟩ _ => by
+        obtain ⟨heq, h2400⟩ := (SW.selGroups_sel false 1 96 (by decide)).eq m st h24
+        rw [heq]
+        have hfr := OneBankReplay5.groups_frame false 1 96 (by decide) origin ctx X Y st m
+          (encFieldFrame_of_basis origin X Y st hfr0)
+        exact anyEncField_replayValid ⟨origin, ctx, _, _, h2400, encFieldFrame_to_basis origin _ _ _ hfr.2⟩) s read h
+  · simp only [if_true]
+    have h1 : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+        CatLitSim (base 1026) ((compiledFirstPacket (n := n) true s').prog.instantiate r' h')
+          (SW.firstPacketS true) AnyEncFieldY0 := fun s' r' h' =>
+      catLitSim_weaken (by simpa only [if_true] using compiledFirstPacket_catLitSim true s' r' h')
+        (fun _ hv => anyEncFieldY0_replayValidZero hv)
+    exact CatFn.seq_catLitSim _ _ (compiledGroups_indep true 1 96)
+      (SW.firstPacketS true) (SW.groupsS true 1 96) AnyEncFieldY0 AnyEncField
+      h1 (compiledGroups_catLitSim true 1 96 (by decide))
+      (fun st m ⟨origin, ctx, Y, h24, hfr0⟩ _ => by
+        obtain ⟨heq, h2400⟩ := (SW.selFirstPacket_sel true).eq m st h24
+        rw [heq]
+        have hfr := OneBankReplay5.firstPacket_frame true origin ctx Y 0 st m
+          (encFieldFrame_of_basis origin Y 0 st hfr0) ⟨fun e => absurd e (by decide), fun _ => rfl⟩
+        exact ⟨origin, ctx, _, _, h2400, encFieldFrame_to_basis origin _ _ _ hfr.2⟩) s read h
+
+theorem compiledReplayS96_catLitSim {n : Nat} (divide : Bool)
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 1026) ((compiledReplayS96 (n := n) divide s).prog.instantiate read h)
+      (replaySTrunc96 divide) (if divide then AnyPlacedFieldY0 else AnyPlacedField) := by
+  have h1026 : sig511Perm (base 1026) = base 1026 := by
+    change OB5.sig 511 (base 1026) = base 1026; decide +kernel
+  have h2400 : sig511Perm (base 2400) = base 2400 := SW.selSig_2400
+  rw [compiledReplayS96, replaySTrunc96]
+  have hm := CatFn.map_perm_catLitSim sig511Perm (base 1026)
+    (compiledLogicalReplayS96 divide) (logicalReplaySTrunc96 divide)
+    (if divide then AnyEncFieldY0 else AnyEncField) (compiledLogicalReplayS96_catLitSim divide) s read h
+  rw [h1026] at hm
+  exact catLitSim_weaken hm (fun bs hv => by
+    cases divide
+    · obtain ⟨origin, ctx, X, Y, h24, hfr⟩ := hv
+      exact ⟨origin, ctx, X, Y, by dsimp only; rw [h2400]; exact h24, hfr⟩
+    · obtain ⟨origin, ctx, Y, h24, hfr⟩ := hv
+      exact ⟨origin, ctx, Y, by dsimp only; rw [h2400]; exact h24, hfr⟩)
+
+private def AnySegInput96 (bs : BasisState) : Prop :=
+  ∃ (origin : BasisState) (_ : OneBankReplay5.Context origin) (x : Nat) (Y : ECDSAAdd.Fp),
+    0 < x ∧ x < ECDSAAdd.p ∧ SkywalkFast485 x ∧ origin (base 2400) = true ∧
+    ECDSAAdd.regValue (skywalkSharedField base).a origin = 0 ∧
+    skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)) ∧
+    bs (base 2400) = true ∧ FieldFrameOB5.EncodedCanonicalFrame origin Y 0 ⟨false, bs⟩
+
+private def AnySegMid0_96 (bs : BasisState) : Prop :=
+  ∃ (origin : BasisState) (_ : OneBankReplay5.Context origin) (x : Nat) (Y : ECDSAAdd.Fp),
+    0 < x ∧ x < ECDSAAdd.p ∧ SkywalkFast485 x ∧ origin (base 2400) = true ∧
+    skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)) ∧
+    bs (base 2400) = true ∧ FieldFrameOB5.EncodedFieldFrame origin Y 0 ⟨false, bs⟩
+
+private def AnySegMidEq_96 (bs : BasisState) : Prop :=
+  ∃ (origin : BasisState) (_ : OneBankReplay5.Context origin) (x : Nat) (Y : ECDSAAdd.Fp),
+    0 < x ∧ x < ECDSAAdd.p ∧ SkywalkFast485 x ∧ origin (base 2400) = true ∧
+    skywalkTapeControls origin (skywalkSharedTape base) =
+      SkywalkTrace.trace 512 (SkywalkRails.encode false false (x : Int) (ECDSAAdd.p : Int)) ∧
+    bs (base 2400) = true ∧ FieldFrameOB5.EncodedFieldFrame origin Y Y ⟨false, bs⟩
+
+private def AnySegHInput96 (bs : BasisState) : Prop :=
+  AnySegInput96 bs ∧ bs (base 511) = true ∧ bs (base 1542) = false
+
+def KernelInput96 (bs : BasisState) : Prop :=
+  ∃ (x : Nat) (Y : ECDSAAdd.Fp), 0 < x ∧ x < ECDSAAdd.p ∧ SkywalkFast485 x ∧
+    SkywalkArithmeticInput base x Y.val bs ∧
+    bs (base 2409) = false ∧ bs (base 2410) = false
+
+theorem compiledSegmentS96_catLitSim {n : Nat} (divide : Bool)
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 2410) ((compiledSegmentS96 (n := n) divide s).prog.instantiate read h)
+      (segmentSTrunc96 divide) AnySegInput96 := by
+  have cfg := MappedCompressed.LaneA.laneLogical_config
+  have hph := OwnQ4Endpoint.endpoint_physical cfg.1
+  have ha9 := ownQ4_avoid_2409_2410_2400 2409 (Or.inr (Or.inl rfl))
+  have ha10 := ownQ4_avoid_2409_2410_2400 2410 (Or.inr (Or.inr rfl))
+  have ha0 := ownQ4_avoid_2409_2410_2400 2400 (Or.inl rfl)
+  have hcp0 := copyN_avoid_2400_2410 2400 (Or.inl rfl)
+  have hcp10 := copyN_avoid_2400_2410 2410 (Or.inr rfl)
+  have hce_sim : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+      CatLitSim (base 2410) ((CatFn.compileProg (base 2409) (base 2410) OwnQ4Endpoint.centerT s').prog.instantiate r' h')
+        OwnQ4Endpoint.centerT AnySegInput96 := fun s' r' h' =>
+    catLitSim_weaken (CatFn.compileProg_catLitSim (base 2409) (base 2410) OwnQ4Endpoint.centerT
+      ha9.1 ha10.1 (base_ne 2409 2410 (by omega)) hph.1 s' r' h')
+      (fun bs ⟨origin, ctx, _, Y, _, _, _, _, ha, _, _, hfr⟩ => placedCanonical_at_2409_2410 origin ctx ha Y ⟨false, bs⟩ hfr)
+  have hca_sim : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+      CatLitSim (base 2410) ((CatFn.compileProg (base 2409) (base 2410) OwnQ4Endpoint.canonT s').prog.instantiate r' h')
+        OwnQ4Endpoint.canonT AnyPlacedField := fun s' r' h' =>
+    catLitSim_weaken (CatFn.compileProg_catLitSim (base 2409) (base 2410) OwnQ4Endpoint.canonT
+      ha9.2 ha10.2 (base_ne 2409 2410 (by omega)) hph.2.1 s' r' h')
+      (fun bs ⟨origin, ctx, A, B, _, hfr⟩ => placedField_at_2409_2410 origin ctx A B ⟨false, bs⟩ hfr)
+  have hfield_clean (origin : BasisState) (ctx : OneBankReplay5.Context origin) (A B : ECDSAAdd.Fp)
+      (bs : BasisState) (hf : FieldFrameOB5.EncodedFieldFrame origin A B ⟨false, bs⟩) :
+      bs (base 2410) = false ∧ bs (base 1026) = false :=
+    ⟨(placedField_at_2409_2410 origin ctx A B ⟨false, bs⟩ hf).2,
+     (OwnQ4Endpoint.field_at origin A B ⟨false, bs⟩ 1026 (Or.inr rfl) hf).trans ctx.env.2.2⟩
+  rw [compiledSegmentS96, segmentSTrunc96]
+  cases divide
+  · simp only [Bool.false_eq_true, if_false]
+    have hsw : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+        CatLitSim (base 2410) ((CatFn.swapSurround (base 2410) (base 1026) (compiledReplayS96 false) s').prog.instantiate r' h')
+          (replaySTrunc96 false) AnySegMidEq_96 :=
+      CatFn.swapSurround_catLitSim (base_ne 2410 1026 (by omega)) (compiledReplayS96 false)
+        (compiledReplayS96_indep false) (replaySTrunc96 false) AnySegMidEq_96
+        (fun s' r' h' => catLitSim_weaken
+          (by simpa only [Bool.false_eq_true, if_false] using compiledReplayS96_catLitSim false s' r' h')
+          (fun bs (hv : AnySegMidEq_96 bs) => by
+            obtain ⟨origin, ctx, _, Y, _, _, _, _, _, h24, hfr⟩ := hv
+            exact ⟨origin, ctx, Y, Y, h24, hfr⟩))
+        (fun bs ⟨origin, ctx, _, Y, _, _, _, _, _, _, hfr⟩ => hfield_clean origin ctx Y Y bs hfr)
+        (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, trace, h24, hfr0⟩ _ => by
+          obtain ⟨heq, _⟩ := (selReplayTrunc96_sel false).eq m st h24
+          rw [heq]
+          have hfr := replayOB5Trunc96_inverse_frame origin ctx x hx0 hx hfast h24o trace Y st m
+            (placedField_of_basis origin Y Y st hfr0)
+          exact hfield_clean origin ctx _ _ _ (placedField_to_basis origin _ _ _ hfr.2))
+    have hrep_ca := CatFn.seq_catLitSim _ _ (CatFn.compileProg_indep _ _ _)
+      (replaySTrunc96 false) OwnQ4Endpoint.canonT AnySegMidEq_96 AnyPlacedField hsw hca_sim
+      (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, trace, h24, hfr0⟩ _ => by
+        obtain ⟨heq, hb⟩ := (selReplayTrunc96_sel false).eq m st h24
+        rw [heq]
+        have hfr := replayOB5Trunc96_inverse_frame origin ctx x hx0 hx hfast h24o trace Y st m
+          (placedField_of_basis origin Y Y st hfr0)
+        exact ⟨origin, ctx, _, _, hb, placedField_to_basis origin _ _ _ hfr.2⟩)
+    have hcp_tail := CatFn.seq_catLitSim _ _
+      (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep false)) (CatFn.compileProg_indep _ _ _))
+      HalfFieldOB5.copyN (replaySTrunc96 false ++ OwnQ4Endpoint.canonT) AnySegMid0_96 AnySegMidEq_96
+      (fun s' r' h' => catLitSim_weaken (CatFn.noT_catLitSim (base 2410) HalfFieldOB5.copyN hcp10 s' r' h')
+        (fun _ _ => trivial))
+      hrep_ca
+      (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, trace, h24, hfr0⟩ _ => by
+        have h24' : (ECDSAAdd.run HalfFieldOB5.copyN m st).basis (base 2400) = true :=
+          (ECDSAAdd.run_preserves_outside _ m st _ hcp0).trans h24
+        have hfr := HalfFieldOB5.copy_fill ctx.hn origin Y st m (placedField_of_basis origin Y 0 st hfr0)
+        exact ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, trace, h24', placedField_to_basis origin Y Y _ hfr.2⟩)
+    exact CatFn.seq_catLitSim _ _
+      (CatFn.seq_indep _ _ (CatFn.noT_indep _)
+        (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep false))
+          (CatFn.compileProg_indep _ _ _)))
+      OwnQ4Endpoint.centerT _ AnySegInput96 AnySegMid0_96 hce_sim hcp_tail
+      (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, ha, trace, h24, hfr0⟩ _ => by
+        have h24' : (ECDSAAdd.run OwnQ4Endpoint.centerT m st).basis (base 2400) = true :=
+          (ECDSAAdd.run_preserves_outside _ m st _ ha0.1).trans h24
+        have hfr := OwnQ4Endpoint.center_frame ctx.hn (ctx.hp _ (by simp)) origin ctx.env ctx.legal
+          ctx.parity ha Y st m (placedCanonical_of_basis origin Y 0 st hfr0)
+        exact ⟨origin, ctx, x, Y / (2 : ECDSAAdd.Fp), hx0, hx, hfast, h24o, trace, h24', placedField_to_basis origin (Y / (2 : ECDSAAdd.Fp)) 0 _ hfr.2⟩) s read h
+  · simp only [if_true]
+    have hsw : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+        CatLitSim (base 2410) ((CatFn.swapSurround (base 2410) (base 1026) (compiledReplayS96 true) s').prog.instantiate r' h')
+          (replaySTrunc96 true) AnySegMid0_96 :=
+      CatFn.swapSurround_catLitSim (base_ne 2410 1026 (by omega)) (compiledReplayS96 true)
+        (compiledReplayS96_indep true) (replaySTrunc96 true) AnySegMid0_96
+        (fun s' r' h' => catLitSim_weaken
+          (by simpa only [if_true] using compiledReplayS96_catLitSim true s' r' h')
+          (fun bs (hv : AnySegMid0_96 bs) => by
+            obtain ⟨origin, ctx, _, Y, _, _, _, _, _, h24, hfr⟩ := hv
+            exact ⟨origin, ctx, Y, h24, hfr⟩))
+        (fun bs ⟨origin, ctx, _, Y, _, _, _, _, _, _, hfr⟩ => hfield_clean origin ctx Y 0 bs hfr)
+        (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, trace, h24, hfr0⟩ _ => by
+          obtain ⟨heq, _⟩ := (selReplayTrunc96_sel true).eq m st h24
+          rw [heq]
+          have hfr := replayOB5Trunc96_forward_frame origin ctx x hx0 hx hfast h24o trace Y st m
+            (placedField_of_basis origin Y 0 st hfr0)
+          exact hfield_clean origin ctx _ _ _ (placedField_to_basis origin _ _ _ hfr.2))
+    have hcp_ca := CatFn.seq_catLitSim _ _ (CatFn.compileProg_indep _ _ _)
+      HalfFieldOB5.copyN OwnQ4Endpoint.canonT AnyPlacedFieldEq AnyPlacedField
+      (fun s' r' h' => catLitSim_weaken (CatFn.noT_catLitSim (base 2410) HalfFieldOB5.copyN hcp10 s' r' h')
+        (fun _ _ => trivial))
+      hca_sim
+      (fun st m ⟨origin, ctx, Z, h24, hfr0⟩ _ => by
+        have h24' : (ECDSAAdd.run HalfFieldOB5.copyN m st).basis (base 2400) = true :=
+          (ECDSAAdd.run_preserves_outside _ m st _ hcp0).trans h24
+        have hfr := HalfFieldOB5.copy_clear ctx.hn origin Z st m (placedField_of_basis origin Z Z st hfr0)
+        exact ⟨origin, ctx, Z, 0, h24', placedField_to_basis origin Z 0 _ hfr.2⟩)
+    have hrep_tail := CatFn.seq_catLitSim _ _
+      (CatFn.seq_indep _ _ (CatFn.noT_indep _) (CatFn.compileProg_indep _ _ _))
+      (replaySTrunc96 true) (HalfFieldOB5.copyN ++ OwnQ4Endpoint.canonT) AnySegMid0_96 AnyPlacedFieldEq hsw hcp_ca
+      (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, trace, h24, hfr0⟩ _ => by
+        obtain ⟨heq, hb⟩ := (selReplayTrunc96_sel true).eq m st h24
+        rw [heq]
+        have hfr := replayOB5Trunc96_forward_frame origin ctx x hx0 hx hfast h24o trace Y st m
+          (placedField_of_basis origin Y 0 st hfr0)
+        exact ⟨origin, ctx, _, hb, placedField_to_basis origin _ _ _ hfr.2⟩)
+    exact CatFn.seq_catLitSim _ _
+      (CatFn.seq_indep _ _ (CatFn.swapSurround_indep _ _ _ (compiledReplayS96_indep true))
+        (CatFn.seq_indep _ _ (CatFn.noT_indep _) (CatFn.compileProg_indep _ _ _)))
+      OwnQ4Endpoint.centerT _ AnySegInput96 AnySegMid0_96 hce_sim hrep_tail
+      (fun st m ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, ha, trace, h24, hfr0⟩ _ => by
+        have h24' : (ECDSAAdd.run OwnQ4Endpoint.centerT m st).basis (base 2400) = true :=
+          (ECDSAAdd.run_preserves_outside _ m st _ ha0.1).trans h24
+        have hfr := OwnQ4Endpoint.center_frame ctx.hn (ctx.hp _ (by simp)) origin ctx.env ctx.legal
+          ctx.parity ha Y st m (placedCanonical_of_basis origin Y 0 st hfr0)
+        exact ⟨origin, ctx, x, Y / (2 : ECDSAAdd.Fp), hx0, hx, hfast, h24o, trace, h24', placedField_to_basis origin (Y / (2 : ECDSAAdd.Fp)) 0 _ hfr.2⟩) s read h
+
+theorem compiledSegHS96_catLitSim {n : Nat} (divide : Bool)
+    (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 1542) ((compiledSegHS96 (n := n) divide s).prog.instantiate read h)
+      (segHSTrunc96 divide) AnySegHInput96 := by
+  have hx1542 : base 1542 ∉ ECDSAAdd.wires [.X (base 511)] := by
+    intro hm; simp only [ECDSAAdd.wires, ECDSAAdd.Instr.wires, Finset.mem_union, Finset.mem_singleton,
+      Finset.notMem_empty, or_false] at hm; exact base_ne 1542 511 (by omega) hm
+  have h511_seg : base 511 ∉ ECDSAAdd.wires (segmentSTrunc96 divide) := fun hm =>
+    (KernelOB5.seg_free divide).1 (segmentOB5Trunc96_wires_sub divide ((selSegmentTrunc96_sel divide).sub.wires_sub hm))
+  have hseg_drop : ∀ s' r' h',
+      CatLitSim (base 2410) ((compiledSegmentS96 (n := n) divide s').prog.instantiate r' h')
+        (segmentSTrunc96 divide) (fun bs => AnySegInput96 (bs[base 511 ↦ true])) := by
+    intro s' r' h'
+    have hfr511 : Fresh (base 511) (compiledSegmentS96 (n := n) divide s').prog :=
+      fresh_of_not_mem_straightWires (base 511) _ (fun hm =>
+        OB5Support.seg_host_free.1 (Finset.mem_erase.mp (Finset.mem_toList.mp (compiledSegmentS96_wires divide s' hm))).2)
+    refine catLitSim_drop_bit (x := base 511) (y := base 2410) (base_ne 511 2410 (by omega))
+      _ (segmentSTrunc96 divide) (fun bs => AnySegInput96 (bs[base 511 ↦ true])) hfr511 h511_seg
+      (fun bs hbs => by
+        dsimp only at hbs ⊢
+        have heq : (bs[base 511 ↦ true])[base 511 ↦ true] = bs[base 511 ↦ true] := by
+          funext w; by_cases hw : w = base 511 <;> simp [upd, hw]
+        rwa [heq]) r' h' ?_
+    exact catLitSim_weaken (compiledSegmentS96_catLitSim divide s' r' h')
+      (fun bs ⟨hbs, h511⟩ => by
+        dsimp only at hbs
+        have heq : bs[base 511 ↦ true] = bs := by
+          funext w; by_cases hw : w = base 511
+          · rw [hw]; simp [upd, h511]
+          · simp [upd, hw]
+        rwa [heq] at hbs)
+  have hhost_2410 : hostSwapPerm (base 2410) = base 1542 := by
+    change HostOB5.hostSwap (base 2410) = base 1542; decide +kernel
+  have hmid : ∀ s' r' h',
+      CatLitSim (base 1542) ((CatFn.map HostOB5.hostSwap (compiledSegmentS96 (n := n) divide) s').prog.instantiate r' h')
+        (ECDSAAdd.renameProgram HostOB5.hostSwap (segmentSTrunc96 divide))
+        (fun bs => AnySegInput96 ((fun w => bs (HostOB5.hostSwap w))[base 511 ↦ true])) := by
+    intro s' r' h'
+    have hm := CatFn.map_perm_catLitSim hostSwapPerm (base 2410) (compiledSegmentS96 divide)
+      (segmentSTrunc96 divide) (fun bs => AnySegInput96 (bs[base 511 ↦ true])) hseg_drop s' r' h'
+    rwa [hhost_2410] at hm
+  have hmid_x := CatFn.seq_catLitSim _ _ (CatFn.noT_indep _) _ ([.X (base 511)]) _ (fun _ => True)
+    hmid (CatFn.noT_catLitSim (base 1542) _ hx1542) (fun _ _ _ _ => trivial)
+  rw [compiledSegHS96, segHSTrunc96]
+  exact CatFn.seq_catLitSim _ _
+    (CatFn.seq_indep _ _ (CatFn.map_indep _ _ (compiledSegmentS96_indep divide)
+      (fun _ _ _ _ _ e => HostOB5.hostSwap_injective e)) (CatFn.noT_indep _))
+    ([.X (base 511)]) _ AnySegHInput96 _
+    (fun s' r' h' => catLitSim_weaken (CatFn.noT_catLitSim (base 1542) ([.X (base 511)]) hx1542 s' r' h')
+      (fun _ _ => trivial))
+    hmid_x
+    (fun st m ⟨hseg, h511, h1542⟩ _ => by
+      obtain ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, ha, trace, h24, hfr⟩ := hseg
+      have h910 := placedCanonical_at_2409_2410 origin ctx ha Y ⟨false, st.basis⟩ hfr
+      have heq : (fun w => (ECDSAAdd.run [.X (base 511)] m st).basis (HostOB5.hostSwap w))[base 511 ↦ true] = st.basis := by
+        funext w
+        have hxrun : ∀ u, (ECDSAAdd.run [.X (base 511)] m st).basis u =
+            if u = base 511 then !st.basis (base 511) else st.basis u := fun u => by
+          by_cases hu : u = base 511
+          · subst hu; simp [ECDSAAdd.run, ECDSAAdd.writeBit]
+          · simp [ECDSAAdd.run, ECDSAAdd.writeBit, Function.update_of_ne hu, hu]
+        by_cases h1 : w = base 511
+        · subst h1; simp [upd, h511]
+        · simp only [upd, h1, if_false]
+          unfold HostOB5.hostSwap
+          by_cases h2 : w = base 2409
+          · subst h2; rw [if_pos rfl, hxrun, if_pos rfl, h511]; exact h910.1.symm
+          · rw [if_neg h2, if_neg h1]
+            by_cases h3 : w = base 2410
+            · subst h3; rw [if_pos rfl, hxrun, if_neg (base_ne 1542 511 (by omega)), h1542]; exact h910.2.symm
+            · rw [if_neg h3]
+              by_cases h4 : w = base 1542
+              · subst h4; rw [if_pos rfl, hxrun, if_neg (base_ne 2410 511 (by omega)), h910.2]; exact h1542.symm
+              · rw [if_neg h4, hxrun, if_neg h1]
+      rw [heq]; exact ⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, ha, trace, h24, hfr⟩) s read h
+
+private theorem kernelPre_out_facts96 (x : Nat) (Y : ECDSAAdd.Fp) (hx0 : 0 < x) (hx : x < ECDSAAdd.p)
+    (hfast : SkywalkFast485 x) (st : ECDSAAdd.State) (m : List Bool)
+    (hin : SkywalkArithmeticInput base x Y.val st.basis)
+    (hg0 : st.basis (base 2409) = false) (hs0 : st.basis (base 2410) = false) (h24 : st.basis (base 2400) = true) :
+    AnySegHInput96 (ECDSAAdd.run kernelPre m st).basis ∧
+    (ECDSAAdd.run kernelPre m st).basis (base 717) = false ∧
+    (ECDSAAdd.run kernelPre m st).basis (base 718) = false := by
+  generalize hs3_def : ECDSAAdd.run kernelPre m st = s3
+  have cfg := MappedCompressed.LaneA.laneLogical_config
+  have hlo : History5.HistoryAbove base := OB5.historyAbove
+  have h78_in := skywalkInput_at_717_718 x Y.val st.basis hin
+  have hav7 := (kernelPreSuf_avoid 717 (Or.inl rfl)).1
+  have hav8 := (kernelPreSuf_avoid 718 (Or.inr (Or.inl rfl))).1
+  have hav0 := (kernelPreSuf_avoid 2400 (Or.inr (Or.inr rfl))).1
+  have hs3_717 : s3.basis (base 717) = false := by
+    rw [← hs3_def]; exact (ECDSAAdd.run_preserves_outside kernelPre m st (base 717) hav7).trans h78_in.1
+  have hs3_718 : s3.basis (base 718) = false := by
+    rw [← hs3_def]; exact (ECDSAAdd.run_preserves_outside kernelPre m st (base 718) hav8).trans h78_in.2
+  have hs3_2400 : s3.basis (base 2400) = true := by
+    rw [← hs3_def]; exact (ECDSAAdd.run_preserves_outside kernelPre m st (base 2400) hav0).trans h24
+  let m12 := m.take (ECDSAAdd.measurementCount (NativeFirstDirect.forward base ++ stackForwardT))
+  let m1 := m12.take (ECDSAAdd.measurementCount (NativeFirstDirect.forward base))
+  let m2 := m12.drop (ECDSAAdd.measurementCount (NativeFirstDirect.forward base))
+  let m3 := m.drop (ECDSAAdd.measurementCount (NativeFirstDirect.forward base ++ stackForwardT))
+  have hs3_eq0 : s3 = ECDSAAdd.run (skywalkArithmeticClear base) m3
+      (ECDSAAdd.run stackForwardT m2 (ECDSAAdd.run (NativeFirstDirect.forward base) m1 st)) := by
+    rw [← hs3_def]; simp only [kernelPre, ECDSAAdd.run_append, m1, m2, m3, m12]
+  clear_value m1 m2 m3
+  generalize h1 : ECDSAAdd.run (NativeFirstDirect.forward base) m1 st = s1 at hs3_eq0
+  generalize h2 : ECDSAAdd.run stackForwardT m2 s1 = s2 at hs3_eq0
+  have first := NativeFirstDirect.caller_first_stage base cfg.1 x Y.val hx0 hx st m1 hin
+  rw [h1] at first
+  obtain ⟨hp0, hpo, hpp, cop⟩ := OB5.prime_facts x hx0 hx
+  have hpGap : ECDSAAdd.p + 2 ^ 32 ≤ 2 ^ 256 := by norm_num [ECDSAAdd.p]
+  have pool := skywalkShared_integer_nodup base cfg.1
+  have firstW := (W.compactSkywalkStage_one base _ s1.basis).mpr first
+  generalize l2 : ECDSAAdd.run (History5.compactForward5 base 1 511) m2 s1 = t2
+  generalize l3 : ECDSAAdd.run (skywalkArithmeticClear base) m3 t2 = t3
+  have wEq : ECDSAAdd.run (Stack5.forward5 base 1 511) m2 s1 = t2 :=
+    (Stack5.forward_old_eq base pool hlo x ECDSAAdd.p hp0 hx0 hpo hpp hpGap hx cop s1 m2 m2 first).trans l2
+  have h2old : ECDSAAdd.run (StackOB5.forward 1 511) m2 s1 = s2 :=
+    (stackForwardT_run cfg.1 hlo x hx0 hx s1 m2 firstW).symm.trans h2
+  have fwd := StackOB5.forward_run x hx0 hx s1 m2 firstW
+  rw [h2old, wEq] at fwd
+  have e3 : s3 = ECDSAAdd.pullState (OB5.sig 511) t3 := by
+    rw [hs3_eq0, fwd, KernelOB5.clear_placed, l3]
+  obtain ⟨origin, facts, legal, _, encEq, entry⟩ := Kernel5.preparation_facts5 cfg.1 hlo cfg.2.1
+    x Y hx0 hx st m1 m2 m3 hin s1 t2 t3 h1 l2 l3 first
+  have hp : ∀ q ∈ [base 2400, base 2409, base 2410], q ∉ skywalkPoolWires base := fun q hq bad =>
+    cfg.2.1 q hq (arith_block_subset_shared base 0 1798 (by omega) bad)
+  have hg : origin.basis (base 2409) = false := (facts.controls _ (by simp)).trans hg0
+  have hs : origin.basis (base 2410) = false := (facts.controls _ (by simp)).trans hs0
+  have h24o : origin.basis (base 2400) = true := (facts.controls _ (by simp)).trans h24
+  let ctx : OneBankReplay5.Context origin.basis :=
+    ⟨cfg.1, cfg.2.1, hp, cfg.2.2, hg, hs, facts.env, legal, facts.targetHigh⟩
+  have placedInput : FieldFrameOB5.EncodedCanonicalFrame origin.basis Y 0 s3 := by
+    change History5.EncodedCanonicalFrame5 origin.basis Y 0 (ECDSAAdd.pullState (OB5.sig 511) s3)
+    rw [e3, OB5.pull_invol 511 (by decide)]
+    exact entry
+  have tr : (skywalkTapeControls origin.basis (skywalkSharedTape base)).getD 511 (false, false) = (true, false) := by
+    rw [facts.trace]; exact SkywalkTrace.trace512_last x hx0 hx _
+  have codes : origin.basis (base 511) = true ∧ origin.basis (base (1028 + 511)) = false := by
+    have e : (skywalkTapeControls origin.basis (skywalkSharedTape base)).getD 511 (false, false) =
+        (origin.basis (base 511), origin.basis (base (1028 + 511))) := by
+      rw [skywalkTapeControls, skywalkSharedTape,
+        List.getD_eq_getElem _ _ (by simp only [List.length_map, List.length_range]; omega)]
+      simp only [List.getElem_map, List.getElem_range]
+    rw [e] at tr; exact ⟨(Prod.mk.inj tr).1, (Prod.mk.inj tr).2⟩
+  have sig511 : OB5.sig 511 (base 511) = base 511 := by decide +kernel
+  have sig1542 : OB5.sig 511 (base 1542) = base 1539 := by decide +kernel
+  have in511 : s3.basis (base 511) = true := by
+    rw [e3]; change t3.basis (OB5.sig 511 (base 511)) = true
+    rw [sig511, encEq, ECDSAAdd.run_preserves_outside _ List.nil origin _ (HostOB5.enc_free 102 (le_refl _) 511 (Or.inl rfl))]
+    exact codes.1
+  have in1542 : s3.basis (base 1542) = false := by
+    rw [e3]; change t3.basis (OB5.sig 511 (base 1542)) = false
+    rw [sig1542, encEq, ECDSAAdd.run_preserves_outside _ List.nil origin _ (HostOB5.enc_free 102 (le_refl _) 1539 (Or.inr rfl))]
+    exact codes.2
+  exact ⟨⟨⟨origin.basis, ctx, x, Y, hx0, hx, hfast, h24o, facts.sourceZero, facts.trace, hs3_2400,
+    placedCanonical_to_basis origin.basis Y 0 s3 placedInput⟩, in511, in1542⟩, hs3_717, hs3_718⟩
+
+private theorem segHS96_out_clean (divide : Bool) (st : ECDSAAdd.State) (m : List Bool)
+    (hv : AnySegHInput96 st.basis) :
+    (ECDSAAdd.run (segHSTrunc96 divide) m st).basis (base 717) = false ∧
+    (ECDSAAdd.run (segHSTrunc96 divide) m st).basis (base 718) = false ∧
+    (ECDSAAdd.run (segHSTrunc96 divide) m st).basis (base 1542) = false := by
+  obtain ⟨⟨origin, ctx, x, Y, hx0, hx, hfast, h24o, ha, trace, h24, hfr0⟩, h511, h1542⟩ := hv
+  have hfr_in := placedCanonical_of_basis origin Y 0 st hfr0
+  have h910_in := placedCanonical_at_2409_2410 origin ctx ha Y st hfr_in
+  have hspec := segmentOB5Trunc96_spec divide origin ctx ha x hx0 hx hfast h24o trace Y st m hfr_in
+  have h910_out := placedCanonical_at_2409_2410 origin ctx ha _ _ hspec.2
+  have hsel := (selSegHTrunc96_sel divide).eq m st h24
+  have hfree_tr : base 511 ∉ ECDSAAdd.wires (segmentOB5Trunc96 divide) ∧
+      base 1542 ∉ ECDSAAdd.wires (segmentOB5Trunc96 divide) :=
+    ⟨fun h => (KernelOB5.seg_free divide).1 (segmentOB5Trunc96_wires_sub divide h),
+     fun h => (KernelOB5.seg_free divide).2 (segmentOB5Trunc96_wires_sub divide h)⟩
+  have hhost := HostOB5.hosted_run (segmentOB5Trunc96 divide) st m hfree_tr.1 hfree_tr.2
+    h910_in.1 h511 h910_in.2 h1542 h910_out.1 h910_out.2
+  have hs4_eq : ECDSAAdd.run (segHSTrunc96 divide) m st = ECDSAAdd.run (segmentOB5Trunc96 divide) m st := by
+    rw [hsel.1, segHOB5Trunc96]; exact hhost
+  rw [hs4_eq]
+  have h78 := placedCanonical_at_717_718 origin ctx _ _ hspec.2
+  have h1542' : (ECDSAAdd.run (segmentOB5Trunc96 divide) m st).basis (base 1542) = false :=
+    (ECDSAAdd.run_preserves_outside _ m st _ hfree_tr.2).trans h1542
+  exact ⟨h78.1, h78.2, h1542'⟩
+
+private theorem compiledKernelS96_catLitSim_2400 {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 718) ((compiledKernelS96 (n := n) divide s).prog.instantiate read h)
+      (kernelSTrunc96 divide) (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) := by
+  have hkph := KernelOB5.program_physical divide
+  have hk0 : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
+    simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
+  rw [hk0, gatePhysical_append, gatePhysical_append] at hkph
+  have ha7 := kernelPreSuf_avoid 717 (Or.inl rfl)
+  have ha8 := kernelPreSuf_avoid 718 (Or.inr (Or.inl rfl))
+  let MidPred : BasisState → Prop := fun bs => AnySegHInput96 bs ∧ bs (base 718) = false
+  have h1 : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+      CatLitSim (base 718) ((CatFn.compileProg (base 717) (base 718) kernelPre s').prog.instantiate r' h')
+        kernelPre (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) := fun s' r' h' =>
+    catLitSim_weaken (CatFn.compileProg_catLitSim (base 717) (base 718) kernelPre ha7.1 ha8.1
+      (base_ne 717 718 (by omega)) hkph.1.1 s' r' h')
+      (fun bs ⟨⟨x, Y, _, _, _, hin, _, _⟩, _⟩ => skywalkInput_at_717_718 x Y.val bs hin)
+  have hsw : ∀ (s' : Nat) (r' : ConstantBit n → Bool) (h' : Fin s' → Bool),
+      CatLitSim (base 718) ((CatFn.swapSurround (base 718) (base 1542) (compiledSegHS96 divide) s').prog.instantiate r' h')
+        (segHSTrunc96 divide) MidPred :=
+    CatFn.swapSurround_catLitSim (base_ne 718 1542 (by omega)) (compiledSegHS96 divide)
+      (compiledSegHS96_indep divide) (segHSTrunc96 divide) MidPred
+      (fun s' r' h' => catLitSim_weaken (compiledSegHS96_catLitSim divide s' r' h') (fun _ hv => hv.1))
+      (fun bs ⟨⟨_, _, h1542⟩, h718⟩ => ⟨h718, h1542⟩)
+      (fun st m hv _ => let ho := segHS96_out_clean divide st m hv.1; ⟨ho.2.1, ho.2.2⟩)
+  have h12 := CatFn.seq_catLitSim _ _ (CatFn.swapSurround_indep _ _ _ (compiledSegHS96_indep divide))
+    kernelPre (segHSTrunc96 divide) (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) MidPred h1 hsw
+    (fun st m ⟨⟨x, Y, hx0, hx, hfast, hin, hg0, hs0⟩, h24⟩ _ =>
+      let ho := kernelPre_out_facts96 x Y hx0 hx hfast st m hin hg0 hs0 h24
+      ⟨ho.1, ho.2.2⟩)
+  rw [compiledKernelS96, kernelSTrunc96]
+  exact CatFn.seq_catLitSim _ _ (CatFn.compileProg_indep _ _ _) (kernelPre ++ segHSTrunc96 divide) kernelSuf
+    (fun bs => KernelInput96 bs ∧ bs (base 2400) = true) (fun bs => bs (base 717) = false ∧ bs (base 718) = false)
+    h12 (CatFn.compileProg_catLitSim (base 717) (base 718) kernelSuf ha7.2 ha8.2
+      (base_ne 717 718 (by omega)) hkph.2)
+    (fun st m ⟨⟨x, Y, hx0, hx, hfast, hin, hg0, hs0⟩, h24⟩ _ => by
+      rw [ECDSAAdd.run_append]
+      have ho1 := kernelPre_out_facts96 x Y hx0 hx hfast st (m.take (ECDSAAdd.measurementCount kernelPre)) hin hg0 hs0 h24
+      have ho2 := segHS96_out_clean divide _ (m.drop (ECDSAAdd.measurementCount kernelPre)) ho1.1
+      exact ⟨ho2.1, ho2.2.1⟩) s read h
+
+theorem compiledKernelS96_catLitSim {n : Nat} (divide : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim (base 718) ((compiledKernelS96 (n := n) divide s).prog.instantiate read h)
+      (kernelSTrunc96 divide) KernelInput96 := by
+  have hfr2400 : Fresh (base 2400) (compiledKernelS96 (n := n) divide s).prog :=
+    fresh_of_not_mem_straightWires (base 2400) _ (fun hm =>
+      (Finset.mem_erase.mp (Finset.mem_toList.mp (compiledKernelS96_wires divide s hm))).1 rfl)
+  have h2400_in : ∀ bs, KernelInput96 bs → KernelInput96 (bs[base 2400 ↦ true]) := by
+    rintro bs ⟨x, Y, hx0, hx, hfast, hin, hg0, hs0⟩
+    have cfg := MappedCompressed.LaneA.laneLogical_config
+    have bShared : base 2400 ∉ skywalkSharedWires base := cfg.2.1 _ (by simp)
+    have bDiv : base 2400 ∉ skywalkArithmeticDivisor base := fun h =>
+      bShared (arith_block_subset_shared base 770 256 (by omega) h)
+    have bNum : base 2400 ∉ skywalkArithmeticNumerator base := fun h =>
+      bShared (arith_block_subset_shared base 2056 256 (by omega) h)
+    refine ⟨x, Y, hx0, hx, hfast, ⟨?_, ?_, ?_⟩, ?_, ?_⟩
+    · rw [← hin.1]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun q hq => by simp [upd, show q ≠ base 2400 from fun e => bDiv (e ▸ hq)])
+    · rw [← hin.2.1]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun q hq => by simp [upd, show q ≠ base 2400 from fun e => bNum (e ▸ hq)])
+    · intro q hq hdx hdy
+      have hne : q ≠ base 2400 := fun e => bShared (e ▸ hq)
+      simpa [upd, hne] using hin.2.2 q hq hdx hdy
+    · simpa [upd, base_ne 2409 2400 (by omega)] using hg0
+    · simpa [upd, base_ne 2410 2400 (by omega)] using hs0
+  exact catLitSim_drop_bit (x := base 2400) (y := base 718) (base_ne 2400 718 (by omega))
+    _ (kernelSTrunc96 divide) KernelInput96 hfr2400 (selKernelTrunc96_sel divide).away h2400_in read h
+    (compiledKernelS96_catLitSim_2400 divide s read h)
+
+end Trunc96
+
 end KernelCompiler
 
 
@@ -13174,9 +14891,11 @@ private theorem compiledRawReplay_avoid4 {n : Nat} (divide : Bool) (ls : List Mi
     · exact catFn_seq_avoid4 _ _ (fun s' u hu => ih hrest s' u hu) (fun s' => compiledCell_avoid4 false l.1.1 l.1.2 h0.1 h0.2 s') s w hw
     · exact catFn_seq_avoid4 _ _ (fun s' => compiledCell_avoid4 true l.1.1 l.1.2 h0.1 h0.2 s') (fun s' u hu => ih hrest s' u hu) s w hw
 
-theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
-    (w : Wire) (hw : w ∈ ChallengeMigration.straightWires (compiledKernelS (n := n) divide s).prog) :
-    w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312 := by
+private theorem compiledKernelS_avoid4_both {n : Nat} (divide : Bool) :
+    (∀ (s : Nat) (w : Wire), w ∈ ChallengeMigration.straightWires (compiledKernelS (n := n) divide s).prog →
+      w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312) ∧
+    (∀ (s : Nat) (w : Wire), w ∈ ChallengeMigration.straightWires (compiledKernelS96 (n := n) divide s).prog →
+      w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312) := by
   have hpi_fix (j : Nat) (hj : j < 102) (k : Nat) (hk : k = 765 ∨ k = 766 ∨ k = 767 ∨ k = 2312) :
       MappedCompressed.shifted (Placement5.pi j) (base k) = base k := by
     rw [MappedCompressed.shifted_base, Placement5.pi_outside j k hj]
@@ -13303,6 +15022,16 @@ theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
     rw [compiledLogicalReplayS] at hv; cases divide
     · exact catFn_seq_avoid4 _ _ (catFn_seq_avoid4 _ _ hend (hgrp 1 101 (by decide))) hfirst s' v hv
     · exact catFn_seq_avoid4 _ _ (catFn_seq_avoid4 _ _ hfirst (hgrp 1 101 (by decide))) hend s' v hv
+  have hrep96 (s' : Nat) (u : Wire)
+      (hu : u ∈ ChallengeMigration.straightWires (compiledReplayS96 (n := n) divide s').prog) : avoid4 u := by
+    rw [compiledReplayS96] at hu
+    obtain ⟨v, hv, rfl⟩ := catFn_map_mem _ _ s' hu
+    refine map_avoid4_of_fix (OB5.sig_injective 511 (by decide))
+      (hsig_fix 765 (by omega)) (hsig_fix 766 (by omega))
+      (hsig_fix 767 (by omega)) (hsig_fix 2312 (by omega)) ?_
+    rw [compiledLogicalReplayS96] at hv; cases divide
+    · exact catFn_seq_avoid4 _ _ (hgrp 1 96 (by decide)) hfirst s' v hv
+    · exact catFn_seq_avoid4 _ _ hfirst (hgrp 1 96 (by decide)) s' v hv
   have hce : ∀ q ∈ ECDSAAdd.wires OwnQ4Endpoint.centerT, avoid4 q := fun q hq =>
     ⟨fun e => OwnQ4Endpoint.prior_free765.1 (by subst e; exact hq),
      fun e => OwnQ4Endpoint.prior_free766.1 (by subst e; exact hq),
@@ -13333,6 +15062,21 @@ theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
           (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 2410 (by omega)) (base_avoid4 1026 (by omega)) hrep)
           (catFn_seq_avoid4 _ _ (catFn_noT_avoid4 _ hcp)
             (catFn_compileProg_avoid4 _ _ _ (base_avoid4 2409 (by omega)) (base_avoid4 2410 (by omega)) hca))) s' u hu
+  have hseg96 (s' : Nat) (u : Wire)
+      (hu : u ∈ ChallengeMigration.straightWires (compiledSegmentS96 (n := n) divide s').prog) : avoid4 u := by
+    rw [compiledSegmentS96] at hu; cases divide
+    · exact catFn_seq_avoid4 _ _
+        (catFn_compileProg_avoid4 _ _ _ (base_avoid4 2409 (by omega)) (base_avoid4 2410 (by omega)) hce)
+        (catFn_seq_avoid4 _ _ (catFn_noT_avoid4 _ hcp)
+          (catFn_seq_avoid4 _ _
+            (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 2410 (by omega)) (base_avoid4 1026 (by omega)) hrep96)
+            (catFn_compileProg_avoid4 _ _ _ (base_avoid4 2409 (by omega)) (base_avoid4 2410 (by omega)) hca))) s' u hu
+    · exact catFn_seq_avoid4 _ _
+        (catFn_compileProg_avoid4 _ _ _ (base_avoid4 2409 (by omega)) (base_avoid4 2410 (by omega)) hce)
+        (catFn_seq_avoid4 _ _
+          (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 2410 (by omega)) (base_avoid4 1026 (by omega)) hrep96)
+          (catFn_seq_avoid4 _ _ (catFn_noT_avoid4 _ hcp)
+            (catFn_compileProg_avoid4 _ _ _ (base_avoid4 2409 (by omega)) (base_avoid4 2410 (by omega)) hca))) s' u hu
   have hsegH (s' : Nat) (u : Wire)
       (hu : u ∈ ChallengeMigration.straightWires (compiledSegHS (n := n) divide s').prog) : avoid4 u := by
     have hx511 : ∀ q ∈ ECDSAAdd.wires [.X (base 511)], avoid4 q := fun q hq => by
@@ -13348,6 +15092,21 @@ theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
             (hhost_fix 765 (by omega)) (hhost_fix 766 (by omega))
             (hhost_fix 767 (by omega)) (hhost_fix 2312 (by omega)) (hseg s'' z hz))
         (catFn_noT_avoid4 _ hx511)) s' u hu
+  have hsegH96 (s' : Nat) (u : Wire)
+      (hu : u ∈ ChallengeMigration.straightWires (compiledSegHS96 (n := n) divide s').prog) : avoid4 u := by
+    have hx511 : ∀ q ∈ ECDSAAdd.wires [.X (base 511)], avoid4 q := fun q hq => by
+      simp only [ECDSAAdd.wires, ECDSAAdd.Instr.wires, Finset.mem_union, Finset.mem_singleton,
+        Finset.notMem_empty, or_false] at hq
+      subst hq; exact base_avoid4 511 (by omega)
+    rw [compiledSegHS96] at hu
+    exact catFn_seq_avoid4 _ _ (catFn_noT_avoid4 _ hx511)
+      (catFn_seq_avoid4 _ _
+        (fun s'' v hv => by
+          obtain ⟨z, hz, rfl⟩ := catFn_map_mem _ _ s'' hv
+          exact map_avoid4_of_fix HostOB5.hostSwap_injective
+            (hhost_fix 765 (by omega)) (hhost_fix 766 (by omega))
+            (hhost_fix 767 (by omega)) (hhost_fix 2312 (by omega)) (hseg96 s'' z hz))
+        (catFn_noT_avoid4 _ hx511)) s' u hu
   have hk_eq : KernelOB5.program divide = (kernelPre ++ KernelOB5.segH divide) ++ kernelSuf := by
     simp only [KernelOB5.program, kernelPre, kernelSuf, List.append_assoc]
   have hpre_sub : ECDSAAdd.wires kernelPre ⊆ ECDSAAdd.wires (KernelOB5.program divide) := by
@@ -13362,12 +15121,30 @@ theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
   have hsuf4 : ∀ q ∈ ECDSAAdd.wires kernelSuf, avoid4 q :=
     prog_avoid4_of_sub hsuf_sub (OwnGuardFinal.kernel_free divide) (OwnPlusFinal.kernel_free divide)
       (OwnMinusFinal.kernel_free divide) (OwnParityHost.kernel_parity_free divide)
-  rw [compiledKernelS] at hw
-  exact catFn_seq_avoid4 _ _
-    (catFn_seq_avoid4 _ _
-      (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hpre4)
-      (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 718 (by omega)) (base_avoid4 1542 (by omega)) hsegH))
-    (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hsuf4) s w hw
+  exact ⟨fun s w hw => by
+    rw [compiledKernelS] at hw
+    exact catFn_seq_avoid4 _ _
+      (catFn_seq_avoid4 _ _
+        (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hpre4)
+        (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 718 (by omega)) (base_avoid4 1542 (by omega)) hsegH))
+      (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hsuf4) s w hw,
+    fun s w hw => by
+    rw [compiledKernelS96] at hw
+    exact catFn_seq_avoid4 _ _
+      (catFn_seq_avoid4 _ _
+        (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hpre4)
+        (catFn_swapSurround_avoid4 _ _ _ (base_avoid4 718 (by omega)) (base_avoid4 1542 (by omega)) hsegH96))
+      (catFn_compileProg_avoid4 _ _ _ (base_avoid4 717 (by omega)) (base_avoid4 718 (by omega)) hsuf4) s w hw⟩
+
+theorem compiledKernelS_avoid4 {n : Nat} (divide : Bool) (s : Nat)
+    (w : Wire) (hw : w ∈ ChallengeMigration.straightWires (compiledKernelS (n := n) divide s).prog) :
+    w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312 :=
+  (compiledKernelS_avoid4_both (n := n) divide).1 s w hw
+
+theorem compiledKernelS96_avoid4 {n : Nat} (divide : Bool) (s : Nat)
+    (w : Wire) (hw : w ∈ ChallengeMigration.straightWires (compiledKernelS96 (n := n) divide s).prog) :
+    w ≠ base 765 ∧ w ≠ base 766 ∧ w ≠ base 767 ∧ w ≠ base 2312 :=
+  (compiledKernelS_avoid4_both (n := n) divide).2 s w hw
 
 
 -- Universal `Straight.append` T-count upper bound (works even when continuation `q` depends on history!)
@@ -15030,6 +16807,352 @@ theorem compiledDirectArith_catLitSim {n : Nat} (multiply : Bool) (s : Nat)
     · simp only [bs', if_pos hmem]
       exact hpool0 _ (hpl.sharedWork q hq (ArithmeticOB5.logical_sub_old (Finset.mem_erase.mp hmem).2) hdx hdy)
     · simp only [bs', if_neg hmem]
+
+def compiledDirectArith96 {n : Nat} (multiply : Bool) : CatFn n :=
+  CatFn.map (wireFn2 streamLayout) (compiledKernelS96 (!multiply))
+
+attribute [local irreducible] compiledDirectArith96
+
+theorem compiledDirectArith96_indep {n : Nat} (multiply : Bool) (s : Nat) :
+    Indep (compiledDirectArith96 (n := n) multiply s).prog := by
+  rw [compiledDirectArith96]
+  exact CatFn.map_indep _ _ (compiledKernelS96_indep (!multiply))
+    (fun s' a ha b hb => wireFn2_inj_logical a (Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s' ha))
+      b (Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s' hb))) s
+
+theorem compiledDirectArith96_removed18 {n : Nat} (multiply : Bool) (s : Nat) :
+    removed 18 (compiledDirectArith96 (n := n) multiply s).prog = 0 := by
+  rw [compiledDirectArith96]
+  exact CatFn.map_removed18 _ _ (compiledKernelS96_removed18 (!multiply)) s
+
+theorem compiledDirectArith96_shiftFin {n : Nat} (multiply : Bool) :
+    ShiftFin (compiledDirectArith96 (n := n) multiply)
+      (if multiply then 1709707 else 1709452) := by
+  have hc := arithSTrunc96_counts streamLayout
+  have hren_m : ECDSAAdd.measurementCount (arithSTrunc96 streamLayout multiply) =
+      ECDSAAdd.measurementCount (kernelSTrunc96 (!multiply)) := by
+    rw [arithSTrunc96]; exact (ECDSAAdd.renameProgram_counts (wireFn2 streamLayout) (kernelSTrunc96 (!multiply))).2
+  have hren_t : ECDSAAdd.toffoliCount (arithSTrunc96 streamLayout multiply) =
+      ECDSAAdd.toffoliCount (kernelSTrunc96 (!multiply)) := by
+    rw [arithSTrunc96]; exact (ECDSAAdd.renameProgram_counts (wireFn2 streamLayout) (kernelSTrunc96 (!multiply))).1
+  rw [compiledDirectArith96]
+  refine (CatFn.map_shiftFin _ _ (compiledKernelS96_shiftFin (!multiply))).mono ?_
+  cases multiply <;> simp only [Bool.false_eq_true, if_false, if_true] at hren_m hren_t ⊢ <;>
+    (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+theorem compiledDirectArith96_tCount {n : Nat} (multiply : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ((compiledDirectArith96 (n := n) multiply s).prog.instantiate read h).tCount ≤
+      4 * (if multiply then 1015057 else 1015058) := by
+  have hc := arithSTrunc96_counts streamLayout
+  have hren_t : ECDSAAdd.toffoliCount (arithSTrunc96 streamLayout multiply) =
+      ECDSAAdd.toffoliCount (kernelSTrunc96 (!multiply)) := by
+    rw [arithSTrunc96]; exact (ECDSAAdd.renameProgram_counts (wireFn2 streamLayout) (kernelSTrunc96 (!multiply))).1
+  rw [compiledDirectArith96]
+  refine (CatFn.map_tCount_le _ _ (compiledKernelS96_tCount (!multiply)) s read h).trans ?_
+  cases multiply <;> simp only [Bool.false_eq_true, if_false, if_true] at hren_t ⊢ <;>
+    (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
+
+theorem compiledDirectArith96_slots {n : Nat} (multiply : Bool) (s : Nat) :
+    (compiledDirectArith96 (n := n) multiply s).prog.gateSlots ≤ 1000000000 := by
+  rw [compiledDirectArith96]
+  exact CatFn.map_slots _ _ (compiledKernelS96_slots (!multiply)) s
+
+theorem compiledDirectArith96_wires {n : Nat} (multiply : Bool) (s : Nat) :
+    ChallengeMigration.straightWires (compiledDirectArith96 (n := n) multiply s).prog ⊆ support1612 := by
+  intro w hw
+  rw [compiledDirectArith96] at hw
+  obtain ⟨u, hu, rfl⟩ := catFn_map_mem (wireFn2 streamLayout) (compiledKernelS96 (n := n) (!multiply)) s hw
+  exact wireFn2_mem_support1612 u (Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s hu))
+    (compiledKernelS96_avoid4 (!multiply) s u hu)
+
+theorem compiledDirectArith96_wellFormed {n : Nat} (multiply : Bool) (s : Nat) :
+    (compiledDirectArith96 (n := n) multiply s).prog.WellFormed := by
+  rw [compiledDirectArith96]
+  exact CatFn.map_wellFormed _ _ (compiledKernelS96_wellFormed (!multiply))
+    (fun s' a ha b hb => wireFn2_inj_logical a (Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s' ha))
+      b (Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s' hb))) s
+
+def DirectArithValid96 (bs : BasisState) : Prop :=
+  ∃ (X Y : ECDSAAdd.Fp), (X ≠ 0 ∧ SkywalkFast485 X.val) ∧
+    ECDSAAdd.regValue (List.range' 263 256) bs = X.val ∧
+    ECDSAAdd.regValue (List.range' 580 256) bs = Y.val ∧
+    CleanOutsideXYBank bs
+
+theorem compiledDirectArith96_catLitSim {n : Nat} (multiply : Bool) (s : Nat)
+    (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    CatLitSim 14833 ((compiledDirectArith96 (n := n) multiply s).prog.instantiate read h)
+      (arithSTrunc96 streamLayout multiply) DirectArithValid96 := by
+  have hker_sites : ECDSAAdd.wires (kernelSTrunc96 (!multiply)) ⊆ logicalNo2400 := fun q hq =>
+    Finset.mem_erase.mpr ⟨fun e => (selKernelTrunc96_sel (!multiply)).away (by subst e; exact hq), arithSTrunc96_sites multiply hq⟩
+  have h718_mem : base 718 ∈ logicalNo2400 := by
+    rw [logicalNo2400, Finset.mem_erase]
+    exact ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨718, by decide, rfl⟩)⟩
+  have hrestr : ∀ (s'' : Nat) (r'' : ConstantBit n → Bool) (h'' : Fin s'' → Bool),
+      CatLitSim (base 718) ((compiledKernelS96 (n := n) (!multiply) s'').prog.instantiate r'' h'') (kernelSTrunc96 (!multiply))
+        (fun bs => ∃ bs', KernelInput96 bs' ∧ ∀ w ∈ logicalNo2400, bs w = bs' w) := fun s'' r'' h'' =>
+    catLitSim_restrict_S logicalNo2400 (base 718) _ (kernelSTrunc96 (!multiply)) KernelInput96
+      (fun w hw => Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s'' hw))
+      hker_sites h718_mem r'' h'' (compiledKernelS96_catLitSim (!multiply) s'' r'' h'')
+  have hmap := CatFn.map_catLitSim (wireFn2 streamLayout) (base 718) logicalNo2400
+    (compiledKernelS96 (n := n) (!multiply)) (kernelSTrunc96 (!multiply)) _
+    (fun s'' w hw => Finset.mem_toList.mp (compiledKernelS96_wires (!multiply) s'' hw))
+    hker_sites h718_mem wireFn2_inj_logical hrestr s read h
+  rw [wireFn2_base718] at hmap
+  rw [compiledDirectArith96]
+  have harith_eq : ECDSAAdd.renameProgram (wireFn2 streamLayout) (kernelSTrunc96 (!multiply)) = arithSTrunc96 streamLayout multiply := by
+    rw [arithSTrunc96]
+  rw [harith_eq] at hmap
+  refine catLitSim_weaken hmap ?_
+  rintro bs ⟨X, Y, ⟨hX0, hfast⟩, hx, hy, hcl⟩ bs0 hag
+  let bs' : BasisState := fun w => if w ∈ logicalNo2400 then bs (wireFn2 streamLayout w) else false
+  refine ⟨bs', ?_, fun w hw => by simp only [bs', if_pos hw]; exact hag w hw⟩
+  have hpl := placement2 streamLayout streamLayout_widths streamLayout_nodup
+  have hdx_sub : ∀ q ∈ wireBlock base 770 256, q ∈ logicalNo2400 := fun q hq => by
+    obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hq; simp only [List.mem_range'_1] at hi
+    rw [logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨i, ?_, rfl⟩)⟩
+    exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _ (List.mem_range'_1.mpr ⟨hi.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))))
+  have hdy_sub : ∀ q ∈ wireBlock base 2056 256, q ∈ logicalNo2400 := fun q hq => by
+    obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hq; simp only [List.mem_range'_1] at hi
+    rw [logicalNo2400, Finset.mem_erase]
+    refine ⟨fun e => by have := MappedCompressed.base_injective e; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), List.mem_toFinset.mpr (List.mem_map.mpr ⟨i, ?_, rfl⟩)⟩
+    exact List.mem_append_left _ (List.mem_append_right _ (List.mem_range'_1.mpr ⟨hi.1, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩))
+  have h2409_n : base 2409 ∉ logicalNo2400 := fun hm =>
+    (OB5Support.logical_nosel _ (Finset.mem_erase.mp hm).2).1 rfl
+  have h2410_n : base 2410 ∉ logicalNo2400 := fun hm =>
+    (OB5Support.logical_nosel _ (Finset.mem_erase.mp hm).2).2 rfl
+  have hpool0 : ∀ w ∈ streamLayout.dialogPool, bs w = false :=
+    (ECDSAAdd.Arithmetic.regValue_zero _ _).mp (cleanOutside_dialogPool bs hcl)
+  refine ⟨X.val, Y, Nat.pos_of_ne_zero (fun h0 => hX0 ((ZMod.val_eq_zero X).mp h0)), X.val_lt, hfast, ⟨?_, ?_, ?_⟩,
+    by simp only [bs', if_neg h2409_n], by simp only [bs', if_neg h2410_n]⟩
+  · change ECDSAAdd.regValue (wireBlock base 770 256) bs' = X.val
+    rw [selRegMap (wireFn2 streamLayout) _ bs' bs (fun q hq => by simp only [bs', if_pos (hdx_sub q hq)]),
+      hpl.divisorMap, streamLayout_point_x_eq, hx]
+  · change ECDSAAdd.regValue (wireBlock base 2056 256) bs' = Y.val
+    rw [selRegMap (wireFn2 streamLayout) _ bs' bs (fun q hq => by simp only [bs', if_pos (hdy_sub q hq)]),
+      hpl.numeratorMap, streamLayout_point_y_eq, hy]
+  · intro q hq hdx hdy
+    by_cases hmem : q ∈ logicalNo2400
+    · simp only [bs', if_pos hmem]
+      exact hpool0 _ (hpl.sharedWork q hq (ArithmeticOB5.logical_sub_old (Finset.mem_erase.mp hmem).2) hdx hdy)
+    · simp only [bs', if_neg hmem]
+
+private theorem compiledDirectArith_ket_sim {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ∃ cs : List ℂ, List.Forall₂
+      (fun b k => ∀ (t : BasisState), DirectArithValid t →
+        ∃ t' : BasisState,
+          (∀ (X Y : ECDSAAdd.Fp), X ≠ 0 →
+            ECDSAAdd.regValue (List.range' 263 256) t = X.val →
+            ECDSAAdd.regValue (List.range' 580 256) t = Y.val →
+            CleanOutsideXYBank t →
+            ECDSAAdd.regValue (List.range' 580 256) t' = (if mul then Y * X else Y / X).val ∧
+            (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
+          b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
+      ((compiledDirectArith (n := n) mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  refine catLitSim_to_ket_aux (arithS streamLayout mul) ((compiledDirectArith mul s).prog.instantiate read h)
+    DirectArithValid DirectArithValid _ (compiledDirectArith_catLitSim mul s read h) (fun _ h => h) ?_
+  rintro bs m ⟨X₀, Y₀, hX₀, hx₀, hy₀, hcl₀⟩
+  have hpos₀ : 0 < X₀.val := Nat.pos_of_ne_zero (fun h0 => hX₀ ((ZMod.val_eq_zero X₀).mp h0))
+  have har₀ := arithS_correct streamLayout streamLayout_widths streamLayout_nodup mul X₀.val Y₀.val
+    X₀.val_lt hpos₀ Y₀.val_lt ⟨false, bs⟩ m
+    (by rw [streamLayout_point_x_eq]; exact hx₀)
+    (by rw [streamLayout_point_y_eq]; exact hy₀)
+    (cleanOutside_dialogPool bs hcl₀)
+  refine ⟨har₀.1, fun X Y hX0 hx hy hcl => ?_⟩
+  have hpos : 0 < X.val := Nat.pos_of_ne_zero (fun h0 => hX0 ((ZMod.val_eq_zero X).mp h0))
+  have har := arithS_correct streamLayout streamLayout_widths streamLayout_nodup mul X.val Y.val
+    X.val_lt hpos Y.val_lt ⟨false, bs⟩ m
+    (by rw [streamLayout_point_x_eq]; exact hx)
+    (by rw [streamLayout_point_y_eq]; exact hy)
+    (cleanOutside_dialogPool bs hcl)
+  have hy1 := har.2.1
+  simp only [streamLayout_point_y_eq, ZMod.natCast_zmod_val] at hy1
+  exact ⟨by cases mul <;> simpa only [↓reduceIte] using hy1,
+    fun w hw => har.2.2 w (by rw [streamLayout_point_y_eq, List.mem_range'_1]; exact hw)⟩
+
+private theorem compiledDirectArith96_ket_sim {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
+    ∃ cs : List ℂ, List.Forall₂
+      (fun b k => ∀ (t : BasisState), DirectArithValid96 t →
+        ∃ t' : BasisState,
+          (∀ (X Y : ECDSAAdd.Fp), (X ≠ 0 ∧ SkywalkFast485 X.val) →
+            ECDSAAdd.regValue (List.range' 263 256) t = X.val →
+            ECDSAAdd.regValue (List.range' 580 256) t = Y.val →
+            CleanOutsideXYBank t →
+            ECDSAAdd.regValue (List.range' 580 256) t' = (if mul then Y * X else Y / X).val ∧
+            (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
+          b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
+      ((compiledDirectArith96 (n := n) mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+  refine catLitSim_to_ket_aux (arithSTrunc96 streamLayout mul) ((compiledDirectArith96 mul s).prog.instantiate read h)
+    DirectArithValid96 DirectArithValid96 _ (compiledDirectArith96_catLitSim mul s read h) (fun _ h => h) ?_
+  rintro bs m ⟨X₀, Y₀, ⟨hX₀, hfast₀⟩, hx₀, hy₀, hcl₀⟩
+  have hpos₀ : 0 < X₀.val := Nat.pos_of_ne_zero (fun h0 => hX₀ ((ZMod.val_eq_zero X₀).mp h0))
+  have har₀ := arithSTrunc96_correct streamLayout streamLayout_widths streamLayout_nodup mul X₀.val Y₀.val
+    X₀.val_lt hpos₀ Y₀.val_lt hfast₀ ⟨false, bs⟩ m
+    (by rw [streamLayout_point_x_eq]; exact hx₀)
+    (by rw [streamLayout_point_y_eq]; exact hy₀)
+    (cleanOutside_dialogPool bs hcl₀)
+  refine ⟨har₀.1, fun X Y ⟨hX0, hfast⟩ hx hy hcl => ?_⟩
+  have hpos : 0 < X.val := Nat.pos_of_ne_zero (fun h0 => hX0 ((ZMod.val_eq_zero X).mp h0))
+  have har := arithSTrunc96_correct streamLayout streamLayout_widths streamLayout_nodup mul X.val Y.val
+    X.val_lt hpos Y.val_lt hfast ⟨false, bs⟩ m
+    (by rw [streamLayout_point_x_eq]; exact hx)
+    (by rw [streamLayout_point_y_eq]; exact hy)
+    (cleanOutside_dialogPool bs hcl)
+  have hy1 := har.2.1
+  simp only [streamLayout_point_y_eq, ZMod.natCast_zmod_val] at hy1
+  exact ⟨by cases mul <;> simpa only [↓reduceIte] using hy1,
+    fun w hw => har.2.2 w (by rw [streamLayout_point_y_eq, List.mem_range'_1]; exact hw)⟩
+
+/-- Polymorphic arithmetic kernel spec shared by full (`n = 101 + end`) and truncated (`n = 96`) body windows. -/
+structure ArithSpec where
+  prog : ∀ {n : Nat}, Bool → CatFn n
+  GoodX : ECDSAAdd.Fp → Prop
+  good_ne_zero : ∀ X, GoodX X → X ≠ 0
+  finDiv : Nat
+  finMul : Nat
+  tofDiv : Nat
+  tofMul : Nat
+  removed18 : ∀ {n : Nat} (mul : Bool) (s : Nat), removed 18 (prog (n := n) mul s).prog = 0
+  shiftFin : ∀ {n : Nat} (mul : Bool), ShiftFin (prog (n := n) mul) (if mul then finMul else finDiv)
+  tCount : ∀ {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool),
+    ((prog (n := n) mul s).prog.instantiate read h).tCount ≤ 4 * (if mul then tofMul else tofDiv)
+  slots : ∀ {n : Nat} (mul : Bool) (s : Nat), (prog (n := n) mul s).prog.gateSlots ≤ 1000000000
+  wires : ∀ {n : Nat} (mul : Bool) (s : Nat), ChallengeMigration.straightWires (prog (n := n) mul s).prog ⊆ support1612
+  wellFormed : ∀ {n : Nat} (mul : Bool) (s : Nat), (prog (n := n) mul s).prog.WellFormed
+  ket_sim : ∀ {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool),
+    ∃ cs : List ℂ, List.Forall₂
+      (fun b k => ∀ (t : BasisState),
+        (∃ (X Y : ECDSAAdd.Fp), GoodX X ∧
+          ECDSAAdd.regValue (List.range' 263 256) t = X.val ∧
+          ECDSAAdd.regValue (List.range' 580 256) t = Y.val ∧
+          CleanOutsideXYBank t) →
+        ∃ t' : BasisState,
+          (∀ (X Y : ECDSAAdd.Fp), GoodX X →
+            ECDSAAdd.regValue (List.range' 263 256) t = X.val →
+            ECDSAAdd.regValue (List.range' 580 256) t = Y.val →
+            CleanOutsideXYBank t →
+            ECDSAAdd.regValue (List.range' 580 256) t' = (if mul then Y * X else Y / X).val ∧
+            (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
+          b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
+      ((prog (n := n) mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1
+
+def arithSpecFull : ArithSpec where
+  prog := fun mul => compiledDirectArith mul
+  GoodX := fun X => X ≠ 0
+  good_ne_zero := fun _ h => h
+  finDiv := 1768845
+  finMul := 1769354
+  tofDiv := 1047824
+  tofMul := 1048077
+  removed18 := fun mul s => compiledDirectArith_removed18 mul s
+  shiftFin := fun mul => compiledDirectArith_shiftFin mul
+  tCount := fun mul s read h => compiledDirectArith_tCount mul s read h
+  slots := fun mul s => compiledDirectArith_slots mul s
+  wires := fun mul s => compiledDirectArith_wires mul s
+  wellFormed := fun mul s => compiledDirectArith_wellFormed mul s
+  ket_sim := fun mul s read h => compiledDirectArith_ket_sim mul s read h
+
+def arithSpecTrunc96 : ArithSpec where
+  prog := fun mul => compiledDirectArith96 mul
+  GoodX := fun X => X ≠ 0 ∧ SkywalkFast485 X.val
+  good_ne_zero := fun _ h => h.1
+  finDiv := 1709452
+  finMul := 1709707
+  tofDiv := 1015058
+  tofMul := 1015057
+  removed18 := fun mul s => compiledDirectArith96_removed18 mul s
+  shiftFin := fun mul => compiledDirectArith96_shiftFin mul
+  tCount := fun mul s read h => compiledDirectArith96_tCount mul s read h
+  slots := fun mul s => compiledDirectArith96_slots mul s
+  wires := fun mul s => compiledDirectArith96_wires mul s
+  wellFormed := fun mul s => compiledDirectArith96_wellFormed mul s
+  ket_sim := fun mul s read h => compiledDirectArith96_ket_sim mul s read h
+
+def GoodPointA (ax : ArithSpec) (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
+  GoodPoint R Δ ∧
+  ∀ (x y cx cy : ECDSAAdd.Fp)
+    (hnsR : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular x y)
+    (hnsC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
+    R = .some hnsR → Δ = .some hnsC →
+    ax.GoodX (x - cx) ∧ ax.GoodX (cx - genericX x y cx cy)
+
+def GoodPoint96 (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
+  GoodPointA arithSpecTrunc96 R Δ
+
+def GoodWA (ax : ArithSpec) (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (bs : BasisState) : Prop :=
+  CleanOutsideXYBank bs ∧
+  ∃ R : ShorECDLP.Secp256k1.Point, HasFinitePoint R bs ∧ GoodPointA ax R (signedDeltaW k coeffs Q bs)
+
+def GoodW96 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (bs : BasisState) : Prop :=
+  GoodWA arithSpecTrunc96 k coeffs Q bs
+
+private theorem genericX_neg (x y cx cy : ECDSAAdd.Fp) :
+    ECDSAAdd.Secp256k1.genericX x (-y) cx (-cy) = ECDSAAdd.Secp256k1.genericX x y cx cy := by
+  unfold ECDSAAdd.Secp256k1.genericX ECDSAAdd.Secp256k1.genericSlope
+    ECDSAAdd.Secp256k1.genericNumerator ECDSAAdd.Secp256k1.genericDenominator
+  dsimp only; ring
+
+theorem goodPointA_neg {ax : ArithSpec} {R Δ : ShorECDLP.Secp256k1.Point}
+    (hg : GoodPointA ax R Δ) : GoodPointA ax (-R) (-Δ) := by
+  refine ⟨goodPoint_neg_iff.mpr hg.1, ?_⟩
+  intro x' y' cx' cy' hnsR' hnsC' hR' hC'
+  cases R with
+  | zero =>
+    change -(0 : ShorECDLP.Secp256k1.Point) = _ at hR'
+    rw [neg_zero] at hR'; cases hR'
+  | @some x y hnsR =>
+    cases Δ with
+    | zero =>
+      change -(0 : ShorECDLP.Secp256k1.Point) = _ at hC'
+      rw [neg_zero] at hC'; cases hC'
+    | @some cx cy hnsC =>
+      have hneR : -(WeierstrassCurve.Affine.Point.some hnsR : ShorECDLP.Secp256k1.Point) =
+          .some ((ECDSAAdd.Secp256k1.curve.toAffine.nonsingular_neg x y).mpr hnsR) :=
+        WeierstrassCurve.Affine.Point.neg_some hnsR
+      have hneC : -(WeierstrassCurve.Affine.Point.some hnsC : ShorECDLP.Secp256k1.Point) =
+          .some ((ECDSAAdd.Secp256k1.curve.toAffine.nonsingular_neg cx cy).mpr hnsC) :=
+        WeierstrassCurve.Affine.Point.neg_some hnsC
+      rw [hneR] at hR'; rw [hneC] at hC'
+      have hnyR : ECDSAAdd.Secp256k1.curve.toAffine.negY x y = -y := by
+        simp [WeierstrassCurve.Affine.negY, ECDSAAdd.Secp256k1.curve]
+      have hnyC : ECDSAAdd.Secp256k1.curve.toAffine.negY cx cy = -cy := by
+        simp [WeierstrassCurve.Affine.negY, ECDSAAdd.Secp256k1.curve]
+      injection hR' with hx' hy'
+      injection hC' with hcx' hcy'
+      rw [hnyR] at hy'; rw [hnyC] at hcy'
+      subst hx'; subst hy'; subst hcx'; subst hcy'
+      have horig := hg.2 x y cx cy hnsR hnsC rfl rfl
+      rw [genericX_neg]
+      exact horig
+
+theorem goodPointA_neg_iff {ax : ArithSpec} {R Δ : ShorECDLP.Secp256k1.Point} :
+    GoodPointA ax (-R) (-Δ) ↔ GoodPointA ax R Δ :=
+  ⟨fun h => by simpa only [neg_neg] using goodPointA_neg h, goodPointA_neg⟩
+
+theorem goodWA_relabel {ax : ArithSpec} {k : Nat} (hk : k ≤ 18) (coeffs : Fin (2 ^ k) → PointCoeff)
+    (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) (h : GoodWA ax k coeffs Q bs) :
+    GoodWA ax k coeffs Q (relabelBasis compact1612 bs) := by
+  obtain ⟨hcl, R, hR, hg⟩ := h
+  refine ⟨cleanOutside_relabel bs hcl, R, hasFinitePoint_relabel hR, ?_⟩
+  rwa [signedDeltaW_relabel hk]
+
+theorem goodWA_to_goodW {ax : ArithSpec} {k : Nat} {coeffs : Fin (2 ^ k) → PointCoeff}
+    {Q : ShorECDLP.Secp256k1.Point} {bs : BasisState} (h : GoodWA ax k coeffs Q bs) :
+    GoodW k coeffs Q bs :=
+  ⟨h.1, let ⟨R, hR, hg⟩ := h.2; ⟨R, hR, hg.1⟩⟩
+
+theorem goodW_to_goodWA_full {k : Nat} {coeffs : Fin (2 ^ k) → PointCoeff}
+    {Q : ShorECDLP.Secp256k1.Point} {bs : BasisState} (h : GoodW k coeffs Q bs) :
+    GoodWA arithSpecFull k coeffs Q bs := by
+  obtain ⟨hcl, R, hR, hg⟩ := h
+  refine ⟨hcl, R, hR, hg, fun x y cx cy hnsR hnsC hReq hCeq => ?_⟩
+  subst hReq; rw [hCeq] at hg
+  have hden := dialog_denominators_ne_zero hnsR hnsC hg.2.1 hg.2.2.1
+    (by simpa only [dialogExceptionPoint] using hg.2.2.2)
+  exact ⟨sub_ne_zero.mpr hden.1, hden.2⟩
 
 /-! #### 5. Direct square (`compiledSquare`, `52,276` Toffolis, `106,716` records) -/
 
@@ -17159,26 +19282,26 @@ def gStep16W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatPro
 def gStep15W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep16W fx) g1_1 s rs
 def gStep14W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (wrapSS ((ss1RecW k).loadProg 0)) (gStep15W fx) s rs
 def gStep13W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledNegX (gStep14W fx) s rs
-def gStep12W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (compiledDirectArith true) (gStep13W fx) s rs
-def gStep11W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep12W fx) cxWord s rs
-def gStep10W {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep11W fx) s rs
-def gStep9W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep10W fx) g4 s rs
-def gStep8W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (wrapSS ((ss2TripleW k).loadProg 0)) (gStep9W fx) s rs
-def gStep7W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledSquare (gStep8W fx) s rs
-def gStep6W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (compiledDirectArith false) (gStep7W fx) s rs
-def gStep5W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep6W fx) cxCy s rs
-def gStep4W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledYAdd (gStep5W fx) s rs
-def gStep3W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep4W fx) s rs
-def gStep2W  {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep3W fx) g1_1 s rs
-def compiledGenericCoreW {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s :=
-  stepCatFn (wrapSS ((ss1NegW k).loadProg 0)) (gStep2W fx) s rs
+def gStep12W {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (ax.prog true) (gStep13W fx) s rs
+def gStep11W {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep12W ax fx) cxWord s rs
+def gStep10W {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep11W ax fx) s rs
+def gStep9W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep10W ax fx) g4 s rs
+def gStep8W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (wrapSS ((ss2TripleW k).loadProg 0)) (gStep9W ax fx) s rs
+def gStep7W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledSquare (gStep8W ax fx) s rs
+def gStep6W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn (ax.prog false) (gStep7W ax fx) s rs
+def gStep5W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep6W ax fx) cxCy s rs
+def gStep4W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledYAdd (gStep5W ax fx) s rs
+def gStep3W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := stepCatFn compiledXAdd (gStep4W ax fx) s rs
+def gStep2W  {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s := CatProg.measureThen (gStep3W ax fx) g1_1 s rs
+def compiledGenericCoreW {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) : CatProg (2 ^ k) s :=
+  stepCatFn (wrapSS ((ss1NegW k).loadProg 0)) (gStep2W ax fx) s rs
 
 attribute [local irreducible] gStep18W gStep17W gStep16W gStep15W gStep14W gStep13W gStep12W gStep11W
   gStep10W gStep9W gStep8W gStep7W gStep6W gStep5W gStep4W gStep3W gStep2W compiledGenericCoreW
 
-theorem compiledGenericCoreW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) :
-    ShiftFin (fun s => compiledGenericCoreW fx s List.nil)
-      (3658723 + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin) := by
+theorem compiledGenericCoreW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) :
+    ShiftFin (fun s => compiledGenericCoreW ax fx s List.nil)
+      (120524 + ax.finMul + ax.finDiv + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin) := by
   let b1 := 2 * (2 ^ (k - 1) - 1) + 512
   let b2 := 2 * (2 ^ (k - 2) - 1) + 768
   have h18 : ∃ D, (∀ c rs, (gStep18W fx c rs).finish = c + D) ∧ D ≤ 512 + fx.fin := by
@@ -17199,67 +19322,67 @@ theorem compiledGenericCoreW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k �
   have h13 : ∃ D, (∀ c rs, (gStep13W fx c rs).finish = c + D) ∧ D ≤ 5622 + b1 + fx.fin := by
     obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledNegX (gStep14W fx) 506 _ compiledNegX_shiftFin h14
     exact ⟨D, fun c rs => by rw [gStep13W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h12 : ∃ D, (∀ c rs, (gStep12W fx c rs).finish = c + D) ∧ D ≤ 1774976 + b1 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (compiledDirectArith true) (gStep13W fx) 1769354 _ (compiledDirectArith_shiftFin true) h13
+  have h12 : ∃ D, (∀ c rs, (gStep12W ax fx c rs).finish = c + D) ∧ D ≤ 5622 + ax.finMul + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (ax.prog true) (gStep13W fx) ax.finMul _ (ax.shiftFin true) h13
     exact ⟨D, fun c rs => by rw [gStep12W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h11 : ∃ D, (∀ c rs, (gStep11W fx c rs).finish = c + D) ∧ D ≤ 1775232 + b1 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep12W fx) cxWord _ h12
+  have h11 : ∃ D, (∀ c rs, (gStep11W ax fx c rs).finish = c + D) ∧ D ≤ 5878 + ax.finMul + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep12W ax fx) cxWord _ h12
     exact ⟨D, fun c rs => by rw [gStep11W]; exact h1 c rs, by rw [cxWord_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h10 : ∃ D, (∀ c rs, (gStep10W fx c rs).finish = c + D) ∧ D ≤ 1777278 + b1 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep11W fx) 2046 _ compiledXAdd_shiftFin h11
+  have h10 : ∃ D, (∀ c rs, (gStep10W ax fx c rs).finish = c + D) ∧ D ≤ 7924 + ax.finMul + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep11W ax fx) 2046 _ compiledXAdd_shiftFin h11
     exact ⟨D, fun c rs => by rw [gStep10W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h9  : ∃ D, (∀ c rs, (gStep9W fx c rs).finish = c + D) ∧ D ≤ 1778046 + b1 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep10W fx) g4 _ h10
+  have h9  : ∃ D, (∀ c rs, (gStep9W ax fx c rs).finish = c + D) ∧ D ≤ 8692 + ax.finMul + b1 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep10W ax fx) g4 _ h10
     exact ⟨D, fun c rs => by rw [gStep9W]; exact h1 c rs, by rw [g4_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h8  : ∃ D, (∀ c rs, (gStep8W fx c rs).finish = c + D) ∧ D ≤ 1778046 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (wrapSS ((ss2TripleW k).loadProg 0)) (gStep9W fx) b2 _ (ss2TripleW_shiftFin hk_lo hk_hi) h9
+  have h8  : ∃ D, (∀ c rs, (gStep8W ax fx c rs).finish = c + D) ∧ D ≤ 8692 + ax.finMul + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (wrapSS ((ss2TripleW k).loadProg 0)) (gStep9W ax fx) b2 _ (ss2TripleW_shiftFin hk_lo hk_hi) h9
     exact ⟨D, fun c rs => by rw [gStep8W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h7  : ∃ D, (∀ c rs, (gStep7W fx c rs).finish = c + D) ∧ D ≤ 1884762 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledSquare (gStep8W fx) 106716 _ compiledSquare_shiftFin h8
+  have h7  : ∃ D, (∀ c rs, (gStep7W ax fx c rs).finish = c + D) ∧ D ≤ 115408 + ax.finMul + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledSquare (gStep8W ax fx) 106716 _ compiledSquare_shiftFin h8
     exact ⟨D, fun c rs => by rw [gStep7W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h6  : ∃ D, (∀ c rs, (gStep6W fx c rs).finish = c + D) ∧ D ≤ 3653607 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (compiledDirectArith false) (gStep7W fx) 1768845 _ (compiledDirectArith_shiftFin false) h7
+  have h6  : ∃ D, (∀ c rs, (gStep6W ax fx c rs).finish = c + D) ∧ D ≤ 115408 + ax.finMul + ax.finDiv + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin (ax.prog false) (gStep7W ax fx) ax.finDiv _ (ax.shiftFin false) h7
     exact ⟨D, fun c rs => by rw [gStep6W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h5  : ∃ D, (∀ c rs, (gStep5W fx c rs).finish = c + D) ∧ D ≤ 3654119 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep6W fx) cxCy _ h6
+  have h5  : ∃ D, (∀ c rs, (gStep5W ax fx c rs).finish = c + D) ∧ D ≤ 115920 + ax.finMul + ax.finDiv + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep6W ax fx) cxCy _ h6
     exact ⟨D, fun c rs => by rw [gStep5W]; exact h1 c rs, by rw [cxCy_len] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h4  : ∃ D, (∀ c rs, (gStep4W fx c rs).finish = c + D) ∧ D ≤ 3656165 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledYAdd (gStep5W fx) 2046 _ compiledYAdd_shiftFin h5
+  have h4  : ∃ D, (∀ c rs, (gStep4W ax fx c rs).finish = c + D) ∧ D ≤ 117966 + ax.finMul + ax.finDiv + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledYAdd (gStep5W ax fx) 2046 _ compiledYAdd_shiftFin h5
     exact ⟨D, fun c rs => by rw [gStep4W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h3  : ∃ D, (∀ c rs, (gStep3W fx c rs).finish = c + D) ∧ D ≤ 3658211 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep4W fx) 2046 _ compiledXAdd_shiftFin h4
+  have h3  : ∃ D, (∀ c rs, (gStep3W ax fx c rs).finish = c + D) ∧ D ≤ 120012 + ax.finMul + ax.finDiv + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := stepCatFn_shiftFin compiledXAdd (gStep4W ax fx) 2046 _ compiledXAdd_shiftFin h4
     exact ⟨D, fun c rs => by rw [gStep3W]; exact h1 c rs, by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  have h2  : ∃ D, (∀ c rs, (gStep2W fx c rs).finish = c + D) ∧ D ≤ 3658723 + b1 + b2 + fx.fin := by
-    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep3W fx) g1_1 _ h3
+  have h2  : ∃ D, (∀ c rs, (gStep2W ax fx c rs).finish = c + D) ∧ D ≤ 120524 + ax.finMul + ax.finDiv + b1 + b2 + fx.fin := by
+    obtain ⟨D, h1, h2⟩ := measureThen_shiftFin (gStep3W ax fx) g1_1 _ h3
     exact ⟨D, fun c rs => by rw [gStep2W]; exact h1 c rs, by rw [g1_1_length] at h2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
-  obtain ⟨D, hD1, hD2⟩ := stepCatFn_shiftFin (wrapSS ((ss1NegW k).loadProg 0)) (gStep2W fx) b1 _ (ss1NegW_shiftFin hk_lo hk_hi) h2
+  obtain ⟨D, hD1, hD2⟩ := stepCatFn_shiftFin (wrapSS ((ss1NegW k).loadProg 0)) (gStep2W ax fx) b1 _ (ss1NegW_shiftFin hk_lo hk_hi) h2
   exact ShiftFin.of_exact (fun s => by rw [compiledGenericCoreW]; exact hD1 s List.nil) (by dsimp only [b1, b2] at hD2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledGenericCoreW_removed18 {k : Nat} (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) :
-    removed 18 (compiledGenericCoreW fx s rs).prog = 0 := by
+theorem compiledGenericCoreW_removed18 {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) :
+    removed 18 (compiledGenericCoreW ax fx s rs).prog = 0 := by
   have h18 (c : Nat) (r : List (Fin c)) : removed 18 (gStep18W fx c r).prog = 0 := by rw [gStep18W]; exact CatProg.measureThen_removed18 _ fx.removed18 _ c r
   have h17 (c : Nat) (r : List (Fin c)) : removed 18 (gStep17W fx c r).prog = 0 := by rw [gStep17W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h18 c r
   have h16 (c : Nat) (r : List (Fin c)) : removed 18 (gStep16W fx c r).prog = 0 := by rw [gStep16W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h17 c r
   have h15 (c : Nat) (r : List (Fin c)) : removed 18 (gStep15W fx c r).prog = 0 := by rw [gStep15W]; exact CatProg.measureThen_removed18 _ h16 _ c r
   have h14 (c : Nat) (r : List (Fin c)) : removed 18 (gStep14W fx c r).prog = 0 := by rw [gStep14W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1RecW k).loadProg_residue 0)) h15 c r
   have h13 (c : Nat) (r : List (Fin c)) : removed 18 (gStep13W fx c r).prog = 0 := by rw [gStep13W]; exact stepCatFn_removed18 _ _ compiledNegX_removed18 h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : removed 18 (gStep12W fx c r).prog = 0 := by rw [gStep12W]; exact stepCatFn_removed18 _ _ (compiledDirectArith_removed18 true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : removed 18 (gStep11W fx c r).prog = 0 := by rw [gStep11W]; exact CatProg.measureThen_removed18 _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : removed 18 (gStep10W fx c r).prog = 0 := by rw [gStep10W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : removed 18 (gStep9W fx c r).prog = 0  := by rw [gStep9W]; exact CatProg.measureThen_removed18 _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : removed 18 (gStep8W fx c r).prog = 0  := by rw [gStep8W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss2TripleW k).loadProg_residue 0)) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : removed 18 (gStep7W fx c r).prog = 0  := by rw [gStep7W]; exact stepCatFn_removed18 _ _ compiledSquare_removed18 h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : removed 18 (gStep6W fx c r).prog = 0  := by rw [gStep6W]; exact stepCatFn_removed18 _ _ (compiledDirectArith_removed18 false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : removed 18 (gStep5W fx c r).prog = 0  := by rw [gStep5W]; exact CatProg.measureThen_removed18 _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : removed 18 (gStep4W fx c r).prog = 0  := by rw [gStep4W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : removed 18 (gStep3W fx c r).prog = 0  := by rw [gStep3W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : removed 18 (gStep2W fx c r).prog = 0  := by rw [gStep2W]; exact CatProg.measureThen_removed18 _ h3 _ c r
+  have h12 (c : Nat) (r : List (Fin c)) : removed 18 (gStep12W ax fx c r).prog = 0 := by rw [gStep12W]; exact stepCatFn_removed18 _ _ (ax.removed18 true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : removed 18 (gStep11W ax fx c r).prog = 0 := by rw [gStep11W]; exact CatProg.measureThen_removed18 _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : removed 18 (gStep10W ax fx c r).prog = 0 := by rw [gStep10W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : removed 18 (gStep9W ax fx c r).prog = 0  := by rw [gStep9W]; exact CatProg.measureThen_removed18 _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : removed 18 (gStep8W ax fx c r).prog = 0  := by rw [gStep8W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss2TripleW k).loadProg_residue 0)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : removed 18 (gStep7W ax fx c r).prog = 0  := by rw [gStep7W]; exact stepCatFn_removed18 _ _ compiledSquare_removed18 h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : removed 18 (gStep6W ax fx c r).prog = 0  := by rw [gStep6W]; exact stepCatFn_removed18 _ _ (ax.removed18 false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : removed 18 (gStep5W ax fx c r).prog = 0  := by rw [gStep5W]; exact CatProg.measureThen_removed18 _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : removed 18 (gStep4W ax fx c r).prog = 0  := by rw [gStep4W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : removed 18 (gStep3W ax fx c r).prog = 0  := by rw [gStep3W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : removed 18 (gStep2W ax fx c r).prog = 0  := by rw [gStep2W]; exact CatProg.measureThen_removed18 _ h3 _ c r
   rw [compiledGenericCoreW]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1NegW k).loadProg_residue 0)) h2 s rs
 
-theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (s : Nat) (rs : List (Fin s)) (read : ConstantBit (2 ^ k) → Bool) (h : Fin s → Bool) :
-    ((compiledGenericCoreW fx s rs).prog.instantiate read h).tCount ≤
-      4 * (2153543 + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
+    ((compiledGenericCoreW ax fx s rs).prog.instantiate read h).tCount ≤
+      4 * (57642 + ax.tofMul + ax.tofDiv + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
   let t1 := 2 ^ (k - 1) - 1 + 512
   let t2 := 2 ^ (k - 2) - 1 + 768
   have h18 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep18W fx c r).prog.instantiate read hh).tCount ≤ 4 * fx.tof := by
@@ -17274,57 +19397,57 @@ theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 
     rw [gStep14W]; exact (stepCatFn_tCount_le _ (gStep15W fx) (4 * t1) _ read (fun s' h' => wrapSS_tCount _ t1 ((ss1RecW k).loadProg_residue 0) (ss1RecW_tcount hk_lo hk_hi) s' read h') h15 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
   have h13 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep13W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2297 + t1 + fx.tof) := by
     rw [gStep13W]; exact (stepCatFn_tCount_le _ (gStep14W fx) (4 * 251) _ read (fun s' h' => compiledNegX_tCount s' read h') h14 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h12 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep12W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1050374 + t1 + fx.tof) := by
-    rw [gStep12W]; exact (stepCatFn_tCount_le _ (gStep13W fx) (4 * 1048077) _ read (fun s' h' => compiledDirectArith_tCount true s' read h') h13 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h11 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep11W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1050374 + t1 + fx.tof) := by
+  have h12 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep12W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (2297 + ax.tofMul + t1 + fx.tof) := by
+    rw [gStep12W]; exact (stepCatFn_tCount_le _ (gStep13W fx) (4 * ax.tofMul) _ read (fun s' h' => ax.tCount true s' read h') h13 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h11 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep11W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (2297 + ax.tofMul + t1 + fx.tof) := by
     rw [gStep11W]; exact CatProg.measureThen_tCount_le _ _ read h12 _ c r hh
-  have h10 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep10W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1051397 + t1 + fx.tof) := by
-    rw [gStep10W]; exact (stepCatFn_tCount_le _ (gStep11W fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h11 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h9  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep9W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1051397 + t1 + fx.tof) := by
+  have h10 (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep10W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (3320 + ax.tofMul + t1 + fx.tof) := by
+    rw [gStep10W]; exact (stepCatFn_tCount_le _ (gStep11W ax fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h11 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h9  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep9W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (3320 + ax.tofMul + t1 + fx.tof) := by
     rw [gStep9W]; exact CatProg.measureThen_tCount_le _ _ read h10 _ c r hh
-  have h8  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep8W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1051397 + t1 + t2 + fx.tof) := by
-    rw [gStep8W]; exact (stepCatFn_tCount_le _ (gStep9W fx) (4 * t2) _ read (fun s' h' => wrapSS_tCount _ t2 ((ss2TripleW k).loadProg_residue 0) (ss2TripleW_tcount hk_lo hk_hi) s' read h') h9 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h7  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep7W fx c r).prog.instantiate read hh).tCount ≤ 4 * (1103673 + t1 + t2 + fx.tof) := by
-    rw [gStep7W]; exact (stepCatFn_tCount_le _ (gStep8W fx) (4 * 52276) _ read (fun s' h' => compiledSquare_tCount s' read h') h8 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h6  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep6W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2151497 + t1 + t2 + fx.tof) := by
-    rw [gStep6W]; exact (stepCatFn_tCount_le _ (gStep7W fx) (4 * 1047824) _ read (fun s' h' => compiledDirectArith_tCount false s' read h') h7 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h5  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep5W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2151497 + t1 + t2 + fx.tof) := by
+  have h8  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep8W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (3320 + ax.tofMul + t1 + t2 + fx.tof) := by
+    rw [gStep8W]; exact (stepCatFn_tCount_le _ (gStep9W ax fx) (4 * t2) _ read (fun s' h' => wrapSS_tCount _ t2 ((ss2TripleW k).loadProg_residue 0) (ss2TripleW_tcount hk_lo hk_hi) s' read h') h9 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h7  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep7W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55596 + ax.tofMul + t1 + t2 + fx.tof) := by
+    rw [gStep7W]; exact (stepCatFn_tCount_le _ (gStep8W ax fx) (4 * 52276) _ read (fun s' h' => compiledSquare_tCount s' read h') h8 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h6  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep6W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55596 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+    rw [gStep6W]; exact (stepCatFn_tCount_le _ (gStep7W ax fx) (4 * ax.tofDiv) _ read (fun s' h' => ax.tCount false s' read h') h7 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h5  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep5W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (55596 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep5W]; exact CatProg.measureThen_tCount_le _ _ read h6 _ c r hh
-  have h4  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep4W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2152520 + t1 + t2 + fx.tof) := by
-    rw [gStep4W]; exact (stepCatFn_tCount_le _ (gStep5W fx) (4 * 1023) _ read (fun s' h' => compiledYAdd_tCount s' read h') h5 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h3  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep3W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2153543 + t1 + t2 + fx.tof) := by
-    rw [gStep3W]; exact (stepCatFn_tCount_le _ (gStep4W fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h4 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h2  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep2W fx c r).prog.instantiate read hh).tCount ≤ 4 * (2153543 + t1 + t2 + fx.tof) := by
+  have h4  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep4W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (56619 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+    rw [gStep4W]; exact (stepCatFn_tCount_le _ (gStep5W ax fx) (4 * 1023) _ read (fun s' h' => compiledYAdd_tCount s' read h') h5 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h3  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep3W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (57642 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
+    rw [gStep3W]; exact (stepCatFn_tCount_le _ (gStep4W ax fx) (4 * 1023) _ read (fun s' h' => compiledXAdd_tCount s' read h') h4 c r hh).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h2  (c : Nat) (r : List (Fin c)) (hh : Fin c → Bool) : ((gStep2W ax fx c r).prog.instantiate read hh).tCount ≤ 4 * (57642 + ax.tofMul + ax.tofDiv + t1 + t2 + fx.tof) := by
     rw [gStep2W]; exact CatProg.measureThen_tCount_le _ _ read h3 _ c r hh
   rw [compiledGenericCoreW]
-  exact (stepCatFn_tCount_le _ (gStep2W fx) (4 * t1) _ read
+  exact (stepCatFn_tCount_le _ (gStep2W ax fx) (4 * t1) _ read
     (fun s' h' => wrapSS_tCount _ t1 ((ss1NegW k).loadProg_residue 0) (ss1NegW_tcount hk_lo hk_hi) s' read h') h2 s rs h).trans (by dsimp only [t1, t2]; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledGenericCoreW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledGenericCoreW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (s : Nat) (rs : List (Fin s)) :
-    (compiledGenericCoreW fx s rs).prog.gateSlots ≤ fx.slots + 5000000000 := by
+    (compiledGenericCoreW ax fx s rs).prog.gateSlots ≤ fx.slots + 5000000000 := by
   have h18 (c : Nat) (r : List (Fin c)) : (gStep18W fx c r).prog.gateSlots ≤ fx.slots := by rw [gStep18W]; exact CatProg.measureThen_slots_le _ _ fx.slots_le _ c r
   have h17 (c : Nat) (r : List (Fin c)) : (gStep17W fx c r).prog.gateSlots ≤ fx.slots + 400000 := by rw [gStep17W]; exact (stepCatFn_slots_le _ (gStep18W fx) _ _ compiledYAdd_slots h18 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
   have h16 (c : Nat) (r : List (Fin c)) : (gStep16W fx c r).prog.gateSlots ≤ fx.slots + 800000 := by rw [gStep16W]; exact (stepCatFn_slots_le _ (gStep17W fx) _ _ compiledXAdd_slots h17 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
   have h15 (c : Nat) (r : List (Fin c)) : (gStep15W fx c r).prog.gateSlots ≤ fx.slots + 800000 := by rw [gStep15W]; exact CatProg.measureThen_slots_le _ _ h16 _ c r
   have h14 (c : Nat) (r : List (Fin c)) : (gStep14W fx c r).prog.gateSlots ≤ fx.slots + 600800000 := by rw [gStep14W]; exact (stepCatFn_slots_le _ (gStep15W fx) _ _ (ss1RecW_slots hk_lo hk_hi) h15 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
   have h13 (c : Nat) (r : List (Fin c)) : (gStep13W fx c r).prog.gateSlots ≤ fx.slots + 600920000 := by rw [gStep13W]; exact (stepCatFn_slots_le _ (gStep14W fx) _ _ compiledNegX_slots h14 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h12 (c : Nat) (r : List (Fin c)) : (gStep12W fx c r).prog.gateSlots ≤ fx.slots + 1600920000 := by rw [gStep12W]; exact (stepCatFn_slots_le _ (gStep13W fx) _ _ (compiledDirectArith_slots true) h13 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h11 (c : Nat) (r : List (Fin c)) : (gStep11W fx c r).prog.gateSlots ≤ fx.slots + 1600920000 := by rw [gStep11W]; exact CatProg.measureThen_slots_le _ _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : (gStep10W fx c r).prog.gateSlots ≤ fx.slots + 1601320000 := by rw [gStep10W]; exact (stepCatFn_slots_le _ (gStep11W fx) _ _ compiledXAdd_slots h11 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h9  (c : Nat) (r : List (Fin c)) : (gStep9W fx c r).prog.gateSlots ≤ fx.slots + 1601320000 := by rw [gStep9W]; exact CatProg.measureThen_slots_le _ _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : (gStep8W fx c r).prog.gateSlots ≤ fx.slots + 1901320000 := by rw [gStep8W]; exact (stepCatFn_slots_le _ (gStep9W fx) _ _ (ss2TripleW_slots hk_lo hk_hi) h9 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h7  (c : Nat) (r : List (Fin c)) : (gStep7W fx c r).prog.gateSlots ≤ fx.slots + 2021320000 := by rw [gStep7W]; exact (stepCatFn_slots_le _ (gStep8W fx) _ _ compiledSquare_slots h8 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h6  (c : Nat) (r : List (Fin c)) : (gStep6W fx c r).prog.gateSlots ≤ fx.slots + 3021320000 := by rw [gStep6W]; exact (stepCatFn_slots_le _ (gStep7W fx) _ _ (compiledDirectArith_slots false) h7 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h5  (c : Nat) (r : List (Fin c)) : (gStep5W fx c r).prog.gateSlots ≤ fx.slots + 3021320000 := by rw [gStep5W]; exact CatProg.measureThen_slots_le _ _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : (gStep4W fx c r).prog.gateSlots ≤ fx.slots + 3021720000 := by rw [gStep4W]; exact (stepCatFn_slots_le _ (gStep5W fx) _ _ compiledYAdd_slots h5 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h3  (c : Nat) (r : List (Fin c)) : (gStep3W fx c r).prog.gateSlots ≤ fx.slots + 3022120000 := by rw [gStep3W]; exact (stepCatFn_slots_le _ (gStep4W fx) _ _ compiledXAdd_slots h4 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
-  have h2  (c : Nat) (r : List (Fin c)) : (gStep2W fx c r).prog.gateSlots ≤ fx.slots + 3022120000 := by rw [gStep2W]; exact CatProg.measureThen_slots_le _ _ h3 _ c r
-  rw [compiledGenericCoreW]; exact (stepCatFn_slots_le _ (gStep2W fx) _ _ (ss1NegW_slots hk_lo hk_hi) h2 s rs).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h12 (c : Nat) (r : List (Fin c)) : (gStep12W ax fx c r).prog.gateSlots ≤ fx.slots + 1600920000 := by rw [gStep12W]; exact (stepCatFn_slots_le _ (gStep13W fx) _ _ (ax.slots true) h13 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h11 (c : Nat) (r : List (Fin c)) : (gStep11W ax fx c r).prog.gateSlots ≤ fx.slots + 1600920000 := by rw [gStep11W]; exact CatProg.measureThen_slots_le _ _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : (gStep10W ax fx c r).prog.gateSlots ≤ fx.slots + 1601320000 := by rw [gStep10W]; exact (stepCatFn_slots_le _ (gStep11W ax fx) _ _ compiledXAdd_slots h11 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h9  (c : Nat) (r : List (Fin c)) : (gStep9W ax fx c r).prog.gateSlots ≤ fx.slots + 1601320000 := by rw [gStep9W]; exact CatProg.measureThen_slots_le _ _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : (gStep8W ax fx c r).prog.gateSlots ≤ fx.slots + 1901320000 := by rw [gStep8W]; exact (stepCatFn_slots_le _ (gStep9W ax fx) _ _ (ss2TripleW_slots hk_lo hk_hi) h9 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h7  (c : Nat) (r : List (Fin c)) : (gStep7W ax fx c r).prog.gateSlots ≤ fx.slots + 2021320000 := by rw [gStep7W]; exact (stepCatFn_slots_le _ (gStep8W ax fx) _ _ compiledSquare_slots h8 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h6  (c : Nat) (r : List (Fin c)) : (gStep6W ax fx c r).prog.gateSlots ≤ fx.slots + 3021320000 := by rw [gStep6W]; exact (stepCatFn_slots_le _ (gStep7W ax fx) _ _ (ax.slots false) h7 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h5  (c : Nat) (r : List (Fin c)) : (gStep5W ax fx c r).prog.gateSlots ≤ fx.slots + 3021320000 := by rw [gStep5W]; exact CatProg.measureThen_slots_le _ _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : (gStep4W ax fx c r).prog.gateSlots ≤ fx.slots + 3021720000 := by rw [gStep4W]; exact (stepCatFn_slots_le _ (gStep5W ax fx) _ _ compiledYAdd_slots h5 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h3  (c : Nat) (r : List (Fin c)) : (gStep3W ax fx c r).prog.gateSlots ≤ fx.slots + 3022120000 := by rw [gStep3W]; exact (stepCatFn_slots_le _ (gStep4W ax fx) _ _ compiledXAdd_slots h4 c r).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
+  have h2  (c : Nat) (r : List (Fin c)) : (gStep2W ax fx c r).prog.gateSlots ≤ fx.slots + 3022120000 := by rw [gStep2W]; exact CatProg.measureThen_slots_le _ _ h3 _ c r
+  rw [compiledGenericCoreW]; exact (stepCatFn_slots_le _ (gStep2W ax fx) _ _ (ss1NegW_slots hk_lo hk_hi) h2 s rs).trans (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-theorem compiledGenericCoreW_wires {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledGenericCoreW_wires {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (s : Nat) (rs : List (Fin s)) :
-    ChallengeMigration.straightWires (compiledGenericCoreW fx s rs).prog ⊆ support1612 := by
+    ChallengeMigration.straightWires (compiledGenericCoreW ax fx s rs).prog ⊆ support1612 := by
   have hcx : cxWord ⊆ support1612 := fun w hw => by simp only [cxWord, List.mem_range'_1] at hw; exact mem_support1612_p1 ⟨by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
   have hcy : cyWord ⊆ support1612 := fun w hw => by
     simp only [cyWord, List.mem_cons, List.mem_range'_1] at hw
@@ -17349,22 +19472,22 @@ theorem compiledGenericCoreW_wires {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 1
   have h15 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep15W fx c r).prog ⊆ support1612 := by rw [gStep15W]; exact CatProg.measureThen_wires _ h16 _ hg1 c r
   have h14 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep14W fx c r).prog ⊆ support1612 := by rw [gStep14W]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss1RecW_raw_support hk_lo hk_hi)) h15 c r
   have h13 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep13W fx c r).prog ⊆ support1612 := by rw [gStep13W]; exact stepCatFn_wires _ _ compiledNegX_wires h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep12W fx c r).prog ⊆ support1612 := by rw [gStep12W]; exact stepCatFn_wires _ _ (compiledDirectArith_wires true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep11W fx c r).prog ⊆ support1612 := by rw [gStep11W]; exact CatProg.measureThen_wires _ h12 _ hcx c r
-  have h10 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep10W fx c r).prog ⊆ support1612 := by rw [gStep10W]; exact stepCatFn_wires _ _ compiledXAdd_wires h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep9W fx c r).prog ⊆ support1612  := by rw [gStep9W]; exact CatProg.measureThen_wires _ h10 _ hg4 c r
-  have h8  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep8W fx c r).prog ⊆ support1612  := by rw [gStep8W]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss2TripleW_raw_support hk_lo hk_hi)) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep7W fx c r).prog ⊆ support1612  := by rw [gStep7W]; exact stepCatFn_wires _ _ compiledSquare_wires h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep6W fx c r).prog ⊆ support1612  := by rw [gStep6W]; exact stepCatFn_wires _ _ (compiledDirectArith_wires false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep5W fx c r).prog ⊆ support1612  := by rw [gStep5W]; exact CatProg.measureThen_wires _ h6 _ hcc c r
-  have h4  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep4W fx c r).prog ⊆ support1612  := by rw [gStep4W]; exact stepCatFn_wires _ _ compiledYAdd_wires h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep3W fx c r).prog ⊆ support1612  := by rw [gStep3W]; exact stepCatFn_wires _ _ compiledXAdd_wires h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep2W fx c r).prog ⊆ support1612  := by rw [gStep2W]; exact CatProg.measureThen_wires _ h3 _ hg1 c r
+  have h12 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep12W ax fx c r).prog ⊆ support1612 := by rw [gStep12W]; exact stepCatFn_wires _ _ (ax.wires true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep11W ax fx c r).prog ⊆ support1612 := by rw [gStep11W]; exact CatProg.measureThen_wires _ h12 _ hcx c r
+  have h10 (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep10W ax fx c r).prog ⊆ support1612 := by rw [gStep10W]; exact stepCatFn_wires _ _ compiledXAdd_wires h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep9W ax fx c r).prog ⊆ support1612  := by rw [gStep9W]; exact CatProg.measureThen_wires _ h10 _ hg4 c r
+  have h8  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep8W ax fx c r).prog ⊆ support1612  := by rw [gStep8W]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss2TripleW_raw_support hk_lo hk_hi)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep7W ax fx c r).prog ⊆ support1612  := by rw [gStep7W]; exact stepCatFn_wires _ _ compiledSquare_wires h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep6W ax fx c r).prog ⊆ support1612  := by rw [gStep6W]; exact stepCatFn_wires _ _ (ax.wires false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep5W ax fx c r).prog ⊆ support1612  := by rw [gStep5W]; exact CatProg.measureThen_wires _ h6 _ hcc c r
+  have h4  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep4W ax fx c r).prog ⊆ support1612  := by rw [gStep4W]; exact stepCatFn_wires _ _ compiledYAdd_wires h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep3W ax fx c r).prog ⊆ support1612  := by rw [gStep3W]; exact stepCatFn_wires _ _ compiledXAdd_wires h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : ChallengeMigration.straightWires (gStep2W ax fx c r).prog ⊆ support1612  := by rw [gStep2W]; exact CatProg.measureThen_wires _ h3 _ hg1 c r
   rw [compiledGenericCoreW]; exact stepCatFn_wires _ _ (wrapSS_wires _ (ss1NegW_raw_support hk_lo hk_hi)) h2 s rs
 
-theorem compiledGenericCoreW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledGenericCoreW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (s : Nat) (rs : List (Fin s)) :
-    (compiledGenericCoreW fx s rs).prog.WellFormed := by
+    (compiledGenericCoreW ax fx s rs).prog.WellFormed := by
   have av1 := ssSup_avoid_14832_14833 _ (ss1NegW_raw_support hk_lo hk_hi)
   have av4 := ssSup_avoid_14832_14833 _ (ss2TripleW_raw_support hk_lo hk_hi)
   have av6 := ssSup_avoid_14832_14833 _ (ss1RecW_raw_support hk_lo hk_hi)
@@ -17374,17 +19497,17 @@ theorem compiledGenericCoreW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k 
   have h15 (c : Nat) (r : List (Fin c)) : (gStep15W fx c r).prog.WellFormed := by rw [gStep15W]; exact CatProg.measureThen_wellFormed _ h16 _ c r
   have h14 (c : Nat) (r : List (Fin c)) : (gStep14W fx c r).prog.WellFormed := by rw [gStep14W]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av6.1 av6.2 ((ss1RecW k).loadProg_wellFormed (ss1RecW_geo hk_lo hk_hi) 0)) h15 c r
   have h13 (c : Nat) (r : List (Fin c)) : (gStep13W fx c r).prog.WellFormed := by rw [gStep13W]; exact stepCatFn_wellFormed _ _ compiledNegX_wellFormed h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : (gStep12W fx c r).prog.WellFormed := by rw [gStep12W]; exact stepCatFn_wellFormed _ _ (compiledDirectArith_wellFormed true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : (gStep11W fx c r).prog.WellFormed := by rw [gStep11W]; exact CatProg.measureThen_wellFormed _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : (gStep10W fx c r).prog.WellFormed := by rw [gStep10W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : (gStep9W fx c r).prog.WellFormed  := by rw [gStep9W]; exact CatProg.measureThen_wellFormed _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : (gStep8W fx c r).prog.WellFormed  := by rw [gStep8W]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av4.1 av4.2 ((ss2TripleW k).loadProg_wellFormed (ss2TripleW_geo hk_lo hk_hi) 0)) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : (gStep7W fx c r).prog.WellFormed  := by rw [gStep7W]; exact stepCatFn_wellFormed _ _ compiledSquare_wellFormed h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : (gStep6W fx c r).prog.WellFormed  := by rw [gStep6W]; exact stepCatFn_wellFormed _ _ (compiledDirectArith_wellFormed false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : (gStep5W fx c r).prog.WellFormed  := by rw [gStep5W]; exact CatProg.measureThen_wellFormed _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : (gStep4W fx c r).prog.WellFormed  := by rw [gStep4W]; exact stepCatFn_wellFormed _ _ compiledYAdd_wellFormed h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : (gStep3W fx c r).prog.WellFormed  := by rw [gStep3W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : (gStep2W fx c r).prog.WellFormed  := by rw [gStep2W]; exact CatProg.measureThen_wellFormed _ h3 _ c r
+  have h12 (c : Nat) (r : List (Fin c)) : (gStep12W ax fx c r).prog.WellFormed := by rw [gStep12W]; exact stepCatFn_wellFormed _ _ (ax.wellFormed true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : (gStep11W ax fx c r).prog.WellFormed := by rw [gStep11W]; exact CatProg.measureThen_wellFormed _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : (gStep10W ax fx c r).prog.WellFormed := by rw [gStep10W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : (gStep9W ax fx c r).prog.WellFormed  := by rw [gStep9W]; exact CatProg.measureThen_wellFormed _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : (gStep8W ax fx c r).prog.WellFormed  := by rw [gStep8W]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av4.1 av4.2 ((ss2TripleW k).loadProg_wellFormed (ss2TripleW_geo hk_lo hk_hi) 0)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : (gStep7W ax fx c r).prog.WellFormed  := by rw [gStep7W]; exact stepCatFn_wellFormed _ _ compiledSquare_wellFormed h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : (gStep6W ax fx c r).prog.WellFormed  := by rw [gStep6W]; exact stepCatFn_wellFormed _ _ (ax.wellFormed false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : (gStep5W ax fx c r).prog.WellFormed  := by rw [gStep5W]; exact CatProg.measureThen_wellFormed _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : (gStep4W ax fx c r).prog.WellFormed  := by rw [gStep4W]; exact stepCatFn_wellFormed _ _ compiledYAdd_wellFormed h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : (gStep3W ax fx c r).prog.WellFormed  := by rw [gStep3W]; exact stepCatFn_wellFormed _ _ compiledXAdd_wellFormed h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : (gStep2W ax fx c r).prog.WellFormed  := by rw [gStep2W]; exact CatProg.measureThen_wellFormed _ h3 _ c r
   rw [compiledGenericCoreW]; exact stepCatFn_wellFormed _ _ (wrapSS_wellFormed _ av1.1 av1.2 ((ss1NegW k).loadProg_wellFormed (ss1NegW_geo hk_lo hk_hi) 0)) h2 s rs
 
 -- Clean canonical `(X, Y)` state helper for zero-boilerplate simulation across all 18 steps
@@ -17541,39 +19664,6 @@ private theorem compiledYAdd_ket_sim {n : Nat} (c : Nat) (read : ConstantBit n �
     refine ⟨h0.1, fun A Y hA hY => ?_⟩
     have h := yAddProg_correct A Y ⟨false, bs⟩ m hA hY hwk
     exact ⟨h.2.1, h.2.2⟩
-
-private theorem compiledDirectArith_ket_sim {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool) :
-    ∃ cs : List ℂ, List.Forall₂
-      (fun b k => ∀ (t : BasisState), DirectArithValid t →
-        ∃ t' : BasisState,
-          (∀ (X Y : ECDSAAdd.Fp), X ≠ 0 →
-            ECDSAAdd.regValue (List.range' 263 256) t = X.val →
-            ECDSAAdd.regValue (List.range' 580 256) t = Y.val →
-            CleanOutsideXYBank t →
-            ECDSAAdd.regValue (List.range' 580 256) t' = (if mul then Y * X else Y / X).val ∧
-            (∀ w, ¬(580 ≤ w ∧ w < 836) → t' w = t w)) ∧
-          b.kraus (Prep 14833 (ket t)) = k • Prep 14833 (ket t'))
-      ((compiledDirectArith (n := n) mul s).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
-  refine catLitSim_to_ket_aux (arithS streamLayout mul) ((compiledDirectArith mul s).prog.instantiate read h)
-    DirectArithValid DirectArithValid _ (compiledDirectArith_catLitSim mul s read h) (fun _ h => h) ?_
-  rintro bs m ⟨X₀, Y₀, hX₀, hx₀, hy₀, hcl₀⟩
-  have hpos₀ : 0 < X₀.val := Nat.pos_of_ne_zero (fun h0 => hX₀ ((ZMod.val_eq_zero X₀).mp h0))
-  have har₀ := arithS_correct streamLayout streamLayout_widths streamLayout_nodup mul X₀.val Y₀.val
-    X₀.val_lt hpos₀ Y₀.val_lt ⟨false, bs⟩ m
-    (by rw [streamLayout_point_x_eq]; exact hx₀)
-    (by rw [streamLayout_point_y_eq]; exact hy₀)
-    (cleanOutside_dialogPool bs hcl₀)
-  refine ⟨har₀.1, fun X Y hX0 hx hy hcl => ?_⟩
-  have hpos : 0 < X.val := Nat.pos_of_ne_zero (fun h0 => hX0 ((ZMod.val_eq_zero X).mp h0))
-  have har := arithS_correct streamLayout streamLayout_widths streamLayout_nodup mul X.val Y.val
-    X.val_lt hpos Y.val_lt ⟨false, bs⟩ m
-    (by rw [streamLayout_point_x_eq]; exact hx)
-    (by rw [streamLayout_point_y_eq]; exact hy)
-    (cleanOutside_dialogPool bs hcl)
-  have hy1 := har.2.1
-  simp only [streamLayout_point_y_eq, ZMod.natCast_zmod_val] at hy1
-  exact ⟨by cases mul <;> simpa only [↓reduceIte] using hy1,
-    fun w hw => har.2.2 w (by rw [streamLayout_point_y_eq, List.mem_range'_1]; exact hw)⟩
 
 -- Reusable `SS1` + `measureThen g1_1` + `xAdd` + `yAdd` + `measureThen cxCy` step lemma (used for Stages 1 & 7)
 private theorem ss1_addXY_clear_sim {kw : Nat} (hk_hi : kw ≤ 18) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
@@ -17930,30 +20020,30 @@ private theorem stage6_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
     hb₂ a bg (-X) Y cx cy hC ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 5 (`(gStep12W fx)`): `compiledDirectArith true` (mul) → Stage 6
-private theorem stage5_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+-- Stage 5 (`(gStep12W ax fx)`): `ax.prog true` (mul) → Stage 6
+private theorem stage5_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (ax : ArithSpec) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        ax.GoodX X → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
         constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
           (c * portPhase ((d1W kw) ++ (d2W kw) ++ (d3W kw) ++ (d4W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-X)) ((-cy) + Y * X))))
-      (((gStep12W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep12W ax fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
   rw [gStep12W]
-  refine stepCatFn_sim (compiledDirectArith true) (gStep13W fx) read s refs h _ _ _
-    (compiledDirectArith_ket_sim true s read h)
+  refine stepCatFn_sim (ax.prog true) (gStep13W fx) read s refs h _ _ _
+    (ax.ket_sim true s read h)
     (fun c rs hh hrs => stage6_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
-    (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hX0 ha hcl hQ => ?_)
+    (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hXgood ha hcl hQ => ?_)
   have hcl_xy := setXY_cleanOutside bg X Y hcl
-  have hvalid : DirectArithValid (setXY bg X Y) := ⟨X, Y, hX0, setXY_regValue_x bg X Y, setXY_regValue_y bg X Y, hcl_xy⟩
-  obtain ⟨t', ht'c, hkr⟩ := hb₁ (setXY bg X Y) hvalid
-  have har := ht'c X Y hX0 (setXY_regValue_x bg X Y) (setXY_regValue_y bg X Y) hcl_xy
+  have hX0 : X ≠ 0 := ax.good_ne_zero X hXgood
+  obtain ⟨t', ht'c, hkr⟩ := hb₁ (setXY bg X Y) ⟨X, Y, hXgood, setXY_regValue_x bg X Y, setXY_regValue_y bg X Y, hcl_xy⟩
+  have har := ht'c X Y hXgood (setXY_regValue_x bg X Y) (setXY_regValue_y bg X Y) hcl_xy
   have hout_eq : t' = setXY bg X (Y * X) := by
     apply eq_setXY
     · refine (ECDSAAdd.Arithmetic.regValue_congr (List.range' 263 256) t' (setXY bg X Y) (fun w hw => ?_)).trans (setXY_regValue_x bg X Y)
@@ -17964,20 +20054,20 @@ private theorem stage5_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
     hb₂ a bg X (Y * X) cx cy hC hX0 ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 4 (`(gStep8W fx)..(gStep11W fx)`): `(ss2TripleW kw) → meas g4 → xAdd → meas cxWord` → Stage 5
-private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+-- Stage 4 (`(gStep8W ax fx)..(gStep11W ax fx)`): `(ss2TripleW kw) → meas g4 → xAdd → meas cxWord` → Stage 5
+private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (ax : ArithSpec) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        3 * cx + X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        ax.GoodX (3 * cx + X) → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
         constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
           (c * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-(3 * cx + X))) ((-cy) + Y * (3 * cx + X)))))
-      (((gStep8W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep8W ax fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
   have hlen12 : ((d1W kw) ++ (d2W kw)).length = 1024 := by simp [(d1W_len hk_lo hk_hi), (d2W_len kw)]
   have h33_cx : (14833 : Wire) ∉ cxWord := fun hm => by simp only [cxWord, List.mem_range'_1] at hm; norm_num at hm
@@ -17997,17 +20087,17 @@ private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
       ∃ cs : List ℂ, List.Forall₂
         (fun b k11 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
-          X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          ax.GoodX X → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
           constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxWord t = setXY bg X Y →
           (∀ q ∈ (d4W kw), t q.target = decide (read (q.ref a) = q.value)) →
           b.kraus (Prep 14833 (ket t)) =
             (k11 * (portPhase ((d1W kw) ++ (d2W kw)) oB read a * portPhase (d3W kw) o3 read a)) •
               Prep 14833 (ket (setXY bg (cx + (-X)) ((-cy) + Y * X))))
-        (((gStep11W fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+        (((gStep11W ax fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
     rw [gStep11W]
-    refine CatProg.measureThen_sim (gStep12W fx) read cxWord c rs hh _ _
-      (fun o4 ho4 cur rs' hh' hrs' => stage5_sim hk_lo hk_hi fx coeffs Q (oB ++ o3 ++ o4)
+    refine CatProg.measureThen_sim (gStep12W ax fx) read cxWord c rs hh _ _
+      (fun o4 ho4 cur rs' hh' hrs' => stage5_sim hk_lo hk_hi ax fx coeffs Q (oB ++ o3 ++ o4)
         (by simp only [List.length_append, hoB, (d1W_len hk_lo hk_hi), (d2W_len kw), (d3W_len hk_lo hk_hi), (d4W_len kw), ho3, ho4, cxWord_length])
         cur rs' hh' (by rw [hrs', hrs, List.append_assoc]))
       (fun o4 ho4 b k11 hb a bg X Y cx cy hC t hX0 ha hcl hQ hclr hld => ?_)
@@ -18028,7 +20118,7 @@ private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
       ∃ cs : List ℂ, List.Forall₂
         (fun b k10 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
-          3 * cx + X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          ax.GoodX (3 * cx + X) → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
           constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           clearRegister cxWord t = setXY bg X Y →
           ECDSAAdd.regValue cxWord t = (3 * cx).val →
@@ -18036,9 +20126,9 @@ private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
           b.kraus (Prep 14833 (ket t)) =
             (k10 * (portPhase ((d1W kw) ++ (d2W kw)) oB read a * portPhase (d3W kw) o3 read a)) •
               Prep 14833 (ket (setXY bg (cx + (-(3 * cx + X))) ((-cy) + Y * (3 * cx + X)))))
-        (((gStep10W fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+        (((gStep10W ax fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
     rw [gStep10W]
-    refine stepCatFn_sim compiledXAdd (gStep11W fx) read c rs hh _ _ _
+    refine stepCatFn_sim compiledXAdd (gStep11W ax fx) read c rs hh _ _ _
       (compiledXAdd_ket_sim c read hh)
       (fun c' rs' hh' hrs' => hs11 o3 ho3 c' rs' hh' (hrs'.trans hrs))
       (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC t hne0 ha hcl hQ hclr hcxv hld => ?_)
@@ -18084,16 +20174,16 @@ private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
       ∃ cs : List ℂ, List.Forall₂
         (fun b k9 => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
           (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy) (t : BasisState),
-          3 * cx + X ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+          ax.GoodX (3 * cx + X) → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
           constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
           (∀ q ∈ (d3W kw), t q.target = decide (read (q.ref a) = q.value)) →
           clearRegister g4 t = tableXorState (portMask read (ports4W kw) a) true (setXY bg X Y) →
           b.kraus (Prep 14833 (ket t)) =
             (k9 * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
               Prep 14833 (ket (setXY bg (cx + (-(3 * cx + X))) ((-cy) + Y * (3 * cx + X)))))
-        (((gStep9W fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+        (((gStep9W ax fx) c rs).prog.instantiate read hh).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
     rw [gStep9W]
-    refine CatProg.measureThen_sim (gStep10W fx) read g4 c rs hh _ _
+    refine CatProg.measureThen_sim (gStep10W ax fx) read g4 c rs hh _ _
       (fun o3 ho3 cur rs' hh' hrs' => hs10 o3 (ho3.trans g4_length) cur rs' hh' (by rw [hrs', hrs]))
       (fun o3 ho3 b k9 hb a bg X Y cx cy hC t hne0 ha hcl hQ hgd hcg => ?_)
     set t1 := clearRegister g4 t
@@ -18120,7 +20210,7 @@ private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
     rw [phase_cancel_prep _ _ _ _ (portPhase_mul_self _ _ _ _)]
   -- Step 8: wrapSS (ss2TripleW kw)
   rw [gStep8W]
-  refine stepCatFn_sim (wrapSS ((ss2TripleW kw).loadProg 0)) (gStep9W fx) read s refs h _ _ _
+  refine stepCatFn_sim (wrapSS ((ss2TripleW kw).loadProg 0)) (gStep9W ax fx) read s refs h _ _ _
     (wrapSS_SS2_sim hk_hi (ss2TripleW kw) (ss2TripleW_geo hk_lo hk_hi) rfl rfl rfl (ss2TripleW_raw_support hk_lo hk_hi) hdisj hout s read h)
     (fun c rs hh hrs => hs9 c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hne0 ha hcl hQ => ?_)
@@ -18129,25 +20219,25 @@ private theorem stage4_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
     hb₂ a bg X Y cx cy hC bs' hne0 ha hcl hQ (by rw [d3W]; exact hgd) hcg, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 3 (`(gStep7W fx)`): `compiledSquare` → Stage 4
-private theorem stage3_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+-- Stage 3 (`(gStep7W ax fx)`): `compiledSquare` → Stage 4
+private theorem stage3_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (ax : ArithSpec) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        3 * cx + (X - Y * Y) ≠ 0 → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
+        ax.GoodX (3 * cx + (X - Y * Y)) → tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
         constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
           (c * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-(3 * cx + (X - Y * Y)))) ((-cy) + Y * (3 * cx + (X - Y * Y))))))
-      (((gStep7W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep7W ax fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
   rw [gStep7W]
-  refine stepCatFn_sim compiledSquare (gStep8W fx) read s refs h _ _ _
+  refine stepCatFn_sim compiledSquare (gStep8W ax fx) read s refs h _ _ _
     (compiledSquare_sim s read h)
-    (fun c rs hh hrs => stage4_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
+    (fun c rs hh hrs => stage4_sim hk_lo hk_hi ax fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
     (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hne0 ha hcl hQ => ?_)
   obtain ⟨bs', hx', hy', hfr', hkr⟩ := hb₁ X Y (setXY bg X Y) (setXY_regValue_x bg X Y) (setXY_regValue_y bg X Y) (setXY_cleanOutside bg X Y hcl)
   have hout_eq : bs' = setXY bg (X - Y * Y) Y :=
@@ -18156,32 +20246,31 @@ private theorem stage3_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
     hb₂ a bg (X - Y * Y) Y cx cy hC hne0 ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Stage 2 (`(gStep6W fx)`): `compiledDirectArith false` (div) → Stage 3
-private theorem stage2_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+-- Stage 2 (`(gStep6W ax fx)`): `ax.prog false` (div) → Stage 3
+private theorem stage2_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (ax : ArithSpec) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (oB : List Bool) (hoB : oB.length = ((d1W kw) ++ (d2W kw)).length)
     (s : Nat) (refs : List (Fin s)) (h : Fin s → Bool) (hrefs : refs.map h = oB) :
     let read := readConstant coeffs Q
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (a : Nat) (bg : BasisState) (X Y cx cy : ECDSAAdd.Fp)
         (hC : ECDSAAdd.Secp256k1.curve.toAffine.Nonsingular cx cy),
-        X ≠ 0 → 3 * cx + (X - (Y / X) * (Y / X)) ≠ 0 →
+        ax.GoodX X → ax.GoodX (3 * cx + (X - (Y / X) * (Y / X))) →
         tableAddressValue (bitsW kw) bg = a → CleanOutsideXYBank bg →
         constantPoint Q (coeffs ((rowsW kw) a)) = .some hC →
         b.kraus (Prep 14833 (ket (setXY bg X Y))) =
           (c * portPhase ((d1W kw) ++ (d2W kw)) oB read a) •
             Prep 14833 (ket (setXY bg (cx + (-(3 * cx + (X - (Y / X) * (Y / X)))))
               ((-cy) + (Y / X) * (3 * cx + (X - (Y / X) * (Y / X)))))))
-      (((gStep6W fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
+      (((gStep6W ax fx) s refs).prog.instantiate read h).run cs ∧ (cs.map Complex.normSq).sum = 1 := by
   intro read
   rw [gStep6W]
-  refine stepCatFn_sim (compiledDirectArith false) (gStep7W fx) read s refs h _ _ _
-    (compiledDirectArith_ket_sim false s read h)
-    (fun c rs hh hrs => stage3_sim hk_lo hk_hi fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
-    (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hX0 hne2 ha hcl hQ => ?_)
+  refine stepCatFn_sim (ax.prog false) (gStep7W ax fx) read s refs h _ _ _
+    (ax.ket_sim false s read h)
+    (fun c rs hh hrs => stage3_sim hk_lo hk_hi ax fx coeffs Q oB hoB c rs hh (hrs.trans hrefs))
+    (fun b₁ k₁ b₂ k₂ hb₁ hb₂ a bg X Y cx cy hC hXgood hne2 ha hcl hQ => ?_)
   have hcl_xy := setXY_cleanOutside bg X Y hcl
-  have hvalid : DirectArithValid (setXY bg X Y) := ⟨X, Y, hX0, setXY_regValue_x bg X Y, setXY_regValue_y bg X Y, hcl_xy⟩
-  obtain ⟨t', ht'c, hkr⟩ := hb₁ (setXY bg X Y) hvalid
-  have har := ht'c X Y hX0 (setXY_regValue_x bg X Y) (setXY_regValue_y bg X Y) hcl_xy
+  obtain ⟨t', ht'c, hkr⟩ := hb₁ (setXY bg X Y) ⟨X, Y, hXgood, setXY_regValue_x bg X Y, setXY_regValue_y bg X Y, hcl_xy⟩
+  have har := ht'c X Y hXgood (setXY_regValue_x bg X Y) (setXY_regValue_y bg X Y) hcl_xy
   have hout_eq : t' = setXY bg X (Y / X) := by
     apply eq_setXY
     · refine (ECDSAAdd.Arithmetic.regValue_congr (List.range' 263 256) t' (setXY bg X Y) (fun w hw => ?_)).trans (setXY_regValue_x bg X Y)
@@ -18192,16 +20281,16 @@ private theorem stage2_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (f
     hb₂ a bg X (Y / X) cx cy hC hne2 ha hcl hQ, smul_smul]
   exact congrArg (· • _) (by ring)
 
--- Full core simulation: `compiledGenericCore` implements `R ↦ R + C` on all `GoodPoint R C`
-theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+-- Full core simulation: `compiledGenericCoreW ax fx` implements `R ↦ R + C` on all `GoodPointA ax R C`
+theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 18) (ax : ArithSpec) (fx : FixupSpec kw) (coeffs : Fin (2 ^ kw) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (s : Nat) (h : Fin s → Bool) :
     ∃ cs : List ℂ, List.Forall₂
       (fun b c => ∀ (R : ShorECDLP.Secp256k1.Point) (bs : BasisState),
         CleanOutsideXYBank bs → HasFinitePoint R bs →
-        GoodPoint R (constantPoint Q (coeffs ((rowsW kw) ((rawW kw) bs)))) →
+        GoodPointA ax R (constantPoint Q (coeffs ((rowsW kw) ((rawW kw) bs)))) →
         b.kraus (Prep 14833 (ket bs)) =
           c • Prep 14833 (ket (pointWrite (R + constantPoint Q (coeffs ((rowsW kw) ((rawW kw) bs)))) bs)))
-      ((compiledGenericCoreW fx s List.nil).prog.instantiate (readConstant coeffs Q) h).run cs ∧
+      ((compiledGenericCoreW ax fx s List.nil).prog.instantiate (readConstant coeffs Q) h).run cs ∧
     (cs.map Complex.normSq).sum = 1 := by
   let read := readConstant coeffs Q
   let T : Nat → BasisState → ECDSAAdd.Fp → ECDSAAdd.Fp → State := fun a bg X Y =>
@@ -18213,10 +20302,10 @@ theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 
       let d : ECDSAAdd.Fp := 3 * cx' + (X - (Y / X) * (Y / X))
       Prep 14833 (ket (setXY bg (cx' + (-d)) ((-cy') + (Y / X) * d)))
   have hsim := ss1_addXY_clear_sim hk_hi coeffs Q (ss1NegW kw) (ss1NegW_geo hk_lo hk_hi) .negX .negY rfl rfl rfl rfl (by change ports1W kw = _; rw [ports1W])
-    (ss1NegW_raw_support hk_lo hk_hi) (gStep6W fx) List.nil List.nil rfl s List.nil h rfl
-    (fun X Y cx _ => X ≠ 0 ∧ 3 * cx + (X - (Y / X) * (Y / X)) ≠ 0) T
+    (ss1NegW_raw_support hk_lo hk_hi) (gStep6W ax fx) List.nil List.nil rfl s List.nil h rfl
+    (fun X Y cx _ => ax.GoodX X ∧ ax.GoodX (3 * cx + (X - (Y / X) * (Y / X)))) T
     (fun o1 o2 ho1 ho2 cur rs hh hrs => by
-      obtain ⟨cs, al, hm⟩ := stage2_sim hk_lo hk_hi fx coeffs Q (o1 ++ o2) (by simp only [List.length_append, ho1, ho2, (d1W_len hk_lo hk_hi), (d2W_len kw)]) cur rs hh (by simpa using hrs)
+      obtain ⟨cs, al, hm⟩ := stage2_sim hk_lo hk_hi ax fx coeffs Q (o1 ++ o2) (by simp only [List.length_append, ho1, ho2, (d1W_len hk_lo hk_hi), (d2W_len kw)]) cur rs hh (by simpa using hrs)
       refine ⟨cs, al.imp (fun b c hb a bg X Y cx cy hC ⟨hX0, hne2⟩ ha hcl hQ => ?_), hm⟩
       have hpp : portPhase ((d1W kw) ++ (d2W kw)) (o1 ++ o2) read a =
           portPhase (List.nil : List (MeasuredClear.ClearPort (2 ^ kw))) List.nil read a *
@@ -18228,15 +20317,15 @@ theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 
       rw [hb a bg X Y cx cy hC hX0 hne2 ha hcl hQ, hpp, hT])
   obtain ⟨cs, al, hm⟩ := hsim
   refine ⟨cs, ?_, hm⟩
-  have hcat : compiledGenericCoreW fx s List.nil = stepCatFn (wrapSS ((ss1NegW kw).loadProg 0))
+  have hcat : compiledGenericCoreW ax fx s List.nil = stepCatFn (wrapSS ((ss1NegW kw).loadProg 0))
       (fun c rs => CatProg.measureThen (fun c' rs' => stepCatFn compiledXAdd
-        (fun c'' rs'' => stepCatFn compiledYAdd (fun c3 rs3 => CatProg.measureThen (gStep6W fx) cxCy c3 rs3) c'' rs'')
+        (fun c'' rs'' => stepCatFn compiledYAdd (fun c3 rs3 => CatProg.measureThen (gStep6W ax fx) cxCy c3 rs3) c'' rs'')
         c' rs') g1_1 c rs) s List.nil := by
     simp only [compiledGenericCoreW,
-      show gStep2W fx = fun c rs => CatProg.measureThen (gStep3W fx) g1_1 c rs from funext₂ fun c rs => by rw [gStep2W],
-      show gStep3W fx = fun c' rs' => stepCatFn compiledXAdd (gStep4W fx) c' rs' from funext₂ fun c' rs' => by rw [gStep3W],
-      show gStep4W fx = fun c'' rs'' => stepCatFn compiledYAdd (gStep5W fx) c'' rs'' from funext₂ fun c'' rs'' => by rw [gStep4W],
-      show gStep5W fx = fun c3 rs3 => CatProg.measureThen (gStep6W fx) cxCy c3 rs3 from funext₂ fun c3 rs3 => by rw [gStep5W]]
+      show gStep2W ax fx = fun c rs => CatProg.measureThen (gStep3W ax fx) g1_1 c rs from funext₂ fun c rs => by rw [gStep2W],
+      show gStep3W ax fx = fun c' rs' => stepCatFn compiledXAdd (gStep4W ax fx) c' rs' from funext₂ fun c' rs' => by rw [gStep3W],
+      show gStep4W ax fx = fun c'' rs'' => stepCatFn compiledYAdd (gStep5W ax fx) c'' rs'' from funext₂ fun c'' rs'' => by rw [gStep4W],
+      show gStep5W ax fx = fun c3 rs3 => CatProg.measureThen (gStep6W ax fx) cxCy c3 rs3 from funext₂ fun c3 rs3 => by rw [gStep5W]]
   rw [hcat]
   refine al.imp (fun b c hb R bs hcl hR hgp => ?_)
   obtain ⟨x, y, hnsR, rfl, hx, hy⟩ := hR
@@ -18248,11 +20337,12 @@ theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 
     let cx : ECDSAAdd.Fp := cx₀
     let cy : ECDSAAdd.Fp := cy₀
     rw [hCeq] at hgp
-    have hden := dialog_denominators_ne_zero hnsR hnsC hgp.2.1 hgp.2.2.1
-      (by simpa only [dialogExceptionPoint] using hgp.2.2.2)
-    have hxcx : (-cx) + x ≠ 0 := by
+    have hden := dialog_denominators_ne_zero hnsR hnsC hgp.1.2.1 hgp.1.2.2.1
+      (by simpa only [dialogExceptionPoint] using hgp.1.2.2.2)
+    have hgood := hgp.2 x y cx cy hnsR hnsC rfl rfl
+    have hxcx : ax.GoodX ((-cx) + x) := by
       have : (-cx) + x = x - cx := by ring
-      rw [this]; exact sub_ne_zero.mpr hden.1
+      rw [this]; exact hgood.1
     have hval := generic_inplace_values x y cx cy hden.1
     have hslope : ((-cy) + y) / ((-cx) + x) = genericSlope x y cx cy := by
       unfold ECDSAAdd.Secp256k1.genericSlope ECDSAAdd.Secp256k1.genericNumerator ECDSAAdd.Secp256k1.genericDenominator
@@ -18260,10 +20350,10 @@ theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 
     have hd_eq : 3 * cx + ((-cx) + x - (((-cy) + y) / ((-cx) + x)) * (((-cy) + y) / ((-cx) + x))) =
         cx - genericX x y cx cy := by
       rw [hslope]; linear_combination hval.2.1
-    have hd_ne : 3 * cx + ((-cx) + x - (((-cy) + y) / ((-cx) + x)) * (((-cy) + y) / ((-cx) + x))) ≠ 0 := by
-      rw [hd_eq]; exact hden.2
+    have hd_good : ax.GoodX (3 * cx + ((-cx) + x - (((-cy) + y) / ((-cx) + x)) * (((-cy) + y) / ((-cx) + x)))) := by
+      rw [hd_eq]; exact hgood.2
     have hbs_eq : bs = setXY bs x y := eq_setXY hx hy (fun _ _ _ => rfl)
-    have hstep := hb a bs x y cx cy hnsC rfl hcl hCeq (-cx) (-cy) ⟨hxcx, hd_ne⟩ rfl rfl
+    have hstep := hb a bs x y cx cy hnsC rfl hcl hCeq (-cx) (-cy) ⟨hxcx, hd_good⟩ rfl rfl
     rw [← hbs_eq] at hstep
     have hT : T a bs ((-cx) + x) ((-cy) + y) =
         Prep 14833 (ket (setXY bs (genericX x y cx cy) (genericY x y cx cy))) := by
@@ -18286,94 +20376,94 @@ theorem compiledGenericCoreW_sim {kw : Nat} (hk_lo : 16 ≤ kw) (hk_hi : kw ≤ 
     rw [hstep, hT, hpw]; simp [portPhase]
 
 
-/-! #### 9. Polymorphic full signed generic window (`compiledProgramW`) and concrete `16/17/18` wrappers -/
+/-! #### 9. Polymorphic full signed generic window (`compiledProgramW`) and concrete `16/17/18` + truncated `16/17` wrappers -/
 
-def compiledProgramFnW {k : Nat} (fx : FixupSpec k) : CatFn (2 ^ k) :=
+def compiledProgramFnW {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) : CatFn (2 ^ k) :=
   CatFn.seq (CatFn.lit (flipAddrW k))
     (CatFn.seq (compiledSign (signBitW k))
-      (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil)
+      (CatFn.seq (fun s => compiledGenericCoreW ax fx s List.nil)
         (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
 
 attribute [local irreducible] compiledProgramFnW
 
-theorem compiledProgramFnW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) :
-    ShiftFin (compiledProgramFnW fx)
-      (3659735 + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin) := by
+theorem compiledProgramFnW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) :
+    ShiftFin (compiledProgramFnW ax fx)
+      (121536 + ax.finMul + ax.finDiv + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin) := by
   rw [compiledProgramFnW]
   exact (CatFn.seq_shiftFin _ _ (CatFn.lit_shiftFin (flipAddrW k))
     (CatFn.seq_shiftFin _ _ (compiledSign_shiftFin (signBitW k))
-      (CatFn.seq_shiftFin _ _ (compiledGenericCoreW_shiftFin hk_lo hk_hi fx)
+      (CatFn.seq_shiftFin _ _ (compiledGenericCoreW_shiftFin hk_lo hk_hi ax fx)
         (CatFn.seq_shiftFin _ _ (compiledSign_shiftFin (signBitW k)) (CatFn.lit_shiftFin (unflipAddrW k)))))).mono (by (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
-def compiledProgramW {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
-    Straight (2 ^ k) start (start + (compiledProgramFnW fx 0).finish) :=
-  castFinish ((compiledProgramFnW_shiftFin hk_lo hk_hi fx).1 start) (compiledProgramFnW fx start).prog
+def compiledProgramW {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
+    Straight (2 ^ k) start (start + (compiledProgramFnW ax fx 0).finish) :=
+  castFinish ((compiledProgramFnW_shiftFin hk_lo hk_hi ax fx).1 start) (compiledProgramFnW ax fx start).prog
 
 attribute [local irreducible] compiledProgramW
 
-theorem compiledRecW_bound {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) :
-    (compiledProgramFnW fx 0).finish ≤
-      3659735 + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin :=
-  (compiledProgramFnW_shiftFin hk_lo hk_hi fx).2
+theorem compiledRecW_bound {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) :
+    (compiledProgramFnW ax fx 0).finish ≤
+      121536 + ax.finMul + ax.finDiv + 2 * (2 * (2 ^ (k - 1) - 1) + 512) + (2 * (2 ^ (k - 2) - 1) + 768) + fx.fin :=
+  (compiledProgramFnW_shiftFin hk_lo hk_hi ax fx).2
 
-theorem compiledW_removed18 {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
-    removed 18 (compiledProgramW hk_lo hk_hi fx start) = 0 := by
+theorem compiledW_removed18 {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
+    removed 18 (compiledProgramW hk_lo hk_hi ax fx start) = 0 := by
   rw [compiledProgramW, LocalFour.removed_castFinish, compiledProgramFnW]
   exact CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ (flipAddrW_removed18 k))
     (CatFn.seq_removed18 _ _ (compiledSign_removed18 (signBitW k))
-      (CatFn.seq_removed18 _ _ (fun s => compiledGenericCoreW_removed18 fx s List.nil)
+      (CatFn.seq_removed18 _ _ (fun s => compiledGenericCoreW_removed18 ax fx s List.nil)
         (CatFn.seq_removed18 _ _ (compiledSign_removed18 (signBitW k))
           (CatFn.lit_removed18 _ (unflipAddrW_removed18 k))))) start
 
-theorem compiledW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (start : Nat) (read : ConstantBit (2 ^ k) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramW hk_lo hk_hi fx start).instantiate read h).tCount ≤
-      4 * (2154045 + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
+    ((compiledProgramW hk_lo hk_hi ax fx start).instantiate read h).tCount ≤
+      4 * (58144 + ax.tofMul + ax.tofDiv + 2 * (2 ^ (k - 1) - 1 + 512) + (2 ^ (k - 2) - 1 + 768) + fx.tof) := by
   rw [compiledProgramW, castFinish_instantiate, compiledProgramFnW]
   refine (b_seq_tCount_any _ _
     (fun s r hh => le_of_eq ((CatFn.lit_tCount (flipAddrW k) s r hh).trans (flipAddrW_tCount k)))
     (b_seq_tCount_any _ _ (compiledSign_tCount (signBitW k))
-      (b_seq_tCount_any _ _ (fun s r hh => compiledGenericCoreW_tCount hk_lo hk_hi fx s List.nil r hh)
+      (b_seq_tCount_any _ _ (fun s r hh => compiledGenericCoreW_tCount hk_lo hk_hi ax fx s List.nil r hh)
         (b_seq_tCount_any _ _ (compiledSign_tCount (signBitW k))
           (fun s r hh => le_of_eq ((CatFn.lit_tCount (unflipAddrW k) s r hh).trans (unflipAddrW_tCount k)))))) start read h).trans ?_
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
-    (compiledProgramW hk_lo hk_hi fx start).WellFormed := by
+theorem compiledW_wellFormed {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
+    (compiledProgramW hk_lo hk_hi ax fx start).WellFormed := by
   have hsb : 855 ≤ signBitW k ∧ signBitW k < 874 := ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
   rw [compiledProgramW, castFinish_wellFormed, compiledProgramFnW]
   exact CatFn.seq_wellFormed _ _ (CatFn.lit_wellFormed _ (flipAddrW_wellFormed k))
     (CatFn.seq_wellFormed _ _ (compiledSign_wellFormed (signBitW k) hsb)
-      (CatFn.seq_wellFormed _ _ (fun s => compiledGenericCoreW_wellFormed hk_lo hk_hi fx s List.nil)
+      (CatFn.seq_wellFormed _ _ (fun s => compiledGenericCoreW_wellFormed hk_lo hk_hi ax fx s List.nil)
         (CatFn.seq_wellFormed _ _ (compiledSign_wellFormed (signBitW k) hsb)
           (CatFn.lit_wellFormed _ (unflipAddrW_wellFormed k))))) start
 
-theorem compiledW_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
-    ChallengeMigration.straightWires (compiledProgramW hk_lo hk_hi fx start) ⊆ support1612 := by
+theorem compiledW_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
+    ChallengeMigration.straightWires (compiledProgramW hk_lo hk_hi ax fx start) ⊆ support1612 := by
   have hsb : 855 ≤ signBitW k ∧ signBitW k < 874 := ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
   rw [compiledProgramW, straightWires_castFinish, compiledProgramFnW]
   exact CatFn.seq_wires _ _ (CatFn.lit_wires _ (flipAddrW_wires hk_hi))
     (CatFn.seq_wires _ _ (compiledSign_wires (signBitW k) hsb)
-      (CatFn.seq_wires _ _ (fun s => compiledGenericCoreW_wires hk_lo hk_hi fx s List.nil)
+      (CatFn.seq_wires _ _ (fun s => compiledGenericCoreW_wires hk_lo hk_hi ax fx s List.nil)
         (CatFn.seq_wires _ _ (compiledSign_wires (signBitW k) hsb)
           (CatFn.lit_wires _ (unflipAddrW_wires hk_hi))))) start
 
-theorem compiledW_packed_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
-    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramW hk_lo hk_hi fx start)) ⊆ List.range 1612 := by
+theorem compiledW_packed_support {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramW hk_lo hk_hi ax fx start)) ⊆ List.range 1612 := by
   rw [straightWires_relabel]
   intro v hv; obtain ⟨u, hu, rfl⟩ := List.mem_map.mp hv
-  exact List.mem_range.mpr (compact1612_bound u (compiledW_support hk_lo hk_hi fx start hu))
+  exact List.mem_range.mpr (compact1612_bound u (compiledW_support hk_lo hk_hi ax fx start hu))
 
-theorem compiledW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k) (start : Nat) :
-    (compiledProgramW hk_lo hk_hi fx start).gateSlots ≤ fx.slots + 10000000000 := by
+theorem compiledW_slots {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
+    (compiledProgramW hk_lo hk_hi ax fx start).gateSlots ≤ fx.slots + 10000000000 := by
   rw [compiledProgramW, castFinish_gateSlots, compiledProgramFnW]
   have h1 := CatFn.seq_slots (CatFn.lit (n := 2 ^ k) (flipAddrW k))
     (CatFn.seq (compiledSign (signBitW k))
-      (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil)
+      (CatFn.seq (fun s => compiledGenericCoreW ax fx s List.nil)
         (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
     (CatFn.lit_slots (flipAddrW k))
     (CatFn.seq_slots _ _ (compiledSign_slots (signBitW k))
-      (CatFn.seq_slots _ _ (fun s => compiledGenericCoreW_slots hk_lo hk_hi fx s List.nil)
+      (CatFn.seq_slots _ _ (fun s => compiledGenericCoreW_slots hk_lo hk_hi ax fx s List.nil)
         (CatFn.seq_slots _ _ (compiledSign_slots (signBitW k)) (CatFn.lit_slots (unflipAddrW k))))) start
   rw [flipAddrW_length, unflipAddrW_length] at h1
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
@@ -18438,11 +20528,11 @@ private theorem coreAddStateW_eq {k : Nat} {coeffs : Fin (2 ^ k) → PointCoeff}
   have hch : Classical.choose hex = R := fig14PointEncoding_injective ((Classical.choose_spec hex).symm.trans hco)
   rw [hch]
 
-theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 14833 ((compiledProgramW hk_lo hk_hi fx start).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW k coeffs Q)) (GoodW k coeffs Q) := by
+    CatCoherent 14833 ((compiledProgramW hk_lo hk_hi ax fx start).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW k coeffs Q)) (GoodWA ax k coeffs Q) := by
   let read := readConstant coeffs Q
   have hsb : 855 ≤ signBitW k ∧ signBitW k < 874 := ⟨by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)), by unfold signBitW; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))⟩
   have hlmap (f : BasisState → BasisState) (bs : BasisState) :
@@ -18450,7 +20540,7 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
     unfold ket; rw [Finsupp.lmapDomain_apply, Finsupp.mapDomain_single]
   have hflip_coh (s : Nat) (hh : Fin s → Bool) :
       CatCoherent 14833 ((CatFn.lit (n := 2 ^ k) (flipAddrW k) s).prog.instantiate read hh)
-        (Finsupp.lmapDomain ℂ ℂ (flipAddrBasisW k)) (GoodW k coeffs Q) := by
+        (Finsupp.lmapDomain ℂ ℂ (flipAddrBasisW k)) (GoodWA ax k coeffs Q) := by
     refine ⟨[1], ?_, by simp⟩
     rw [CatFn.lit, CatProg.lit_run]
     refine .cons (fun bs _ => ?_) .nil
@@ -18463,14 +20553,14 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
     refine .cons (fun bs _ => ?_) .nil
     rw [one_smul, hlmap, prep_circuit 14833 (unflipAddrW k) (unflipAddrW_no14833 hk_hi), unflipAddrW_ket]
   let CoreReady : BasisState → Prop := fun bs =>
-    CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs ∧ GoodPoint R (constantPoint Q (coeffs (rowsW k (rawW k bs))))
+    CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs ∧ GoodPointA ax R (constantPoint Q (coeffs (rowsW k (rawW k bs))))
   have hcore_coh (s : Nat) (hh : Fin s → Bool) :
-      CatCoherent 14833 ((compiledGenericCoreW fx s List.nil).prog.instantiate read hh)
+      CatCoherent 14833 ((compiledGenericCoreW ax fx s List.nil).prog.instantiate read hh)
         (Finsupp.lmapDomain ℂ ℂ (coreAddStateW k coeffs Q)) CoreReady := by
-    obtain ⟨cs, al, hm⟩ := compiledGenericCoreW_sim hk_lo hk_hi fx coeffs Q hn s hh
+    obtain ⟨cs, al, hm⟩ := compiledGenericCoreW_sim hk_lo hk_hi ax fx coeffs Q hn s hh
     refine ⟨cs, al.imp (fun b c hb bs ⟨hcl, R, hR, hgp⟩ => ?_), hm⟩
     rw [hb R bs hcl hR hgp, hlmap, coreAddStateW_eq hcl hR]
-  have h12 : ∀ bs, GoodW k coeffs Q bs →
+  have h12 : ∀ bs, GoodWA ax k coeffs Q bs →
       CleanOutsideXYBank (flipAddrBasisW k bs) ∧ ∃ R, HasFinitePoint R (flipAddrBasisW k bs) := by
     rintro bs ⟨hcl, R, ⟨x, y, hns, rfl, hx, hy⟩, _⟩
     have hfr_xy (w : Wire) (hw : (263 ≤ w ∧ w < 519) ∨ (580 ≤ w ∧ w < 836)) : flipAddrBasisW k bs w = bs w := by
@@ -18482,7 +20572,7 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
       .some hns, x, y, hns, rfl, ?_, ?_⟩
     · rw [← hx]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inl (List.mem_range'_1.mp hw)))
     · rw [← hy]; exact ECDSAAdd.Arithmetic.regValue_congr _ _ _ (fun w hw => hfr_xy w (Or.inr (List.mem_range'_1.mp hw)))
-  have h23 : ∀ bs, GoodW k coeffs Q bs → CoreReady (signReflectStateW (signBitW k) (flipAddrBasisW k bs)) := by
+  have h23 : ∀ bs, GoodWA ax k coeffs Q bs → CoreReady (signReflectStateW (signBitW k) (flipAddrBasisW k bs)) := by
     rintro bs ⟨hcl, R, hR, hgp⟩
     obtain ⟨hcl1, R1, hR1⟩ := h12 bs ⟨hcl, R, hR, hgp⟩
     have hR_eq : R1 = R := by
@@ -18500,8 +20590,8 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
     rw [signReflectStateW_eq hcl1 hR1]
     have hpw_ne : (if flipAddrBasisW k bs (signBitW k) then -R else R) ≠ 0 := by
       cases flipAddrBasisW k bs (signBitW k)
-      · exact hgp.1
-      · exact neg_ne_zero.mpr hgp.1
+      · exact hgp.1.1
+      · exact neg_ne_zero.mpr hgp.1.1
     have hpw_cl : CleanOutsideXYBank (pointWrite (if flipAddrBasisW k bs (signBitW k) then -R else R) (flipAddrBasisW k bs)) :=
       cleanOutside_frame (flipAddrBasisW k bs) _ hcl1 (fun w h1 h2 h3 => by
         by_cases h8 : w = 838
@@ -18533,14 +20623,14 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
     | true =>
       simpa only [Bool.not_true, Bool.false_eq_true, if_false, if_true, signedDeltaW, hb8] using hgp
     | false =>
-      have hneg := goodPoint_neg_iff (R := R) (Δ := -constantPoint Q (coeffs (rowsW k (2 ^ k - 1 - rawW k bs))))
+      have hneg := goodPointA_neg_iff (ax := ax) (R := R) (Δ := -constantPoint Q (coeffs (rowsW k (2 ^ k - 1 - rawW k bs))))
       rw [neg_neg] at hneg
       simpa only [Bool.not_false, if_true, Bool.false_eq_true, if_false, signedDeltaW, hb8] using hneg.mpr (by simpa [signedDeltaW, hb8] using hgp)
   have h34 : ∀ bs, CoreReady bs →
       CleanOutsideXYBank (coreAddStateW k coeffs Q bs) ∧ ∃ R, HasFinitePoint R (coreAddStateW k coeffs Q bs) := by
     rintro bs ⟨hcl, R, hR, hgp⟩
     rw [coreAddStateW_eq hcl hR]
-    have hne0 := goodPoint_add_ne_zero hgp
+    have hne0 := goodPoint_add_ne_zero hgp.1
     refine ⟨cleanOutside_frame bs _ hcl (fun w h1 h2 h3 => by
       by_cases h8 : w = 838
       · subst h8
@@ -18557,21 +20647,21 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
           · exact h2 h
           · exact h8 rfl)),
       _, hasFinitePoint_pointWrite _ hne0 bs⟩
-  let FlippedGood : BasisState → Prop := fun bs1 => ∃ bs, GoodW k coeffs Q bs ∧ bs1 = flipAddrBasisW k bs
+  let FlippedGood : BasisState → Prop := fun bs1 => ∃ bs, GoodWA ax k coeffs Q bs ∧ bs1 = flipAddrBasisW k bs
   have hsign1_coh (s : Nat) (hh : Fin s → Bool) :
       CatCoherent 14833 ((compiledSign (n := 2 ^ k) (signBitW k) s).prog.instantiate read hh)
         (Finsupp.lmapDomain ℂ ℂ (signReflectStateW (signBitW k))) FlippedGood := by
     obtain ⟨cs, al, hm⟩ := compiledSign_catCoherent (signBitW k) hsb read s hh
     exact ⟨cs, al.imp (fun b c hb bs1 ⟨bs, hgd, heq⟩ => hb bs1 (heq ▸ h12 bs hgd)), hm⟩
   have hcomp := b_seq_catCoherent 14833 (CatFn.lit (flipAddrW k))
-    (CatFn.seq (compiledSign (signBitW k)) (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil) (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
-    read (flipAddrBasisW k) _ (GoodW k coeffs Q) FlippedGood
+    (CatFn.seq (compiledSign (signBitW k)) (CatFn.seq (fun s => compiledGenericCoreW ax fx s List.nil) (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))))
+    read (flipAddrBasisW k) _ (GoodWA ax k coeffs Q) FlippedGood
     hflip_coh
     (b_seq_catCoherent 14833 (compiledSign (signBitW k))
-      (CatFn.seq (fun s => compiledGenericCoreW fx s List.nil) (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k))))
+      (CatFn.seq (fun s => compiledGenericCoreW ax fx s List.nil) (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k))))
       read (signReflectStateW (signBitW k)) _ FlippedGood CoreReady
       hsign1_coh
-      (b_seq_catCoherent 14833 (fun s => compiledGenericCoreW fx s List.nil)
+      (b_seq_catCoherent 14833 (fun s => compiledGenericCoreW ax fx s List.nil)
         (CatFn.seq (compiledSign (signBitW k)) (CatFn.lit (unflipAddrW k)))
         read (coreAddStateW k coeffs Q) _ CoreReady (fun bs => CleanOutsideXYBank bs ∧ ∃ R, HasFinitePoint R bs)
         hcore_coh
@@ -18601,7 +20691,7 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
         · exact h2 h
         · exact h8 rfl
       rw [pointWrite_frame P₂ _ w hnw, pointWrite_frame P₁ _ w hnw]
-  have hfinal_eq (bs : BasisState) (hgd : GoodW k coeffs Q bs) :
+  have hfinal_eq (bs : BasisState) (hgd : GoodWA ax k coeffs Q bs) :
       unflipAddrBasisW k (signReflectStateW (signBitW k) (coreAddStateW k coeffs Q (signReflectStateW (signBitW k) (flipAddrBasisW k bs)))) =
         updateW k coeffs Q bs := by
     obtain ⟨hcl, R, hR, hgp⟩ := hgd
@@ -18624,8 +20714,8 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
     set C := constantPoint Q (coeffs (rowsW k (rawW k bs1)))
     have hR2_ne : R2 ≠ 0 := by
       cases hb : b with
-      | false => simpa [R2, hb] using hgp.1
-      | true => simpa [R2, hb] using neg_ne_zero.mpr hgp.1
+      | false => simpa [R2, hb] using hgp.1.1
+      | true => simpa [R2, hb] using neg_ne_zero.mpr hgp.1.1
     have hgp2 : GoodPoint R2 C := by
       have hraw := rawW_flipAddrBasisW k bs
       have hb_eq : b = !bs (signBitW k) := by simp [b, bs1, flipAddrBasisW]
@@ -18633,13 +20723,13 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
       | true =>
         have hb' : b = false := by simp [hb_eq, hb8]
         have hC' : C = signedDeltaW k coeffs Q bs := by simp [C, bs1, hraw, hb8, signedDeltaW]
-        simpa [R2, hb', hC'] using hgp
+        simpa [R2, hb', hC'] using hgp.1
       | false =>
         have hb' : b = true := by simp [hb_eq, hb8]
         have hC' : -C = signedDeltaW k coeffs Q bs := by simp [C, bs1, hraw, hb8, signedDeltaW]
         have hneg := goodPoint_neg_iff (R := R) (Δ := -C)
         rw [neg_neg] at hneg
-        simpa [R2, hb', hC'] using hneg.mpr (by rwa [hC'])
+        simpa [R2, hb', hC'] using hneg.mpr (by rw [hC']; exact hgp.1)
     have hR3_ne : R2 + C ≠ 0 := goodPoint_add_ne_zero hgp2
     have hR4_eq : (if b then -(R2 + C) else R2 + C) = R + signedDeltaW k coeffs Q bs := by
       have hraw := rawW_flipAddrBasisW k bs
@@ -18652,7 +20742,7 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
         have hb' : b = true := by simp [hb_eq, hb8]
         simp only [R2, C, bs1, hb', hraw, hb8, Bool.false_eq_true, if_false, if_true, signedDeltaW]
         abel
-    have hR4_ne : R + signedDeltaW k coeffs Q bs ≠ 0 := goodPoint_add_ne_zero hgp
+    have hR4_ne : R + signedDeltaW k coeffs Q bs ≠ 0 := goodPoint_add_ne_zero hgp.1
     have hs1 : signReflectStateW (signBitW k) bs1 = pointWrite R2 bs1 := signReflectStateW_eq hcl1 hR1
     have hpw_cl (P : ShorECDLP.Secp256k1.Point) (hP : P ≠ 0) : CleanOutsideXYBank (pointWrite P bs1) :=
       cleanOutside_frame bs1 _ hcl1 (fun w h1 h2 h3 => by
@@ -18715,12 +20805,12 @@ theorem compiledW_good_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) 
   rw [hlmap]
   exact h1
 
-theorem compiledW_packed_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (fx : FixupSpec k)
+theorem compiledW_packed_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
     (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramW hk_lo hk_hi fx start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW k coeffs Q)) (GoodW k coeffs Q) := by
-  obtain ⟨cs, al, hm⟩ := compiledW_good_coherent hk_lo hk_hi fx coeffs Q hn start h
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramW hk_lo hk_hi ax fx start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW k coeffs Q)) (GoodWA ax k coeffs Q) := by
+  obtain ⟨cs, al, hm⟩ := compiledW_good_coherent hk_lo hk_hi ax fx coeffs Q hn start h
   refine ⟨cs, ?_, hm⟩
   rw [relabelStraight_instantiate, AdaptiveCircuit.run_relabel, List.forall₂_map_left_iff]
   refine al.imp (fun b c hb bs hgd => ?_)
@@ -18737,85 +20827,138 @@ theorem compiledW_packed_coherent {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18
   have hinv_b (t : BasisState) : relabelBasis compact1612 (relabelBasis compact1612 t) = t := by
     funext w; change t (compact1612 (compact1612 w)) = t w; exact congrArg t (compact1612Fn_invol w)
   change relabelState compact1612 (b.kraus (relabelState compact1612.symm (Prep 1 (ket bs)))) = _
-  rw [hrel1, hb (relabelBasis compact1612 bs) (goodW_relabel hk_hi coeffs Q bs hgd), hlmap _ (relabelBasis compact1612 bs), map_smul,
+  rw [hrel1, hb (relabelBasis compact1612 bs) (goodWA_relabel hk_hi coeffs Q bs hgd), hlmap _ (relabelBasis compact1612 bs), map_smul,
     relabelState_prep, compact1612_14833, relabelState_ket,
-    ← updateW_relabel_good hk_hi coeffs Q bs hgd, hinv_b, hlmap _ bs]
+    ← updateW_relabel_good hk_hi coeffs Q bs (goodWA_to_goodW hgd), hinv_b, hlmap _ bs]
 
-/-! #### 10. Concrete Wave 8B exports: `k = 16` (`2,238,256` Tof), `k = 17` (`2,320,431` Tof), `k = 18` (`2,484,527` Tof) -/
+/-! #### 10. Concrete full (`16/17/18`) and truncated (`n = 96`, `16/17`) exports -/
 
 def fixupSpec17 : FixupSpec 17 := fixupSpec9 17 (Or.inl rfl)
 def fixupSpec18 : FixupSpec 18 := fixupSpec9 18 (Or.inr rfl)
 
-def compiledProgram16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW fixupSpec16 0).finish) :=
-  compiledProgramW (by decide) (by decide) fixupSpec16 start
-def compiledProgram17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW fixupSpec17 0).finish) :=
-  compiledProgramW (by decide) (by decide) fixupSpec17 start
-def compiledProgram18 (start : Nat) : Straight (2 ^ 18) start (start + (compiledProgramFnW fixupSpec18 0).finish) :=
-  compiledProgramW (by decide) (by decide) fixupSpec18 start
+def compiledProgram16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW arithSpecFull fixupSpec16 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecFull fixupSpec16 start
+def compiledProgram17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW arithSpecFull fixupSpec17 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecFull fixupSpec17 start
+def compiledProgram18 (start : Nat) : Straight (2 ^ 18) start (start + (compiledProgramFnW arithSpecFull fixupSpec18 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecFull fixupSpec18 start
 
-theorem compiledRec16_bound : (compiledProgramFnW fixupSpec16 0).finish ≤ 3850000 :=
-  (compiledRecW_bound (by decide) (by decide) fixupSpec16).trans (by decide)
-theorem compiledRec17_bound : (compiledProgramFnW fixupSpec17 0).finish ≤ 4000000 :=
-  (compiledRecW_bound (by decide) (by decide) fixupSpec17).trans (by decide)
-theorem compiledRec18_bound : (compiledProgramFnW fixupSpec18 0).finish ≤ 4350000 :=
-  (compiledRecW_bound (by decide) (by decide) fixupSpec18).trans (by decide)
+theorem compiledRec16_bound : (compiledProgramFnW arithSpecFull fixupSpec16 0).finish ≤ 3850000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecFull fixupSpec16).trans (by decide)
+theorem compiledRec17_bound : (compiledProgramFnW arithSpecFull fixupSpec17 0).finish ≤ 4000000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecFull fixupSpec17).trans (by decide)
+theorem compiledRec18_bound : (compiledProgramFnW arithSpecFull fixupSpec18 0).finish ≤ 4350000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecFull fixupSpec18).trans (by decide)
 
 theorem compiled16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
     ((compiledProgram16 start).instantiate read h).tCount ≤ 4 * 2238256 :=
-  (compiledW_tCount (by decide) (by decide) fixupSpec16 start read h).trans (by decide)
+  (compiledW_tCount (by decide) (by decide) arithSpecFull fixupSpec16 start read h).trans (by decide)
 theorem compiled17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
     ((compiledProgram17 start).instantiate read h).tCount ≤ 4 * 2320431 :=
-  (compiledW_tCount (by decide) (by decide) fixupSpec17 start read h).trans (by decide)
+  (compiledW_tCount (by decide) (by decide) arithSpecFull fixupSpec17 start read h).trans (by decide)
 theorem compiled18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
     ((compiledProgram18 start).instantiate read h).tCount ≤ 4 * 2484527 :=
-  (compiledW_tCount (by decide) (by decide) fixupSpec18 start read h).trans (by decide)
+  (compiledW_tCount (by decide) (by decide) arithSpecFull fixupSpec18 start read h).trans (by decide)
 
 theorem compiled16_slots (start : Nat) : (compiledProgram16 start).gateSlots ≤ 80000000000 :=
-  (compiledW_slots (by decide) (by decide) fixupSpec16 start).trans (by decide)
+  (compiledW_slots (by decide) (by decide) arithSpecFull fixupSpec16 start).trans (by decide)
 theorem compiled17_slots (start : Nat) : (compiledProgram17 start).gateSlots ≤ 80000000000 :=
-  (compiledW_slots (by decide) (by decide) fixupSpec17 start).trans (by decide)
+  (compiledW_slots (by decide) (by decide) arithSpecFull fixupSpec17 start).trans (by decide)
 theorem compiled18_slots (start : Nat) : (compiledProgram18 start).gateSlots ≤ 80000000000 :=
-  (compiledW_slots (by decide) (by decide) fixupSpec18 start).trans (by decide)
+  (compiledW_slots (by decide) (by decide) arithSpecFull fixupSpec18 start).trans (by decide)
 
 theorem compiled16_wellFormed (start : Nat) : (compiledProgram16 start).WellFormed :=
-  compiledW_wellFormed (by decide) (by decide) fixupSpec16 start
+  compiledW_wellFormed (by decide) (by decide) arithSpecFull fixupSpec16 start
 theorem compiled17_wellFormed (start : Nat) : (compiledProgram17 start).WellFormed :=
-  compiledW_wellFormed (by decide) (by decide) fixupSpec17 start
+  compiledW_wellFormed (by decide) (by decide) arithSpecFull fixupSpec17 start
 theorem compiled18_wellFormed (start : Nat) : (compiledProgram18 start).WellFormed :=
-  compiledW_wellFormed (by decide) (by decide) fixupSpec18 start
+  compiledW_wellFormed (by decide) (by decide) arithSpecFull fixupSpec18 start
 
 theorem compiled16_removed18 (start : Nat) : removed 18 (compiledProgram16 start) = 0 :=
-  compiledW_removed18 (by decide) (by decide) fixupSpec16 start
+  compiledW_removed18 (by decide) (by decide) arithSpecFull fixupSpec16 start
 theorem compiled17_removed18 (start : Nat) : removed 18 (compiledProgram17 start) = 0 :=
-  compiledW_removed18 (by decide) (by decide) fixupSpec17 start
+  compiledW_removed18 (by decide) (by decide) arithSpecFull fixupSpec17 start
 theorem compiled18_removed18 (start : Nat) : removed 18 (compiledProgram18 start) = 0 :=
-  compiledW_removed18 (by decide) (by decide) fixupSpec18 start
+  compiledW_removed18 (by decide) (by decide) arithSpecFull fixupSpec18 start
 
 theorem compiled16_packed_support (start : Nat) :
     ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgram16 start)) ⊆ List.range 1612 :=
-  compiledW_packed_support (by decide) (by decide) fixupSpec16 start
+  compiledW_packed_support (by decide) (by decide) arithSpecFull fixupSpec16 start
 theorem compiled17_packed_support (start : Nat) :
     ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgram17 start)) ⊆ List.range 1612 :=
-  compiledW_packed_support (by decide) (by decide) fixupSpec17 start
+  compiledW_packed_support (by decide) (by decide) arithSpecFull fixupSpec17 start
 theorem compiled18_packed_support (start : Nat) :
     ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgram18 start)) ⊆ List.range 1612 :=
-  compiledW_packed_support (by decide) (by decide) fixupSpec18 start
+  compiledW_packed_support (by decide) (by decide) arithSpecFull fixupSpec18 start
 
 theorem compiled16_packed_coherent (coeffs : Fin (2 ^ 16) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
     CatCoherent 1 ((relabelStraight compact1612 (compiledProgram16 start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodW 16 coeffs Q) :=
-  compiledW_packed_coherent (by decide) (by decide) fixupSpec16 coeffs Q hn start h
+      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodW 16 coeffs Q) := by
+  obtain ⟨cs, al, hm⟩ := compiledW_packed_coherent (by decide) (by decide) arithSpecFull fixupSpec16 coeffs Q hn start h
+  exact ⟨cs, al.imp (fun b c hb bs hgd => hb bs (goodW_to_goodWA_full hgd)), hm⟩
 theorem compiled17_packed_coherent (coeffs : Fin (2 ^ 17) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
     CatCoherent 1 ((relabelStraight compact1612 (compiledProgram17 start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodW 17 coeffs Q) :=
-  compiledW_packed_coherent (by decide) (by decide) fixupSpec17 coeffs Q hn start h
+      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodW 17 coeffs Q) := by
+  obtain ⟨cs, al, hm⟩ := compiledW_packed_coherent (by decide) (by decide) arithSpecFull fixupSpec17 coeffs Q hn start h
+  exact ⟨cs, al.imp (fun b c hb bs hgd => hb bs (goodW_to_goodWA_full hgd)), hm⟩
 theorem compiled18_packed_coherent (coeffs : Fin (2 ^ 18) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
     CatCoherent 1 ((relabelStraight compact1612 (compiledProgram18 start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW 18 coeffs Q)) (GoodW 18 coeffs Q) :=
-  compiledW_packed_coherent (by decide) (by decide) fixupSpec18 coeffs Q hn start h
+      (Finsupp.lmapDomain ℂ ℂ (updateW 18 coeffs Q)) (GoodW 18 coeffs Q) := by
+  obtain ⟨cs, al, hm⟩ := compiledW_packed_coherent (by decide) (by decide) arithSpecFull fixupSpec18 coeffs Q hn start h
+  exact ⟨cs, al.imp (fun b c hb bs hgd => hb bs (goodW_to_goodWA_full hgd)), hm⟩
+
+def compiledProgramTrunc16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW arithSpecTrunc96 fixupSpec16 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start
+def compiledProgramTrunc17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW arithSpecTrunc96 fixupSpec17 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start
+
+theorem compiledRecTrunc16_bound : (compiledProgramFnW arithSpecTrunc96 fixupSpec16 0).finish ≤ 3730000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecTrunc96 fixupSpec16).trans (by decide)
+theorem compiledRecTrunc17_bound : (compiledProgramFnW arithSpecTrunc96 fixupSpec17 0).finish ≤ 3880000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecTrunc96 fixupSpec17).trans (by decide)
+
+theorem compiledTrunc16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramTrunc16 start).instantiate read h).tCount ≤ 4 * 2172470 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start read h).trans (by decide)
+theorem compiledTrunc17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramTrunc17 start).instantiate read h).tCount ≤ 4 * 2254645 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start read h).trans (by decide)
+
+theorem compiledTrunc16_slots (start : Nat) : (compiledProgramTrunc16 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start).trans (by decide)
+theorem compiledTrunc17_slots (start : Nat) : (compiledProgramTrunc17 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start).trans (by decide)
+
+theorem compiledTrunc16_wellFormed (start : Nat) : (compiledProgramTrunc16 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start
+theorem compiledTrunc17_wellFormed (start : Nat) : (compiledProgramTrunc17 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start
+
+theorem compiledTrunc16_removed18 (start : Nat) : removed 18 (compiledProgramTrunc16 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start
+theorem compiledTrunc17_removed18 (start : Nat) : removed 18 (compiledProgramTrunc17 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start
+
+theorem compiledTrunc16_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramTrunc16 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecTrunc96 fixupSpec16 start
+theorem compiledTrunc17_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramTrunc17 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecTrunc96 fixupSpec17 start
+
+theorem compiledTrunc16_packed_coherent (coeffs : Fin (2 ^ 16) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramTrunc16 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodW96 16 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecTrunc96 fixupSpec16 coeffs Q hn start h
+theorem compiledTrunc17_packed_coherent (coeffs : Fin (2 ^ 17) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramTrunc17 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodW96 17 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecTrunc96 fixupSpec17 coeffs Q hn start h
 
 end
 end ShorECDLP.Entrant.GenericW
