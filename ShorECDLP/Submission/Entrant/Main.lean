@@ -1038,6 +1038,246 @@ theorem joint_error18_256_206 : account18 256 0 + account18 206 0 ≤ 51 / 10000
   have hu : (425 : ℝ) * unit18 ≤ 51 / 10000 := by norm_num [unit18]
   linarith
 
+/-! ### Wave 11 Minkowski `ℓ^2` phase-trimming lemmas (`Trim18`) -/
+
+theorem sqrt_le_add_of_eps (C A B : ℝ) (hC : 0 ≤ C) (hA : 0 ≤ A) (hB : 0 ≤ B)
+    (h : ∀ eps : ℝ, 0 < eps → eps * C ≤ (eps + eps ^ 2) * A + (1 + eps) * B) :
+    Real.sqrt C ≤ Real.sqrt A + Real.sqrt B := by
+  by_cases hA0 : A = 0
+  · subst hA0
+    have hCB : C ≤ B := by
+      by_contra hlt
+      push_neg at hlt
+      have hpos : 0 < C - B := by linarith
+      have heps : 0 < (B + 1) / (C - B) := by positivity
+      have h1 := h ((B + 1) / (C - B)) heps
+      have hmul : (B + 1) / (C - B) * (C - B) = B + 1 := div_mul_cancel₀ (B + 1) hpos.ne'
+      nlinarith
+    simpa only [Real.sqrt_zero, zero_add] using Real.sqrt_le_sqrt hCB
+  · by_cases hB0 : B = 0
+    · subst hB0
+      have hApos : 0 < A := lt_of_le_of_ne hA (Ne.symm hA0)
+      have hCA : C ≤ A := by
+        by_contra hlt
+        push_neg at hlt
+        have hCA_pos : 0 < C - A := by linarith
+        have heps : 0 < (C - A) / (2 * A) := by positivity
+        have h1 := h ((C - A) / (2 * A)) heps
+        have h2 : (C - A) / (2 * A) * C ≤ (C - A) / (2 * A) * ((1 + (C - A) / (2 * A)) * A) := by
+          linarith
+        have h3 : C ≤ (1 + (C - A) / (2 * A)) * A := le_of_mul_le_mul_left h2 heps
+        have h4 : (1 + (C - A) / (2 * A)) * A = (C + A) / 2 := by field_simp [hApos.ne']; ring
+        linarith
+      simpa only [Real.sqrt_zero, add_zero] using Real.sqrt_le_sqrt hCA
+    · have hApos : 0 < A := lt_of_le_of_ne hA (Ne.symm hA0)
+      have hBpos : 0 < B := lt_of_le_of_ne hB (Ne.symm hB0)
+      set eps : ℝ := Real.sqrt B / Real.sqrt A
+      have hAs : 0 < Real.sqrt A := Real.sqrt_pos.mpr hApos
+      have hBs : 0 < Real.sqrt B := Real.sqrt_pos.mpr hBpos
+      have heps : 0 < eps := div_pos hBs hAs
+      have h1 := h eps heps
+      have hsqA : Real.sqrt A ^ 2 = A := Real.sq_sqrt hA
+      have hsqB : Real.sqrt B ^ 2 = B := Real.sq_sqrt hB
+      have heq : (eps + eps ^ 2) * A + (1 + eps) * B = eps * (Real.sqrt A + Real.sqrt B) ^ 2 := by
+        dsimp only [eps]
+        field_simp [hAs.ne', hBs.ne']
+        nlinarith [hsqA, hsqB]
+      rw [heq] at h1
+      have h2 : C ≤ (Real.sqrt A + Real.sqrt B) ^ 2 := le_of_mul_le_mul_left h1 heps
+      exact (Real.sqrt_le_sqrt h2).trans_eq (Real.sqrt_sq (by positivity))
+
+theorem sqrt_sum_sq_add_two (a b c d : ℝ) (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) (hd : 0 ≤ d) :
+    Real.sqrt ((a + c) ^ 2 + (b + d) ^ 2) ≤ Real.sqrt (a ^ 2 + b ^ 2) + Real.sqrt (c ^ 2 + d ^ 2) := by
+  have h1 : (a + c) ^ 2 + (b + d) ^ 2 ≤ (Real.sqrt (a ^ 2 + b ^ 2) + Real.sqrt (c ^ 2 + d ^ 2)) ^ 2 := by
+    rw [add_sq (Real.sqrt _), Real.sq_sqrt (by positivity), Real.sq_sqrt (by positivity)]
+    have hcs : a * c + b * d ≤ Real.sqrt (a ^ 2 + b ^ 2) * Real.sqrt (c ^ 2 + d ^ 2) := by
+      have hsq : (a * c + b * d) ^ 2 ≤ (Real.sqrt (a ^ 2 + b ^ 2) * Real.sqrt (c ^ 2 + d ^ 2)) ^ 2 := by
+        rw [mul_pow, Real.sq_sqrt (by positivity), Real.sq_sqrt (by positivity)]
+        nlinarith [sq_nonneg (a * d - b * c)]
+      exact le_of_sq_le_sq hsq (by positivity)
+    linarith
+  exact (Real.sqrt_le_sqrt h1).trans_eq (Real.sqrt_sq (by positivity))
+
+theorem expectation_sqrt_add {n s e} (read : ConstantBit n → Bool)
+    (p : Straight n s e) (history : Fin s → Bool) (psi phi : State)
+    (accept : (Fin e → Bool) → Bool) :
+    Real.sqrt (expectation read p history (psi + phi) accept) ≤
+      Real.sqrt (expectation read p history psi accept) +
+      Real.sqrt (expectation read p history phi accept) :=
+  sqrt_le_add_of_eps _ _ _
+    (expectation_nonneg read p history (psi + phi) accept)
+    (expectation_nonneg read p history psi accept)
+    (expectation_nonneg read p history phi accept)
+    (fun eps _ => ComplementLoss.expectation_upper read p history psi phi accept eps)
+
+theorem dropped_sqrt18 {n s e} (read : ConstantBit n → Bool)
+    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
+    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
+    (g : Gate) (hg : largePhase 18 g = true) :
+    Real.sqrt (expectation read p history psi accept) ≤
+      Real.sqrt (expectation read p history (applyGate g psi) accept) +
+        charge18 g * Real.sqrt (normSq psi) := by
+  cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
+  case P dir k t =>
+    have hc : charge18 (.P dir k t) = (6283186 / 1000000 : ℝ) / 2 ^ (k + 1) := by
+      simp [charge18, hg]
+    have ha : (phaseAngle dir k / 2) ^ 2 ≤ (charge18 (.P dir k t)) ^ 2 := by
+      rw [hc]
+      have hpi := Real.pi_lt_d6
+      have hb : 2 * Real.pi / (2 : ℝ) ^ k / 2 ≤ (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ (k + 1) := by
+        rw [pow_succ, div_div]
+        apply div_le_div_of_nonneg_right _ (by positivity)
+        linarith
+      have hz : 0 ≤ 2 * Real.pi / (2 : ℝ) ^ k / 2 := by positivity
+      cases dir <;> simp only [phaseAngle, neg_div, neg_sq] <;> nlinarith
+    have hw : Complex.normSq (Complex.exp (Complex.I * ((-(phaseAngle dir k / 2) : ℝ) : ℂ))) = 1 := by
+      rw [Complex.normSq_eq_norm_sq, Complex.norm_exp]; simp
+    let phi := Complex.exp (Complex.I * ((-(phaseAngle dir k / 2) : ℝ) : ℂ)) • applyGate (.P dir k t) psi
+    have hphi : expectation read p history phi accept =
+        expectation read p history (applyGate (.P dir k t) psi) accept := by
+      simp only [phi, AndGadget.expectation_smul, hw, one_mul]
+    have hdiff : normSq (psi - phi) ≤ (charge18 (.P dir k t)) ^ 2 * normSq psi := by
+      have hneg : psi - phi = -(phi - psi) := by abel
+      rw [hneg, normSq_neg]
+      exact (phase_centered_mass dir k t psi).trans (mul_le_mul_of_nonneg_right ha (mass_nonneg psi))
+    have hsplit : psi = phi + (psi - phi) := by abel
+    have hadd := expectation_sqrt_add read p history phi (psi - phi) accept
+    rw [← hsplit, hphi] at hadd
+    have hrem : Real.sqrt (expectation read p history (psi - phi) accept) ≤
+        charge18 (.P dir k t) * Real.sqrt (normSq psi) := by
+      have hle := (expectation_le_mass read p history (psi - phi) accept hp).trans hdiff
+      have hs := Real.sqrt_le_sqrt hle
+      rw [Real.sqrt_mul (sq_nonneg _), Real.sqrt_sq (charge18_nonneg _)] at hs
+      exact hs
+    linarith
+
+theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
+    (p : Straight n s e) (history : Fin s → Bool) (psi : State)
+    (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed) :
+    Real.sqrt (expectation read (trim 18 p) history psi accept) ≤
+      Real.sqrt (expectation read p history psi accept) + cost18 p * Real.sqrt (normSq psi) := by
+  induction p generalizing psi with
+  | done => simp [trim, cost18, expectation]
+  | measure w p ih =>
+    have h0 := ih (Fin.lastCases false history) (xResetKraus w false psi) accept hp
+    have h1 := ih (Fin.lastCases true history) (xResetKraus w true psi) accept hp
+    have hm := normSq_xResetKraus_false_add_true w psi
+    have hc := cost18_nonneg p
+    set E0' := expectation read (trim 18 p) (Fin.lastCases false history) (xResetKraus w false psi) accept
+    set E1' := expectation read (trim 18 p) (Fin.lastCases true history) (xResetKraus w true psi) accept
+    set E0 := expectation read p (Fin.lastCases false history) (xResetKraus w false psi) accept
+    set E1 := expectation read p (Fin.lastCases true history) (xResetKraus w true psi) accept
+    set M0 := normSq (xResetKraus w false psi)
+    set M1 := normSq (xResetKraus w true psi)
+    have hE0' : 0 ≤ E0' := expectation_nonneg _ _ _ _ _
+    have hE1' : 0 ≤ E1' := expectation_nonneg _ _ _ _ _
+    have hE0 : 0 ≤ E0 := expectation_nonneg _ _ _ _ _
+    have hE1 : 0 ≤ E1 := expectation_nonneg _ _ _ _ _
+    have hM0 : 0 ≤ M0 := mass_nonneg _
+    have hM1 : 0 ≤ M1 := mass_nonneg _
+    have hsq0 : E0' ≤ (Real.sqrt E0 + cost18 p * Real.sqrt M0) ^ 2 := by
+      have := pow_le_pow_left₀ (Real.sqrt_nonneg _) h0 2
+      rwa [Real.sq_sqrt hE0'] at this
+    have hsq1 : E1' ≤ (Real.sqrt E1 + cost18 p * Real.sqrt M1) ^ 2 := by
+      have := pow_le_pow_left₀ (Real.sqrt_nonneg _) h1 2
+      rwa [Real.sq_sqrt hE1'] at this
+    simp only [trim, cost18, expectation]
+    have hsum : Real.sqrt (E0' + E1') ≤
+        Real.sqrt ((Real.sqrt E0 + cost18 p * Real.sqrt M0) ^ 2 + (Real.sqrt E1 + cost18 p * Real.sqrt M1) ^ 2) :=
+      Real.sqrt_le_sqrt (add_le_add hsq0 hsq1)
+    have hmink := sqrt_sum_sq_add_two (Real.sqrt E0) (Real.sqrt E1)
+      (cost18 p * Real.sqrt M0) (cost18 p * Real.sqrt M1)
+      (Real.sqrt_nonneg _) (Real.sqrt_nonneg _) (by positivity) (by positivity)
+    have heq1 : Real.sqrt E0 ^ 2 + Real.sqrt E1 ^ 2 = E0 + E1 := by
+      rw [Real.sq_sqrt hE0, Real.sq_sqrt hE1]
+    have heq2 : Real.sqrt ((cost18 p * Real.sqrt M0) ^ 2 + (cost18 p * Real.sqrt M1) ^ 2) =
+        cost18 p * Real.sqrt (normSq psi) := by
+      rw [mul_pow, mul_pow, Real.sq_sqrt hM0, Real.sq_sqrt hM1, ← mul_add, hm,
+        Real.sqrt_mul (sq_nonneg _), Real.sqrt_sq hc]
+    rw [heq1, heq2] at hmink
+    exact hsum.trans hmink
+  | recordGate i v g p ih =>
+    by_cases hg : largePhase 18 g = true
+    · have hi := ih history psi accept hp.2
+      have hs := dropped_sqrt18 read p history psi accept hp.2 g hg
+      have hc := charge18_nonneg g
+      simp only [trim, hg, if_true, cost18, expectation]
+      by_cases hr : history i = v
+      · simp only [hr, if_true, run_singleton]; linarith
+      · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
+        have : 0 ≤ charge18 g * Real.sqrt (normSq psi) := mul_nonneg hc (Real.sqrt_nonneg _)
+        linarith
+    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      have hz := charge18_false g hgf
+      have hi := ih history (Quantum.run (if history i = v then [g] else []) psi) accept hp.2
+      have hn : normSq (Quantum.run (if history i = v then [g] else []) psi) = normSq psi := by
+        apply normSq_run
+        split_ifs
+        · simpa [CircuitWellFormed] using hp.1
+        · simp [CircuitWellFormed]
+      rw [hn] at hi
+      simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation] using hi
+  | gate g p ih =>
+    cases g with
+    | literal g =>
+      by_cases hg : largePhase 18 g = true
+      · have hi := ih history psi accept hp.2
+        have hs := dropped_sqrt18 read p history psi accept hp.2 g hg
+        simp only [trim, hg, if_true, cost18, expectation, TemplateGate.instantiate, run_singleton]
+        linarith
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        have hz := charge18_false g hgf
+        have hi := ih history (Quantum.run [g] psi) accept hp.2
+        have hn : normSq (Quantum.run [g] psi) = normSq psi := by
+          apply normSq_run; simpa [CircuitWellFormed] using hp.1
+        rw [hn] at hi
+        simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation,
+          TemplateGate.instantiate] using hi
+    | whenBit r v g =>
+      by_cases hg : largePhase 18 g = true
+      · have hi := ih history psi accept hp.2
+        have hs := dropped_sqrt18 read p history psi accept hp.2 g hg
+        have hc := charge18_nonneg g
+        simp only [trim, hg, if_true, cost18, expectation, TemplateGate.instantiate]
+        by_cases hr : read r = v
+        · simp only [hr, if_true, run_singleton]; linarith
+        · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
+          have : 0 ≤ charge18 g * Real.sqrt (normSq psi) := mul_nonneg hc (Real.sqrt_nonneg _)
+          linarith
+      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+        have hz := charge18_false g hgf
+        have hi := ih history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2
+        have hn : normSq (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) = normSq psi :=
+          normSq_template read (.whenBit r v g) hp.1 psi
+        rw [hn] at hi
+        simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation,
+          TemplateGate.instantiate] using hi
+
+theorem joint_error18_256_206_tight : account18 256 0 + account18 206 0 ≤ 5085 / 1000000 := by
+  have hz : account18 17 0 = 0 := by norm_num [account18, potential18, unit18]
+  rw [show 256 = 17 + 239 from rfl, show 206 = 17 + 189 from rfl,
+    account18_append, account18_append, hz]
+  norm_num only [zero_add]
+  have h1 := account18_geometric 239 17 (by decide)
+  have h2 := account18_geometric 189 17 (by decide)
+  have hp1 : potential18 (17 + 239 + 2) ≤ unit18 / 16 := by
+    unfold potential18 unit18
+    rw [show max 19 (17 + 239 + 2) = 258 by decide]
+    have h23 : (2 : ℝ) ^ 23 ≤ (2 : ℝ) ^ 258 := pow_le_pow_right₀ (by norm_num) (by decide)
+    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 16 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 23 by norm_num]
+    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h23
+  have hp2 : potential18 (17 + 189 + 2) ≤ unit18 / 16 := by
+    unfold potential18 unit18
+    rw [show max 19 (17 + 189 + 2) = 208 by decide]
+    have h23 : (2 : ℝ) ^ 23 ≤ (2 : ℝ) ^ 208 := pow_le_pow_right₀ (by norm_num) (by decide)
+    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 16 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 23 by norm_num]
+    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h23
+  have hp19 : potential18 (17 + 2) = unit18 := by norm_num [potential18, unit18]
+  rw [hp19] at h1 h2
+  norm_num only [Nat.cast_ofNat] at h1 h2
+  have hu : (424 + 1 / 4 : ℝ) * unit18 ≤ 5085 / 1000000 := by norm_num [unit18]
+  linarith
+
 theorem cost18_axis_exact [body : Single.WindowBody] [ledger : Single.ProducerResources body]
     {n} (ws : List (Window n))
     (hz : ∀ w ∈ ws, ∀ start, cost18 (w.program start) = 0)
@@ -1232,6 +1472,1551 @@ theorem trim18_within {n s e} (p : Straight n s e) (ws : List Wire) (hp : Within
 
 end
 end ShorECDLP.Entrant.Trim18
+
+/-! ### Part 1b: Tight deg-2 sine-windowed ideal recovery (`SineBoundsTight`, `≥ 99497 / 100000`) -/
+
+namespace ShorECDLP.Entrant.SineBoundsTight
+open Finset Classical Quantum Quantum.PhaseEstimation Secp256k1 Challenge
+open Paper2607_13816 Paper2607_13816.ChallengeMigration
+open SineCircuit SineBounds RoundedReadout WindowMassSharpProof
+open scoped BigOperators
+noncomputable section
+set_option maxRecDepth 20000
+set_option maxHeartbeats 2000000
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+
+/-! ### Part 1: Elementary alternating Taylor bounds on `[0, π/2]` and closed-form 1024-bin sum -/
+
+private theorem sin_le_self_of_nonneg {x : ℝ} (hx : 0 ≤ x) : Real.sin x ≤ x := by
+  have h1 := Real.abs_sin_sub_sin_le x 0
+  rw [Real.sin_zero, sub_zero, sub_zero, abs_of_nonneg hx] at h1
+  exact (abs_le.mp h1).2
+
+private theorem cos_ge_one_sub_sq_div_two {x : ℝ} (hx : 0 ≤ x) : 1 - x ^ 2 / 2 ≤ Real.cos x := by
+  let f : ℝ → ℝ := fun t => Real.cos t - (1 - t ^ 2 / 2)
+  have hf : ∀ t ∈ Set.Icc (0 : ℝ) x, HasDerivAt f (t - Real.sin t) t := by
+    intro t _
+    have h1 := (Real.hasDerivAt_cos t).sub ((hasDerivAt_const t (1 : ℝ)).sub
+      (((hasDerivAt_pow 2 t).div_const 2)))
+    convert h1 using 1; ring
+  have hmono : MonotoneOn f (Set.Icc 0 x) := monotoneOn_of_deriv_nonneg (convex_Icc 0 x)
+    (fun t ht => (hf t ht).continuousAt.continuousWithinAt)
+    (fun t ht => (hf t (interior_subset ht)).differentiableAt.differentiableWithinAt)
+    (fun t ht => by
+      rw [(hf t (interior_subset ht)).deriv]
+      linarith [sin_le_self_of_nonneg (interior_subset ht).1])
+  have h0 : f 0 ≤ f x := hmono ⟨le_rfl, hx⟩ ⟨hx, le_rfl⟩ hx
+  simp only [f, Real.cos_zero, sq, mul_zero, zero_div, sub_zero, sub_self] at h0
+  linarith
+
+private theorem sin_ge_sub_cube {x : ℝ} (hx : 0 ≤ x) : x - x ^ 3 / 6 ≤ Real.sin x := by
+  let f : ℝ → ℝ := fun t => Real.sin t - (t - t ^ 3 / 6)
+  have hf : ∀ t ∈ Set.Icc (0 : ℝ) x, HasDerivAt f (Real.cos t - (1 - t ^ 2 / 2)) t := by
+    intro t _
+    have h1 := (Real.hasDerivAt_sin t).sub ((hasDerivAt_id t).sub
+      (((hasDerivAt_pow 3 t).div_const 6)))
+    convert h1 using 1; ring
+  have hmono : MonotoneOn f (Set.Icc 0 x) := monotoneOn_of_deriv_nonneg (convex_Icc 0 x)
+    (fun t ht => (hf t ht).continuousAt.continuousWithinAt)
+    (fun t ht => (hf t (interior_subset ht)).differentiableAt.differentiableWithinAt)
+    (fun t ht => by
+      rw [(hf t (interior_subset ht)).deriv]
+      linarith [cos_ge_one_sub_sq_div_two (interior_subset ht).1])
+  have h0 : f 0 ≤ f x := hmono ⟨le_rfl, hx⟩ ⟨hx, le_rfl⟩ hx
+  simp only [f, Real.sin_zero, zero_pow (by decide : 3 ≠ 0), zero_div, sub_zero, sub_self] at h0
+  linarith
+
+private theorem cos_le_quartic {x : ℝ} (hx : 0 ≤ x) : Real.cos x ≤ 1 - x ^ 2 / 2 + x ^ 4 / 24 := by
+  let f : ℝ → ℝ := fun t => (1 - t ^ 2 / 2 + t ^ 4 / 24) - Real.cos t
+  have hf : ∀ t ∈ Set.Icc (0 : ℝ) x, HasDerivAt f (Real.sin t - (t - t ^ 3 / 6)) t := by
+    intro t _
+    have h1 := (((hasDerivAt_const t (1 : ℝ)).sub ((hasDerivAt_pow 2 t).div_const 2)).add
+      ((hasDerivAt_pow 4 t).div_const 24)).sub (Real.hasDerivAt_cos t)
+    convert h1 using 1; ring
+  have hmono : MonotoneOn f (Set.Icc 0 x) := monotoneOn_of_deriv_nonneg (convex_Icc 0 x)
+    (fun t ht => (hf t ht).continuousAt.continuousWithinAt)
+    (fun t ht => (hf t (interior_subset ht)).differentiableAt.differentiableWithinAt)
+    (fun t ht => by
+      rw [(hf t (interior_subset ht)).deriv]
+      linarith [sin_ge_sub_cube (interior_subset ht).1])
+  have h0 : f 0 ≤ f x := hmono ⟨le_rfl, hx⟩ ⟨hx, le_rfl⟩ hx
+  simp only [f, Real.cos_zero, zero_pow (by decide : 2 ≠ 0), zero_pow (by decide : 4 ≠ 0),
+    zero_div, sub_zero, add_zero, sub_self] at h0
+  linarith
+
+private theorem sin_le_quintic {x : ℝ} (hx : 0 ≤ x) : Real.sin x ≤ x - x ^ 3 / 6 + x ^ 5 / 120 := by
+  let f : ℝ → ℝ := fun t => (t - t ^ 3 / 6 + t ^ 5 / 120) - Real.sin t
+  have hf : ∀ t ∈ Set.Icc (0 : ℝ) x, HasDerivAt f ((1 - t ^ 2 / 2 + t ^ 4 / 24) - Real.cos t) t := by
+    intro t _
+    have h1 := (((hasDerivAt_id t).sub ((hasDerivAt_pow 3 t).div_const 6)).add
+      ((hasDerivAt_pow 5 t).div_const 120)).sub (Real.hasDerivAt_sin t)
+    convert h1 using 1; ring
+  have hmono : MonotoneOn f (Set.Icc 0 x) := monotoneOn_of_deriv_nonneg (convex_Icc 0 x)
+    (fun t ht => (hf t ht).continuousAt.continuousWithinAt)
+    (fun t ht => (hf t (interior_subset ht)).differentiableAt.differentiableWithinAt)
+    (fun t ht => by
+      rw [(hf t (interior_subset ht)).deriv]
+      linarith [cos_le_quartic (interior_subset ht).1])
+  have h0 : f 0 ≤ f x := hmono ⟨le_rfl, hx⟩ ⟨hx, le_rfl⟩ hx
+  simp only [f, Real.sin_zero, zero_pow (by decide : 3 ≠ 0), zero_pow (by decide : 5 ≠ 0),
+    zero_div, sub_zero, add_zero, sub_self] at h0
+  linarith
+
+private theorem cos_ge_sextic {x : ℝ} (hx : 0 ≤ x) :
+    1 - x ^ 2 / 2 + x ^ 4 / 24 - x ^ 6 / 720 ≤ Real.cos x := by
+  let f : ℝ → ℝ := fun t => Real.cos t - (1 - t ^ 2 / 2 + t ^ 4 / 24 - t ^ 6 / 720)
+  have hf : ∀ t ∈ Set.Icc (0 : ℝ) x, HasDerivAt f ((t - t ^ 3 / 6 + t ^ 5 / 120) - Real.sin t) t := by
+    intro t _
+    have h1 := (Real.hasDerivAt_cos t).sub ((((hasDerivAt_const t (1 : ℝ)).sub
+      ((hasDerivAt_pow 2 t).div_const 2)).add ((hasDerivAt_pow 4 t).div_const 24)).sub
+      ((hasDerivAt_pow 6 t).div_const 720))
+    convert h1 using 1; ring
+  have hmono : MonotoneOn f (Set.Icc 0 x) := monotoneOn_of_deriv_nonneg (convex_Icc 0 x)
+    (fun t ht => (hf t ht).continuousAt.continuousWithinAt)
+    (fun t ht => (hf t (interior_subset ht)).differentiableAt.differentiableWithinAt)
+    (fun t ht => by
+      rw [(hf t (interior_subset ht)).deriv]
+      linarith [sin_le_quintic (interior_subset ht).1])
+  have h0 : f 0 ≤ f x := hmono ⟨le_rfl, hx⟩ ⟨hx, le_rfl⟩ hx
+  simp only [f, Real.cos_zero, zero_pow (by decide : 2 ≠ 0), zero_pow (by decide : 4 ≠ 0),
+    zero_pow (by decide : 6 ≠ 0), zero_div, sub_zero, add_zero, sub_self] at h0
+  linarith
+
+private theorem sin_ge_septic {x : ℝ} (hx : 0 ≤ x) :
+    x - x ^ 3 / 6 + x ^ 5 / 120 - x ^ 7 / 5040 ≤ Real.sin x := by
+  let f : ℝ → ℝ := fun t => Real.sin t - (t - t ^ 3 / 6 + t ^ 5 / 120 - t ^ 7 / 5040)
+  have hf : ∀ t ∈ Set.Icc (0 : ℝ) x,
+      HasDerivAt f (Real.cos t - (1 - t ^ 2 / 2 + t ^ 4 / 24 - t ^ 6 / 720)) t := by
+    intro t _
+    have h1 := (Real.hasDerivAt_sin t).sub ((((hasDerivAt_id t).sub
+      ((hasDerivAt_pow 3 t).div_const 6)).add ((hasDerivAt_pow 5 t).div_const 120)).sub
+      ((hasDerivAt_pow 7 t).div_const 5040))
+    convert h1 using 1; ring
+  have hmono : MonotoneOn f (Set.Icc 0 x) := monotoneOn_of_deriv_nonneg (convex_Icc 0 x)
+    (fun t ht => (hf t ht).continuousAt.continuousWithinAt)
+    (fun t ht => (hf t (interior_subset ht)).differentiableAt.differentiableWithinAt)
+    (fun t ht => by
+      rw [(hf t (interior_subset ht)).deriv]
+      linarith [cos_ge_sextic (interior_subset ht).1])
+  have h0 : f 0 ≤ f x := hmono ⟨le_rfl, hx⟩ ⟨hx, le_rfl⟩ hx
+  simp only [f, Real.sin_zero, zero_pow (by decide : 3 ≠ 0), zero_pow (by decide : 5 ≠ 0),
+    zero_pow (by decide : 7 ≠ 0), zero_div, sub_zero, add_zero, sub_self] at h0
+  linarith
+
+private theorem abs_cos_sub_cos_le (a b : ℝ) : |Real.cos a - Real.cos b| ≤ |a - b| := by
+  rw [← Real.sin_pi_div_two_sub a, ← Real.sin_pi_div_two_sub b]
+  have h := Real.abs_sin_sub_sin_le (Real.pi / 2 - a) (Real.pi / 2 - b)
+  have heq : (Real.pi / 2 - a) - (Real.pi / 2 - b) = -(a - b) := by ring
+  rwa [heq, abs_neg] at h
+
+private theorem sum_sin_arith_telescope (M : ℕ) (α β : ℝ) :
+    2 * Real.sin (α / 2) * ∑ u ∈ range M, Real.sin (α * (u : ℝ) + β) =
+      Real.cos (β - α / 2) - Real.cos (α * (M : ℝ) + β - α / 2) := by
+  rw [Finset.mul_sum]
+  have hterm : ∀ u : ℕ, 2 * Real.sin (α / 2) * Real.sin (α * (u : ℝ) + β) =
+      Real.cos (α * (u : ℝ) + β - α / 2) - Real.cos (α * ((u + 1 : ℕ) : ℝ) + β - α / 2) := by
+    intro u
+    set θ : ℝ := α * (u : ℝ) + β
+    have h2 : α * ((u + 1 : ℕ) : ℝ) + β - α / 2 = θ + α / 2 := by dsimp [θ]; push_cast; ring
+    rw [h2, Real.cos_sub θ (α / 2), Real.cos_add θ (α / 2)]; ring
+  simp_rw [hterm]
+  have htel := Finset.sum_range_sub' (fun u : ℕ => Real.cos (α * (u : ℝ) + β - α / 2)) M
+  simpa only [Nat.cast_zero, mul_zero, zero_add] using htel
+
+private theorem sum_sin_1024_le : ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ≤ 652 := by
+  have htel := sum_sin_arith_telescope 1024 (Real.pi / 1024) 0
+  have harg : ∀ u ∈ range 1024, Real.sin (Real.pi / 1024 * (u : ℝ) + 0) = Real.sin (Real.pi * (u : ℝ) / 1024) :=
+    fun u _ => by congr 1; ring
+  rw [Finset.sum_congr rfl harg] at htel
+  set a : ℝ := Real.pi / 1024 / 2
+  have ha_pos : 0 < a := by dsimp [a]; positivity
+  have ha_lt : a < Real.pi / 2 := by dsimp [a]; linarith [Real.pi_pos]
+  have hsin_pos : 0 < Real.sin a := Real.sin_pos_of_pos_of_lt_pi ha_pos (by linarith [Real.pi_pos])
+  have hrhs : Real.cos (0 - a) - Real.cos (Real.pi / 1024 * ((1024 : ℕ) : ℝ) + 0 - a) = 2 * Real.cos a := by
+    push_cast
+    rw [show (0 : ℝ) - a = -a by ring, Real.cos_neg,
+      show Real.pi / 1024 * (1024 : ℝ) + 0 - a = Real.pi - a by ring, Real.cos_pi_sub]
+    ring
+  rw [hrhs] at htel
+  have hcos_le : Real.cos a ≤ 1 := Real.cos_le_one a
+  have hsin_ge : a - a ^ 3 / 6 ≤ Real.sin a := sin_ge_sub_cube ha_pos.le
+  have hpi_lo : (314159 / 100000 : ℝ) ≤ Real.pi := by linarith [Real.pi_gt_d6]
+  have hpi_hi : Real.pi ≤ 31416 / 10000 := by linarith [Real.pi_lt_d6]
+  have hnum : (1 : ℝ) ≤ 652 * (a - a ^ 3 / 6) := by
+    have ha_lo : (314159 / 204800000 : ℝ) ≤ a := by dsimp [a]; linarith
+    have ha_hi : a ≤ 31416 / 20480000 := by dsimp [a]; linarith
+    have ha2 : a ^ 2 ≤ (31416 / 20480000 : ℝ) ^ 2 := by nlinarith
+    have ha3 : a ^ 3 ≤ (31416 / 20480000 : ℝ) ^ 3 := by nlinarith
+    nlinarith
+  have hprod : 2 * Real.sin a * ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ≤
+      2 * Real.sin a * 652 := by nlinarith
+  exact le_of_mul_le_mul_left hprod (by positivity)
+
+private theorem sum_sin_cos_1024_ge (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t < 1 / 2) :
+    (2048 / Real.pi) * Real.cos (Real.pi * t) / (1 - 4 * t ^ 2) - Real.pi / 4096 ≤
+      ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+        Real.cos (2 * Real.pi * t * ((u : ℝ) / 1024 - 1 / 2)) := by
+  set α1 : ℝ := Real.pi * (1 + 2 * t) / 1024
+  set α2 : ℝ := Real.pi * (1 - 2 * t) / 1024
+  have hsplit : ∀ u : ℕ,
+      2 * (Real.sin (Real.pi * (u : ℝ) / 1024) *
+        Real.cos (2 * Real.pi * t * ((u : ℝ) / 1024 - 1 / 2))) =
+      Real.sin (α1 * (u : ℝ) + (-Real.pi * t)) + Real.sin (α2 * (u : ℝ) + (Real.pi * t)) := by
+    intro u
+    have h1 : α1 * (u : ℝ) + (-Real.pi * t) =
+        Real.pi * (u : ℝ) / 1024 + 2 * Real.pi * t * ((u : ℝ) / 1024 - 1 / 2) := by
+      dsimp only [α1]; ring
+    have h2 : α2 * (u : ℝ) + (Real.pi * t) =
+        Real.pi * (u : ℝ) / 1024 - 2 * Real.pi * t * ((u : ℝ) / 1024 - 1 / 2) := by
+      dsimp only [α2]; ring
+    rw [h1, h2, Real.sin_add, Real.sin_sub]; ring
+  have htel1 := sum_sin_arith_telescope 1024 α1 (-Real.pi * t)
+  have htel2 := sum_sin_arith_telescope 1024 α2 (Real.pi * t)
+  simp only [Nat.cast_ofNat] at htel1 htel2
+  have ha1_pos : 0 < α1 / 2 := by dsimp [α1]; have := Real.pi_pos; positivity
+  have ha2_pos : 0 < α2 / 2 := by dsimp [α2]; have := Real.pi_pos; nlinarith
+  have ha1_lt : α1 / 2 < Real.pi := by dsimp [α1]; nlinarith [Real.pi_pos]
+  have ha2_lt : α2 / 2 < Real.pi := by dsimp [α2]; nlinarith [Real.pi_pos]
+  have hs1_pos : 0 < Real.sin (α1 / 2) := Real.sin_pos_of_pos_of_lt_pi ha1_pos ha1_lt
+  have hs2_pos : 0 < Real.sin (α2 / 2) := Real.sin_pos_of_pos_of_lt_pi ha2_pos ha2_lt
+  have hr1 : Real.cos (-Real.pi * t - α1 / 2) - Real.cos (α1 * 1024 + -Real.pi * t - α1 / 2) =
+      2 * Real.cos (Real.pi * t) * Real.cos (α1 / 2) := by
+    have he1 : -Real.pi * t - α1 / 2 = -(Real.pi * t + α1 / 2) := by ring
+    have he2 : α1 * 1024 + -Real.pi * t - α1 / 2 = (Real.pi * t - α1 / 2) + Real.pi := by
+      dsimp only [α1]; ring
+    rw [he1, Real.cos_neg, he2, Real.cos_add_pi, Real.cos_add, Real.cos_sub]; ring
+  have hr2 : Real.cos (Real.pi * t - α2 / 2) - Real.cos (α2 * 1024 + Real.pi * t - α2 / 2) =
+      2 * Real.cos (Real.pi * t) * Real.cos (α2 / 2) := by
+    have he2 : α2 * 1024 + Real.pi * t - α2 / 2 = Real.pi - (Real.pi * t + α2 / 2) := by
+      dsimp only [α2]; ring
+    rw [he2, Real.cos_pi_sub, Real.cos_sub, Real.cos_add]; ring
+  rw [hr1] at htel1
+  rw [hr2] at htel2
+  have hS1 : ∑ u ∈ range 1024, Real.sin (α1 * (u : ℝ) + (-Real.pi * t)) =
+      Real.cos (Real.pi * t) * (Real.cos (α1 / 2) / Real.sin (α1 / 2)) := by
+    have h : (2 * Real.sin (α1 / 2) * ∑ u ∈ range 1024, Real.sin (α1 * (u : ℝ) + (-Real.pi * t))) / (2 * Real.sin (α1 / 2)) =
+        (2 * Real.cos (Real.pi * t) * Real.cos (α1 / 2)) / (2 * Real.sin (α1 / 2)) :=
+      congrArg (· / (2 * Real.sin (α1 / 2))) htel1
+    have hne : (2 : ℝ) * Real.sin (α1 / 2) ≠ 0 := by positivity
+    rw [mul_div_cancel_left₀ _ hne] at h
+    exact h.trans (by field_simp [hs1_pos.ne'])
+  have hS2 : ∑ u ∈ range 1024, Real.sin (α2 * (u : ℝ) + (Real.pi * t)) =
+      Real.cos (Real.pi * t) * (Real.cos (α2 / 2) / Real.sin (α2 / 2)) := by
+    have h : (2 * Real.sin (α2 / 2) * ∑ u ∈ range 1024, Real.sin (α2 * (u : ℝ) + (Real.pi * t))) / (2 * Real.sin (α2 / 2)) =
+        (2 * Real.cos (Real.pi * t) * Real.cos (α2 / 2)) / (2 * Real.sin (α2 / 2)) :=
+      congrArg (· / (2 * Real.sin (α2 / 2))) htel2
+    have hne : (2 : ℝ) * Real.sin (α2 / 2) ≠ 0 := by positivity
+    rw [mul_div_cancel_left₀ _ hne] at h
+    exact h.trans (by field_simp [hs2_pos.ne'])
+  have hsum_eq : ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+        Real.cos (2 * Real.pi * t * ((u : ℝ) / 1024 - 1 / 2)) =
+      (1 / 2) * Real.cos (Real.pi * t) *
+        (Real.cos (α1 / 2) / Real.sin (α1 / 2) + Real.cos (α2 / 2) / Real.sin (α2 / 2)) := by
+    have h2 : 2 * ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+        Real.cos (2 * Real.pi * t * ((u : ℝ) / 1024 - 1 / 2)) =
+        Real.cos (Real.pi * t) *
+          (Real.cos (α1 / 2) / Real.sin (α1 / 2) + Real.cos (α2 / 2) / Real.sin (α2 / 2)) := by
+      rw [Finset.mul_sum, Finset.sum_congr rfl (fun u _ => hsplit u), Finset.sum_add_distrib, hS1, hS2]
+      ring
+    linarith
+  rw [hsum_eq]
+  have hcot_lb : ∀ x : ℝ, 0 < x → x ≤ 1 → 1 / x - x / 2 ≤ Real.cos x / Real.sin x := by
+    intro x hx0 hx1
+    have hxpi : x < Real.pi := lt_of_le_of_lt hx1 (by linarith [Real.pi_gt_three])
+    have hspos : 0 < Real.sin x := Real.sin_pos_of_pos_of_lt_pi hx0 hxpi
+    have hsle : Real.sin x ≤ x := sin_le_self_of_nonneg hx0.le
+    have hcge : 1 - x ^ 2 / 2 ≤ Real.cos x := cos_ge_one_sub_sq_div_two hx0.le
+    have h1 : (1 - x ^ 2 / 2) / x ≤ Real.cos x / Real.sin x := by
+      rw [div_le_div_iff₀ hx0 hspos]
+      have hpos : 0 ≤ 1 - x ^ 2 / 2 := by nlinarith
+      exact (mul_le_mul_of_nonneg_left hsle hpos).trans (mul_le_mul_of_nonneg_right hcge hx0.le)
+    have heq : (1 - x ^ 2 / 2) / x = 1 / x - x / 2 := by field_simp [hx0.ne']
+    linarith
+  have hc1 := hcot_lb (α1 / 2) ha1_pos (by dsimp [α1]; nlinarith [Real.pi_lt_four, Real.pi_pos])
+  have hc2 := hcot_lb (α2 / 2) ha2_pos (by dsimp [α2]; nlinarith [Real.pi_lt_four, Real.pi_pos])
+  have hcos_nn : 0 ≤ Real.cos (Real.pi * t) :=
+    Real.cos_nonneg_of_mem_Icc ⟨by nlinarith [Real.pi_pos], by nlinarith [Real.pi_pos]⟩
+  have hcos_le1 : Real.cos (Real.pi * t) ≤ 1 := Real.cos_le_one _
+  have hsum_alg : 1 / (α1 / 2) - (α1 / 2) / 2 + (1 / (α2 / 2) - (α2 / 2) / 2) =
+      (4096 / Real.pi) / (1 - 4 * t ^ 2) - Real.pi / 2048 := by
+    dsimp only [α1, α2]
+    have hpi : Real.pi ≠ 0 := Real.pi_ne_zero
+    have h1p : 1 + 2 * t ≠ 0 := by linarith
+    have h1m : 1 - 2 * t ≠ 0 := by linarith
+    rw [show 1 - 4 * t ^ 2 = (1 - 2 * t) * (1 + 2 * t) by ring]
+    field_simp [hpi, h1p, h1m]; ring
+  have hstep : (1 / 2) * Real.cos (Real.pi * t) * ((4096 / Real.pi) / (1 - 4 * t ^ 2) - Real.pi / 2048) ≤
+      (1 / 2) * Real.cos (Real.pi * t) *
+        (Real.cos (α1 / 2) / Real.sin (α1 / 2) + Real.cos (α2 / 2) / Real.sin (α2 / 2)) := by
+    apply mul_le_mul_of_nonneg_left _ (by positivity)
+    linarith
+  have hpi_nn : 0 ≤ Real.pi / 4096 := by positivity
+  nlinarith [show (1 / 2) * Real.cos (Real.pi * t) * ((4096 / Real.pi) / (1 - 4 * t ^ 2) - Real.pi / 2048) =
+      (2048 / Real.pi) * Real.cos (Real.pi * t) / (1 - 4 * t ^ 2) - (Real.pi / 4096) * Real.cos (Real.pi * t) by ring]
+
+/-! ### Part 2: Rational 64-subinterval evaluator and tight deg-2 bounds (`U3`, `U5`, `L1`) -/
+
+def piLoQ : ℚ := 314159 / 100000
+def piHiQ : ℚ := 31416 / 10000
+def sqrt2LoQ : ℚ := 141421 / 100000
+
+def cosLoQ (t : ℚ) : ℚ :=
+  if t ≤ 1 / 4 then
+    let x := piHiQ * t
+    1 - x ^ 2 / 2 + x ^ 4 / 24 - x ^ 6 / 720
+  else
+    let y := piLoQ * (1 / 2 - t)
+    y - y ^ 3 / 6 + y ^ 5 / 120 - y ^ 7 / 5040
+
+def cosHiQ (t : ℚ) : ℚ :=
+  if t ≤ 1 / 4 then
+    let x := piLoQ * t
+    1 - x ^ 2 / 2 + x ^ 4 / 24
+  else
+    let y := piHiQ * (1 / 2 - t)
+    y - y ^ 3 / 6 + y ^ 5 / 120
+
+def reLoQ (t : ℚ) : ℚ :=
+  if t = 1 / 2 then
+    sqrt2LoQ * (1 / 2 - piHiQ * (652 / 1048576))
+  else
+    (2 * sqrt2LoQ / piHiQ) * cosLoQ t / (1 - 4 * t ^ 2) -
+      (15 / 10) * piHiQ / 4194304 - (15 / 10) * (2 * piHiQ * t) * (652 / 1048576)
+
+def U3a0Q : ℚ := 139 / 500000
+def U3a1Q : ℚ := 6003 / 500000
+def U3a2Q : ℚ := 2819 / 1000000
+
+def U5d0Q : ℚ := 19 / 1000000
+def U5d1Q : ℚ := 2397 / 1000000
+def U5d2Q : ℚ := 119 / 500000
+
+def L1b0Q : ℚ := 495779 / 1000000
+def L1b1Q : ℚ := 131799 / 250000
+def L1b2Q : ℚ := 45303 / 200000
+
+def subOK64 (j : Fin 64) : Bool :=
+  let t0 : ℚ := (j.val : ℚ) / 128
+  let t1 : ℚ := ((j.val + 1 : ℕ) : ℚ) / 128
+  let clo : ℚ := (cosLoQ t1) ^ 2
+  let chi : ℚ := (cosHiQ t0) ^ 2
+  let k3 : ℚ := (508 / 10000) * (smallSumQ 15 (2 - t1) + smallSumQ 14 (2 + t0)) + 68 / 1000000
+  let k5 : ℚ := (508 / 10000) * (smallSumQ 14 (3 - t1) + smallSumQ 13 (3 + t0)) + 68 / 1000000
+  let rlo : ℚ := reLoQ t1
+  decide (0 ≤ cosLoQ t1 ∧ cosHiQ t0 ≤ 1 ∧ 0 ≤ rlo ∧
+    k3 * clo ≤ U3a0Q + U3a1Q * clo - U3a2Q * clo ^ 2 ∧
+    k3 * chi ≤ U3a0Q + U3a1Q * chi - U3a2Q * chi ^ 2 ∧
+    k5 * clo ≤ U5d0Q + U5d1Q * clo - U5d2Q * clo ^ 2 ∧
+    k5 * chi ≤ U5d0Q + U5d1Q * chi - U5d2Q * chi ^ 2 ∧
+    L1b0Q + L1b1Q * chi - L1b2Q * chi ^ 2 ≤ rlo ^ 2)
+
+theorem all_subOK64 : ∀ j : Fin 64, subOK64 j = true := by
+  decide +kernel
+
+private theorem cosLoQ_le_cos (t : ℚ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
+    ((cosLoQ t : ℚ) : ℝ) ≤ Real.cos (Real.pi * (t : ℝ)) := by
+  have hpi_lo : ((piLoQ : ℚ) : ℝ) ≤ Real.pi := by
+    unfold piLoQ; push_cast; linarith [Real.pi_gt_d6]
+  have hpi_hi : Real.pi ≤ ((piHiQ : ℚ) : ℝ) := by
+    unfold piHiQ; push_cast; linarith [Real.pi_lt_d6]
+  have ht0R : (0 : ℝ) ≤ (t : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr ht0
+  have ht1R : (t : ℝ) ≤ 1 / 2 := by simpa using Rat.cast_le (K := ℝ).mpr ht1
+  unfold cosLoQ
+  split_ifs with hq
+  · have hqR : (t : ℝ) ≤ 1 / 4 := by simpa using Rat.cast_le (K := ℝ).mpr hq
+    set x : ℝ := ((piHiQ : ℚ) : ℝ) * (t : ℝ)
+    have hx0 : 0 ≤ x := by dsimp [x]; unfold piHiQ; push_cast; positivity
+    have hx_le : Real.pi * (t : ℝ) ≤ x := mul_le_mul_of_nonneg_right hpi_hi ht0R
+    have hx_pi : x ≤ Real.pi := by
+      dsimp [x]; unfold piHiQ; push_cast; linarith [Real.pi_gt_d6]
+    have hanti : Real.cos x ≤ Real.cos (Real.pi * (t : ℝ)) :=
+      Real.strictAntiOn_cos.antitoneOn ⟨by positivity, hx_le.trans hx_pi⟩ ⟨hx0, hx_pi⟩ hx_le
+    have htay := cos_ge_sextic hx0
+    push_cast; exact htay.trans hanti
+  · have hqR : 1 / 4 < (t : ℝ) := by simpa using Rat.cast_lt (K := ℝ).mpr (lt_of_not_ge hq)
+    set y : ℝ := ((piLoQ : ℚ) : ℝ) * (1 / 2 - (t : ℝ))
+    have hy0 : 0 ≤ y := by dsimp [y]; unfold piLoQ; push_cast; nlinarith
+    have hy_le : y ≤ Real.pi * (1 / 2 - (t : ℝ)) := mul_le_mul_of_nonneg_right hpi_lo (by linarith)
+    have hy_pi2 : Real.pi * (1 / 2 - (t : ℝ)) ≤ Real.pi / 2 := by nlinarith [Real.pi_pos]
+    have hmono : Real.sin y ≤ Real.sin (Real.pi * (1 / 2 - (t : ℝ))) :=
+      Real.strictMonoOn_sin.monotoneOn ⟨by linarith [Real.pi_pos], hy_le.trans hy_pi2⟩
+        ⟨by linarith [Real.pi_pos], hy_pi2⟩ hy_le
+    have hcos_eq : Real.sin (Real.pi * (1 / 2 - (t : ℝ))) = Real.cos (Real.pi * (t : ℝ)) := by
+      rw [show Real.pi * (1 / 2 - (t : ℝ)) = Real.pi / 2 - Real.pi * (t : ℝ) by ring, Real.sin_pi_div_two_sub]
+    have htay := sin_ge_septic hy0
+    push_cast; rw [← hcos_eq]; exact htay.trans hmono
+
+private theorem cos_le_cosHiQ (t : ℚ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
+    Real.cos (Real.pi * (t : ℝ)) ≤ ((cosHiQ t : ℚ) : ℝ) := by
+  have hpi_lo : ((piLoQ : ℚ) : ℝ) ≤ Real.pi := by
+    unfold piLoQ; push_cast; linarith [Real.pi_gt_d6]
+  have hpi_hi : Real.pi ≤ ((piHiQ : ℚ) : ℝ) := by
+    unfold piHiQ; push_cast; linarith [Real.pi_lt_d6]
+  have ht0R : (0 : ℝ) ≤ (t : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr ht0
+  have ht1R : (t : ℝ) ≤ 1 / 2 := by simpa using Rat.cast_le (K := ℝ).mpr ht1
+  unfold cosHiQ
+  split_ifs with hq
+  · set x : ℝ := ((piLoQ : ℚ) : ℝ) * (t : ℝ)
+    have hx0 : 0 ≤ x := by dsimp [x]; unfold piLoQ; push_cast; positivity
+    have hx_le : x ≤ Real.pi * (t : ℝ) := mul_le_mul_of_nonneg_right hpi_lo ht0R
+    have hx_pi : Real.pi * (t : ℝ) ≤ Real.pi := by nlinarith [Real.pi_pos]
+    have hanti : Real.cos (Real.pi * (t : ℝ)) ≤ Real.cos x :=
+      Real.strictAntiOn_cos.antitoneOn ⟨hx0, hx_le.trans hx_pi⟩ ⟨by positivity, hx_pi⟩ hx_le
+    have htay := cos_le_quartic hx0
+    push_cast; exact hanti.trans htay
+  · have hqR : 1 / 4 < (t : ℝ) := by simpa using Rat.cast_lt (K := ℝ).mpr (lt_of_not_ge hq)
+    set y : ℝ := ((piHiQ : ℚ) : ℝ) * (1 / 2 - (t : ℝ))
+    have hy0 : 0 ≤ y := by dsimp [y]; unfold piHiQ; push_cast; nlinarith
+    have hy_le : Real.pi * (1 / 2 - (t : ℝ)) ≤ y := mul_le_mul_of_nonneg_right hpi_hi (by linarith)
+    have hy_pi2 : y ≤ Real.pi / 2 := by
+      dsimp [y]; unfold piHiQ; push_cast; linarith [Real.pi_gt_d6]
+    have hmono : Real.sin (Real.pi * (1 / 2 - (t : ℝ))) ≤ Real.sin y :=
+      Real.strictMonoOn_sin.monotoneOn ⟨by nlinarith [Real.pi_pos], hy_le.trans hy_pi2⟩
+        ⟨by linarith [Real.pi_pos], hy_pi2⟩ hy_le
+    have hcos_eq : Real.sin (Real.pi * (1 / 2 - (t : ℝ))) = Real.cos (Real.pi * (t : ℝ)) := by
+      rw [show Real.pi * (1 / 2 - (t : ℝ)) = Real.pi / 2 - Real.pi * (t : ℝ) by ring, Real.sin_pi_div_two_sub]
+    have htay := sin_le_quintic hy0
+    push_cast; rw [← hcos_eq]; exact hmono.trans htay
+
+private theorem concave_quad_ge_lin {a0 a1 a2 K clo chi c : ℝ} (ha2 : 0 ≤ a2)
+    (hlo : clo ≤ c) (hhi : c ≤ chi)
+    (h1 : K * clo ≤ a0 + a1 * clo - a2 * clo ^ 2)
+    (h2 : K * chi ≤ a0 + a1 * chi - a2 * chi ^ 2) :
+    K * c ≤ a0 + a1 * c - a2 * c ^ 2 := by
+  by_cases heq : clo = chi
+  · have hc : c = clo := by linarith
+    subst hc; exact h1
+  · have hd : 0 < chi - clo := sub_pos.mpr (lt_of_le_of_ne (by linarith) heq)
+    have hw1 : 0 ≤ (chi - c) / (chi - clo) := div_nonneg (by linarith) hd.le
+    have hw2 : 0 ≤ (c - clo) / (chi - clo) := div_nonneg (by linarith) hd.le
+    have hcomb := add_le_add (mul_le_mul_of_nonneg_left h1 hw1) (mul_le_mul_of_nonneg_left h2 hw2)
+    have hconv : a2 * c ^ 2 ≤ ((chi - c) / (chi - clo)) * (a2 * clo ^ 2) +
+        ((c - clo) / (chi - clo)) * (a2 * chi ^ 2) := by
+      have hdiff : ((chi - c) / (chi - clo)) * (a2 * clo ^ 2) +
+          ((c - clo) / (chi - clo)) * (a2 * chi ^ 2) - a2 * c ^ 2 =
+          a2 * (c - clo) * (chi - c) := by
+        field_simp [hd.ne']; ring
+      have hnn : 0 ≤ a2 * (c - clo) * (chi - c) := mul_nonneg (mul_nonneg ha2 (by linarith)) (by linarith)
+      linarith
+    have hlin : ((chi - c) / (chi - clo)) * clo + ((c - clo) / (chi - clo)) * chi = c := by
+      field_simp [hd.ne']; ring
+    have hwsum : (chi - c) / (chi - clo) + (c - clo) / (chi - clo) = 1 := by
+      field_simp [hd.ne']; ring
+    have hL : ((chi - c) / (chi - clo)) * (K * clo) + ((c - clo) / (chi - clo)) * (K * chi) = K * c := by
+      calc _ = K * (((chi - c) / (chi - clo)) * clo + ((c - clo) / (chi - clo)) * chi) := by ring
+        _ = K * c := by rw [hlin]
+    have hR : ((chi - c) / (chi - clo)) * (a0 + a1 * clo - a2 * clo ^ 2) +
+        ((c - clo) / (chi - clo)) * (a0 + a1 * chi - a2 * chi ^ 2) =
+        a0 + a1 * c - (((chi - c) / (chi - clo)) * (a2 * clo ^ 2) +
+          ((c - clo) / (chi - clo)) * (a2 * chi ^ 2)) := by
+      calc _ = a0 * ((chi - c) / (chi - clo) + (c - clo) / (chi - clo)) +
+            a1 * (((chi - c) / (chi - clo)) * clo + ((c - clo) / (chi - clo)) * chi) -
+            (((chi - c) / (chi - clo)) * (a2 * clo ^ 2) +
+              ((c - clo) / (chi - clo)) * (a2 * chi ^ 2)) := by ring
+        _ = _ := by rw [hwsum, hlin]; ring
+    linarith
+
+private theorem exists_sub64 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
+    ∃ j : Fin 64, (((j.val : ℚ) / 128 : ℚ) : ℝ) ≤ t ∧ t ≤ ((((j.val + 1 : ℕ) : ℚ) / 128 : ℚ) : ℝ) := by
+  by_cases htop : t = 1 / 2
+  · refine ⟨⟨63, by decide⟩, ?_, ?_⟩ <;> (push_cast; linarith)
+  · have hlt : t < 1 / 2 := lt_of_le_of_ne ht1 htop
+    let n : ℕ := Nat.floor (128 * t)
+    have hn_lt : n < 64 := by
+      have h1 : (n : ℝ) ≤ 128 * t := Nat.floor_le (by positivity)
+      have h2 : (n : ℝ) < 64 := by linarith
+      exact_mod_cast h2
+    refine ⟨⟨n, hn_lt⟩, ?_, ?_⟩
+    · have h1 : (n : ℝ) ≤ 128 * t := Nat.floor_le (by positivity)
+      push_cast; linarith
+    · have h2 : 128 * t < (n : ℝ) + 1 := Nat.lt_floor_add_one (128 * t)
+      push_cast; linarith
+
+private theorem cos_sq_bounds_sub64 (j : Fin 64) {t : ℝ}
+    (ht0 : (((j.val : ℚ) / 128 : ℚ) : ℝ) ≤ t) (ht1 : t ≤ ((((j.val + 1 : ℕ) : ℚ) / 128 : ℚ) : ℝ)) :
+    (((cosLoQ (((j.val + 1 : ℕ) : ℚ) / 128) ^ 2 : ℚ) : ℝ)) ≤ Real.cos (Real.pi * t) ^ 2 ∧
+    Real.cos (Real.pi * t) ^ 2 ≤ (((cosHiQ ((j.val : ℚ) / 128) ^ 2 : ℚ) : ℝ)) := by
+  have hj := all_subOK64 j
+  unfold subOK64 at hj
+  simp only [decide_eq_true_eq] at hj
+  set t0q : ℚ := (j.val : ℚ) / 128
+  set t1q : ℚ := ((j.val + 1 : ℕ) : ℚ) / 128
+  have ht0q_nn : (0 : ℚ) ≤ t0q := by dsimp [t0q]; positivity
+  have ht0q_le : t0q ≤ 1 / 2 := by
+    dsimp [t0q]; have : (j.val : ℚ) ≤ 64 := by exact_mod_cast j.isLt.le
+    linarith
+  have ht1q_nn : (0 : ℚ) ≤ t1q := by dsimp [t1q]; positivity
+  have ht1q_le : t1q ≤ 1 / 2 := by
+    dsimp [t1q]; have : ((j.val + 1 : ℕ) : ℚ) ≤ 64 := by exact_mod_cast j.isLt
+    linarith
+  have ht0R_nn : (0 : ℝ) ≤ (t0q : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr ht0q_nn
+  have ht0R_le : (t0q : ℝ) ≤ 1 / 2 := by simpa using Rat.cast_le (K := ℝ).mpr ht0q_le
+  have ht1R_nn : (0 : ℝ) ≤ (t1q : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr ht1q_nn
+  have ht1R_le : (t1q : ℝ) ≤ 1 / 2 := by simpa using Rat.cast_le (K := ℝ).mpr ht1q_le
+  have hlo1 := cosLoQ_le_cos t1q ht1q_nn ht1q_le
+  have hhi0 := cos_le_cosHiQ t0q ht0q_nn ht0q_le
+  have hcl_nn : (0 : ℝ) ≤ ((cosLoQ t1q : ℚ) : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr hj.1
+  have ht_nn : 0 ≤ t := ht0R_nn.trans ht0
+  have ht_le : t ≤ 1 / 2 := ht1.trans ht1R_le
+  have hanti1 : Real.cos (Real.pi * (t1q : ℝ)) ≤ Real.cos (Real.pi * t) :=
+    Real.strictAntiOn_cos.antitoneOn ⟨by positivity, by nlinarith [Real.pi_pos]⟩
+      ⟨by positivity, by nlinarith [Real.pi_pos]⟩ (mul_le_mul_of_nonneg_left ht1 Real.pi_pos.le)
+  have hanti0 : Real.cos (Real.pi * t) ≤ Real.cos (Real.pi * (t0q : ℝ)) :=
+    Real.strictAntiOn_cos.antitoneOn ⟨by positivity, by nlinarith [Real.pi_pos]⟩
+      ⟨by positivity, by nlinarith [Real.pi_pos]⟩ (mul_le_mul_of_nonneg_left ht0 Real.pi_pos.le)
+  have hcos_nn : 0 ≤ Real.cos (Real.pi * t) := hcl_nn.trans (hlo1.trans hanti1)
+  constructor
+  · rw [Rat.cast_pow]; exact pow_le_pow_left₀ hcl_nn (hlo1.trans hanti1) 2
+  · rw [Rat.cast_pow]; exact pow_le_pow_left₀ hcos_nn (hanti0.trans hhi0) 2
+
+private theorem box3_tight_deg2 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
+    ((508 / 10000 : ℝ) *
+      ((∑ k ∈ range 15, 1 / ((2 - t + k) ^ 2 - 1 / 4) ^ 2) +
+       (∑ k ∈ range 14, 1 / ((2 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000) *
+      Real.cos (Real.pi * t) ^ 2 ≤
+    (139 / 500000 : ℝ) + (6003 / 500000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
+      (2819 / 1000000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 := by
+  obtain ⟨j, hjt0, hjt1⟩ := exists_sub64 t ht0 ht1
+  have hcs := cos_sq_bounds_sub64 j hjt0 hjt1
+  have hj := all_subOK64 j
+  unfold subOK64 at hj
+  simp only [decide_eq_true_eq] at hj
+  set t0q : ℚ := (j.val : ℚ) / 128
+  set t1q : ℚ := ((j.val + 1 : ℕ) : ℚ) / 128
+  have ht1R_le : (t1q : ℝ) ≤ 1 / 2 := by
+    have ht1_le : t1q ≤ 1 / 2 := by
+      dsimp [t1q]
+      have h64 : ((j.val + 1 : ℕ) : ℚ) ≤ 64 := by exact_mod_cast j.isLt
+      linarith
+    simpa using Rat.cast_le (K := ℝ).mpr ht1_le
+  have ht0R_nn : (0 : ℝ) ≤ (t0q : ℝ) := by
+    have : (0 : ℚ) ≤ t0q := by dsimp [t0q]; positivity
+    simpa using Rat.cast_le (K := ℝ).mpr this
+  have hA := smallSum_antitone 15 ((2 - t1q : ℚ) : ℝ) (2 - t) (by push_cast; linarith) (by push_cast; linarith)
+  have hB := smallSum_antitone 14 ((2 + t0q : ℚ) : ℝ) (2 + t) (by push_cast; linarith) (by push_cast; linarith)
+  rw [smallSum_cast] at hA hB
+  set K3q : ℚ := (508 / 10000) * (smallSumQ 15 (2 - t1q) + smallSumQ 14 (2 + t0q)) + 68 / 1000000
+  have hKle : (508 / 10000 : ℝ) *
+      ((∑ k ∈ range 15, 1 / ((2 - t + k) ^ 2 - 1 / 4) ^ 2) +
+       (∑ k ∈ range 14, 1 / ((2 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000 ≤ (K3q : ℝ) := by
+    dsimp only [K3q]; push_cast; linarith
+  have h1 : (K3q : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ≤
+      (139 / 500000 : ℝ) + (6003 / 500000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) -
+      (2819 / 1000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+    have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.1
+    dsimp only [U3a0Q, U3a1Q, U3a2Q] at h; push_cast at h ⊢; exact h
+  have h2 : (K3q : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ≤
+      (139 / 500000 : ℝ) + (6003 / 500000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (2819 / 1000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+    have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.1
+    dsimp only [U3a0Q, U3a1Q, U3a2Q] at h; push_cast at h ⊢; exact h
+  have hq := concave_quad_ge_lin (by norm_num : (0 : ℝ) ≤ 2819 / 1000000) hcs.1 hcs.2 h1 h2
+  exact (mul_le_mul_of_nonneg_right hKle (sq_nonneg _)).trans hq
+
+private theorem box5_tight_deg2 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
+    ((508 / 10000 : ℝ) *
+      ((∑ k ∈ range 14, 1 / ((3 - t + k) ^ 2 - 1 / 4) ^ 2) +
+       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000) *
+      Real.cos (Real.pi * t) ^ 2 ≤
+    (19 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
+      (119 / 500000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 := by
+  obtain ⟨j, hjt0, hjt1⟩ := exists_sub64 t ht0 ht1
+  have hcs := cos_sq_bounds_sub64 j hjt0 hjt1
+  have hj := all_subOK64 j
+  unfold subOK64 at hj
+  simp only [decide_eq_true_eq] at hj
+  set t0q : ℚ := (j.val : ℚ) / 128
+  set t1q : ℚ := ((j.val + 1 : ℕ) : ℚ) / 128
+  have ht1R_le : (t1q : ℝ) ≤ 1 / 2 := by
+    have ht1_le : t1q ≤ 1 / 2 := by
+      dsimp [t1q]
+      have h64 : ((j.val + 1 : ℕ) : ℚ) ≤ 64 := by exact_mod_cast j.isLt
+      linarith
+    simpa using Rat.cast_le (K := ℝ).mpr ht1_le
+  have ht0R_nn : (0 : ℝ) ≤ (t0q : ℝ) := by
+    have : (0 : ℚ) ≤ t0q := by dsimp [t0q]; positivity
+    simpa using Rat.cast_le (K := ℝ).mpr this
+  have hA := smallSum_antitone 14 ((3 - t1q : ℚ) : ℝ) (3 - t) (by push_cast; linarith) (by push_cast; linarith)
+  have hB := smallSum_antitone 13 ((3 + t0q : ℚ) : ℝ) (3 + t) (by push_cast; linarith) (by push_cast; linarith)
+  rw [smallSum_cast] at hA hB
+  set K5q : ℚ := (508 / 10000) * (smallSumQ 14 (3 - t1q) + smallSumQ 13 (3 + t0q)) + 68 / 1000000
+  have hKle : (508 / 10000 : ℝ) *
+      ((∑ k ∈ range 14, 1 / ((3 - t + k) ^ 2 - 1 / 4) ^ 2) +
+       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000 ≤ (K5q : ℝ) := by
+    dsimp only [K5q]; push_cast; linarith
+  have h1 : (K5q : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ≤
+      (19 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) -
+      (119 / 500000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+    have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.2.1
+    dsimp only [U5d0Q, U5d1Q, U5d2Q] at h; push_cast at h ⊢; exact h
+  have h2 : (K5q : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ≤
+      (19 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (119 / 500000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+    have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.2.2.1
+    dsimp only [U5d0Q, U5d1Q, U5d2Q] at h; push_cast at h ⊢; exact h
+  have hq := concave_quad_ge_lin (by norm_num : (0 : ℝ) ≤ 119 / 500000) hcs.1 hcs.2 h1 h2
+  exact (mul_le_mul_of_nonneg_right hKle (sq_nonneg _)).trans hq
+
+theorem sine_neighbor_mass3_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
+    let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
+    1 - ((29 / 100000 : ℝ) + (6003 / 500000 : ℝ) * c - (2819 / 1000000 : ℝ) * c ^ 2) ≤
+      sineNeighborMass m r 1 k := by
+  classical
+  dsimp only
+  set β : ℝ := (k.val : ℝ) / r
+  set x : ℝ := ((2 ^ m : ℕ) : ℝ) * β
+  set σ : ℝ := x - round x
+  have hσ := abs_le.mp (abs_sub_round x)
+  have hcos_eq : Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 = Real.cos (Real.pi * |σ|) ^ 2 := by
+    rw [mul_assoc]; exact cos_sq_eq_abs_round x
+  have hstep :
+      1 - ((29 / 100000 : ℝ) + (6003 / 500000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
+        (2819 / 1000000 : ℝ) * (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2) ^ 2) ≤
+      ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) x b < 2 - σ ∨ phiL (2 ^ m) x b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 := by
+    by_cases hs : 0 ≤ σ
+    · have hcirc := sine_circular_mass_two m hm β (2 - σ) (2 + σ) 15 14
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := box3_tight_deg2 σ hs hσ.2
+      rw [hcos_eq, abs_of_nonneg hs] at hcirc ⊢
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) x b < 2 - σ ∨ phiL (2 ^ m) x b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+    · have hcirc := sine_circular_mass_two m hm β (2 - σ) (2 + σ) 14 15
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := box3_tight_deg2 (-σ) (by linarith) (by linarith)
+      rw [hcos_eq, abs_of_neg (lt_of_not_ge hs)] at hcirc ⊢
+      have he1 : 2 - -σ = 2 + σ := by ring
+      have he2 : 2 + -σ = 2 - σ := by ring
+      rw [he1, he2, add_comm (∑ j ∈ range 15, 1 / ((2 + σ + ↑j) ^ 2 - 1 / 4) ^ 2)] at hbox
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) x b < 2 - σ ∨ phiL (2 ^ m) x b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+  have hfin :
+      ∑ b ∈ range (2 ^ m),
+        (if phiR (2 ^ m) x b < 2 - σ ∨ phiL (2 ^ m) x b < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0) =
+      ∑ b : Fin (2 ^ m),
+        if phiR (2 ^ m) x b.val < 2 - σ ∨ phiL (2 ^ m) x b.val < 2 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b.val) else 0 :=
+    (Fin.sum_univ_eq_sum_range _ (2 ^ m)).symm
+  rw [hfin] at hstep
+  refine hstep.trans (Finset.sum_le_sum (fun b _ => ?_))
+  dsimp only [sineNeighborMass]
+  split_ifs with hnear hgood
+  · exact le_rfl
+  · exact (hgood (neighbor_coverage_gen m r 1 hr k b (by
+      rcases hnear with h | h
+      · dsimp only [x, σ, β] at h; push_cast at h; exact Or.inl (by norm_num; linarith)
+      · dsimp only [x, σ, β] at h; push_cast at h; exact Or.inr (by norm_num; linarith)))).elim
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+theorem sine_neighbor_mass5_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
+    let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
+    1 - ((31 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * c - (119 / 500000 : ℝ) * c ^ 2) ≤
+      sineNeighborMass m r 2 k := by
+  classical
+  dsimp only
+  set β : ℝ := (k.val : ℝ) / r
+  set x : ℝ := ((2 ^ m : ℕ) : ℝ) * β
+  set σ : ℝ := x - round x
+  have hσ := abs_le.mp (abs_sub_round x)
+  have hcos_eq : Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 = Real.cos (Real.pi * |σ|) ^ 2 := by
+    rw [mul_assoc]; exact cos_sq_eq_abs_round x
+  have hstep :
+      1 - ((31 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
+        (119 / 500000 : ℝ) * (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2) ^ 2) ≤
+      ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) x b < 3 - σ ∨ phiL (2 ^ m) x b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 := by
+    by_cases hs : 0 ≤ σ
+    · have hcirc := sine_circular_mass_two m hm β (3 - σ) (3 + σ) 14 13
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := box5_tight_deg2 σ hs hσ.2
+      rw [hcos_eq, abs_of_nonneg hs] at hcirc ⊢
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) x b < 3 - σ ∨ phiL (2 ^ m) x b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+    · have hcirc := sine_circular_mass_two m hm β (3 - σ) (3 + σ) 13 14
+        (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
+        (by push_cast; linarith) (by push_cast; linarith)
+      have hbox := box5_tight_deg2 (-σ) (by linarith) (by linarith)
+      rw [hcos_eq, abs_of_neg (lt_of_not_ge hs)] at hcirc ⊢
+      have he1 : 3 - -σ = 3 + σ := by ring
+      have he2 : 3 + -σ = 3 - σ := by ring
+      rw [he1, he2, add_comm (∑ j ∈ range 14, 1 / ((3 + σ + ↑j) ^ 2 - 1 / 4) ^ 2)] at hbox
+      change _ ≤ ∑ b ∈ range (2 ^ m),
+        if phiR (2 ^ m) x b < 3 - σ ∨ phiL (2 ^ m) x b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
+      linarith
+  have hfin :
+      ∑ b ∈ range (2 ^ m),
+        (if phiR (2 ^ m) x b < 3 - σ ∨ phiL (2 ^ m) x b < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b) else 0) =
+      ∑ b : Fin (2 ^ m),
+        if phiR (2 ^ m) x b.val < 3 - σ ∨ phiL (2 ^ m) x b.val < 3 + σ
+        then Complex.normSq (sinePhaseAmplitude m β b.val) else 0 :=
+    (Fin.sum_univ_eq_sum_range _ (2 ^ m)).symm
+  rw [hfin] at hstep
+  refine hstep.trans (Finset.sum_le_sum (fun b _ => ?_))
+  dsimp only [sineNeighborMass]
+  split_ifs with hnear hgood
+  · exact le_rfl
+  · exact (hgood (neighbor_coverage_gen m r 2 hr k b (by
+      rcases hnear with h | h
+      · dsimp only [x, σ, β] at h; push_cast at h; exact Or.inl (by norm_num; linarith)
+      · dsimp only [x, σ, β] at h; push_cast at h; exact Or.inr (by norm_num; linarith)))).elim
+  · exact Complex.normSq_nonneg _
+  · exact le_rfl
+
+private theorem cos_add_int_mul_pi_sq (x : ℝ) (k : ℤ) :
+    Real.cos (x + (k : ℝ) * Real.pi) ^ 2 = Real.cos x ^ 2 := by
+  rw [Real.cos_add_int_mul_pi, mul_pow]
+  have h1 : ((-1 : ℝ) ^ k) ^ 2 = 1 := by
+    rw [← zpow_natCast, ← zpow_mul, mul_comm, zpow_mul]
+    norm_num
+  rw [h1, one_mul]
+
+private theorem sinePhaseAmplitude_peak_lower_tight (m : ℕ) (hm : 10 ≤ m) (β : ℝ) (a : ℕ) (z : ℤ)
+    (hdist : |((2 ^ m : ℕ) : ℝ) * β - ((a : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ))| ≤ 1 / 2) :
+    let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2
+    (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * c - (45303 / 200000 : ℝ) * c ^ 2 ≤
+      Complex.normSq (sinePhaseAmplitude m β a) := by
+  dsimp only
+  set N := 2 ^ m
+  set B := 2 ^ (m - 10)
+  have hNpos : 0 < N := pow_pos (by decide) m
+  have hBpos : 0 < B := pow_pos (by decide) _
+  have hNR : (0 : ℝ) < N := by exact_mod_cast hNpos
+  have hBR : (0 : ℝ) < B := by exact_mod_cast hBpos
+  have hNB : N = 1024 * B := by
+    have : 2 ^ m = 2 ^ 10 * 2 ^ (m - 10) := by rw [← pow_add, Nat.add_sub_cancel' hm]
+    simpa [N, B] using this
+  have hNBR : (N : ℝ) = 1024 * (B : ℝ) := by exact_mod_cast hNB
+  set δ : ℝ := β - (a : ℝ) / N - (z : ℝ)
+  set t : ℝ := |(N : ℝ) * δ|
+  have ht0 : 0 ≤ t := abs_nonneg _
+  have ht1 : t ≤ 1 / 2 := by
+    have heq : (N : ℝ) * δ = (N : ℝ) * β - ((a : ℝ) + (z : ℝ) * (N : ℝ)) := by
+      dsimp only [δ]; field_simp [hNR.ne']; ring
+    dsimp only [t]; rw [heq]; exact hdist
+  have hcos_eq : Real.cos (Real.pi * (N : ℝ) * β) ^ 2 = Real.cos (Real.pi * t) ^ 2 := by
+    have h1 : Real.pi * (N : ℝ) * β = Real.pi * ((N : ℝ) * δ) + (((a : ℤ) + z * (N : ℤ) : ℤ) : ℝ) * Real.pi := by
+      dsimp only [δ]; push_cast; field_simp [hNR.ne']; ring
+    have h2 : |Real.pi * ((N : ℝ) * δ)| = Real.pi * t := by
+      dsimp only [t]; rw [abs_mul, abs_of_pos Real.pi_pos]
+    rw [h1, cos_add_int_mul_pi_sq, ← h2, Real.cos_abs]
+  have hω_eq : eigenvalue (β - (a : ℝ) / N) = eigenvalue δ := by
+    have heq : β - (a : ℝ) / N = δ + (z : ℝ) := by dsimp only [δ]; ring
+    rw [heq, eigenvalue_add_int]
+  set u₀ : ℂ := (-Complex.I) * eigenvalue (-(N : ℝ) * δ / 2)
+  have hu₀ : Complex.normSq u₀ = 1 := by
+    simp only [u₀, Complex.normSq_mul, Complex.normSq_neg, Complex.normSq_I, eigenvalue_normSq, mul_one]
+  have hre_le : (u₀ * sinePhaseAmplitude m β a).re ^ 2 ≤ Complex.normSq (sinePhaseAmplitude m β a) := by
+    have hns : Complex.normSq (u₀ * sinePhaseAmplitude m β a) = Complex.normSq (sinePhaseAmplitude m β a) := by
+      rw [Complex.normSq_mul, hu₀, one_mul]
+    rw [← hns, Complex.normSq_apply, ← sq]
+    nlinarith [sq_nonneg (u₀ * sinePhaseAmplitude m β a).im]
+  have hre_expr : (u₀ * sinePhaseAmplitude m β a).re =
+      (N : ℝ)⁻¹ * ∑ x ∈ range N,
+        Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) *
+          Real.cos (2 * Real.pi * t * ((x : ℝ) / N - 1 / 2)) := by
+    have hmul : u₀ * sinePhaseAmplitude m β a =
+        ((N : ℝ)⁻¹ : ℂ) * ∑ x ∈ range N,
+          (((Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ) *
+            eigenvalue (δ * ((x : ℝ) - (N : ℝ) / 2))) := by
+      unfold sinePhaseAmplitude
+      change u₀ * (((N : ℕ) : ℂ)⁻¹ * ∑ x ∈ range N, sineWeight 10 (x / B) * eigenvalue (β - (a : ℝ) / N) ^ x) = _
+      rw [← mul_assoc, mul_comm u₀ ((N : ℕ) : ℂ)⁻¹, mul_assoc, Finset.mul_sum]
+      simp only [Complex.ofReal_inv, Complex.ofReal_natCast]
+      congr 1
+      apply Finset.sum_congr rfl; intro x _
+      rw [hω_eq, sineWeight_eq_sin, eigenvalue_pow_eq_eigenvalue_mul]
+      have harg10 : Real.pi * ((x / B : ℕ) : ℝ) / (2 : ℝ) ^ 10 = Real.pi * ((x / B : ℕ) : ℝ) / 1024 := by
+        norm_num
+      rw [harg10]
+      have heig : eigenvalue (-(N : ℝ) * δ / 2) * eigenvalue ((x : ℝ) * δ) =
+          eigenvalue (δ * ((x : ℝ) - (N : ℝ) / 2)) := by
+        unfold eigenvalue
+        rw [← Complex.exp_add]
+        congr 1; push_cast; ring
+      dsimp only [u₀]
+      have hI2 : (-Complex.I) * Complex.I = 1 := by simp [Complex.I_sq]
+      calc (-Complex.I) * eigenvalue (-(N : ℝ) * δ / 2) *
+            (((Real.sqrt 2 : ℝ) : ℂ) * Complex.I * ((Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ) *
+              eigenvalue ((x : ℝ) * δ))
+          = ((-Complex.I) * Complex.I) *
+              (((Real.sqrt 2 : ℝ) : ℂ) * ((Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) : ℝ) : ℂ)) *
+              (eigenvalue (-(N : ℝ) * δ / 2) * eigenvalue ((x : ℝ) * δ)) := by ring
+        _ = _ := by rw [hI2, one_mul, heig, Complex.ofReal_mul]
+    rw [hmul, ← Complex.ofReal_inv, Complex.re_ofReal_mul, Complex.re_sum]
+    congr 1
+    apply Finset.sum_congr rfl; intro x _
+    rw [Complex.re_ofReal_mul]
+    congr 1
+    unfold eigenvalue
+    rw [show Complex.I * ((2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2)) : ℝ) : ℂ) =
+      ((2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2)) : ℝ) : ℂ) * Complex.I by ring,
+      Complex.exp_ofReal_mul_I_re]
+    have harg : 2 * Real.pi * (δ * ((x : ℝ) - (N : ℝ) / 2)) =
+        2 * Real.pi * ((N : ℝ) * δ) * ((x : ℝ) / N - 1 / 2) := by
+      field_simp [hNR.ne']
+    rw [harg]
+    by_cases hs : 0 ≤ (N : ℝ) * δ
+    · dsimp only [t]; rw [abs_of_nonneg hs]
+    · dsimp only [t]; rw [abs_of_neg (lt_of_not_ge hs)]
+      rw [show 2 * Real.pi * -((N : ℝ) * δ) * ((x : ℝ) / N - 1 / 2) =
+        -(2 * Real.pi * ((N : ℝ) * δ) * ((x : ℝ) / N - 1 / 2)) by ring, Real.cos_neg]
+  obtain ⟨j, hjt0, hjt1⟩ := exists_sub64 t ht0 ht1
+  have hcs := cos_sq_bounds_sub64 j hjt0 hjt1
+  have hj := all_subOK64 j
+  unfold subOK64 at hj
+  simp only [decide_eq_true_eq] at hj
+  set t0q : ℚ := (j.val : ℚ) / 128
+  set t1q : ℚ := ((j.val + 1 : ℕ) : ℚ) / 128
+  have ht1q_nn : (0 : ℚ) ≤ t1q := by dsimp [t1q]; positivity
+  have ht1q_le : t1q ≤ 1 / 2 := by
+    dsimp [t1q]
+    have h64 : ((j.val + 1 : ℕ) : ℚ) ≤ 64 := by exact_mod_cast j.isLt
+    linarith
+  have ht1R_nn : (0 : ℝ) ≤ (t1q : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr ht1q_nn
+  have ht1R_le : (t1q : ℝ) ≤ 1 / 2 := by simpa using Rat.cast_le (K := ℝ).mpr ht1q_le
+  have ht_le_t1 : t ≤ (t1q : ℝ) := hjt1
+  have hre_ge_t1 : (N : ℝ)⁻¹ * ∑ x ∈ range N,
+      Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) *
+        Real.cos (2 * Real.pi * (t1q : ℝ) * ((x : ℝ) / N - 1 / 2)) ≤
+      (u₀ * sinePhaseAmplitude m β a).re := by
+    rw [hre_expr]
+    apply mul_le_mul_of_nonneg_left _ (by positivity)
+    apply Finset.sum_le_sum; intro x hx
+    have hxlt : (x : ℝ) < N := by exact_mod_cast mem_range.mp hx
+    have hdivlt : x / B < 1024 := by
+      have hxN := mem_range.mp hx; rw [hNB] at hxN
+      exact (Nat.div_lt_iff_lt_mul hBpos).mpr (by linarith)
+    have hsin_nn : 0 ≤ Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) := by
+      apply Real.sin_nonneg_of_nonneg_of_le_pi (by positivity)
+      have : ((x / B : ℕ) : ℝ) ≤ 1024 := by exact_mod_cast hdivlt.le
+      nlinarith [Real.pi_pos]
+    apply mul_le_mul_of_nonneg_left _ (by positivity)
+    have hy_le : |(x : ℝ) / N - 1 / 2| ≤ 1 / 2 := by
+      rw [abs_le]
+      have h1 : 0 ≤ (x : ℝ) / N := by positivity
+      have h2 : (x : ℝ) / N ≤ 1 := (div_le_one hNR).mpr hxlt.le
+      constructor <;> linarith
+    have hle1 : |2 * Real.pi * t * ((x : ℝ) / N - 1 / 2)| ≤ |2 * Real.pi * (t1q : ℝ) * ((x : ℝ) / N - 1 / 2)| := by
+      have h1 : 0 ≤ 2 * Real.pi * t := by have := Real.pi_pos; positivity
+      have h2 : 0 ≤ 2 * Real.pi * (t1q : ℝ) := by have := Real.pi_pos; positivity
+      rw [abs_mul (2 * Real.pi * t), abs_mul (2 * Real.pi * (t1q : ℝ)), abs_of_nonneg h1, abs_of_nonneg h2]
+      exact mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left ht_le_t1 (by have := Real.pi_pos; positivity)) (abs_nonneg _)
+    have hle2 : |2 * Real.pi * (t1q : ℝ) * ((x : ℝ) / N - 1 / 2)| ≤ Real.pi := by
+      have h2 : 0 ≤ 2 * Real.pi * (t1q : ℝ) := by have := Real.pi_pos; positivity
+      rw [abs_mul (2 * Real.pi * (t1q : ℝ)), abs_of_nonneg h2]
+      have h3 : 2 * Real.pi * (t1q : ℝ) ≤ Real.pi := by nlinarith [Real.pi_pos]
+      have h4 := mul_le_mul h3 hy_le (abs_nonneg _) Real.pi_pos.le
+      linarith [Real.pi_pos]
+    rw [← Real.cos_abs (2 * Real.pi * (t1q : ℝ) * ((x : ℝ) / N - 1 / 2)),
+        ← Real.cos_abs (2 * Real.pi * t * ((x : ℝ) / N - 1 / 2))]
+    exact Real.strictAntiOn_cos.antitoneOn ⟨abs_nonneg _, hle1.trans hle2⟩ ⟨abs_nonneg _, hle2⟩ hle1
+  have hre_t1_ge : ((reLoQ t1q : ℚ) : ℝ) ≤
+      (N : ℝ)⁻¹ * ∑ x ∈ range N,
+        Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) *
+          Real.cos (2 * Real.pi * (t1q : ℝ) * ((x : ℝ) / N - 1 / 2)) := by
+    have hreidx :
+        (∑ x ∈ range N,
+          Real.sqrt 2 * Real.sin (Real.pi * ((x / B : ℕ) : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (t1q : ℝ) * ((x : ℝ) / N - 1 / 2))) =
+        ∑ u ∈ range 1024, ∑ k0 ∈ range B,
+          Real.sqrt 2 * Real.sin (Real.pi * (((u * B + k0) / B : ℕ) : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (t1q : ℝ) * (((u * B + k0 : ℕ) : ℝ) / N - 1 / 2)) := by
+      rw [congrArg range hNB]; exact range_mul_sum 1024 B _
+    rw [hreidx]
+    have hinner (u : ℕ) (hu : u ∈ range 1024) :
+        (B : ℝ) * (Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+          (Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2)) - 2 * Real.pi * (t1q : ℝ) / 1024)) ≤
+        ∑ k0 ∈ range B,
+          Real.sqrt 2 * Real.sin (Real.pi * (((u * B + k0) / B : ℕ) : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (t1q : ℝ) * (((u * B + k0 : ℕ) : ℝ) / N - 1 / 2)) := by
+      have hult : u < 1024 := mem_range.mp hu
+      have hsin_nn : 0 ≤ Real.sin (Real.pi * (u : ℝ) / 1024) := by
+        apply Real.sin_nonneg_of_nonneg_of_le_pi (by positivity)
+        have : (u : ℝ) ≤ 1024 := by exact_mod_cast hult.le
+        nlinarith [Real.pi_pos]
+      have hterm (k0 : ℕ) (hk0 : k0 ∈ range B) :
+          Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+            (Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2)) - 2 * Real.pi * (t1q : ℝ) / 1024) ≤
+          Real.sqrt 2 * Real.sin (Real.pi * (((u * B + k0) / B : ℕ) : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (t1q : ℝ) * (((u * B + k0 : ℕ) : ℝ) / N - 1 / 2)) := by
+        have hk0lt : k0 < B := mem_range.mp hk0
+        have hdiv : (u * B + k0) / B = u := by
+          rw [Nat.mul_comm u B, Nat.mul_add_div hBpos, Nat.div_eq_of_lt hk0lt, Nat.add_zero]
+        rw [hdiv]
+        apply mul_le_mul_of_nonneg_left _ (by positivity)
+        have hlip := abs_cos_sub_cos_le
+          (2 * Real.pi * (t1q : ℝ) * (((u * B + k0 : ℕ) : ℝ) / N - 1 / 2))
+          (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2))
+        have hdiff : 2 * Real.pi * (t1q : ℝ) * (((u * B + k0 : ℕ) : ℝ) / N - 1 / 2) -
+            2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2) =
+            2 * Real.pi * (t1q : ℝ) * (k0 : ℝ) / (1024 * (B : ℝ)) := by
+          rw [hNBR]; push_cast; field_simp [hBR.ne']; ring
+        have hdiff_nn : 0 ≤ 2 * Real.pi * (t1q : ℝ) * (k0 : ℝ) / (1024 * (B : ℝ)) := by
+          have := Real.pi_pos; positivity
+        rw [hdiff, abs_of_nonneg hdiff_nn] at hlip
+        have hle_step : 2 * Real.pi * (t1q : ℝ) * (k0 : ℝ) / (1024 * (B : ℝ)) ≤ 2 * Real.pi * (t1q : ℝ) / 1024 := by
+          have hkB : (k0 : ℝ) ≤ B := by exact_mod_cast hk0lt.le
+          have hcoef_nn : 0 ≤ 2 * Real.pi * (t1q : ℝ) := by have := Real.pi_pos; positivity
+          have hmul := mul_le_mul_of_nonneg_left hkB hcoef_nn
+          rw [div_le_div_iff₀ (by positivity) (by norm_num)]
+          linarith
+        linarith [(abs_le.mp hlip).1]
+      simpa only [Finset.sum_const, Finset.card_range, nsmul_eq_mul] using Finset.sum_le_sum hterm
+    have hsum1 := Finset.sum_le_sum hinner
+    rw [← Finset.mul_sum] at hsum1
+    have hscale := mul_le_mul_of_nonneg_left hsum1 (inv_nonneg.mpr hNR.le)
+    have hcancel : (N : ℝ)⁻¹ * ((B : ℝ) * ∑ u ∈ range 1024,
+        Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+          (Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2)) - 2 * Real.pi * (t1q : ℝ) / 1024)) =
+        (Real.sqrt 2 / 1024) * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+          Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2))) -
+        Real.sqrt 2 * (2 * Real.pi * (t1q : ℝ)) * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) / 1048576 := by
+      have hdist : ∑ u ∈ range 1024,
+          Real.sqrt 2 * Real.sin (Real.pi * (u : ℝ) / 1024) *
+            (Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2)) - 2 * Real.pi * (t1q : ℝ) / 1024) =
+          Real.sqrt 2 * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+            Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2))) -
+          Real.sqrt 2 * (2 * Real.pi * (t1q : ℝ) / 1024) *
+            (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) := by
+        rw [Finset.mul_sum, Finset.mul_sum, ← Finset.sum_sub_distrib]
+        apply Finset.sum_congr rfl; intro u _; ring
+      rw [hdist, hNBR]
+      generalize (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+        Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2))) = S1
+      generalize (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) = S2
+      field_simp [hBR.ne']; ring
+    rw [hcancel] at hscale
+    refine le_trans ?_ hscale
+    have hsq2_lo : ((sqrt2LoQ : ℚ) : ℝ) ≤ Real.sqrt 2 := by
+      unfold sqrt2LoQ; push_cast
+      rw [Real.le_sqrt (by norm_num) (by norm_num)]; norm_num
+    have hsq2_hi : Real.sqrt 2 ≤ 15 / 10 := by
+      rw [Real.sqrt_le_left (by norm_num)]; norm_num
+    have hpi_hi : Real.pi ≤ ((piHiQ : ℚ) : ℝ) := by
+      unfold piHiQ; push_cast; linarith [Real.pi_lt_d6]
+    have hsum_sin := sum_sin_1024_le
+    have hsum_sin_nn : 0 ≤ ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) :=
+      Finset.sum_nonneg (fun u hu => Real.sin_nonneg_of_nonneg_of_le_pi (by positivity)
+        (by have : (u : ℝ) ≤ 1024 := by exact_mod_cast (mem_range.mp hu).le
+            nlinarith [Real.pi_pos]))
+    unfold reLoQ
+    split_ifs with hhalf
+    · have ht1_half : (t1q : ℝ) = 1 / 2 := by simpa using congrArg (Rat.cast (K := ℝ)) hhalf
+      have hcos_sin : ∀ u ∈ range 1024,
+          Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2)) =
+            Real.sin (Real.pi * (u : ℝ) / 1024) := by
+        intro u _
+        rw [ht1_half, show 2 * Real.pi * (1 / 2 : ℝ) * ((u : ℝ) / 1024 - 1 / 2) =
+          Real.pi * (u : ℝ) / 1024 - Real.pi / 2 by ring,
+          Real.cos_sub, Real.cos_pi_div_two, Real.sin_pi_div_two]; ring
+      have hsin2 : ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) ^ 2 = 512 := by
+        have h := sineWeight_sum_normSq
+        have hterm : ∀ u ∈ range 1024, Complex.normSq (sineWeight 10 u) =
+            2 * Real.sin (Real.pi * (u : ℝ) / 1024) ^ 2 := fun u _ => by
+          rw [sineWeight_normSq]; norm_num
+        rw [Finset.sum_congr rfl hterm, ← Finset.mul_sum] at h; linarith
+      have heq_main : ∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024) *
+          Real.cos (2 * Real.pi * (t1q : ℝ) * ((u : ℝ) / 1024 - 1 / 2)) = 512 := by
+        rw [Finset.sum_congr rfl (fun u hu => by rw [hcos_sin u hu, ← sq]), hsin2]
+      rw [heq_main, ht1_half]
+      have hterm2 : Real.pi * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) / 1048576 ≤
+          ((piHiQ : ℚ) : ℝ) * (652 / 1048576) := by
+        have h1 : Real.pi * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) ≤
+            ((piHiQ : ℚ) : ℝ) * 652 := mul_le_mul hpi_hi hsum_sin hsum_sin_nn (by unfold piHiQ; push_cast; positivity)
+        linarith
+      have hbracket_nn : 0 ≤ (1 / 2 : ℝ) - ((piHiQ : ℚ) : ℝ) * (652 / 1048576) := by
+        unfold piHiQ; push_cast; norm_num
+      have hfact : Real.sqrt 2 / 1024 * 512 -
+          Real.sqrt 2 * (2 * Real.pi * (1 / 2)) * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) / 1048576 =
+          Real.sqrt 2 * (1 / 2 - Real.pi * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) / 1048576) := by ring
+      rw [hfact]; push_cast
+      exact mul_le_mul hsq2_lo (by linarith) hbracket_nn (Real.sqrt_nonneg 2)
+    · have ht1_lt : (t1q : ℝ) < 1 / 2 := lt_of_le_of_ne ht1R_le (by
+        intro h; apply hhalf; exact Rat.cast_injective (α := ℝ) (by simpa using h))
+      have hmain := sum_sin_cos_1024_ge (t1q : ℝ) ht1R_nn ht1_lt
+      have hcos_lb := cosLoQ_le_cos t1q ht1q_nn ht1q_le
+      have hcos_nn : 0 ≤ ((cosLoQ t1q : ℚ) : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr hj.1
+      have h1m4_pos : 0 < 1 - 4 * (t1q : ℝ) ^ 2 := by nlinarith
+      have hcoef : (2 * ((sqrt2LoQ : ℚ) : ℝ) / ((piHiQ : ℚ) : ℝ)) * ((cosLoQ t1q : ℚ) : ℝ) / (1 - 4 * (t1q : ℝ) ^ 2) ≤
+          (Real.sqrt 2 / 1024) * ((2048 / Real.pi) * Real.cos (Real.pi * (t1q : ℝ)) / (1 - 4 * (t1q : ℝ) ^ 2)) := by
+        have h1 : 2 * ((sqrt2LoQ : ℚ) : ℝ) / ((piHiQ : ℚ) : ℝ) ≤ 2 * Real.sqrt 2 / Real.pi := by
+          have hnum : 2 * ((sqrt2LoQ : ℚ) : ℝ) ≤ 2 * Real.sqrt 2 := by linarith
+          exact (div_le_div_of_nonneg_right hnum (by unfold piHiQ; push_cast; positivity)).trans
+            (div_le_div_of_nonneg_left (by positivity) Real.pi_pos hpi_hi)
+        have h2 : (2 * ((sqrt2LoQ : ℚ) : ℝ) / ((piHiQ : ℚ) : ℝ)) * ((cosLoQ t1q : ℚ) : ℝ) ≤
+            (2 * Real.sqrt 2 / Real.pi) * Real.cos (Real.pi * (t1q : ℝ)) :=
+          mul_le_mul h1 hcos_lb hcos_nn (by positivity)
+        have h3 := div_le_div_of_nonneg_right h2 h1m4_pos.le
+        exact h3.trans_eq (by ring)
+      have herr1 : (Real.sqrt 2 / 1024) * (Real.pi / 4096) ≤ (15 / 10 : ℝ) * ((piHiQ : ℚ) : ℝ) / 4194304 := by
+        have h1 : Real.sqrt 2 * Real.pi ≤ (15 / 10 : ℝ) * ((piHiQ : ℚ) : ℝ) :=
+          mul_le_mul hsq2_hi hpi_hi Real.pi_pos.le (by norm_num)
+        linarith
+      have herr2 : Real.sqrt 2 * (2 * Real.pi * (t1q : ℝ)) * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) / 1048576 ≤
+          (15 / 10 : ℝ) * (2 * ((piHiQ : ℚ) : ℝ) * (t1q : ℝ)) * (652 / 1048576) := by
+        have h1 : Real.sqrt 2 * (2 * Real.pi * (t1q : ℝ)) ≤ (15 / 10 : ℝ) * (2 * ((piHiQ : ℚ) : ℝ) * (t1q : ℝ)) :=
+          mul_le_mul hsq2_hi (by nlinarith) (by positivity) (by norm_num)
+        have h2 : Real.sqrt 2 * (2 * Real.pi * (t1q : ℝ)) * (∑ u ∈ range 1024, Real.sin (Real.pi * (u : ℝ) / 1024)) ≤
+            (15 / 10 : ℝ) * (2 * ((piHiQ : ℚ) : ℝ) * (t1q : ℝ)) * 652 :=
+          mul_le_mul h1 hsum_sin hsum_sin_nn (by unfold piHiQ; push_cast; positivity)
+        linarith
+      have hscale_m := mul_le_mul_of_nonneg_left hmain (by positivity : (0 : ℝ) ≤ Real.sqrt 2 / 1024)
+      push_cast; linarith
+  have hrlo_nn : (0 : ℝ) ≤ ((reLoQ t1q : ℚ) : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr hj.2.2.1
+  have hsq : ((reLoQ t1q : ℚ) : ℝ) ^ 2 ≤ (u₀ * sinePhaseAmplitude m β a).re ^ 2 :=
+    pow_le_pow_left₀ hrlo_nn (hre_t1_ge.trans hre_ge_t1) 2
+  have hL1_chi : (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (45303 / 200000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 ≤ ((reLoQ t1q : ℚ) : ℝ) ^ 2 := by
+    have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.2.2.2
+    dsimp only [L1b0Q, L1b1Q, L1b2Q] at h; push_cast at h ⊢; exact h
+  have hchi_le1 : (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ≤ 1 := by
+    have h1 : ((cosHiQ t0q : ℚ) : ℝ) ≤ 1 := by simpa using Rat.cast_le (K := ℝ).mpr hj.2.1
+    have ht0q_nn : (0 : ℚ) ≤ t0q := by dsimp [t0q]; positivity
+    have ht0q_le : t0q ≤ 1 / 2 := by
+      dsimp [t0q]
+      have h64 : (j.val : ℚ) ≤ 64 := by exact_mod_cast j.isLt.le
+      linarith
+    have ht0R_nn : (0 : ℝ) ≤ (t0q : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr ht0q_nn
+    have ht0R_le : (t0q : ℝ) ≤ 1 / 2 := by simpa using Rat.cast_le (K := ℝ).mpr ht0q_le
+    have h0 : 0 ≤ Real.cos (Real.pi * (t0q : ℝ)) :=
+      Real.cos_nonneg_of_mem_Icc ⟨by nlinarith [Real.pi_pos], by nlinarith [Real.pi_pos]⟩
+    have h2 : 0 ≤ ((cosHiQ t0q : ℚ) : ℝ) := h0.trans (cos_le_cosHiQ t0q ht0q_nn ht0q_le)
+    rw [Rat.cast_pow]; nlinarith
+  have hL1_mono : (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
+      (45303 / 200000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 ≤
+      (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (45303 / 200000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+    have hcc := hcs.2
+    have hnn : 0 ≤ Real.cos (Real.pi * t) ^ 2 := sq_nonneg _
+    nlinarith
+  rw [hcos_eq]
+  linarith
+
+theorem sine_neighbor_mass1_tight (m : ℕ) (hm : 10 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
+    let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
+    (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * c - (45303 / 200000 : ℝ) * c ^ 2 ≤
+      sineNeighborMass m r 0 k := by
+  classical
+  dsimp only
+  set a : Fin (2 ^ m) := reducedPeak r m k
+  have hgood_a : goodNeighbor m r 0 k a := by
+    refine ⟨0, by omega, by omega, ?_⟩
+    simp only [neighborWord, Int.cast_zero, add_zero, ← Int.natCast_mod, Int.toNat_natCast,
+      Nat.mod_eq_of_lt a.isLt]
+    rfl
+  have hsingle : Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) a.val) ≤ sineNeighborMass m r 0 k := by
+    unfold sineNeighborMass
+    have hle := Finset.single_le_sum (f := fun x : Fin (2 ^ m) =>
+        if goodNeighbor m r 0 k x then Complex.normSq (sinePhaseAmplitude m ((k.val : ℝ) / r) x.val) else 0)
+      (fun x _ => by dsimp only; split_ifs; exact Complex.normSq_nonneg _; exact le_rfl) (Finset.mem_univ a)
+    simpa only [if_pos hgood_a] using hle
+  set z : ℤ := ((reducedPeakRaw r m k / 2 ^ m : ℕ) : ℤ)
+  have hdiv : reducedPeakRaw r m k = a.val + (reducedPeakRaw r m k / 2 ^ m) * 2 ^ m := by
+    have h := (Nat.div_add_mod (reducedPeakRaw r m k) (2 ^ m)).symm
+    dsimp only [a, reducedPeak]
+    linarith [Nat.mul_comm (2 ^ m) (reducedPeakRaw r m k / 2 ^ m)]
+  have hround : round (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) = (reducedPeakRaw r m k : ℤ) := by
+    have hc' : ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r) = ((2 ^ m * k.val : ℕ) : ℝ) / r := by push_cast; ring
+    rw [hc', ShorECDLP.Entrant.RoundedReadout.round_nat_ratio _ r hr]
+    simp only [reducedPeakRaw, Nat.mul_assoc]
+  have hdist : |((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r) - ((a.val : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ))| ≤ 1 / 2 := by
+    have hcast : ((a.val : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ)) =
+        (round (((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) : ℝ) := by
+      rw [hround]
+      have hR : ((reducedPeakRaw r m k : ℕ) : ℝ) =
+          (a.val : ℝ) + ((reducedPeakRaw r m k / 2 ^ m : ℕ) : ℝ) * ((2 ^ m : ℕ) : ℝ) := by exact_mod_cast hdiv
+      dsimp only [z]; rw [Int.cast_natCast, Int.cast_natCast]; linarith
+    rw [hcast]; exact abs_sub_round _
+  exact (sinePhaseAmplitude_peak_lower_tight m hm ((k.val : ℝ) / r) a.val z hdist).trans hsingle
+
+/-! ### Part 3: Exact `d`-disjoint cosine Fourier average and `99497 / 100000` theorem -/
+
+private theorem sum_cos_int_eval (r : ℕ) (hr : 0 < r) (M : ℤ) :
+    ∑ k ∈ range r, Real.cos (2 * Real.pi * (M : ℝ) * (k : ℝ) / r) =
+      if (r : ℤ) ∣ M then (r : ℝ) else 0 := by
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr
+  split_ifs with hdvd
+  · obtain ⟨q, rfl⟩ := hdvd
+    have h1 : ∀ k ∈ range r, Real.cos (2 * Real.pi * ((r * q : ℤ) : ℝ) * (k : ℝ) / r) = 1 := by
+      intro k _
+      have heq : 2 * Real.pi * ((r * q : ℤ) : ℝ) * (k : ℝ) / r = ((q * (k : ℤ) : ℤ) : ℝ) * (2 * Real.pi) := by
+        push_cast; field_simp [hrR.ne']
+      rw [heq, Real.cos_int_mul_two_pi]
+    rw [Finset.sum_congr rfl h1]; simp
+  · set m : ℕ := (M % (r : ℤ)).toNat
+    have hm_mod : (m : ℤ) = M % (r : ℤ) := Int.toNat_of_nonneg (Int.emod_nonneg M (by omega))
+    have hm_ndvd : ¬ r ∣ m := by
+      intro ⟨q, hq⟩
+      have h1 : (r : ℤ) ∣ (m : ℤ) := ⟨q, by exact_mod_cast hq⟩
+      rw [hm_mod] at h1
+      have h2 := Int.emod_eq_zero_of_dvd h1
+      rw [Int.emod_emod] at h2
+      exact hdvd (Int.dvd_of_emod_eq_zero h2)
+    have hterm : ∀ k ∈ range r,
+        Real.cos (2 * Real.pi * (M : ℝ) * (k : ℝ) / r) =
+          Real.cos (2 * Real.pi * (m : ℝ) * (k : ℝ) / r) := by
+      intro k _
+      have hdiv : (M : ℝ) = (m : ℝ) + (r : ℝ) * ((M / (r : ℤ) : ℤ) : ℝ) := by
+        have h : (m : ℤ) + (r : ℤ) * (M / (r : ℤ)) = M := by rw [hm_mod]; exact Int.emod_add_mul_ediv M (r : ℤ)
+        have h' : (((m : ℤ) + (r : ℤ) * (M / (r : ℤ)) : ℤ) : ℝ) = (M : ℝ) := by exact_mod_cast h
+        simp only [Int.cast_add, Int.cast_mul, Int.cast_natCast] at h'
+        exact h'.symm
+      have heq : 2 * Real.pi * (M : ℝ) * (k : ℝ) / r =
+          2 * Real.pi * (m : ℝ) * (k : ℝ) / r + (((M / (r : ℤ)) * (k : ℤ) : ℤ) : ℝ) * (2 * Real.pi) := by
+        rw [hdiv]; push_cast; field_simp [hrR.ne']
+      rw [heq, Real.cos_add_int_mul_two_pi]
+    rw [Finset.sum_congr rfl hterm]
+    exact sum_cos_eq_zero r m hr hm_ndvd
+
+private theorem sum_cos_mul_cos_eq (r : ℕ) (hr : 0 < r) (A B : ℤ) :
+    ∑ k ∈ range r, Real.cos (2 * Real.pi * (A : ℝ) * (k : ℝ) / r) *
+        Real.cos (2 * Real.pi * (B : ℝ) * (k : ℝ) / r) =
+      ((if (r : ℤ) ∣ (A + B) then (r : ℝ) else 0) +
+       (if (r : ℤ) ∣ (A - B) then (r : ℝ) else 0)) / 2 := by
+  have hterm : ∀ k ∈ range r,
+      Real.cos (2 * Real.pi * (A : ℝ) * (k : ℝ) / r) *
+        Real.cos (2 * Real.pi * (B : ℝ) * (k : ℝ) / r) =
+      (Real.cos (2 * Real.pi * ((A + B : ℤ) : ℝ) * (k : ℝ) / r) +
+       Real.cos (2 * Real.pi * ((A - B : ℤ) : ℝ) * (k : ℝ) / r)) / 2 := by
+    intro k _
+    have h1 : 2 * Real.pi * ((A + B : ℤ) : ℝ) * (k : ℝ) / r =
+        2 * Real.pi * (A : ℝ) * (k : ℝ) / r + 2 * Real.pi * (B : ℝ) * (k : ℝ) / r := by push_cast; ring
+    have h2 : 2 * Real.pi * ((A - B : ℤ) : ℝ) * (k : ℝ) / r =
+        2 * Real.pi * (A : ℝ) * (k : ℝ) / r - 2 * Real.pi * (B : ℝ) * (k : ℝ) / r := by push_cast; ring
+    rw [h1, h2, Real.cos_add, Real.cos_sub]; ring
+  rw [Finset.sum_congr rfl hterm, ← Finset.sum_div, Finset.sum_add_distrib,
+    sum_cos_int_eval r hr (A + B), sum_cos_int_eval r hr (A - B)]
+
+private theorem cross13_tight_pointwise (p1 p3 p5 q1 q3 q5 u3L u5L l1L u3R u5R l1R : ℝ)
+    (hp3_le : p3 ≤ p5) (hp5_le : p5 ≤ 1) (hq3_le : q3 ≤ q5) (hq5_le : q5 ≤ 1)
+    (hp3 : 1 - u3L ≤ p3) (hp5 : 1 - u5L ≤ p5) (hp1 : l1L ≤ p1)
+    (hq3 : 1 - u3R ≤ q3) (hq5 : 1 - u5R ≤ q5) (hq1 : l1R ≤ q1)
+    (hl1L : 0 ≤ l1L ∧ l1L ≤ 1) (hl1R : 0 ≤ l1R ∧ l1R ≤ 1) :
+    1 - (u3L - (u3L - u5L) * l1R) - (u3R - (u3R - u5R) * l1L) ≤
+      p3 * q3 + (p5 - p3) * q1 + p1 * (q5 - q3) := by
+  have h1 : 0 ≤ (1 - p3) * (1 - q3) := mul_nonneg (by linarith) (by linarith)
+  have h2 : (p5 - p3) * l1R ≤ (p5 - p3) * q1 := mul_le_mul_of_nonneg_left hq1 (by linarith)
+  have h3 : l1L * (q5 - q3) ≤ p1 * (q5 - q3) := mul_le_mul_of_nonneg_right hp1 (by linarith)
+  have h4 : (1 - p3) * (1 - l1R) + (1 - p5) * l1R ≤ u3L * (1 - l1R) + u5L * l1R :=
+    add_le_add (mul_le_mul_of_nonneg_right (by linarith) (by linarith))
+      (mul_le_mul_of_nonneg_right (by linarith) hl1R.1)
+  have h5 : (1 - q3) * (1 - l1L) + (1 - q5) * l1L ≤ u3R * (1 - l1L) + u5R * l1L :=
+    add_le_add (mul_le_mul_of_nonneg_right (by linarith) (by linarith))
+      (mul_le_mul_of_nonneg_right (by linarith) hl1L.1)
+  nlinarith
+
+private theorem sine_pair_success_256_206_aux (r d : ℕ) (hr : r.Prime) (hrbig : 1000000 ≤ r)
+    (hndvdd : ¬ r ∣ d)
+    (hrec_pair : ∀ (k : Fin r), k.val ≠ 0 → ∀ (a : Fin (2 ^ 256)) (b : Fin (2 ^ 206)) (i j : ℤ),
+      (i, j) ∈ offsets13 →
+      neighborWord 256 a.val i = (reducedPeak r 256 k).val →
+      neighborWord 206 b.val j = (reducedPeak r 206 ⟨d * k.val % r, Nat.mod_lt _ hr.pos⟩).val →
+      pairRecovered256 d a.val b.val = true) :
+    (99497 / 100000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+      if pairRecovered256 d a.val b.val then sinePairMass r 256 206 d (a, b) else 0 := by
+  classical
+  have hrR : (0 : ℝ) < r := by exact_mod_cast hr.pos
+  have hrinv : (0 : ℝ) ≤ (r : ℝ)⁻¹ := by positivity
+  let kR : Fin r → Fin r := fun k => ⟨d * k.val % r, Nat.mod_lt _ hr.pos⟩
+  let A : Fin r → Fin (2 ^ 256) → ℝ := fun k a =>
+    Complex.normSq (sinePhaseAmplitude 256 ((k.val : ℝ) / r) a.val)
+  let B : Fin r → Fin (2 ^ 206) → ℝ := fun k b =>
+    Complex.normSq (sinePhaseAmplitude 206 (((kR k).val : ℝ) / r) b.val)
+  let G1 : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    goodNeighbor 256 r 1 k a ∧ goodNeighbor 206 r 1 (kR k) b
+  let G2 : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    (goodNeighbor 256 r 2 k a ∧ ¬ goodNeighbor 256 r 1 k a) ∧ goodNeighbor 206 r 0 (kR k) b
+  let G3 : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    goodNeighbor 256 r 0 k a ∧ (goodNeighbor 206 r 2 (kR k) b ∧ ¬ goodNeighbor 206 r 1 (kR k) b)
+  let good : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → Prop := fun k a b =>
+    k.val ≠ 0 ∧ (G1 k a b ∨ G2 k a b ∨ G3 k a b)
+  let F : Fin r → Fin (2 ^ 256) → Fin (2 ^ 206) → ℝ := fun k a b =>
+    if good k a b then A k a * B k b else 0
+  let cL : Fin r → ℝ := fun k => Real.cos (Real.pi * ((2 ^ 256 : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
+  let cR : Fin r → ℝ := fun k => Real.cos (Real.pi * ((2 ^ 206 : ℕ) : ℝ) * (((kR k).val : ℝ) / r)) ^ 2
+  let U3 : ℝ → ℝ := fun c => (29 / 100000 : ℝ) + (6003 / 500000 : ℝ) * c - (2819 / 1000000 : ℝ) * c ^ 2
+  let U5 : ℝ → ℝ := fun c => (31 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * c - (119 / 500000 : ℝ) * c ^ 2
+  let L1 : ℝ → ℝ := fun c => (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * c - (45303 / 200000 : ℝ) * c ^ 2
+  have hrec : ∀ k a b, good k a b → pairRecovered256 d a.val b.val = true := by
+    intro k a b ⟨hk, h⟩
+    rcases h with ⟨⟨i, hi1, hi2, hi⟩, ⟨j, hj1, hj2, hj⟩⟩ |
+      ⟨⟨⟨i, hi1, hi2, hi⟩, _⟩, ⟨j, hj1, hj2, hj⟩⟩ |
+      ⟨⟨i, hi1, hi2, hi⟩, ⟨⟨j, hj1, hj2, hj⟩, _⟩⟩
+    · have hp : (i, j) ∈ offsets13 := by
+        have hi' : i = -1 ∨ i = 0 ∨ i = 1 := by omega
+        have hj' : j = -1 ∨ j = 0 ∨ j = 1 := by omega
+        rcases hi' with rfl | rfl | rfl <;> rcases hj' with rfl | rfl | rfl <;> decide
+      exact hrec_pair k hk a b i j hp hi hj
+    · have hp : (i, j) ∈ offsets13 := by
+        have hi' : i = -2 ∨ i = -1 ∨ i = 0 ∨ i = 1 ∨ i = 2 := by omega
+        have hj' : j = 0 := by omega
+        subst hj'
+        rcases hi' with rfl | rfl | rfl | rfl | rfl <;> decide
+      exact hrec_pair k hk a b i j hp hi hj
+    · have hp : (i, j) ∈ offsets13 := by
+        have hi' : i = 0 := by omega
+        have hj' : j = -2 ∨ j = -1 ∨ j = 0 ∨ j = 1 ∨ j = 2 := by omega
+        subst hi'
+        rcases hj' with rfl | rfl | rfl | rfl | rfl <;> decide
+      exact hrec_pair k hk a b i j hp hi hj
+  have step1 :
+      ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b ≤
+        ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+          if pairRecovered256 d a.val b.val then sinePairMass r 256 206 d (a, b) else 0 := by
+    apply Finset.sum_le_sum; intro a _
+    apply Finset.sum_le_sum; intro b _
+    by_cases hp : pairRecovered256 d a.val b.val = true
+    · rw [if_pos hp]; unfold sinePairMass
+      apply mul_le_mul_of_nonneg_left _ hrinv
+      apply Finset.sum_le_sum; intro k _
+      dsimp only [F, A, B, kR]; split_ifs
+      · exact le_rfl
+      · exact mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _)
+    · rw [if_neg hp]
+      have hz : ∀ k, F k a b = 0 := fun k => by dsimp only [F]; rw [if_neg (fun hg => hp (hrec k a b hg))]
+      simp [hz]
+  have step2 :
+      (r : ℝ)⁻¹ * ∑ k : Fin r, ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b =
+        ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), (r : ℝ)⁻¹ * ∑ k : Fin r, F k a b := by
+    simp_rw [Finset.mul_sum]; rw [Finset.sum_comm]
+    apply Finset.sum_congr rfl; intro a _; exact Finset.sum_comm
+  have hL1_range : ∀ c : ℝ, 0 ≤ c → c ≤ 1 → 0 ≤ L1 c ∧ L1 c ≤ 1 := fun c hc0 hc1 => by
+    dsimp only [L1]; constructor <;> nlinarith
+  have hpoint_k (k : Fin r) :
+      (1 - (U3 (cL k) - (U3 (cL k) - U5 (cL k)) * L1 (cR k)) -
+           (U3 (cR k) - (U3 (cR k) - U5 (cR k)) * L1 (cL k))) -
+        (if k.val = 0 then (1 : ℝ) else 0) ≤
+      ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b := by
+    have hcL0 : 0 ≤ cL k := sq_nonneg _
+    have hcL1 : cL k ≤ 1 := by dsimp [cL]; nlinarith [Real.cos_sq_le_one (Real.pi * ((2 ^ 256 : ℕ) : ℝ) * ((k.val : ℝ) / r))]
+    have hcR0 : 0 ≤ cR k := sq_nonneg _
+    have hcR1 : cR k ≤ 1 := by dsimp [cR]; nlinarith [Real.cos_sq_le_one (Real.pi * ((2 ^ 206 : ℕ) : ℝ) * (((kR k).val : ℝ) / r))]
+    by_cases hk : k.val = 0
+    · rw [if_pos hk]
+      have h0 : 0 ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b :=
+        Finset.sum_nonneg (fun a _ => Finset.sum_nonneg (fun b _ => by
+          dsimp only [F, A, B]; split_ifs
+          · exact mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _)
+          · exact le_rfl))
+      have hU3L : 0 ≤ U3 (cL k) := by dsimp [U3]; nlinarith
+      have hU5L : 0 ≤ U5 (cL k) := by dsimp [U5]; nlinarith
+      have hU3R : 0 ≤ U3 (cR k) := by dsimp [U3]; nlinarith
+      have hU5R : 0 ≤ U5 (cR k) := by dsimp [U5]; nlinarith
+      have hL1L := hL1_range (cL k) hcL0 hcL1
+      have hL1R := hL1_range (cR k) hcR0 hcR1
+      nlinarith
+    · rw [if_neg hk, sub_zero]
+      have hsplit : ∀ a b, F k a b =
+          (if G1 k a b then A k a * B k b else 0) +
+          (if G2 k a b then A k a * B k b else 0) +
+          (if G3 k a b then A k a * B k b else 0) := by
+        intro a b; dsimp only [F, good]
+        by_cases h1 : G1 k a b
+        · simp [hk, h1, show ¬ G2 k a b from fun h => h.1.2 h1.1, show ¬ G3 k a b from fun h => h.2.2 h1.2]
+        · by_cases h2 : G2 k a b
+          · simp [hk, h1, h2, show ¬ G3 k a b from fun h => h2.1.2 (goodNeighbor_mono (by decide) h.1)]
+          · by_cases h3 : G3 k a b <;> simp [hk, h1, h2, h3]
+      have hsum_eq : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), F k a b) =
+          sineNeighborMass 256 r 1 k * sineNeighborMass 206 r 1 (kR k) +
+          (sineNeighborMass 256 r 2 k - sineNeighborMass 256 r 1 k) * sineNeighborMass 206 r 0 (kR k) +
+          sineNeighborMass 256 r 0 k * (sineNeighborMass 206 r 2 (kR k) - sineNeighborMass 206 r 1 (kR k)) := by
+        simp_rw [hsplit, Finset.sum_add_distrib]
+        have hS1 : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), if G1 k a b then A k a * B k b else 0) =
+            sineNeighborMass 256 r 1 k * sineNeighborMass 206 r 1 (kR k) := by
+          rw [sineNeighborMass, sineNeighborMass, Finset.sum_mul_sum]
+          apply Finset.sum_congr rfl; intro a _; apply Finset.sum_congr rfl; intro b _
+          dsimp only [G1, A, B]; rw [ite_zero_mul_ite_zero]
+        have hdiffL : (∑ a : Fin (2 ^ 256), if goodNeighbor 256 r 2 k a ∧ ¬ goodNeighbor 256 r 1 k a then A k a else 0) =
+            sineNeighborMass 256 r 2 k - sineNeighborMass 256 r 1 k := by
+          rw [sineNeighborMass, sineNeighborMass, ← Finset.sum_sub_distrib]
+          apply Finset.sum_congr rfl; intro a _; dsimp only [A]
+          by_cases h1 : goodNeighbor 256 r 1 k a
+          · simp [h1, goodNeighbor_mono (by decide : 1 ≤ 2) h1]
+          · by_cases h2 : goodNeighbor 256 r 2 k a <;> simp [h1, h2]
+        have hdiffR : (∑ b : Fin (2 ^ 206), if goodNeighbor 206 r 2 (kR k) b ∧ ¬ goodNeighbor 206 r 1 (kR k) b then B k b else 0) =
+            sineNeighborMass 206 r 2 (kR k) - sineNeighborMass 206 r 1 (kR k) := by
+          rw [sineNeighborMass, sineNeighborMass, ← Finset.sum_sub_distrib]
+          apply Finset.sum_congr rfl; intro b _; dsimp only [B]
+          by_cases h1 : goodNeighbor 206 r 1 (kR k) b
+          · simp [h1, goodNeighbor_mono (by decide : 1 ≤ 2) h1]
+          · by_cases h2 : goodNeighbor 206 r 2 (kR k) b <;> simp [h1, h2]
+        have hS2 : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), if G2 k a b then A k a * B k b else 0) =
+            (sineNeighborMass 256 r 2 k - sineNeighborMass 256 r 1 k) * sineNeighborMass 206 r 0 (kR k) := by
+          rw [← hdiffL, sineNeighborMass, Finset.sum_mul_sum]
+          apply Finset.sum_congr rfl; intro a _; apply Finset.sum_congr rfl; intro b _
+          dsimp only [G2, A, B]; rw [ite_zero_mul_ite_zero]
+        have hS3 : (∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206), if G3 k a b then A k a * B k b else 0) =
+            sineNeighborMass 256 r 0 k * (sineNeighborMass 206 r 2 (kR k) - sineNeighborMass 206 r 1 (kR k)) := by
+          rw [← hdiffR, sineNeighborMass, Finset.sum_mul_sum]
+          apply Finset.sum_congr rfl; intro a _; apply Finset.sum_congr rfl; intro b _
+          dsimp only [G3, A, B]; rw [ite_zero_mul_ite_zero]
+        rw [hS1, hS2, hS3]
+      rw [hsum_eq]
+      exact cross13_tight_pointwise
+        (sineNeighborMass 256 r 0 k) (sineNeighborMass 256 r 1 k) (sineNeighborMass 256 r 2 k)
+        (sineNeighborMass 206 r 0 (kR k)) (sineNeighborMass 206 r 1 (kR k)) (sineNeighborMass 206 r 2 (kR k))
+        (U3 (cL k)) (U5 (cL k)) (L1 (cL k)) (U3 (cR k)) (U5 (cR k)) (L1 (cR k))
+        (sineNeighborMass_mono 256 r 1 2 (by decide) k) (sineNeighborMass_le_one 256 (by decide) r 2 k)
+        (sineNeighborMass_mono 206 r 1 2 (by decide) (kR k)) (sineNeighborMass_le_one 206 (by decide) r 2 (kR k))
+        (sine_neighbor_mass3_tight 256 (by decide) r hr.pos k)
+        (sine_neighbor_mass5_tight 256 (by decide) r hr.pos k)
+        (sine_neighbor_mass1_tight 256 (by decide) r hr.pos k)
+        (sine_neighbor_mass3_tight 206 (by decide) r hr.pos (kR k))
+        (sine_neighbor_mass5_tight 206 (by decide) r hr.pos (kR k))
+        (sine_neighbor_mass1_tight 206 (by decide) r hr.pos (kR k))
+        (hL1_range (cL k) hcL0 hcL1) (hL1_range (cR k) hcR0 hcR1)
+  -- Express `cL`, `cR` in the exact Fourier basis keeping `2^256`, `2^206`, and `r` abstract!
+  let AL : ℤ := ((2 ^ 256 : ℕ) : ℤ)
+  let AR : ℤ := ((2 ^ 206 : ℕ) : ℤ) * (d : ℤ)
+  let eL1 : ℕ → ℝ := fun k => Real.cos (2 * Real.pi * (AL : ℝ) * (k : ℝ) / r)
+  let eL2 : ℕ → ℝ := fun k => Real.cos (2 * Real.pi * ((2 * AL : ℤ) : ℝ) * (k : ℝ) / r)
+  let eR1 : ℕ → ℝ := fun k => Real.cos (2 * Real.pi * (AR : ℝ) * (k : ℝ) / r)
+  let eR2 : ℕ → ℝ := fun k => Real.cos (2 * Real.pi * ((2 * AR : ℤ) : ℝ) * (k : ℝ) / r)
+  have hcL_eq : ∀ k : Fin r, cL k = (1 + eL1 k.val) / 2 ∧ cL k ^ 2 = 3 / 8 + eL1 k.val / 2 + eL2 k.val / 8 := by
+    intro k
+    have h1 : cL k = (1 + eL1 k.val) / 2 := by
+      dsimp only [cL, eL1]
+      have hAL : (AL : ℝ) = ((2 ^ 256 : ℕ) : ℝ) := by dsimp only [AL]; exact Int.cast_natCast _
+      rw [hAL, Real.cos_sq, show 2 * (Real.pi * ((2 ^ 256 : ℕ) : ℝ) * ((k.val : ℝ) / r)) =
+        2 * Real.pi * ((2 ^ 256 : ℕ) : ℝ) * (k.val : ℝ) / r by ring]; ring
+    have h2 : eL1 k.val ^ 2 = (1 + eL2 k.val) / 2 := by
+      dsimp only [eL1, eL2]
+      have h2AL : ((2 * AL : ℤ) : ℝ) = 2 * (AL : ℝ) := by rw [Int.cast_mul, Int.cast_ofNat]
+      rw [Real.cos_sq, h2AL, show 2 * (2 * Real.pi * (AL : ℝ) * (k.val : ℝ) / r) =
+        2 * Real.pi * (2 * (AL : ℝ)) * (k.val : ℝ) / r by ring]; ring
+    refine ⟨h1, ?_⟩
+    rw [h1]; nlinarith
+  have hcR_eq : ∀ k : Fin r, cR k = (1 + eR1 k.val) / 2 ∧ cR k ^ 2 = 3 / 8 + eR1 k.val / 2 + eR2 k.val / 8 := by
+    intro k
+    have hmod : cR k = Real.cos (Real.pi * ((2 ^ 206 * d : ℕ) : ℝ) * (k.val : ℝ) / r) ^ 2 := by
+      dsimp only [cR, kR]
+      rw [← mul_div_assoc, cos_sq_mod r (2 ^ 206) (d * k.val) hr.pos]
+      congr 2; rw [Nat.cast_mul, Nat.cast_mul]; ring
+    have h1 : cR k = (1 + eR1 k.val) / 2 := by
+      rw [hmod]; dsimp only [eR1]
+      have hAR : (AR : ℝ) = ((2 ^ 206 * d : ℕ) : ℝ) := by
+        dsimp only [AR]; rw [Nat.cast_mul, Int.cast_mul, Int.cast_natCast, Int.cast_natCast]
+      rw [hAR, Real.cos_sq, show 2 * (Real.pi * ((2 ^ 206 * d : ℕ) : ℝ) * (k.val : ℝ) / r) =
+        2 * Real.pi * ((2 ^ 206 * d : ℕ) : ℝ) * (k.val : ℝ) / r by ring]; ring
+    have h2 : eR1 k.val ^ 2 = (1 + eR2 k.val) / 2 := by
+      dsimp only [eR1, eR2]
+      have h2AR : ((2 * AR : ℤ) : ℝ) = 2 * (AR : ℝ) := by rw [Int.cast_mul, Int.cast_ofNat]
+      rw [Real.cos_sq, h2AR, show 2 * (2 * Real.pi * (AR : ℝ) * (k.val : ℝ) / r) =
+        2 * Real.pi * (2 * (AR : ℝ)) * (k.val : ℝ) / r by ring]; ring
+    refine ⟨h1, ?_⟩
+    rw [h1]; nlinarith
+  have hndvd2 : ¬ r ∣ 2 := fun h => by have := Nat.le_of_dvd (by decide) h; omega
+  have hndvd_pow : ∀ m : ℕ, ¬ r ∣ 2 ^ m := fun m h => hndvd2 (hr.dvd_of_dvd_pow h)
+  have hndvd_L1 : ¬ (r : ℤ) ∣ AL := fun h => hndvd_pow 256 (Int.ofNat_dvd.mp h)
+  have hndvd_L2 : ¬ (r : ℤ) ∣ (2 * AL) := by
+    intro h
+    have heq : 2 * AL = ((2 * 2 ^ 256 : ℕ) : ℤ) := by dsimp only [AL]; push_cast
+    rw [heq] at h
+    rcases hr.dvd_mul.mp (Int.ofNat_dvd.mp h) with h1 | h2
+    · exact hndvd2 h1
+    · exact hndvd_pow 256 h2
+  have hndvd_R1 : ¬ (r : ℤ) ∣ AR := by
+    intro h
+    have heq : AR = ((2 ^ 206 * d : ℕ) : ℤ) := by dsimp only [AR]; rw [Nat.cast_mul]
+    rw [heq] at h
+    rcases hr.dvd_mul.mp (Int.ofNat_dvd.mp h) with h1 | h2
+    · exact hndvd_pow 206 h1
+    · exact hndvdd h2
+  have hndvd_R2 : ¬ (r : ℤ) ∣ (2 * AR) := by
+    intro h
+    have heq : 2 * AR = ((2 * (2 ^ 206 * d) : ℕ) : ℤ) := by dsimp only [AR]; push_cast; ring
+    rw [heq] at h
+    rcases hr.dvd_mul.mp (Int.ofNat_dvd.mp h) with h1 | h2
+    · exact hndvd2 h1
+    · rcases hr.dvd_mul.mp h2 with h3 | h4
+      · exact hndvd_pow 206 h3
+      · exact hndvdd h4
+  have hsum_L1 : ∑ k ∈ range r, eL1 k = 0 := by rw [sum_cos_int_eval r hr.pos AL, if_neg hndvd_L1]
+  have hsum_L2 : ∑ k ∈ range r, eL2 k = 0 := by rw [sum_cos_int_eval r hr.pos (2 * AL), if_neg hndvd_L2]
+  have hsum_R1 : ∑ k ∈ range r, eR1 k = 0 := by rw [sum_cos_int_eval r hr.pos AR, if_neg hndvd_R1]
+  have hsum_R2 : ∑ k ∈ range r, eR2 k = 0 := by rw [sum_cos_int_eval r hr.pos (2 * AR), if_neg hndvd_R2]
+  set S11 : ℝ := ∑ k ∈ range r, eL1 k * eR1 k
+  set S22 : ℝ := ∑ k ∈ range r, eL2 k * eR2 k
+  set S12 : ℝ := ∑ k ∈ range r, eL1 k * eR2 k
+  set S21 : ℝ := ∑ k ∈ range r, eL2 k * eR1 k
+  have hS11_nn : 0 ≤ S11 := by
+    dsimp only [S11, eL1, eR1]; rw [sum_cos_mul_cos_eq r hr.pos AL AR]; split_ifs <;> linarith
+  have hS22_nn : 0 ≤ S22 := by
+    dsimp only [S22, eL2, eR2]; rw [sum_cos_mul_cos_eq r hr.pos (2 * AL) (2 * AR)]; split_ifs <;> linarith
+  have hS12_bounds : 0 ≤ S12 ∧ S12 ≤ (r : ℝ) / 2 := by
+    dsimp only [S12, eL1, eR2]; rw [sum_cos_mul_cos_eq r hr.pos AL (2 * AR)]
+    have hnotboth : ¬ ((r : ℤ) ∣ (AL + 2 * AR) ∧ (r : ℤ) ∣ (AL - 2 * AR)) := by
+      rintro ⟨h1, h2⟩
+      have hadd : (r : ℤ) ∣ ((AL + 2 * AR) + (AL - 2 * AR)) := dvd_add h1 h2
+      rw [show AL + 2 * AR + (AL - 2 * AR) = 2 * AL by ring] at hadd
+      exact hndvd_L2 hadd
+    by_cases h1 : (r : ℤ) ∣ (AL + 2 * AR)
+    · have h2 : ¬ (r : ℤ) ∣ (AL - 2 * AR) := fun h2 => hnotboth ⟨h1, h2⟩
+      rw [if_pos h1, if_neg h2]; constructor <;> linarith
+    · rw [if_neg h1]; split_ifs <;> constructor <;> linarith
+  have hS21_bounds : 0 ≤ S21 ∧ S21 ≤ (r : ℝ) / 2 := by
+    dsimp only [S21, eL2, eR1]; rw [sum_cos_mul_cos_eq r hr.pos (2 * AL) AR]
+    have hnotboth : ¬ ((r : ℤ) ∣ (2 * AL + AR) ∧ (r : ℤ) ∣ (2 * AL - AR)) := by
+      rintro ⟨h1, h2⟩
+      have hsub : (r : ℤ) ∣ ((2 * AL + AR) - (2 * AL - AR)) := dvd_sub h1 h2
+      rw [show 2 * AL + AR - (2 * AL - AR) = 2 * AR by ring] at hsub
+      exact hndvd_R2 hsub
+    by_cases h1 : (r : ℤ) ∣ (2 * AL + AR)
+    · have h2 : ¬ (r : ℤ) ∣ (2 * AL - AR) := fun h2 => hnotboth ⟨h1, h2⟩
+      rw [if_pos h1, if_neg h2]; constructor <;> linarith
+    · rw [if_neg h1]; split_ifs <;> constructor <;> linarith
+  have hdisj : S12 = 0 ∨ S21 = 0 := by
+    by_contra h
+    push_neg at h
+    have h12 : (r : ℤ) ∣ (AL + 2 * AR) ∨ (r : ℤ) ∣ (AL - 2 * AR) := by
+      by_contra hn12; push_neg at hn12
+      apply h.1; dsimp only [S12, eL1, eR2]
+      rw [sum_cos_mul_cos_eq r hr.pos AL (2 * AR), if_neg hn12.1, if_neg hn12.2]; norm_num
+    have h21 : (r : ℤ) ∣ (2 * AL + AR) ∨ (r : ℤ) ∣ (2 * AL - AR) := by
+      by_contra hn21; push_neg at hn21
+      apply h.2; dsimp only [S21, eL2, eR1]
+      rw [sum_cos_mul_cos_eq r hr.pos (2 * AL) AR, if_neg hn21.1, if_neg hn21.2]; norm_num
+    have hndvd3 : ¬ r ∣ 3 * 2 ^ 256 := by
+      intro hdvd
+      rcases hr.dvd_mul.mp hdvd with h3 | h2
+      · have : r ≤ 3 := Nat.le_of_dvd (by decide) h3; omega
+      · exact hndvd_pow 256 h2
+    have hndvd5 : ¬ r ∣ 5 * 2 ^ 256 := by
+      intro hdvd
+      rcases hr.dvd_mul.mp hdvd with h5 | h2
+      · have : r ≤ 5 := Nat.le_of_dvd (by decide) h5; omega
+      · exact hndvd_pow 256 h2
+    have h3Z : 3 * AL = ((3 * 2 ^ 256 : ℕ) : ℤ) := by dsimp only [AL]; rw [Nat.cast_mul, Nat.cast_ofNat]
+    have h5Z : 5 * AL = ((5 * 2 ^ 256 : ℕ) : ℤ) := by dsimp only [AL]; rw [Nat.cast_mul, Nat.cast_ofNat]
+    rcases h12 with h1 | h1 <;> rcases h21 with h2 | h2
+    · have h3 : (r : ℤ) ∣ (2 * (2 * AL + AR) - (AL + 2 * AR)) := dvd_sub (dvd_mul_of_dvd_right h2 2) h1
+      rw [show 2 * (2 * AL + AR) - (AL + 2 * AR) = 3 * AL by ring, h3Z] at h3
+      exact hndvd3 (Int.ofNat_dvd.mp h3)
+    · have h5 : (r : ℤ) ∣ (2 * (2 * AL - AR) + (AL + 2 * AR)) := dvd_add (dvd_mul_of_dvd_right h2 2) h1
+      rw [show 2 * (2 * AL - AR) + (AL + 2 * AR) = 5 * AL by ring, h5Z] at h5
+      exact hndvd5 (Int.ofNat_dvd.mp h5)
+    · have h5 : (r : ℤ) ∣ (2 * (2 * AL + AR) + (AL - 2 * AR)) := dvd_add (dvd_mul_of_dvd_right h2 2) h1
+      rw [show 2 * (2 * AL + AR) + (AL - 2 * AR) = 5 * AL by ring, h5Z] at h5
+      exact hndvd5 (Int.ofNat_dvd.mp h5)
+    · have h3 : (r : ℤ) ∣ (2 * (2 * AL - AR) - (AL - 2 * AR)) := dvd_sub (dvd_mul_of_dvd_right h2 2) h1
+      rw [show 2 * (2 * AL - AR) - (AL - 2 * AR) = 3 * AL by ring, h3Z] at h3
+      exact hndvd3 (Int.ofNat_dvd.mp h3)
+  have hsum := Finset.sum_le_sum (fun k (_ : k ∈ Finset.univ) => hpoint_k k)
+  have hlhs_eval : ∑ k : Fin r,
+      ((1 - (U3 (cL k) - (U3 (cL k) - U5 (cL k)) * L1 (cR k)) -
+            (U3 (cR k) - (U3 (cR k) - U5 (cR k)) * L1 (cL k))) -
+        (if k.val = 0 then (1 : ℝ) else 0)) =
+      (r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+          2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        2 * ((1757 / 500000 : ℝ) * (300681 / 2000000)) * S11 +
+        2 * ((-2581 / 8000000 : ℝ) * (-45303 / 1600000)) * S22 +
+        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * (S12 + S21) - 1 := by
+    have hz : (∑ k : Fin r, if k.val = 0 then (1 : ℝ) else 0) = 1 := by
+      rw [Fin.sum_univ_eq_sum_range (fun k => if k = 0 then (1 : ℝ) else 0)]; simp [hr.pos]
+    rw [Finset.sum_sub_distrib, hz]
+    apply congrArg (· - 1)
+    have hrew : ∀ k : Fin r,
+        1 - (U3 (cL k) - (U3 (cL k) - U5 (cL k)) * L1 (cR k)) -
+            (U3 (cR k) - (U3 (cR k) - U5 (cR k)) * L1 (cL k)) =
+        (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+          2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        (-(6003 / 500000 - 2819 / 1000000) / 2 + (1757 / 500000) * (5395471 / 8000000) +
+          (6553 / 1600000) * (300681 / 2000000)) * (eL1 k.val + eR1 k.val) +
+        ((2819 / 1000000) / 8 + (-2581 / 8000000) * (5395471 / 8000000) +
+          (6553 / 1600000) * (-45303 / 1600000)) * (eL2 k.val + eR2 k.val) +
+        2 * ((1757 / 500000) * (300681 / 2000000)) * (eL1 k.val * eR1 k.val) +
+        2 * ((-2581 / 8000000) * (-45303 / 1600000)) * (eL2 k.val * eR2 k.val) +
+        ((1757 / 500000) * (-45303 / 1600000)) * (eL1 k.val * eR2 k.val + eL2 k.val * eR1 k.val) +
+        ((-2581 / 8000000) * (300681 / 2000000)) * (eL2 k.val * eR1 k.val + eL1 k.val * eR2 k.val) := by
+      intro k
+      obtain ⟨hL1, hL2⟩ := hcL_eq k
+      obtain ⟨hR1, hR2⟩ := hcR_eq k
+      dsimp only [U3, U5, L1]
+      rw [hL2, hR2, hL1, hR1]
+      ring
+    simp_rw [hrew, Finset.sum_add_distrib, ← Finset.mul_sum]
+    have h0L1 : ∑ k : Fin r, eL1 k.val = 0 := by rw [Fin.sum_univ_eq_sum_range]; exact hsum_L1
+    have h0L2 : ∑ k : Fin r, eL2 k.val = 0 := by rw [Fin.sum_univ_eq_sum_range]; exact hsum_L2
+    have h0R1 : ∑ k : Fin r, eR1 k.val = 0 := by rw [Fin.sum_univ_eq_sum_range]; exact hsum_R1
+    have h0R2 : ∑ k : Fin r, eR2 k.val = 0 := by rw [Fin.sum_univ_eq_sum_range]; exact hsum_R2
+    have h11 : ∑ k : Fin r, eL1 k.val * eR1 k.val = S11 :=
+      Fin.sum_univ_eq_sum_range (fun k => eL1 k * eR1 k) r
+    have h22 : ∑ k : Fin r, eL2 k.val * eR2 k.val = S22 :=
+      Fin.sum_univ_eq_sum_range (fun k => eL2 k * eR2 k) r
+    have h12 : ∑ k : Fin r, eL1 k.val * eR2 k.val = S12 :=
+      Fin.sum_univ_eq_sum_range (fun k => eL1 k * eR2 k) r
+    have h21 : ∑ k : Fin r, eL2 k.val * eR1 k.val = S21 :=
+      Fin.sum_univ_eq_sum_range (fun k => eL2 k * eR1 k) r
+    simp only [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul,
+      Finset.sum_add_distrib, h0L1, h0L2, h0R1, h0R2, h11, h22, h12, h21]
+    ring
+  rw [hlhs_eval] at hsum
+  have hS12_21 : S12 + S21 ≤ (r : ℝ) / 2 := by
+    rcases hdisj with h0 | h0
+    · rw [h0, zero_add]; exact hS21_bounds.2
+    · rw [h0, add_zero]; exact hS12_bounds.2
+  have hcross_ge : ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) *
+      ((r : ℝ) / 2) ≤
+      ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * (S12 + S21) := by
+    nlinarith
+  have hS11_t : 0 ≤ 2 * ((1757 / 500000 : ℝ) * (300681 / 2000000)) * S11 :=
+    mul_nonneg (by norm_num) hS11_nn
+  have hS22_t : 0 ≤ 2 * ((-2581 / 8000000 : ℝ) * (-45303 / 1600000)) * S22 :=
+    mul_nonneg (by norm_num) hS22_nn
+  have hlower := mul_le_mul_of_nonneg_left hsum hrinv
+  rw [step2] at hlower
+  have hrbigR : (1000000 : ℝ) ≤ (r : ℝ) := by exact_mod_cast hrbig
+  have hinv : (r : ℝ)⁻¹ ≤ (1 : ℝ) / 1000000 := by
+    rw [one_div]; exact inv_anti₀ (by norm_num) hrbigR
+  have hnum : (99497 / 100000 : ℝ) ≤
+      (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * ((r : ℝ) / 2) - 1) := by
+    have hsimp : (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * ((r : ℝ) / 2) - 1) =
+      (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) / 2 - (r : ℝ)⁻¹ := by
+      field_simp [hrR.ne']
+    rw [hsimp]; linarith
+  have hcomb : (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * ((r : ℝ) / 2) - 1) ≤
+      (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
+        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
+        2 * ((1757 / 500000 : ℝ) * (300681 / 2000000)) * S11 +
+        2 * ((-2581 / 8000000 : ℝ) * (-45303 / 1600000)) * S22 +
+        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * (S12 + S21) - 1) :=
+    mul_le_mul_of_nonneg_left (by linarith) hrinv
+  exact hnum.trans (hcomb.trans (hlower.trans step1))
+
+/-- Wave 11 tight ideal recovery lower bound (`≥ 99497 / 100000`) for `(L = 256, R = 206, 13 trials)`. -/
+theorem sine_pair_success_256_206_tight (Q : Point) (d : ℕ) (hn : Q ≠ 0) (hd : Q = d • G) :
+    (99497 / 100000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+      if pairRecovered256 d a.val b.val then sinePairMass order 256 206 d (a, b) else 0 :=
+  sine_pair_success_256_206_aux order d order_prime (by norm_num [order])
+    (order_not_dvd_of_ne_zero Q d hn hd)
+    (fun k hk a b i j hp hi hj => pairRecovered256_of_pair d k hk a b i j hp hi hj)
+
+end
+end ShorECDLP.Entrant.SineBoundsTight
 
 /-! ### Part 2: Arbitrary-bias windowed bridge and `prependCircuit` combinators -/
 
@@ -4537,10 +6322,421 @@ theorem selectedAxisDep_cons_exact_upper {n : Nat} {y : Wire} {read : ConstantBi
     exact hs
   exact list_sum_forall2_normSq_ge _ cs _ _ hal hper_a hmass
 
+/-! ### Wave 11 Minkowski `ℓ^2` `ApproxCat` propagation (`axisSqrtErr`, `selectedAxisDep_sqrt_upper`) -/
+
+theorem instrument_sqrt_add (I : Instrument) (a b : State) :
+    Real.sqrt (I.bornMass (a + b)) ≤ Real.sqrt (I.bornMass a) + Real.sqrt (I.bornMass b) :=
+  Trim18.sqrt_le_add_of_eps _ _ _
+    (instrument_bornMass_nonneg I (a + b))
+    (instrument_bornMass_nonneg I a)
+    (instrument_bornMass_nonneg I b)
+    (fun eps heps => by
+      have h := instrument_mass_upper I a b eps heps
+      have hm := mul_le_mul_of_nonneg_left h heps.le
+      refine hm.trans_eq ?_
+      field_simp [heps.ne']; ring)
+
+theorem list_sqrt_sum_sq_add {α : Type} (xs : List α) (f g : α → ℝ)
+    (hf : ∀ x ∈ xs, 0 ≤ f x) (hg : ∀ x ∈ xs, 0 ≤ g x) :
+    Real.sqrt ((xs.map (fun x => (f x + g x) ^ 2)).sum) ≤
+      Real.sqrt ((xs.map (fun x => (f x) ^ 2)).sum) +
+      Real.sqrt ((xs.map (fun x => (g x) ^ 2)).sum) := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.map_cons, List.sum_cons]
+    have hfx : 0 ≤ f x := hf x List.mem_cons_self
+    have hgx : 0 ≤ g x := hg x List.mem_cons_self
+    have hih := ih (fun y hy => hf y (List.mem_cons_of_mem _ hy)) (fun y hy => hg y (List.mem_cons_of_mem _ hy))
+    have hsf : 0 ≤ (xs.map (fun y => (f y) ^ 2)).sum :=
+      List.sum_nonneg (fun r hr => by obtain ⟨y, _, rfl⟩ := List.mem_map.mp hr; exact sq_nonneg _)
+    have hsg : 0 ≤ (xs.map (fun y => (g y) ^ 2)).sum :=
+      List.sum_nonneg (fun r hr => by obtain ⟨y, _, rfl⟩ := List.mem_map.mp hr; exact sq_nonneg _)
+    have hss : 0 ≤ (xs.map (fun y => (f y + g y) ^ 2)).sum :=
+      List.sum_nonneg (fun r hr => by obtain ⟨y, _, rfl⟩ := List.mem_map.mp hr; exact sq_nonneg _)
+    have hsq_tail : (xs.map (fun y => (f y + g y) ^ 2)).sum ≤
+        (Real.sqrt ((xs.map (fun y => (f y) ^ 2)).sum) + Real.sqrt ((xs.map (fun y => (g y) ^ 2)).sum)) ^ 2 := by
+      have := pow_le_pow_left₀ (Real.sqrt_nonneg _) hih 2
+      rwa [Real.sq_sqrt hss] at this
+    have h1 : Real.sqrt ((f x + g x) ^ 2 + (xs.map (fun y => (f y + g y) ^ 2)).sum) ≤
+        Real.sqrt ((f x + g x) ^ 2 + (Real.sqrt ((xs.map (fun y => (f y) ^ 2)).sum) +
+          Real.sqrt ((xs.map (fun y => (g y) ^ 2)).sum)) ^ 2) :=
+      Real.sqrt_le_sqrt (add_le_add le_rfl hsq_tail)
+    have h2 := Trim18.sqrt_sum_sq_add_two (f x) (Real.sqrt ((xs.map (fun y => (f y) ^ 2)).sum))
+      (g x) (Real.sqrt ((xs.map (fun y => (g y) ^ 2)).sum))
+      hfx (Real.sqrt_nonneg _) hgx (Real.sqrt_nonneg _)
+    rw [Real.sq_sqrt hsf, Real.sq_sqrt hsg] at h2
+    exact h1.trans h2
+
+def axisSqrtErr {n : Nat} {y : Wire} {read : ConstantBit n → Bool} :
+    List (ApproxCatWindow y read) → List Bool → (List Bool → State → ℝ) → State → ℝ
+  | List.nil, prior, baseErr, ψ => baseErr prior ψ
+  | w :: ws, prior, baseErr, ψ =>
+      let χ := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)
+      2 * Real.sqrt (normSq (restrictState (fun s => ¬ w.goodPred s) χ)) +
+      Real.sqrt (((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+        (axisSqrtErr ws (bits.reverse ++ prior) baseErr (w.model.step prior bits ψ)) ^ 2)).sum)
+
+theorem axisSqrtErr_nonneg {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (ApproxCatWindow y read)) (prior : List Bool) (baseErr : List Bool → State → ℝ)
+    (hbase : ∀ pr φ, 0 ≤ baseErr pr φ) (ψ : State) :
+    0 ≤ axisSqrtErr ws prior baseErr ψ := by
+  cases ws with
+  | nil => exact hbase prior ψ
+  | cons w ws =>
+    dsimp only [axisSqrtErr]
+    exact add_nonneg (mul_nonneg (by norm_num) (Real.sqrt_nonneg _)) (Real.sqrt_nonneg _)
+
+theorem list_sqrt_axisSqrtErr_cons {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (w : ApproxCatWindow y read) (ws : List (ApproxCatWindow y read))
+    (baseErr : List Bool → State → ℝ) (S : List (List Bool × State)) :
+    Real.sqrt ((S.map (fun x => (axisSqrtErr (w :: ws) x.1 baseErr x.2) ^ 2)).sum) ≤
+      2 * Real.sqrt ((S.map (fun x =>
+        normSq (restrictState (fun s => ¬ w.goodPred s)
+          (Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) x.2))))).sum) +
+      Real.sqrt ((S.map (fun x =>
+        ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+          (axisSqrtErr ws (bits.reverse ++ x.1) baseErr (w.model.step x.1 bits x.2)) ^ 2)).sum)).sum) := by
+  dsimp only [axisSqrtErr]
+  have h := list_sqrt_sum_sq_add S
+    (fun x => 2 * Real.sqrt (normSq (restrictState (fun s => ¬ w.goodPred s)
+      (Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) x.2)))))
+    (fun x => Real.sqrt (((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+      (axisSqrtErr ws (bits.reverse ++ x.1) baseErr (w.model.step x.1 bits x.2)) ^ 2)).sum))
+    (fun _ _ => mul_nonneg (by norm_num) (Real.sqrt_nonneg _))
+    (fun _ _ => Real.sqrt_nonneg _)
+  have hf_eq : (S.map (fun x => (2 * Real.sqrt (normSq (restrictState (fun s => ¬ w.goodPred s)
+      (Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) x.2))))) ^ 2)).sum =
+      4 * (S.map (fun x => normSq (restrictState (fun s => ¬ w.goodPred s)
+      (Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) x.2))))).sum := by
+    rw [← list_sum_map_mul_left]
+    apply congrArg List.sum; apply List.map_congr_left; intro x _
+    rw [mul_pow, Real.sq_sqrt (ApproximatePhase34.mass_nonneg _)]; norm_num
+  have hg_eq : (S.map (fun x => (Real.sqrt (((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+      (axisSqrtErr ws (bits.reverse ++ x.1) baseErr (w.model.step x.1 bits x.2)) ^ 2)).sum)) ^ 2)).sum =
+      (S.map (fun x => ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+      (axisSqrtErr ws (bits.reverse ++ x.1) baseErr (w.model.step x.1 bits x.2)) ^ 2)).sum)).sum := by
+    apply congrArg List.sum; apply List.map_congr_left; intro x _
+    exact Real.sq_sqrt (List.sum_nonneg (fun r hr => by obtain ⟨_, _, rfl⟩ := List.mem_map.mp hr; exact sq_nonneg _))
+  rw [hf_eq, hg_eq, Real.sqrt_mul (by norm_num), show Real.sqrt 4 = 2 by rw [show (4 : ℝ) = 2 ^ 2 by norm_num, Real.sqrt_sq (by norm_num)]] at h
+  exact h
+
+/-- Zero-overhead Minkowski `ℓ^2` upper bound on physical event mass across any `ApproxCatWindow` list. -/
+theorem selectedAxisDep_sqrt_upper {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (ws : List (ApproxCatWindow y read)) (start : Nat) (history : Fin start → Bool)
+    (prior : List (Fin start))
+    (physTerm : List Bool → List Bool → Instrument) (idealTerm : List Bool → Instrument)
+    (baseErr : List Bool → State → ℝ) (hbase_nn : ∀ pr φ, 0 ≤ baseErr pr φ)
+    (Inv : State → Prop)
+    (hstep_inv : ∀ w ∈ ws, ∀ pr bits φ, Inv φ → Inv (w.model.step pr bits φ))
+    (hbad_iso : ∀ w ∈ ws, ∀ φ, Inv φ →
+      let χ := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) φ)
+      normSq (w.core_ideal (restrictState (fun s => ¬ w.goodPred s) χ)) ≤
+        normSq (restrictState (fun s => ¬ w.goodPred s) χ))
+    (hphys_sub : ∀ h tag, SubUnital (physTerm h tag))
+    (hterm : ∀ h tag φ, Inv φ → SupportedOn (fun s => s y = false) φ →
+      Real.sqrt ((physTerm h tag).bornMass (Prep y φ)) ≤
+        Real.sqrt ((idealTerm tag).bornMass φ) + baseErr tag φ)
+    (ψ : State) (hψ_inv : Inv ψ) (hψY : SupportedOn (fun s => s y = false) ψ) :
+    Real.sqrt ((selectedAxisDep ws start history prior physTerm).bornMass (Prep y ψ)) ≤
+      Real.sqrt ((idealAxis (ws.map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ) +
+      axisSqrtErr ws (prior.map history) baseErr ψ := by
+  induction ws generalizing start physTerm ψ with
+  | nil =>
+    simp only [List.map_nil, idealAxis, selectedAxisDep, taggedAxisApprox,
+      List.flatMap_cons, List.flatMap_nil, List.append_nil, axisSqrtErr]
+    rw [prefixed_mass ⟨[], LinearMap.id⟩ _ (Prep y ψ)]
+    exact hterm List.nil (prior.map history) ψ hψ_inv hψY
+  | cons w ws ih =>
+    have hH_nw : y ∉ circuitWires (w.model.physical.wires.reverse.map Gate.H) := by
+      intro hm
+      simp only [circuitWires, List.mem_flatMap, List.mem_map] at hm
+      obtain ⟨g, ⟨v, hv, rfl⟩, hwg⟩ := hm
+      simp only [gateWires, List.mem_singleton] at hwg
+      exact w.noY (List.mem_reverse.mp (hwg ▸ hv))
+    let χ : State := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)
+    let χ_good : State := restrictState w.goodPred χ
+    let χ_bad : State := restrictState (fun s => ¬ w.goodPred s) χ
+    have hχ_split : χ = χ_good + χ_bad := (restrictState_add_compl w.goodPred χ).symm
+    have hχY : SupportedOn (fun s => s y = false) χ :=
+      LocalFour.circuit_frame y w.pre w.pre_noY _ (LocalFour.circuit_frame y _ hH_nw ψ hψY)
+    have hgoodY : SupportedOn (fun s => s y = false) χ_good :=
+      restrictState_preserves w.goodPred _ χ hχY
+    have hgood_sup : SupportedOn w.goodPred χ_good := restrictState_supportedOn w.goodPred χ
+    have hpreH_prep : Quantum.run (compileCircuit y w.pre)
+        (Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ)) = Prep y χ := by
+      rw [w.wires_eq, prep_circuit y _ hH_nw ψ,
+        compileCircuit_prep y w.pre w.pre_noY _ (LocalFour.circuit_frame y _ hH_nw ψ hψY)]
+    obtain ⟨cs, hal, hmass⟩ := w.catCoherent start history
+    let tailPhys (a : InstrumentBranch) (bits : List Bool) : Instrument :=
+      let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+      let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+      selectedAxisDep ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+        (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)
+    let stepPhys : Instrument :=
+      (((w.core start).instantiate read history).run).flatMap (fun a =>
+        (fourierOutcomes w.catPhys.wires.length).flatMap (fun bits =>
+          (tailPhys a bits).map
+            (a.seq ⟨bits, compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits⟩).seq))
+    have hstepPhys_mass (φ : State) :
+        stepPhys.bornMass φ =
+          (((w.core start).instantiate read history).run.map (fun a =>
+            ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+              (tailPhys a bits).bornMass
+                (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                  (a.kraus φ)))).sum)).sum := by
+      simp only [stepPhys, flat_mass, prefixed_mass, List.flatMap_map, List.map_map,
+        Function.comp_def, InstrumentBranch.seq, LinearMap.comp_apply]
+    have hstepPhys_eq : (selectedAxisDep (w :: ws) start history prior physTerm).bornMass (Prep y ψ) =
+        stepPhys.bornMass (Prep y χ) := by
+      rw [selectedAxisDep_cons_mass, hstepPhys_mass, hpreH_prep]
+    have hstepPhys_sub : SubUnital stepPhys := by
+      intro φ
+      rw [hstepPhys_mass]
+      have h1 : ∀ a ∈ ((w.core start).instantiate read history).run,
+          ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus φ)))).sum ≤ normSq (a.kraus φ) := by
+        intro a _
+        have hle : ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus φ)))).sum ≤
+            ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+              normSq (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus φ)))).sum :=
+          list_sum_map_le _ _ _ (fun bits _ =>
+            selectedAxisDep_subUnital ws _ _ _ _ (fun _ tag => hphys_sub _ tag) _)
+        exact hle.trans_eq (normSq_list_sum_compileFourierBranch y .inverse w.catPhys.wires
+          (w.wires_eq ▸ w.noY) (prior.map history) _)
+      exact (list_sum_map_le _ _ _ h1).trans_eq
+        (AdaptiveCircuit.run_preservesBornMass _ ((w.core start).instantiate_wellFormed read history (w.core_wf start)) φ)
+    have hfull_to_good : Real.sqrt (stepPhys.bornMass (Prep y χ)) ≤
+        Real.sqrt (stepPhys.bornMass (Prep y χ_good)) + Real.sqrt (normSq χ_bad) := by
+      rw [hχ_split, map_add]
+      have hu := instrument_sqrt_add stepPhys (Prep y χ_good) (Prep y χ_bad)
+      have hsub := Real.sqrt_le_sqrt (hstepPhys_sub (Prep y χ_bad))
+      rw [LocalFour.normSq_prep] at hsub
+      linarith
+    let fI : List Bool → ℝ := fun bits =>
+      Real.sqrt ((idealAxis (ws.map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass
+        (w.model.step (prior.map history) bits ψ))
+    let fE : List Bool → ℝ := fun bits =>
+      axisSqrtErr ws (bits.reverse ++ prior.map history) baseErr (w.model.step (prior.map history) bits ψ)
+    let fB : List Bool → ℝ := fun bits =>
+      Real.sqrt (normSq (fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad)))
+    have hgood_sq : stepPhys.bornMass (Prep y χ_good) ≤
+        ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fI bits + fE bits + fB bits) ^ 2)).sum := by
+      have hper_a : ∀ a ∈ ((w.core start).instantiate read history).run, ∀ c : ℂ,
+          (∀ s, w.goodPred s → a.kraus (Prep y (ket s)) = c • Prep y (w.core_ideal (ket s))) →
+          ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus (Prep y χ_good))))).sum ≤
+          Complex.normSq c *
+            ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fI bits + fE bits + fB bits) ^ 2)).sum := by
+        intro a ha_mem c ha
+        have ha_len : a.history.length = w.catPhys.count := by
+          have h := straight_history_length _ read history a ha_mem; omega
+        have ha_good : a.kraus (Prep y χ_good) = c • Prep y (w.core_ideal χ_good) :=
+          catBranch_on_supported ha χ_good hgood_sup
+        have hper_bits : ∀ bits ∈ fourierOutcomes w.model.physical.wires.length,
+            (tailPhys a bits).bornMass
+              (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+                (a.kraus (Prep y χ_good))) ≤
+            Complex.normSq c * (fI bits + fE bits + fB bits) ^ 2 := by
+          intro bits hb
+          let φ_full := w.model.step (prior.map history) bits ψ
+          let φ_good := fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_good)
+          let φ_bad := fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad)
+          have hφ_eq : φ_full = φ_good + φ_bad := by
+            change fourierBranch .inverse w.model.physical.wires (prior.map history) bits
+                (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)) = _
+            rw [w.ideal_eq]; change fourierBranch _ _ _ _ (w.core_ideal χ) = _
+            rw [hχ_split, map_add, map_add]
+          have hφY : SupportedOn (fun s => s y = false) φ_full := by
+            have h1 := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+              (prior.map history) bits (w.core_ideal χ) (w.core_idealY χ hχY)
+            change SupportedOn _ (fourierBranch _ _ _ _ (w.model.ideal _))
+            rw [w.ideal_eq]; exact h1.2
+          have hih := ih (start + w.catPhys.count + w.catPhys.wires.length)
+            (Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length)
+              (Single.historyAfter (start + w.catPhys.count) history a.history) bits)
+            (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+            (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)
+            (fun v hv => hstep_inv v (List.mem_cons_of_mem _ hv))
+            (fun v hv => hbad_iso v (List.mem_cons_of_mem _ hv))
+            (fun _ tag => hphys_sub _ tag)
+            (fun _ tag => hterm _ tag)
+            φ_full (hstep_inv w List.mem_cons_self _ bits ψ hψ_inv) hφY
+          have hnp : (nextPrior w.catPhys.count w.catPhys.wires.length prior).map
+              (Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length)
+                (Single.historyAfter (start + w.catPhys.count) history a.history) bits) =
+              bits.reverse ++ prior.map history :=
+            nextPrior_map _ _ _ _ _ _ ha_len (w.wires_eq ▸ (fourierOutcomes_mem _ _).mp hb)
+          rw [hnp] at hih
+          have hsplit_good : Real.sqrt ((tailPhys a bits).bornMass (Prep y φ_good)) ≤
+              Real.sqrt ((tailPhys a bits).bornMass (Prep y φ_full)) + fB bits := by
+            have hgs : φ_good = φ_full + (-φ_bad) := by rw [hφ_eq]; abel
+            rw [hgs, map_add, map_neg]
+            have hu := instrument_sqrt_add (tailPhys a bits) (Prep y φ_full) (-(Prep y φ_bad))
+            rw [instrument_mass_neg] at hu
+            have hsub_mass : (tailPhys a bits).bornMass (Prep y φ_bad) ≤ normSq (Prep y φ_bad) :=
+              selectedAxisDep_subUnital ws _ _ _ _ (fun _ tag => hphys_sub _ tag) (Prep y φ_bad)
+            have hsub := Real.sqrt_le_sqrt hsub_mass
+            rw [LocalFour.normSq_prep] at hsub
+            exact hu.trans (add_le_add le_rfl hsub)
+          have hsqrt_le : Real.sqrt ((tailPhys a bits).bornMass (Prep y φ_good)) ≤ fI bits + fE bits + fB bits := by
+            linarith
+          have hmass_le : (tailPhys a bits).bornMass (Prep y φ_good) ≤ (fI bits + fE bits + fB bits) ^ 2 := by
+            have := pow_le_pow_left₀ (Real.sqrt_nonneg _) hsqrt_le 2
+            rwa [Real.sq_sqrt (instrument_bornMass_nonneg _ _)] at this
+          have hcfb : compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+              (a.kraus (Prep y χ_good)) = c • Prep y φ_good := by
+            rw [ha_good, map_smul, w.wires_eq]
+            have hfb := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+              (prior.map history) bits (w.core_ideal χ_good) (w.core_idealY χ_good hgoodY)
+            rw [hfb.1]
+          rw [hcfb, bornMass_smul_real]
+          exact mul_le_mul_of_nonneg_left hmass_le (Complex.normSq_nonneg c)
+        have hs := list_sum_map_le _ _ _ hper_bits
+        rw [list_sum_map_mul_left] at hs
+        rw [congrArg (fun l => fourierOutcomes l.length) w.wires_eq]
+        exact hs
+      rw [hstepPhys_mass]
+      exact list_sum_forall2_normSq_ge _ cs _ _ hal hper_a hmass
+    have hgood_sqrt : Real.sqrt (stepPhys.bornMass (Prep y χ_good)) ≤
+        Real.sqrt ((idealAxis ((w :: ws).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ) +
+        Real.sqrt (((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fE bits) ^ 2)).sum) +
+        Real.sqrt (normSq χ_bad) := by
+      have hs1 := Real.sqrt_le_sqrt hgood_sq
+      have hm1 := list_sqrt_sum_sq_add (fourierOutcomes w.model.physical.wires.length)
+        (fun bits => fI bits + fE bits) fB
+        (fun bits _ => add_nonneg (Real.sqrt_nonneg _) (axisSqrtErr_nonneg ws _ baseErr hbase_nn _))
+        (fun _ _ => Real.sqrt_nonneg _)
+      have hm2 := list_sqrt_sum_sq_add (fourierOutcomes w.model.physical.wires.length) fI fE
+        (fun _ _ => Real.sqrt_nonneg _)
+        (fun bits _ => axisSqrtErr_nonneg ws _ baseErr hbase_nn _)
+      have hI_eq : ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fI bits) ^ 2)).sum =
+          (idealAxis ((w :: ws).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ := by
+        simp only [List.map_cons, idealAxis_cons_mass]
+        apply congrArg List.sum; apply List.map_congr_left; intro bits _
+        exact Real.sq_sqrt (instrument_bornMass_nonneg _ _)
+      have hB_le : ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fB bits) ^ 2)).sum ≤ normSq χ_bad := by
+        have heq : ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fB bits) ^ 2)).sum =
+            ((fourierOutcomes w.model.physical.wires.length).map (fun bits =>
+              normSq (fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ_bad)))).sum := by
+          apply congrArg List.sum; apply List.map_congr_left; intro bits _
+          exact Real.sq_sqrt (ApproximatePhase34.mass_nonneg _)
+        rw [heq, normSq_list_sum_fourierBranch]
+        exact hbad_iso w List.mem_cons_self ψ hψ_inv
+      have hB_sqrt : Real.sqrt (((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fB bits) ^ 2)).sum) ≤
+          Real.sqrt (normSq χ_bad) := Real.sqrt_le_sqrt hB_le
+      rw [hI_eq] at hm2
+      linarith
+    rw [hstepPhys_eq]
+    dsimp only [axisSqrtErr]
+    linarith
+
+/-- Exact head step (`χ_bad = 0`, zero loss, Minkowski `ℓ^2`): used for `first20ApproxWin`. -/
+theorem selectedAxisDep_cons_exact_sqrt {n : Nat} {y : Wire} {read : ConstantBit n → Bool}
+    (w : ApproxCatWindow y read) (ws : List (ApproxCatWindow y read))
+    (start : Nat) (history : Fin start → Bool) (prior : List (Fin start))
+    (physTerm : List Bool → List Bool → Instrument) (idealTerm : List Bool → Instrument)
+    (tailErr : List Bool → ℝ) (htail_nn : ∀ bits, 0 ≤ tailErr bits)
+    (ψ : State) (hψY : SupportedOn (fun s => s y = false) ψ)
+    (hgood : SupportedOn w.goodPred
+      (Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)))
+    (htail : ∀ (a : InstrumentBranch) (bits : List Bool),
+      a ∈ ((w.core start).instantiate read history).run →
+      bits ∈ fourierOutcomes w.model.physical.wires.length →
+      let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+      let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+      Real.sqrt ((selectedAxisDep ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+        (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)).bornMass
+          (Prep y (w.model.step (prior.map history) bits ψ))) ≤
+      Real.sqrt ((idealAxis (ws.map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass
+        (w.model.step (prior.map history) bits ψ)) + tailErr bits) :
+    Real.sqrt ((selectedAxisDep (w :: ws) start history prior physTerm).bornMass (Prep y ψ)) ≤
+      Real.sqrt ((idealAxis ((w :: ws).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ) +
+      Real.sqrt (((fourierOutcomes w.model.physical.wires.length).map (fun bits => (tailErr bits) ^ 2)).sum) := by
+  have hH_nw : y ∉ circuitWires (w.model.physical.wires.reverse.map Gate.H) := by
+    intro hm
+    simp only [circuitWires, List.mem_flatMap, List.mem_map] at hm
+    obtain ⟨g, ⟨v, hv, rfl⟩, hwg⟩ := hm
+    simp only [gateWires, List.mem_singleton] at hwg
+    exact w.noY (List.mem_reverse.mp (hwg ▸ hv))
+  let χ : State := Quantum.run w.pre (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)
+  have hχY : SupportedOn (fun s => s y = false) χ :=
+    LocalFour.circuit_frame y w.pre w.pre_noY _ (LocalFour.circuit_frame y _ hH_nw ψ hψY)
+  have hpreH_prep : Quantum.run (compileCircuit y w.pre)
+      (Quantum.run (w.catPhys.wires.reverse.map Gate.H) (Prep y ψ)) = Prep y χ := by
+    rw [w.wires_eq, prep_circuit y _ hH_nw ψ,
+      compileCircuit_prep y w.pre w.pre_noY _ (LocalFour.circuit_frame y _ hH_nw ψ hψY)]
+  obtain ⟨cs, hal, hmass⟩ := w.catCoherent start history
+  let fI : List Bool → ℝ := fun bits =>
+    Real.sqrt ((idealAxis (ws.map ApproxCatWindow.model) (bits.reverse ++ prior.map history) idealTerm).bornMass
+      (w.model.step (prior.map history) bits ψ))
+  have hsq : (selectedAxisDep (w :: ws) start history prior physTerm).bornMass (Prep y ψ) ≤
+      ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fI bits + tailErr bits) ^ 2)).sum := by
+    rw [selectedAxisDep_cons_mass, hpreH_prep]
+    have hper_a : ∀ a ∈ ((w.core start).instantiate read history).run, ∀ c : ℂ,
+        (∀ s, w.goodPred s → a.kraus (Prep y (ket s)) = c • Prep y (w.core_ideal (ket s))) →
+        ((fourierOutcomes w.catPhys.wires.length).map (fun bits =>
+          let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+          let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+          (selectedAxisDep ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+            (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)).bornMass
+            (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+              (a.kraus (Prep y χ))))).sum ≤
+        Complex.normSq c *
+          ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fI bits + tailErr bits) ^ 2)).sum := by
+      intro a ha_mem c ha
+      have ha_χ : a.kraus (Prep y χ) = c • Prep y (w.core_ideal χ) := catBranch_on_supported ha χ hgood
+      have hper_bits : ∀ bits ∈ fourierOutcomes w.model.physical.wires.length,
+          (let h₁ := Single.historyAfter (start + w.catPhys.count) history a.history
+           let h₂ := Single.historyAfter (start + w.catPhys.count + w.catPhys.wires.length) h₁ bits
+           (selectedAxisDep ws _ h₂ (nextPrior w.catPhys.count w.catPhys.wires.length prior)
+             (fun hRest tag => physTerm (a.history ++ bits ++ hRest) tag)).bornMass
+             (compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits
+               (a.kraus (Prep y χ)))) ≤
+          Complex.normSq c * (fI bits + tailErr bits) ^ 2 := by
+        intro bits hb
+        have hfb := compileFourierBranch_prep y .inverse w.model.physical.wires w.noY
+          (prior.map history) bits (w.core_ideal χ) (w.core_idealY χ hχY)
+        have hcfb : compileFourierBranch y .inverse w.catPhys.wires (prior.map history) bits (a.kraus (Prep y χ)) =
+            c • Prep y (w.model.step (prior.map history) bits ψ) := by
+          rw [ha_χ, map_smul, w.wires_eq, hfb.1]
+          change c • Prep y (fourierBranch .inverse w.model.physical.wires (prior.map history) bits (w.core_ideal χ)) =
+            c • Prep y (fourierBranch .inverse w.model.physical.wires (prior.map history) bits
+              (w.model.ideal (Quantum.run (w.model.physical.wires.reverse.map Gate.H) ψ)))
+          rw [w.ideal_eq]; rfl
+        rw [hcfb, bornMass_smul_real]
+        have hle := pow_le_pow_left₀ (Real.sqrt_nonneg _) (htail a bits ha_mem hb) 2
+        rw [Real.sq_sqrt (instrument_bornMass_nonneg _ _)] at hle
+        exact mul_le_mul_of_nonneg_left hle (Complex.normSq_nonneg c)
+      have hs := list_sum_map_le _ _ _ hper_bits
+      rw [list_sum_map_mul_left] at hs
+      rw [congrArg (fun l => fourierOutcomes l.length) w.wires_eq]
+      exact hs
+    exact list_sum_forall2_normSq_ge _ cs _ _ hal hper_a hmass
+  have hm := list_sqrt_sum_sq_add (fourierOutcomes w.model.physical.wires.length) fI tailErr
+    (fun _ _ => Real.sqrt_nonneg _) (fun bits _ => htail_nn bits)
+  have hI_eq : ((fourierOutcomes w.model.physical.wires.length).map (fun bits => (fI bits) ^ 2)).sum =
+      (idealAxis ((w :: ws).map ApproxCatWindow.model) (prior.map history) idealTerm).bornMass ψ := by
+    simp only [List.map_cons, idealAxis_cons_mass]
+    apply congrArg List.sum; apply List.map_congr_left; intro bits _
+    exact Real.sq_sqrt (instrument_bornMass_nonneg _ _)
+  rw [hI_eq] at hm
+  exact (Real.sqrt_le_sqrt hsq).trans hm
+
 end
 end ShorECDLP.Entrant.ApproxCat
 
-/-! ### Skywalk adaptive-envelope tail cardinality bounds (`|BadStack env475|`, `|BadStack env490|`) -/
+/-! ### Skywalk adaptive-envelope tail cardinality bounds (`env460`, `env465`, `env485`, `env500`, `env510`) -/
+
+/-! ### Skywalk adaptive-envelope tail cardinality bounds (Wave 11: `env460`, `env465`, `env485`, `env500`, `env510`) -/
 
 namespace ShorECDLP.Entrant.SkywalkTail485
 open ECDSAAdd ECDSAAdd.SkywalkNat
@@ -4548,11 +6744,13 @@ open scoped Classical
 noncomputable section
 attribute [local instance] Classical.propDecidable
 
-set_option maxHeartbeats 2000000
+set_option maxHeartbeats 4000000
 set_option maxRecDepth 16384
 set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
+set_option linter.unusedVariables false
 
-/-! ### 1. Exact step kinds, adjoint forward/backward recurrences, and linear invariants -/
+/-! ### 1. Exact step kinds, adjoint forward/backward recurrences, linear invariants, and martingales -/
 
 inductive StepKind where
   | E | O0 | O1
@@ -4645,9 +6843,39 @@ theorem runF_pos (γ : List StepKind) {C D : Nat} (hC : 0 < C) (hD : 0 < D) :
     0 < (runF (C, D) γ).1 ∧ 0 < (runF (C, D) γ).2 := by
   induction γ generalizing C D with
   | nil => exact ⟨hC, hD⟩
+  | cons k γ ih => have h1 := stepF_pos k hC hD; exact ih h1.1 h1.2
+
+theorem runF_mul (γ : List StepKind) (c A B : Nat) :
+    runF (c * A, c * B) γ = (c * (runF (A, B) γ).1, c * (runF (A, B) γ).2) := by
+  induction γ generalizing A B with
+  | nil => rfl
   | cons k γ ih =>
-    have h1 := stepF_pos k hC hD
-    exact ih h1.1 h1.2
+    rw [runF_cons, runF_cons]
+    cases k <;> dsimp only [stepF]
+    · rw [show 2 * (c * A) = c * (2 * A) by ring]; exact ih (2 * A) B
+    · rw [show 2 * (c * A) = c * (2 * A) by ring, show c * A + c * B = c * (A + B) by ring]
+      exact ih (2 * A) (A + B)
+    · rw [show 2 * (c * B) = c * (2 * B) by ring, show c * A + c * B = c * (A + B) by ring]
+      exact ih (2 * B) (A + B)
+
+theorem runF_mono_2 (γ : List StepKind) {C₁ C₂ D₁ D₂ : Nat} (hC : C₁ ≤ C₂) (hD : D₁ ≤ D₂) :
+    (runF (C₁, D₁) γ).1 ≤ (runF (C₂, D₂) γ).1 ∧ (runF (C₁, D₁) γ).2 ≤ (runF (C₂, D₂) γ).2 := by
+  induction γ generalizing C₁ C₂ D₁ D₂ with
+  | nil => exact ⟨hC, hD⟩
+  | cons k γ ih =>
+    rw [runF_cons, runF_cons]
+    cases k <;> dsimp only [stepF] <;> exact ih (by omega) (by omega)
+
+theorem runF_max_le (γ : List StepKind) (C D : Nat) :
+    max (runF (C, D) γ).1 (runF (C, D) γ).2 ≤ 2 ^ γ.length * max C D := by
+  induction γ generalizing C D with
+  | nil => simp [runF]
+  | cons k γ ih =>
+    rw [runF_cons, List.length_cons, pow_succ']
+    have h1 := ih (stepF k (C, D)).1 (stepF k (C, D)).2
+    have h2 : max (stepF k (C, D)).1 (stepF k (C, D)).2 ≤ 2 * max C D := by
+      cases k <;> dsimp only [stepF] <;> omega
+    exact h1.trans (by rw [show 2 * 2 ^ γ.length * max C D = 2 ^ γ.length * (2 * max C D) by ring]; exact Nat.mul_le_mul_left _ h2)
 
 theorem stepB_pos (k : StepKind) {u v : Nat} (hu : 0 < u) (hv : 0 < v) :
     0 < (stepB k (u, v)).1 ∧ 0 < (stepB k (u, v)).2 := by
@@ -4663,25 +6891,6 @@ theorem runBL_pos (γ : List StepKind) {u v : Nat} (hu : 0 < u) (hv : 0 < v) :
     0 < (runBL (u, v) γ).1 ∧ 0 < (runBL (u, v) γ).2 := by
   have h := runB_pos γ.reverse hu hv
   rwa [← runBL_reverse, List.reverse_reverse] at h
-
-theorem stepB_prod (k : StepKind) (u v : Nat) :
-    2 * (u * v) ≤ (stepB k (u, v)).1 * (stepB k (u, v)).2 := by
-  cases k <;> dsimp only [stepB] <;> nlinarith
-
-theorem runB_prod (γ : List StepKind) (u v : Nat) :
-    2 ^ γ.length * (u * v) ≤ (runB (u, v) γ).1 * (runB (u, v) γ).2 := by
-  induction γ with
-  | nil => simp [runB]
-  | cons k γ ih =>
-    rw [List.length_cons, pow_succ, runB_cons]
-    have h1 := stepB_prod k (runB (u, v) γ).1 (runB (u, v) γ).2
-    nlinarith
-
-theorem runBL_prod (γ : List StepKind) (u v : Nat) :
-    2 ^ γ.length * (u * v) ≤ (runBL (u, v) γ).1 * (runBL (u, v) γ).2 := by
-  have h := runB_prod γ.reverse u v
-  rw [← runBL_reverse, List.reverse_reverse, List.length_reverse] at h
-  exact h
 
 theorem stepF_coprime_even_odd (k : StepKind) {C D : Nat}
     (hc : C.Coprime D) (hCe : C % 2 = 0) (hDo : D % 2 = 1) :
@@ -4710,9 +6919,7 @@ theorem runF_coprime_even_odd (γ : List StepKind) {C D : Nat}
       (runF (C, D) γ).1 % 2 = 0 ∧ (runF (C, D) γ).2 % 2 = 1 := by
   induction γ generalizing C D with
   | nil => exact ⟨hc, hCe, hDo⟩
-  | cons k γ ih =>
-    have h1 := stepF_coprime_even_odd k hc hCe hDo
-    exact ih h1.1 h1.2.1 h1.2.2
+  | cons k γ ih => have h1 := stepF_coprime_even_odd k hc hCe hDo; exact ih h1.1 h1.2.1 h1.2.2
 
 theorem stepF_det (k : StepKind) (A B C D : Nat) :
     (((stepF k (A, B)).1 : ℤ) * (stepF k (C, D)).2 - ((stepF k (A, B)).2 : ℤ) * (stepF k (C, D)).1) =
@@ -4777,7 +6984,7 @@ theorem iter_alive_of_u_ne_zero (z : SkywalkNat.State) {n i : Nat} (hi : i ≤ n
   rw [hrew, Function.iterate_add_apply] at h
   exact h (iter_of_u_zero hz (n - i))
 
-/-! ### 2. Linear Diophantine solution counting (`#sol(C u + D v = N) ≤ N / (C D) + 1`) -/
+/-! ### 2. Linear Diophantine solution counting (`linear_diophantine_card` & `linear_diophantine_bounded_card`) -/
 
 theorem linear_diophantine_card (C D N : Nat) (hC : 0 < C) (hD : 0 < D) (hc : C.Coprime D) :
     ((Finset.Ioo 0 N).filter (fun v => ∃ u > 0, C * u + D * v = N)).card ≤ N / (C * D) + 1 := by
@@ -4810,9 +7017,7 @@ theorem linear_diophantine_card (C D N : Nat) (hC : 0 < C) (hD : 0 < D) (hc : C.
         exact hc.dvd_of_dvd_mul_right ⟨u0 - u₂, by linarith⟩
       have h1 : C * ((v₁ - v0) / C) = v₁ - v0 := Nat.mul_div_cancel' hdvd₁
       have h2 : C * ((v₂ - v0) / C) = v₂ - v0 := Nat.mul_div_cancel' hdvd₂
-      dsimp only at heq
-      rw [heq] at h1
-      omega
+      dsimp only at heq; rw [heq] at h1; omega
     have hmap : Set.MapsTo (fun v => (v - v0) / C) (S : Set Nat) (Finset.range (N / (C * D) + 1) : Set Nat) := by
       intro v hv
       have hv' : v ∈ S := Finset.mem_coe.mp hv
@@ -4831,476 +7036,51 @@ theorem linear_diophantine_card (C D N : Nat) (hC : 0 < C) (hD : 0 < D) (hc : C.
     simpa only [Finset.card_range] using hc_le
   · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty]; exact Nat.zero_le _
 
-/-! ### 3. Exact manifest-positive rational potentials `Φ_F`, `Φ_B` and contractions -/
+theorem linear_diophantine_bounded_card (C D N B : Nat) (hC : 0 < C) (hD : 0 < D) (hc : C.Coprime D) :
+    ((Finset.Ioo 0 N).filter (fun u => u < B ∧ ∃ v > 0, C * u + D * v = N)).card ≤ B / D + 1 := by
+  set S := (Finset.Ioo 0 N).filter (fun u => u < B ∧ ∃ v > 0, C * u + D * v = N)
+  by_cases hne : S.Nonempty
+  · let u0 := S.min' hne
+    have hu0_mem : u0 ∈ S := Finset.min'_mem S hne
+    obtain ⟨_, v0, _, heq0⟩ := (Finset.mem_filter.mp hu0_mem).2
+    have hinj : Set.InjOn (fun u => (u - u0) / D) (S : Set Nat) := by
+      intro u₁ hu₁ u₂ hu₂ heq
+      have hu₁' : u₁ ∈ S := Finset.mem_coe.mp hu₁
+      have hu₂' : u₂ ∈ S := Finset.mem_coe.mp hu₂
+      have hle₁ : u0 ≤ u₁ := Finset.min'_le S u₁ hu₁'
+      have hle₂ : u0 ≤ u₂ := Finset.min'_le S u₂ hu₂'
+      obtain ⟨_, v₁, _, heq₁⟩ := (Finset.mem_filter.mp hu₁').2
+      obtain ⟨_, v₂, _, heq₂⟩ := (Finset.mem_filter.mp hu₂').2
+      have hdvd₁ : D ∣ (u₁ - u0) := by
+        have hm : (u₁ - u0) * C = (v0 - v₁) * D := by
+          have : C * u0 ≤ C * u₁ := Nat.mul_le_mul_left C hle₁
+          have : D * v₁ ≤ D * v0 := by omega
+          have : v₁ ≤ v0 := Nat.le_of_mul_le_mul_left this hD
+          zify [hle₁, this] at heq0 heq₁ ⊢; linarith
+        exact hc.symm.dvd_of_dvd_mul_right ⟨v0 - v₁, by linarith⟩
+      have hdvd₂ : D ∣ (u₂ - u0) := by
+        have hm : (u₂ - u0) * C = (v0 - v₂) * D := by
+          have : C * u0 ≤ C * u₂ := Nat.mul_le_mul_left C hle₂
+          have : D * v₂ ≤ D * v0 := by omega
+          have : v₂ ≤ v0 := Nat.le_of_mul_le_mul_left this hD
+          zify [hle₂, this] at heq0 heq₂ ⊢; linarith
+        exact hc.symm.dvd_of_dvd_mul_right ⟨v0 - v₂, by linarith⟩
+      have h1 : D * ((u₁ - u0) / D) = u₁ - u0 := Nat.mul_div_cancel' hdvd₁
+      have h2 : D * ((u₂ - u0) / D) = u₂ - u0 := Nat.mul_div_cancel' hdvd₂
+      dsimp only at heq; rw [heq] at h1; omega
+    have hmap : Set.MapsTo (fun u => (u - u0) / D) (S : Set Nat) (Finset.range (B / D + 1) : Set Nat) := by
+      intro u hu
+      have hu' : u ∈ S := Finset.mem_coe.mp hu
+      rw [Finset.mem_coe, Finset.mem_range]
+      have huB : u < B := (Finset.mem_filter.mp hu').2.1
+      have hmul : (u - u0) / D * D < B :=
+        (Nat.div_mul_le_self (u - u0) D).trans_lt ((Nat.sub_le u u0).trans_lt huB)
+      exact Nat.lt_succ_of_le ((Nat.le_div_iff_mul_le hD).mpr hmul.le)
+    have hc_le := Finset.card_le_card_of_injOn (fun u => (u - u0) / D) hmap hinj
+    simpa only [Finset.card_range] using hc_le
+  · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty]; exact Nat.zero_le _
 
-def P_F (C D : ℝ) : ℝ :=
-  1000 * D ^ 6 + 22122 * C * D ^ 5 + 94633 * C ^ 2 * D ^ 4 + 169415 * C ^ 3 * D ^ 3 +
-    172641 * C ^ 4 * D ^ 2 + 56248 * C ^ 5 * D + 3364 * C ^ 6
-
-def Q_F (C D : ℝ) : ℝ := D ^ 2 + 10 * C * D + C ^ 2
-
-def phiF (C D : ℝ) : ℝ := P_F C D / (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D)
-
-def P_B (u v : ℝ) : ℝ :=
-  1000 * v ^ 6 + 39562 * u * v ^ 5 + 228983 * u ^ 2 * v ^ 4 + 419099 * u ^ 3 * v ^ 3 +
-    337106 * u ^ 4 * v ^ 2 + 99995 * u ^ 5 * v + 6562 * u ^ 6
-
-def Q_B (u v : ℝ) : ℝ := v ^ 2 + 20 * u * v + 2 * u ^ 2
-
-def phiB (u v : ℝ) : ℝ := P_B u v / (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v)
-
-def rhoF : ℝ := 359 / 1250
-def rhoB : ℝ := 2881 / 10000
-def rhoEO0 : ℝ := 32 / 125
-
-theorem phiF_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF C D := by
-  unfold phiF P_F Q_F; positivity
-
-theorem phiB_pos {u v : ℝ} (hu : 0 < u) (hv : 0 < v) : 0 < phiB u v := by
-  unfold phiB P_B Q_B; positivity
-
-theorem phiF_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
-    1000 * (C + D) / (C ^ 3 * D ^ 3) ≤ phiF C D := by
-  unfold phiF
-  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
-  have hden : 0 < C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D := by positivity
-  rw [div_le_div_iff₀ (by positivity) hden]
-  have hid : P_F C D * (C ^ 3 * D ^ 3) - 1000 * (C + D) * (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D) =
-      (C ^ 3 * D ^ 3) * (8122 * C * D ^ 5 + 47633 * C ^ 2 * D ^ 4 + 101415 * C ^ 3 * D ^ 3 +
-        125641 * C ^ 4 * D ^ 2 + 42248 * C ^ 5 * D + 2364 * C ^ 6) := by
-    unfold P_F Q_F; ring
-  have hnn : 0 ≤ P_F C D * (C ^ 3 * D ^ 3) - 1000 * (C + D) * (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D) := by
-    rw [hid]; positivity
-  linarith
-
-theorem phiB_lower {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
-    1000 / (u ^ 2 * v ^ 2 * (u + v)) ≤ phiB u v := by
-  unfold phiB
-  have hQ : 0 < Q_B u v := by unfold Q_B; positivity
-  have hden : 0 < u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v := by positivity
-  rw [div_le_div_iff₀ (by positivity) hden]
-  have hid : P_B u v * (u ^ 2 * v ^ 2 * (u + v)) - 1000 * (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v) =
-      (u ^ 2 * v ^ 2 * (u + v)) * (15562 * u * v ^ 5 + 140983 * u ^ 2 * v ^ 4 + 287099 * u ^ 3 * v ^ 3 +
-        244106 * u ^ 4 * v ^ 2 + 71995 * u ^ 5 * v + 4562 * u ^ 6) := by
-    unfold P_B Q_B; ring
-  have hnn : 0 ≤ P_B u v * (u ^ 2 * v ^ 2 * (u + v)) - 1000 * (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v) := by
-    rw [hid]; positivity
-  linarith
-
-theorem inv_prod_le_phiF {C D : ℝ} (hC : 0 < C) (hD : 0 < D) (hCD : C * D ≤ (2 : ℝ) ^ 256) :
-    1 / (C * D) ≤ ((2 : ℝ) ^ 384 / 2000) * phiF C D := by
-  have hfl := phiF_lower hC hD
-  have hcube : (C * D) ^ 3 ≤ ((2 : ℝ) ^ 384) ^ 2 := by
-    have h1 : (C * D) ^ 3 ≤ ((2 : ℝ) ^ 256) ^ 3 := pow_le_pow_left₀ (by positivity) hCD 3
-    have h2 : ((2 : ℝ) ^ 256) ^ 3 = ((2 : ℝ) ^ 384) ^ 2 := by rw [← pow_mul, ← pow_mul]
-    exact h1.trans_eq h2
-  have hE : 0 < (2 : ℝ) ^ 384 := by positivity
-  generalize (2 : ℝ) ^ 384 = E at hcube hE ⊢
-  have hsq : (1 / (C * D)) ^ 2 ≤ ((E / 2000) * (1000 * (C + D) / (C ^ 3 * D ^ 3))) ^ 2 := by
-    have h4 : 4 * (C * D) ≤ (C + D) ^ 2 := by nlinarith [sq_nonneg (C - D)]
-    have hnum : 4 * (C * D) ^ 4 ≤ E ^ 2 * (C + D) ^ 2 := by
-      have h1 := mul_le_mul hcube h4 (by positivity) (by positivity)
-      linarith
-    have h6 : 4 * (C * D) ^ 6 ≤ E ^ 2 * (C + D) ^ 2 * (C * D) ^ 2 := by
-      have h1 := mul_le_mul_of_nonneg_right hnum (sq_nonneg (C * D))
-      linarith
-    have hrhs : ((E / 2000) * (1000 * (C + D) / (C ^ 3 * D ^ 3))) ^ 2 =
-        E ^ 2 * (C + D) ^ 2 / (4 * (C * D) ^ 6) := by
-      field_simp [hC.ne', hD.ne']; ring
-    rw [hrhs, div_pow, one_pow, div_le_div_iff₀ (by positivity) (by positivity)]
-    linarith
-  have h1 : 1 / (C * D) ≤ (E / 2000) * (1000 * (C + D) / (C ^ 3 * D ^ 3)) :=
-    le_of_sq_le_sq hsq (by positivity)
-  exact h1.trans (mul_le_mul_of_nonneg_left hfl (by positivity))
-
-theorem coupling_lower {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v) :
-    (3125 * 10 ^ 6 / 108 : ℝ) ≤ phiF C D * phiB u v * (C * u + D * v) ^ 5 := by
-  have hf := phiF_lower hC hD
-  have hb := phiB_lower hu hv
-  have hfb : (1000 * (C + D) / (C ^ 3 * D ^ 3)) * (1000 / (u ^ 2 * v ^ 2 * (u + v))) ≤ phiF C D * phiB u v :=
-    mul_le_mul hf hb (by positivity) (phiF_pos hC hD).le
-  have hmul := mul_le_mul_of_nonneg_right hfb (by positivity : 0 ≤ (C * u + D * v) ^ 5)
-  refine le_trans ?_ hmul
-  have hpoly (X Y : ℝ) (hX : 0 < X) (hY : 0 < Y) : 3125 * X ^ 2 * Y ^ 3 ≤ 108 * (X + Y) ^ 5 := by
-    have h : 108 * (X + Y) ^ 5 - 3125 * X ^ 2 * Y ^ 3 =
-        (3 * X - 2 * Y) ^ 2 * (12 * X ^ 3 + 76 * X ^ 2 * Y + 216 * X * Y ^ 2 + 27 * Y ^ 3) := by ring
-    have hnn : 0 ≤ 108 * (X + Y) ^ 5 - 3125 * X ^ 2 * Y ^ 3 := by rw [h]; positivity
-    linarith
-  have h1 := hpoly (C * u) (D * v) (by positivity) (by positivity)
-  have h2 := hpoly (D * v) (C * u) (by positivity) (by positivity)
-  have hcomb : 3125 * C ^ 3 * D ^ 3 * u ^ 2 * v ^ 2 * (u + v) ≤ 108 * (C + D) * (C * u + D * v) ^ 5 := by
-    have hC1 := mul_le_mul_of_nonneg_left h1 hC.le
-    have hD1 := mul_le_mul_of_nonneg_left h2 hD.le
-    have hsum : C * (3125 * (C * u) ^ 2 * (D * v) ^ 3) + D * (3125 * (D * v) ^ 2 * (C * u) ^ 3) =
-        3125 * C ^ 3 * D ^ 3 * u ^ 2 * v ^ 2 * (u + v) := by ring
-    have hrhs : C * (108 * (C * u + D * v) ^ 5) + D * (108 * (D * v + C * u) ^ 5) =
-        108 * (C + D) * (C * u + D * v) ^ 5 := by ring
-    linarith
-  have hden : 0 < C ^ 3 * D ^ 3 * (u ^ 2 * v ^ 2 * (u + v)) := by positivity
-  have hlhs : 1000 * (C + D) / (C ^ 3 * D ^ 3) * (1000 / (u ^ 2 * v ^ 2 * (u + v))) * (C * u + D * v) ^ 5 =
-      10 ^ 6 * (C + D) * (C * u + D * v) ^ 5 / (C ^ 3 * D ^ 3 * (u ^ 2 * v ^ 2 * (u + v))) := by
-    field_simp [hC.ne', hD.ne', hu.ne', hv.ne', (show 0 < u + v by positivity).ne']; ring
-  rw [hlhs, div_le_div_iff₀ (by norm_num) hden]
-  linarith
-
-theorem phiF_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
-    phiF (2 * C) D + phiF (2 * C) (C + D) + phiF (2 * D) (C + D) ≤ rhoF * phiF C D := by
-  unfold phiF rhoF
-  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
-  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
-  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
-  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
-  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
-  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
-  rw [h31, h13]
-  set M := 1250 * 8 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 *
-      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
-  have hM : 0 < M := by dsimp [M]; positivity
-  suffices hsub : 0 ≤ M * (359 / 1250 * (P_F C D / (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F (2 * C) D / ((2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F (2 * C) (C + D) / ((2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)) +
-       P_F (2 * D) (C + D) / ((2 * D) ^ 3 * (C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * D) (C + D)))) by
-    have hnn := nonneg_of_mul_nonneg_right hsub hM
-    linarith
-  have hclear : M * (359 / 1250 * (P_F C D / (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F (2 * C) D / ((2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F (2 * C) (C + D) / ((2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)) +
-       P_F (2 * D) (C + D) / ((2 * D) ^ 3 * (C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * D) (C + D)))) =
-      (C + D) ^ 2 * (
-        359 * 8 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F C D
-        - 1250 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F (2 * C) D
-                + D ^ 3 * (2 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F (2 * C) (C + D)
-                + C ^ 3 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F (2 * D) (C + D))) := by
-    dsimp only [M]
-    generalize Q_F C D = q0 at hQ0 ⊢
-    generalize Q_F (2 * C) D = qe at hQE ⊢
-    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
-    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
-    field_simp
-    ring
-  rw [hclear]
-  have hid : (C + D) ^ 2 * (
-        359 * 8 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F C D
-        - 1250 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F (2 * C) D
-                + D ^ 3 * (2 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F (2 * C) (C + D)
-                + C ^ 3 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F (2 * D) (C + D))) =
-      251100000 * D ^ 23 + 7135927200 * C * D ^ 22 + 42740968896 * C ^ 2 * D ^ 21 + 13475513472 * C ^ 3 * D ^ 20 +
-      157045860560 * C ^ 4 * D ^ 19 + 11180872647872 * C ^ 5 * D ^ 18 + 71111814523696 * C ^ 6 * D ^ 17 +
-      161294689885176 * C ^ 7 * D ^ 16 + 94725774363808 * C ^ 8 * D ^ 15 + 237084598265936 * C ^ 9 * D ^ 14 +
-      2547001311711632 * C ^ 10 * D ^ 13 + 7871039956412616 * C ^ 11 * D ^ 12 + 11522451273465248 * C ^ 12 * D ^ 11 +
-      8441404560143808 * C ^ 13 * D ^ 10 + 2432762994107472 * C ^ 14 * D ^ 9 + 415461302137096 * C ^ 15 * D ^ 8 +
-      1691281594971584 * C ^ 16 * D ^ 7 + 2040172166507632 * C ^ 17 * D ^ 6 + 1072036835112240 * C ^ 18 * D ^ 5 +
-      293723985914040 * C ^ 19 * D ^ 4 + 42427334594000 * C ^ 20 * D ^ 3 + 2617763422752 * C ^ 21 * D ^ 2 +
-      1566411264 * C ^ 22 * D + 30412800 * C ^ 23 := by
-    unfold P_F Q_F; ring
-  rw [hid]; positivity
-
-theorem phiB_contract {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
-    phiB (2 * u) v + phiB (2 * u + v) v + phiB v (2 * u + v) ≤ rhoB * phiB u v := by
-  unfold phiB rhoB
-  have hQ0 : 0 < Q_B u v := by unfold Q_B; positivity
-  have hQE : 0 < Q_B (2 * u) v := by unfold Q_B; positivity
-  have hQO0 : 0 < Q_B (2 * u + v) v := by unfold Q_B; positivity
-  have hQO1 : 0 < Q_B v (2 * u + v) := by unfold Q_B; positivity
-  have h2uv1 : 2 * u + v + v = 2 * (u + v) := by ring
-  have h2uv2 : v + (2 * u + v) = 2 * (u + v) := by ring
-  rw [h2uv1, h2uv2]
-  set M := 10000 * 32 * u ^ 2 * v ^ 2 * (u + v) ^ 7 * (2 * u + v) ^ 5 *
-      Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v)
-  have hM : 0 < M := by dsimp [M]; positivity
-  suffices hsub : 0 ≤ M * (2881 / 10000 * (P_B u v / (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v)) -
-      (P_B (2 * u) v / ((2 * u) ^ 2 * v ^ 2 * (2 * u + v) ^ 5 * Q_B (2 * u) v) +
-       P_B (2 * u + v) v / ((2 * u + v) ^ 2 * v ^ 2 * (2 * (u + v)) ^ 5 * Q_B (2 * u + v) v) +
-       P_B v (2 * u + v) / (v ^ 2 * (2 * u + v) ^ 2 * (2 * (u + v)) ^ 5 * Q_B v (2 * u + v)))) by
-    have hnn := nonneg_of_mul_nonneg_right hsub hM
-    linarith
-  have hclear : M * (2881 / 10000 * (P_B u v / (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v)) -
-      (P_B (2 * u) v / ((2 * u) ^ 2 * v ^ 2 * (2 * u + v) ^ 5 * Q_B (2 * u) v) +
-       P_B (2 * u + v) v / ((2 * u + v) ^ 2 * v ^ 2 * (2 * (u + v)) ^ 5 * Q_B (2 * u + v) v) +
-       P_B v (2 * u + v) / (v ^ 2 * (2 * u + v) ^ 2 * (2 * (u + v)) ^ 5 * Q_B v (2 * u + v)))) =
-      (u + v) ^ 2 * (
-        2881 * 32 * (2 * u + v) ^ 5 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B u v
-        - 10000 * (8 * (u + v) ^ 5 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B (2 * u) v
-                 + u ^ 2 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B (2 * u + v) v
-                 + u ^ 2 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B v (2 * u + v))) := by
-    dsimp only [M]
-    generalize Q_B u v = q0 at hQ0 ⊢
-    generalize Q_B (2 * u) v = qe at hQE ⊢
-    generalize Q_B (2 * u + v) v = qo0 at hQO0 ⊢
-    generalize Q_B v (2 * u + v) = qo1 at hQO1 ⊢
-    field_simp
-    ring
-  rw [hclear]
-  have hid : (u + v) ^ 2 * (
-        2881 * 32 * (2 * u + v) ^ 5 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B u v
-        - 10000 * (8 * (u + v) ^ 5 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B (2 * u) v
-                 + u ^ 2 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B (2 * u + v) v
-                 + u ^ 2 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B v (2 * u + v))) =
-      6449568000 * v ^ 19 + 69777216 * u * v ^ 18 + 1606510277440 * u ^ 2 * v ^ 17 +
-      7348047945760 * u ^ 3 * v ^ 16 + 275453341888 * u ^ 4 * v ^ 15 + 1552781252544 * u ^ 5 * v ^ 14 +
-      322867813257088 * u ^ 6 * v ^ 13 + 1329542784952032 * u ^ 7 * v ^ 12 + 2252279628383104 * u ^ 8 * v ^ 11 +
-      1601552632989696 * u ^ 9 * v ^ 10 + 94516252773888 * u ^ 10 * v ^ 9 + 94151335135232 * u ^ 11 * v ^ 8 +
-      1207676159293440 * u ^ 12 * v ^ 7 + 1247603729526784 * u ^ 13 * v ^ 6 + 428015070552064 * u ^ 14 * v ^ 5 +
-      24943582863360 * u ^ 15 * v ^ 4 + 782709555200 * u ^ 16 * v ^ 3 + 1438222385152 * u ^ 17 * v ^ 2 +
-      107171807232 * u ^ 18 * v + 31981568 * u ^ 19 := by
-    unfold P_B Q_B; ring
-  rw [hid]; positivity
-
-theorem phiF_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
-    phiF (2 * C) D + phiF (2 * C) (C + D) ≤ rhoEO0 * phiF C D := by
-  have hC : 0 < C := lt_of_lt_of_le hD hCD
-  unfold phiF rhoEO0
-  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
-  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
-  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
-  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
-  rw [h31]
-  set M := 125 * 8 * C ^ 3 * D ^ 3 * (C + D) ^ 3 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 *
-      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
-  have hM : 0 < M := by dsimp [M]; positivity
-  suffices hsub : 0 ≤ M * (32 / 125 * (P_F C D / (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F (2 * C) D / ((2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F (2 * C) (C + D) / ((2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)))) by
-    have hnn := nonneg_of_mul_nonneg_right hsub hM
-    linarith
-  have hclear : M * (32 / 125 * (P_F C D / (C ^ 3 * D ^ 3 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F (2 * C) D / ((2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F (2 * C) (C + D) / ((2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)))) =
-      32 * 8 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F C D
-      - 125 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * P_F (2 * C) D
-             + D ^ 3 * (2 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * P_F (2 * C) (C + D)) := by
-    dsimp only [M]
-    generalize Q_F C D = q0 at hQ0 ⊢
-    generalize Q_F (2 * C) D = qe at hQE ⊢
-    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
-    field_simp
-    ring
-  rw [hclear]
-  set t := C - D
-  have ht : 0 ≤ t := sub_nonneg.mpr hCD
-  have hCeq : C = t + D := by dsimp [t]; ring
-  rw [hCeq]
-  have hid : 32 * 8 * (2 * (t + D) + D) ^ 3 * (3 * (t + D) + D) ^ 3 *
-        Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F (t + D) D
-      - 125 * ((t + D + D) ^ 3 * (3 * (t + D) + D) ^ 3 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F (2 * (t + D)) D
-             + D ^ 3 * (2 * (t + D) + D) ^ 3 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F (2 * (t + D)) (t + D + D)) =
-      370813420800 * D ^ 16 + 31008708959616 * t * D ^ 15 + 277910958981312 * t ^ 2 * D ^ 14 +
-      1194365542632768 * t ^ 3 * D ^ 13 + 3161811169282992 * t ^ 4 * D ^ 12 + 5718780934162728 * t ^ 5 * D ^ 11 +
-      7453583570410404 * t ^ 6 * D ^ 10 + 7206305505080116 * t ^ 7 * D ^ 9 + 5243541127053392 * t ^ 8 * D ^ 8 +
-      2882659283100512 * t ^ 9 * D ^ 7 + 1190836405581184 * t ^ 10 * D ^ 6 + 363938594284044 * t ^ 11 * D ^ 5 +
-      79927058953116 * t ^ 12 * D ^ 4 + 11987169035544 * t ^ 13 * D ^ 3 + 1115909600400 * t ^ 14 * D ^ 2 +
-      51711996672 * t ^ 15 * D + 435974400 * t ^ 16 := by
-    unfold P_F Q_F; ring
-  rw [hid]; positivity
-
--- Generated Wave 10 polynomial definitions, contractions, and dyadic ladders
-def P_B7 (u v : ℝ) : ℝ :=
-      1000 * v ^ 6 + 34471 * u * v ^ 5 + 186254 * u ^ 2 * v ^ 4 +
-      395740 * u ^ 3 * v ^ 3 + 370904 * u ^ 4 * v ^ 2 + 132298 * u ^ 5 * v +
-      9552 * u ^ 6
-
-def psiB7 (u v : ℝ) : ℝ := P_B7 u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v)
-
-def P_F3 (C D : ℝ) : ℝ :=
-      1000 * D ^ 6 + 31500 * C * D ^ 5 + 146917 * C ^ 2 * D ^ 4 +
-      239494 * C ^ 3 * D ^ 3 + 176916 * C ^ 4 * D ^ 2 + 45544 * C ^ 5 * D +
-      2093 * C ^ 6
-
-def phiF3 (C D : ℝ) : ℝ := P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)
-
-def rhoB7 : ℝ := 1381 / 10000
-def rhoF3 : ℝ := 1273 / 2000
-def rhoEO3 : ℝ := 2557 / 5000
-
-theorem psiB7_pos {u v : ℝ} (hu : 0 < u) (hv : 0 < v) : 0 < psiB7 u v := by
-  unfold psiB7 P_B7 Q_B; positivity
-
-theorem phiF3_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF3 C D := by
-  unfold phiF3 P_F3 Q_F; positivity
-
-theorem phiB_div_uv_le_psiB7 {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
-    phiB u v / (u * v) ≤ (123 / 100 : ℝ) * psiB7 u v := by
-  unfold phiB psiB7
-  have hQ : 0 < Q_B u v := by unfold Q_B; positivity
-  have hden : 0 < u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v := by positivity
-  have hlhs : P_B u v / (u ^ 2 * v ^ 2 * (u + v) ^ 5 * Q_B u v) / (u * v) =
-      P_B u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v) := by
-    field_simp [hu.ne', hv.ne', (show 0 < u + v by positivity).ne', hQ.ne']
-  rw [hlhs, mul_div_assoc', div_le_div_iff₀ hden hden]
-  have hid : 123 * P_B7 u v - 100 * P_B u v =
-      23000 * v ^ 6 + 283733 * u * v ^ 5 + 10942 * u ^ 2 * v ^ 4 +
-      6766120 * u ^ 3 * v ^ 3 + 11910592 * u ^ 4 * v ^ 2 + 6273154 * u ^ 5 * v +
-      518696 * u ^ 6 := by
-    unfold P_B7 P_B; ring
-  have hnn : 0 ≤ 123 * P_B7 u v - 100 * P_B u v := by rw [hid]; positivity
-  nlinarith
-
-theorem phiF3_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
-    1000 * (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D := by
-  unfold phiF3
-  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
-  have hden : 0 < C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D := by positivity
-  rw [div_le_div_iff₀ (by positivity) hden]
-  have hid : P_F3 C D * (C ^ 2 * D ^ 2) - 1000 * (C + D) * (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D) =
-      (C ^ 2 * D ^ 2) * (
-      17500 * C * D ^ 5 + 99917 * C ^ 2 * D ^ 4 + 171494 * C ^ 3 * D ^ 3 +
-      129916 * C ^ 4 * D ^ 2 + 31544 * C ^ 5 * D + 1093 * C ^ 6) := by
-    unfold P_F3 Q_F; ring
-  have hnn : 0 ≤ P_F3 C D * (C ^ 2 * D ^ 2) - 1000 * (C + D) * (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D) := by
-    rw [hid]; positivity
-  linarith
-
-theorem psiB7_contract {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
-    psiB7 (2 * u) v + psiB7 (2 * u + v) v + psiB7 v (2 * u + v) ≤ rhoB7 * psiB7 u v := by
-  unfold psiB7 rhoB7
-  have hQ0 : 0 < Q_B u v := by unfold Q_B; positivity
-  have hQE : 0 < Q_B (2 * u) v := by unfold Q_B; positivity
-  have hQO0 : 0 < Q_B (2 * u + v) v := by unfold Q_B; positivity
-  have hQO1 : 0 < Q_B v (2 * u + v) := by unfold Q_B; positivity
-  have h2uv1 : 2 * u + v + v = 2 * (u + v) := by ring
-  have h2uv2 : v + (2 * u + v) = 2 * (u + v) := by ring
-  rw [h2uv1, h2uv2]
-  set M := 10000 * 32 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * (2 * u + v) ^ 5 *
-      Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v)
-  have hM : 0 < M := by dsimp [M]; positivity
-  suffices hsub : 0 ≤ M * (1381 / 10000 * (P_B7 u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v)) -
-      (P_B7 (2 * u) v / ((2 * u) ^ 3 * v ^ 3 * (2 * u + v) ^ 5 * Q_B (2 * u) v) +
-       P_B7 (2 * u + v) v / ((2 * u + v) ^ 3 * v ^ 3 * (2 * (u + v)) ^ 5 * Q_B (2 * u + v) v) +
-       P_B7 v (2 * u + v) / (v ^ 3 * (2 * u + v) ^ 3 * (2 * (u + v)) ^ 5 * Q_B v (2 * u + v)))) by
-    have hnn := nonneg_of_mul_nonneg_right hsub hM
-    linarith
-  have hclear : M * (1381 / 10000 * (P_B7 u v / (u ^ 3 * v ^ 3 * (u + v) ^ 5 * Q_B u v)) -
-      (P_B7 (2 * u) v / ((2 * u) ^ 3 * v ^ 3 * (2 * u + v) ^ 5 * Q_B (2 * u) v) +
-       P_B7 (2 * u + v) v / ((2 * u + v) ^ 3 * v ^ 3 * (2 * (u + v)) ^ 5 * Q_B (2 * u + v) v) +
-       P_B7 v (2 * u + v) / (v ^ 3 * (2 * u + v) ^ 3 * (2 * (u + v)) ^ 5 * Q_B v (2 * u + v)))) =
-      (u + v) ^ 2 * (
-        1381 * 32 * (2 * u + v) ^ 5 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 u v
-        - 10000 * (4 * (u + v) ^ 5 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 (2 * u) v
-                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B7 (2 * u + v) v
-                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B7 v (2 * u + v))) := by
-    dsimp only [M]
-    generalize Q_B u v = q0 at hQ0 ⊢
-    generalize Q_B (2 * u) v = qe at hQE ⊢
-    generalize Q_B (2 * u + v) v = qo0 at hQO0 ⊢
-    generalize Q_B v (2 * u + v) = qo1 at hQO1 ⊢
-    field_simp
-    ring
-  rw [hclear]
-  have hid : (u + v) ^ 2 * (
-        1381 * 32 * (2 * u + v) ^ 5 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 u v
-        - 10000 * (4 * (u + v) ^ 5 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 (2 * u) v
-                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B7 (2 * u + v) v
-                 + u ^ 3 * (2 * u + v) ^ 2 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B7 v (2 * u + v))) =
-      2217568000 * v ^ 19 + 219234528 * u * v ^ 18 + 466398347840 * u ^ 2 * v ^ 17 +
-      2401752540864 * u ^ 3 * v ^ 16 + 870948416576 * u ^ 4 * v ^ 15 + 4934549147680 * u ^ 5 * v ^ 14 +
-      141277797008896 * u ^ 6 * v ^ 13 + 581458955143616 * u ^ 7 * v ^ 12 + 1032206623949696 * u ^ 8 * v ^ 11 +
-      847468739349376 * u ^ 9 * v ^ 10 + 283892828570112 * u ^ 10 * v ^ 9 + 288015060529152 * u ^ 11 * v ^ 8 +
-      659036660261888 * u ^ 12 * v ^ 7 + 559976824731648 * u ^ 13 * v ^ 6 + 178030290972672 * u ^ 14 * v ^ 5 +
-      12944198057984 * u ^ 15 * v ^ 4 + 2343591215104 * u ^ 16 * v ^ 3 + 998195331072 * u ^ 17 * v ^ 2 +
-      71481688064 * u ^ 18 * v + 343932928 * u ^ 19 := by
-    unfold P_B7 Q_B; ring
-  rw [hid]; positivity
-
-theorem phiF3_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
-    phiF3 (2 * C) D + phiF3 (2 * C) (C + D) + phiF3 (2 * D) (C + D) ≤ rhoF3 * phiF3 C D := by
-  unfold phiF3 rhoF3
-  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
-  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
-  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
-  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
-  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
-  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
-  rw [h31, h13]
-  set M := 2000 * 4 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 *
-      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
-  have hM : 0 < M := by dsimp [M]; positivity
-  suffices hsub : 0 ≤ M * (1273 / 2000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)) +
-       P_F3 (2 * D) (C + D) / ((2 * D) ^ 2 * (C + D) ^ 2 * (C + 3 * D) ^ 3 * Q_F (2 * D) (C + D)))) by
-    have hnn := nonneg_of_mul_nonneg_right hsub hM
-    linarith
-  have hclear : M * (1273 / 2000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)) +
-       P_F3 (2 * D) (C + D) / ((2 * D) ^ 2 * (C + D) ^ 2 * (C + 3 * D) ^ 3 * Q_F (2 * D) (C + D)))) =
-      (C + D) ^ 2 * (
-        1273 * 4 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 C D
-        - 2000 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 (2 * C) D
-                + (C + D) * D ^ 2 * (2 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F3 (2 * C) (C + D)
-                + (C + D) * C ^ 2 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 (2 * D) (C + D))) := by
-    dsimp only [M]
-    generalize Q_F C D = q0 at hQ0 ⊢
-    generalize Q_F (2 * C) D = qe at hQE ⊢
-    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
-    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
-    field_simp
-    ring
-  rw [hclear]
-  have hid : (C + D) ^ 2 * (
-        1273 * 4 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 C D
-        - 2000 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 (2 * C) D
-                + (C + D) * D ^ 2 * (2 * C + D) ^ 3 * (C + 3 * D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F3 (2 * C) (C + D)
-                + (C + D) * C ^ 2 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 (2 * D) (C + D))) =
-      737100000 * D ^ 23 + 19493298000 * C * D ^ 22 + 95341624700 * C ^ 2 * D ^ 21 +
-      82778515616 * C ^ 3 * D ^ 20 + 1023957616600 * C ^ 4 * D ^ 19 + 16867757221392 * C ^ 5 * D ^ 18 +
-      97853319829184 * C ^ 6 * D ^ 17 + 328908922172568 * C ^ 7 * D ^ 16 + 790541421052552 * C ^ 8 * D ^ 15 +
-      1602593563840064 * C ^ 9 * D ^ 14 + 3075786368672200 * C ^ 10 * D ^ 13 + 5406627612632008 * C ^ 11 * D ^ 12 +
-      7612444367104200 * C ^ 12 * D ^ 11 + 7648198305351120 * C ^ 13 * D ^ 10 + 5083681571332608 * C ^ 14 * D ^ 9 +
-      2241166800761128 * C ^ 15 * D ^ 8 + 1000460775125656 * C ^ 16 * D ^ 7 + 759861296994512 * C ^ 17 * D ^ 6 +
-      492013897868860 * C ^ 18 * D ^ 5 + 180702789070680 * C ^ 19 * D ^ 4 + 33479786282592 * C ^ 20 * D ^ 3 +
-      2350815416512 * C ^ 21 * D ^ 2 + 4759674048 * C ^ 22 * D + 6168009600 * C ^ 23 := by
-    unfold P_F3 Q_F; ring
-  rw [hid]; positivity
-
-theorem phiF3_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
-    phiF3 (2 * C) D + phiF3 (2 * C) (C + D) ≤ rhoEO3 * phiF3 C D := by
-  have hC : 0 < C := lt_of_lt_of_le hD hCD
-  unfold phiF3 rhoEO3
-  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
-  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
-  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
-  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
-  rw [h31]
-  set M := 5000 * 4 * C ^ 2 * D ^ 2 * (C + D) ^ 3 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 *
-      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
-  have hM : 0 < M := by dsimp [M]; positivity
-  suffices hsub : 0 ≤ M * (2557 / 5000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)))) by
-    have hnn := nonneg_of_mul_nonneg_right hsub hM
-    linarith
-  have hclear : M * (2557 / 5000 * (P_F3 C D / (C ^ 2 * D ^ 2 * (C + D) ^ 3 * Q_F C D)) -
-      (P_F3 (2 * C) D / ((2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 3 * Q_F (2 * C) D) +
-       P_F3 (2 * C) (C + D) / ((2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 3 * Q_F (2 * C) (C + D)))) =
-      2557 * 4 * (2 * C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 C D
-      - 5000 * ((C + D) ^ 3 * (3 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) (C + D) * P_F3 (2 * C) D
-             + (C + D) * D ^ 2 * (2 * C + D) ^ 3 * Q_F C D * Q_F (2 * C) D * P_F3 (2 * C) (C + D)) := by
-    dsimp only [M]
-    generalize Q_F C D = q0 at hQ0 ⊢
-    generalize Q_F (2 * C) D = qe at hQE ⊢
-    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
-    field_simp
-    ring
-  rw [hclear]
-  set t := C - D
-  have ht : 0 ≤ t := sub_nonneg.mpr hCD
-  have hCeq : C = t + D := by dsimp [t]; ring
-  rw [hCeq]
-  have hid : 2557 * 4 * (2 * (t + D) + D) ^ 3 * (3 * (t + D) + D) ^ 3 *
-        Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F3 (t + D) D
-      - 5000 * ((t + D + D) ^ 3 * (3 * (t + D) + D) ^ 3 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F3 (2 * (t + D)) D
-             + (t + D + D) * D ^ 2 * (2 * (t + D) + D) ^ 3 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F3 (2 * (t + D)) (t + D + D)) =
-      4731892531200 * D ^ 16 + 2073210521554944 * t * D ^ 15 + 19221348805951488 * t ^ 2 * D ^ 14 +
-      82589175657523200 * t ^ 3 * D ^ 13 + 216576396350153344 * t ^ 4 * D ^ 12 + 386476100428261440 * t ^ 5 * D ^ 11 +
-      495814804109460664 * t ^ 6 * D ^ 10 + 471028509607980088 * t ^ 7 * D ^ 9 + 336211149463668104 * t ^ 8 * D ^ 8 +
-      180957007431163132 * t ^ 9 * D ^ 7 + 72992789846946416 * t ^ 10 * D ^ 6 + 21700009043437780 * t ^ 11 * D ^ 5 +
-      4609960302278552 * t ^ 12 * D ^ 4 + 663036225065184 * t ^ 13 * D ^ 3 + 58313611152832 * t ^ 14 * D ^ 2 +
-      2455774535232 * t ^ 15 * D + 10307606400 * t ^ 16 := by
-    unfold P_F3 Q_F; ring
-  rw [hid]; positivity
-
-/-! ### 4. Path-list enumeration and tree-sum contraction lemmas -/
+/-! ### 3. Path-list enumeration, exact `EO0` odd-number bijection, and martingales -/
 
 def pathsOf (alphabet : List StepKind) : Nat → List (List StepKind)
   | 0 => [[]]
@@ -5361,9 +7141,65 @@ private theorem list_sum_mul_left {α : Type} (xs : List α) (c : ℝ) (f : α �
   | nil => simp
   | cons x xs ih => simp [ih, mul_add]
 
-theorem sum_pathsAll_phiF (n : Nat) (C D : Nat) (hC : 0 < C) (hD : 0 < D) :
-    ((pathsOf allKinds n).map (fun γ => phiF (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
-      phiF C D * rhoF ^ n := by
+private theorem list_sum_add_real {α : Type} (xs : List α) (f g : α → ℝ) :
+    (xs.map (fun x => f x + g x)).sum = (xs.map f).sum + (xs.map g).sum := by
+  induction xs with
+  | nil => simp
+  | cons _ _ ih => simp [ih]; ring
+
+private theorem finset_sum_range_two_mul (n : Nat) (f : Nat → ℝ) :
+    ∑ k ∈ Finset.range (2 * n), f k =
+      (∑ j ∈ Finset.range n, f (2 * j)) + (∑ j ∈ Finset.range n, f (2 * j + 1)) := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    rw [Nat.mul_succ, Finset.sum_range_succ, Finset.sum_range_succ,
+        Finset.sum_range_succ, Finset.sum_range_succ, ih]
+    ring
+
+private theorem pathsOf_eo0Kinds_succ (n : Nat) (f : List StepKind → ℝ) :
+    ((pathsOf eo0Kinds (n + 1)).map f).sum =
+      ((pathsOf eo0Kinds n).map (fun γ => f (.E :: γ))).sum +
+      ((pathsOf eo0Kinds n).map (fun γ => f (.O0 :: γ))).sum := by
+  rw [pathsOf, list_sum_flatMap_real]
+  simp only [List.map_map, Function.comp_def]
+  change (([StepKind.E, StepKind.O0] : List StepKind).map (fun k => ((pathsOf eo0Kinds n).map (fun γ => f (k :: γ))).sum)).sum = _
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero]
+
+private theorem pathsOf_allKinds_succ (n : Nat) (f : List StepKind → ℝ) :
+    ((pathsOf allKinds (n + 1)).map f).sum =
+      ((pathsOf allKinds n).map (fun γ => f (.E :: γ))).sum +
+      (((pathsOf allKinds n).map (fun γ => f (.O0 :: γ))).sum +
+       ((pathsOf allKinds n).map (fun γ => f (.O1 :: γ))).sum) := by
+  rw [pathsOf, list_sum_flatMap_real]
+  simp only [List.map_map, Function.comp_def]
+  change (([StepKind.E, StepKind.O0, StepKind.O1] : List StepKind).map (fun k => ((pathsOf allKinds n).map (fun γ => f (k :: γ))).sum)).sum = _
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero]
+
+private theorem eo0_sum_eq_aux (n a b : Nat) (g : Nat → ℝ) :
+    ((pathsOf eo0Kinds n).map (fun γ => g (runF (2 ^ a, b) γ).2)).sum =
+      ∑ j ∈ Finset.range (2 ^ n), g (b + 2 ^ a * j) := by
+  induction n generalizing a b with
+  | zero => simp [pathsOf, runF]
+  | succ n ih =>
+    rw [pathsOf_eo0Kinds_succ]
+    simp only [runF_cons, stepF]
+    rw [show 2 * 2 ^ a = 2 ^ (a + 1) by rw [pow_succ'], ih (a + 1) b, ih (a + 1) (2 ^ a + b)]
+    rw [pow_succ' 2 n, finset_sum_range_two_mul]
+    congr 1
+    · apply Finset.sum_congr rfl; intro j _; congr 1; rw [pow_succ']; ring
+    · apply Finset.sum_congr rfl; intro j _; congr 1; rw [pow_succ']; ring
+
+theorem eo0_sum_eq (n : Nat) (g : Nat → ℝ) :
+    ((pathsOf eo0Kinds n).map (fun γ => g (runF (2, 1) γ).2)).sum =
+      ∑ j ∈ Finset.range (2 ^ n), g (2 * j + 1) := by
+  simpa only [pow_one, add_comm 1 (2 * _)] using eo0_sum_eq_aux n 1 1 g
+
+theorem sum_pathsAll_F (Φ : ℝ → ℝ → ℝ) (ρ : ℝ) (hρ : 0 ≤ ρ)
+    (hcontract : ∀ C D : ℝ, 0 < C → 0 < D → Φ (2 * C) D + Φ (2 * C) (C + D) + Φ (2 * D) (C + D) ≤ ρ * Φ C D)
+    (n C D : Nat) (hC : 0 < C) (hD : 0 < D) :
+    ((pathsOf allKinds n).map (fun γ => Φ (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
+      Φ C D * ρ ^ n := by
   induction n generalizing C D with
   | zero => simp [pathsOf, runF]
   | succ n ih =>
@@ -5373,49 +7209,49 @@ theorem sum_pathsAll_phiF (n : Nat) (C D : Nat) (hC : 0 < C) (hD : 0 < D) :
     have hE := ih (2 * C) D (by omega) hD
     have hO0 := ih (2 * C) (C + D) (by omega) (by omega)
     have hO1 := ih (2 * D) (C + D) (by omega) (by omega)
-    have hc := phiF_contract (C := (C : ℝ)) (D := (D : ℝ)) (by exact_mod_cast hC) (by exact_mod_cast hD)
-    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoF; positivity : 0 ≤ rhoF ^ n)
-    have hsum : phiF ((2 * C : Nat) : ℝ) (D : ℝ) * rhoF ^ n +
-        (phiF ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF ^ n +
-         phiF ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF ^ n) =
-        (phiF (2 * (C : ℝ)) (D : ℝ) + phiF (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
-         phiF (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoF ^ n := by
-      push_cast; ring
-    calc _ ≤ phiF ((2 * C : Nat) : ℝ) (D : ℝ) * rhoF ^ n +
-              (phiF ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF ^ n +
-               phiF ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF ^ n) :=
+    have hc := hcontract (C : ℝ) (D : ℝ) (by exact_mod_cast hC) (by exact_mod_cast hD)
+    have hmul := mul_le_mul_of_nonneg_right hc (pow_nonneg hρ n)
+    have hsum : Φ ((2 * C : Nat) : ℝ) (D : ℝ) * ρ ^ n +
+        (Φ ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * ρ ^ n +
+         Φ ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * ρ ^ n) =
+        (Φ (2 * (C : ℝ)) (D : ℝ) + Φ (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
+         Φ (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * ρ ^ n := by push_cast; ring
+    calc _ ≤ Φ ((2 * C : Nat) : ℝ) (D : ℝ) * ρ ^ n +
+              (Φ ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * ρ ^ n +
+               Φ ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * ρ ^ n) :=
             add_le_add hE (add_le_add hO0 hO1)
-      _ = (phiF (2 * (C : ℝ)) (D : ℝ) + phiF (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
-           phiF (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoF ^ n := hsum
-      _ ≤ (rhoF * phiF C D) * rhoF ^ n := hmul
-      _ = phiF C D * rhoF ^ (n + 1) := by rw [pow_succ']; ring
+      _ = _ := hsum
+      _ ≤ (ρ * Φ C D) * ρ ^ n := hmul
+      _ = Φ C D * ρ ^ (n + 1) := by rw [pow_succ']; ring
 
-theorem sum_pathsEO0_phiF (n : Nat) (C D : Nat) (hD : 0 < D) (hCD : D ≤ C) :
-    ((pathsOf eo0Kinds n).map (fun γ => phiF (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
-      phiF C D * rhoEO0 ^ n := by
+theorem sum_pathsEO0_F (Φ : ℝ → ℝ → ℝ) (ρ : ℝ) (hρ : 0 ≤ ρ)
+    (hcontract : ∀ C D : ℝ, 0 < D → D ≤ C → Φ (2 * C) D + Φ (2 * C) (C + D) ≤ ρ * Φ C D)
+    (n C D : Nat) (hD : 0 < D) (hCD : D ≤ C) :
+    ((pathsOf eo0Kinds n).map (fun γ => Φ (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
+      Φ C D * ρ ^ n := by
   induction n generalizing C D with
   | zero => simp [pathsOf, runF]
   | succ n ih =>
-    rw [pathsOf, list_sum_flatMap_real]
-    simp only [eo0Kinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
-      List.map_map, Function.comp_def, runF_cons, stepF]
+    rw [pathsOf_eo0Kinds_succ]
+    simp only [runF_cons, stepF]
     have hE := ih (2 * C) D hD (by omega)
     have hO0 := ih (2 * C) (C + D) (by omega) (by omega)
-    have hc := phiF_eo0_contract (C := (C : ℝ)) (D := (D : ℝ)) (by exact_mod_cast hD) (by exact_mod_cast hCD)
-    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoEO0; positivity : 0 ≤ rhoEO0 ^ n)
-    have hsum : phiF ((2 * C : Nat) : ℝ) (D : ℝ) * rhoEO0 ^ n +
-        phiF ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoEO0 ^ n =
-        (phiF (2 * (C : ℝ)) (D : ℝ) + phiF (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoEO0 ^ n := by
-      push_cast; ring
-    calc _ ≤ phiF ((2 * C : Nat) : ℝ) (D : ℝ) * rhoEO0 ^ n +
-              phiF ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoEO0 ^ n := add_le_add hE hO0
-      _ = (phiF (2 * (C : ℝ)) (D : ℝ) + phiF (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoEO0 ^ n := hsum
-      _ ≤ (rhoEO0 * phiF C D) * rhoEO0 ^ n := hmul
-      _ = phiF C D * rhoEO0 ^ (n + 1) := by rw [pow_succ']; ring
+    have hc := hcontract (C : ℝ) (D : ℝ) (by exact_mod_cast hD) (by exact_mod_cast hCD)
+    have hmul := mul_le_mul_of_nonneg_right hc (pow_nonneg hρ n)
+    have hsum : Φ ((2 * C : Nat) : ℝ) (D : ℝ) * ρ ^ n +
+        Φ ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * ρ ^ n =
+        (Φ (2 * (C : ℝ)) (D : ℝ) + Φ (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * ρ ^ n := by push_cast; ring
+    calc _ ≤ Φ ((2 * C : Nat) : ℝ) (D : ℝ) * ρ ^ n +
+              Φ ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * ρ ^ n := add_le_add hE hO0
+      _ = _ := hsum
+      _ ≤ (ρ * Φ C D) * ρ ^ n := hmul
+      _ = Φ C D * ρ ^ (n + 1) := by rw [pow_succ']; ring
 
-theorem sum_pathsAll_phiB (n : Nat) (u v : Nat) (hu : 0 < u) (hv : 0 < v) :
-    ((pathsOf allKinds n).map (fun γ => phiB (runBL (u, v) γ).1 (runBL (u, v) γ).2)).sum ≤
-      phiB u v * rhoB ^ n := by
+theorem sum_pathsAll_B (Ψ : ℝ → ℝ → ℝ) (ρ : ℝ) (hρ : 0 ≤ ρ)
+    (hcontract : ∀ u v : ℝ, 0 < u → 0 < v → Ψ (2 * u) v + Ψ (2 * u + v) v + Ψ v (2 * u + v) ≤ ρ * Ψ u v)
+    (n u v : Nat) (hu : 0 < u) (hv : 0 < v) :
+    ((pathsOf allKinds n).map (fun γ => Ψ (runBL (u, v) γ).1 (runBL (u, v) γ).2)).sum ≤
+      Ψ u v * ρ ^ n := by
   induction n generalizing u v with
   | zero => simp [pathsOf, runBL]
   | succ n ih =>
@@ -5425,116 +7261,1655 @@ theorem sum_pathsAll_phiB (n : Nat) (u v : Nat) (hu : 0 < u) (hv : 0 < v) :
     have hE := ih (2 * u) v (by omega) hv
     have hO0 := ih (2 * u + v) v (by omega) hv
     have hO1 := ih v (2 * u + v) hv (by omega)
-    have hc := phiB_contract (u := (u : ℝ)) (v := (v : ℝ)) (by exact_mod_cast hu) (by exact_mod_cast hv)
-    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoB; positivity : 0 ≤ rhoB ^ n)
-    have hsum : phiB ((2 * u : Nat) : ℝ) (v : ℝ) * rhoB ^ n +
-        (phiB ((2 * u + v : Nat) : ℝ) (v : ℝ) * rhoB ^ n +
-         phiB (v : ℝ) ((2 * u + v : Nat) : ℝ) * rhoB ^ n) =
-        (phiB (2 * (u : ℝ)) (v : ℝ) + phiB (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
-         phiB (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * rhoB ^ n := by
-      push_cast; ring
-    calc _ ≤ phiB ((2 * u : Nat) : ℝ) (v : ℝ) * rhoB ^ n +
-              (phiB ((2 * u + v : Nat) : ℝ) (v : ℝ) * rhoB ^ n +
-               phiB (v : ℝ) ((2 * u + v : Nat) : ℝ) * rhoB ^ n) :=
-            add_le_add hE (add_le_add hO0 hO1)
-      _ = (phiB (2 * (u : ℝ)) (v : ℝ) + phiB (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
-           phiB (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * rhoB ^ n := hsum
-      _ ≤ (rhoB * phiB u v) * rhoB ^ n := hmul
-      _ = phiB u v * rhoB ^ (n + 1) := by rw [pow_succ']; ring
+    have hc := hcontract (u : ℝ) (v : ℝ) (by exact_mod_cast hu) (by exact_mod_cast hv)
+    have hmul := mul_le_mul_of_nonneg_right hc (pow_nonneg hρ n)
+    have hsum : Ψ ((2 * u : Nat) : ℝ) (v : ℝ) * ρ ^ n +
+        (Ψ ((2 * u + v : Nat) : ℝ) (v : ℝ) * ρ ^ n +
+         Ψ (v : ℝ) ((2 * u + v : Nat) : ℝ) * ρ ^ n) =
+        (Ψ (2 * (u : ℝ)) (v : ℝ) + Ψ (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
+         Ψ (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * ρ ^ n := by push_cast; ring
+    calc _ ≤ Ψ ((2 * u : Nat) : ℝ) (v : ℝ) * ρ ^ n +
+              (Ψ ((2 * u + v : Nat) : ℝ) (v : ℝ) * ρ ^ n +
+               Ψ (v : ℝ) ((2 * u + v : Nat) : ℝ) * ρ ^ n) := add_le_add hE (add_le_add hO0 hO1)
+      _ = _ := hsum
+      _ ≤ (ρ * Ψ u v) * ρ ^ n := hmul
+      _ = Ψ u v * ρ ^ (n + 1) := by rw [pow_succ']; ring
 
-theorem sum_pathsAll_psiB7 (n : Nat) (u v : Nat) (hu : 0 < u) (hv : 0 < v) :
-    ((pathsOf allKinds n).map (fun γ => psiB7 (runBL (u, v) γ).1 (runBL (u, v) γ).2)).sum ≤
-      psiB7 u v * rhoB7 ^ n := by
-  induction n generalizing u v with
-  | zero => simp [pathsOf, runBL]
-  | succ n ih =>
-    rw [pathsOf, list_sum_flatMap_real]
-    simp only [allKinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
-      List.map_map, Function.comp_def, runBL, List.foldl_cons, stepB]
-    have hE := ih (2 * u) v (by omega) hv
-    have hO0 := ih (2 * u + v) v (by omega) hv
-    have hO1 := ih v (2 * u + v) hv (by omega)
-    have hc := psiB7_contract (u := (u : ℝ)) (v := (v : ℝ)) (by exact_mod_cast hu) (by exact_mod_cast hv)
-    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoB7; positivity : 0 ≤ rhoB7 ^ n)
-    have hsum : psiB7 ((2 * u : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
-        (psiB7 ((2 * u + v : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
-         psiB7 (v : ℝ) ((2 * u + v : Nat) : ℝ) * rhoB7 ^ n) =
-        (psiB7 (2 * (u : ℝ)) (v : ℝ) + psiB7 (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
-         psiB7 (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * rhoB7 ^ n := by
-      push_cast; ring
-    calc _ ≤ psiB7 ((2 * u : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
-              (psiB7 ((2 * u + v : Nat) : ℝ) (v : ℝ) * rhoB7 ^ n +
-               psiB7 (v : ℝ) ((2 * u + v : Nat) : ℝ) * rhoB7 ^ n) :=
-            add_le_add hE (add_le_add hO0 hO1)
-      _ = (psiB7 (2 * (u : ℝ)) (v : ℝ) + psiB7 (2 * (u : ℝ) + (v : ℝ)) (v : ℝ) +
-           psiB7 (v : ℝ) (2 * (u : ℝ) + (v : ℝ))) * rhoB7 ^ n := hsum
-      _ ≤ (rhoB7 * psiB7 u v) * rhoB7 ^ n := hmul
-      _ = psiB7 u v * rhoB7 ^ (n + 1) := by rw [pow_succ']; ring
-
-theorem sum_pathsAll_phiF3 (n : Nat) (C D : Nat) (hC : 0 < C) (hD : 0 < D) :
-    ((pathsOf allKinds n).map (fun γ => phiF3 (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
-      phiF3 C D * rhoF3 ^ n := by
+theorem sum_pathsAll_invProd (n C D : Nat) (hC : 0 < C) (hD : 0 < D) :
+    ((pathsOf allKinds n).map (fun γ => 1 / (((runF (C, D) γ).1 : ℝ) * ((runF (C, D) γ).2 : ℝ)))).sum =
+      1 / ((C : ℝ) * (D : ℝ)) := by
   induction n generalizing C D with
   | zero => simp [pathsOf, runF]
   | succ n ih =>
-    rw [pathsOf, list_sum_flatMap_real]
-    simp only [allKinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
-      List.map_map, Function.comp_def, runF_cons, stepF]
+    rw [pathsOf_allKinds_succ]
+    simp only [runF_cons, stepF]
+    rw [ih (2 * C) D (by omega) hD, ih (2 * C) (C + D) (by omega) (by omega), ih (2 * D) (C + D) (by omega) (by omega)]
+    have hCR : (0 : ℝ) < C := by exact_mod_cast hC
+    have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+    push_cast
+    field_simp [hCR.ne', hDR.ne', (show (0 : ℝ) < C + D by positivity).ne']
+    ring
+
+theorem sum_pathsAll_invDSq (n C D : Nat) (hC : 0 < C) (hD : 0 < D) :
+    ((pathsOf allKinds n).map (fun γ => 1 / ((runF (C, D) γ).2 : ℝ) ^ 2)).sum ≤
+      1 / (D : ℝ) ^ 2 + (n : ℝ) / (2 * (C : ℝ) * (D : ℝ)) := by
+  induction n generalizing C D with
+  | zero => simp [pathsOf, runF]
+  | succ n ih =>
+    rw [pathsOf_allKinds_succ]
+    simp only [runF_cons, stepF]
     have hE := ih (2 * C) D (by omega) hD
     have hO0 := ih (2 * C) (C + D) (by omega) (by omega)
     have hO1 := ih (2 * D) (C + D) (by omega) (by omega)
-    have hc := phiF3_contract (C := (C : ℝ)) (D := (D : ℝ)) (by exact_mod_cast hC) (by exact_mod_cast hD)
-    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoF3; positivity : 0 ≤ rhoF3 ^ n)
-    have hsum : phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoF3 ^ n +
-        (phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n +
-         phiF3 ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n) =
-        (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
-         phiF3 (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoF3 ^ n := by
-      push_cast; ring
-    calc _ ≤ phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoF3 ^ n +
-              (phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n +
-               phiF3 ((2 * D : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoF3 ^ n) :=
-            add_le_add hE (add_le_add hO0 hO1)
-      _ = (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ)) +
-           phiF3 (2 * (D : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoF3 ^ n := hsum
-      _ ≤ (rhoF3 * phiF3 C D) * rhoF3 ^ n := hmul
-      _ = phiF3 C D * rhoF3 ^ (n + 1) := by rw [pow_succ']; ring
+    have hCR : (0 : ℝ) < C := by exact_mod_cast hC
+    have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+    have h4 : 2 / ((C : ℝ) + D) ^ 2 ≤ 1 / (2 * (C : ℝ) * D) := by
+      rw [div_le_div_iff₀ (by positivity) (by positivity)]
+      nlinarith [sq_nonneg ((C : ℝ) - D)]
+    have halg : (n : ℝ) / (2 * (2 * (C : ℝ)) * D) + (n : ℝ) / (2 * (2 * (C : ℝ)) * ((C : ℝ) + D)) +
+        (n : ℝ) / (2 * (2 * (D : ℝ)) * ((C : ℝ) + D)) = (n : ℝ) / (2 * (C : ℝ) * D) := by
+      field_simp [hCR.ne', hDR.ne', (show (0 : ℝ) < C + D by positivity).ne']; ring
+    have hadd := add_le_add hE (add_le_add hO0 hO1)
+    push_cast at hadd ⊢
+    linarith [show 1 / (D : ℝ) ^ 2 + 1 / ((C : ℝ) + D) ^ 2 + 1 / ((C : ℝ) + D) ^ 2 =
+        1 / (D : ℝ) ^ 2 + 2 / ((C : ℝ) + D) ^ 2 by ring,
+      show 1 / (2 * (C : ℝ) * D) + (n : ℝ) / (2 * (C : ℝ) * D) = ((n : ℝ) + 1) / (2 * (C : ℝ) * D) by ring]
 
-theorem sum_pathsEO0_phiF3 (n : Nat) (C D : Nat) (hD : 0 < D) (hCD : D ≤ C) :
-    ((pathsOf eo0Kinds n).map (fun γ => phiF3 (runF (C, D) γ).1 (runF (C, D) γ).2)).sum ≤
-      phiF3 C D * rhoEO3 ^ n := by
+private theorem sum_pathsAll_invCSq_aux (n C D : Nat) (hC : 0 < C) (hD : 0 < D) :
+    ((pathsOf allKinds n).map (fun γ => 1 / ((runF (C, D) γ).1 : ℝ) ^ 2)).sum ≤
+      (1 / 2 : ℝ) ^ n / (C : ℝ) ^ 2 + (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) / (D : ℝ) ^ 2 +
+        (n : ℝ) / (4 * (C : ℝ) * (D : ℝ)) := by
   induction n generalizing C D with
   | zero => simp [pathsOf, runF]
   | succ n ih =>
-    rw [pathsOf, list_sum_flatMap_real]
-    simp only [eo0Kinds, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, add_zero,
-      List.map_map, Function.comp_def, runF_cons, stepF]
-    have hE := ih (2 * C) D hD (by omega)
+    rw [pathsOf_allKinds_succ]
+    simp only [runF_cons, stepF]
+    have hE := ih (2 * C) D (by omega) hD
     have hO0 := ih (2 * C) (C + D) (by omega) (by omega)
-    have hc := phiF3_eo0_contract (C := (C : ℝ)) (D := (D : ℝ)) (by exact_mod_cast hD) (by exact_mod_cast hCD)
-    have hmul := mul_le_mul_of_nonneg_right hc (by unfold rhoEO3; positivity : 0 ≤ rhoEO3 ^ n)
-    have hsum : phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoEO3 ^ n +
-        phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoEO3 ^ n =
-        (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoEO3 ^ n := by
-      push_cast; ring
-    calc _ ≤ phiF3 ((2 * C : Nat) : ℝ) (D : ℝ) * rhoEO3 ^ n +
-              phiF3 ((2 * C : Nat) : ℝ) ((C + D : Nat) : ℝ) * rhoEO3 ^ n := add_le_add hE hO0
-      _ = (phiF3 (2 * (C : ℝ)) (D : ℝ) + phiF3 (2 * (C : ℝ)) ((C : ℝ) + (D : ℝ))) * rhoEO3 ^ n := hsum
-      _ ≤ (rhoEO3 * phiF3 C D) * rhoEO3 ^ n := hmul
-      _ = phiF3 C D * rhoEO3 ^ (n + 1) := by rw [pow_succ']; ring
+    have hO1 := ih (2 * D) (C + D) (by omega) (by omega)
+    have hCR : (0 : ℝ) < C := by exact_mod_cast hC
+    have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+    have h2 : (0 : ℝ) ≤ 1 - (1 / 2 : ℝ) ^ n := by
+      have : (1 / 2 : ℝ) ^ n ≤ 1 := pow_le_one₀ (by norm_num) (by norm_num)
+      linarith
+    have h4 : 2 / ((C : ℝ) + D) ^ 2 ≤ 1 / (2 * (C : ℝ) * D) := by
+      rw [div_le_div_iff₀ (by positivity) (by positivity)]
+      nlinarith [sq_nonneg ((C : ℝ) - D)]
+    have hDterm : (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) * (2 / ((C : ℝ) + D) ^ 2) ≤ 1 / (4 * (C : ℝ) * D) := by
+      have h1 := mul_le_mul_of_nonneg_left h4 (by positivity : (0 : ℝ) ≤ (1 / 2) * (1 - (1 / 2) ^ n))
+      have h2' : (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) * (1 / (2 * (C : ℝ) * D)) ≤
+          (1 / 2 : ℝ) * 1 * (1 / (2 * (C : ℝ) * D)) := by
+        apply mul_le_mul_of_nonneg_right _ (by positivity)
+        have : (0 : ℝ) ≤ (1 / 2 : ℝ) ^ n := by positivity
+        linarith
+      exact h1.trans (h2'.trans_eq (by ring))
+    have hCD_alg : (n : ℝ) / (4 * (2 * (C : ℝ)) * D) + (n : ℝ) / (4 * (2 * (C : ℝ)) * ((C : ℝ) + D)) +
+        (n : ℝ) / (4 * (2 * (D : ℝ)) * ((C : ℝ) + D)) = (n : ℝ) / (4 * (C : ℝ) * D) := by
+      field_simp [hCR.ne', hDR.ne', (show (0 : ℝ) < C + D by positivity).ne']; ring
+    have hC_alg : (1 / 2 : ℝ) ^ n / (2 * (C : ℝ)) ^ 2 + (1 / 2 : ℝ) ^ n / (2 * (C : ℝ)) ^ 2 =
+        (1 / 2 : ℝ) ^ (n + 1) / (C : ℝ) ^ 2 := by rw [pow_succ']; ring
+    have hD_alg : (1 / 2 : ℝ) ^ n / (2 * (D : ℝ)) ^ 2 + (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) / (D : ℝ) ^ 2 =
+        (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ (n + 1)) / (D : ℝ) ^ 2 := by rw [pow_succ']; ring
+    have hadd := add_le_add hE (add_le_add hO0 hO1)
+    push_cast at hadd ⊢
+    have hrew : (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) / ((C : ℝ) + D) ^ 2 +
+        (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) / ((C : ℝ) + D) ^ 2 =
+        (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) * (2 / ((C : ℝ) + D) ^ 2) := by ring
+    linarith [show 1 / (4 * (C : ℝ) * D) + (n : ℝ) / (4 * (C : ℝ) * D) = ((n : ℝ) + 1) / (4 * (C : ℝ) * D) by ring]
 
-/-! ### 5. Exact trajectory decomposition for `x ∈ (0, p)` and `k₀ = v₂(x)` -/
+theorem sum_pathsAll_invCSq (n C D : Nat) (hC : 0 < C) (hD : 0 < D) :
+    ((pathsOf allKinds n).map (fun γ => 1 / ((runF (C, D) γ).1 : ℝ) ^ 2)).sum ≤
+      1 / (C : ℝ) ^ 2 + 1 / (2 * (D : ℝ) ^ 2) + (n : ℝ) / (4 * (C : ℝ) * (D : ℝ)) := by
+  have h1 := sum_pathsAll_invCSq_aux n C D hC hD
+  have hp1 : (1 / 2 : ℝ) ^ n ≤ 1 := pow_le_one₀ (by norm_num) (by norm_num)
+  have hp2 : (0 : ℝ) ≤ (1 / 2 : ℝ) ^ n := by positivity
+  have hCR : (0 : ℝ) < C := by exact_mod_cast hC
+  have hDR : (0 : ℝ) < D := by exact_mod_cast hD
+  have hA : (1 / 2 : ℝ) ^ n / (C : ℝ) ^ 2 ≤ 1 / (C : ℝ) ^ 2 :=
+    div_le_div_of_nonneg_right hp1 (by positivity)
+  have hB : (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) / (D : ℝ) ^ 2 ≤ 1 / (2 * (D : ℝ) ^ 2) := by
+    have : (1 / 2 : ℝ) * (1 - (1 / 2 : ℝ) ^ n) ≤ 1 / 2 := by linarith
+    exact (div_le_div_of_nonneg_right this (by positivity)).trans_eq (by ring)
+  linarith
+
+/-! ### 4. Wave 11 manifest-positive `Q_F`/`Q_B` degree-8 potentials (`phiF3,4,5,7,9`, `psiB6,7,9`) -/
+
+def Q_F (C D : ℝ) : ℝ := D ^ 2 + 10 * C * D + C ^ 2
+def Q_B (u v : ℝ) : ℝ := v ^ 2 + 20 * u * v + 2 * u ^ 2
+
+def P_F3 (C D : ℝ) : ℝ :=
+  10010 * D ^ 8 + 360688 * C * D ^ 7 + 2169160 * C ^ 2 * D ^ 6 + 6104336 * C ^ 3 * D ^ 5 +
+  8103900 * C ^ 4 * D ^ 4 + 6985496 * C ^ 5 * D ^ 3 + 2685816 * C ^ 6 * D ^ 2 + 543624 * C ^ 7 * D +
+  18469 * C ^ 8
+
+def phiF3 (C D : ℝ) : ℝ :=
+  P_F3 C D / (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D)
+
+def rhoF3 : ℝ := 63551 / 100000
+def rhoEO3 : ℝ := 51017 / 100000
+
+theorem phiF3_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF3 C D := by
+  unfold phiF3 P_F3 Q_F; positivity
+
+theorem phiF3_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D := by
+  unfold phiF3
+  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
+  have hden : 0 < 10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_F3 C D * (C ^ 2 * D ^ 2) - (C + D) * (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D) =
+      (C ^ 2 * D ^ 2) * (
+      10 * D ^ 8 + 200688 * C * D ^ 7 + 1409160 * C ^ 2 * D ^ 6 + 4344336 * C ^ 3 * D ^ 5 +
+      5803900 * C ^ 4 * D ^ 4 + 5225496 * C ^ 5 * D ^ 3 + 1925816 * C ^ 6 * D ^ 2 +
+      383624 * C ^ 7 * D + 8469 * C ^ 8) := by
+    unfold P_F3 Q_F; ring
+  have hnn : 0 ≤ P_F3 C D * (C ^ 2 * D ^ 2) - (C + D) * (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D) := by
+    rw [hid]; positivity
+  linarith
+
+theorem phiF3_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    phiF3 (2 * C) D + phiF3 (2 * C) (C + D) + phiF3 (2 * D) (C + D) ≤ rhoF3 * phiF3 C D := by
+  unfold phiF3 rhoF3
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
+  rw [h31, h13]
+  set M := 100000 * 10000 * 4 * C ^ 2 * D ^ 2 * (C + D) ^ 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((63551 / 100000 : ℝ) * (P_F3 C D / (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F3 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F3 (2 * D) (C + D) / (10000 * (2 * D) ^ 2 * (C + D) ^ 2 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((63551 / 100000 : ℝ) * (P_F3 C D / (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F3 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F3 (2 * D) (C + D) / (10000 * (2 * D) ^ 2 * (C + D) ^ 2 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) =
+      (C + D) ^ 3 * (
+        63551 * 4 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 (2 * C) D
+                + (C + D) ^ 3 * D ^ 2 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F3 (2 * C) (C + D)
+                + (C + D) ^ 3 * C ^ 2 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 (2 * D) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (C + D) ^ 3 * (
+        63551 * 4 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F3 (2 * C) D
+                + (C + D) ^ 3 * D ^ 2 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F3 (2 * C) (C + D)
+                + (C + D) ^ 3 * C ^ 2 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 (2 * D) (C + D))) =
+      3296185893000 * D ^ 32 + 108175403289240 * C * D ^ 31 + 936819955413712 * C ^ 2 * D ^ 30 +
+      1836595251159456 * C ^ 3 * D ^ 29 + 798326856574320 * C ^ 4 * D ^ 28 +
+      115438579871823984 * C ^ 5 * D ^ 27 + 702535883534551744 * C ^ 6 * D ^ 26 +
+      556406219190894368 * C ^ 7 * D ^ 25 + 7816195757360734932 * C ^ 8 * D ^ 24 +
+      186651387776564135196 * C ^ 9 * D ^ 23 + 1349550018050507076472 * C ^ 10 * D ^ 22 +
+      5266742735933189537312 * C ^ 11 * D ^ 21 + 12676043658674248439936 * C ^ 12 * D ^ 20 +
+      18847948396057000925216 * C ^ 13 * D ^ 19 + 14887363451737428113392 * C ^ 14 * D ^ 18 +
+      2220998341878554609968 * C ^ 15 * D ^ 17 + 2900781549292607038736 * C ^ 16 * D ^ 16 +
+      37187058323472417476080 * C ^ 17 * D ^ 15 + 87883912829304642588272 * C ^ 18 * D ^ 14 +
+      110462602759907479926736 * C ^ 19 * D ^ 13 + 86057086070745198322384 * C ^ 20 * D ^ 12 +
+      41259167883483170661840 * C ^ 21 * D ^ 11 + 10146101765499697828944 * C ^ 22 * D ^ 10 +
+      162318898370343003120 * C ^ 23 * D ^ 9 + 51518332544487671732 * C ^ 24 * D ^ 8 +
+      744773694975268215484 * C ^ 25 * D ^ 7 + 527601013428493054152 * C ^ 26 * D ^ 6 +
+      181233037802323330352 * C ^ 27 * D ^ 5 + 35250763701529692960 * C ^ 28 * D ^ 4 +
+      3727343038980298560 * C ^ 29 * D ^ 3 + 166675803938198912 * C ^ 30 * D ^ 2 +
+      6674504364288 * C ^ 31 * D + 72842457600 * C ^ 32 := by
+    unfold P_F3 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF3_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
+    phiF3 (2 * C) D + phiF3 (2 * C) (C + D) ≤ rhoEO3 * phiF3 C D := by
+  have hC : 0 < C := lt_of_lt_of_le hD hCD
+  unfold phiF3 rhoEO3
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  rw [h31]
+  set M := 100000 * 10000 * 4 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((51017 / 100000 : ℝ) * (P_F3 C D / (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F3 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((51017 / 100000 : ℝ) * (P_F3 C D / (10000 * C ^ 2 * D ^ 2 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F3 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F3 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) =
+      (
+        51017 * 4 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F3 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * P_F3 (2 * C) D
+                + (C + D) ^ 3 * D ^ 2 * (2 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * P_F3 (2 * C) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  set t := C - D
+  have ht : 0 ≤ t := sub_nonneg.mpr hCD
+  have hCeq : C = t + D := by dsimp [t]; ring
+  rw [hCeq]
+  have hid : (
+        51017 * 4 * (2 * (t + D) + D) ^ 5 * (3 * (t + D) + D) ^ 5 *
+          Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F3 (t + D) D
+        - 100000 * ((t + D + D) ^ 5 * (3 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F3 (2 * (t + D)) D
+                + (t + D + D) ^ 3 * D ^ 2 * (2 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F3 (2 * (t + D)) (t + D + D))) =
+      5595477781708800 * D ^ 22 + 247661160609706131456 * t * D ^ 21 +
+      3273473613356651827200 * t ^ 2 * D ^ 20 + 20447786663566950134784 * t ^ 3 * D ^ 19 +
+      80236163287048755531008 * t ^ 4 * D ^ 18 + 221756608518646582046272 * t ^ 5 * D ^ 17 +
+      458748147581620170859696 * t ^ 6 * D ^ 16 + 736846179732828932704204 * t ^ 7 * D ^ 15 +
+      940744531509482138137176 * t ^ 8 * D ^ 14 + 969372239227443204094560 * t ^ 9 * D ^ 13 +
+      813984058164690004752352 * t ^ 10 * D ^ 12 + 559984381126686670179080 * t ^ 11 * D ^ 11 +
+      316194868419575135643184 * t ^ 12 * D ^ 10 + 146323389463658151927504 * t ^ 13 * D ^ 9 +
+      55226922905294698392816 * t ^ 14 * D ^ 8 + 16852931610185536601076 * t ^ 15 * D ^ 7 +
+      4101109716587407505672 * t ^ 16 * D ^ 6 + 779162374365183973392 * t ^ 17 * D ^ 5 +
+      111777481962207773856 * t ^ 18 * D ^ 4 + 11445569416960550336 * t ^ 19 * D ^ 3 +
+      751435732515946880 * t ^ 20 * D ^ 2 + 24321842108234496 * t ^ 21 * D + 58422559219200 * t ^ 22 := by
+    unfold P_F3 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF3_11_le : phiF3 1 1 ≤ 8993833 / 1280000 := by
+  unfold phiF3 P_F3 Q_F; norm_num
+
+theorem phiF3_21_le : phiF3 2 1 ≤ 328822573 / 121500000 := by
+  unfold phiF3 P_F3 Q_F; norm_num
+
+private theorem inv_sqrt_two_le : 1 / Real.sqrt 2 ≤ (99 / 140 : ℝ) := by
+  rw [div_le_div_iff₀ (Real.sqrt_pos.mpr (by norm_num)) (by norm_num)]
+  have hsq : (1 * 140 : ℝ) ^ 2 ≤ (99 * Real.sqrt 2) ^ 2 := by
+    rw [one_mul, mul_pow, Real.sq_sqrt (by norm_num)]; norm_num
+  exact le_of_sq_le_sq hsq (by positivity)
+
+private theorem sqrt_div_le_amgm {a b t : ℝ} (ha : 0 < a) (hb : 0 < b) (ht : 0 < t) :
+    Real.sqrt (a / b) ≤ (2500 * a * b ^ 3 + t ^ 2) / (100 * b ^ 2 * t) := by
+  rw [le_div_iff₀ (by positivity)]
+  have h1 : Real.sqrt (a / b) * (100 * b ^ 2 * t) = 2 * (50 * b * Real.sqrt (a * b)) * t := by
+    rw [Real.sqrt_div ha.le, Real.sqrt_mul ha.le]
+    have hsb : Real.sqrt b ≠ 0 := (Real.sqrt_pos.mpr hb).ne'
+    field_simp [hsb]; rw [Real.sq_sqrt hb.le]; ring
+  rw [h1]
+  have hsq : 0 ≤ (50 * b * Real.sqrt (a * b) - t) ^ 2 := sq_nonneg _
+  have hr : (50 * b * Real.sqrt (a * b)) ^ 2 = 2500 * a * b ^ 3 := by
+    rw [mul_pow, mul_pow, Real.sq_sqrt (by positivity)]; ring
+  nlinarith
+
+def P_F4 (C D : ℝ) : ℝ :=
+  10010 * D ^ 8 + 299024 * C * D ^ 7 + 1631672 * C ^ 2 * D ^ 6 + 4810400 * C ^ 3 * D ^ 5 +
+  6464080 * C ^ 4 * D ^ 4 + 6306888 * C ^ 5 * D ^ 3 + 2644684 * C ^ 6 * D ^ 2 + 597832 * C ^ 7 * D +
+  26215 * C ^ 8
+
+def phiF4 (C D : ℝ) : ℝ :=
+  P_F4 C D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D)
+
+def rhoF4 : ℝ := 42109 / 100000
+def rhoEO4 : ℝ := 17917 / 50000
+
+theorem phiF4_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF4 C D := by
+  unfold phiF4 P_F4 Q_F; positivity
+
+theorem phiF4_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    (C + D) / (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) ≤ phiF4 C D := by
+  unfold phiF4
+  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
+  have hs : 0 < Real.sqrt (C * D) := Real.sqrt_pos.mpr (by positivity)
+  have hden : 0 < 10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_F4 C D * (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) -
+      (C + D) * (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D) =
+      (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) * (
+      10 * D ^ 8 + 139024 * C * D ^ 7 + 871672 * C ^ 2 * D ^ 6 + 3050400 * C ^ 3 * D ^ 5 +
+      4164080 * C ^ 4 * D ^ 4 + 4546888 * C ^ 5 * D ^ 3 + 1884684 * C ^ 6 * D ^ 2 +
+      437832 * C ^ 7 * D + 16215 * C ^ 8) := by
+    unfold P_F4 Q_F; ring
+  have hnn : 0 ≤ P_F4 C D * (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) -
+      (C + D) * (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D) := by
+    rw [hid]; positivity
+  linarith
+
+theorem phiF4_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    phiF4 (2 * C) D + phiF4 (2 * C) (C + D) + phiF4 (2 * D) (C + D) ≤ rhoF4 * phiF4 C D := by
+  unfold phiF4 rhoF4
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
+  have hP0 : 0 < P_F4 (2 * C) D := by unfold P_F4; positivity
+  have hP1 : 0 < P_F4 (2 * C) (C + D) := by unfold P_F4; positivity
+  have hP2 : 0 < P_F4 (2 * D) (C + D) := by unfold P_F4; positivity
+  set T2 : ℝ := 50 * D ^ 2 + 80 * C * D + 11 * C ^ 2
+  set T3 : ℝ := 50 * C ^ 2 + 80 * C * D + 11 * D ^ 2
+  have hT2 : 0 < T2 := by dsimp [T2]; positivity
+  have hT3 : 0 < T3 := by dsimp [T3]; positivity
+  have hsCD : 0 < Real.sqrt (C * D) := Real.sqrt_pos.mpr (by positivity)
+  have hs2 : 0 < Real.sqrt 2 := Real.sqrt_pos.mpr (by norm_num)
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
+  rw [h31, h13]
+  -- Eliminate all square roots via `1/√2 ≤ 99/140` and `sqrt_div_le_amgm`!
+  have hE_le : P_F4 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * Real.sqrt (2 * C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D) ≤
+      (99 / 560 : ℝ) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) := by
+    have hsr : Real.sqrt (2 * C * D) = Real.sqrt 2 * Real.sqrt (C * D) := by
+      rw [mul_assoc, Real.sqrt_mul (by norm_num)]
+    rw [hsr]
+    have hlhs : P_F4 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * (Real.sqrt 2 * Real.sqrt (C * D)) * (2 * C + D) ^ 5 * Q_F (2 * C) D) =
+        (1 / Real.sqrt 2 / 4) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) := by
+      field_simp [hs2.ne', hsCD.ne', hC.ne', hD.ne', hQE.ne']; ring
+    rw [hlhs]
+    have h1 : 1 / Real.sqrt 2 / 4 ≤ 99 / 560 := by linarith [inv_sqrt_two_le]
+    exact mul_le_mul_of_nonneg_right h1 (by positivity)
+  have hO0_le : P_F4 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * Real.sqrt (2 * C * (C + D)) * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) ≤
+      (99 / 56000 : ℝ) * (D ^ 2 * (2500 * D * (C + D) ^ 3 + T2 ^ 2) * P_F4 (2 * C) (C + D) /
+        (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))) := by
+    have hsr : Real.sqrt (2 * C * (C + D)) = Real.sqrt 2 * Real.sqrt (C * D) / Real.sqrt (D / (C + D)) := by
+      rw [Real.sqrt_div hD.le, Real.sqrt_mul hC.le, mul_assoc, Real.sqrt_mul (by norm_num), Real.sqrt_mul hC.le]
+      have hsC : Real.sqrt C ≠ 0 := (Real.sqrt_pos.mpr hC).ne'
+      have hsD : Real.sqrt D ≠ 0 := (Real.sqrt_pos.mpr hD).ne'
+      have hsS : Real.sqrt (C + D) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hsC, hsD, hsS]
+    rw [hsr]
+    have h1 : (1 / Real.sqrt 2 / 4) * Real.sqrt (D / (C + D)) ≤ (99 / 560 : ℝ) * ((2500 * D * (C + D) ^ 3 + T2 ^ 2) / (100 * (C + D) ^ 2 * T2)) := by
+      exact mul_le_mul (by linarith [inv_sqrt_two_le]) (sqrt_div_le_amgm hD (by positivity) hT2) (Real.sqrt_nonneg _) (by norm_num)
+    have hlhs : P_F4 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * (Real.sqrt 2 * Real.sqrt (C * D) / Real.sqrt (D / (C + D))) * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) =
+        ((1 / Real.sqrt 2 / 4) * Real.sqrt (D / (C + D))) *
+          (D ^ 2 * P_F4 (2 * C) (C + D) / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))) := by
+      have hsR : Real.sqrt (D / (C + D)) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hs2.ne', hsCD.ne', hsR, hC.ne', hD.ne', hQO0.ne']; ring
+    rw [hlhs]
+    refine (mul_le_mul_of_nonneg_right h1 (by positivity)).trans_eq ?_
+    field_simp [hC.ne', hD.ne', hsCD.ne', hT2.ne', hQO0.ne']; ring
+  have hO1_le : P_F4 (2 * D) (C + D) / (10000 * (2 * D) ^ 2 * (C + D) ^ 2 * Real.sqrt (2 * D * (C + D)) * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)) ≤
+      (99 / 56000 : ℝ) * (C ^ 2 * (2500 * C * (C + D) ^ 3 + T3 ^ 2) * P_F4 (2 * D) (C + D) /
+        (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T3 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D))) := by
+    have hsr : Real.sqrt (2 * D * (C + D)) = Real.sqrt 2 * Real.sqrt (C * D) / Real.sqrt (C / (C + D)) := by
+      rw [Real.sqrt_div hC.le, Real.sqrt_mul hC.le, mul_assoc, Real.sqrt_mul (by norm_num), Real.sqrt_mul hD.le]
+      have hsC : Real.sqrt C ≠ 0 := (Real.sqrt_pos.mpr hC).ne'
+      have hsD : Real.sqrt D ≠ 0 := (Real.sqrt_pos.mpr hD).ne'
+      have hsS : Real.sqrt (C + D) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hsC, hsD, hsS]
+    rw [hsr]
+    have h1 : (1 / Real.sqrt 2 / 4) * Real.sqrt (C / (C + D)) ≤ (99 / 560 : ℝ) * ((2500 * C * (C + D) ^ 3 + T3 ^ 2) / (100 * (C + D) ^ 2 * T3)) := by
+      exact mul_le_mul (by linarith [inv_sqrt_two_le]) (sqrt_div_le_amgm hC (by positivity) hT3) (Real.sqrt_nonneg _) (by norm_num)
+    have hlhs : P_F4 (2 * D) (C + D) / (10000 * (2 * D) ^ 2 * (C + D) ^ 2 * (Real.sqrt 2 * Real.sqrt (C * D) / Real.sqrt (C / (C + D))) * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)) =
+        ((1 / Real.sqrt 2 / 4) * Real.sqrt (C / (C + D))) *
+          (C ^ 2 * P_F4 (2 * D) (C + D) / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 2 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D))) := by
+      have hsR : Real.sqrt (C / (C + D)) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hs2.ne', hsCD.ne', hsR, hC.ne', hD.ne', hQO1.ne']; ring
+    rw [hlhs]
+    refine (mul_le_mul_of_nonneg_right h1 (by positivity)).trans_eq ?_
+    field_simp [hC.ne', hD.ne', hsCD.ne', hT3.ne', hQO1.ne']; ring
+  refine (add_le_add (add_le_add hE_le hO0_le) hO1_le).trans ?_
+  set M := 100000 * 56000 * 10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 8 *
+      (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * T2 * T3
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((42109 / 100000 : ℝ) * (P_F4 C D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D)) -
+      ((99 / 560 : ℝ) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) +
+       (99 / 56000 : ℝ) * (D ^ 2 * (2500 * D * (C + D) ^ 3 + T2 ^ 2) * P_F4 (2 * C) (C + D) /
+         (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))) +
+       (99 / 56000 : ℝ) * (C ^ 2 * (2500 * C * (C + D) ^ 3 + T3 ^ 2) * P_F4 (2 * D) (C + D) /
+         (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T3 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D))))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((42109 / 100000 : ℝ) * (P_F4 C D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D)) -
+      ((99 / 560 : ℝ) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) +
+       (99 / 56000 : ℝ) * (D ^ 2 * (2500 * D * (C + D) ^ 3 + T2 ^ 2) * P_F4 (2 * C) (C + D) /
+         (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))) +
+       (99 / 56000 : ℝ) * (C ^ 2 * (2500 * C * (C + D) ^ 3 + T3 ^ 2) * P_F4 (2 * D) (C + D) /
+         (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T3 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D))))) =
+      (C + D) ^ 3 * (
+        42109 * 56000 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * T2 * T3 * P_F4 C D
+        - 100000 * 99 * (
+            100 * (C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * T2 * T3 * P_F4 (2 * C) D
+            + (2500 * D * (C + D) ^ 3 + T2 ^ 2) * D ^ 2 * (C + D) * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * T3 * P_F4 (2 * C) (C + D)
+            + (2500 * C * (C + D) ^ 3 + T3 ^ 2) * C ^ 2 * (C + D) * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * T2 * P_F4 (2 * D) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
+    generalize Real.sqrt (C * D) = sCD at hsCD ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (C + D) ^ 3 * (
+        42109 * 56000 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * T2 * T3 * P_F4 C D
+        - 100000 * 99 * (
+            100 * (C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * T2 * T3 * P_F4 (2 * C) D
+            + (2500 * D * (C + D) ^ 3 + T2 ^ 2) * D ^ 2 * (C + D) * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * T3 * P_F4 (2 * C) (C + D)
+            + (2500 * C * (C + D) ^ 3 + T3 ^ 2) * C ^ 2 * (C + D) * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * T2 * P_F4 (2 * D) (C + D))) =
+      12646033299900000000 * D ^ 36 + 472166524297512000000 * C * D ^ 35 +
+      5028695394534108000000 * C ^ 2 * D ^ 34 + 10174561304632636320000 * C ^ 3 * D ^ 33 +
+      8874725542965231936000 * C ^ 4 * D ^ 32 + 2802024499140098631136000 * C ^ 5 * D ^ 31 +
+      35776951115189151907712000 * C ^ 6 * D ^ 30 + 185766267447823594202560000 * C ^ 7 * D ^ 29 +
+      403433228672792851289904000 * C ^ 8 * D ^ 28 + 359692682725152474502768000 * C ^ 9 * D ^ 27 +
+      6907577290599148827585192000 * C ^ 10 * D ^ 26 +
+      72879264687531595356493528000 * C ^ 11 * D ^ 25 +
+      368474750045027289717670560000 * C ^ 12 * D ^ 24 +
+      1143265802771555909977438384000 * C ^ 13 * D ^ 23 +
+      2339955996376621048567950816000 * C ^ 14 * D ^ 22 +
+      3108313249605701973932293952000 * C ^ 15 * D ^ 21 +
+      2322765123648907148957762400000 * C ^ 16 * D ^ 20 +
+      490096707332409721970615872000 * C ^ 17 * D ^ 19 +
+      621969680372206821715232496000 * C ^ 18 * D ^ 18 +
+      5317753296504075274362559504000 * C ^ 19 * D ^ 17 +
+      12654256000173434330962070944000 * C ^ 20 * D ^ 16 +
+      17061806848695977257013694688000 * C ^ 21 * D ^ 15 +
+      15193771356926003938745135104000 * C ^ 22 * D ^ 14 +
+      9218432850237016519877354624000 * C ^ 23 * D ^ 13 +
+      3651165168996889192030121360000 * C ^ 24 * D ^ 12 +
+      782889226385341856392858256000 * C ^ 25 * D ^ 11 +
+      20192082494920588551714248000 * C ^ 26 * D ^ 10 +
+      6352270995938471083503032000 * C ^ 27 * D ^ 9 + 44124513970003852789814912000 * C ^ 28 * D ^ 8 +
+      30432571228241219780513296000 * C ^ 29 * D ^ 7 +
+      10788631178991683719012832000 * C ^ 30 * D ^ 6 + 2325196446269853943804480000 * C ^ 31 * D ^ 5 +
+      307731571846286584089984000 * C ^ 32 * D ^ 4 + 23026216509115069305600000 * C ^ 33 * D ^ 3 +
+      745659731741224665600000 * C ^ 34 * D ^ 2 + 73965882582144000000 * C ^ 35 * D +
+      896571244800000000 * C ^ 36 := by
+    dsimp only [T2, T3]; unfold P_F4 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF4_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
+    phiF4 (2 * C) D + phiF4 (2 * C) (C + D) ≤ rhoEO4 * phiF4 C D := by
+  have hC : 0 < C := lt_of_lt_of_le hD hCD
+  unfold phiF4 rhoEO4
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hP0 : 0 < P_F4 (2 * C) D := by unfold P_F4; positivity
+  have hP1 : 0 < P_F4 (2 * C) (C + D) := by unfold P_F4; positivity
+  set T2 : ℝ := 50 * D ^ 2 + 80 * C * D + 11 * C ^ 2
+  have hT2 : 0 < T2 := by dsimp [T2]; positivity
+  have hsCD : 0 < Real.sqrt (C * D) := Real.sqrt_pos.mpr (by positivity)
+  have hs2 : 0 < Real.sqrt 2 := Real.sqrt_pos.mpr (by norm_num)
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  rw [h31]
+  have hE_le : P_F4 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * Real.sqrt (2 * C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D) ≤
+      (99 / 560 : ℝ) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) := by
+    have hsr : Real.sqrt (2 * C * D) = Real.sqrt 2 * Real.sqrt (C * D) := by
+      rw [mul_assoc, Real.sqrt_mul (by norm_num)]
+    rw [hsr]
+    have hlhs : P_F4 (2 * C) D / (10000 * (2 * C) ^ 2 * D ^ 2 * (Real.sqrt 2 * Real.sqrt (C * D)) * (2 * C + D) ^ 5 * Q_F (2 * C) D) =
+        (1 / Real.sqrt 2 / 4) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) := by
+      field_simp [hs2.ne', hsCD.ne', hC.ne', hD.ne', hQE.ne']; ring
+    rw [hlhs]
+    exact mul_le_mul_of_nonneg_right (by linarith [inv_sqrt_two_le]) (by positivity)
+  have hO0_le : P_F4 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * Real.sqrt (2 * C * (C + D)) * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) ≤
+      (99 / 56000 : ℝ) * (D ^ 2 * (2500 * D * (C + D) ^ 3 + T2 ^ 2) * P_F4 (2 * C) (C + D) /
+        (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))) := by
+    have hsr : Real.sqrt (2 * C * (C + D)) = Real.sqrt 2 * Real.sqrt (C * D) / Real.sqrt (D / (C + D)) := by
+      rw [Real.sqrt_div hD.le, Real.sqrt_mul hC.le, mul_assoc, Real.sqrt_mul (by norm_num), Real.sqrt_mul hC.le]
+      have hsC : Real.sqrt C ≠ 0 := (Real.sqrt_pos.mpr hC).ne'
+      have hsD : Real.sqrt D ≠ 0 := (Real.sqrt_pos.mpr hD).ne'
+      have hsS : Real.sqrt (C + D) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hsC, hsD, hsS]
+    rw [hsr]
+    have h1 : (1 / Real.sqrt 2 / 4) * Real.sqrt (D / (C + D)) ≤ (99 / 560 : ℝ) * ((2500 * D * (C + D) ^ 3 + T2 ^ 2) / (100 * (C + D) ^ 2 * T2)) := by
+      exact mul_le_mul (by linarith [inv_sqrt_two_le]) (sqrt_div_le_amgm hD (by positivity) hT2) (Real.sqrt_nonneg _) (by norm_num)
+    have hlhs : P_F4 (2 * C) (C + D) / (10000 * (2 * C) ^ 2 * (C + D) ^ 2 * (Real.sqrt 2 * Real.sqrt (C * D) / Real.sqrt (D / (C + D))) * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) =
+        ((1 / Real.sqrt 2 / 4) * Real.sqrt (D / (C + D))) *
+          (D ^ 2 * P_F4 (2 * C) (C + D) / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))) := by
+      have hsR : Real.sqrt (D / (C + D)) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hs2.ne', hsCD.ne', hsR, hC.ne', hD.ne', hQO0.ne']; ring
+    rw [hlhs]
+    refine (mul_le_mul_of_nonneg_right h1 (by positivity)).trans_eq ?_
+    field_simp [hC.ne', hD.ne', hsCD.ne', hT2.ne', hQO0.ne']; ring
+  refine (add_le_add hE_le hO0_le).trans ?_
+  set M := 50000 * 56000 * 10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 *
+      (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * T2
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((17917 / 50000 : ℝ) * (P_F4 C D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D)) -
+      ((99 / 560 : ℝ) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) +
+       (99 / 56000 : ℝ) * (D ^ 2 * (2500 * D * (C + D) ^ 3 + T2 ^ 2) * P_F4 (2 * C) (C + D) /
+         (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((17917 / 50000 : ℝ) * (P_F4 C D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 5 * Q_F C D)) -
+      ((99 / 560 : ℝ) * (P_F4 (2 * C) D / (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (2 * C + D) ^ 5 * Q_F (2 * C) D)) +
+       (99 / 56000 : ℝ) * (D ^ 2 * (2500 * D * (C + D) ^ 3 + T2 ^ 2) * P_F4 (2 * C) (C + D) /
+         (10000 * C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (C + D) ^ 4 * T2 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D))))) =
+      17917 * 56000 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * T2 * P_F4 C D
+      - 50000 * 99 * (
+          100 * (C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * T2 * P_F4 (2 * C) D
+          + (2500 * D * (C + D) ^ 3 + T2 ^ 2) * D ^ 2 * (C + D) * (2 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * P_F4 (2 * C) (C + D)) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Real.sqrt (C * D) = sCD at hsCD ⊢
+    field_simp
+    ring
+  rw [hclear]
+  set t := C - D
+  have ht : 0 ≤ t := sub_nonneg.mpr hCD
+  have hCeq : C = t + D := by dsimp [t]; ring
+  have hT2_eq : T2 = 50 * D ^ 2 + 80 * (t + D) * D + 11 * (t + D) ^ 2 := by dsimp only [T2]; rw [← hCeq]
+  rw [hT2_eq, hCeq]
+  have hid :
+      17917 * 56000 * (2 * (t + D) + D) ^ 5 * (3 * (t + D) + D) ^ 5 * Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) *
+        (50 * D ^ 2 + 80 * (t + D) * D + 11 * (t + D) ^ 2) * P_F4 (t + D) D
+      - 50000 * 99 * (
+          100 * (t + D + D) ^ 5 * (3 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) *
+            (50 * D ^ 2 + 80 * (t + D) * D + 11 * (t + D) ^ 2) * P_F4 (2 * (t + D)) D
+          + (2500 * D * (t + D + D) ^ 3 + (50 * D ^ 2 + 80 * (t + D) * D + 11 * (t + D) ^ 2) ^ 2) * D ^ 2 * (t + D + D) *
+            (2 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F4 (2 * (t + D)) (t + D + D)) =
+      9219105906706944000000 * D ^ 24 + 119389992643147405178880000 * t * D ^ 23 +
+      1671351819129511935538176000 * t ^ 2 * D ^ 22 + 11101379014187946894048768000 * t ^ 3 * D ^ 21 +
+      46513459385151906176921088000 * t ^ 4 * D ^ 20 +
+      137897531259271399886534784000 * t ^ 5 * D ^ 19 +
+      307580424618982749490297440000 * t ^ 6 * D ^ 18 +
+      535787098622667502054028568000 * t ^ 7 * D ^ 17 +
+      746799901158254705441293440000 * t ^ 8 * D ^ 16 +
+      846583373470503968042021016000 * t ^ 9 * D ^ 15 +
+      789085091922573532404253784000 * t ^ 10 * D ^ 14 +
+      608965781242071492503490188000 * t ^ 11 * D ^ 13 +
+      390622268516536242413312024000 * t ^ 12 * D ^ 12 +
+      208521140789867279640080936000 * t ^ 13 * D ^ 11 +
+      92521872923073850226545512000 * t ^ 14 * D ^ 10 +
+      33996290755767668886959172000 * t ^ 15 * D ^ 9 +
+      10277360024319366690824968000 * t ^ 16 * D ^ 8 + 2530596233432537169790760000 * t ^ 17 * D ^ 7 +
+      499939984583614117982096000 * t ^ 18 * D ^ 6 + 77460657857990766248864000 * t ^ 19 * D ^ 5 +
+      9082090741458104546880000 * t ^ 20 * D ^ 4 + 759011872511190167424000 * t ^ 21 * D ^ 3 +
+      40442994601521230592000 * t ^ 22 * D ^ 2 + 1058297948104112640000 * t ^ 23 * D +
+      2993953995648000000 * t ^ 24 := by
+    unfold P_F4 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF4_11_le : phiF4 1 1 ≤ 1519387 / 256000 := by
+  unfold phiF4 P_F4 Q_F; norm_num
+
+theorem phiF4_21_le : phiF4 2 1 ≤ 3318463247 / 1890000000 := by
+  unfold phiF4 P_F4 Q_F
+  have h1 : P_F4 2 1 / (10000 * (2 : ℝ) ^ 2 * 1 ^ 2 * Real.sqrt (2 * 1) * (2 + 1) ^ 5 * Q_F 2 1) =
+      (P_F4 2 1 / (10000 * 4 * 243 * Q_F 2 1)) * (1 / Real.sqrt 2) := by
+    rw [mul_one]; unfold P_F4 Q_F; field_simp [(Real.sqrt_pos.mpr (by norm_num : (0 : ℝ) < 2)).ne']; ring
+  unfold P_F4 Q_F at h1
+  rw [h1]
+  have h2 := mul_le_mul_of_nonneg_left inv_sqrt_two_le (by positivity : (0 : ℝ) ≤ (10010 * 1 ^ 8 + 299024 * 2 * 1 ^ 7 + 1631672 * 2 ^ 2 * 1 ^ 6 + 4810400 * 2 ^ 3 * 1 ^ 5 + 6464080 * 2 ^ 4 * 1 ^ 4 + 6306888 * 2 ^ 5 * 1 ^ 3 + 2644684 * 2 ^ 6 * 1 ^ 2 + 597832 * 2 ^ 7 * 1 + 26215 * 2 ^ 8) / (10000 * 4 * 243 * (1 ^ 2 + 10 * 2 * 1 + 2 ^ 2)))
+  exact h2.trans (by norm_num)
+
+def P_F5 (C D : ℝ) : ℝ :=
+  10010 * D ^ 8 + 259360 * C * D ^ 7 + 1408260 * C ^ 2 * D ^ 6 + 4135432 * C ^ 3 * D ^ 5 +
+  5982200 * C ^ 4 * D ^ 4 + 6195616 * C ^ 5 * D ^ 3 + 2877280 * C ^ 6 * D ^ 2 + 666200 * C ^ 7 * D +
+  34183 * C ^ 8
+
+def phiF5 (C D : ℝ) : ℝ :=
+  P_F5 C D / (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D)
+
+def rhoF5 : ℝ := 14331 / 50000
+def rhoEO5 : ℝ := 25523 / 100000
+
+theorem phiF5_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF5 C D := by
+  unfold phiF5 P_F5 Q_F; positivity
+
+theorem phiF5_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    (C + D) / (C ^ 3 * D ^ 3) ≤ phiF5 C D := by
+  unfold phiF5
+  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
+  have hden : 0 < 10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_F5 C D * (C ^ 3 * D ^ 3) - (C + D) * (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D) =
+      (C ^ 3 * D ^ 3) * (
+      10 * D ^ 8 + 99360 * C * D ^ 7 + 648260 * C ^ 2 * D ^ 6 + 2375432 * C ^ 3 * D ^ 5 +
+      3682200 * C ^ 4 * D ^ 4 + 4435616 * C ^ 5 * D ^ 3 + 2117280 * C ^ 6 * D ^ 2 +
+      506200 * C ^ 7 * D + 24183 * C ^ 8) := by
+    unfold P_F5 Q_F; ring
+  have hnn : 0 ≤ P_F5 C D * (C ^ 3 * D ^ 3) - (C + D) * (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D) := by
+    rw [hid]; positivity
+  linarith
+
+theorem phiF5_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    phiF5 (2 * C) D + phiF5 (2 * C) (C + D) + phiF5 (2 * D) (C + D) ≤ rhoF5 * phiF5 C D := by
+  unfold phiF5 rhoF5
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
+  rw [h31, h13]
+  set M := 50000 * 10000 * 8 * C ^ 3 * D ^ 3 * (C + D) ^ 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((14331 / 50000 : ℝ) * (P_F5 C D / (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F5 (2 * C) D / (10000 * (2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F5 (2 * C) (C + D) / (10000 * (2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F5 (2 * D) (C + D) / (10000 * (2 * D) ^ 3 * (C + D) ^ 3 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((14331 / 50000 : ℝ) * (P_F5 C D / (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F5 (2 * C) D / (10000 * (2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F5 (2 * C) (C + D) / (10000 * (2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F5 (2 * D) (C + D) / (10000 * (2 * D) ^ 3 * (C + D) ^ 3 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) =
+      (C + D) ^ 3 * (
+        14331 * 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F5 C D
+        - 50000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F5 (2 * C) D
+                + (C + D) ^ 2 * D ^ 3 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F5 (2 * C) (C + D)
+                + (C + D) ^ 2 * C ^ 3 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F5 (2 * D) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (C + D) ^ 3 * (
+        14331 * 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F5 C D
+        - 50000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F5 (2 * C) D
+                + (C + D) ^ 2 * D ^ 3 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F5 (2 * C) (C + D)
+                + (C + D) ^ 2 * C ^ 3 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F5 (2 * D) (C + D))) =
+      890755866000 * D ^ 32 + 27436933468080 * C * D ^ 31 + 190782169477920 * C ^ 2 * D ^ 30 +
+      39250272391360 * C ^ 3 * D ^ 29 + 4662136647258016 * C ^ 4 * D ^ 28 +
+      112249497516329568 * C ^ 5 * D ^ 27 + 657855150090156896 * C ^ 6 * D ^ 26 +
+      1283662121541523040 * C ^ 7 * D ^ 25 + 2300956511198901688 * C ^ 8 * D ^ 24 +
+      50299213066622635496 * C ^ 9 * D ^ 23 + 409718459410531215312 * C ^ 10 * D ^ 22 +
+      1695767621887547121984 * C ^ 11 * D ^ 21 + 4227748017770321607040 * C ^ 12 * D ^ 20 +
+      6490069867863089593024 * C ^ 13 * D ^ 19 + 5483365932745455656672 * C ^ 14 * D ^ 18 +
+      1595961913950016268768 * C ^ 15 * D ^ 17 + 2120175644188028317376 * C ^ 16 * D ^ 16 +
+      13695748048438257517760 * C ^ 17 * D ^ 15 + 30399241074475852830304 * C ^ 18 * D ^ 14 +
+      37418474922514755920992 * C ^ 19 * D ^ 13 + 28836688964898332291168 * C ^ 20 * D ^ 12 +
+      13785637467326590959136 * C ^ 21 * D ^ 11 + 3478225855421820679360 * C ^ 22 * D ^ 10 +
+      155489291018096780864 * C ^ 23 * D ^ 9 + 51783456696353120696 * C ^ 24 * D ^ 8 +
+      237598233595093539560 * C ^ 25 * D ^ 7 + 161904013532604906160 * C ^ 26 * D ^ 6 +
+      54950383051611789600 * C ^ 27 * D ^ 5 + 10652860799053044416 * C ^ 28 * D ^ 4 +
+      1125102089171682176 * C ^ 29 * D ^ 3 + 50108719710802176 * C ^ 30 * D ^ 2 +
+      11187113928192 * C ^ 31 * D + 165305318400 * C ^ 32 := by
+    unfold P_F5 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF5_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
+    phiF5 (2 * C) D + phiF5 (2 * C) (C + D) ≤ rhoEO5 * phiF5 C D := by
+  have hC : 0 < C := lt_of_lt_of_le hD hCD
+  unfold phiF5 rhoEO5
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  rw [h31]
+  set M := 100000 * 10000 * 8 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((25523 / 100000 : ℝ) * (P_F5 C D / (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F5 (2 * C) D / (10000 * (2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F5 (2 * C) (C + D) / (10000 * (2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((25523 / 100000 : ℝ) * (P_F5 C D / (10000 * C ^ 3 * D ^ 3 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F5 (2 * C) D / (10000 * (2 * C) ^ 3 * D ^ 3 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F5 (2 * C) (C + D) / (10000 * (2 * C) ^ 3 * (C + D) ^ 3 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) =
+      (
+        25523 * 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F5 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * P_F5 (2 * C) D
+                + (C + D) ^ 2 * D ^ 3 * (2 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * P_F5 (2 * C) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  set t := C - D
+  have ht : 0 ≤ t := sub_nonneg.mpr hCD
+  have hCeq : C = t + D := by dsimp [t]; ring
+  rw [hCeq]
+  have hid : (
+        25523 * 8 * (2 * (t + D) + D) ^ 5 * (3 * (t + D) + D) ^ 5 *
+          Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F5 (t + D) D
+        - 100000 * ((t + D + D) ^ 5 * (3 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F5 (2 * (t + D)) D
+                + (t + D + D) ^ 2 * D ^ 3 * (2 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F5 (2 * (t + D)) (t + D + D))) =
+      43478957496729600 * D ^ 22 + 131916426466287255552 * t * D ^ 21 +
+      1761771603410212429824 * t ^ 2 * D ^ 20 + 11133765871198521083904 * t ^ 3 * D ^ 19 +
+      44205378060511982195200 * t ^ 4 * D ^ 18 + 123600382043508857232000 * t ^ 5 * D ^ 17 +
+      258596557485032088522720 * t ^ 6 * D ^ 16 + 419907834521468782894648 * t ^ 7 * D ^ 15 +
+      541710104672906716815664 * t ^ 8 * D ^ 14 + 563724334057630298486048 * t ^ 9 * D ^ 13 +
+      477770342459809996862528 * t ^ 10 * D ^ 12 + 331550829798703734220016 * t ^ 11 * D ^ 11 +
+      188739998766750488614176 * t ^ 12 * D ^ 10 + 88019080269169571391072 * t ^ 13 * D ^ 9 +
+      33473044359909269541408 * t ^ 14 * D ^ 8 + 10294776685485908990888 * t ^ 15 * D ^ 7 +
+      2527334129578106679696 * t ^ 16 * D ^ 6 + 485416489712531270432 * t ^ 17 * D ^ 5 +
+      70670409141072873280 * t ^ 18 * D ^ 4 + 7394995969755635584 * t ^ 19 * D ^ 3 +
+      503286248156154624 * t ^ 20 * D ^ 2 + 17664154949223936 * t ^ 21 * D +
+      111213652147200 * t ^ 22 := by
+    unfold P_F5 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF5_11_le : phiF5 1 1 ≤ 21568541 / 3840000 := by
+  unfold phiF5 P_F5 Q_F; norm_num
+
+theorem phiF5_21_le : phiF5 2 1 ≤ 305695253 / 243000000 := by
+  unfold phiF5 P_F5 Q_F; norm_num
+
+def P_F7 (C D : ℝ) : ℝ :=
+  10010 * D ^ 8 + 232536 * C * D ^ 7 + 1269436 * C ^ 2 * D ^ 6 + 3919384 * C ^ 3 * D ^ 5 +
+  6069770 * C ^ 4 * D ^ 4 + 7122248 * C ^ 5 * D ^ 3 + 3575796 * C ^ 6 * D ^ 2 + 856032 * C ^ 7 * D +
+  49595 * C ^ 8
+
+def phiF7 (C D : ℝ) : ℝ :=
+  P_F7 C D / (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D)
+
+def rhoF7 : ℝ := 13763 / 100000
+def rhoEO7 : ℝ := 6487 / 50000
+
+theorem phiF7_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF7 C D := by
+  unfold phiF7 P_F7 Q_F; positivity
+
+theorem phiF7_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    (C + D) / (C ^ 4 * D ^ 4) ≤ phiF7 C D := by
+  unfold phiF7
+  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
+  have hden : 0 < 10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_F7 C D * (C ^ 4 * D ^ 4) - (C + D) * (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D) =
+      (C ^ 4 * D ^ 4) * (
+      10 * D ^ 8 + 72536 * C * D ^ 7 + 509436 * C ^ 2 * D ^ 6 + 2159384 * C ^ 3 * D ^ 5 +
+      3769770 * C ^ 4 * D ^ 4 + 5362248 * C ^ 5 * D ^ 3 + 2815796 * C ^ 6 * D ^ 2 +
+      696032 * C ^ 7 * D + 39595 * C ^ 8) := by
+    unfold P_F7 Q_F; ring
+  have hnn : 0 ≤ P_F7 C D * (C ^ 4 * D ^ 4) - (C + D) * (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D) := by
+    rw [hid]; positivity
+  linarith
+
+theorem phiF7_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    phiF7 (2 * C) D + phiF7 (2 * C) (C + D) + phiF7 (2 * D) (C + D) ≤ rhoF7 * phiF7 C D := by
+  unfold phiF7 rhoF7
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
+  rw [h31, h13]
+  set M := 100000 * 10000 * 16 * C ^ 4 * D ^ 4 * (C + D) ^ 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((13763 / 100000 : ℝ) * (P_F7 C D / (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F7 (2 * C) D / (10000 * (2 * C) ^ 4 * D ^ 4 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F7 (2 * C) (C + D) / (10000 * (2 * C) ^ 4 * (C + D) ^ 4 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F7 (2 * D) (C + D) / (10000 * (2 * D) ^ 4 * (C + D) ^ 4 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((13763 / 100000 : ℝ) * (P_F7 C D / (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F7 (2 * C) D / (10000 * (2 * C) ^ 4 * D ^ 4 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F7 (2 * C) (C + D) / (10000 * (2 * C) ^ 4 * (C + D) ^ 4 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F7 (2 * D) (C + D) / (10000 * (2 * D) ^ 4 * (C + D) ^ 4 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) =
+      (C + D) ^ 3 * (
+        13763 * 16 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F7 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F7 (2 * C) D
+                + (C + D) * D ^ 4 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F7 (2 * C) (C + D)
+                + (C + D) * C ^ 4 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F7 (2 * D) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (C + D) ^ 3 * (
+        13763 * 16 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F7 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F7 (2 * C) D
+                + (C + D) * D ^ 4 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F7 (2 * C) (C + D)
+                + (C + D) * C ^ 4 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F7 (2 * D) (C + D))) =
+      1228863636000 * D ^ 32 + 35841152069280 * C * D ^ 31 + 211267165932288 * C ^ 2 * D ^ 30 +
+      144133743995712 * C ^ 3 * D ^ 29 + 16191114788602400 * C ^ 4 * D ^ 28 +
+      228544397456271968 * C ^ 5 * D ^ 27 + 1041962104854596480 * C ^ 6 * D ^ 26 +
+      1516795476965241536 * C ^ 7 * D ^ 25 + 8189655922122849136 * C ^ 8 * D ^ 24 +
+      144280647777802949648 * C ^ 9 * D ^ 23 + 997204953963953527584 * C ^ 10 * D ^ 22 +
+      3807220700266608334464 * C ^ 11 * D ^ 21 + 9063257877888292046016 * C ^ 12 * D ^ 20 +
+      13622378520905337576640 * C ^ 13 * D ^ 19 + 12059800000234573350080 * C ^ 14 * D ^ 18 +
+      6502704901108201213248 * C ^ 15 * D ^ 17 + 11978371325050262456448 * C ^ 16 * D ^ 16 +
+      39435193289884848576832 * C ^ 17 * D ^ 15 + 73475054112582432157184 * C ^ 18 * D ^ 14 +
+      83867674695329884845056 * C ^ 19 * D ^ 13 + 61976328328681332642592 * C ^ 20 * D ^ 12 +
+      29093635205294618004064 * C ^ 21 * D ^ 11 + 7663948533259352307648 * C ^ 22 * D ^ 10 +
+      761268775444455821568 * C ^ 23 * D ^ 9 + 258151448097574202480 * C ^ 24 * D ^ 8 +
+      442666139914732777360 * C ^ 25 * D ^ 7 + 269958840113858367968 * C ^ 26 * D ^ 6 +
+      87532457630872585536 * C ^ 27 * D ^ 5 + 16650660005775430528 * C ^ 28 * D ^ 4 +
+      1751329229606615808 * C ^ 29 * D ^ 3 + 78143191940602368 * C ^ 30 * D ^ 2 +
+      63016230804480 * C ^ 31 * D + 945374976000 * C ^ 32 := by
+    unfold P_F7 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF7_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
+    phiF7 (2 * C) D + phiF7 (2 * C) (C + D) ≤ rhoEO7 * phiF7 C D := by
+  have hC : 0 < C := lt_of_lt_of_le hD hCD
+  unfold phiF7 rhoEO7
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  rw [h31]
+  set M := 50000 * 10000 * 16 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((6487 / 50000 : ℝ) * (P_F7 C D / (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F7 (2 * C) D / (10000 * (2 * C) ^ 4 * D ^ 4 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F7 (2 * C) (C + D) / (10000 * (2 * C) ^ 4 * (C + D) ^ 4 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((6487 / 50000 : ℝ) * (P_F7 C D / (10000 * C ^ 4 * D ^ 4 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F7 (2 * C) D / (10000 * (2 * C) ^ 4 * D ^ 4 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F7 (2 * C) (C + D) / (10000 * (2 * C) ^ 4 * (C + D) ^ 4 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) =
+      (
+        6487 * 16 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F7 C D
+        - 50000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * P_F7 (2 * C) D
+                + (C + D) * D ^ 4 * (2 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * P_F7 (2 * C) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  set t := C - D
+  have ht : 0 ≤ t := sub_nonneg.mpr hCD
+  have hCeq : C = t + D := by dsimp [t]; ring
+  rw [hCeq]
+  have hid : (
+        6487 * 16 * (2 * (t + D) + D) ^ 5 * (3 * (t + D) + D) ^ 5 *
+          Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F7 (t + D) D
+        - 50000 * ((t + D + D) ^ 5 * (3 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F7 (2 * (t + D)) D
+                + (t + D + D) * D ^ 4 * (2 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F7 (2 * (t + D)) (t + D + D))) =
+      24345914255769600 * D ^ 22 + 48585572541829988352 * t * D ^ 21 +
+      662340416120453259264 * t ^ 2 * D ^ 20 + 4277728578677673713664 * t ^ 3 * D ^ 19 +
+      17366261631610278063104 * t ^ 4 * D ^ 18 + 49666096636804719770368 * t ^ 5 * D ^ 17 +
+      106313171885089522560576 * t ^ 6 * D ^ 16 + 176658571524512303580176 * t ^ 7 * D ^ 15 +
+      233258238892371521117728 * t ^ 8 * D ^ 14 + 248473303584030834336448 * t ^ 9 * D ^ 13 +
+      215579027846644585641152 * t ^ 10 * D ^ 12 + 153149446872696029018400 * t ^ 11 * D ^ 11 +
+      89242977014243140453184 * t ^ 12 * D ^ 10 + 42594171510955116385856 * t ^ 13 * D ^ 9 +
+      16572634199681784714336 * t ^ 14 * D ^ 8 + 5212418341923043635408 * t ^ 15 * D ^ 7 +
+      1307980324291484020512 * t ^ 16 * D ^ 6 + 256746747341060851776 * t ^ 17 * D ^ 5 +
+      38248379849747610752 * t ^ 18 * D ^ 4 + 4117832659202787072 * t ^ 19 * D ^ 3 +
+      293689417689994752 * t ^ 20 * D ^ 2 + 11569331364203520 * t ^ 21 * D +
+      146238753024000 * t ^ 22 := by
+    unfold P_F7 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF7_11_le : phiF7 1 1 ≤ 23104807 / 3840000 := by
+  unfold phiF7 P_F7 Q_F; norm_num
+
+theorem phiF7_21_le : phiF7 2 1 ≤ 356527757 / 486000000 := by
+  unfold phiF7 P_F7 Q_F; norm_num
+
+def P_F9 (C D : ℝ) : ℝ :=
+  10010 * D ^ 8 + 219536 * C * D ^ 7 + 1269464 * C ^ 2 * D ^ 6 + 3992744 * C ^ 3 * D ^ 5 +
+  6909490 * C ^ 4 * D ^ 4 + 8097040 * C ^ 5 * D ^ 3 + 4320092 * C ^ 6 * D ^ 2 + 1040000 * C ^ 7 * D +
+  63646 * C ^ 8
+
+def phiF9 (C D : ℝ) : ℝ :=
+  P_F9 C D / (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D)
+
+def rhoF9 : ℝ := 6743 / 100000
+def rhoEO9 : ℝ := 409 / 6250
+
+theorem phiF9_pos {C D : ℝ} (hC : 0 < C) (hD : 0 < D) : 0 < phiF9 C D := by
+  unfold phiF9 P_F9 Q_F; positivity
+
+theorem phiF9_lower {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    (C + D) / (C ^ 5 * D ^ 5) ≤ phiF9 C D := by
+  unfold phiF9
+  have hQ : 0 < Q_F C D := by unfold Q_F; positivity
+  have hden : 0 < 10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_F9 C D * (C ^ 5 * D ^ 5) - (C + D) * (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D) =
+      (C ^ 5 * D ^ 5) * (
+      10 * D ^ 8 + 59536 * C * D ^ 7 + 509464 * C ^ 2 * D ^ 6 + 2232744 * C ^ 3 * D ^ 5 +
+      4609490 * C ^ 4 * D ^ 4 + 6337040 * C ^ 5 * D ^ 3 + 3560092 * C ^ 6 * D ^ 2 +
+      880000 * C ^ 7 * D + 53646 * C ^ 8) := by
+    unfold P_F9 Q_F; ring
+  have hnn : 0 ≤ P_F9 C D * (C ^ 5 * D ^ 5) - (C + D) * (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D) := by
+    rw [hid]; positivity
+  linarith
+
+theorem phiF9_contract {C D : ℝ} (hC : 0 < C) (hD : 0 < D) :
+    phiF9 (2 * C) D + phiF9 (2 * C) (C + D) + phiF9 (2 * D) (C + D) ≤ rhoF9 * phiF9 C D := by
+  unfold phiF9 rhoF9
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have hQO1 : 0 < Q_F (2 * D) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  have h13 : 2 * D + (C + D) = C + 3 * D := by ring
+  rw [h31, h13]
+  set M := 100000 * 10000 * 32 * C ^ 5 * D ^ 5 * (C + D) ^ 8 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((6743 / 100000 : ℝ) * (P_F9 C D / (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F9 (2 * C) D / (10000 * (2 * C) ^ 5 * D ^ 5 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F9 (2 * C) (C + D) / (10000 * (2 * C) ^ 5 * (C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F9 (2 * D) (C + D) / (10000 * (2 * D) ^ 5 * (C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((6743 / 100000 : ℝ) * (P_F9 C D / (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F9 (2 * C) D / (10000 * (2 * C) ^ 5 * D ^ 5 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F9 (2 * C) (C + D) / (10000 * (2 * C) ^ 5 * (C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)) +
+       P_F9 (2 * D) (C + D) / (10000 * (2 * D) ^ 5 * (C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * D) (C + D)))) =
+      (C + D) ^ 3 * (
+        6743 * 32 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F9 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F9 (2 * C) D
+                + D ^ 5 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F9 (2 * C) (C + D)
+                + C ^ 5 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F9 (2 * D) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    generalize Q_F (2 * D) (C + D) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (C + D) ^ 3 * (
+        6743 * 32 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F9 C D
+        - 100000 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * Q_F (2 * D) (C + D) * P_F9 (2 * C) D
+                + D ^ 5 * (2 * C + D) ^ 5 * (C + 3 * D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * D) (C + D) * P_F9 (2 * C) (C + D)
+                + C ^ 5 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F9 (2 * D) (C + D))) =
+      959350392000 * D ^ 32 + 30658137716160 * C * D ^ 31 + 245011888043136 * C ^ 2 * D ^ 30 +
+      402885230516352 * C ^ 3 * D ^ 29 + 4470721472344704 * C ^ 4 * D ^ 28 +
+      100086253447123200 * C ^ 5 * D ^ 27 + 725806552264568320 * C ^ 6 * D ^ 26 +
+      3039386431471816576 * C ^ 7 * D ^ 25 + 16533277967157438976 * C ^ 8 * D ^ 24 +
+      130424197744113350400 * C ^ 9 * D ^ 23 + 772092051273116571904 * C ^ 10 * D ^ 22 +
+      2976292941696165105152 * C ^ 11 * D ^ 21 + 7580214000842347463424 * C ^ 12 * D ^ 20 +
+      12866836888356243369984 * C ^ 13 * D ^ 19 + 14757540085362149166848 * C ^ 14 * D ^ 18 +
+      14466986278120757834240 * C ^ 15 * D ^ 17 + 24398445549786786863808 * C ^ 16 * D ^ 16 +
+      54333378127541422159296 * C ^ 17 * D ^ 15 + 89424573342981449290112 * C ^ 18 * D ^ 14 +
+      99027298651968220489600 * C ^ 19 * D ^ 13 + 73620510111589075189888 * C ^ 20 * D ^ 12 +
+      35817525817511382862080 * C ^ 21 * D ^ 11 + 10575733222725939968768 * C ^ 22 * D ^ 10 +
+      1810679640951540621952 * C ^ 23 * D ^ 9 + 618520697853444714624 * C ^ 24 * D ^ 8 +
+      541682271317111835520 * C ^ 25 * D ^ 7 + 277740743982821619968 * C ^ 26 * D ^ 6 +
+      81269972826381422080 * C ^ 27 * D ^ 5 + 14225752221690802176 * C ^ 28 * D ^ 4 +
+      1405459624775362560 * C ^ 29 * D ^ 3 + 60950251340550144 * C ^ 30 * D ^ 2 +
+      158590353973248 * C ^ 31 * D + 2394460569600 * C ^ 32 := by
+    unfold P_F9 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF9_eo0_contract {C D : ℝ} (hD : 0 < D) (hCD : D ≤ C) :
+    phiF9 (2 * C) D + phiF9 (2 * C) (C + D) ≤ rhoEO9 * phiF9 C D := by
+  have hC : 0 < C := lt_of_lt_of_le hD hCD
+  unfold phiF9 rhoEO9
+  have hQ0 : 0 < Q_F C D := by unfold Q_F; positivity
+  have hQE : 0 < Q_F (2 * C) D := by unfold Q_F; positivity
+  have hQO0 : 0 < Q_F (2 * C) (C + D) := by unfold Q_F; positivity
+  have h31 : 2 * C + (C + D) = 3 * C + D := by ring
+  rw [h31]
+  set M := 6250 * 10000 * 32 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 *
+      Q_F C D * Q_F (2 * C) D * Q_F (2 * C) (C + D)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((409 / 6250 : ℝ) * (P_F9 C D / (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F9 (2 * C) D / (10000 * (2 * C) ^ 5 * D ^ 5 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F9 (2 * C) (C + D) / (10000 * (2 * C) ^ 5 * (C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((409 / 6250 : ℝ) * (P_F9 C D / (10000 * C ^ 5 * D ^ 5 * (C + D) ^ 5 * Q_F C D)) -
+      (P_F9 (2 * C) D / (10000 * (2 * C) ^ 5 * D ^ 5 * (2 * C + D) ^ 5 * Q_F (2 * C) D) +
+       P_F9 (2 * C) (C + D) / (10000 * (2 * C) ^ 5 * (C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) (C + D)))) =
+      (
+        409 * 32 * (2 * C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F (2 * C) D * Q_F (2 * C) (C + D) * P_F9 C D
+        - 6250 * ((C + D) ^ 5 * (3 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) (C + D) * P_F9 (2 * C) D
+                + D ^ 5 * (2 * C + D) ^ 5 * Q_F C D * Q_F (2 * C) D * P_F9 (2 * C) (C + D))) := by
+    dsimp only [M]
+    generalize Q_F C D = q0 at hQ0 ⊢
+    generalize Q_F (2 * C) D = qe at hQE ⊢
+    generalize Q_F (2 * C) (C + D) = qo0 at hQO0 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  set t := C - D
+  have ht : 0 ≤ t := sub_nonneg.mpr hCD
+  have hCeq : C = t + D := by dsimp [t]; ring
+  rw [hCeq]
+  have hid : (
+        409 * 32 * (2 * (t + D) + D) ^ 5 * (3 * (t + D) + D) ^ 5 *
+          Q_F (2 * (t + D)) D * Q_F (2 * (t + D)) (t + D + D) * P_F9 (t + D) D
+        - 6250 * ((t + D + D) ^ 5 * (3 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) (t + D + D) * P_F9 (2 * (t + D)) D
+                + D ^ 5 * (2 * (t + D) + D) ^ 5 * Q_F (t + D) D * Q_F (2 * (t + D)) D * P_F9 (2 * (t + D)) (t + D + D))) =
+      13505470976102400 * D ^ 22 + 4791248972650303488 * t * D ^ 21 +
+      65660845494765788160 * t ^ 2 * D ^ 20 + 431472323500440299520 * t ^ 3 * D ^ 19 +
+      1788375702160415330560 * t ^ 4 * D ^ 18 + 5230609662753497637632 * t ^ 5 * D ^ 17 +
+      11462440185029164930240 * t ^ 6 * D ^ 16 + 19514280875255876233664 * t ^ 7 * D ^ 15 +
+      26413982480157866078576 * t ^ 8 * D ^ 14 + 28856488404935713615568 * t ^ 9 * D ^ 13 +
+      25683867508034937051124 * t ^ 10 * D ^ 12 + 18720000906754109346344 * t ^ 11 * D ^ 11 +
+      11190451386547198643104 * t ^ 12 * D ^ 10 + 5476721590803288758696 * t ^ 13 * D ^ 9 +
+      2183223584555222410708 * t ^ 14 * D ^ 8 + 702592441241924908288 * t ^ 15 * D ^ 7 +
+      180054286472901606464 * t ^ 16 * D ^ 6 + 36011327401522070272 * t ^ 17 * D ^ 5 +
+      5454521388722945088 * t ^ 18 * D ^ 4 + 597059694348171264 * t ^ 19 * D ^ 3 +
+      43629608105289216 * t ^ 20 * D ^ 2 + 1822707683149824 * t ^ 21 * D + 29100784204800 * t ^ 22 := by
+    unfold P_F9 Q_F; ring
+  rw [hid]; positivity
+
+theorem phiF9_11_le : phiF9 1 1 ≤ 4320337 / 640000 := by
+  unfold phiF9 P_F9 Q_F; norm_num
+
+theorem phiF9_21_le : phiF9 2 1 ≤ 416512637 / 972000000 := by
+  unfold phiF9 P_F9 Q_F; norm_num
+
+def P_B6 (u v : ℝ) : ℝ :=
+  10010 * v ^ 8 + 393520 * u * v ^ 7 + 2856420 * u ^ 2 * v ^ 6 + 8750112 * u ^ 3 * v ^ 5 +
+  14241780 * u ^ 4 * v ^ 4 + 12651016 * u ^ 5 * v ^ 3 + 6115284 * u ^ 6 * v ^ 2 +
+  1348560 * u ^ 7 * v + 81873 * u ^ 8
+
+def psiB6 (u v : ℝ) : ℝ :=
+  P_B6 u v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 7 * Q_B u v)
+
+def rhoB6 : ℝ := 19841 / 100000
+
+theorem psiB6_pos {u v : ℝ} (hu : 0 < u) (hv : 0 < v) : 0 < psiB6 u v := by
+  unfold psiB6 P_B6 Q_B; positivity
+
+theorem psiB6_lower {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    1 / (u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v)) ≤ psiB6 u v := by
+  unfold psiB6
+  have hQ : 0 < Q_B u v := by unfold Q_B; positivity
+  have hs : 0 < Real.sqrt (u * v) := Real.sqrt_pos.mpr (by positivity)
+  have hden : 0 < 10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 7 * Q_B u v := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_B6 u v * (u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v)) -
+      1 * (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 7 * Q_B u v) =
+      (u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v)) * (
+      10 * v ^ 8 + 133520 * u * v ^ 7 + 1486420 * u ^ 2 * v ^ 6 + 5430112 * u ^ 3 * v ^ 5 +
+      9791780 * u ^ 4 * v ^ 4 + 9191016 * u ^ 5 * v ^ 3 + 4605284 * u ^ 6 * v ^ 2 +
+      1028560 * u ^ 7 * v + 61873 * u ^ 8) := by
+    unfold P_B6 Q_B; ring
+  have hnn : 0 ≤ P_B6 u v * (u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v)) -
+      1 * (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 7 * Q_B u v) := by
+    rw [hid]; positivity
+  linarith
+
+theorem psiB6_contract {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    psiB6 (2 * u) v + psiB6 (2 * u + v) v + psiB6 v (2 * u + v) ≤ rhoB6 * psiB6 u v := by
+  unfold psiB6 rhoB6
+  have hQ0 : 0 < Q_B u v := by unfold Q_B; positivity
+  have hQE : 0 < Q_B (2 * u) v := by unfold Q_B; positivity
+  have hQO0 : 0 < Q_B (2 * u + v) v := by unfold Q_B; positivity
+  have hQO1 : 0 < Q_B v (2 * u + v) := by unfold Q_B; positivity
+  have hP0 : 0 < P_B6 (2 * u) v := by unfold P_B6; positivity
+  have hP1 : 0 < P_B6 (2 * u + v) v := by unfold P_B6; positivity
+  have hP2 : 0 < P_B6 v (2 * u + v) := by unfold P_B6; positivity
+  set TB : ℝ := 9 * v ^ 2 + 118 * u * v + 141 * u ^ 2
+  have hTB : 0 < TB := by dsimp [TB]; positivity
+  have hsuv : 0 < Real.sqrt (u * v) := Real.sqrt_pos.mpr (by positivity)
+  have hs2 : 0 < Real.sqrt 2 := Real.sqrt_pos.mpr (by norm_num)
+  have h2uv1 : 2 * u + v + v = 2 * (u + v) := by ring
+  have h2uv2 : v + (2 * u + v) = 2 * (u + v) := by ring
+  rw [h2uv1, h2uv2]
+  have hE_le : P_B6 (2 * u) v / (10000 * (2 * u) ^ 2 * v ^ 2 * Real.sqrt (2 * u * v) * (2 * u + v) ^ 7 * Q_B (2 * u) v) ≤
+      (495 / 2800 : ℝ) * (P_B6 (2 * u) v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 7 * Q_B (2 * u) v)) := by
+    have hsr : Real.sqrt (2 * u * v) = Real.sqrt 2 * Real.sqrt (u * v) := by
+      rw [mul_assoc, Real.sqrt_mul (by norm_num)]
+    rw [hsr]
+    have hlhs : P_B6 (2 * u) v / (10000 * (2 * u) ^ 2 * v ^ 2 * (Real.sqrt 2 * Real.sqrt (u * v)) * (2 * u + v) ^ 7 * Q_B (2 * u) v) =
+        (1 / Real.sqrt 2 / 4) * (P_B6 (2 * u) v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 7 * Q_B (2 * u) v)) := by
+      field_simp [hs2.ne', hsuv.ne', hu.ne', hv.ne', hQE.ne']; ring
+    rw [hlhs]
+    exact mul_le_mul_of_nonneg_right (by linarith [inv_sqrt_two_le]) (by positivity)
+  have hsrO : Real.sqrt ((2 * u + v) * v) = Real.sqrt (u * v) / Real.sqrt (u / (2 * u + v)) := by
+    rw [Real.sqrt_div hu.le, Real.sqrt_mul hu.le, Real.sqrt_mul (by positivity)]
+    have hsu : Real.sqrt u ≠ 0 := (Real.sqrt_pos.mpr hu).ne'
+    have hsv : Real.sqrt v ≠ 0 := (Real.sqrt_pos.mpr hv).ne'
+    have hsS : Real.sqrt (2 * u + v) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+    field_simp [hsu, hsv, hsS]
+  have ham := sqrt_div_le_amgm hu (by positivity : 0 < 2 * u + v) hTB
+  have hO0_le : P_B6 (2 * u + v) v / (10000 * (2 * u + v) ^ 2 * v ^ 2 * Real.sqrt ((2 * u + v) * v) * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v) ≤
+      (28 / 2800 : ℝ) * (u ^ 2 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * P_B6 (2 * u + v) v /
+        (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 4 * TB * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v)) := by
+    rw [hsrO]
+    have hlhs : P_B6 (2 * u + v) v / (10000 * (2 * u + v) ^ 2 * v ^ 2 * (Real.sqrt (u * v) / Real.sqrt (u / (2 * u + v))) * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v) =
+        Real.sqrt (u / (2 * u + v)) * (u ^ 2 * P_B6 (2 * u + v) v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 2 * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v)) := by
+      have hsR : Real.sqrt (u / (2 * u + v)) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hsuv.ne', hsR, hu.ne', hv.ne', hQO0.ne']
+    rw [hlhs]
+    refine (mul_le_mul_of_nonneg_right ham (by positivity)).trans_eq ?_
+    field_simp [hu.ne', hv.ne', hsuv.ne', hTB.ne', hQO0.ne']; ring
+  have hO1_le : P_B6 v (2 * u + v) / (10000 * v ^ 2 * (2 * u + v) ^ 2 * Real.sqrt (v * (2 * u + v)) * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v)) ≤
+      (28 / 2800 : ℝ) * (u ^ 2 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * P_B6 v (2 * u + v) /
+        (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 4 * TB * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v))) := by
+    rw [mul_comm v (2 * u + v), hsrO]
+    have hlhs : P_B6 v (2 * u + v) / (10000 * v ^ 2 * (2 * u + v) ^ 2 * (Real.sqrt (u * v) / Real.sqrt (u / (2 * u + v))) * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v)) =
+        Real.sqrt (u / (2 * u + v)) * (u ^ 2 * P_B6 v (2 * u + v) / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 2 * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v))) := by
+      have hsR : Real.sqrt (u / (2 * u + v)) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+      field_simp [hsuv.ne', hsR, hu.ne', hv.ne', hQO1.ne']
+    rw [hlhs]
+    refine (mul_le_mul_of_nonneg_right ham (by positivity)).trans_eq ?_
+    field_simp [hu.ne', hv.ne', hsuv.ne', hTB.ne', hQO1.ne']; ring
+  refine (add_le_add (add_le_add hE_le hO0_le) hO1_le).trans ?_
+  set M := 100000 * 2800 * 10000 * 128 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 10 * (2 * u + v) ^ 7 *
+      Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * TB
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((19841 / 100000 : ℝ) * (P_B6 u v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 7 * Q_B u v)) -
+      ((495 / 2800 : ℝ) * (P_B6 (2 * u) v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 7 * Q_B (2 * u) v)) +
+       (28 / 2800 : ℝ) * (u ^ 2 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * P_B6 (2 * u + v) v /
+         (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 4 * TB * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v)) +
+       (28 / 2800 : ℝ) * (u ^ 2 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * P_B6 v (2 * u + v) /
+         (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 4 * TB * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v))))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((19841 / 100000 : ℝ) * (P_B6 u v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (u + v) ^ 7 * Q_B u v)) -
+      ((495 / 2800 : ℝ) * (P_B6 (2 * u) v / (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 7 * Q_B (2 * u) v)) +
+       (28 / 2800 : ℝ) * (u ^ 2 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * P_B6 (2 * u + v) v /
+         (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 4 * TB * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v)) +
+       (28 / 2800 : ℝ) * (u ^ 2 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * P_B6 v (2 * u + v) /
+         (10000 * u ^ 2 * v ^ 2 * Real.sqrt (u * v) * (2 * u + v) ^ 4 * TB * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v))))) =
+      (u + v) ^ 3 * (
+        19841 * 2800 * 128 * (2 * u + v) ^ 7 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * TB * P_B6 u v
+        - 100000 * (495 * 128 * (u + v) ^ 7 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * TB * P_B6 (2 * u) v
+                + 28 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * u ^ 2 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v *
+                  (Q_B v (2 * u + v) * P_B6 (2 * u + v) v + Q_B (2 * u + v) v * P_B6 v (2 * u + v)))) := by
+    dsimp only [M]
+    generalize Q_B u v = q0 at hQ0 ⊢
+    generalize Q_B (2 * u) v = qe at hQE ⊢
+    generalize Q_B (2 * u + v) v = qo0 at hQO0 ⊢
+    generalize Q_B v (2 * u + v) = qo1 at hQO1 ⊢
+    generalize Real.sqrt (u * v) = suv at hsuv ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (u + v) ^ 3 * (
+        19841 * 2800 * 128 * (2 * u + v) ^ 7 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * TB * P_B6 u v
+        - 100000 * (495 * 128 * (u + v) ^ 7 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * TB * P_B6 (2 * u) v
+                + 28 * (2500 * u * (2 * u + v) ^ 3 + TB ^ 2) * u ^ 2 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v *
+                  (Q_B v (2 * u + v) * P_B6 (2 * u + v) v + Q_B (2 * u + v) v * P_B6 v (2 * u + v)))) =
+      36935334019584000 * v ^ 26 + 471423848552960000 * u * v ^ 25 +
+      937904290876704000 * u ^ 2 * v ^ 24 + 5501280996771756800 * u ^ 3 * v ^ 23 +
+      43561785247447430400 * u ^ 4 * v ^ 22 + 535866338783686956800 * u ^ 5 * v ^ 21 +
+      5191698898718938950400 * u ^ 6 * v ^ 20 + 27259636858576565561600 * u ^ 7 * v ^ 19 +
+      90971771724133472121600 * u ^ 8 * v ^ 18 + 247835637213355453420800 * u ^ 9 * v ^ 17 +
+      684561517636917691340800 * u ^ 10 * v ^ 16 + 1822910337162437901337600 * u ^ 11 * v ^ 15 +
+      3958118805420679977420800 * u ^ 12 * v ^ 14 + 6442770869173663674342400 * u ^ 13 * v ^ 13 +
+      7694629399658722143078400 * u ^ 14 * v ^ 12 + 6825239475306865803571200 * u ^ 15 * v ^ 11 +
+      4867999797221308506316800 * u ^ 16 * v ^ 10 + 3389628157570863792128000 * u ^ 17 * v ^ 9 +
+      2533178449135523595878400 * u ^ 18 * v ^ 8 + 1620625131373283844096000 * u ^ 19 * v ^ 7 +
+      682860094925850053836800 * u ^ 20 * v ^ 6 + 154501519836819698483200 * u ^ 21 * v ^ 5 +
+      15419295719478237593600 * u ^ 22 * v ^ 4 + 2094784973076771635200 * u ^ 23 * v ^ 3 +
+      459131726263379558400 * u ^ 24 * v ^ 2 + 27315436168570470400 * u ^ 25 * v +
+      205256272746905600 * u ^ 26 := by
+    dsimp only [TB]; unfold P_B6 Q_B; ring
+  rw [hid]; positivity
+
+theorem psiB6_11_le : psiB6 1 1 ≤ 1857943 / 1177600 := by
+  unfold psiB6 P_B6 Q_B; norm_num
+
+def P_B7 (u v : ℝ) : ℝ :=
+  10010 * v ^ 8 + 370608 * u * v ^ 7 + 2619064 * u ^ 2 * v ^ 6 + 8109192 * u ^ 3 * v ^ 5 +
+  13792870 * u ^ 4 * v ^ 4 + 12844272 * u ^ 5 * v ^ 3 + 6565580 * u ^ 6 * v ^ 2 +
+  1531992 * u ^ 7 * v + 96585 * u ^ 8
+
+def psiB7 (u v : ℝ) : ℝ :=
+  P_B7 u v / (10000 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * Q_B u v)
+
+def rhoB7 : ℝ := 13797 / 100000
+
+theorem psiB7_pos {u v : ℝ} (hu : 0 < u) (hv : 0 < v) : 0 < psiB7 u v := by
+  unfold psiB7 P_B7 Q_B; positivity
+
+theorem psiB7_lower {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    1 / (u ^ 3 * v ^ 3 * (u + v)) ≤ psiB7 u v := by
+  unfold psiB7
+  have hQ : 0 < Q_B u v := by unfold Q_B; positivity
+  have hden : 0 < 10000 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * Q_B u v := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_B7 u v * (u ^ 3 * v ^ 3 * (u + v)) - 1 * (10000 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * Q_B u v) =
+      (u ^ 3 * v ^ 3 * (u + v)) * (
+      10 * v ^ 8 + 110608 * u * v ^ 7 + 1249064 * u ^ 2 * v ^ 6 + 4789192 * u ^ 3 * v ^ 5 +
+      9342870 * u ^ 4 * v ^ 4 + 9384272 * u ^ 5 * v ^ 3 + 5055580 * u ^ 6 * v ^ 2 +
+      1211992 * u ^ 7 * v + 76585 * u ^ 8) := by
+    unfold P_B7 Q_B; ring
+  have hnn : 0 ≤ P_B7 u v * (u ^ 3 * v ^ 3 * (u + v)) - 1 * (10000 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * Q_B u v) := by
+    rw [hid]; positivity
+  linarith
+
+theorem psiB7_contract {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    psiB7 (2 * u) v + psiB7 (2 * u + v) v + psiB7 v (2 * u + v) ≤ rhoB7 * psiB7 u v := by
+  unfold psiB7 rhoB7
+  have hQ0 : 0 < Q_B u v := by unfold Q_B; positivity
+  have hQE : 0 < Q_B (2 * u) v := by unfold Q_B; positivity
+  have hQO0 : 0 < Q_B (2 * u + v) v := by unfold Q_B; positivity
+  have hQO1 : 0 < Q_B v (2 * u + v) := by unfold Q_B; positivity
+  have h2uv1 : 2 * u + v + v = 2 * (u + v) := by ring
+  have h2uv2 : v + (2 * u + v) = 2 * (u + v) := by ring
+  rw [h2uv1, h2uv2]
+  set M := 100000 * 10000 * 128 * u ^ 3 * v ^ 3 * (u + v) ^ 10 * (2 * u + v) ^ 7 *
+      Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((13797 / 100000 : ℝ) * (P_B7 u v / (10000 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * Q_B u v)) -
+      (P_B7 (2 * u) v / (10000 * (2 * u) ^ 3 * v ^ 3 * (2 * u + v) ^ 7 * Q_B (2 * u) v) +
+       P_B7 (2 * u + v) v / (10000 * (2 * u + v) ^ 3 * v ^ 3 * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v) +
+       P_B7 v (2 * u + v) / (10000 * v ^ 3 * (2 * u + v) ^ 3 * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((13797 / 100000 : ℝ) * (P_B7 u v / (10000 * u ^ 3 * v ^ 3 * (u + v) ^ 7 * Q_B u v)) -
+      (P_B7 (2 * u) v / (10000 * (2 * u) ^ 3 * v ^ 3 * (2 * u + v) ^ 7 * Q_B (2 * u) v) +
+       P_B7 (2 * u + v) v / (10000 * (2 * u + v) ^ 3 * v ^ 3 * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v) +
+       P_B7 v (2 * u + v) / (10000 * v ^ 3 * (2 * u + v) ^ 3 * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v)))) =
+      (u + v) ^ 3 * (
+        13797 * 128 * (2 * u + v) ^ 7 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 u v
+        - 100000 * (16 * (u + v) ^ 7 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 (2 * u) v
+                + u ^ 3 * (2 * u + v) ^ 4 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B7 (2 * u + v) v
+                + u ^ 3 * (2 * u + v) ^ 4 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B7 v (2 * u + v))) := by
+    dsimp only [M]
+    generalize Q_B u v = q0 at hQ0 ⊢
+    generalize Q_B (2 * u) v = qe at hQE ⊢
+    generalize Q_B (2 * u + v) v = qo0 at hQO0 ⊢
+    generalize Q_B v (2 * u + v) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (u + v) ^ 3 * (
+        13797 * 128 * (2 * u + v) ^ 7 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 u v
+        - 100000 * (16 * (u + v) ^ 7 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B7 (2 * u) v
+                + u ^ 3 * (2 * u + v) ^ 4 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B7 (2 * u + v) v
+                + u ^ 3 * (2 * u + v) ^ 4 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B7 v (2 * u + v))) =
+      879102864640 * v ^ 24 + 1246899281152 * u * v ^ 23 + 36278750769408 * u ^ 2 * v ^ 22 +
+      68211132556608 * u ^ 3 * v ^ 21 + 759716228571968 * u ^ 4 * v ^ 20 +
+      14512345909430080 * u ^ 5 * v ^ 19 + 79815430945383872 * u ^ 6 * v ^ 18 +
+      220179835764312448 * u ^ 7 * v ^ 17 + 452657940431807872 * u ^ 8 * v ^ 16 +
+      1208682186124477568 * u ^ 9 * v ^ 15 + 3686576732973494144 * u ^ 10 * v ^ 14 +
+      8492010769874951552 * u ^ 11 * v ^ 13 + 13308098518160123136 * u ^ 12 * v ^ 12 +
+      14095837730828530688 * u ^ 13 * v ^ 11 + 10216237456938190848 * u ^ 14 * v ^ 10 +
+      5669395040662700032 * u ^ 15 * v ^ 9 + 3498887098288586752 * u ^ 16 * v ^ 8 +
+      2625225176447107072 * u ^ 17 * v ^ 7 + 1488426016270254080 * u ^ 18 * v ^ 6 +
+      468742017278312448 * u ^ 19 * v ^ 5 + 68185263900131328 * u ^ 20 * v ^ 4 +
+      5536639890227200 * u ^ 21 * v ^ 3 + 539733782429696 * u ^ 22 * v ^ 2 +
+      30476259557376 * u ^ 23 * v + 611298836480 * u ^ 24 := by
+    unfold P_B7 Q_B; ring
+  rw [hid]; positivity
+
+theorem psiB7_11_le : psiB7 1 1 ≤ 45940173 / 29440000 := by
+  unfold psiB7 P_B7 Q_B; norm_num
+
+def P_B9 (u v : ℝ) : ℝ :=
+  10010 * v ^ 8 + 344224 * u * v ^ 7 + 2352840 * u ^ 2 * v ^ 6 + 7179872 * u ^ 3 * v ^ 5 +
+  12687150 * u ^ 4 * v ^ 4 + 12791352 * u ^ 5 * v ^ 3 + 7196448 * u ^ 6 * v ^ 2 +
+  1866472 * u ^ 7 * v + 124257 * u ^ 8
+
+def psiB9 (u v : ℝ) : ℝ :=
+  P_B9 u v / (10000 * u ^ 4 * v ^ 4 * (u + v) ^ 7 * Q_B u v)
+
+def rhoB9 : ℝ := 1351 / 20000
+
+theorem psiB9_pos {u v : ℝ} (hu : 0 < u) (hv : 0 < v) : 0 < psiB9 u v := by
+  unfold psiB9 P_B9 Q_B; positivity
+
+theorem psiB9_lower {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    1 / (u ^ 4 * v ^ 4 * (u + v)) ≤ psiB9 u v := by
+  unfold psiB9
+  have hQ : 0 < Q_B u v := by unfold Q_B; positivity
+  have hden : 0 < 10000 * u ^ 4 * v ^ 4 * (u + v) ^ 7 * Q_B u v := by positivity
+  rw [div_le_div_iff₀ (by positivity) hden]
+  have hid : P_B9 u v * (u ^ 4 * v ^ 4 * (u + v)) - 1 * (10000 * u ^ 4 * v ^ 4 * (u + v) ^ 7 * Q_B u v) =
+      (u ^ 4 * v ^ 4 * (u + v)) * (
+      10 * v ^ 8 + 84224 * u * v ^ 7 + 982840 * u ^ 2 * v ^ 6 + 3859872 * u ^ 3 * v ^ 5 +
+      8237150 * u ^ 4 * v ^ 4 + 9331352 * u ^ 5 * v ^ 3 + 5686448 * u ^ 6 * v ^ 2 +
+      1546472 * u ^ 7 * v + 104257 * u ^ 8) := by
+    unfold P_B9 Q_B; ring
+  have hnn : 0 ≤ P_B9 u v * (u ^ 4 * v ^ 4 * (u + v)) - 1 * (10000 * u ^ 4 * v ^ 4 * (u + v) ^ 7 * Q_B u v) := by
+    rw [hid]; positivity
+  linarith
+
+theorem psiB9_contract {u v : ℝ} (hu : 0 < u) (hv : 0 < v) :
+    psiB9 (2 * u) v + psiB9 (2 * u + v) v + psiB9 v (2 * u + v) ≤ rhoB9 * psiB9 u v := by
+  unfold psiB9 rhoB9
+  have hQ0 : 0 < Q_B u v := by unfold Q_B; positivity
+  have hQE : 0 < Q_B (2 * u) v := by unfold Q_B; positivity
+  have hQO0 : 0 < Q_B (2 * u + v) v := by unfold Q_B; positivity
+  have hQO1 : 0 < Q_B v (2 * u + v) := by unfold Q_B; positivity
+  have h2uv1 : 2 * u + v + v = 2 * (u + v) := by ring
+  have h2uv2 : v + (2 * u + v) = 2 * (u + v) := by ring
+  rw [h2uv1, h2uv2]
+  set M := 20000 * 10000 * 128 * u ^ 4 * v ^ 4 * (u + v) ^ 10 * (2 * u + v) ^ 7 *
+      Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v)
+  have hM : 0 < M := by dsimp [M]; positivity
+  suffices hsub : 0 ≤ M * ((1351 / 20000 : ℝ) * (P_B9 u v / (10000 * u ^ 4 * v ^ 4 * (u + v) ^ 7 * Q_B u v)) -
+      (P_B9 (2 * u) v / (10000 * (2 * u) ^ 4 * v ^ 4 * (2 * u + v) ^ 7 * Q_B (2 * u) v) +
+       P_B9 (2 * u + v) v / (10000 * (2 * u + v) ^ 4 * v ^ 4 * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v) +
+       P_B9 v (2 * u + v) / (10000 * v ^ 4 * (2 * u + v) ^ 4 * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v)))) by
+    have hnn := nonneg_of_mul_nonneg_right hsub hM
+    linarith
+  have hclear : M * ((1351 / 20000 : ℝ) * (P_B9 u v / (10000 * u ^ 4 * v ^ 4 * (u + v) ^ 7 * Q_B u v)) -
+      (P_B9 (2 * u) v / (10000 * (2 * u) ^ 4 * v ^ 4 * (2 * u + v) ^ 7 * Q_B (2 * u) v) +
+       P_B9 (2 * u + v) v / (10000 * (2 * u + v) ^ 4 * v ^ 4 * (2 * (u + v)) ^ 7 * Q_B (2 * u + v) v) +
+       P_B9 v (2 * u + v) / (10000 * v ^ 4 * (2 * u + v) ^ 4 * (2 * (u + v)) ^ 7 * Q_B v (2 * u + v)))) =
+      (u + v) ^ 3 * (
+        1351 * 128 * (2 * u + v) ^ 7 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B9 u v
+        - 20000 * (8 * (u + v) ^ 7 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B9 (2 * u) v
+                + u ^ 4 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B9 (2 * u + v) v
+                + u ^ 4 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B9 v (2 * u + v))) := by
+    dsimp only [M]
+    generalize Q_B u v = q0 at hQ0 ⊢
+    generalize Q_B (2 * u) v = qe at hQE ⊢
+    generalize Q_B (2 * u + v) v = qo0 at hQO0 ⊢
+    generalize Q_B v (2 * u + v) = qo1 at hQO1 ⊢
+    field_simp
+    ring
+  rw [hclear]
+  have hid : (u + v) ^ 3 * (
+        1351 * 128 * (2 * u + v) ^ 7 * Q_B (2 * u) v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B9 u v
+        - 20000 * (8 * (u + v) ^ 7 * Q_B u v * Q_B (2 * u + v) v * Q_B v (2 * u + v) * P_B9 (2 * u) v
+                + u ^ 4 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B v (2 * u + v) * P_B9 (2 * u + v) v
+                + u ^ 4 * (2 * u + v) ^ 3 * Q_B u v * Q_B (2 * u) v * Q_B (2 * u + v) v * P_B9 v (2 * u + v))) =
+      68457509120 * v ^ 24 + 270559140608 * u * v ^ 23 + 4593259282688 * u ^ 2 * v ^ 22 +
+      12419457265920 * u ^ 3 * v ^ 21 + 136219052860736 * u ^ 4 * v ^ 20 +
+      1822183402219200 * u ^ 5 * v ^ 19 + 9788672732491200 * u ^ 6 * v ^ 18 +
+      31047927951859264 * u ^ 7 * v ^ 17 + 81899127481602944 * u ^ 8 * v ^ 16 +
+      219919396006105216 * u ^ 9 * v ^ 15 + 535799485242405248 * u ^ 10 * v ^ 14 +
+      1019671457416290688 * u ^ 11 * v ^ 13 + 1460904973937873152 * u ^ 12 * v ^ 12 +
+      1616341006392309760 * u ^ 13 * v ^ 11 + 1458252063706726400 * u ^ 14 * v ^ 10 +
+      1141196327113908224 * u ^ 15 * v ^ 9 + 790522955397382144 * u ^ 16 * v ^ 8 +
+      454753039941664768 * u ^ 17 * v ^ 7 + 192394706713935872 * u ^ 18 * v ^ 6 +
+      52786993862770688 * u ^ 19 * v ^ 5 + 9021436659695616 * u ^ 20 * v ^ 4 +
+      1335699947388928 * u ^ 21 * v ^ 3 + 172306126077952 * u ^ 22 * v ^ 2 +
+      10043822964736 * u ^ 23 * v + 157106044928 * u ^ 24 := by
+    unfold P_B9 Q_B; ring
+  rw [hid]; positivity
+
+theorem psiB9_11_le : psiB9 1 1 ≤ 356421 / 235520 := by
+  unfold psiB9 P_B9 Q_B; norm_num
+
+/-! ### 5. Inverse-product, coupling, and unified `FwdSpec`/`BackSpec` interfaces -/
+
+theorem inv_prod_le_phiF4 {C D M Mh : ℝ} (hC : 0 < C) (hD : 0 < D) (hM : 0 < M) (hMh : 0 < Mh)
+    (hCD : C * D ≤ M) (hsq : M ^ 2 ≤ Mh ^ 2) :
+    1 / (C * D) ≤ (Mh / 2) * phiF4 C D := by
+  have hMle : M ≤ Mh := le_of_sq_le_sq hsq hMh.le
+  have hfl := phiF4_lower hC hD
+  have h4 : 2 * Real.sqrt (C * D) ≤ C + D := by
+    have hsq' : (2 * Real.sqrt (C * D)) ^ 2 ≤ (C + D) ^ 2 := by
+      rw [mul_pow, Real.sq_sqrt (by positivity)]; nlinarith [sq_nonneg (C - D)]
+    exact le_of_sq_le_sq hsq' (by positivity)
+  have h2 : 2 / (C * D) ^ 2 ≤ (C + D) / (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) := by
+    have hs : 0 < Real.sqrt (C * D) := Real.sqrt_pos.mpr (by positivity)
+    rw [div_le_div_iff₀ (by positivity) (by positivity)]
+    have hlhs : 2 * (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) = (2 * Real.sqrt (C * D)) * (C * D) ^ 2 := by ring
+    rw [hlhs]
+    exact mul_le_mul_of_nonneg_right h4 (by positivity)
+  have h1 : 1 / (C * D) ≤ (Mh / 2) * (2 / (C * D) ^ 2) := by
+    have hrhs : (Mh / 2) * (2 / (C * D) ^ 2) = Mh / (C * D) ^ 2 := by ring
+    rw [hrhs, div_le_div_iff₀ (by positivity) (by positivity)]
+    nlinarith [hCD.trans hMle, mul_pos hC hD]
+  exact h1.trans ((mul_le_mul_of_nonneg_left h2 (by positivity)).trans (mul_le_mul_of_nonneg_left hfl (by positivity)))
+
+private theorem inv_prod_le_odd_aux {C D M Mh Phi : ℝ} (k : Nat)
+    (hC : 0 < C) (hD : 0 < D) (hM : 0 < M) (hMh : 0 < Mh)
+    (hCD : C * D ≤ M) (hsq : M ^ (2 * k - 3) ≤ Mh ^ 2)
+    (hk : 2 ≤ k) (hfl : (C + D) / (C ^ k * D ^ k) ≤ Phi) :
+    1 / (C * D) ≤ (Mh / 2) * Phi := by
+  have hpow : (C * D) ^ (2 * k - 3) ≤ Mh ^ 2 :=
+    (pow_le_pow_left₀ (by positivity) hCD (2 * k - 3)).trans hsq
+  have h4 : 4 * (C * D) ≤ (C + D) ^ 2 := by nlinarith [sq_nonneg (C - D)]
+  have hnum : 4 * (C * D) ^ (2 * k - 2) ≤ Mh ^ 2 * (C + D) ^ 2 := by
+    have h1 := mul_le_mul hpow h4 (by positivity) (by positivity)
+    have he : (C * D) ^ (2 * k - 3) * (C * D) = (C * D) ^ (2 * k - 2) := by
+      rw [← pow_succ, show 2 * k - 3 + 1 = 2 * k - 2 by omega]
+    linarith [show 4 * (C * D) ^ (2 * k - 2) = (C * D) ^ (2 * k - 3) * (4 * (C * D)) by rw [← he]; ring]
+  have h2k : 4 * (C * D) ^ (2 * k) ≤ Mh ^ 2 * (C + D) ^ 2 * (C * D) ^ 2 := by
+    have h1 := mul_le_mul_of_nonneg_right hnum (sq_nonneg (C * D))
+    have he : (C * D) ^ (2 * k - 2) * (C * D) ^ 2 = (C * D) ^ (2 * k) := by
+      rw [← pow_add, show 2 * k - 2 + 2 = 2 * k by omega]
+    linarith [show 4 * (C * D) ^ (2 * k - 2) * (C * D) ^ 2 = 4 * (C * D) ^ (2 * k) by rw [mul_assoc, he]]
+  have hsq_le : (1 / (C * D)) ^ 2 ≤ ((Mh / 2) * ((C + D) / (C ^ k * D ^ k))) ^ 2 := by
+    have hrhs : ((Mh / 2) * ((C + D) / (C ^ k * D ^ k))) ^ 2 =
+        Mh ^ 2 * (C + D) ^ 2 / (4 * (C * D) ^ (2 * k)) := by
+      have hp : (C ^ k * D ^ k) ^ 2 = (C * D) ^ (2 * k) := by
+        rw [mul_pow, ← pow_mul, ← pow_mul, mul_pow, mul_comm k 2]
+      field_simp [hC.ne', hD.ne']; rw [← hp]; ring
+    rw [hrhs, div_pow, one_pow, div_le_div_iff₀ (by positivity) (by positivity)]
+    linarith
+  have h1 : 1 / (C * D) ≤ (Mh / 2) * ((C + D) / (C ^ k * D ^ k)) := le_of_sq_le_sq hsq_le (by positivity)
+  exact h1.trans (mul_le_mul_of_nonneg_left hfl (by positivity))
+
+theorem coupling_lower_4 {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v) :
+    (14101 / 1000 : ℝ) ≤ phiF4 C D * ((u * v) * psiB6 u v) * (C * u + D * v) ^ 4 := by
+  have hf := phiF4_lower hC hD
+  have hb : 1 / (u * v * Real.sqrt (u * v) * (u + v)) ≤ (u * v) * psiB6 u v := by
+    have h1 := mul_le_mul_of_nonneg_left (psiB6_lower hu hv) (by positivity : (0 : ℝ) ≤ u * v)
+    refine le_trans (le_of_eq ?_) h1
+    have hs : Real.sqrt (u * v) ≠ 0 := (Real.sqrt_pos.mpr (by positivity)).ne'
+    field_simp [hu.ne', hv.ne', hs, (show (0 : ℝ) < u + v by positivity).ne']
+  have hfb := mul_le_mul hf hb (by positivity) (phiF4_pos hC hD).le
+  refine le_trans ?_ (mul_le_mul_of_nonneg_right hfb (by positivity : 0 ≤ (C * u + D * v) ^ 4))
+  have hpoly8 (X Y : ℝ) (hX : 0 < X) (hY : 0 < Y) : 16777216 * X ^ 3 * Y ^ 5 ≤ 84375 * (X + Y) ^ 8 := by
+    have h : 84375 * (X + Y) ^ 8 - 16777216 * X ^ 3 * Y ^ 5 =
+        (5 * X - 3 * Y) ^ 2 * (
+          9375 * Y ^ 6 + 106250 * X * Y ^ 5 + 590625 * X ^ 2 * Y ^ 4 + 334476 * X ^ 3 * Y ^ 3 +
+          130545 * X ^ 4 * Y ^ 2 + 31050 * X ^ 5 * Y + 3375 * X ^ 6) := by ring
+    have hnn : 0 ≤ 84375 * (X + Y) ^ 8 - 16777216 * X ^ 3 * Y ^ 5 := by rw [h]; positivity
+    linarith
+  have hpoly4 (X Y : ℝ) (hX : 0 < X) (hY : 0 < Y) :
+      (14101 / 1000 : ℝ) * X * Y ^ 2 * Real.sqrt (X * Y) ≤ (X + Y) ^ 4 := by
+    have hsq : ((14101 / 1000 : ℝ) * X * Y ^ 2 * Real.sqrt (X * Y)) ^ 2 ≤ ((X + Y) ^ 4) ^ 2 := by
+      rw [mul_pow, mul_pow, mul_pow, Real.sq_sqrt (by positivity), ← pow_mul]
+      have h8 := hpoly8 X Y hX hY
+      have hc : (14101 / 1000 : ℝ) ^ 2 * 84375 ≤ 16777216 := by norm_num
+      have hxy : 0 ≤ X ^ 3 * Y ^ 5 := by positivity
+      have h1 : (14101 / 1000 : ℝ) ^ 2 * (84375 * (X ^ 3 * Y ^ 5)) ≤ 16777216 * X ^ 3 * Y ^ 5 := by nlinarith
+      have hl : (14101 / 1000 : ℝ) ^ 2 * X ^ 2 * (Y ^ 2) ^ 2 * (X * Y) = (14101 / 1000 : ℝ) ^ 2 * (X ^ 3 * Y ^ 5) := by ring
+      nlinarith
+    exact le_of_sq_le_sq hsq (by positivity)
+  have h1 := mul_le_mul_of_nonneg_left (hpoly4 (C * u) (D * v) (by positivity) (by positivity)) hC.le
+  have h2 := mul_le_mul_of_nonneg_left (hpoly4 (D * v) (C * u) (by positivity) (by positivity)) hD.le
+  have hsqrt_eq : Real.sqrt (C * u * (D * v)) = Real.sqrt (C * D) * Real.sqrt (u * v) := by
+    rw [show C * u * (D * v) = (C * D) * (u * v) by ring, Real.sqrt_mul (by positivity)]
+  have hsqrt_eq2 : Real.sqrt (D * v * (C * u)) = Real.sqrt (C * D) * Real.sqrt (u * v) := by
+    rw [mul_comm (D * v) (C * u), hsqrt_eq]
+  rw [hsqrt_eq] at h1; rw [hsqrt_eq2] at h2
+  have hcomb : (14101 / 1000 : ℝ) * (C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (u * v * Real.sqrt (u * v) * (u + v))) ≤
+      (C + D) * (C * u + D * v) ^ 4 := by
+    have hsum : C * ((14101 / 1000 : ℝ) * (C * u) * (D * v) ^ 2 * (Real.sqrt (C * D) * Real.sqrt (u * v))) +
+        D * ((14101 / 1000 : ℝ) * (D * v) * (C * u) ^ 2 * (Real.sqrt (C * D) * Real.sqrt (u * v))) =
+        (14101 / 1000 : ℝ) * (C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (u * v * Real.sqrt (u * v) * (u + v))) := by ring
+    have hrhs : C * (C * u + D * v) ^ 4 + D * (D * v + C * u) ^ 4 = (C + D) * (C * u + D * v) ^ 4 := by ring
+    linarith
+  have hden : 0 < C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (u * v * Real.sqrt (u * v) * (u + v)) := by positivity
+  have hlhs : (C + D) / (C ^ 2 * D ^ 2 * Real.sqrt (C * D)) * (1 / (u * v * Real.sqrt (u * v) * (u + v))) * (C * u + D * v) ^ 4 =
+      (C + D) * (C * u + D * v) ^ 4 / (C ^ 2 * D ^ 2 * Real.sqrt (C * D) * (u * v * Real.sqrt (u * v) * (u + v))) := by
+    field_simp [hC.ne', hD.ne', hu.ne', hv.ne', (Real.sqrt_pos.mpr (by positivity : 0 < C * D)).ne',
+      (Real.sqrt_pos.mpr (by positivity : 0 < u * v)).ne', (show (0 : ℝ) < u + v by positivity).ne']
+  rw [hlhs, le_div_iff₀ hden]; exact hcomb
+
+theorem coupling_lower_5 {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v) :
+    (3125 / 108 : ℝ) ≤ phiF5 C D * ((u * v) * psiB7 u v) * (C * u + D * v) ^ 5 := by
+  have hf := phiF5_lower hC hD
+  have hb : 1 / (u ^ 2 * v ^ 2 * (u + v)) ≤ (u * v) * psiB7 u v := by
+    have h1 := mul_le_mul_of_nonneg_left (psiB7_lower hu hv) (by positivity : (0 : ℝ) ≤ u * v)
+    refine le_trans (le_of_eq ?_) h1
+    field_simp [hu.ne', hv.ne', (show (0 : ℝ) < u + v by positivity).ne']
+  have hfb := mul_le_mul hf hb (by positivity) (phiF5_pos hC hD).le
+  refine le_trans ?_ (mul_le_mul_of_nonneg_right hfb (by positivity : 0 ≤ (C * u + D * v) ^ 5))
+  have hpoly (X Y : ℝ) (hX : 0 < X) (hY : 0 < Y) : 3125 * X ^ 2 * Y ^ 3 ≤ 108 * (X + Y) ^ 5 := by
+    have h : 108 * (X + Y) ^ 5 - 3125 * X ^ 2 * Y ^ 3 =
+        (3 * X - 2 * Y) ^ 2 * (27 * Y ^ 3 + 216 * X * Y ^ 2 + 76 * X ^ 2 * Y + 12 * X ^ 3) := by ring
+    have hnn : 0 ≤ 108 * (X + Y) ^ 5 - 3125 * X ^ 2 * Y ^ 3 := by rw [h]; positivity
+    linarith
+  have h1 := mul_le_mul_of_nonneg_left (hpoly (C * u) (D * v) (by positivity) (by positivity)) hC.le
+  have h2 := mul_le_mul_of_nonneg_left (hpoly (D * v) (C * u) (by positivity) (by positivity)) hD.le
+  have hcomb : 3125 * (C ^ 3 * D ^ 3 * (u ^ 2 * v ^ 2 * (u + v))) ≤ 108 * (C + D) * (C * u + D * v) ^ 5 := by
+    have hsum : C * (3125 * (C * u) ^ 2 * (D * v) ^ 3) + D * (3125 * (D * v) ^ 2 * (C * u) ^ 3) =
+        3125 * (C ^ 3 * D ^ 3 * (u ^ 2 * v ^ 2 * (u + v))) := by ring
+    have hrhs : C * (108 * (C * u + D * v) ^ 5) + D * (108 * (D * v + C * u) ^ 5) =
+        108 * (C + D) * (C * u + D * v) ^ 5 := by ring
+    linarith
+  have hden : 0 < C ^ 3 * D ^ 3 * (u ^ 2 * v ^ 2 * (u + v)) := by positivity
+  have hlhs : (C + D) / (C ^ 3 * D ^ 3) * (1 / (u ^ 2 * v ^ 2 * (u + v))) * (C * u + D * v) ^ 5 =
+      (C + D) * (C * u + D * v) ^ 5 / (C ^ 3 * D ^ 3 * (u ^ 2 * v ^ 2 * (u + v))) := by
+    field_simp [hC.ne', hD.ne', hu.ne', hv.ne', (show (0 : ℝ) < u + v by positivity).ne']
+  rw [hlhs, div_le_div_iff₀ (by norm_num) hden]; linarith
+
+theorem coupling_lower_7 {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v) :
+    (823543 / 6912 : ℝ) ≤ phiF7 C D * ((u * v) * psiB9 u v) * (C * u + D * v) ^ 7 := by
+  have hf := phiF7_lower hC hD
+  have hb : 1 / (u ^ 3 * v ^ 3 * (u + v)) ≤ (u * v) * psiB9 u v := by
+    have h1 := mul_le_mul_of_nonneg_left (psiB9_lower hu hv) (by positivity : (0 : ℝ) ≤ u * v)
+    refine le_trans (le_of_eq ?_) h1
+    field_simp [hu.ne', hv.ne', (show (0 : ℝ) < u + v by positivity).ne']
+  have hfb := mul_le_mul hf hb (by positivity) (phiF7_pos hC hD).le
+  refine le_trans ?_ (mul_le_mul_of_nonneg_right hfb (by positivity : 0 ≤ (C * u + D * v) ^ 7))
+  have hpoly (X Y : ℝ) (hX : 0 < X) (hY : 0 < Y) : 823543 * X ^ 3 * Y ^ 4 ≤ 6912 * (X + Y) ^ 7 := by
+    have h : 6912 * (X + Y) ^ 7 - 823543 * X ^ 3 * Y ^ 4 =
+        (4 * X - 3 * Y) ^ 2 * (768 * Y ^ 5 + 7424 * X * Y ^ 4 + 34560 * X ^ 2 * Y ^ 3 + 14337 * X ^ 3 * Y ^ 2 + 3672 * X ^ 4 * Y +
+432 * X ^ 5) := by ring
+    have hnn : 0 ≤ 6912 * (X + Y) ^ 7 - 823543 * X ^ 3 * Y ^ 4 := by rw [h]; positivity
+    linarith
+  have h1 := mul_le_mul_of_nonneg_left (hpoly (C * u) (D * v) (by positivity) (by positivity)) hC.le
+  have h2 := mul_le_mul_of_nonneg_left (hpoly (D * v) (C * u) (by positivity) (by positivity)) hD.le
+  have hcomb : 823543 * (C ^ 4 * D ^ 4 * (u ^ 3 * v ^ 3 * (u + v))) ≤ 6912 * (C + D) * (C * u + D * v) ^ 7 := by
+    have hsum : C * (823543 * (C * u) ^ 3 * (D * v) ^ 4) + D * (823543 * (D * v) ^ 3 * (C * u) ^ 4) =
+        823543 * (C ^ 4 * D ^ 4 * (u ^ 3 * v ^ 3 * (u + v))) := by ring
+    have hrhs : C * (6912 * (C * u + D * v) ^ 7) + D * (6912 * (D * v + C * u) ^ 7) =
+        6912 * (C + D) * (C * u + D * v) ^ 7 := by ring
+    linarith
+  have hden : 0 < C ^ 4 * D ^ 4 * (u ^ 3 * v ^ 3 * (u + v)) := by positivity
+  have hlhs : (C + D) / (C ^ 4 * D ^ 4) * (1 / (u ^ 3 * v ^ 3 * (u + v))) * (C * u + D * v) ^ 7 =
+      (C + D) * (C * u + D * v) ^ 7 / (C ^ 4 * D ^ 4 * (u ^ 3 * v ^ 3 * (u + v))) := by
+    field_simp [hC.ne', hD.ne', hu.ne', hv.ne', (show (0 : ℝ) < u + v by positivity).ne']
+  rw [hlhs, div_le_div_iff₀ (by norm_num) hden]; linarith
+
+def powHalfHi (n : Nat) : ℝ :=
+  if n % 2 = 0 then (2 : ℝ) ^ (n / 2) else (14143 / 10000 : ℝ) * (2 : ℝ) ^ (n / 2)
+
+theorem powHalfHi_pos (n : Nat) : 0 < powHalfHi n := by
+  unfold powHalfHi; split_ifs <;> positivity
+
+theorem pow_le_powHalfHi_sq (n : Nat) : (2 : ℝ) ^ n ≤ (powHalfHi n) ^ 2 := by
+  unfold powHalfHi
+  split_ifs with h
+  · rw [← pow_mul, show n / 2 * 2 = n by omega]
+  · rw [mul_pow, ← pow_mul, show (2 : ℝ) ^ n = 2 * (2 : ℝ) ^ (n / 2 * 2) by
+      rw [← pow_succ', show n / 2 * 2 + 1 = n by omega]]
+    exact mul_le_mul_of_nonneg_right (by norm_num) (by positivity)
+
+structure FwdSpec where
+  a : Nat
+  ha : 4 ≤ a
+  phi : ℝ → ℝ → ℝ
+  rho : ℝ
+  rhoEO : ℝ
+  hrho_nn : 0 ≤ rho
+  hrhoEO_nn : 0 ≤ rhoEO
+  hpos : ∀ C D : ℝ, 0 < C → 0 < D → 0 < phi C D
+  hcontract : ∀ C D : ℝ, 0 < C → 0 < D → phi (2 * C) D + phi (2 * C) (C + D) + phi (2 * D) (C + D) ≤ rho * phi C D
+  heo0 : ∀ C D : ℝ, 0 < D → D ≤ C → phi (2 * C) D + phi (2 * C) (C + D) ≤ rhoEO * phi C D
+  hinv : ∀ C D M Mh : ℝ, 0 < C → 0 < D → 0 < M → 0 < Mh → C * D ≤ M → M ^ (a - 2) ≤ Mh ^ 2 →
+    1 / (C * D) ≤ (Mh / 2) * phi C D
+
+def fwdSpec4 : FwdSpec where
+  a := 4
+  ha := by decide
+  phi := phiF4
+  rho := rhoF4
+  rhoEO := rhoEO4
+  hrho_nn := by unfold rhoF4; norm_num
+  hrhoEO_nn := by unfold rhoEO4; norm_num
+  hpos := fun _ _ hC hD => phiF4_pos hC hD
+  hcontract := fun _ _ hC hD => phiF4_contract hC hD
+  heo0 := fun _ _ hD hCD => phiF4_eo0_contract hD hCD
+  hinv := fun _ _ _ _ hC hD hM hMh hCD hsq => inv_prod_le_phiF4 hC hD hM hMh hCD hsq
+
+def fwdSpec5 : FwdSpec where
+  a := 5
+  ha := by decide
+  phi := phiF5
+  rho := rhoF5
+  rhoEO := rhoEO5
+  hrho_nn := by unfold rhoF5; norm_num
+  hrhoEO_nn := by unfold rhoEO5; norm_num
+  hpos := fun _ _ hC hD => phiF5_pos hC hD
+  hcontract := fun _ _ hC hD => phiF5_contract hC hD
+  heo0 := fun _ _ hD hCD => phiF5_eo0_contract hD hCD
+  hinv := fun _ _ _ _ hC hD hM hMh hCD hsq => inv_prod_le_odd_aux 3 hC hD hM hMh hCD hsq (by decide) (phiF5_lower hC hD)
+
+def fwdSpec7 : FwdSpec where
+  a := 7
+  ha := by decide
+  phi := phiF7
+  rho := rhoF7
+  rhoEO := rhoEO7
+  hrho_nn := by unfold rhoF7; norm_num
+  hrhoEO_nn := by unfold rhoEO7; norm_num
+  hpos := fun _ _ hC hD => phiF7_pos hC hD
+  hcontract := fun _ _ hC hD => phiF7_contract hC hD
+  heo0 := fun _ _ hD hCD => phiF7_eo0_contract hD hCD
+  hinv := fun _ _ _ _ hC hD hM hMh hCD hsq => inv_prod_le_odd_aux 4 hC hD hM hMh hCD hsq (by decide) (phiF7_lower hC hD)
+
+def fwdSpec9 : FwdSpec where
+  a := 9
+  ha := by decide
+  phi := phiF9
+  rho := rhoF9
+  rhoEO := rhoEO9
+  hrho_nn := by unfold rhoF9; norm_num
+  hrhoEO_nn := by unfold rhoEO9; norm_num
+  hpos := fun _ _ hC hD => phiF9_pos hC hD
+  hcontract := fun _ _ hC hD => phiF9_contract hC hD
+  heo0 := fun _ _ hD hCD => phiF9_eo0_contract hD hCD
+  hinv := fun _ _ _ _ hC hD hM hMh hCD hsq => inv_prod_le_odd_aux 5 hC hD hM hMh hCD hsq (by decide) (phiF9_lower hC hD)
+
+structure BackSpec where
+  fwd : FwdSpec
+  psiB : ℝ → ℝ → ℝ
+  rhoB : ℝ
+  qL : ℝ
+  K : ℝ
+  hrhoB_nn : 0 ≤ rhoB
+  hqL_pos : 0 < qL
+  hqL_lt1 : qL < 1
+  hrhoB_lt_qL : rhoB < qL
+  hK_pos : 0 < K
+  hpsi_pos : ∀ u v : ℝ, 0 < u → 0 < v → 0 < psiB u v
+  hpsi_contract : ∀ u v : ℝ, 0 < u → 0 < v → psiB (2 * u) v + psiB (2 * u + v) v + psiB v (2 * u + v) ≤ rhoB * psiB u v
+  hcoup : ∀ C D u v : ℝ, 0 < C → 0 < D → 0 < u → 0 < v →
+    K ≤ fwd.phi C D * ((u * v) * psiB u v) * (C * u + D * v) ^ fwd.a
+
+def backSpec4 : BackSpec where
+  fwd := fwdSpec4; psiB := psiB6; rhoB := rhoB6; qL := 45 / 100; K := 14101 / 1000
+  hrhoB_nn := by unfold rhoB6; norm_num
+  hqL_pos := by norm_num
+  hqL_lt1 := by norm_num
+  hrhoB_lt_qL := by unfold rhoB6; norm_num
+  hK_pos := by norm_num
+  hpsi_pos := fun _ _ hu hv => psiB6_pos hu hv
+  hpsi_contract := fun _ _ hu hv => psiB6_contract hu hv
+  hcoup := fun _ _ _ _ hC hD hu hv => coupling_lower_4 hC hD hu hv
+
+def backSpec5 : BackSpec where
+  fwd := fwdSpec5; psiB := psiB7; rhoB := rhoB7; qL := 37 / 100; K := 3125 / 108
+  hrhoB_nn := by unfold rhoB7; norm_num
+  hqL_pos := by norm_num
+  hqL_lt1 := by norm_num
+  hrhoB_lt_qL := by unfold rhoB7; norm_num
+  hK_pos := by norm_num
+  hpsi_pos := fun _ _ hu hv => psiB7_pos hu hv
+  hpsi_contract := fun _ _ hu hv => psiB7_contract hu hv
+  hcoup := fun _ _ _ _ hC hD hu hv => coupling_lower_5 hC hD hu hv
+
+def backSpec7 : BackSpec where
+  fwd := fwdSpec7; psiB := psiB9; rhoB := rhoB9; qL := 26 / 100; K := 823543 / 6912
+  hrhoB_nn := by unfold rhoB9; norm_num
+  hqL_pos := by norm_num
+  hqL_lt1 := by norm_num
+  hrhoB_lt_qL := by unfold rhoB9; norm_num
+  hK_pos := by norm_num
+  hpsi_pos := fun _ _ hu hv => psiB9_pos hu hv
+  hpsi_contract := fun _ _ hu hv => psiB9_contract hu hv
+  hcoup := fun _ _ _ _ hC hD hu hv => coupling_lower_7 hC hD hu hv
+
+/-! ### 6. Trajectory decomposition, Option 1 & Option 2 fibers, `BadS_k0`, and `BadDrop` -/
 
 theorem p_pos : 0 < ECDSAAdd.p := by norm_num [ECDSAAdd.p]
 theorem p_odd : ECDSAAdd.p % 2 = 1 := by norm_num [ECDSAAdd.p]
 theorem p_lt_256 : ECDSAAdd.p < 2 ^ 256 := by norm_num [ECDSAAdd.p]
+theorem p_gt_255 : 2 ^ 255 < ECDSAAdd.p := by norm_num [ECDSAAdd.p]
 
-private theorem phi_consts :
-    phiF 2 1 ≤ 1215 ∧ phiF 1 1 ≤ 5411 ∧ phiB 1 1 ≤ 1539 ∧
-    psiB7 1 1 ≤ 1536 ∧ phiF3 2 1 ≤ 2589 ∧ phiF3 1 1 ≤ 6703 := by
-  unfold phiF phiB psiB7 phiF3 P_F Q_F P_B Q_B P_B7 P_F3; norm_num
-
-attribute [local irreducible] Nat.iterate pathsOf phiF phiB psiB7 phiF3 P_F Q_F P_B Q_B P_B7 P_F3
+attribute [local irreducible] Nat.iterate pathsOf
+  phiF3 phiF4 phiF5 phiF7 phiF9 psiB6 psiB7 psiB9
+  P_F3 P_F4 P_F5 P_F7 P_F9 P_B6 P_B7 P_B9 Q_F Q_B
 
 theorem canonical_coprime_p {x : Nat} (hx0 : 0 < x) (hxp : x < ECDSAAdd.p) : x.Coprime ECDSAAdd.p :=
   (ECDSAAdd.Secp256k1.p_prime.coprime_iff_not_dvd.mpr
@@ -5556,30 +8931,21 @@ theorem exists_term_time (S : Nat) (hS : S ≤ 512) {x : Nat} (hx0 : 0 < x) (hxp
     by_contra hle
     have hSt : (SkywalkNat.step^[S] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by
       have hrew : S = (S - L) + L := by omega
-      rw [hrew, Function.iterate_add_apply]
-      exact iter_of_u_zero hPL (S - L)
+      rw [hrew, Function.iterate_add_apply]; exact iter_of_u_zero hPL (S - L)
     exact hbad hSt
-  have hprev_ne : (SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0 :=
-    Nat.find_min hex (by omega)
+  have hprev_ne : (SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0 := Nat.find_min hex (by omega)
   set z := SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p)
   have hvalid := SkywalkNat.iter_valid (L - 1) (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
-  have hvpos : 0 < z.v := hvalid.1
-  have hvodd : z.v % 2 = 1 := hvalid.2.1
   have hg : z.u.gcd z.v = 1 := hvalid.2.2.trans (canonical_coprime_p hx0 hxp)
   have hstep_z : (SkywalkNat.step z).u = 0 := by
-    have hL1 : L = (L - 1) + 1 := by omega
-    rw [hL1, Function.iterate_succ_apply'] at hPL
-    exact hPL
+    rw [show L = (L - 1) + 1 by omega, Function.iterate_succ_apply'] at hPL; exact hPL
   have huv : z.u = z.v := by
-    unfold SkywalkNat.step at hstep_z
-    rw [if_neg hprev_ne] at hstep_z
-    split_ifs at hstep_z with he hle
-    · dsimp at hstep_z; omega
-    · dsimp at hstep_z; omega
-    · dsimp at hstep_z; omega
+    change z.u ≠ 0 at hprev_ne
+    have hvodd : z.v % 2 = 1 := hvalid.2.1
+    unfold SkywalkNat.step at hstep_z; rw [if_neg hprev_ne] at hstep_z
+    split_ifs at hstep_z with he hle <;> (dsimp at hstep_z; omega)
   have hv1 : z.v = 1 := by rw [huv, Nat.gcd_self] at hg; exact hg
-  have hu1 : z.u = 1 := huv.trans hv1
-  exact ⟨L, by omega, hL_le, SkywalkNat.State.ext hu1 hv1, hPL⟩
+  exact ⟨L, by omega, hL_le, SkywalkNat.State.ext (huv.trans hv1) hv1, hPL⟩
 
 private theorem finset_toFinset_sum_le_list_sum {β : Type} [DecidableEq β]
     (bs : List β) (g : β → ℝ) (hg : ∀ b, 0 ≤ g b) :
@@ -5601,10 +8967,8 @@ private theorem card_le_list_sum_fiber {α β : Type} [DecidableEq α] [Decidabl
       simp only [Finset.mem_biUnion, List.mem_toFinset, Finset.mem_filter]
       exact ⟨fun ha => ⟨f a, hf a ha, ha, rfl⟩, fun ⟨_, _, ha, _⟩ => ha⟩
     · intro b₁ _ b₂ _ hne
-      change Disjoint _ _
-      rw [Finset.disjoint_left]
-      intro a ha1 ha2
-      exact hne ((Finset.mem_filter.mp ha1).2.symm.trans (Finset.mem_filter.mp ha2).2)
+      change Disjoint _ _; rw [Finset.disjoint_left]
+      intro a ha1 ha2; exact hne ((Finset.mem_filter.mp ha1).2.symm.trans (Finset.mem_filter.mp ha2).2)
   rw [h1, Nat.cast_sum]
   exact finset_toFinset_sum_le_list_sum bs _ (fun _ => Nat.cast_nonneg _)
 
@@ -5621,7 +8985,6 @@ theorem forward_prefix_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
   let T := (Finset.Ioo 0 ECDSAAdd.p).filter (fun v => ∃ u > 0, C * u + D * v = ECDSAAdd.p)
   have hmem : ∀ x ∈ S, f x ∈ T := by
     intro x hx
-    obtain ⟨_, _⟩ := hS_sub x hx
     obtain ⟨htr, hu_pos⟩ := hγ_eq x hx
     have hval := SkywalkNat.iter_valid t (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
     have halive : ∀ i < t, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := fun i hi =>
@@ -5634,20 +8997,17 @@ theorem forward_prefix_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
     have hv_lt : f x < ECDSAAdd.p := by
       have h1 : 1 ≤ C * (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u := Nat.mul_pos hC hu_pos
       have h2 : f x ≤ D * f x := Nat.le_mul_of_pos_left _ hD
-      change C * (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u + D * f x = ECDSAAdd.p at hdot
-      omega
+      change C * (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u + D * f x = ECDSAAdd.p at hdot; omega
     exact Finset.mem_filter.mpr ⟨Finset.mem_Ioo.mpr ⟨hval.1, hv_lt⟩,
       (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u, hu_pos, hdot⟩
   have hinj : Set.InjOn f (S : Set Nat) := by
     intro x₁ hx₁ x₂ hx₂ hfeq
     obtain ⟨htr₁, hu₁⟩ := hγ_eq x₁ (Finset.mem_coe.mp hx₁)
     obtain ⟨htr₂, hu₂⟩ := hγ_eq x₂ (Finset.mem_coe.mp hx₂)
-    have halive₁ : ∀ i < t, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x₁ ECDSAAdd.p)).u := fun i hi =>
-      iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu₁)
-    have halive₂ : ∀ i < t, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x₂ ECDSAAdd.p)).u := fun i hi =>
-      iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu₂)
-    have hB₁ := runB_traceKinds (SkywalkNat.init x₁ ECDSAAdd.p) t p_pos p_odd halive₁
-    have hB₂ := runB_traceKinds (SkywalkNat.init x₂ ECDSAAdd.p) t p_pos p_odd halive₂
+    have hB₁ := runB_traceKinds (SkywalkNat.init x₁ ECDSAAdd.p) t p_pos p_odd
+      (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu₁))
+    have hB₂ := runB_traceKinds (SkywalkNat.init x₂ ECDSAAdd.p) t p_pos p_odd
+      (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu₂))
     rw [htr₁] at hB₁; rw [htr₂] at hB₂
     have hd₁ := runF_runB_dot γ 0 1 (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).u (f x₁)
     have hd₂ := runF_runB_dot γ 0 1 (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).u (f x₂)
@@ -5661,10 +9021,7 @@ theorem forward_prefix_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
         change C * (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).u + D * f x₂ = ECDSAAdd.p at hd₂
         rw [hfeq] at hd₁; omega
       exact Nat.eq_of_mul_eq_mul_left hC this
-    have hpair : ((SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).u, f x₁) =
-        ((SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).u, f x₂) := Prod.ext hueq hfeq
-    have h0 := congrArg (fun q => (runB q γ).1) hpair
-    dsimp only at h0
+    have h0 : (runB ((SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).u, f x₁) γ).1 = (runB ((SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).u, f x₂) γ).1 := by rw [hueq, hfeq]
     have h1 : (runB ((SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).u, f x₁) γ).1 = x₁ := by
       change (runB ((SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).u, (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).v) γ).1 = x₁
       rw [hB₁]; rfl
@@ -5674,6 +9031,186 @@ theorem forward_prefix_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
     rw [h1, h2] at h0; exact h0
   exact (Finset.card_le_card_of_injOn f (fun x hx => Finset.mem_coe.mpr (hmem x (Finset.mem_coe.mp hx))) hinj).trans
     (linear_diophantine_card C D ECDSAAdd.p hC hD hcop)
+
+theorem forward_opt2_fiber_card (S : Finset Nat) (k0 m : Nat) (hk0 : 1 ≤ k0)
+    (γ1 γ2 : List StepKind) (hγ1_len : γ1.length = k0 - 1) (hγ2_len : γ2.length = m)
+    (hC1 : (runF (2, 1) γ1).1 = 2 ^ k0) (hD1_lt : (runF (2, 1) γ1).2 < 2 ^ k0)
+    (hγ_eq : ∀ x ∈ S, 0 < x ∧ x < ECDSAAdd.p ∧
+      traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0 + m) = (List.replicate k0 .E ++ [.O1]) ++ γ1 ++ γ2 ∧
+      0 < (SkywalkNat.step^[2 * k0 + m] (SkywalkNat.init x ECDSAAdd.p)).u ∧
+      ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+       (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) * 2 ^ k0 < 2 * ECDSAAdd.p) :
+    let D0 := (runF (2, 1) γ1).2
+    let C' := (runF (1, 1) γ2).1
+    let D' := (runF (1, 1) γ2).2
+    (S.card : ℝ) ≤ (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * (D0 : ℝ) * (C' : ℝ) * (D' : ℝ)) + 1 := by
+  dsimp only
+  set t := 2 * k0 + m
+  set pref : List StepKind := List.replicate k0 StepKind.E ++ [StepKind.O1]
+  set γ := pref ++ γ1 ++ γ2
+  set D0 := (runF (2, 1) γ1).2
+  set C' := (runF (1, 1) γ2).1
+  set D' := (runF (1, 1) γ2).2
+  have hD0_pos : 0 < D0 := (runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)).2
+  have hCD'_pos := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+  have hrunF_pref : runF (0, 1) pref = (2, 1) := by
+    have hrep : ∀ n, runF (0, 1) (List.replicate n .E) = (0, 1) := by
+      intro n; induction n with | zero => rfl | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
+    rw [runF_append, hrep]; rfl
+  have hF_eq : runF (0, 1) γ = runF (2 ^ k0, D0) γ2 := by
+    rw [show γ = pref ++ γ1 ++ γ2 from rfl, runF_append, runF_append, hrunF_pref,
+        show runF (2, 1) γ1 = (2 ^ k0, D0) from Prod.ext hC1 rfl]
+  set C := (runF (0, 1) γ).1
+  set D := (runF (0, 1) γ).2
+  have hCD_pos : 0 < C ∧ 0 < D := by
+    rw [show C = (runF (2 ^ k0, D0) γ2).1 by rw [← hF_eq], show D = (runF (2 ^ k0, D0) γ2).2 by rw [← hF_eq]]
+    exact runF_pos γ2 (Nat.two_pow_pos k0) hD0_pos
+  have hD_ge : D0 * D' ≤ D := by
+    have h1 := (runF_mono_2 γ2 (C₁ := D0 * 1) (C₂ := 2 ^ k0) (D₁ := D0 * 1) (D₂ := D0) (by omega) (by omega)).2
+    rw [runF_mul] at h1
+    simpa only [D, hF_eq] using h1
+  have hcop : C.Coprime D := by
+    have h1 := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
+    have h2 : runF (0, 1) γ = runF (2, 1) (γ1 ++ γ2) := by
+      rw [show γ = pref ++ γ1 ++ γ2 from rfl, List.append_assoc, runF_append, hrunF_pref]
+    simpa only [C, D, h2] using h1
+  -- Set `B := (2 * p - 1) / (2^k0 * C') + 1` so `u_t < B` and `(B - 1) / D ≤ 2 * p / (2^k0 * D0 * C' * D')`!
+  -- Even simpler: use `B := (2 * p + 2^k0 * C' - 1) / (2^k0 * C')`? Wait: if `u_t * (2^k0 * C') < 2 * p`, then
+  -- `u_t ≤ (2 * p - 1) / (2^k0 * C') < (2 * p - 1) / (2^k0 * C') + 1`!
+  -- Wait: in `linear_diophantine_bounded_card`, if `B = 2 * p / (2^k0 * C') + 1`, wait:
+  -- if `2^k0 * C' ∣ 2 * p`, `u_t * (2^k0 * C') < 2 * p` implies `u_t < 2 * p / (2^k0 * C')`!
+  -- Even cleaner: let `B := (2 * ECDSAAdd.p - 1) / (2 ^ k0 * C') + 1`!
+  -- Check: `u_t * (2^k0 * C') < 2 * p` ↔ `u_t * (2^k0 * C') ≤ 2 * p - 1` ↔ `u_t ≤ (2 * p - 1) / (2^k0 * C')` ↔ `u_t < B`!
+  -- And `B / D = ((2 * p - 1) / (2^k0 * C') + 1) / D`: wait, `+1` inside `/ D` could add `1` if `D = 1`!
+  -- Better: `linear_diophantine_bounded_card` with `u ≤ M` directly? Look at `linear_diophantine_bounded_card`:
+  -- In `linear_diophantine_bounded_card`: `(u - u0) / D * D ≤ u - u0 < u` (since `u0 ≥ 1`!!)!
+  -- WAIT A SECOND! `u0 ∈ Ioo 0 N` means `1 ≤ u0`, so `u - u0 < u ≤ (2 * p - 1) / (2^k0 * C')`!
+  -- Even simpler: `(u - u0) * (2^k0 * C') < u * (2^k0 * C') < 2 * p`, so `(u - u0) / D * (2^k0 * C' * D) < 2 * p`!
+  -- Let's prove `S.card ≤ (2 * ECDSAAdd.p) / (2 ^ k0 * D0 * C' * D') + 1` DIRECTLY in 15 lines!
+  set M_den : Nat := 2 ^ k0 * D0 * C' * D'
+  have hM_pos : 0 < M_den := by dsimp [M_den]; exact Nat.mul_pos (Nat.mul_pos (Nat.mul_pos (Nat.two_pow_pos k0) hD0_pos) hCD'_pos.1) hCD'_pos.2
+  have hcard_nat : S.card ≤ 2 * ECDSAAdd.p / M_den + 1 := by
+    let f : Nat → Nat := fun x => (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u
+    let T := (Finset.Ioo 0 ECDSAAdd.p).filter (fun u => u * (2 ^ k0 * C') < 2 * ECDSAAdd.p ∧ ∃ v > 0, C * u + D * v = ECDSAAdd.p)
+    have hmem : ∀ x ∈ S, f x ∈ T := by
+      intro x hx
+      obtain ⟨_, _, htr, hu_pos, hsum_lt⟩ := hγ_eq x hx
+      have hval := SkywalkNat.iter_valid t (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+      have halive : ∀ i < t, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := fun i hi =>
+        iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu_pos)
+      have hB := runB_traceKinds (SkywalkNat.init x ECDSAAdd.p) t p_pos p_odd halive
+      rw [htr] at hB
+      have hdot := runF_runB_dot γ 0 1 (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v
+      change runB _ γ = _ at hB
+      rw [hB] at hdot
+      rw [show (SkywalkNat.init x ECDSAAdd.p).v = ECDSAAdd.p from rfl] at hdot
+      simp only [zero_mul, one_mul, zero_add] at hdot
+      -- Also `C' * u_t + D' * v_t = u_{2k0} + v_{2k0}`!
+      have hval2 := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+      have htr_m : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m = γ2 := by
+        have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m
+        rw [htr] at h1
+        have hl1 : (traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0)).length = (pref ++ γ1).length := by
+          rw [traceKinds_length, List.length_append, show pref.length = k0 + 1 by simp [pref], hγ1_len]; omega
+        exact (List.append_inj h1 hl1.symm).2.symm
+      have halive2 : ∀ i < m, 0 < (SkywalkNat.step^[i] (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p))).u := fun i hi => by
+        rw [← Function.iterate_add_apply]
+        exact iter_alive_of_u_ne_zero _ (show i + 2 * k0 ≤ t by omega) (Nat.ne_of_gt hu_pos)
+      have hB2 := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m hval2.1 hval2.2.1 halive2
+      rw [htr_m, ← Function.iterate_add_apply, show m + 2 * k0 = t by omega] at hB2
+      have hdot2 := runF_runB_dot γ2 1 1 (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v
+      rw [hB2] at hdot2; simp only [one_mul] at hdot2
+      have hu_lt_p : f x < ECDSAAdd.p := by
+        have h1 : 1 ≤ D * (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v := Nat.mul_pos hCD_pos.2 hval.1
+        have h2 : f x ≤ C * f x := Nat.le_mul_of_pos_left _ hCD_pos.1
+        change C * f x + D * _ = ECDSAAdd.p at hdot; omega
+      have hu_bound : f x * (2 ^ k0 * C') < 2 * ECDSAAdd.p := by
+        have hle : C' * f x ≤ (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+            (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v := by
+          change C' * f x + D' * _ = _ at hdot2; omega
+        have hm := Nat.mul_le_mul_right (2 ^ k0) hle
+        nlinarith
+      exact Finset.mem_filter.mpr ⟨Finset.mem_Ioo.mpr ⟨hu_pos, hu_lt_p⟩, hu_bound,
+        (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v, hval.1, hdot⟩
+    have hinj : Set.InjOn f (S : Set Nat) := by
+      intro x₁ hx₁ x₂ hx₂ hfeq
+      obtain ⟨_, _, htr₁, hu₁, _⟩ := hγ_eq x₁ (Finset.mem_coe.mp hx₁)
+      obtain ⟨_, _, htr₂, hu₂, _⟩ := hγ_eq x₂ (Finset.mem_coe.mp hx₂)
+      have hB₁ := runB_traceKinds (SkywalkNat.init x₁ ECDSAAdd.p) t p_pos p_odd
+        (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu₁))
+      have hB₂ := runB_traceKinds (SkywalkNat.init x₂ ECDSAAdd.p) t p_pos p_odd
+        (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hu₂))
+      rw [htr₁] at hB₁; rw [htr₂] at hB₂
+      change runB _ γ = _ at hB₁; change runB _ γ = _ at hB₂
+      have hd₁ := runF_runB_dot γ 0 1 (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).v
+      have hd₂ := runF_runB_dot γ 0 1 (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).v
+      rw [hB₁] at hd₁; rw [hB₂] at hd₂
+      rw [show (SkywalkNat.init x₁ ECDSAAdd.p).v = ECDSAAdd.p from rfl] at hd₁
+      rw [show (SkywalkNat.init x₂ ECDSAAdd.p).v = ECDSAAdd.p from rfl] at hd₂
+      simp only [zero_mul, one_mul, zero_add] at hd₁ hd₂
+      have hveq : (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).v =
+          (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).v := by
+        have : D * (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).v =
+            D * (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).v := by
+          change C * f x₁ + D * _ = ECDSAAdd.p at hd₁
+          change C * f x₂ + D * _ = ECDSAAdd.p at hd₂
+          rw [hfeq] at hd₁; omega
+        exact Nat.eq_of_mul_eq_mul_left hCD_pos.2 this
+      have h0 : (runB (f x₁, (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).v) γ).1 = (runB (f x₂, (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).v) γ).1 := by rw [hfeq, hveq]
+      have h1 : (runB (f x₁, (SkywalkNat.step^[t] (SkywalkNat.init x₁ ECDSAAdd.p)).v) γ).1 = x₁ := by rw [hB₁]; rfl
+      have h2 : (runB (f x₂, (SkywalkNat.step^[t] (SkywalkNat.init x₂ ECDSAAdd.p)).v) γ).1 = x₂ := by rw [hB₂]; rfl
+      rw [h1, h2] at h0; exact h0
+    have hT_card : T.card ≤ 2 * ECDSAAdd.p / M_den + 1 := by
+      by_cases hne : T.Nonempty
+      · let u0 := T.min' hne
+        have hu0_mem : u0 ∈ T := Finset.min'_mem T hne
+        obtain ⟨_, v0, _, heq0⟩ := (Finset.mem_filter.mp hu0_mem).2
+        have hinjT : Set.InjOn (fun u => (u - u0) / D) (T : Set Nat) := by
+          intro u₁ hu₁ u₂ hu₂ heq
+          have hu₁' : u₁ ∈ T := Finset.mem_coe.mp hu₁
+          have hu₂' : u₂ ∈ T := Finset.mem_coe.mp hu₂
+          have hle₁ : u0 ≤ u₁ := Finset.min'_le T u₁ hu₁'
+          have hle₂ : u0 ≤ u₂ := Finset.min'_le T u₂ hu₂'
+          obtain ⟨_, v₁, _, heq₁⟩ := (Finset.mem_filter.mp hu₁').2
+          obtain ⟨_, v₂, _, heq₂⟩ := (Finset.mem_filter.mp hu₂').2
+          have hdvd₁ : D ∣ (u₁ - u0) := by
+            have hm : (u₁ - u0) * C = (v0 - v₁) * D := by
+              have : C * u0 ≤ C * u₁ := Nat.mul_le_mul_left C hle₁
+              have : D * v₁ ≤ D * v0 := by omega
+              have : v₁ ≤ v0 := Nat.le_of_mul_le_mul_left this hCD_pos.2
+              zify [hle₁, this] at heq0 heq₁ ⊢; linarith
+            exact hcop.symm.dvd_of_dvd_mul_right ⟨v0 - v₁, by linarith⟩
+          have hdvd₂ : D ∣ (u₂ - u0) := by
+            have hm : (u₂ - u0) * C = (v0 - v₂) * D := by
+              have : C * u0 ≤ C * u₂ := Nat.mul_le_mul_left C hle₂
+              have : D * v₂ ≤ D * v0 := by omega
+              have : v₂ ≤ v0 := Nat.le_of_mul_le_mul_left this hCD_pos.2
+              zify [hle₂, this] at heq0 heq₂ ⊢; linarith
+            exact hcop.symm.dvd_of_dvd_mul_right ⟨v0 - v₂, by linarith⟩
+          have h1 := Nat.mul_div_cancel' hdvd₁
+          have h2 := Nat.mul_div_cancel' hdvd₂
+          dsimp only at heq; rw [heq] at h1; omega
+        have hmapT : Set.MapsTo (fun u => (u - u0) / D) (T : Set Nat) (Finset.range (2 * ECDSAAdd.p / M_den + 1) : Set Nat) := by
+          intro u hu
+          have hu' : u ∈ T := Finset.mem_coe.mp hu
+          rw [Finset.mem_coe, Finset.mem_range]
+          have hub := (Finset.mem_filter.mp hu').2.1
+          have hmul : (u - u0) / D * M_den < 2 * ECDSAAdd.p := by
+            have h1 : (u - u0) / D * (D0 * D') ≤ (u - u0) / D * D := Nat.mul_le_mul_left _ hD_ge
+            have h2 : (u - u0) / D * D ≤ u - u0 := Nat.div_mul_le_self _ _
+            have h3 : (u - u0) / D * (D0 * D') ≤ u := (h1.trans h2).trans (Nat.sub_le u u0)
+            have h4 : (u - u0) / D * M_den = ((u - u0) / D * (D0 * D')) * (2 ^ k0 * C') := by dsimp [M_den]; ring
+            rw [h4]
+            exact (Nat.mul_le_mul_right (2 ^ k0 * C') h3).trans_lt hub
+          exact Nat.lt_succ_of_le ((Nat.le_div_iff_mul_le hM_pos).mpr hmul.le)
+        simpa only [Finset.card_range] using Finset.card_le_card_of_injOn (fun u => (u - u0) / D) hmapT hinjT
+      · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty]; exact Nat.zero_le _
+    exact (Finset.card_le_card_of_injOn f (fun x hx => Finset.mem_coe.mpr (hmem x (Finset.mem_coe.mp hx))) hinj).trans hT_card
+  have hcast : (S.card : ℝ) ≤ ((2 * ECDSAAdd.p / M_den : Nat) : ℝ) + 1 := by exact_mod_cast hcard_nat
+  have hdiv : ((2 * ECDSAAdd.p / M_den : Nat) : ℝ) ≤ (2 * ECDSAAdd.p : ℝ) / (M_den : ℝ) := by
+    simpa only [Nat.cast_mul, Nat.cast_ofNat] using (Nat.cast_div_le (α := ℝ) (m := 2 * ECDSAAdd.p) (n := M_den))
+  have hM_eq : (M_den : ℝ) = (2 : ℝ) ^ k0 * (D0 : ℝ) * (C' : ℝ) * (D' : ℝ) := by dsimp [M_den]; push_cast; ring
+  rw [hM_eq] at hdiv; linarith
 
 theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x ∧ x < ECDSAAdd.p)
     (t u v : Nat) (hu : 0 < u) (hv : 0 < v) (hcop : u.Coprime v)
@@ -5690,9 +9227,7 @@ theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
   have hD_pres : ∀ (l : List StepKind) (C0 D0 : Nat), 0 < D0 → 0 < (runF (C0, D0) l).2 := by
     intro l; induction l with
     | nil => intro _ _ h0; exact h0
-    | cons k l ih =>
-      intro C0 D0 h0; rw [runF_cons]; apply ih
-      cases k <;> dsimp [stepF] <;> omega
+    | cons k l ih => intro C0 D0 h0; rw [runF_cons]; apply ih; cases k <;> dsimp [stepF] <;> omega
   have hmem : ∀ x ∈ S, g x ∈ T ×ˢ (Finset.univ : Finset Bool) := by
     intro x hx
     obtain ⟨hstate, hCpos⟩ := hreach x hx
@@ -5702,8 +9237,7 @@ theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
     have hB := runB_traceKinds (SkywalkNat.init x ECDSAAdd.p) t p_pos p_odd halive
     rw [hstate] at hB
     have hdot := runF_runB_dot γ 0 1 u v
-    rw [hB] at hdot
-    simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot
+    rw [hB] at hdot; simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot
     have hDpos : 0 < (runF (0, 1) γ).2 := hD_pres γ 0 1 (by omega)
     have hDlt : (runF (0, 1) γ).2 < ECDSAAdd.p := by
       have h1 : 1 ≤ (runF (0, 1) γ).1 * u := Nat.mul_pos hCpos hu
@@ -5733,8 +9267,7 @@ theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
       rw [hB] at hdotC hdotA
       simp only [SkywalkNat.init, zero_mul, one_mul, zero_add, add_zero] at hdotC hdotA
       obtain ⟨sgn, hdet⟩ := runF_det_abs γ 1 0 0 1
-      rw [hlen] at hdet
-      simp only [Nat.cast_one, Nat.cast_zero, mul_one, mul_zero, sub_zero] at hdet
+      rw [hlen] at hdet; simp only [Nat.cast_one, Nat.cast_zero, mul_one, mul_zero, sub_zero] at hdet
       have hsgn_eq : (g x).2 = sgn := by
         dsimp only [g]
         cases sgn
@@ -5742,8 +9275,7 @@ theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
           rw [hdet, decide_eq_false_iff_not]
           have h2pos : (0 : ℤ) < (2 : ℤ) ^ t := by positivity
           omega
-        · simp only [↓reduceIte, one_mul] at hdet
-          rw [hdet]; simp
+        · simp only [↓reduceIte, one_mul] at hdet; rw [hdet]; simp
       have helim : ((runF (0, 1) γ).2 : ℤ) * x - ((runF (1, 0) γ).2 : ℤ) * ECDSAAdd.p =
           (if sgn then (1 : ℤ) else -1) * (2 : ℤ) ^ t * u := by
         have h1 : ((runF (1, 0) γ).1 : ℤ) * u + ((runF (1, 0) γ).2 : ℤ) * v = x := by exact_mod_cast hdotA
@@ -5763,8 +9295,7 @@ theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
       obtain ⟨hDpos, hDlt⟩ := Finset.mem_Ioo.mp hD_mem
       have hDne : ((runF (0, 1) γ).2 : ECDSAAdd.Fp) ≠ 0 := by
         intro hz
-        have hdvd := (ZMod.natCast_eq_zero_iff _ _).mp hz
-        exact (Nat.not_le_of_lt hDlt) (Nat.le_of_dvd hDpos hdvd)
+        exact (Nat.not_le_of_lt hDlt) (Nat.le_of_dvd hDpos ((ZMod.natCast_eq_zero_iff _ _).mp hz))
       exact ⟨hcast, hDne⟩
     obtain ⟨hc1, hne1⟩ := hcong x₁ (Finset.mem_coe.mp hx₁)
     obtain ⟨hc2, _⟩ := hcong x₂ (Finset.mem_coe.mp hx₂)
@@ -5779,8 +9310,6 @@ theorem backward_state_fiber_card (S : Finset Nat) (hS_sub : ∀ x ∈ S, 0 < x 
   have hc := Finset.card_le_card_of_injOn g (fun x hx => Finset.mem_coe.mpr (hmem x (Finset.mem_coe.mp hx))) hinj
   rw [Finset.card_product, Finset.card_univ, Fintype.card_bool, mul_comm] at hc
   exact hc.trans (Nat.mul_le_mul_left 2 (linear_diophantine_card u v ECDSAAdd.p hu hv hcop))
-
-/-! ### 6. Leading-even-steps (`k₀ = v₂(x)`) forced `E/O0` phase -/
 
 theorem leading_E_steps (x k0 : Nat) (hdiv : 2 ^ k0 ∣ x) (hodd : (x / 2 ^ k0) % 2 = 1)
     (hxp : x < ECDSAAdd.p) :
@@ -5800,22 +9329,19 @@ theorem leading_E_steps (x k0 : Nat) (hdiv : 2 ^ k0 ∣ x) (hodd : (x / 2 ^ k0) 
       obtain ⟨hst, htr⟩ := ih (by omega)
       have h2j : 2 ^ (j + 1) ∣ x := dvd_trans (Nat.pow_dvd_pow 2 hj) hdiv
       have hdivj : (x / 2 ^ j) % 2 = 0 := by
-        obtain ⟨q, rfl⟩ := h2j
-        rw [pow_succ, mul_assoc, Nat.mul_div_cancel_left _ (Nat.two_pow_pos j)]
-        omega
+        obtain ⟨q, rfl⟩ := h2j; rw [pow_succ, mul_assoc, Nat.mul_div_cancel_left _ (Nat.two_pow_pos j)]; omega
       have hne : x / 2 ^ j ≠ 0 := by
         obtain ⟨q, hq⟩ := h2j
         have hq0 : 0 < q := by
-          by_contra h; have hqz : q = 0 := by omega
+          by_contra h
+          have hqz : q = 0 := by omega
           rw [hqz] at hq; simp at hq; omega
         rw [hq, pow_succ, mul_assoc, Nat.mul_div_cancel_left _ (Nat.two_pow_pos j)]; omega
       have hstep : SkywalkNat.step ⟨x / 2 ^ j, ECDSAAdd.p⟩ = ⟨x / 2 ^ (j + 1), ECDSAAdd.p⟩ := by
         unfold SkywalkNat.step; rw [if_neg hne, if_pos hdivj, Nat.div_div_eq_div_mul, ← pow_succ]
       have hkd : stepKind ⟨x / 2 ^ j, ECDSAAdd.p⟩ = .E := by unfold stepKind; rw [if_pos hdivj]
-      refine ⟨?_, ?_⟩
-      · rw [Function.iterate_succ_apply', hst, hstep]
-      · rw [traceKinds_add _ j 1, htr, hst]
-        simp only [traceKinds, hkd, List.replicate_succ']
+      refine ⟨by rw [Function.iterate_succ_apply', hst, hstep], ?_⟩
+      rw [traceKinds_add _ j 1, htr, hst]; simp only [traceKinds, hkd, List.replicate_succ']
   obtain ⟨hst_k, htr_k⟩ := hk0_step k0 (le_refl k0)
   have hlt_p : x / 2 ^ k0 < ECDSAAdd.p := (Nat.div_le_self x _).trans_lt hxp
   have hne_k : x / 2 ^ k0 ≠ 0 := by omega
@@ -5826,193 +9352,185 @@ theorem leading_E_steps (x k0 : Nat) (hdiv : 2 ^ k0 ∣ x) (hodd : (x / 2 ^ k0) 
   have hkd_o1 : stepKind ⟨x / 2 ^ k0, ECDSAAdd.p⟩ = .O1 := by
     unfold stepKind; rw [if_neg hnot_even, if_neg hnot_le]
   have hrunF_rep : ∀ n, runF (0, 1) (List.replicate n .E) = (0, 1) := by
-    intro n; induction n with
-    | zero => rfl
-    | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
-  refine ⟨hst_k, ?_, ?_, ?_⟩
-  · rw [Function.iterate_succ_apply', hst_k, hstep_o1]
-  · rw [traceKinds_add _ k0 1, htr_k, hst_k]; simp [traceKinds, hkd_o1]
-  · rw [runF_append, hrunF_rep k0]; rfl
+    intro n; induction n with | zero => rfl | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
+  refine ⟨hst_k, by rw [Function.iterate_succ_apply', hst_k, hstep_o1],
+    by rw [traceKinds_add _ k0 1, htr_k, hst_k]; simp [traceKinds, hkd_o1],
+    by rw [runF_append, hrunF_rep k0]; rfl⟩
+
+theorem forced_eo0_step (x k0 : Nat) (hk0 : 1 ≤ k0) (hdiv : 2 ^ k0 ∣ x)
+    (hodd : (x / 2 ^ k0) % 2 = 1) (hxp : x < ECDSAAdd.p) (j : Nat) (hj : j ≤ k0 - 1) :
+    let zj := SkywalkNat.step^[j] (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p))
+    let γj := traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) j
+    (∀ k ∈ γj, k ∈ eo0Kinds) ∧
+    zj.v = x / 2 ^ k0 ∧
+    (runF (2, 1) γj).1 = 2 ^ (j + 1) ∧
+    (runF (2, 1) γj).2 < 2 ^ (j + 1) ∧
+    2 ^ (j + 1) * zj.u + (runF (2, 1) γj).2 * (x / 2 ^ k0) = ECDSAAdd.p := by
+  obtain ⟨_, hz1_eq, _, _⟩ := leading_E_steps x k0 hdiv hodd hxp
+  set v0 := x / 2 ^ k0
+  have hv0_lt : 2 ^ k0 * v0 < ECDSAAdd.p := by have : 2 ^ k0 * v0 = x := Nat.mul_div_cancel' hdiv; omega
+  have hv0_pos : 0 < v0 := Nat.pos_of_ne_zero (fun h0 => by have : v0 % 2 = 1 := hodd; rw [h0] at this; simp at this)
+  induction j with
+  | zero =>
+    refine ⟨fun _ h => by simp [traceKinds] at h, by simp [hz1_eq], by simp [traceKinds, runF], by simp [traceKinds, runF], ?_⟩
+    simp only [Function.iterate_zero_apply, hz1_eq, traceKinds, runF, List.foldl_nil, Nat.zero_add, pow_one, one_mul]
+    have hpo := p_odd
+    have hltp : v0 < ECDSAAdd.p := (Nat.div_le_self x _).trans_lt hxp
+    have hv0_odd : v0 % 2 = 1 := hodd
+    omega
+  | succ j ih =>
+    obtain ⟨hEO, hvj, hCj, hDj, hlin⟩ := ih (by omega)
+    set zj := SkywalkNat.step^[j] (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p))
+    set γj := traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) j
+    have hgt : v0 < zj.u := by
+      have hpow_le : 2 ^ (j + 2) ≤ 2 ^ k0 := Nat.pow_le_pow_right (by decide) (by omega)
+      have hsum_lt : (2 ^ (j + 1) + (runF (2, 1) γj).2) * v0 < ECDSAAdd.p := by
+        have h1 : 2 ^ (j + 1) + (runF (2, 1) γj).2 ≤ 2 ^ (j + 2) := by
+          rw [show j + 2 = (j + 1) + 1 by omega, pow_succ]; omega
+        linarith [Nat.mul_le_mul_right v0 (h1.trans hpow_le)]
+      nlinarith
+    have hkd_in : stepKind zj ∈ eo0Kinds := by
+      unfold stepKind eo0Kinds; split_ifs with he hle
+      · simp
+      · simp
+      · exfalso; rw [hvj] at hle; omega
+    have htr_succ : traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (j + 1) = γj ++ [stepKind zj] := by
+      rw [traceKinds_add _ j 1]; rfl
+    have hstep_v : (SkywalkNat.step zj).v = v0 := by
+      unfold SkywalkNat.step; rw [if_neg (by omega)]
+      split_ifs with he hle
+      · exact hvj
+      · exact hvj
+      · exfalso; rw [hvj] at hle; omega
+    have hB_one := stepB_step zj (by omega) (by rw [hvj]; exact hodd)
+    have hdot_one := stepF_dot (stepKind zj) (runF (2, 1) γj).1 (runF (2, 1) γj).2 (SkywalkNat.step zj).u (SkywalkNat.step zj).v
+    rw [hB_one, hvj] at hdot_one
+    have hF_succ : runF (2, 1) (γj ++ [stepKind zj]) = stepF (stepKind zj) (runF (2, 1) γj) := by rw [runF_append]; rfl
+    have hC_succ : (stepF (stepKind zj) (runF (2, 1) γj)).1 = 2 ^ (j + 2) := by
+      simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hkd_in
+      rcases hkd_in with hk | hk <;> rw [hk] <;> simp [stepF, hCj, pow_succ']
+    have hD_succ : (stepF (stepKind zj) (runF (2, 1) γj)).2 < 2 ^ (j + 2) := by
+      simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hkd_in
+      rcases hkd_in with hk | hk <;> rw [hk] <;> simp [stepF, hCj, pow_succ'] <;> omega
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · rw [htr_succ]; intro k hk; rcases List.mem_append.mp hk with h1 | h2
+      · exact hEO k h1
+      · simp at h2; rw [h2]; exact hkd_in
+    · rw [Function.iterate_succ_apply']; exact hstep_v
+    · rw [htr_succ, hF_succ]; exact hC_succ
+    · rw [htr_succ, hF_succ]; exact hD_succ
+    · rw [htr_succ, hF_succ, Function.iterate_succ_apply', ← hstep_v]
+      have hlin' : (runF (2, 1) γj).1 * zj.u + (runF (2, 1) γj).2 * v0 = ECDSAAdd.p := by rw [hCj]; exact hlin
+      rw [show j + 1 + 1 = j + 2 from rfl, ← hC_succ, hdot_one, hlin']
 
 theorem forced_eo0_phase (x k0 : Nat) (hk0 : 1 ≤ k0) (hdiv : 2 ^ k0 ∣ x)
     (hodd : (x / 2 ^ k0) % 2 = 1) (hxp : x < ECDSAAdd.p) :
     let z1 := SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)
     let γ1 := traceKinds z1 (k0 - 1)
     let z2 := SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)
+    let D0 := (runF (2, 1) γ1).2
     (∀ k ∈ γ1, k ∈ eo0Kinds) ∧
-    (runF (2, 1) γ1).1 = 2 ^ k0 ∧ (runF (2, 1) γ1).2 < 2 ^ k0 ∧
-    (z2.u : ℝ) + (z2.v : ℝ) < 2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 := by
-  obtain ⟨_, hz1_eq, _, _⟩ := leading_E_steps x k0 hdiv hodd hxp
-  set v0 := x / 2 ^ k0
-  have hv0_lt : 2 ^ k0 * v0 < ECDSAAdd.p := by
-    have : 2 ^ k0 * v0 = x := Nat.mul_div_cancel' hdiv
-    omega
-  have hv0_pos : 0 < v0 := Nat.pos_of_ne_zero (fun h0 => by have : v0 % 2 = 1 := hodd; rw [h0] at this; simp at this)
-  have hstep_ind : ∀ j ≤ k0 - 1,
-      let zj := SkywalkNat.step^[j] (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p))
-      let γj := traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) j
-      (∀ k ∈ γj, k ∈ eo0Kinds) ∧
-      zj.v = v0 ∧
-      (runF (2, 1) γj).1 = 2 ^ (j + 1) ∧
-      (runF (2, 1) γj).2 < 2 ^ (j + 1) ∧
-      2 ^ (j + 1) * zj.u + (runF (2, 1) γj).2 * v0 = ECDSAAdd.p := by
-    intro j hj
-    induction j with
-    | zero =>
-      refine ⟨fun _ h => by simp [traceKinds] at h, ?_, by simp [traceKinds, runF], by simp [traceKinds, runF], ?_⟩
-      · simp [hz1_eq]
-      · simp only [Function.iterate_zero_apply, hz1_eq, traceKinds, runF, List.foldl_nil, Nat.zero_add, pow_one, one_mul]
-        have hpo := p_odd
-        have hltp : v0 < ECDSAAdd.p := (Nat.div_le_self x _).trans_lt hxp
-        have hv0_odd : v0 % 2 = 1 := hodd
-        omega
-    | succ j ih =>
-      obtain ⟨hEO, hvj, hCj, hDj, hlin⟩ := ih (by omega)
-      set zj := SkywalkNat.step^[j] (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p))
-      set γj := traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) j
-      have hgt : v0 < zj.u := by
-        have hpow_le : 2 ^ (j + 2) ≤ 2 ^ k0 := Nat.pow_le_pow_right (by decide) (by omega)
-        have hsum_lt : (2 ^ (j + 1) + (runF (2, 1) γj).2) * v0 < ECDSAAdd.p := by
-          have h1 : 2 ^ (j + 1) + (runF (2, 1) γj).2 ≤ 2 ^ (j + 2) := by
-            rw [show j + 2 = (j + 1) + 1 by omega, pow_succ]; omega
-          have h2 := Nat.mul_le_mul_right v0 (h1.trans hpow_le)
-          linarith
-        nlinarith
-      have hkd_in : stepKind zj ∈ eo0Kinds := by
-        unfold stepKind eo0Kinds
-        split_ifs with he hle
-        · simp
-        · simp
-        · exfalso; rw [hvj] at hle; omega
-      have htr_succ : traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (j + 1) =
-          γj ++ [stepKind zj] := by
-        rw [traceKinds_add _ j 1]; rfl
-      have hstep_v : (SkywalkNat.step zj).v = v0 := by
-        unfold SkywalkNat.step
-        rw [if_neg (by omega)]
-        split_ifs with he hle
-        · exact hvj
-        · exact hvj
-        · exfalso; rw [hvj] at hle; omega
-      have hB_one := stepB_step zj (by omega) (by rw [hvj]; exact hodd)
-      have hdot_one := stepF_dot (stepKind zj) (runF (2, 1) γj).1 (runF (2, 1) γj).2
-        (SkywalkNat.step zj).u (SkywalkNat.step zj).v
-      rw [hB_one, hvj] at hdot_one
-      have hF_succ : runF (2, 1) (γj ++ [stepKind zj]) = stepF (stepKind zj) (runF (2, 1) γj) := by
-        rw [runF_append]; rfl
-      have hC_succ : (stepF (stepKind zj) (runF (2, 1) γj)).1 = 2 ^ (j + 2) := by
-        simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hkd_in
-        rcases hkd_in with hk | hk <;> rw [hk] <;> simp [stepF, hCj, pow_succ']
-      have hD_succ : (stepF (stepKind zj) (runF (2, 1) γj)).2 < 2 ^ (j + 2) := by
-        simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hkd_in
-        rcases hkd_in with hk | hk <;> rw [hk] <;> simp [stepF, hCj, pow_succ'] <;> omega
-      refine ⟨?_, ?_, ?_, ?_, ?_⟩
-      · intro k hk; rw [htr_succ, List.mem_append, List.mem_singleton] at hk
-        rcases hk with h | rfl
-        · exact hEO k h
-        · exact hkd_in
-      · rw [Function.iterate_succ_apply']; exact hstep_v
-      · rw [htr_succ, hF_succ]; exact hC_succ
-      · rw [htr_succ, hF_succ]; exact hD_succ
-      · rw [htr_succ, hF_succ, Function.iterate_succ_apply']
-        have hdot' : 2 ^ (j + 2) * (SkywalkNat.step zj).u + (stepF (stepKind zj) (runF (2, 1) γj)).2 * v0 =
-            2 ^ (j + 1) * zj.u + (runF (2, 1) γj).2 * v0 := by
-          rw [Prod.mk.eta] at hdot_one
-          rw [hC_succ, hstep_v, hCj] at hdot_one
-          exact hdot_one
-        exact hdot'.trans hlin
-  obtain ⟨hEO, hv2, hC2, hD2, hlin2⟩ := hstep_ind (k0 - 1) (le_refl _)
+    (runF (2, 1) γ1).1 = 2 ^ k0 ∧ D0 < 2 ^ k0 ∧
+    (z2.u + z2.v) * 2 ^ k0 < 2 * ECDSAAdd.p ∧
+    ((z2.u : ℝ) + (z2.v : ℝ)) ≤ (2 - (D0 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+  have h := forced_eo0_step x k0 hk0 hdiv hodd hxp (k0 - 1) (le_refl _)
   have h2k : (k0 - 1) + (k0 + 1) = 2 * k0 := by omega
-  have hz2_eq : SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p) =
-      SkywalkNat.step^[k0 - 1] (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) := by
-    rw [← h2k, Function.iterate_add_apply]
   have hsub1 : (k0 - 1) + 1 = k0 := by omega
-  rw [hsub1] at hC2 hD2 hlin2
-  rw [← hz2_eq] at hv2 hlin2
-  set z2 := SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)
-  have hu2_mul : 2 ^ k0 * z2.u < ECDSAAdd.p := by
-    have hD_pos : 0 < (runF (2, 1) (traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1))).2 :=
-      (runF_pos _ (by omega) (by omega)).2
-    have : 1 ≤ (runF (2, 1) (traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1))).2 * v0 :=
-      Nat.mul_pos hD_pos hv0_pos
-    linarith
-  have hsum_mul : 2 ^ k0 * (z2.u + z2.v) < 2 * ECDSAAdd.p := by
-    rw [hv2]; linarith
-  have hsum_real : (z2.u : ℝ) + (z2.v : ℝ) < 2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 := by
-    rw [lt_div_iff₀ (by positivity)]
-    have hcast : ((2 ^ k0 * (z2.u + z2.v) : Nat) : ℝ) < ((2 * ECDSAAdd.p : Nat) : ℝ) := by exact_mod_cast hsum_mul
-    push_cast at hcast; linarith
-  exact ⟨hEO, hC2, hD2, hsum_real⟩
+  rw [← Function.iterate_add_apply, h2k, hsub1] at h
+  obtain ⟨hEO, hv2, hC2, hD2, hlin⟩ := h
+  set v0 := x / 2 ^ k0
+  set D0 := (runF (2, 1) (traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1))).2
+  have hv0_lt : 2 ^ k0 * v0 < ECDSAAdd.p := by have : 2 ^ k0 * v0 = x := Nat.mul_div_cancel' hdiv; omega
+  have hnat_lt : ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+      (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) * 2 ^ k0 < 2 * ECDSAAdd.p := by
+    rw [hv2]; nlinarith
+  have hreal_le : ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
+      ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤
+      (2 - (D0 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+    rw [hv2]
+    have h2k_pos : (0 : ℝ) < (2 : ℝ) ^ k0 := by positivity
+    have hlinR : (2 : ℝ) ^ k0 * ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
+        (D0 : ℝ) * (v0 : ℝ) = (ECDSAAdd.p : ℝ) := by exact_mod_cast hlin
+    have hv0R : (2 : ℝ) ^ k0 * (v0 : ℝ) ≤ (ECDSAAdd.p : ℝ) := by exact_mod_cast hv0_lt.le
+    have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+    have hD0_le : (D0 : ℝ) ≤ (2 : ℝ) ^ k0 := by exact_mod_cast hD2.le
+    have h2k_mul : (2 : ℝ) ^ k0 * (((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) + (v0 : ℝ)) ≤
+        (2 - (D0 : ℝ) / (2 : ℝ) ^ k0) * (ECDSAAdd.p : ℝ) := by
+      have h1 : (2 : ℝ) ^ k0 * (((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) + (v0 : ℝ)) =
+          (ECDSAAdd.p : ℝ) + ((2 : ℝ) ^ k0 - (D0 : ℝ)) * (v0 : ℝ) := by linarith
+      have h2 : ((2 : ℝ) ^ k0 - (D0 : ℝ)) * (v0 : ℝ) ≤ ((2 : ℝ) ^ k0 - (D0 : ℝ)) * ((ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0) := by
+        apply mul_le_mul_of_nonneg_left _ (by linarith)
+        exact (le_div_iff₀ h2k_pos).mpr (by linarith)
+      have h3 : (ECDSAAdd.p : ℝ) + ((2 : ℝ) ^ k0 - (D0 : ℝ)) * ((ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0) =
+          (2 - (D0 : ℝ) / (2 : ℝ) ^ k0) * (ECDSAAdd.p : ℝ) := by field_simp [h2k_pos.ne']; ring
+      linarith
+    have hcoeff_nn : 0 ≤ 2 - (D0 : ℝ) / (2 : ℝ) ^ k0 := by
+      have : (D0 : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one h2k_pos).mpr hD0_le; linarith
+    have h4 := h2k_mul.trans (mul_le_mul_of_nonneg_left hpR hcoeff_nn)
+    exact (le_div_iff₀ h2k_pos).mpr (by linarith)
+  exact ⟨hEO, hC2, hD2, hnat_lt, hreal_le⟩
 
-/-! ### 7. Parameterized per-`k₀` 3-case bound (`BadS`) with `ψ_{B7}` and envelope drop bound (`BadDrop`) -/
+/-! ### 7. Unified `BadS_k0` bounds (`k0 = 0`, `k0 = 1` reduction, Option 1 Way A/B, Option 2) -/
 
 def BadS (S : Nat) : Finset Nat :=
   (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => (SkywalkNat.step^[S] (SkywalkNat.init x ECDSAAdd.p)).u ≠ 0)
 
-def qL : ℝ := 38 / 100
+def BadS_k0 (S k0 : Nat) : Finset Nat :=
+  (BadS S).filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
 
-theorem geom_sum_le_inv {{r : ℝ}} (hr0 : 0 ≤ r) (hr1 : r < 1) (n : Nat) :
-    ∑ j ∈ Finset.range n, r ^ j ≤ 1 / (1 - r) := by
-  have h1 : (1 - r) * ∑ j ∈ Finset.range n, r ^ j = 1 - r ^ n := by
-    have := geom_sum_mul_neg r n
-    linarith
-  have h2 : 1 - r ^ n ≤ 1 := by have : 0 ≤ r ^ n := pow_nonneg hr0 n; linarith
-  rw [le_div_iff₀ (by linarith)]
-  linarith
+private theorem geom_sum_le_inv {r : ℝ} (hr0 : 0 ≤ r) (hr1 : r < 1) (N : Nat) :
+    ∑ j ∈ Finset.range N, r ^ j ≤ 1 / (1 - r) := by
+  have h1 : (1 - r) * ∑ j ∈ Finset.range N, r ^ j = 1 - r ^ N := by
+    induction N with
+    | zero => simp
+    | succ n ih => rw [Finset.sum_range_succ, mul_add, ih, pow_succ]; ring
+  have h2 : (1 - r) * ∑ j ∈ Finset.range N, r ^ j ≤ 1 := by rw [h1]; linarith [pow_nonneg hr0 N]
+  exact (le_div_iff₀ (by linarith)).mpr (by linarith)
 
-theorem geom_sum_gt1_le {{r : ℝ}} (hr1 : 1 < r) (n : Nat) :
-    ∑ j ∈ Finset.range n, r ^ j ≤ r ^ n / (r - 1) := by
-  have h1 : (r - 1) * ∑ j ∈ Finset.range n, r ^ j = r ^ n - 1 := by
-    have := mul_geom_sum r n
-    linarith
-  have h2 : r ^ n - 1 ≤ r ^ n := by linarith
-  rw [le_div_iff₀ (by linarith)]
-  linarith
-
-theorem case3_card_bound (S_step : Nat) (hS_le : S_step ≤ 512)
-    (S : Finset Nat) (hS_sub : S ⊆ BadS S_step)
-    (t : Nat) (ht : t ≤ S_step) (T0 : ℝ) (hT0 : 0 < T0)
+theorem case3_card_bound_gen (B : BackSpec) (S_step : Nat) (hS_le : S_step ≤ 512)
+    (S : Finset Nat) (hS_sub : S ⊆ BadS S_step) (t : Nat) (ht : t ≤ S_step)
+    (T0 cfac : ℝ) (hT0 : 0 < T0) (hcfac : 0 < cfac)
     (hC_pos : ∀ x ∈ S, 0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1)
-    (hPhiB : ∀ x ∈ S, ∀ L, S_step + 1 ≤ L → L ≤ 512 →
+    (huv_fac : ∀ x ∈ S,
+      let u := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u
+      let v := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v
+      2 * ((ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) + 1) ≤ cfac * (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)))
+    (hPsiB : ∀ x ∈ S, ∀ L, S_step + 1 ≤ L → L ≤ 512 →
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
-      T0 * qL ^ (L - (S_step + 1)) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
-        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)) :
-    (S.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - t) / (1 - rhoB7 / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - t) / (1 - rhoB / qL)) / T0) := by
+      T0 * B.qL ^ (L - (S_step + 1)) <
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+               ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)) :
+    (S.card : ℝ) ≤ ((2 : ℝ) ^ 256 / T0) *
+      (cfac * B.psiB 1 1 * B.rhoB ^ (S_step - t) / (1 - B.rhoB / B.qL)) := by
   let SL : Nat → Finset Nat := fun j =>
-    S.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
-      (SkywalkNat.step^[S_step + 1 + j] (SkywalkNat.init x ECDSAAdd.p)).u = 0)
+    S.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩)
   have hcov : S ⊆ (Finset.range (512 - S_step)).biUnion SL := by
     intro x hx
     have hbad := Finset.mem_filter.mp (hS_sub hx)
     obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
-    obtain ⟨L, hL1, hL2, hterm1, hterm0⟩ := exists_term_time S_step hS_le hx0 hxp hbad.2
+    obtain ⟨L, hL1, hL2, hterm, _⟩ := exists_term_time S_step hS_le hx0 hxp hbad.2
     refine Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
-      Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega],
-        by rwa [show S_step + 1 + (L - (S_step + 1)) = L by omega]⟩⟩
+      Finset.mem_filter.mpr ⟨hx, ?_⟩⟩
+    rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega]
   have hcard_sum : (S.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL j).card : ℝ) := by
     exact_mod_cast (Finset.card_le_card hcov).trans Finset.card_biUnion_le
   have hper_j : ∀ j ∈ Finset.range (512 - S_step),
-      ((SL j).card : ℝ) ≤ (2 : ℝ) ^ 256 / T0 *
-        ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - t) * (rhoB7 / qL) ^ j +
-         (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - t) * (rhoB / qL) ^ j) := by
+      ((SL j).card : ℝ) ≤ ((2 : ℝ) ^ 256 / T0) *
+        (cfac * B.psiB 1 1 * B.rhoB ^ (S_step - t) * (B.rhoB / B.qL) ^ j) := by
     intro j hj
     have hjlt : j < 512 - S_step := Finset.mem_range.mp hj
     set Lb := (S_step - t) + j
     let fB : Nat → List StepKind := fun x =>
       (traceKinds (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)) Lb).reverse
-    have hfB_mem : ∀ x ∈ SL j, fB x ∈ pathsOf allKinds Lb := fun x _ =>
-      mem_pathsOf_all (by simp [fB, traceKinds_length])
-    have hfib := card_le_list_sum_fiber (SL j) (pathsOf allKinds Lb) fB hfB_mem
+    have hfib := card_le_list_sum_fiber (SL j) (pathsOf allKinds Lb) fB
+      (fun x _ => mem_pathsOf_all (by simp [fB, traceKinds_length]))
     have hper_γ : ∀ γ ∈ pathsOf allKinds Lb,
         (((SL j).filter (fun x => fB x = γ)).card : ℝ) ≤
-          ((246 / 100 : ℝ) * (2 : ℝ) ^ 256 / (T0 * qL ^ j)) *
-            psiB7 ((runBL (1, 1) γ).1 : ℝ) ((runBL (1, 1) γ).2 : ℝ) +
-          (2 / (T0 * qL ^ j)) *
-            phiB ((runBL (1, 1) γ).1 : ℝ) ((runBL (1, 1) γ).2 : ℝ) := by
-      intro γ hγ
-      have hγ_len : γ.length = Lb := (mem_pathsOf.mp hγ).1
+          (cfac * (2 : ℝ) ^ 256 / (T0 * B.qL ^ j)) *
+            B.psiB ((runBL (1, 1) γ).1 : ℝ) ((runBL (1, 1) γ).2 : ℝ) := by
+      intro γ _
       set F := (SL j).filter (fun x => fB x = γ)
       have huv_pos := runBL_pos γ (by omega : 0 < 1) (by omega : 0 < 1)
       have huR : (0 : ℝ) < ((runBL (1, 1) γ).1 : ℝ) := by exact_mod_cast huv_pos.1
@@ -6021,22 +9539,19 @@ theorem case3_card_bound (S_step : Nat) (hS_le : S_step ≤ 512)
       · obtain ⟨x0, hx0F⟩ := hFne
         have hx0SL : x0 ∈ SL j := (Finset.mem_filter.mp hx0F).1
         have hx0S : x0 ∈ S := (Finset.mem_filter.mp hx0SL).1
-        have hbad0 := Finset.mem_filter.mp (hS_sub hx0S)
-        obtain ⟨hx0_0, hx0_p⟩ := Finset.mem_Ioo.mp hbad0.1
+        obtain ⟨hx0_0, hx0_p⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp (hS_sub hx0S)).1
         set uv := runBL (1, 1) γ
         have hstate_all : ∀ x ∈ F, SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p) = ⟨uv.1, uv.2⟩ := by
           intro x hxF
           have hxSL := (Finset.mem_filter.mp hxF).1
           have hfx : fB x = γ := (Finset.mem_filter.mp hxF).2
-          have hterm := (Finset.mem_filter.mp hxSL).2.1
+          have hterm := (Finset.mem_filter.mp hxSL).2
           have hval := SkywalkNat.iter_valid t (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
           have halive : ∀ i < Lb, 0 < (SkywalkNat.step^[i] (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p))).u := by
-            intro i hi
-            rw [← Function.iterate_add_apply]
+            intro i hi; rw [← Function.iterate_add_apply]
             exact iter_alive_of_u_ne_zero _ (show i + t ≤ S_step + j by omega) (by rw [hterm]; decide)
           have hB := runB_traceKinds (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)) Lb hval.1 hval.2.1 halive
-          have hadd : Lb + t = S_step + j := by omega
-          rw [← Function.iterate_add_apply, hadd, hterm] at hB
+          rw [← Function.iterate_add_apply, show Lb + t = S_step + j by omega, hterm] at hB
           have hrev : runB (1, 1) (traceKinds (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)) Lb) = uv := by
             dsimp only [uv]; rw [← hfx]; exact (runBL_reverse (1, 1) _).symm
           rw [hrev] at hB
@@ -6049,80 +9564,53 @@ theorem case3_card_bound (S_step : Nat) (hS_le : S_step ≤ 512)
           (fun x hx => Finset.mem_Ioo.mp (Finset.mem_filter.mp (hS_sub (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1)).1)
           t uv.1 uv.2 huv_pos.1 huv_pos.2 hcop_uv
           (fun x hx => ⟨hstate_all x hx, hC_pos x (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1⟩)
-        have hdiv_le : ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) ≤ (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) := by
-          have h1 : ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((uv.1 * uv.2 : Nat) : ℝ) :=
-            Nat.cast_div_le
-          have h2 : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-          push_cast at h1
-          exact h1.trans (div_le_div_of_nonneg_right h2 (by positivity))
-        have hcardF_real : (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) + 2 := by
-          have hcR : (F.card : ℝ) ≤ 2 * ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) + 2 := by
-            have := Nat.cast_le (α := ℝ).mpr hcardF
-            push_cast at this; linarith
-          have h2div := mul_le_mul_of_nonneg_left hdiv_le (by norm_num : (0 : ℝ) ≤ 2)
-          linarith [show 2 * ((2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) = 2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) by ring]
-        have hphi_gt : T0 * qL ^ j < phiB (uv.1 : ℝ) (uv.2 : ℝ) := by
-          have h1 := hPhiB x0 hx0S (S_step + 1 + j) (by omega) (by omega) (by
-            simpa only [show S_step + 1 + j - 1 = S_step + j by omega] using (Finset.mem_filter.mp hx0SL).2.1)
-          rw [hstate_all x0 hx0F, show S_step + 1 + j - (S_step + 1) = j by omega] at h1
-          exact h1
-        have hqpos : 0 < T0 * qL ^ j := by unfold qL; positivity
-        have h1le : 1 ≤ phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j) := (one_le_div hqpos).mpr hphi_gt.le
-        have hmul := mul_le_mul hcardF_real h1le (by norm_num) (by positivity)
-        have hpsi := phiB_div_uv_le_psiB7 huR hvR
-        have hfirst : (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) ≤
-            ((246 / 100 : ℝ) * (2 : ℝ) ^ 256 / (T0 * qL ^ j)) * psiB7 (uv.1 : ℝ) (uv.2 : ℝ) := by
-          have heq1 : (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) =
-              (2 * (2 : ℝ) ^ 256 / (T0 * qL ^ j)) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / ((uv.1 : ℝ) * (uv.2 : ℝ))) := by ring
-          rw [heq1]
-          exact (mul_le_mul_of_nonneg_left hpsi (by positivity)).trans_eq (by ring)
-        calc (F.card : ℝ) = (F.card : ℝ) * 1 := (mul_one _).symm
-          _ ≤ (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) + 2) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) := hmul
-          _ = (2 * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))) * (phiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * qL ^ j)) +
-              (2 / (T0 * qL ^ j)) * phiB (uv.1 : ℝ) (uv.2 : ℝ) := by ring
-          _ ≤ _ := add_le_add hfirst le_rfl
+        have hfac0 := huv_fac x0 hx0S
+        rw [hstate_all x0 hx0F] at hfac0
+        have hcardF_real : (F.card : ℝ) ≤ cfac * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ)) := by
+          have hcR : (F.card : ℝ) ≤ ((2 * (ECDSAAdd.p / (uv.1 * uv.2) + 1) : Nat) : ℝ) := by exact_mod_cast hcardF
+          have hdiv : ((ECDSAAdd.p / (uv.1 * uv.2) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((uv.1 : ℝ) * (uv.2 : ℝ)) := by
+            simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := uv.1 * uv.2))
+          have hcR2 : (F.card : ℝ) ≤ 2 * ((ECDSAAdd.p : ℝ) / ((uv.1 : ℝ) * (uv.2 : ℝ)) + 1) := by
+            push_cast at hcR; linarith
+          exact hcR2.trans hfac0
+        have hpsi_gt : T0 * B.qL ^ j < (uv.1 : ℝ) * (uv.2 : ℝ) * B.psiB (uv.1 : ℝ) (uv.2 : ℝ) := by
+          have h1 := hPsiB x0 hx0S (S_step + 1 + j) (by omega) (by omega) (by
+            simpa only [show S_step + 1 + j - 1 = S_step + j by omega] using (Finset.mem_filter.mp hx0SL).2)
+          rw [hstate_all x0 hx0F, show S_step + 1 + j - (S_step + 1) = j by omega] at h1; exact h1
+        have hqpos : 0 < T0 * B.qL ^ j := mul_pos hT0 (pow_pos B.hqL_pos j)
+        have h1le : 1 / ((uv.1 : ℝ) * (uv.2 : ℝ)) ≤ B.psiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * B.qL ^ j) := by
+          rw [div_le_div_iff₀ (by positivity) hqpos]; linarith
+        refine hcardF_real.trans ?_
+        calc cfac * (2 : ℝ) ^ 256 / ((uv.1 : ℝ) * (uv.2 : ℝ))
+            = (cfac * (2 : ℝ) ^ 256) * (1 / ((uv.1 : ℝ) * (uv.2 : ℝ))) := by ring
+          _ ≤ (cfac * (2 : ℝ) ^ 256) * (B.psiB (uv.1 : ℝ) (uv.2 : ℝ) / (T0 * B.qL ^ j)) :=
+              mul_le_mul_of_nonneg_left h1le (by positivity)
+          _ = (cfac * (2 : ℝ) ^ 256 / (T0 * B.qL ^ j)) * B.psiB (uv.1 : ℝ) (uv.2 : ℝ) := by ring
       · rw [Finset.not_nonempty_iff_eq_empty.mp hFne, Finset.card_empty, Nat.cast_zero]
-        have h1 := psiB7_pos huR hvR
-        have h2 := phiB_pos huR hvR
-        unfold qL; positivity
+        have h1 := B.hpsi_pos _ _ huR hvR
+        have hq := B.hqL_pos; positivity
     have hsum1 := hfib.trans (list_sum_map_le _ _ _ hper_γ)
-    have hadd_map : ∀ (xs : List (List StepKind)) (f g : List StepKind → ℝ),
-        (xs.map (fun x => f x + g x)).sum = (xs.map f).sum + (xs.map g).sum := by
-      intro xs f g; induction xs with | nil => simp | cons _ _ ih => simp [ih]; ring
-    rw [hadd_map, list_sum_mul_left, list_sum_mul_left] at hsum1
-    have htree1 := sum_pathsAll_psiB7 Lb 1 1 (by omega) (by omega)
-    have htree2 := sum_pathsAll_phiB Lb 1 1 (by omega) (by omega)
-    have hsum2 := hsum1.trans (add_le_add
-      (mul_le_mul_of_nonneg_left htree1 (by unfold qL; positivity))
-      (mul_le_mul_of_nonneg_left htree2 (by unfold qL; positivity)))
+    rw [list_sum_mul_left] at hsum1
+    have htree := sum_pathsAll_B B.psiB B.rhoB B.hrhoB_nn B.hpsi_contract Lb 1 1 (by omega) (by omega)
+    have hq := B.hqL_pos
+    have hsum2 := hsum1.trans (mul_le_mul_of_nonneg_left htree (by positivity))
     refine hsum2.trans_eq ?_
-    dsimp only [Lb]
-    rw [pow_add rhoB7, pow_add rhoB]
-    simp only [Nat.cast_one, div_pow]
-    have hT0ne : T0 ≠ 0 := hT0.ne'
-    have hq_ne : qL ≠ 0 := by unfold qL; norm_num
-    field_simp
+    dsimp only [Lb]; rw [pow_add B.rhoB]; simp only [Nat.cast_one, div_pow]
+    field_simp [hT0.ne', hq.ne']
   have hsum_all := hcard_sum.trans (Finset.sum_le_sum hper_j)
-  rw [← Finset.mul_sum, Finset.sum_add_distrib, ← Finset.mul_sum, ← Finset.mul_sum] at hsum_all
-  have hg1 := geom_sum_le_inv (r := rhoB7 / qL) (by unfold rhoB7 qL; positivity) (by unfold rhoB7 qL; norm_num) (512 - S_step)
-  have hg2 := geom_sum_le_inv (r := rhoB / qL) (by unfold rhoB qL; positivity) (by unfold rhoB qL; norm_num) (512 - S_step)
-  have hpsiB_pos : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
-  have hphiB_pos : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-  have hterm1 := mul_le_mul_of_nonneg_left hg1 (by unfold rhoB7; positivity : 0 ≤ (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - t))
-  have hterm2 := mul_le_mul_of_nonneg_left hg2 (by unfold rhoB; positivity : 0 ≤ 2 / (2 : ℝ) ^ 256 * phiB 1 1 * rhoB ^ (S_step - t))
-  have hcomb := mul_le_mul_of_nonneg_left (add_le_add hterm1 hterm2) (by positivity : 0 ≤ (2 : ℝ) ^ 256 / T0)
-  refine (hsum_all.trans hcomb).trans_eq ?_
-  ring
+  rw [← Finset.mul_sum, ← Finset.mul_sum] at hsum_all
+  have hg := geom_sum_le_inv (div_nonneg B.hrhoB_nn B.hqL_pos.le) ((div_lt_one B.hqL_pos).mpr B.hrhoB_lt_qL) (512 - S_step)
+  have hpsi11 : 0 ≤ B.psiB 1 1 := (B.hpsi_pos 1 1 (by norm_num) (by norm_num)).le
+  have hrp : 0 ≤ B.rhoB ^ (S_step - t) := pow_nonneg B.hrhoB_nn _
+  have hcomb := mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_left hg (by positivity : 0 ≤ cfac * B.psiB 1 1 * B.rhoB ^ (S_step - t))) (by positivity : 0 ≤ (2 : ℝ) ^ 256 / T0)
+  exact (hsum_all.trans hcomb).trans_eq (by ring)
 
-def BadS_k0 (S k0 : Nat) : Finset Nat :=
-  (BadS S).filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
-
-theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 + m ≤ S_step) :
+theorem badS_k0_zero_gen (F1 : FwdSpec) (B2 : BackSpec) (S_step m e : Nat)
+    (hS_le : S_step ≤ 512) (hm : 1 + m ≤ S_step) :
     ((BadS_k0 S_step 0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
-      ((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoF ^ m +
-      ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e +
-      ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (1 + m)) / (1 - rhoB7 / qL) +
-       (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (1 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+      (2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi 2 1 * F1.rho ^ m +
+      (1 / B2.K) * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) * B2.fwd.phi 2 1 * B2.fwd.rho ^ m / (1 - B2.qL) / (2 : ℝ) ^ e +
+      (5 / 2 : ℝ) * B2.psiB 1 1 * B2.rhoB ^ (S_step - (1 + m)) / (1 - B2.rhoB / B2.qL) * (2 : ℝ) ^ e) := by
   set S0 := BadS_k0 S_step 0
   set t : Nat := 1 + m
   set T0 : ℝ := 1 / (2 : ℝ) ^ e
@@ -6133,18 +9621,21 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
   let c3Pred : Nat → Prop := fun x =>
     ∀ L, S_step + 1 ≤ L → L ≤ 512 →
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
-      T0 * qL ^ (L - (S_step + 1)) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
-        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
+      T0 * B2.qL ^ (L - (S_step + 1)) <
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B2.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+                ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
   set S1 := S0.filter c1Pred
-  set S3 := S0.filter c3Pred
   set S2 := S0.filter (fun x => ¬ c1Pred x ∧ ¬ c3Pred x)
+  set S3 := S0.filter (fun x => ¬ c1Pred x ∧ c3Pred x)
   have hsplit : (S0.card : ℝ) ≤ (S1.card : ℝ) + (S2.card : ℝ) + (S3.card : ℝ) := by
     have hsub : S0 ⊆ S1 ∪ (S2 ∪ S3) := by
       intro x hx
       by_cases h1 : c1Pred x
       · exact Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h1⟩)
       · by_cases h3 : c3Pred x
-        · exact Finset.mem_union_right _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h3⟩))
+        · exact Finset.mem_union_right _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h1, h3⟩))
         · exact Finset.mem_union_right _ (Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h1, h3⟩))
     have hc := (Finset.card_le_card hsub).trans (Finset.card_union_le _ _)
     have hc2 := Finset.card_union_le S2 S3
@@ -6159,25 +9650,20 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
     have hmem := Finset.mem_filter.mp hx
     have hbad := Finset.mem_filter.mp hmem.1
     obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
-    have hodd : (x / 2 ^ 0) % 2 = 1 := hmem.2.2
-    obtain ⟨_, _, htr1, _⟩ := leading_E_steps x 0 (by simp) hodd hxp
-    have hu_t : 0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u :=
-      iter_alive_of_u_ne_zero _ hm hbad.2
-    have htr_t : traceKinds (SkywalkNat.init x ECDSAAdd.p) t =
-        .O1 :: traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m := by
-      have := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 m
-      simpa only [htr1, List.replicate_zero, List.nil_append, List.cons_append] using this
+    obtain ⟨_, _, htr1, _⟩ := leading_E_steps x 0 (by simp) hmem.2.2 hxp
+    have hu_t : 0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u := iter_alive_of_u_ne_zero _ hm hbad.2
+    have htr_t : traceKinds (SkywalkNat.init x ECDSAAdd.p) t = .O1 :: traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m := by
+      simpa only [htr1, List.replicate_zero, List.nil_append, List.cons_append] using traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 m
     have hCpos : 0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
-      rw [htr_t, runF_cons]
-      exact (runF_pos _ (by omega : 0 < 2) (by omega : 0 < 1)).1
+      rw [htr_t, runF_cons]; exact (runF_pos _ (by omega : 0 < 2) (by omega : 0 < 1)).1
     exact ⟨hx0, hxp, hu_t, htr_t, hCpos⟩
-  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * (((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoF ^ m) := by
+  -- S1
+  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * ((2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi 2 1 * F1.rho ^ m) := by
     let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m
-    have hfib := card_le_list_sum_fiber S1 (pathsOf allKinds m) f1
-      (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
+    have hfib := card_le_list_sum_fiber S1 (pathsOf allKinds m) f1 (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
     have hper : ∀ γ ∈ pathsOf allKinds m,
         ((S1.filter (fun x => f1 x = γ)).card : ℝ) ≤
-          (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) * phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+          (2 : ℝ) ^ 256 * (2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
       intro γ _
       set F := S1.filter (fun x => f1 x = γ)
       have hpos := runF_pos γ (by omega : 0 < 2) (by omega : 0 < 1)
@@ -6190,8 +9676,7 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
         have hc1_0 : c1Pred x0 := (Finset.mem_filter.mp hx0_S1).2
         have hfx0 : f1 x0 = γ := (Finset.mem_filter.mp hx0).2
         dsimp only [f1] at hfx0
-        have htr0 := (hx_facts x0 hx0_S0).2.2.2.1
-        rw [hfx0] at htr0
+        have htr0 := (hx_facts x0 hx0_S0).2.2.2.1; rw [hfx0] at htr0
         have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
         have hCD_le : (runF (2, 1) γ).1 * (runF (2, 1) γ).2 ≤ ECDSAAdd.p := by
           dsimp only [c1Pred] at hc1_0; rwa [htr0, hF_eq] at hc1_0
@@ -6201,10 +9686,8 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
           t (.O1 :: γ)
           (fun x hx => by
             have hxS0 := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
-            have hfx : f1 x = γ := (Finset.mem_filter.mp hx).2
-            dsimp only [f1] at hfx
-            have hf := hx_facts x hxS0
-            exact ⟨by rw [hf.2.2.2.1, hfx], hf.2.2.1⟩)
+            have hfx : f1 x = γ := (Finset.mem_filter.mp hx).2; dsimp only [f1] at hfx
+            have hf := hx_facts x hxS0; exact ⟨by rw [hf.2.2.2.1, hfx], hf.2.2.1⟩)
           hpos.1 hpos.2 hcop
         rw [hF_eq] at hcF
         have hdiv : ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) + 1 : Nat) : ℝ) ≤
@@ -6217,54 +9700,51 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
           have h3 : (ECDSAAdd.p : ℝ) / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) ≤
               (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) :=
             div_le_div_of_nonneg_right (by exact_mod_cast p_lt_256.le) (by positivity)
-          push_cast
-          linarith [show (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) +
+          push_cast; linarith [show (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) +
               (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) =
               2 * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) by ring]
-        have hinv := inv_prod_le_phiF hC_R hD_R (by exact_mod_cast hCD_le.trans p_lt_256.le)
+        have hsqM : ((2 : ℝ) ^ 256) ^ (F1.a - 2) ≤ ((2 : ℝ) ^ (128 * (F1.a - 2))) ^ 2 := by
+          rw [← pow_mul, ← pow_mul]; apply le_of_eq; congr 1; omega
+        have hinv := F1.hinv _ _ ((2 : ℝ) ^ 256) ((2 : ℝ) ^ (128 * (F1.a - 2))) hC_R hD_R (by positivity) (by positivity)
+          (by exact_mod_cast hCD_le.trans p_lt_256.le) hsqM
         have hcardR : (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) :=
           (Nat.cast_le.mpr hcF).trans hdiv
-        have hmul := mul_le_mul_of_nonneg_left hinv (by positivity : (0 : ℝ) ≤ 2 * (2 : ℝ) ^ 256)
-        refine hcardR.trans ?_
-        calc 2 * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)
-            = 2 * (2 : ℝ) ^ 256 * (1 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) := by ring
-          _ ≤ 2 * (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 2000 * phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2) := hmul
-          _ = (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) * phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
-            generalize (2 : ℝ) ^ 384 = P384; ring
+        calc (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 * (1 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) := by linarith [show 2 * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) = 2 * (2 : ℝ) ^ 256 * (1 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) by ring]
+          _ ≤ 2 * (2 : ℝ) ^ 256 * (((2 : ℝ) ^ (128 * (F1.a - 2)) / 2) * F1.phi (runF (2, 1) γ).1 (runF (2, 1) γ).2) :=
+              mul_le_mul_of_nonneg_left hinv (by positivity)
+          _ = (2 : ℝ) ^ 256 * (2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by ring
       · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
-        have := phiF_pos hC_R hD_R
-        exact mul_nonneg (mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))) this.le
+        have := F1.hpos _ _ hC_R hD_R; positivity
     have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
     rw [list_sum_mul_left] at h1
-    have hcoef_nn : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) :=
-      mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))
-    have h2 := h1.trans (mul_le_mul_of_nonneg_left (sum_pathsAll_phiF m 2 1 (by omega) (by omega)) hcoef_nn)
-    refine h2.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; generalize (2 : ℝ) ^ 384 = P384; ring
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left (sum_pathsAll_F F1.phi F1.rho F1.hrho_nn F1.hcontract m 2 1 (by omega) (by omega)) (by positivity))
+    refine h2.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; ring
+  -- S2
   have hS2 : (S2.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e) := by
+      ((1 / B2.K) * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) * B2.fwd.phi 2 1 * B2.fwd.rho ^ m / (1 - B2.qL) / (2 : ℝ) ^ e) := by
     let SL2 : Nat → Finset Nat := fun j =>
       S2.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
-        phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
-          ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * qL ^ j)
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B2.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+                ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * B2.qL ^ j)
     have hcov2 : S2 ⊆ (Finset.range (512 - S_step)).biUnion SL2 := by
       intro x hx
       have hnc3 : ¬ c3Pred x := (Finset.mem_filter.mp hx).2.2
       dsimp only [c3Pred] at hnc3; push_neg at hnc3
       obtain ⟨L, hL1, hL2, hterm, hle⟩ := hnc3
-      refine Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
+      exact Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
         Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega], hle⟩⟩
     have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL2 j).card : ℝ) := by
       exact_mod_cast (Finset.card_le_card hcov2).trans Finset.card_biUnion_le
     have hper_j : ∀ j ∈ Finset.range (512 - S_step),
-        ((SL2 j).card : ℝ) ≤
-          (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * (phiF 2 1 * rhoF ^ m) := by
+        ((SL2 j).card : ℝ) ≤ (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) * (B2.fwd.phi 2 1 * B2.fwd.rho ^ m) := by
       intro j _
       let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) m
-      have hfib := card_le_list_sum_fiber (SL2 j) (pathsOf allKinds m) f1
-        (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
+      have hfib := card_le_list_sum_fiber (SL2 j) (pathsOf allKinds m) f1 (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
       have hper_γ : ∀ γ ∈ pathsOf allKinds m,
           (((SL2 j).filter (fun x => f1 x = γ)).card : ℝ) ≤
-            (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+            (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) * B2.fwd.phi (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
         intro γ _
         set F := (SL2 j).filter (fun x => f1 x = γ)
         have hpos := runF_pos γ (by omega : 0 < 2) (by omega : 0 < 1)
@@ -6276,9 +9756,8 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
           have hx0_S2 := (Finset.mem_filter.mp hx0_SL2).1
           have hx0_S0 := (Finset.mem_filter.mp hx0_S2).1
           have hnc1 : ¬ c1Pred x0 := (Finset.mem_filter.mp hx0_S2).2.1
-          have hphiB_le := (Finset.mem_filter.mp hx0_SL2).2.2
-          have hfx0 : f1 x0 = γ := (Finset.mem_filter.mp hx0).2
-          dsimp only [f1] at hfx0
+          have hpsi_le := (Finset.mem_filter.mp hx0_SL2).2.2
+          have hfx0 : f1 x0 = γ := (Finset.mem_filter.mp hx0).2; dsimp only [f1] at hfx0
           have hf0 := hx_facts x0 hx0_S0
           have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t = .O1 :: γ := by rw [hf0.2.2.2.1, hfx0]
           have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
@@ -6290,84 +9769,314 @@ theorem badS_k0_zero_bound (S_step m e : Nat) (hS_le : S_step ≤ 512) (hm : 1 +
             t (.O1 :: γ)
             (fun x hx => by
               have hxS0 := (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1
-              have hfx : f1 x = γ := (Finset.mem_filter.mp hx).2
-              dsimp only [f1] at hfx
-              have hf := hx_facts x hxS0
-              exact ⟨by rw [hf.2.2.2.1, hfx], hf.2.2.1⟩)
+              have hfx : f1 x = γ := (Finset.mem_filter.mp hx).2; dsimp only [f1] at hfx
+              have hf := hx_facts x hxS0; exact ⟨by rw [hf.2.2.2.1, hfx], hf.2.2.1⟩)
             hpos.1 hpos.2 hcop
           rw [hF_eq, Nat.div_eq_of_lt hCD_gt] at hcF
           have hval0 := SkywalkNat.iter_valid t (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
-          have halive0 : ∀ i < t, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u := fun i hi =>
-            iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hf0.2.2.1)
-          have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t p_pos p_odd halive0
+          have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t p_pos p_odd
+            (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hf0.2.2.1))
           rw [htr0] at hB0
           have hdot0 := runF_runB_dot (.O1 :: γ) 0 1
-            (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u
-            (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v
-          rw [hB0, hF_eq] at hdot0
-          simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
-          have hcoup := coupling_lower hC_R hD_R
-            (Nat.cast_pos.mpr hf0.2.2.1) (Nat.cast_pos.mpr hval0.1)
+            (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v
+          rw [hB0, hF_eq] at hdot0; simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
+          have hcoup := B2.hcoup _ _ _ _ hC_R hD_R (Nat.cast_pos.mpr hf0.2.2.1) (Nat.cast_pos.mpr hval0.1)
           have hlinR : ((runF (2, 1) γ).1 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
               ((runF (2, 1) γ).2 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
-            have : ((runF (2, 1) γ).1 * (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u +
-                (runF (2, 1) γ).2 * (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : Nat) ≤ 2 ^ 256 :=
-              hdot0.le.trans p_lt_256.le
-            exact_mod_cast this
-          have hpow5 : (((runF (2, 1) γ).1 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-              ((runF (2, 1) γ).2 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ)) ^ 5 ≤ (2 : ℝ) ^ 1280 :=
-            (pow_le_pow_left₀ (by positivity) hlinR 5).trans_eq (by rw [← pow_mul])
-          have hphiF_pos := phiF_pos hC_R hD_R
-          have h1 : (3125 * 10 ^ 6 / 108 : ℝ) ≤ phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 * (T0 * qL ^ j) * (2 : ℝ) ^ 1280 :=
-            hcoup.trans (mul_le_mul (mul_le_mul_of_nonneg_left hphiB_le hphiF_pos.le) hpow5
-              (by positivity) (by unfold qL; positivity))
+            exact_mod_cast hdot0.le.trans p_lt_256.le
+          have hpowa := pow_le_pow_left₀ (by positivity) hlinR B2.fwd.a
+          have hphiF_pos := B2.fwd.hpos _ _ hC_R hD_R
+          have hqpos := B2.hqL_pos
+          have h1 : B2.K ≤ B2.fwd.phi (runF (2, 1) γ).1 (runF (2, 1) γ).2 * (T0 * B2.qL ^ j) * ((2 : ℝ) ^ 256) ^ B2.fwd.a :=
+            hcoup.trans (mul_le_mul (mul_le_mul_of_nonneg_left hpsi_le hphiF_pos.le) hpowa (by positivity) (by positivity))
           have hcard1 : (F.card : ℝ) ≤ 1 := by exact_mod_cast hcF
-          have h2 : (1 : ℝ) ≤ (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) *
-              phiF (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
-            have hmul := mul_le_mul_of_nonneg_left h1 (by norm_num : (0 : ℝ) ≤ 108 / (3125 * 10 ^ 6 : ℝ))
-            have hlhs : (108 / (3125 * 10 ^ 6 : ℝ)) * (3125 * 10 ^ 6 / 108 : ℝ) = 1 := by norm_num
-            rw [hlhs] at hmul
-            exact hmul.trans_eq (by generalize (2 : ℝ) ^ 1280 = P1280; generalize T0 = T0'; ring)
+          have hKpos := B2.hK_pos
+          have h2 : (1 : ℝ) ≤ (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) * B2.fwd.phi (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+            have hm := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ 1 / B2.K)
+            rw [one_div_mul_cancel hKpos.ne'] at hm
+            exact hm.trans_eq (by ring)
           exact hcard1.trans h2
         · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
-          have := phiF_pos hC_R hD_R; unfold qL; positivity
+          have := B2.fwd.hpos _ _ hC_R hD_R; have := B2.hK_pos; have := B2.hqL_pos; positivity
       have h1 := hfib.trans (list_sum_map_le _ _ _ hper_γ)
       rw [list_sum_mul_left] at h1
+      have := B2.hK_pos; have := B2.hqL_pos
       exact h1.trans (mul_le_mul_of_nonneg_left
-        (by simpa only [Nat.cast_ofNat, Nat.cast_one] using sum_pathsAll_phiF m 2 1 (by omega) (by omega))
-        (by unfold qL; positivity))
+        (by simpa only [Nat.cast_ofNat, Nat.cast_one] using sum_pathsAll_F B2.fwd.phi B2.fwd.rho B2.fwd.hrho_nn B2.fwd.hcontract m 2 1 (by omega) (by omega))
+        (by positivity))
     have h1 := hsum2.trans (Finset.sum_le_sum hper_j)
     have hfact : ∑ j ∈ Finset.range (512 - S_step),
-        (108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * (T0 * qL ^ j) * (phiF 2 1 * rhoF ^ m) =
-        ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 * T0 * (phiF 2 1 * rhoF ^ m)) *
-          ∑ j ∈ Finset.range (512 - S_step), qL ^ j := by
-      rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro j _; generalize (2 : ℝ) ^ 1280 = P1280; generalize T0 = T0'; ring
+        (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) * (B2.fwd.phi 2 1 * B2.fwd.rho ^ m) =
+        ((1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * T0 * (B2.fwd.phi 2 1 * B2.fwd.rho ^ m)) *
+          ∑ j ∈ Finset.range (512 - S_step), B2.qL ^ j := by
+      rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
     rw [hfact] at h1
-    have hg := geom_sum_le_inv (r := qL) (by unfold qL; positivity) (by unfold qL; norm_num) (512 - S_step)
-    have hphi21_pos : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-    have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by unfold rhoF; positivity))
+    have hg := geom_sum_le_inv B2.hqL_pos.le B2.hqL_lt1 (512 - S_step)
+    have hphi21 := (B2.fwd.hpos 2 1 (by norm_num) (by norm_num)).le
+    have hrF := pow_nonneg B2.fwd.hrho_nn m
+    have hK := B2.hK_pos
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by positivity))
     refine h2.trans_eq ?_
     dsimp only [T0]
-    have hpow : (2 : ℝ) ^ 1280 = (2 : ℝ) ^ 256 * (2 : ℝ) ^ 1024 := by rw [← pow_add]
-    rw [hpow]; generalize (2 : ℝ) ^ 1024 = P1024; ring
-  have hS3 := case3_card_bound S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t hm T0 hT0
+    have hpow : ((2 : ℝ) ^ 256) ^ B2.fwd.a = (2 : ℝ) ^ 256 * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) := by
+      rw [← pow_mul, ← pow_add]; congr 1; have := B2.fwd.ha; omega
+    rw [hpow]; ring
+  -- S3: every x ∈ S3 has ¬ c1Pred x (C * D > p), so 4 * u * v < p -> 2 * (p / (u*v) + 1) ≤ (5/2) * 2^256 / (u*v)!
+  have hS3 := case3_card_bound_gen B2 S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t hm T0 (5 / 2) hT0 (by norm_num)
     (fun x hx => (hx_facts x (Finset.mem_filter.mp hx).1).2.2.2.2)
-    (fun x hx => (Finset.mem_filter.mp hx).2)
+    (fun x hx => by
+      have hxS0 := (Finset.mem_filter.mp hx).1
+      have hnc1 : ¬ c1Pred x := (Finset.mem_filter.mp hx).2.1
+      have hf := hx_facts x hxS0
+      set γ := traceKinds (SkywalkNat.init x ECDSAAdd.p) t
+      set u := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u
+      set v := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v
+      have hval := SkywalkNat.iter_valid t (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+      have hB := runB_traceKinds (SkywalkNat.init x ECDSAAdd.p) t p_pos p_odd
+        (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hf.2.2.1))
+      have hdot := runF_runB_dot γ 0 1 u v; rw [hB] at hdot
+      simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot
+      have hCD_gt : ECDSAAdd.p < (runF (0, 1) γ).1 * (runF (0, 1) γ).2 := by change ¬ (runF (0, 1) γ).1 * (runF (0, 1) γ).2 ≤ ECDSAAdd.p at hnc1; omega
+      have h4uv : 4 * (u * v) < ECDSAAdd.p := by
+        have h1 : 4 * ((runF (0, 1) γ).1 * (runF (0, 1) γ).2) * (u * v) ≤ ECDSAAdd.p * ECDSAAdd.p := by
+          have hsq : 4 * ((runF (0, 1) γ).1 * u) * ((runF (0, 1) γ).2 * v) ≤ ((runF (0, 1) γ).1 * u + (runF (0, 1) γ).2 * v) ^ 2 := by
+            zify; nlinarith [sq_nonneg (((runF (0, 1) γ).1 * u : ℤ) - ((runF (0, 1) γ).2 * v : ℤ))]
+          rw [hdot] at hsq; nlinarith
+        nlinarith [p_pos, Nat.mul_pos hf.2.2.1 hval.1]
+      have huv_pos : (0 : ℝ) < (u : ℝ) * (v : ℝ) := mul_pos (Nat.cast_pos.mpr hf.2.2.1) (Nat.cast_pos.mpr hval.1)
+      have h1 : ((ECDSAAdd.p / (u * v) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) := by
+        simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := u * v))
+      have h2 : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / (4 * ((u : ℝ) * (v : ℝ))) := by
+        rw [one_le_div (by positivity)]; exact_mod_cast h4uv.le
+      have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+      have h3 : (ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) ≤ (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)) :=
+        div_le_div_of_nonneg_right hpR huv_pos.le
+      have h4 : (ECDSAAdd.p : ℝ) / (4 * ((u : ℝ) * (v : ℝ))) = (1 / 4 : ℝ) * ((ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ))) := by ring
+      linarith [show (5 / 2 : ℝ) * (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)) = (5 / 2 : ℝ) * ((2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ))) by ring])
+    (fun x hx => (Finset.mem_filter.mp hx).2.2)
   have hS3' : (S3.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (1 + m)) / (1 - rhoB7 / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (1 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+      ((5 / 2 : ℝ) * B2.psiB 1 1 * B2.rhoB ^ (S_step - (1 + m)) / (1 - B2.rhoB / B2.qL) * (2 : ℝ) ^ e) := by
     refine hS3.trans_eq ?_; dsimp only [T0, t]; field_simp
   have hadd := add_le_add (add_le_add hS1 hS2) hS3'
   rw [← mul_add, ← mul_add] at hadd
   exact hsplit.trans hadd
 
-theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
-    (hk0 : 1 ≤ k0) (_hm : 1 ≤ m) (ht : 2 * k0 + m ≤ S_step) :
+theorem badS_k0_one_reduce (S_step : Nat) (hS : 1 ≤ S_step) :
+    (BadS_k0 S_step 1).card ≤ (BadS_k0 (S_step - 1) 0).card := by
+  have hinj : Set.InjOn (fun x => x / 2) (BadS_k0 S_step 1 : Set Nat) := by
+    intro a ha b hb heq
+    have ha2 : 2 ∣ a := by simpa using (Finset.mem_filter.mp (Finset.mem_coe.mp ha)).2.1
+    have hb2 : 2 ∣ b := by simpa using (Finset.mem_filter.mp (Finset.mem_coe.mp hb)).2.1
+    dsimp only at heq; omega
+  have hmap : Set.MapsTo (fun x => x / 2) (BadS_k0 S_step 1 : Set Nat) (BadS_k0 (S_step - 1) 0 : Set Nat) := by
+    intro x hx
+    have hmem := Finset.mem_filter.mp (Finset.mem_coe.mp hx)
+    have hbad := Finset.mem_filter.mp hmem.1
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
+    have h2dvd : 2 ∣ x := by simpa using hmem.2.1
+    have h2mod : x % 2 = 0 := Nat.dvd_iff_mod_eq_zero.mp h2dvd
+    have hxge2 : 2 ≤ x := Nat.le_of_dvd hx0 h2dvd
+    have hodd : (x / 2) % 2 = 1 := by simpa using hmem.2.2
+    have hstep1 : SkywalkNat.step (SkywalkNat.init x ECDSAAdd.p) = SkywalkNat.init (x / 2) ECDSAAdd.p := by
+      unfold SkywalkNat.step SkywalkNat.init; dsimp only
+      rw [if_neg (by omega), if_pos (by omega)]
+    have hiter : SkywalkNat.step^[S_step - 1] (SkywalkNat.init (x / 2) ECDSAAdd.p) =
+        SkywalkNat.step^[S_step] (SkywalkNat.init x ECDSAAdd.p) := by
+      rw [← hstep1, ← Function.iterate_succ_apply, Nat.succ_eq_add_one, Nat.sub_add_cancel hS]
+    rw [Finset.mem_coe]; dsimp only
+    exact Finset.mem_filter.mpr ⟨Finset.mem_filter.mpr ⟨Finset.mem_Ioo.mpr ⟨by omega, by omega⟩, by rw [hiter]; exact hbad.2⟩,
+      by simp, by simpa using hodd⟩
+  exact Finset.card_le_card_of_injOn (fun x => x / 2) hmap hinj
+
+def H_odd (k0 : Nat) : ℝ := ∑ j ∈ Finset.range (2 ^ (k0 - 1)), (1 : ℝ) / ((2 * j + 1 : Nat) : ℝ)
+
+def opt1Sum (k0 a2 : Nat) : ℝ :=
+  ∑ j ∈ Finset.range (2 ^ (k0 - 1)), (2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2
+
+def opt2Sum (k0 a2 : Nat) : ℝ :=
+  ∑ j ∈ Finset.range (2 ^ (k0 - 1)),
+    ((2 : ℝ) ^ k0 / ((2 * j + 1 : Nat) : ℝ) + 1) * (2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2
+
+theorem H_odd_nonneg (k0 : Nat) : 0 ≤ H_odd k0 := Finset.sum_nonneg (fun _ _ => by positivity)
+
+theorem H_odd_step {k0 : Nat} (hk : 2 ≤ k0) : H_odd (k0 + 1) ≤ H_odd k0 + 5 / 12 := by
+  unfold H_odd
+  have h1 : 2 ^ ((k0 + 1) - 1) = 2 ^ (k0 - 1) + 2 ^ (k0 - 1) := by
+    rw [show (k0 + 1) - 1 = (k0 - 1) + 1 by omega, pow_succ', two_mul]
+  rw [h1, Finset.sum_range_add]
+  have hsplit : 2 ^ (k0 - 1) = 2 ^ (k0 - 2) + 2 ^ (k0 - 2) := by
+    rw [show k0 - 1 = (k0 - 2) + 1 by omega, pow_succ', two_mul]
+  have h2sum : ∑ x ∈ Finset.range (2 ^ (k0 - 1)), (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + x) + 1 : Nat) : ℝ) =
+      (∑ x ∈ Finset.range (2 ^ (k0 - 2)), (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + x) + 1 : Nat) : ℝ)) +
+      (∑ x ∈ Finset.range (2 ^ (k0 - 2)), (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + (2 ^ (k0 - 2) + x)) + 1 : Nat) : ℝ)) := by
+    conv_lhs => arg 1; rw [hsplit]
+    rw [Finset.sum_range_add]
+  rw [h2sum]
+  have hA : ∑ x ∈ Finset.range (2 ^ (k0 - 2)), (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + x) + 1 : Nat) : ℝ) ≤ 1 / 4 := by
+    have hper : ∀ x ∈ Finset.range (2 ^ (k0 - 2)),
+        (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + x) + 1 : Nat) : ℝ) ≤ 1 / (2 : ℝ) ^ k0 := by
+      intro x _
+      apply div_le_div_of_nonneg_left (by norm_num) (by positivity)
+      have hpow : 2 ^ k0 ≤ 2 * (2 ^ (k0 - 1) + x) + 1 := by
+        rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+      exact_mod_cast hpow
+    refine (Finset.sum_le_sum hper).trans ?_
+    rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+    have hp : (2 : ℝ) ^ k0 = 4 * (2 : ℝ) ^ (k0 - 2) := by
+      conv_lhs => rw [show k0 = (k0 - 2) + 2 by omega]
+      rw [pow_add]; ring
+    rw [hp]; field_simp; norm_num
+  have hB : ∑ x ∈ Finset.range (2 ^ (k0 - 2)), (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + (2 ^ (k0 - 2) + x)) + 1 : Nat) : ℝ) ≤ 1 / 6 := by
+    have hper : ∀ x ∈ Finset.range (2 ^ (k0 - 2)),
+        (1 : ℝ) / ((2 * (2 ^ (k0 - 1) + (2 ^ (k0 - 2) + x)) + 1 : Nat) : ℝ) ≤ 1 / (6 * (2 : ℝ) ^ (k0 - 2)) := by
+      intro x _
+      apply div_le_div_of_nonneg_left (by norm_num) (by positivity)
+      have hpow : 6 * 2 ^ (k0 - 2) ≤ 2 * (2 ^ (k0 - 1) + (2 ^ (k0 - 2) + x)) + 1 := by
+        rw [show 2 ^ (k0 - 1) = 2 * 2 ^ (k0 - 2) by rw [← pow_succ', show k0 - 2 + 1 = k0 - 1 by omega]]; omega
+      exact_mod_cast hpow
+    refine (Finset.sum_le_sum hper).trans ?_
+    rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+    field_simp; norm_num
+  linarith
+
+theorem H_odd_ge8 (k0 : Nat) (hk : 8 ≤ k0) : H_odd k0 ≤ H_odd 8 + (5 * ((k0 - 8 : Nat) : ℝ)) / 12 := by
+  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hk
+  clear hk
+  induction d with
+  | zero => simp
+  | succ d ih =>
+    have h1 := H_odd_step (k0 := 8 + d) (by omega)
+    rw [show 8 + d - 8 = d by omega] at ih
+    rw [show 8 + (d + 1) - 8 = d + 1 by omega, show 8 + (d + 1) = 8 + d + 1 by omega]
+    push_cast; linarith
+
+
+theorem opt1Sum_ge3 (k0 a2 : Nat) (hk : 3 ≤ k0) :
+    opt1Sum k0 a2 ≤ (2 : ℝ) ^ (k0 - 3) * ((2 : ℝ) ^ a2 + (7 / 4 : ℝ) ^ a2 + (3 / 2 : ℝ) ^ a2 + (5 / 4 : ℝ) ^ a2) := by
+  unfold opt1Sum
+  set q := 2 ^ (k0 - 3)
+  have hlen : 2 ^ (k0 - 1) = q + q + q + q := by
+    dsimp [q]; rw [show k0 - 1 = (k0 - 3) + 2 by omega, pow_add]; ring
+  rw [hlen, Finset.sum_range_add, Finset.sum_range_add, Finset.sum_range_add]
+  have h2k : (2 : ℝ) ^ k0 = 8 * (q : ℝ) := by
+    dsimp [q]; rw [show k0 = (k0 - 3) + 3 by omega, pow_add]; push_cast; ring
+  have hq_nat : 0 < q := Nat.two_pow_pos _
+  have hqpos : (0 : ℝ) < (q : ℝ) := by dsimp [q]; positivity
+  have hblk (off : Nat) (hoff : off + q ≤ 2 ^ (k0 - 1)) (B : ℝ)
+      (hbound : ∀ x < q, 2 - ((2 * (off + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ B) :
+      ∑ x ∈ Finset.range q, (2 - ((2 * (off + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤ (q : ℝ) * B ^ a2 := by
+    refine (Finset.sum_le_sum (fun x hx => ?_)).trans (by rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul])
+    have hxlt := Finset.mem_range.mp hx
+    have hnn : 0 ≤ 2 - ((2 * (off + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 := by
+      have hlt : 2 * (off + x) + 1 ≤ 2 ^ k0 := by
+        rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+      have hdiv : ((2 * (off + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 :=
+        (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+      linarith
+    exact pow_le_pow_left₀ hnn (hbound x hxlt) a2
+  have hb0 := hblk 0 (by omega) 2 (fun x _ => by
+    have : (0 : ℝ) ≤ ((2 * (0 + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 := by positivity
+    linarith)
+  have hb1 := hblk q (by omega) (7 / 4) (fun x _ => by
+    rw [h2k]
+    have h1 : (2 * (q : ℝ)) ≤ ((2 * (q + x) + 1 : Nat) : ℝ) := by push_cast; linarith
+    have h2 : (1 / 4 : ℝ) ≤ ((2 * (q + x) + 1 : Nat) : ℝ) / (8 * (q : ℝ)) := by
+      rw [div_le_div_iff₀ (by norm_num) (by positivity)]; linarith
+    linarith)
+  have hb2 := hblk (q + q) (by omega) (3 / 2) (fun x _ => by
+    rw [h2k]
+    have h1 : (4 * (q : ℝ)) ≤ ((2 * (q + q + x) + 1 : Nat) : ℝ) := by push_cast; linarith
+    have h2 : (1 / 2 : ℝ) ≤ ((2 * (q + q + x) + 1 : Nat) : ℝ) / (8 * (q : ℝ)) := by
+      rw [div_le_div_iff₀ (by norm_num) (by positivity)]; linarith
+    linarith)
+  have hb3 := hblk (q + q + q) (by omega) (5 / 4) (fun x _ => by
+    rw [h2k]
+    have h1 : (6 * (q : ℝ)) ≤ ((2 * (q + q + q + x) + 1 : Nat) : ℝ) := by push_cast; linarith
+    have h2 : (3 / 4 : ℝ) ≤ ((2 * (q + q + q + x) + 1 : Nat) : ℝ) / (8 * (q : ℝ)) := by
+      rw [div_le_div_iff₀ (by norm_num) (by positivity)]; linarith
+    linarith)
+  have h0' : ∑ x ∈ Finset.range q, (2 - ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤ (q : ℝ) * (2 : ℝ) ^ a2 := by
+    simpa only [Nat.zero_add] using hb0
+  have hqR : (q : ℝ) = (2 : ℝ) ^ (k0 - 3) := by dsimp [q]; norm_cast
+  rw [← hqR]; linarith
+
+theorem opt2Sum_ge2 (k0 a2 : Nat) (hk : 2 ≤ k0) :
+    opt2Sum k0 a2 ≤ (2 : ℝ) ^ a2 * ((2 : ℝ) ^ k0 * H_odd (k0 - 1) + (2 : ℝ) ^ (k0 - 2)) +
+      (2 : ℝ) ^ (k0 - 2) * (3 * (3 / 2 : ℝ) ^ a2) := by
+  unfold opt2Sum
+  set q := 2 ^ (k0 - 2)
+  have hlen : 2 ^ (k0 - 1) = q + q := by
+    dsimp [q]; rw [show k0 - 1 = (k0 - 2) + 1 by omega, pow_succ', two_mul]
+  rw [hlen, Finset.sum_range_add]
+  have hqR : (q : ℝ) = (2 : ℝ) ^ (k0 - 2) := by dsimp [q]; norm_cast
+  have h2k : (2 : ℝ) ^ k0 = 4 * (q : ℝ) := by
+    dsimp [q]; rw [show k0 = (k0 - 2) + 2 by omega, pow_add]; push_cast; ring
+  have h1 : ∑ x ∈ Finset.range q,
+      ((2 : ℝ) ^ k0 / ((2 * x + 1 : Nat) : ℝ) + 1) * (2 - ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+      (2 : ℝ) ^ a2 * ((2 : ℝ) ^ k0 * H_odd (k0 - 1) + (2 : ℝ) ^ (k0 - 2)) := by
+    have hper : ∀ x ∈ Finset.range q,
+        ((2 : ℝ) ^ k0 / ((2 * x + 1 : Nat) : ℝ) + 1) * (2 - ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+        (2 : ℝ) ^ a2 * ((2 : ℝ) ^ k0 * (1 / ((2 * x + 1 : Nat) : ℝ)) + 1) := by
+      intro x hx
+      have hxlt := Finset.mem_range.mp hx
+      have hlt : 2 * x + 1 ≤ 2 ^ k0 := by
+        have : 2 ^ k0 = 4 * q := by
+          dsimp [q]; (conv_lhs => rw [show k0 = (k0 - 2) + 2 by omega]); rw [pow_add]; ring
+        omega
+      have hnn : 0 ≤ 2 - ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 := by
+        have : ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+        linarith
+      have hle2 : 2 - ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 2 := by
+        have : (0 : ℝ) ≤ ((2 * x + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 := by positivity
+        linarith
+      have hp := pow_le_pow_left₀ hnn hle2 a2
+      have hm := mul_le_mul_of_nonneg_left hp (by positivity : 0 ≤ (2 : ℝ) ^ k0 / ((2 * x + 1 : Nat) : ℝ) + 1)
+      exact hm.trans_eq (by ring)
+    refine (Finset.sum_le_sum hper).trans ?_
+    rw [← Finset.mul_sum, Finset.sum_add_distrib, ← Finset.mul_sum, Finset.sum_const, Finset.card_range, nsmul_eq_mul, mul_one, hqR]
+    have hH : ∑ x ∈ Finset.range q, (1 : ℝ) / ((2 * x + 1 : Nat) : ℝ) = H_odd (k0 - 1) := by
+      unfold H_odd; congr 2
+    rw [hH]
+  have h2 : ∑ x ∈ Finset.range q,
+      ((2 : ℝ) ^ k0 / ((2 * (q + x) + 1 : Nat) : ℝ) + 1) * (2 - ((2 * (q + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+      (2 : ℝ) ^ (k0 - 2) * (3 * (3 / 2 : ℝ) ^ a2) := by
+    have hper : ∀ x ∈ Finset.range q,
+        ((2 : ℝ) ^ k0 / ((2 * (q + x) + 1 : Nat) : ℝ) + 1) * (2 - ((2 * (q + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+        3 * (3 / 2 : ℝ) ^ a2 := by
+      intro x hx
+      have hxlt := Finset.mem_range.mp hx
+      have hqpos : (0 : ℝ) < (q : ℝ) := by dsimp [q]; positivity
+      have hge : 2 * (q : ℝ) ≤ ((2 * (q + x) + 1 : Nat) : ℝ) := by push_cast; linarith
+      have hlt : 2 * (q + x) + 1 ≤ 2 ^ k0 := by
+        have : 2 ^ k0 = 4 * q := by
+          dsimp [q]; (conv_lhs => rw [show k0 = (k0 - 2) + 2 by omega]); rw [pow_add]; ring
+        omega
+      have hf1 : (2 : ℝ) ^ k0 / ((2 * (q + x) + 1 : Nat) : ℝ) + 1 ≤ 3 := by
+        rw [h2k]
+        have : 4 * (q : ℝ) / ((2 * (q + x) + 1 : Nat) : ℝ) ≤ 2 := by
+          rw [div_le_iff₀ (by positivity)]; linarith
+        linarith
+      have hnn : 0 ≤ 2 - ((2 * (q + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 := by
+        have : ((2 * (q + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+        linarith
+      have hf2 : 2 - ((2 * (q + x) + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 3 / 2 := by
+        rw [h2k]
+        have : (1 / 2 : ℝ) ≤ ((2 * (q + x) + 1 : Nat) : ℝ) / (4 * (q : ℝ)) := by
+          rw [div_le_div_iff₀ (by norm_num) (by positivity)]; linarith
+        linarith
+      exact mul_le_mul hf1 (pow_le_pow_left₀ hnn hf2 a2) (by positivity) (by norm_num)
+    refine (Finset.sum_le_sum hper).trans ?_
+    rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul, hqR]
+  exact add_le_add h1 h2
+
+theorem badS_k0_opt1_gen (F1 : FwdSpec) (B2 : BackSpec) (S_step k0 m e : Nat) (wb : Bool)
+    (hS_le : S_step ≤ 512) (hk0 : 2 ≤ k0) (ht : 2 * k0 + m ≤ S_step) :
     ((BadS_k0 S_step k0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
-      ((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoEO0 ^ (k0 - 1) * rhoF ^ m +
-      ((16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 / (16 : ℝ) ^ k0 * phiF 1 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e +
-      ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (2 * k0 + m)) / (1 - rhoB7 / qL) +
-       (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (2 * k0 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+      (2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi 2 1 * F1.rhoEO ^ (k0 - 1) * F1.rho ^ m +
+      (1 / B2.K) * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) *
+        (if wb then B2.fwd.phi 1 1 * opt1Sum k0 B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0)
+         else B2.fwd.phi 2 1 * B2.fwd.rhoEO ^ (k0 - 1)) * B2.fwd.rho ^ m / (1 - B2.qL) / (2 : ℝ) ^ e +
+      (5 / 2 : ℝ) * B2.psiB 1 1 * B2.rhoB ^ (S_step - (2 * k0 + m)) / (1 - B2.rhoB / B2.qL) * (2 : ℝ) ^ e) := by
   set Sk := BadS_k0 S_step k0
   set t : Nat := 2 * k0 + m
   set T0 : ℝ := 1 / (2 : ℝ) ^ e
@@ -6378,33 +10087,32 @@ theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
   let c3Pred : Nat → Prop := fun x =>
     ∀ L, S_step + 1 ≤ L → L ≤ 512 →
       SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
-      T0 * qL ^ (L - (S_step + 1)) < phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
-        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
+      T0 * B2.qL ^ (L - (S_step + 1)) <
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B2.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+                ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
   set S1 := Sk.filter c1Pred
-  set S3 := Sk.filter c3Pred
   set S2 := Sk.filter (fun x => ¬ c1Pred x ∧ ¬ c3Pred x)
+  set S3 := Sk.filter (fun x => ¬ c1Pred x ∧ c3Pred x)
   have hsplit : (Sk.card : ℝ) ≤ (S1.card : ℝ) + (S2.card : ℝ) + (S3.card : ℝ) := by
     have hsub : Sk ⊆ S1 ∪ (S2 ∪ S3) := by
       intro x hx
       by_cases h1 : c1Pred x
       · exact Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h1⟩)
       · by_cases h3 : c3Pred x
-        · exact Finset.mem_union_right _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h3⟩))
+        · exact Finset.mem_union_right _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h1, h3⟩))
         · exact Finset.mem_union_right _ (Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h1, h3⟩))
     have hc := (Finset.card_le_card hsub).trans (Finset.card_union_le _ _)
     have hc2 := Finset.card_union_le S2 S3
     have hnat : Sk.card ≤ S1.card + S2.card + S3.card := by omega
     exact_mod_cast hnat
   let pref : List StepKind := List.replicate k0 .E ++ [.O1]
-  let g1 : Nat → List StepKind := fun x =>
-    traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1)
-  let g2 : Nat → List StepKind := fun x =>
-    traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m
+  let g1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1)
+  let g2 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m
   have hrunF_pref : runF (0, 1) pref = (2, 1) := by
     have hrep : ∀ n, runF (0, 1) (List.replicate n .E) = (0, 1) := by
-      intro n; induction n with
-      | zero => rfl
-      | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
+      intro n; induction n with | zero => rfl | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
     rw [runF_append, hrep]; rfl
   have hx_facts : ∀ x ∈ Sk,
       0 < x ∧ x < ECDSAAdd.p ∧
@@ -6413,23 +10121,21 @@ theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
       g1 x ∈ pathsOf eo0Kinds (k0 - 1) ∧
       g2 x ∈ pathsOf allKinds m ∧
       ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
-        ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) <
-          2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 ∧
+        ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤
+          (2 - ((runF (2, 1) (g1 x)).2 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 ∧
       0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
     intro x hx
     have hmem := Finset.mem_filter.mp hx
     have hbad := Finset.mem_filter.mp hmem.1
     obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
     obtain ⟨_, _, htr1, _⟩ := leading_E_steps x k0 hmem.2.1 hmem.2.2 hxp
-    obtain ⟨hEO, _, _, hsumR⟩ := forced_eo0_phase x k0 hk0 hmem.2.1 hmem.2.2 hxp
-    have hu_t : 0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u :=
-      iter_alive_of_u_ne_zero _ ht hbad.2
+    obtain ⟨hEO, _, _, _, hsumR⟩ := forced_eo0_phase x k0 (by omega) hmem.2.1 hmem.2.2 hxp
+    have hu_t : 0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u := iter_alive_of_u_ne_zero _ ht hbad.2
     have htr_2k : traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0) = pref ++ g1 x := by
       have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (k0 + 1) (k0 - 1)
       rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1; exact h1
     have htr_t : traceKinds (SkywalkNat.init x ECDSAAdd.p) t = pref ++ g1 x ++ g2 x := by
-      have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m
-      rw [htr_2k] at h1; exact h1
+      have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m; rw [htr_2k] at h1; exact h1
     have hCpos : 0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
       rw [htr_t, runF_append, runF_append, hrunF_pref]
       have h1 := runF_pos (g1 x) (by omega : 0 < 2) (by omega : 0 < 1)
@@ -6441,13 +10147,13 @@ theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
   have hpair_mem : ∀ x ∈ Sk, (g1 x, g2 x) ∈ pairList := fun x hx => by
     have hf := hx_facts x hx
     exact List.mem_flatMap.mpr ⟨g1 x, hf.2.2.2.2.1, List.mem_map.mpr ⟨g2 x, hf.2.2.2.2.2.1, rfl⟩⟩
-  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * (((2 : ℝ) ^ 384 / 1000) * phiF 2 1 * rhoEO0 ^ (k0 - 1) * rhoF ^ m) := by
-    have hfib := card_le_list_sum_fiber S1 pairList (fun x => (g1 x, g2 x))
-      (fun x hx => hpair_mem x (Finset.mem_filter.mp hx).1)
+  -- S1
+  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 * ((2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi 2 1 * F1.rhoEO ^ (k0 - 1) * F1.rho ^ m) := by
+    have hfib := card_le_list_sum_fiber S1 pairList (fun x => (g1 x, g2 x)) (fun x hx => hpair_mem x (Finset.mem_filter.mp hx).1)
     have hper : ∀ p12 ∈ pairList,
         ((S1.filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
-          (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) *
-            phiF (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2 := by
+          (2 : ℝ) ^ 256 * (2 : ℝ) ^ (128 * (F1.a - 2)) *
+            F1.phi (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2 := by
       rintro ⟨γ1, γ2⟩ _
       set F := S1.filter (fun x => (g1 x, g2 x) = (γ1, γ2))
       have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
@@ -6461,13 +10167,11 @@ theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
         have hx0_S1 := (Finset.mem_filter.mp hx0).1
         have hx0_Sk := (Finset.mem_filter.mp hx0_S1).1
         have hc1_0 : c1Pred x0 := (Finset.mem_filter.mp hx0_S1).2
-        have hpair0 := (Finset.mem_filter.mp hx0).2
+        have hp0 := (Finset.mem_filter.mp hx0).2
         have htr0 := (hx_facts x0 hx0_Sk).2.2.2.1
-        rw [(Prod.mk.inj hpair0).1, (Prod.mk.inj hpair0).2] at htr0
-        have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by
-          rw [runF_append, runF_append, hrunF_pref]
-        have hCD_le : C * D ≤ ECDSAAdd.p := by
-          dsimp only [c1Pred] at hc1_0; rwa [htr0, hF_eq] at hc1_0
+        rw [(Prod.mk.inj hp0).1, (Prod.mk.inj hp0).2] at htr0
+        have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by rw [runF_append, runF_append, hrunF_pref]
+        have hCD_le : C * D ≤ ECDSAAdd.p := by dsimp only [c1Pred] at hc1_0; rwa [htr0, hF_eq] at hc1_0
         have hcop := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
         rw [runF_append] at hcop
         have hcF := forward_prefix_fiber_card F
@@ -6475,254 +10179,812 @@ theorem badS_k0_pos_bound (S_step k0 m e : Nat) (hS_le : S_step ≤ 512)
           t (pref ++ γ1 ++ γ2)
           (fun x hx => by
             have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
-            have hp := (Finset.mem_filter.mp hx).2
-            have hf := hx_facts x hxSk
+            have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
             exact ⟨by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1⟩)
           (by rw [hF_eq]; exact hpos.1) (by rw [hF_eq]; exact hpos.2) (by rw [hF_eq]; exact hcop)
         rw [hF_eq] at hcF
         have hdiv : ((ECDSAAdd.p / (C * D) + 1 : Nat) : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) := by
           have h1 : ((ECDSAAdd.p / (C * D) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((C : ℝ) * D) := by
             simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := C * D))
-          have h2 : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((C : ℝ) * D) :=
-            (one_le_div (by positivity)).mpr (by exact_mod_cast hCD_le)
+          have h2 : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((C : ℝ) * D) := (one_le_div (by positivity)).mpr (by exact_mod_cast hCD_le)
           have h3 : (ECDSAAdd.p : ℝ) / ((C : ℝ) * D) ≤ (2 : ℝ) ^ 256 / ((C : ℝ) * D) :=
             div_le_div_of_nonneg_right (by exact_mod_cast p_lt_256.le) (by positivity)
-          push_cast
-          linarith [show (2 : ℝ) ^ 256 / ((C : ℝ) * D) + (2 : ℝ) ^ 256 / ((C : ℝ) * D) =
-            2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) by ring]
-        have hinv := inv_prod_le_phiF hC_R hD_R (by exact_mod_cast hCD_le.trans p_lt_256.le)
+          push_cast; linarith [show (2 : ℝ) ^ 256 / ((C : ℝ) * D) + (2 : ℝ) ^ 256 / ((C : ℝ) * D) = 2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) by ring]
+        have hsqM : ((2 : ℝ) ^ 256) ^ (F1.a - 2) ≤ ((2 : ℝ) ^ (128 * (F1.a - 2))) ^ 2 := by
+          rw [← pow_mul, ← pow_mul]; apply le_of_eq; congr 1; omega
+        have hinv := F1.hinv _ _ ((2 : ℝ) ^ 256) ((2 : ℝ) ^ (128 * (F1.a - 2))) hC_R hD_R (by positivity) (by positivity)
+          (by exact_mod_cast hCD_le.trans p_lt_256.le) hsqM
         have hcardR : (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) := (Nat.cast_le.mpr hcF).trans hdiv
-        have hmul := mul_le_mul_of_nonneg_left hinv (by positivity : (0 : ℝ) ≤ 2 * (2 : ℝ) ^ 256)
-        refine hcardR.trans ?_
-        calc 2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) = 2 * (2 : ℝ) ^ 256 * (1 / ((C : ℝ) * D)) := by ring
-          _ ≤ 2 * (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 2000 * phiF C D) := hmul
-          _ = (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) * phiF C D := by generalize (2 : ℝ) ^ 384 = P384; ring
+        calc (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 * (1 / ((C : ℝ) * D)) := by linarith [show 2 * (2 : ℝ) ^ 256 / ((C : ℝ) * D) = 2 * (2 : ℝ) ^ 256 * (1 / ((C : ℝ) * D)) by ring]
+          _ ≤ 2 * (2 : ℝ) ^ 256 * (((2 : ℝ) ^ (128 * (F1.a - 2)) / 2) * F1.phi C D) := mul_le_mul_of_nonneg_left hinv (by positivity)
+          _ = (2 : ℝ) ^ 256 * (2 : ℝ) ^ (128 * (F1.a - 2)) * F1.phi C D := by ring
       · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
-        have := phiF_pos hC_R hD_R
-        exact mul_nonneg (mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))) this.le
+        have := F1.hpos _ _ hC_R hD_R; positivity
     have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
     rw [list_sum_mul_left] at h1
-    dsimp only [pairList] at h1
-    rw [list_sum_flatMap_real] at h1
+    dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
     have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
         (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
-          (fun p12 => phiF (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
-        phiF (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * rhoF ^ m := by
-      intro γ1 _
+          (fun p12 => F1.phi (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
+        F1.phi (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * F1.rho ^ m := fun γ1 _ => by
       simp only [List.map_map, Function.comp_def]
       have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
-      simpa only [Prod.mk.eta] using sum_pathsAll_phiF m (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 hpos1.1 hpos1.2
+      simpa only [Prod.mk.eta] using sum_pathsAll_F F1.phi F1.rho F1.hrho_nn F1.hcontract m (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 hpos1.1 hpos1.2
     have h2 := list_sum_map_le _ _ _ hinner
-    have hrhs_pull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => phiF (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * rhoF ^ m)).sum =
-        rhoF ^ m * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => phiF (runF (2, 1) γ1).1 (runF (2, 1) γ1).2)).sum := by
+    have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => F1.phi (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * F1.rho ^ m)).sum =
+        F1.rho ^ m * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => F1.phi (runF (2, 1) γ1).1 (runF (2, 1) γ1).2)).sum := by
       rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
-    rw [hrhs_pull] at h2
-    have houter := sum_pathsEO0_phiF (k0 - 1) 2 1 (by omega) (by omega)
-    have h3 := h2.trans (mul_le_mul_of_nonneg_left houter (by unfold rhoF; positivity))
-    have hcoef_nn : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * ((2 : ℝ) ^ 384 / 1000) :=
-      mul_nonneg (pow_nonneg (by norm_num) _) (div_nonneg (pow_nonneg (by norm_num) _) (by norm_num))
-    have h4 := h1.trans (mul_le_mul_of_nonneg_left h3 hcoef_nn)
-    refine h4.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; generalize (2 : ℝ) ^ 384 = P384; ring
+    rw [hpull] at h2
+    have h3 := h2.trans (mul_le_mul_of_nonneg_left (sum_pathsEO0_F F1.phi F1.rhoEO F1.hrhoEO_nn F1.heo0 (k0 - 1) 2 1 (by omega) (by omega)) (pow_nonneg F1.hrho_nn m))
+    have h4 := h1.trans (mul_le_mul_of_nonneg_left h3 (by positivity))
+    refine h4.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; ring
+  -- S2
   have hS2 : (S2.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (((16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 / (16 : ℝ) ^ k0 * phiF 1 1 * rhoF ^ m / (1 - qL)) / (2 : ℝ) ^ e) := by
+      ((1 / B2.K) * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) *
+        (if wb then B2.fwd.phi 1 1 * opt1Sum k0 B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0)
+         else B2.fwd.phi 2 1 * B2.fwd.rhoEO ^ (k0 - 1)) * B2.fwd.rho ^ m / (1 - B2.qL) / (2 : ℝ) ^ e) := by
     let SL2 : Nat → Finset Nat := fun j =>
       S2.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
-        phiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
-          ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * qL ^ j)
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B2.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+                ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * B2.qL ^ j)
     have hcov2 : S2 ⊆ (Finset.range (512 - S_step)).biUnion SL2 := by
       intro x hx
       have hnc3 : ¬ c3Pred x := (Finset.mem_filter.mp hx).2.2
       dsimp only [c3Pred] at hnc3; push_neg at hnc3
       obtain ⟨L, hL1, hL2, hterm, hle⟩ := hnc3
-      refine Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
+      exact Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
+        Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega], hle⟩⟩
+    have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL2 j).card : ℝ) := by
+      exact_mod_cast (Finset.card_le_card hcov2).trans Finset.card_biUnion_le
+    set pref2 : ℝ := if wb then B2.fwd.phi 1 1 * opt1Sum k0 B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0)
+                     else B2.fwd.phi 2 1 * B2.fwd.rhoEO ^ (k0 - 1)
+    have hper_j : ∀ j ∈ Finset.range (512 - S_step),
+        ((SL2 j).card : ℝ) ≤ (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) * (pref2 * B2.fwd.rho ^ m) := by
+      intro j _
+      have hfib := card_le_list_sum_fiber (SL2 j) pairList (fun x => (g1 x, g2 x))
+        (fun x hx => hpair_mem x (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1)
+      cases wb with
+      | false =>
+        have hper_p : ∀ p12 ∈ pairList,
+            (((SL2 j).filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
+              (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) *
+                B2.fwd.phi (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2 := by
+          rintro ⟨γ1, γ2⟩ _
+          set F := (SL2 j).filter (fun x => (g1 x, g2 x) = (γ1, γ2))
+          have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+          have hpos := runF_pos γ2 hpos1.1 hpos1.2
+          set C := (runF (runF (2, 1) γ1) γ2).1; set D := (runF (runF (2, 1) γ1) γ2).2
+          have hC_R : (0 : ℝ) < (C : ℝ) := by exact_mod_cast hpos.1
+          have hD_R : (0 : ℝ) < (D : ℝ) := by exact_mod_cast hpos.2
+          by_cases hne : F.Nonempty
+          · obtain ⟨x0, hx0⟩ := hne
+            have hx0_SL2 := (Finset.mem_filter.mp hx0).1
+            have hx0_S2 := (Finset.mem_filter.mp hx0_SL2).1
+            have hx0_Sk := (Finset.mem_filter.mp hx0_S2).1
+            have hnc1 : ¬ c1Pred x0 := (Finset.mem_filter.mp hx0_S2).2.1
+            have hpsi_le := (Finset.mem_filter.mp hx0_SL2).2.2
+            have hp0 := (Finset.mem_filter.mp hx0).2
+            have hf0 := hx_facts x0 hx0_Sk
+            have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t = pref ++ γ1 ++ γ2 := by
+              rw [hf0.2.2.2.1, (Prod.mk.inj hp0).1, (Prod.mk.inj hp0).2]
+            have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by rw [runF_append, runF_append, hrunF_pref]
+            have hCD_gt : ECDSAAdd.p < C * D := by dsimp only [c1Pred] at hnc1; rw [htr0, hF_eq] at hnc1; change ¬ C * D ≤ ECDSAAdd.p at hnc1; omega
+            have hcop := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
+            rw [runF_append] at hcop
+            have hcF := forward_prefix_fiber_card F
+              (fun x hx => let hf := hx_facts x (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1; ⟨hf.1, hf.2.1⟩)
+              t (pref ++ γ1 ++ γ2)
+              (fun x hx => by
+                have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1
+                have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
+                exact ⟨by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1⟩)
+              (by rw [hF_eq]; exact hpos.1) (by rw [hF_eq]; exact hpos.2) (by rw [hF_eq]; exact hcop)
+            rw [hF_eq, Nat.div_eq_of_lt hCD_gt] at hcF
+            have hval0 := SkywalkNat.iter_valid t (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+            have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t p_pos p_odd
+              (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hf0.2.2.1))
+            rw [htr0] at hB0
+            have hdot0 := runF_runB_dot (pref ++ γ1 ++ γ2) 0 1
+              (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v
+            rw [hB0, hF_eq] at hdot0; simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
+            have hcoup := B2.hcoup _ _ _ _ hC_R hD_R (Nat.cast_pos.mpr hf0.2.2.1) (Nat.cast_pos.mpr hval0.1)
+            have hlinR : (C : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+                (D : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
+              exact_mod_cast hdot0.le.trans p_lt_256.le
+            have hphiF_pos := B2.fwd.hpos _ _ hC_R hD_R; have hqpos := B2.hqL_pos; have hKpos := B2.hK_pos
+            have h1 := hcoup.trans (mul_le_mul (mul_le_mul_of_nonneg_left hpsi_le hphiF_pos.le)
+              (pow_le_pow_left₀ (by positivity) hlinR B2.fwd.a) (by positivity) (by positivity))
+            have hcard1 : (F.card : ℝ) ≤ 1 := by exact_mod_cast hcF
+            have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ 1 / B2.K)
+            rw [one_div_mul_cancel hKpos.ne'] at h2
+            exact hcard1.trans (h2.trans_eq (by ring))
+          · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
+            have := B2.fwd.hpos _ _ hC_R hD_R; have := B2.hK_pos; have := B2.hqL_pos; positivity
+        have h1 := hfib.trans (list_sum_map_le _ _ _ hper_p)
+        rw [list_sum_mul_left] at h1; dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
+        have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+            (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+              (fun p12 => B2.fwd.phi (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
+            B2.fwd.phi (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * B2.fwd.rho ^ m := fun γ1 _ => by
+          simp only [List.map_map, Function.comp_def]
+          have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+          simpa only [Prod.mk.eta] using sum_pathsAll_F B2.fwd.phi B2.fwd.rho B2.fwd.hrho_nn B2.fwd.hcontract m (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 hpos1.1 hpos1.2
+        have h2 := list_sum_map_le _ _ _ hinner
+        have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => B2.fwd.phi (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * B2.fwd.rho ^ m)).sum =
+            B2.fwd.rho ^ m * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => B2.fwd.phi (runF (2, 1) γ1).1 (runF (2, 1) γ1).2)).sum := by
+          rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
+        rw [hpull] at h2
+        have h3 := h2.trans (mul_le_mul_of_nonneg_left (sum_pathsEO0_F B2.fwd.phi B2.fwd.rhoEO B2.fwd.hrhoEO_nn B2.fwd.heo0 (k0 - 1) 2 1 (by omega) (by omega)) (pow_nonneg B2.fwd.hrho_nn m))
+        have := B2.hK_pos; have := B2.hqL_pos
+        refine (h1.trans (mul_le_mul_of_nonneg_left h3 (by positivity))).trans_eq ?_
+        simp only [pref2, Bool.false_eq_true, ↓reduceIte, Nat.cast_ofNat, Nat.cast_one]; ring
+      | true =>
+        have hper_p : ∀ p12 ∈ pairList,
+            (((SL2 j).filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
+              ((1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0) * (T0 * B2.qL ^ j)) *
+                ((2 - ((runF (2, 1) p12.1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a *
+                  B2.fwd.phi (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2) := by
+          rintro ⟨γ1, γ2⟩ hp12
+          set F := (SL2 j).filter (fun x => (g1 x, g2 x) = (γ1, γ2))
+          have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+          have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
+          have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+          have hγ1_mem : γ1 ∈ pathsOf eo0Kinds (k0 - 1) := by
+            obtain ⟨γ1', h1', h2'⟩ := List.mem_flatMap.mp hp12
+            obtain ⟨_, _, heq⟩ := List.mem_map.mp h2'; rwa [(Prod.mk.inj heq).1.symm]
+          have hD0_le : (runF (2, 1) γ1).2 < 2 ^ k0 := by
+            have hlen1 := (mem_pathsOf.mp hγ1_mem).1
+            have hEO1 := (mem_pathsOf.mp hγ1_mem).2
+            have hind : ∀ (l : List StepKind), (∀ k ∈ l, k ∈ eo0Kinds) →
+                (runF (2, 1) l).1 = 2 ^ (l.length + 1) ∧ (runF (2, 1) l).2 < 2 ^ (l.length + 1) := by
+              intro l hl
+              induction l using List.reverseRecOn with
+              | nil => simp [runF]
+              | append_singleton l k ih =>
+                obtain ⟨hCl, hDl⟩ := ih (fun x hx => hl x (List.mem_append_left _ hx))
+                have hk : k ∈ eo0Kinds := hl k (List.mem_append_right _ List.mem_cons_self)
+                rw [runF_append, runF_cons, runF_nil, List.length_append, List.length_singleton]
+                simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hk
+                rcases hk with rfl | rfl <;> (simp only [stepF]; rw [hCl, pow_succ']; constructor <;> omega)
+            have h := (hind γ1 hEO1).2; rwa [hlen1, Nat.sub_add_cancel (by omega)] at h
+          have h2sub_nn : 0 ≤ 2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 := by
+            have : ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hD0_le.le)
+            linarith
+          by_cases hne : F.Nonempty
+          · obtain ⟨x0, hx0⟩ := hne
+            have hx0_SL2 := (Finset.mem_filter.mp hx0).1
+            have hx0_S2 := (Finset.mem_filter.mp hx0_SL2).1
+            have hx0_Sk := (Finset.mem_filter.mp hx0_S2).1
+            have hnc1 : ¬ c1Pred x0 := (Finset.mem_filter.mp hx0_S2).2.1
+            have hpsi_le := (Finset.mem_filter.mp hx0_SL2).2.2
+            have hp0 := (Finset.mem_filter.mp hx0).2
+            have hf0 := hx_facts x0 hx0_Sk
+            have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t = pref ++ γ1 ++ γ2 := by
+              rw [hf0.2.2.2.1, (Prod.mk.inj hp0).1, (Prod.mk.inj hp0).2]
+            have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by rw [runF_append, runF_append, hrunF_pref]
+            have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+            have hpos := runF_pos γ2 hpos1.1 hpos1.2
+            have hCD_gt : ECDSAAdd.p < (runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2 := by
+              dsimp only [c1Pred] at hnc1; rw [htr0, hF_eq] at hnc1; omega
+            have hcop := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
+            rw [runF_append] at hcop
+            have hcF := forward_prefix_fiber_card F
+              (fun x hx => let hf := hx_facts x (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1; ⟨hf.1, hf.2.1⟩)
+              t (pref ++ γ1 ++ γ2)
+              (fun x hx => by
+                have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1
+                have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
+                exact ⟨by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1⟩)
+              (by rw [hF_eq]; exact hpos.1) (by rw [hF_eq]; exact hpos.2) (by rw [hF_eq]; exact hcop)
+            rw [hF_eq, Nat.div_eq_of_lt hCD_gt] at hcF
+            have hval2 := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+            have hval_t := SkywalkNat.iter_valid t (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+            have hB2 := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m hval2.1 hval2.2.1
+              (fun i hi => by rw [← Function.iterate_add_apply]; exact iter_alive_of_u_ne_zero _ (show i + 2 * k0 ≤ t by omega) (Nat.ne_of_gt hf0.2.2.1))
+            have htr_g2 : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m = γ2 := (Prod.mk.inj hp0).2
+            rw [htr_g2, ← Function.iterate_add_apply, show m + 2 * k0 = t by omega] at hB2
+            have hdot' := runF_runB_dot γ2 1 1 (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v
+            rw [hB2] at hdot'; simp only [one_mul] at hdot'
+            have hlinR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+                ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤
+                (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+              have heqR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+                  ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) =
+                  ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+                  ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by exact_mod_cast hdot'
+              rw [heqR, ← (Prod.mk.inj hp0).1]; exact hf0.2.2.2.2.2.2.1
+            have hcoup := B2.hcoup _ _ _ _ hC'_R hD'_R (Nat.cast_pos.mpr hf0.2.2.1) (Nat.cast_pos.mpr hval_t.1)
+            have hphiF_pos := B2.fwd.hpos _ _ hC'_R hD'_R; have hqpos := B2.hqL_pos; have hKpos := B2.hK_pos
+            have h1 := hcoup.trans (mul_le_mul (mul_le_mul_of_nonneg_left hpsi_le hphiF_pos.le)
+              (pow_le_pow_left₀ (by positivity) hlinR B2.fwd.a) (by positivity) (by positivity))
+            have hcard1 : (F.card : ℝ) ≤ 1 := by exact_mod_cast hcF
+            have h2 := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ 1 / B2.K)
+            rw [one_div_mul_cancel hKpos.ne'] at h2
+            refine hcard1.trans (h2.trans_eq ?_)
+            rw [div_pow, mul_pow, ← pow_mul, ← pow_mul, mul_comm k0 B2.fwd.a]; ring
+          · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
+            have := B2.fwd.hpos _ _ hC'_R hD'_R; have := B2.hK_pos; have := B2.hqL_pos; positivity
+        have h1 := hfib.trans (list_sum_map_le _ _ _ hper_p)
+        rw [list_sum_mul_left] at h1; dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
+        have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+            (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+              (fun p12 => (2 - ((runF (2, 1) p12.1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a *
+                B2.fwd.phi (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤
+            (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a * (B2.fwd.phi 1 1 * B2.fwd.rho ^ m) := fun γ1 hγ1 => by
+          simp only [List.map_map, Function.comp_def]
+          rw [list_sum_mul_left]
+          have hlen1 := (mem_pathsOf.mp hγ1).1; have hEO1 := (mem_pathsOf.mp hγ1).2
+          have hD0_le : (runF (2, 1) γ1).2 < 2 ^ k0 := by
+            have hind : ∀ (l : List StepKind), (∀ k ∈ l, k ∈ eo0Kinds) →
+                (runF (2, 1) l).1 = 2 ^ (l.length + 1) ∧ (runF (2, 1) l).2 < 2 ^ (l.length + 1) := by
+              intro l hl
+              induction l using List.reverseRecOn with
+              | nil => simp [runF]
+              | append_singleton l k ih =>
+                obtain ⟨hCl, hDl⟩ := ih (fun x hx => hl x (List.mem_append_left _ hx))
+                have hk : k ∈ eo0Kinds := hl k (List.mem_append_right _ List.mem_cons_self)
+                rw [runF_append, runF_cons, runF_nil, List.length_append, List.length_singleton]
+                simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hk
+                rcases hk with rfl | rfl <;> (simp only [stepF]; rw [hCl, pow_succ']; constructor <;> omega)
+            have h := (hind γ1 hEO1).2; rwa [hlen1, Nat.sub_add_cancel (by omega)] at h
+          have hnn : 0 ≤ 2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 := by
+            have : ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hD0_le.le); linarith
+          exact mul_le_mul_of_nonneg_left
+            (by simpa only [Nat.cast_one] using sum_pathsAll_F B2.fwd.phi B2.fwd.rho B2.fwd.hrho_nn B2.fwd.hcontract m 1 1 (by omega) (by omega))
+            (pow_nonneg hnn _)
+        have h2 := list_sum_map_le _ _ _ hinner
+        have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a * (B2.fwd.phi 1 1 * B2.fwd.rho ^ m))).sum =
+            (B2.fwd.phi 1 1 * B2.fwd.rho ^ m) * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a)).sum := by
+          rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
+        rw [hpull, eo0_sum_eq (k0 - 1) (fun d0 => (2 - (d0 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a)] at h2
+        have := B2.hK_pos; have := B2.hqL_pos
+        refine (h1.trans (mul_le_mul_of_nonneg_left h2 (by positivity))).trans_eq ?_
+        simp only [pref2, ↓reduceIte, opt1Sum]; ring
+    have h1 := hsum2.trans (Finset.sum_le_sum hper_j)
+    have hfact : ∑ j ∈ Finset.range (512 - S_step),
+        (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * (T0 * B2.qL ^ j) * (pref2 * B2.fwd.rho ^ m) =
+        ((1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a * T0 * (pref2 * B2.fwd.rho ^ m)) *
+          ∑ j ∈ Finset.range (512 - S_step), B2.qL ^ j := by
+      rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
+    rw [hfact] at h1
+    have hpref_nn : 0 ≤ pref2 := by
+      dsimp only [pref2]; split_ifs
+      · have h11 := (B2.fwd.hpos 1 1 (by norm_num) (by norm_num)).le
+        have hs : 0 ≤ opt1Sum k0 B2.fwd.a := Finset.sum_nonneg (fun j hj => by
+          have hjlt := Finset.mem_range.mp hj
+          have hlt : 2 * j + 1 ≤ 2 ^ k0 := by
+            rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+          have : ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+          exact pow_nonneg (by linarith) _)
+        positivity
+      · have h21 := (B2.fwd.hpos 2 1 (by norm_num) (by norm_num)).le
+        have heo := pow_nonneg B2.fwd.hrhoEO_nn (k0 - 1); positivity
+    have hg := geom_sum_le_inv B2.hqL_pos.le B2.hqL_lt1 (512 - S_step)
+    have hrF := pow_nonneg B2.fwd.hrho_nn m; have hK := B2.hK_pos
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by positivity))
+    refine h2.trans_eq ?_
+    dsimp only [T0, pref2]
+    have hpow : ((2 : ℝ) ^ 256) ^ B2.fwd.a = (2 : ℝ) ^ 256 * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) := by
+      rw [← pow_mul, ← pow_add]; congr 1; have := B2.fwd.ha; omega
+    rw [hpow]; ring
+  -- S3
+  have hS3 := case3_card_bound_gen B2 S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t ht T0 (5 / 2) hT0 (by norm_num)
+    (fun x hx => (hx_facts x (Finset.mem_filter.mp hx).1).2.2.2.2.2.2.2)
+    (fun x hx => by
+      have hxSk := (Finset.mem_filter.mp hx).1
+      have hnc1 : ¬ c1Pred x := (Finset.mem_filter.mp hx).2.1
+      have hf := hx_facts x hxSk
+      set γ := traceKinds (SkywalkNat.init x ECDSAAdd.p) t
+      set u := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u
+      set v := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v
+      have hval := SkywalkNat.iter_valid t (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+      have hB := runB_traceKinds (SkywalkNat.init x ECDSAAdd.p) t p_pos p_odd
+        (fun i hi => iter_alive_of_u_ne_zero _ hi.le (Nat.ne_of_gt hf.2.2.1))
+      have hdot := runF_runB_dot γ 0 1 u v; rw [hB] at hdot
+      simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot
+      have hCD_gt : ECDSAAdd.p < (runF (0, 1) γ).1 * (runF (0, 1) γ).2 := by change ¬ (runF (0, 1) γ).1 * (runF (0, 1) γ).2 ≤ ECDSAAdd.p at hnc1; omega
+      have h4uv : 4 * (u * v) < ECDSAAdd.p := by
+        have h1 : 4 * ((runF (0, 1) γ).1 * (runF (0, 1) γ).2) * (u * v) ≤ ECDSAAdd.p * ECDSAAdd.p := by
+          have hsq : 4 * ((runF (0, 1) γ).1 * u) * ((runF (0, 1) γ).2 * v) ≤ ((runF (0, 1) γ).1 * u + (runF (0, 1) γ).2 * v) ^ 2 := by
+            zify; nlinarith [sq_nonneg (((runF (0, 1) γ).1 * u : ℤ) - ((runF (0, 1) γ).2 * v : ℤ))]
+          rw [hdot] at hsq; nlinarith
+        nlinarith [p_pos, Nat.mul_pos hf.2.2.1 hval.1]
+      have huv_pos : (0 : ℝ) < (u : ℝ) * (v : ℝ) := mul_pos (Nat.cast_pos.mpr hf.2.2.1) (Nat.cast_pos.mpr hval.1)
+      have h1 : ((ECDSAAdd.p / (u * v) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) := by
+        simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := u * v))
+      have h2 : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / (4 * ((u : ℝ) * (v : ℝ))) := by
+        rw [one_le_div (by positivity)]; exact_mod_cast h4uv.le
+      have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+      have h3 : (ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) ≤ (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)) :=
+        div_le_div_of_nonneg_right hpR huv_pos.le
+      have h4 : (ECDSAAdd.p : ℝ) / (4 * ((u : ℝ) * (v : ℝ))) = (1 / 4 : ℝ) * ((ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ))) := by ring
+      linarith [show (5 / 2 : ℝ) * (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)) = (5 / 2 : ℝ) * ((2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ))) by ring])
+    (fun x hx => (Finset.mem_filter.mp hx).2.2)
+  have hS3' : (S3.card : ℝ) ≤ (2 : ℝ) ^ 256 *
+      ((5 / 2 : ℝ) * B2.psiB 1 1 * B2.rhoB ^ (S_step - (2 * k0 + m)) / (1 - B2.rhoB / B2.qL) * (2 : ℝ) ^ e) := by
+    refine hS3.trans_eq ?_; dsimp only [T0, t]; field_simp
+  have hadd := add_le_add (add_le_add hS1 hS2) hS3'
+  rw [← mul_add, ← mul_add] at hadd
+  exact hsplit.trans hadd
+
+theorem badS_k0_opt2_gen (F1 : FwdSpec) (B2 : BackSpec) (S_step k0 m e : Nat)
+    (hS_le : S_step ≤ 512) (hk0 : 2 ≤ k0) (ht : 2 * k0 + m ≤ S_step) :
+    ((BadS_k0 S_step k0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
+      (H_odd k0 + 1 / 2) * powHalfHi (F1.a - 2) * (2 : ℝ) ^ (128 * (F1.a - 2)) / (2 : ℝ) ^ ((F1.a - 1) * k0) *
+        F1.phi 1 1 * F1.rho ^ m +
+      (1 / B2.K) * opt2Sum k0 B2.fwd.a * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) / (2 : ℝ) ^ (B2.fwd.a * k0) *
+        B2.fwd.phi 1 1 * B2.fwd.rho ^ m / (1 - B2.qL) / (2 : ℝ) ^ e +
+      (3 : ℝ) * B2.psiB 1 1 * B2.rhoB ^ (S_step - (2 * k0 + m)) / (1 - B2.rhoB / B2.qL) * (2 : ℝ) ^ e) := by
+  set Sk := BadS_k0 S_step k0
+  set t : Nat := 2 * k0 + m
+  set T0 : ℝ := 1 / (2 : ℝ) ^ e
+  have hT0 : 0 < T0 := by dsimp [T0]; positivity
+  let pref : List StepKind := List.replicate k0 .E ++ [.O1]
+  let g1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1)
+  let g2 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m
+  let c1Pred : Nat → Prop := fun x =>
+    4 ^ k0 * (runF (1, 1) (g2 x)).1 * (runF (1, 1) (g2 x)).2 ≤ 2 * ECDSAAdd.p
+  let c3Pred : Nat → Prop := fun x =>
+    ∀ L, S_step + 1 ≤ L → L ≤ 512 →
+      SkywalkNat.step^[L - 1] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ →
+      T0 * B2.qL ^ (L - (S_step + 1)) <
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B2.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+                ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ)
+  set S1 := Sk.filter c1Pred
+  set S2 := Sk.filter (fun x => ¬ c1Pred x ∧ ¬ c3Pred x)
+  set S3 := Sk.filter (fun x => ¬ c1Pred x ∧ c3Pred x)
+  have hsplit : (Sk.card : ℝ) ≤ (S1.card : ℝ) + (S2.card : ℝ) + (S3.card : ℝ) := by
+    have hsub : Sk ⊆ S1 ∪ (S2 ∪ S3) := by
+      intro x hx
+      by_cases h1 : c1Pred x
+      · exact Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h1⟩)
+      · by_cases h3 : c3Pred x
+        · exact Finset.mem_union_right _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h1, h3⟩))
+        · exact Finset.mem_union_right _ (Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h1, h3⟩))
+    have hc := (Finset.card_le_card hsub).trans (Finset.card_union_le _ _)
+    have hc2 := Finset.card_union_le S2 S3
+    have hnat : Sk.card ≤ S1.card + S2.card + S3.card := by omega
+    exact_mod_cast hnat
+  have hrunF_pref : runF (0, 1) pref = (2, 1) := by
+    have hrep : ∀ n, runF (0, 1) (List.replicate n .E) = (0, 1) := by
+      intro n; induction n with | zero => rfl | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
+    rw [runF_append, hrep]; rfl
+  have hEO_props : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+      γ1.length = k0 - 1 ∧ (runF (2, 1) γ1).1 = 2 ^ k0 ∧ (runF (2, 1) γ1).2 < 2 ^ k0 := by
+    intro γ1 hγ1
+    have hlen1 := (mem_pathsOf.mp hγ1).1; have hEO1 := (mem_pathsOf.mp hγ1).2
+    have hind : ∀ (l : List StepKind), (∀ k ∈ l, k ∈ eo0Kinds) →
+        (runF (2, 1) l).1 = 2 ^ (l.length + 1) ∧ (runF (2, 1) l).2 < 2 ^ (l.length + 1) := by
+      intro l hl
+      induction l using List.reverseRecOn with
+      | nil => simp [runF]
+      | append_singleton l k ih =>
+        obtain ⟨hCl, hDl⟩ := ih (fun x hx => hl x (List.mem_append_left _ hx))
+        have hk : k ∈ eo0Kinds := hl k (List.mem_append_right _ List.mem_cons_self)
+        rw [runF_append, runF_cons, runF_nil, List.length_append, List.length_singleton]
+        simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hk
+        rcases hk with rfl | rfl <;> (simp only [stepF]; rw [hCl, pow_succ']; constructor <;> omega)
+    have h := hind γ1 hEO1
+    rw [hlen1, Nat.sub_add_cancel (by omega)] at h
+    exact ⟨hlen1, h.1, h.2⟩
+  have hx_facts : ∀ x ∈ Sk,
+      0 < x ∧ x < ECDSAAdd.p ∧
+      0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u ∧
+      traceKinds (SkywalkNat.init x ECDSAAdd.p) t = pref ++ g1 x ++ g2 x ∧
+      g1 x ∈ pathsOf eo0Kinds (k0 - 1) ∧
+      g2 x ∈ pathsOf allKinds m ∧
+      ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+       (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) * 2 ^ k0 < 2 * ECDSAAdd.p ∧
+      ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
+        ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤
+          (2 - ((runF (2, 1) (g1 x)).2 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 ∧
+      0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
+    intro x hx
+    have hmem := Finset.mem_filter.mp hx
+    have hbad := Finset.mem_filter.mp hmem.1
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
+    obtain ⟨_, _, htr1, _⟩ := leading_E_steps x k0 hmem.2.1 hmem.2.2 hxp
+    obtain ⟨hEO, _, _, hnat_lt, hsumR⟩ := forced_eo0_phase x k0 (by omega) hmem.2.1 hmem.2.2 hxp
+    have hu_t : 0 < (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u := iter_alive_of_u_ne_zero _ ht hbad.2
+    have htr_2k : traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0) = pref ++ g1 x := by
+      have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (k0 + 1) (k0 - 1)
+      rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1; exact h1
+    have htr_t : traceKinds (SkywalkNat.init x ECDSAAdd.p) t = pref ++ g1 x ++ g2 x := by
+      have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m; rw [htr_2k] at h1; exact h1
+    have hCpos : 0 < (runF (0, 1) (traceKinds (SkywalkNat.init x ECDSAAdd.p) t)).1 := by
+      rw [htr_t, runF_append, runF_append, hrunF_pref]
+      have h1 := runF_pos (g1 x) (by omega : 0 < 2) (by omega : 0 < 1)
+      exact (runF_pos (g2 x) h1.1 h1.2).1
+    exact ⟨hx0, hxp, hu_t, htr_t, mem_pathsOf.mpr ⟨traceKinds_length _ _, hEO⟩,
+      mem_pathsOf_all (traceKinds_length _ _), hnat_lt, hsumR, hCpos⟩
+  let pairList : List (List StepKind × List StepKind) :=
+    (pathsOf eo0Kinds (k0 - 1)).flatMap (fun γ1 => (pathsOf allKinds m).map (fun γ2 => (γ1, γ2)))
+  have hpair_mem : ∀ x ∈ Sk, (g1 x, g2 x) ∈ pairList := fun x hx => by
+    have hf := hx_facts x hx
+    exact List.mem_flatMap.mpr ⟨g1 x, hf.2.2.2.2.1, List.mem_map.mpr ⟨g2 x, hf.2.2.2.2.2.1, rfl⟩⟩
+  -- S1
+  have hS1 : (S1.card : ℝ) ≤ (2 : ℝ) ^ 256 *
+      ((H_odd k0 + 1 / 2) * powHalfHi (F1.a - 2) * (2 : ℝ) ^ (128 * (F1.a - 2)) / (2 : ℝ) ^ ((F1.a - 1) * k0) *
+        F1.phi 1 1 * F1.rho ^ m) := by
+    have hfib := card_le_list_sum_fiber S1 pairList (fun x => (g1 x, g2 x)) (fun x hx => hpair_mem x (Finset.mem_filter.mp hx).1)
+    set Mh : ℝ := powHalfHi (F1.a - 2) * (2 : ℝ) ^ (128 * (F1.a - 2)) / (2 : ℝ) ^ ((F1.a - 2) * k0)
+    have hMh_pos : 0 < Mh := by dsimp [Mh]; have := powHalfHi_pos (F1.a - 2); positivity
+    have hper : ∀ p12 ∈ pairList,
+        ((S1.filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
+          ((2 : ℝ) ^ 256 * Mh) *
+            ((1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) p12.1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0) *
+              F1.phi (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2) := by
+      rintro ⟨γ1, γ2⟩ hp12
+      set F := S1.filter (fun x => (g1 x, g2 x) = (γ1, γ2))
+      have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+      have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+      have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
+      have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+      have hD0_R : (0 : ℝ) < ((runF (2, 1) γ1).2 : ℝ) := by exact_mod_cast hpos1.2
+      obtain ⟨γ1', hγ1', hγ2'⟩ := List.mem_flatMap.mp hp12
+      obtain ⟨γ2'', hγ2'', heqp⟩ := List.mem_map.mp hγ2'
+      have hγ1_mem : γ1 ∈ pathsOf eo0Kinds (k0 - 1) := (Prod.mk.inj heqp).1 ▸ hγ1'
+      have hγ2_len : γ2.length = m := (mem_pathsOf.mp ((Prod.mk.inj heqp).2 ▸ hγ2'')).1
+      obtain ⟨hγ1_len, hC1, hD1_lt⟩ := hEO_props γ1 hγ1_mem
+      by_cases hne : F.Nonempty
+      · obtain ⟨x0, hx0⟩ := hne
+        have hx0_S1 := (Finset.mem_filter.mp hx0).1
+        have hx0_Sk := (Finset.mem_filter.mp hx0_S1).1
+        have hc1_0 : c1Pred x0 := (Finset.mem_filter.mp hx0_S1).2
+        have hp0 := (Finset.mem_filter.mp hx0).2
+        have hCD'_le : 4 ^ k0 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 ≤ 2 * ECDSAAdd.p := by
+          dsimp only [c1Pred] at hc1_0; rwa [(Prod.mk.inj hp0).2] at hc1_0
+        have hcF := forward_opt2_fiber_card F k0 m (by omega) γ1 γ2 hγ1_len hγ2_len hC1 hD1_lt
+          (fun x hx => by
+            have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
+            have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
+            exact ⟨hf.1, hf.2.1, by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1, hf.2.2.2.2.2.2.1⟩)
+        have hCD'_R : ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / (4 : ℝ) ^ k0 := by
+          rw [le_div_iff₀ (by positivity)]
+          have h1 : (4 : ℝ) ^ k0 * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) ≤ 2 * (ECDSAAdd.p : ℝ) := by
+            exact_mod_cast hCD'_le
+          have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+          linarith
+        have h1_le : (1 : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / ((4 : ℝ) ^ k0 * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) := by
+          rw [one_le_div (by positivity)]
+          have h1 : (4 : ℝ) ^ k0 * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) ≤ 2 * (ECDSAAdd.p : ℝ) := by
+            exact_mod_cast hCD'_le
+          have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+          linarith
+        have hsqM : (2 * (2 : ℝ) ^ 256 / (4 : ℝ) ^ k0) ^ (F1.a - 2) ≤ Mh ^ 2 := by
+          dsimp only [Mh]
+          rw [div_pow, mul_pow, div_pow, mul_pow, ← pow_mul, ← pow_mul, ← pow_mul, ← pow_mul]
+          have h4k : (4 : ℝ) ^ (k0 * (F1.a - 2)) = (2 : ℝ) ^ ((F1.a - 2) * k0 * 2) := by
+            rw [show (4 : ℝ) = (2 : ℝ) ^ 2 by norm_num, ← pow_mul]; congr 1; ring
+          have h256 : 256 * (F1.a - 2) = 128 * (F1.a - 2) * 2 := by omega
+          rw [h4k, h256]
+          exact div_le_div_of_nonneg_right
+            (mul_le_mul_of_nonneg_right (pow_le_powHalfHi_sq (F1.a - 2)) (by positivity)) (by positivity)
+        have hinv := F1.hinv _ _ (2 * (2 : ℝ) ^ 256 / (4 : ℝ) ^ k0) Mh hC'_R hD'_R (by positivity) hMh_pos hCD'_R hsqM
+        have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+        have hF1 : (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) ≤
+            2 * (2 : ℝ) ^ 256 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) * (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) := by
+          have h := div_le_div_of_nonneg_right (show 2 * (ECDSAAdd.p : ℝ) ≤ 2 * (2 : ℝ) ^ 256 by linarith)
+            (by positivity : 0 ≤ (2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))
+          exact h.trans_eq (by ring)
+        have hF2 : (1 : ℝ) ≤ 2 * (2 : ℝ) ^ 256 / (4 : ℝ) ^ k0 * (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) :=
+          h1_le.trans_eq (by ring)
+        have hcomb : (F.card : ℝ) ≤ 2 * (2 : ℝ) ^ 256 *
+            (1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0) *
+              (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) := by
+          linarith [show 2 * (2 : ℝ) ^ 256 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) * (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) +
+              2 * (2 : ℝ) ^ 256 / (4 : ℝ) ^ k0 * (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) =
+              2 * (2 : ℝ) ^ 256 * (1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0) *
+                (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) by ring]
+        refine hcomb.trans ((mul_le_mul_of_nonneg_left hinv (by positivity)).trans_eq ?_); ring
+      · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
+        have := F1.hpos _ _ hC'_R hD'_R; positivity
+    have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
+    rw [list_sum_mul_left] at h1; dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
+    have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+        (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+          (fun p12 => (1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) p12.1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0) *
+            F1.phi (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤
+        (1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0) * (F1.phi 1 1 * F1.rho ^ m) := fun γ1 _ => by
+      simp only [List.map_map, Function.comp_def]; rw [list_sum_mul_left]
+      exact mul_le_mul_of_nonneg_left
+        (by simpa only [Nat.cast_one] using sum_pathsAll_F F1.phi F1.rho F1.hrho_nn F1.hcontract m 1 1 (by omega) (by omega))
+        (by positivity)
+    have h2 := list_sum_map_le _ _ _ hinner
+    have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => (1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0) * (F1.phi 1 1 * F1.rho ^ m))).sum =
+        (F1.phi 1 1 * F1.rho ^ m) * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => 1 / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ)) + 1 / (4 : ℝ) ^ k0)).sum := by
+      rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
+    rw [hpull, eo0_sum_eq (k0 - 1) (fun d0 => 1 / ((2 : ℝ) ^ k0 * (d0 : ℝ)) + 1 / (4 : ℝ) ^ k0)] at h2
+    have hsumD0 : ∑ j ∈ Finset.range (2 ^ (k0 - 1)), (1 / ((2 : ℝ) ^ k0 * ((2 * j + 1 : Nat) : ℝ)) + 1 / (4 : ℝ) ^ k0) =
+        (H_odd k0 + 1 / 2) / (2 : ℝ) ^ k0 := by
+      rw [Finset.sum_add_distrib, Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+      have hA : ∑ j ∈ Finset.range (2 ^ (k0 - 1)), (1 : ℝ) / ((2 : ℝ) ^ k0 * ((2 * j + 1 : Nat) : ℝ)) =
+          H_odd k0 / (2 : ℝ) ^ k0 := by
+        unfold H_odd; rw [Finset.sum_div]; apply Finset.sum_congr rfl; intro _ _; ring
+      have hB : ((2 ^ (k0 - 1) : Nat) : ℝ) * (1 / (4 : ℝ) ^ k0) = (1 / 2 : ℝ) / (2 : ℝ) ^ k0 := by
+        have h4 : (4 : ℝ) ^ k0 = (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 := by rw [← mul_pow]; norm_num
+        have h2k : (2 : ℝ) ^ k0 = 2 * ((2 ^ (k0 - 1) : Nat) : ℝ) := by push_cast; rw [← pow_succ', Nat.sub_add_cancel (by omega)]
+        rw [h4, h2k]; field_simp
+      rw [hA, hB]; ring
+    rw [hsumD0] at h2
+    refine (h1.trans (mul_le_mul_of_nonneg_left h2 (by positivity))).trans_eq ?_
+    dsimp only [Mh]
+    have hpk : (2 : ℝ) ^ ((F1.a - 1) * k0) = (2 : ℝ) ^ ((F1.a - 2) * k0) * (2 : ℝ) ^ k0 := by
+      rw [← pow_add]; congr 1; have h1 : 1 ≤ F1.a := by have := F1.ha; omega
+      have h2 : 2 ≤ F1.a := by have := F1.ha; omega
+      zify [h1, h2]; ring
+    rw [hpk]; ring
+  -- S2
+  have hS2 : (S2.card : ℝ) ≤ (2 : ℝ) ^ 256 *
+      ((1 / B2.K) * opt2Sum k0 B2.fwd.a * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) / (2 : ℝ) ^ (B2.fwd.a * k0) *
+        B2.fwd.phi 1 1 * B2.fwd.rho ^ m / (1 - B2.qL) / (2 : ℝ) ^ e) := by
+    let SL2 : Nat → Finset Nat := fun j =>
+      S2.filter (fun x => SkywalkNat.step^[S_step + j] (SkywalkNat.init x ECDSAAdd.p) = ⟨1, 1⟩ ∧
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) *
+        ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) *
+        B2.psiB ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ)
+                ((SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) ≤ T0 * B2.qL ^ j)
+    have hcov2 : S2 ⊆ (Finset.range (512 - S_step)).biUnion SL2 := by
+      intro x hx
+      have hnc3 : ¬ c3Pred x := (Finset.mem_filter.mp hx).2.2
+      dsimp only [c3Pred] at hnc3; push_neg at hnc3
+      obtain ⟨L, hL1, hL2, hterm, hle⟩ := hnc3
+      exact Finset.mem_biUnion.mpr ⟨L - (S_step + 1), Finset.mem_range.mpr (by omega),
         Finset.mem_filter.mpr ⟨hx, by rwa [show S_step + (L - (S_step + 1)) = L - 1 by omega], hle⟩⟩
     have hsum2 : (S2.card : ℝ) ≤ ∑ j ∈ Finset.range (512 - S_step), ((SL2 j).card : ℝ) := by
       exact_mod_cast (Finset.card_le_card hcov2).trans Finset.card_biUnion_le
     have hper_j : ∀ j ∈ Finset.range (512 - S_step),
-        ((SL2 j).card : ℝ) ≤
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 / (16 : ℝ) ^ k0 * (T0 * qL ^ j) * (phiF 1 1 * rhoF ^ m) := by
+        ((SL2 j).card : ℝ) ≤ (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0) *
+          (T0 * B2.qL ^ j) * opt2Sum k0 B2.fwd.a * (B2.fwd.phi 1 1 * B2.fwd.rho ^ m) := by
       intro j _
       have hfib := card_le_list_sum_fiber (SL2 j) pairList (fun x => (g1 x, g2 x))
         (fun x hx => hpair_mem x (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1)
       have hper_p : ∀ p12 ∈ pairList,
           (((SL2 j).filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
-            (108 / (3125 * 10 ^ 6 : ℝ)) * (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0) ^ 5 * (T0 * qL ^ j) *
-              phiF (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2 := by
-        rintro ⟨γ1, γ2⟩ _
+            ((1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0) * (T0 * B2.qL ^ j)) *
+              (((2 : ℝ) ^ k0 / ((runF (2, 1) p12.1).2 : ℝ) + 1) *
+                (2 - ((runF (2, 1) p12.1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a *
+                B2.fwd.phi (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2) := by
+        rintro ⟨γ1, γ2⟩ hp12
         set F := (SL2 j).filter (fun x => (g1 x, g2 x) = (γ1, γ2))
-        have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
-        have hpos := runF_pos γ2 hpos1.1 hpos1.2
         have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+        have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
         have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
         have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+        have hD0_R : (0 : ℝ) < ((runF (2, 1) γ1).2 : ℝ) := by exact_mod_cast hpos1.2
+        obtain ⟨γ1', hγ1', hγ2'⟩ := List.mem_flatMap.mp hp12
+        obtain ⟨γ2'', hγ2'', heqp⟩ := List.mem_map.mp hγ2'
+        have hγ1_mem : γ1 ∈ pathsOf eo0Kinds (k0 - 1) := (Prod.mk.inj heqp).1 ▸ hγ1'
+        have hγ2_len : γ2.length = m := (mem_pathsOf.mp ((Prod.mk.inj heqp).2 ▸ hγ2'')).1
+        obtain ⟨hγ1_len, hC1, hD1_lt⟩ := hEO_props γ1 hγ1_mem
+        have h2sub_nn : 0 ≤ 2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 := by
+          have : ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hD1_lt.le)
+          linarith
         by_cases hne : F.Nonempty
         · obtain ⟨x0, hx0⟩ := hne
           have hx0_SL2 := (Finset.mem_filter.mp hx0).1
           have hx0_S2 := (Finset.mem_filter.mp hx0_SL2).1
           have hx0_Sk := (Finset.mem_filter.mp hx0_S2).1
           have hnc1 : ¬ c1Pred x0 := (Finset.mem_filter.mp hx0_S2).2.1
-          have hphiB_le := (Finset.mem_filter.mp hx0_SL2).2.2
-          have hpair0 := (Finset.mem_filter.mp hx0).2
+          have hpsi_le := (Finset.mem_filter.mp hx0_SL2).2.2
+          have hp0 := (Finset.mem_filter.mp hx0).2
           have hf0 := hx_facts x0 hx0_Sk
-          have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) t = pref ++ γ1 ++ γ2 := by
-            rw [hf0.2.2.2.1, (Prod.mk.inj hpair0).1, (Prod.mk.inj hpair0).2]
-          have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by
-            rw [runF_append, runF_append, hrunF_pref]
-          have hCD_gt : ECDSAAdd.p < (runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2 := by
-            dsimp only [c1Pred] at hnc1; rw [htr0, hF_eq] at hnc1; omega
-          have hcop := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
-          rw [runF_append] at hcop
-          have hcF := forward_prefix_fiber_card F
-            (fun x hx => let hf := hx_facts x (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1; ⟨hf.1, hf.2.1⟩)
-            t (pref ++ γ1 ++ γ2)
+          have hCD'_gt : 2 * ECDSAAdd.p < 4 ^ k0 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 := by
+            dsimp only [c1Pred] at hnc1; rw [(Prod.mk.inj hp0).2] at hnc1; omega
+          have hcF := forward_opt2_fiber_card F k0 m (by omega) γ1 γ2 hγ1_len hγ2_len hC1 hD1_lt
             (fun x hx => by
               have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1
-              have hp := (Finset.mem_filter.mp hx).2
-              have hf := hx_facts x hxSk
-              exact ⟨by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1⟩)
-            (by rw [hF_eq]; exact hpos.1) (by rw [hF_eq]; exact hpos.2) (by rw [hF_eq]; exact hcop)
-          rw [hF_eq, Nat.div_eq_of_lt hCD_gt] at hcF
-          have hval_2k := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+              have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
+              exact ⟨hf.1, hf.2.1, by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1, hf.2.2.2.2.2.2.1⟩)
+          have hF_le : (F.card : ℝ) ≤ (2 : ℝ) ^ k0 / ((runF (2, 1) γ1).2 : ℝ) + 1 := by
+            have h1 : 2 * (ECDSAAdd.p : ℝ) ≤ (4 : ℝ) ^ k0 * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) := by
+              exact_mod_cast hCD'_gt.le
+            have h2 : (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) ≤
+                (2 : ℝ) ^ k0 / ((runF (2, 1) γ1).2 : ℝ) := by
+              rw [div_le_div_iff₀ (by positivity) hD0_R]
+              have h4 : (4 : ℝ) ^ k0 = (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 := by rw [← mul_pow]; norm_num
+              have := mul_le_mul_of_nonneg_right h1 hD0_R.le; rw [h4] at this; linarith
+            linarith
+          have hval2 := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
           have hval_t := SkywalkNat.iter_valid t (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
-          have halive_m : ∀ i < m, 0 < (SkywalkNat.step^[i] (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p))).u := by
-            intro i hi; rw [← Function.iterate_add_apply]
-            exact iter_alive_of_u_ne_zero _ (show i + 2 * k0 ≤ t by omega) (Nat.ne_of_gt hf0.2.2.1)
-          have hBm := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m hval_2k.1 hval_2k.2.1 halive_m
-          have hadd_m : m + 2 * k0 = t := by omega
-          rw [← Function.iterate_add_apply, hadd_m] at hBm
-          have hg2_eq : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m = γ2 := (Prod.mk.inj hpair0).2
-          rw [hg2_eq] at hBm
-          have hdot' := runF_runB_dot γ2 1 1
-            (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u
-            (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v
-          rw [hBm] at hdot'
-          simp only [one_mul] at hdot'
-          have hsumR := hf0.2.2.2.2.2.2.1
+          have hB2 := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m hval2.1 hval2.2.1
+            (fun i hi => by rw [← Function.iterate_add_apply]; exact iter_alive_of_u_ne_zero _ (show i + 2 * k0 ≤ t by omega) (Nat.ne_of_gt hf0.2.2.1))
+          have htr_g2 : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m = γ2 := (Prod.mk.inj hp0).2
+          rw [htr_g2, ← Function.iterate_add_apply, show m + 2 * k0 = t by omega] at hB2
+          have hdot' := runF_runB_dot γ2 1 1 (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u (SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v
+          rw [hB2] at hdot'; simp only [one_mul] at hdot'
           have hlinR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
               ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤
-              2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+              (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
             have heqR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
                 ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[t] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) =
                 ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
                 ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by exact_mod_cast hdot'
-            rw [heqR]
-            have hpR : 2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 ≤ 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
-              have hple : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-              exact div_le_div_of_nonneg_right (by linarith) (by positivity)
-            linarith
-          have hpow5 := pow_le_pow_left₀ (by positivity) hlinR 5
-          have hcoup := coupling_lower hC'_R hD'_R
-            (Nat.cast_pos.mpr hf0.2.2.1) (Nat.cast_pos.mpr hval_t.1)
-          have hphiF_pos := phiF_pos hC'_R hD'_R
-          have h1 : (3125 * 10 ^ 6 / 108 : ℝ) ≤
-              phiF (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 * (T0 * qL ^ j) * (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0) ^ 5 :=
-            hcoup.trans (mul_le_mul (mul_le_mul_of_nonneg_left hphiB_le hphiF_pos.le) hpow5
-              (by positivity) (by unfold qL; positivity))
-          have hcard1 : (F.card : ℝ) ≤ 1 := by exact_mod_cast hcF
-          have h2 : (1 : ℝ) ≤ (108 / (3125 * 10 ^ 6 : ℝ)) * (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0) ^ 5 *
-              (T0 * qL ^ j) * phiF (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 := by linarith
-          exact hcard1.trans h2
+            rw [heqR, ← (Prod.mk.inj hp0).1]; exact hf0.2.2.2.2.2.2.2.1
+          have hcoup := B2.hcoup _ _ _ _ hC'_R hD'_R (Nat.cast_pos.mpr hf0.2.2.1) (Nat.cast_pos.mpr hval_t.1)
+          have hphiF_pos := B2.fwd.hpos _ _ hC'_R hD'_R; have hqpos := B2.hqL_pos; have hKpos := B2.hK_pos
+          have h1 := hcoup.trans (mul_le_mul (mul_le_mul_of_nonneg_left hpsi_le hphiF_pos.le)
+            (pow_le_pow_left₀ (by positivity) hlinR B2.fwd.a) (by positivity) (by positivity))
+          have h2 : (1 : ℝ) ≤ (1 / B2.K) * (T0 * B2.qL ^ j) *
+              ((2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0) ^ B2.fwd.a *
+              B2.fwd.phi (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 := by
+            have hm := mul_le_mul_of_nonneg_left h1 (by positivity : (0 : ℝ) ≤ 1 / B2.K)
+            rw [one_div_mul_cancel hKpos.ne'] at hm; exact hm.trans_eq (by ring)
+          have h3 := mul_le_mul hF_le h2 (by norm_num) (by positivity)
+          rw [mul_one] at h3
+          refine h3.trans_eq ?_
+          rw [div_pow, mul_pow, ← pow_mul, ← pow_mul, mul_comm k0 B2.fwd.a]; ring
         · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
-          have := phiF_pos hC'_R hD'_R; unfold qL; positivity
+          have := B2.fwd.hpos _ _ hC'_R hD'_R; have := B2.hK_pos; have := B2.hqL_pos; positivity
       have h1 := hfib.trans (list_sum_map_le _ _ _ hper_p)
-      rw [list_sum_mul_left] at h1
-      dsimp only [pairList] at h1
-      rw [list_sum_flatMap_real] at h1
+      rw [list_sum_mul_left] at h1; dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
       have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
           (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
-            (fun p12 => phiF (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤ phiF 1 1 * rhoF ^ m := by
-        intro γ1 _
-        simp only [List.map_map, Function.comp_def]
-        simpa only [Nat.cast_one] using sum_pathsAll_phiF m 1 1 (by omega) (by omega)
+            (fun p12 => ((2 : ℝ) ^ k0 / ((runF (2, 1) p12.1).2 : ℝ) + 1) *
+              (2 - ((runF (2, 1) p12.1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a *
+              B2.fwd.phi (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤
+          (((2 : ℝ) ^ k0 / ((runF (2, 1) γ1).2 : ℝ) + 1) *
+            (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a) * (B2.fwd.phi 1 1 * B2.fwd.rho ^ m) := fun γ1 hγ1 => by
+        simp only [List.map_map, Function.comp_def]; rw [list_sum_mul_left]
+        have hD1_lt := (hEO_props γ1 hγ1).2.2
+        have hnn : 0 ≤ 2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 := by
+          have : ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hD1_lt.le); linarith
+        exact mul_le_mul_of_nonneg_left
+          (by simpa only [Nat.cast_one] using sum_pathsAll_F B2.fwd.phi B2.fwd.rho B2.fwd.hrho_nn B2.fwd.hcontract m 1 1 (by omega) (by omega))
+          (by positivity)
       have h2 := list_sum_map_le _ _ _ hinner
-      have hconst : ((pathsOf eo0Kinds (k0 - 1)).map (fun _ => phiF 1 1 * rhoF ^ m)).sum =
-          (2 : ℝ) ^ (k0 - 1) * (phiF 1 1 * rhoF ^ m) := by
-        rw [List.map_const', List.sum_replicate, nsmul_eq_mul, pathsOf_length]
-        have hl : eo0Kinds.length = 2 := rfl
-        rw [hl]; norm_cast
-      rw [hconst] at h2
-      have h3 := h1.trans (mul_le_mul_of_nonneg_left h2 (by unfold qL; positivity))
-      refine h3.trans_eq ?_
-      have hk0_eq : (2 : ℝ) ^ k0 = 2 * (2 : ℝ) ^ (k0 - 1) := by
-        rw [← pow_succ', Nat.sub_add_cancel hk0]
-      have h16 : (16 : ℝ) ^ k0 = ((2 : ℝ) ^ k0) ^ 4 := by
-        rw [show (16 : ℝ) = (2 : ℝ) ^ 4 by norm_num, ← pow_mul, mul_comm, pow_mul]
-      have h1280 : ((2 : ℝ) ^ 256) ^ 5 = (2 : ℝ) ^ 1280 := by rw [← pow_mul]
-      rw [div_pow, mul_pow, h1280, h16]
-      have h2k_ne : (2 : ℝ) ^ k0 ≠ 0 := by positivity
-      field_simp [h2k_ne]
-      rw [hk0_eq]; ring
+      have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => (((2 : ℝ) ^ k0 / ((runF (2, 1) γ1).2 : ℝ) + 1) *
+          (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a) * (B2.fwd.phi 1 1 * B2.fwd.rho ^ m))).sum =
+          (B2.fwd.phi 1 1 * B2.fwd.rho ^ m) * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 =>
+            ((2 : ℝ) ^ k0 / ((runF (2, 1) γ1).2 : ℝ) + 1) * (2 - ((runF (2, 1) γ1).2 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a)).sum := by
+        rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
+      rw [hpull, eo0_sum_eq (k0 - 1) (fun d0 => ((2 : ℝ) ^ k0 / (d0 : ℝ) + 1) * (2 - (d0 : ℝ) / (2 : ℝ) ^ k0) ^ B2.fwd.a)] at h2
+      have := B2.hK_pos; have := B2.hqL_pos
+      refine (h1.trans (mul_le_mul_of_nonneg_left h2 (by positivity))).trans_eq ?_
+      simp only [opt2Sum]; ring
     have h1 := hsum2.trans (Finset.sum_le_sum hper_j)
     have hfact : ∑ j ∈ Finset.range (512 - S_step),
-        (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 / (16 : ℝ) ^ k0 * (T0 * qL ^ j) * (phiF 1 1 * rhoF ^ m) =
-        ((16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1280 / (16 : ℝ) ^ k0 * T0 * (phiF 1 1 * rhoF ^ m)) *
-          ∑ j ∈ Finset.range (512 - S_step), qL ^ j := by
-      rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro j _; generalize (2 : ℝ) ^ 1280 = P1280; ring
+        (1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0) *
+          (T0 * B2.qL ^ j) * opt2Sum k0 B2.fwd.a * (B2.fwd.phi 1 1 * B2.fwd.rho ^ m) =
+        ((1 / B2.K) * ((2 : ℝ) ^ 256) ^ B2.fwd.a / (2 : ℝ) ^ (B2.fwd.a * k0) * T0 * opt2Sum k0 B2.fwd.a *
+          (B2.fwd.phi 1 1 * B2.fwd.rho ^ m)) * ∑ j ∈ Finset.range (512 - S_step), B2.qL ^ j := by
+      rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
     rw [hfact] at h1
-    have hg := geom_sum_le_inv (r := qL) (by unfold qL; positivity) (by unfold qL; norm_num) (512 - S_step)
-    have hphi11_pos : 0 ≤ phiF 1 1 := (phiF_pos (by norm_num) (by norm_num)).le
-    have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by unfold rhoF; positivity))
+    have ho2_nn : 0 ≤ opt2Sum k0 B2.fwd.a := Finset.sum_nonneg (fun j hj => by
+      have hjlt := Finset.mem_range.mp hj
+      have hlt : 2 * j + 1 ≤ 2 ^ k0 := by
+        rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+      have : ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+      exact mul_nonneg (by positivity) (pow_nonneg (by linarith) _))
+    have hg := geom_sum_le_inv B2.hqL_pos.le B2.hqL_lt1 (512 - S_step)
+    have hphi11 := (B2.fwd.hpos 1 1 (by norm_num) (by norm_num)).le
+    have hrF := pow_nonneg B2.fwd.hrho_nn m; have hK := B2.hK_pos
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left hg (by positivity))
     refine h2.trans_eq ?_
     dsimp only [T0]
-    have hpow : (2 : ℝ) ^ 1280 = (2 : ℝ) ^ 256 * (2 : ℝ) ^ 1024 := by rw [← pow_add]
-    rw [hpow]; generalize (2 : ℝ) ^ 1024 = P1024; ring
-  have hS3 := case3_card_bound S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t ht T0 hT0
-    (fun x hx => (hx_facts x (Finset.mem_filter.mp hx).1).2.2.2.2.2.2.2)
-    (fun x hx => (Finset.mem_filter.mp hx).2)
+    have hpow : ((2 : ℝ) ^ 256) ^ B2.fwd.a = (2 : ℝ) ^ 256 * (2 : ℝ) ^ (256 * (B2.fwd.a - 1)) := by
+      rw [← pow_mul, ← pow_add]; congr 1; have := B2.fwd.ha; omega
+    rw [hpow]; ring
+  -- S3: ¬ c1Pred (4^k0 * C' * D' > 2 * p) + C' u + D' v < 2*p / 2^k0 -> 2 * u * v < p -> 2*(p/(uv)+1) ≤ 3*2^256/(uv)!
+  have hS3 := case3_card_bound_gen B2 S_step hS_le S3 (Finset.filter_subset _ _ |>.trans (Finset.filter_subset _ _)) t ht T0 3 hT0 (by norm_num)
+    (fun x hx => (hx_facts x (Finset.mem_filter.mp hx).1).2.2.2.2.2.2.2.2)
+    (fun x hx => by
+      have hxSk := (Finset.mem_filter.mp hx).1
+      have hnc1 : ¬ c1Pred x := (Finset.mem_filter.mp hx).2.1
+      have hf := hx_facts x hxSk
+      set γ2 := g2 x
+      set u := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).u
+      set v := (SkywalkNat.step^[t] (SkywalkNat.init x ECDSAAdd.p)).v
+      have hval2 := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+      have hval_t := SkywalkNat.iter_valid t (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+      have hB2 := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m hval2.1 hval2.2.1
+        (fun i hi => by rw [← Function.iterate_add_apply]; exact iter_alive_of_u_ne_zero _ (show i + 2 * k0 ≤ t by omega) (Nat.ne_of_gt hf.2.2.1))
+      rw [← Function.iterate_add_apply, show m + 2 * k0 = t by omega] at hB2
+      have hdot' := runF_runB_dot γ2 1 1 u v; rw [hB2] at hdot'; simp only [one_mul] at hdot'
+      have hCD'_gt : 2 * ECDSAAdd.p < 4 ^ k0 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 := by change ¬ 4 ^ k0 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 ≤ 2 * ECDSAAdd.p at hnc1; omega
+      have hsum_lt := hf.2.2.2.2.2.2.1
+      have h2uv : 2 * (u * v) < ECDSAAdd.p := by
+        have h4 : 4 ^ k0 = 2 ^ k0 * 2 ^ k0 := by rw [← mul_pow]; rfl
+        have hsq : 4 * ((runF (1, 1) γ2).1 * u) * ((runF (1, 1) γ2).2 * v) ≤
+            ((runF (1, 1) γ2).1 * u + (runF (1, 1) γ2).2 * v) ^ 2 := by
+          zify; nlinarith [sq_nonneg (((runF (1, 1) γ2).1 * u : ℤ) - ((runF (1, 1) γ2).2 * v : ℤ))]
+        rw [hdot'] at hsq
+        have hmul : 4 * (4 ^ k0 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2) * (u * v) < 4 * ECDSAAdd.p * ECDSAAdd.p := by
+          have hlt2 : (((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+              (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) * 2 ^ k0) ^ 2 < (2 * ECDSAAdd.p) ^ 2 :=
+            Nat.pow_lt_pow_left hsum_lt (by decide)
+          have h1 : 4 * (4 ^ k0 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2) * (u * v) =
+              (4 * ((runF (1, 1) γ2).1 * u) * ((runF (1, 1) γ2).2 * v)) * (2 ^ k0 * 2 ^ k0) := by rw [h4]; ring
+          have h2 : (((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+              (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) * 2 ^ k0) ^ 2 =
+              ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+                (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) ^ 2 * (2 ^ k0 * 2 ^ k0) := by ring
+          have hm1 := Nat.mul_le_mul_right (2 ^ k0 * 2 ^ k0) hsq
+          nlinarith
+        nlinarith [p_pos, Nat.mul_pos hf.2.2.1 hval_t.1]
+      have huv_pos : (0 : ℝ) < (u : ℝ) * (v : ℝ) := mul_pos (Nat.cast_pos.mpr hf.2.2.1) (Nat.cast_pos.mpr hval_t.1)
+      have h1 : ((ECDSAAdd.p / (u * v) : Nat) : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) := by
+        simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := u * v))
+      have h2 : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / (2 * ((u : ℝ) * (v : ℝ))) := by
+        rw [one_le_div (by positivity)]; exact_mod_cast h2uv.le
+      have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+      have h3 : (ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ)) ≤ (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)) :=
+        div_le_div_of_nonneg_right hpR huv_pos.le
+      have h4 : (ECDSAAdd.p : ℝ) / (2 * ((u : ℝ) * (v : ℝ))) = (1 / 2 : ℝ) * ((ECDSAAdd.p : ℝ) / ((u : ℝ) * (v : ℝ))) := by ring
+      linarith [show (3 : ℝ) * (2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ)) = 3 * ((2 : ℝ) ^ 256 / ((u : ℝ) * (v : ℝ))) by ring])
+    (fun x hx => (Finset.mem_filter.mp hx).2.2)
   have hS3' : (S3.card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ (S_step - (2 * k0 + m)) / (1 - rhoB7 / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ (S_step - (2 * k0 + m)) / (1 - rhoB / qL)) * (2 : ℝ) ^ e) := by
+      ((3 : ℝ) * B2.psiB 1 1 * B2.rhoB ^ (S_step - (2 * k0 + m)) / (1 - B2.rhoB / B2.qL) * (2 : ℝ) ^ e) := by
     refine hS3.trans_eq ?_; dsimp only [T0, t]; field_simp
   have hadd := add_le_add (add_le_add hS1 hS2) hS3'
   rw [← mul_add, ← mul_add] at hadd
   exact hsplit.trans hadd
 
-/-! ### 7b. Envelope width-drop tail bound (`BadDrop` and `badEnv_drop_bound`) -/
+/-! ### 8. Tight `BadDrop` bound (`129/128` factor for `i + d ≤ 248`, `D2 = 0` for `i + d ≤ 255`, exact martingale) -/
+
+private theorem tail_k0_ge (K : Nat) :
+    (((Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)).card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ K := by
+  set S := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)
+  by_cases hK : K ≤ 256
+  · have hinj : Set.InjOn (fun x => x / 2 ^ K) (S : Set Nat) := by
+      intro a ha b hb heq; dsimp only at heq
+      have ha' := Nat.mul_div_cancel' (Finset.mem_filter.mp (Finset.mem_coe.mp ha)).2
+      have hb' := Nat.mul_div_cancel' (Finset.mem_filter.mp (Finset.mem_coe.mp hb)).2
+      rw [← ha', ← hb', heq]
+    have hpow : 2 ^ 256 = 2 ^ (256 - K) * 2 ^ K := by rw [← pow_add, show 256 - K + K = 256 by omega]
+    have h2K : 0 < 2 ^ K := Nat.two_pow_pos K
+    generalize hM : (2 ^ (256 - K) : Nat) = M at hpow
+    have hmap : Set.MapsTo (fun x => x / 2 ^ K) (S : Set Nat) (Finset.range M : Set Nat) := by
+      intro x hx; rw [Finset.mem_coe, Finset.mem_range]
+      have hxp : x < 2 ^ 256 := (Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_coe.mp hx)).1).2.trans p_lt_256
+      exact (Nat.div_lt_iff_lt_mul h2K).mpr (hpow ▸ hxp)
+    have hc := Finset.card_le_card_of_injOn (fun x => x / 2 ^ K) hmap hinj
+    rw [Finset.card_range, ← hM] at hc
+    have hR : (S.card : ℝ) ≤ (2 : ℝ) ^ (256 - K) := by exact_mod_cast hc
+    refine hR.trans_eq ?_
+    rw [show (2 : ℝ) ^ 256 = (2 : ℝ) ^ (256 - K) * (2 : ℝ) ^ K by rw [← pow_add, show 256 - K + K = 256 by omega]]
+    field_simp
+  · have hempty : S = ∅ := by
+      ext x; simp only [Finset.notMem_empty, iff_false]
+      intro hx
+      have hmem := Finset.mem_filter.mp hx
+      obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
+      have hle : 2 ^ K ≤ x := Nat.le_of_dvd hx0 hmem.2
+      have h256 : 2 ^ 256 ≤ 2 ^ K := Nat.pow_le_pow_right (by decide) (by omega)
+      have := p_lt_256; omega
+    rw [hempty, Finset.card_empty, Nat.cast_zero]; positivity
 
 private theorem skywalkNat_step_sum_le (z : SkywalkNat.State) (hv : z.v % 2 = 1) :
     (SkywalkNat.step z).u + (SkywalkNat.step z).v ≤ z.u + z.v := by
-  unfold SkywalkNat.step
-  split_ifs with h0 h2 hge <;> (try dsimp only) <;> omega
+  unfold SkywalkNat.step; split_ifs with h0 h2 hge <;> (try dsimp only) <;> omega
 
 private theorem skywalkNat_iter_sum_le (x j i : Nat) (hji : j ≤ i) :
     (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
     (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v ≤
     (SkywalkNat.step^[j] (SkywalkNat.init x ECDSAAdd.p)).u +
     (SkywalkNat.step^[j] (SkywalkNat.init x ECDSAAdd.p)).v := by
-  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hji
-  clear hji
+  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hji; clear hji
   induction d with
   | zero => simp
   | succ d ih =>
     have hval := SkywalkNat.iter_valid (j + d) (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
-    have hstep := skywalkNat_step_sum_le _ hval.2.1
     rw [show j + (d + 1) = (j + d) + 1 by omega, Function.iterate_succ_apply']
-    exact hstep.trans ih
+    exact (skywalkNat_step_sum_le _ hval.2.1).trans ih
 
-def BadDrop (i d K : Nat) : Finset Nat :=
+def BadDrop (i d : Nat) : Finset Nat :=
   (Finset.Ioo 0 ECDSAAdd.p).filter (fun x =>
-    ¬ 2 ^ K ∣ x ∧
     2 ^ (256 - d) ≤ (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
                     (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v)
 
-def BadDrop_k0 (i d K k0 : Nat) : Finset Nat :=
-  (BadDrop i d K).filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
+def BadDrop_k0 (i d k0 : Nat) : Finset Nat :=
+  (BadDrop i d).filter (fun x => 2 ^ k0 ∣ x ∧ (x / 2 ^ k0) % 2 = 1)
 
-private theorem env_term1_le_phiF3 {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v)
-    (d : Nat) (hsum : (2 : ℝ) ^ (256 - d) ≤ u + v) (hdot : C * u + D * v ≤ (2 : ℝ) ^ 256) (hd : d ≤ 255) :
-    1 / (C * D) ≤ ((2 : ℝ) ^ d / 1000) * phiF3 C D := by
-  have hm : min C D ≤ (2 : ℝ) ^ d := by
-    have h1 : min C D * (u + v) ≤ C * u + D * v := by
-      have hC1 := mul_le_mul_of_nonneg_right (min_le_left C D) hu.le
-      have hD1 := mul_le_mul_of_nonneg_right (min_le_right C D) hv.le
-      linarith
-    have h2 : min C D * (2 : ℝ) ^ (256 - d) ≤ (2 : ℝ) ^ 256 := by
-      have hmn : 0 ≤ min C D := le_min hC.le hD.le
-      exact (mul_le_mul_of_nonneg_left hsum hmn).trans (h1.trans hdot)
-    have hpow : (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) := by
-      rw [← pow_add, show d + (256 - d) = 256 by omega]
-    rw [hpow] at h2
-    exact le_of_mul_le_mul_right h2 (by positivity)
+private theorem inv_prod_le_phiF3_of_min {C D M : ℝ} (hC : 0 < C) (hD : 0 < D) (hm : min C D ≤ M) :
+    1 / (C * D) ≤ M * phiF3 C D := by
   have hCD : C * D / (C + D) ≤ min C D := by
     rw [div_le_iff₀ (by positivity)]
     rcases le_total C D with hle | hle
@@ -6732,1656 +10994,2225 @@ private theorem env_term1_le_phiF3 {C D u v : ℝ} (hC : 0 < C) (hD : 0 < D) (hu
   have hid : 1 / (C * D) = (C * D / (C + D)) * ((C + D) / (C ^ 2 * D ^ 2)) := by
     field_simp [hC.ne', hD.ne', (show 0 < C + D by positivity).ne']
   rw [hid]
-  have h1 : (C * D / (C + D)) * ((C + D) / (C ^ 2 * D ^ 2)) ≤ (2 : ℝ) ^ d * ((C + D) / (C ^ 2 * D ^ 2)) :=
-    mul_le_mul_of_nonneg_right (hCD.trans hm) (by positivity)
-  have h2 : (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D / 1000 := by
-    have := div_le_div_of_nonneg_right hfl (by norm_num : (0 : ℝ) ≤ 1000)
-    exact (le_of_eq (by ring)).trans this
-  exact h1.trans ((mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring))
+  exact (mul_le_mul_of_nonneg_right (hCD.trans hm) (by positivity)).trans
+    (mul_le_mul_of_nonneg_left hfl (le_trans (by positivity) (hCD.trans hm)))
 
-private theorem env_term2_le_phiF3 {C D u v B : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 1 ≤ u) (hv : 1 ≤ v)
-    (d : Nat) (hsum : (2 : ℝ) ^ (256 - d) ≤ u + v) (hdot : C * u + D * v ≤ B) (hB : 0 < B) (_hd : d ≤ 255) :
-    (1 : ℝ) ≤ (B ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 / 1000) * phiF3 C D := by
-  have hm : min C D * (2 : ℝ) ^ (256 - d) ≤ B := by
-    have h1 : min C D * (u + v) ≤ C * u + D * v := by
-      have hC1 := mul_le_mul_of_nonneg_right (min_le_left C D) (by linarith : (0 : ℝ) ≤ u)
-      have hD1 := mul_le_mul_of_nonneg_right (min_le_right C D) (by linarith : (0 : ℝ) ≤ v)
-      linarith
-    have hmn : 0 ≤ min C D := le_min hC.le hD.le
-    exact (mul_le_mul_of_nonneg_left hsum hmn).trans (h1.trans hdot)
-  have hM : max C D ≤ B := by
-    have hC1 : C ≤ C * u := le_mul_of_one_le_right hC.le hu
-    have hD1 : D ≤ D * v := le_mul_of_one_le_right hD.le hv
-    exact max_le (by nlinarith) (by nlinarith)
-  have hCD : C ^ 2 * D ^ 2 / (C + D) ≤ (min C D) ^ 2 * max C D := by
-    rw [div_le_iff₀ (by positivity)]
-    rcases le_total C D with hle | hle
-    · rw [min_eq_left hle, max_eq_right hle]
-      have hpos : (0 : ℝ) ≤ C ^ 3 * D := by positivity
-      linarith [show C ^ 2 * D * (C + D) - C ^ 2 * D ^ 2 = C ^ 3 * D by ring]
-    · rw [min_eq_right hle, max_eq_left hle]
-      have hpos : (0 : ℝ) ≤ C * D ^ 3 := by positivity
-      linarith [show D ^ 2 * C * (C + D) - C ^ 2 * D ^ 2 = C * D ^ 3 by ring]
-  have hm_sq : (min C D) ^ 2 ≤ (B / (2 : ℝ) ^ (256 - d)) ^ 2 := by
-    have h1 : min C D ≤ B / (2 : ℝ) ^ (256 - d) := (le_div_iff₀ (by positivity)).mpr hm
-    exact pow_le_pow_left₀ (le_min hC.le hD.le) h1 2
-  have hprod : C ^ 2 * D ^ 2 / (C + D) ≤ B ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 := by
-    have h1 := hCD.trans (mul_le_mul hm_sq hM (le_max_of_le_left hC.le) (by positivity))
-    exact h1.trans_eq (by rw [div_pow]; ring)
-  have hfl := phiF3_lower hC hD
-  have h1 : (1 : ℝ) ≤ (B ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2) * ((C + D) / (C ^ 2 * D ^ 2)) := by
-    have hpos : 0 < C ^ 2 * D ^ 2 / (C + D) := by positivity
-    have hinv : (C ^ 2 * D ^ 2 / (C + D)) * ((C + D) / (C ^ 2 * D ^ 2)) = 1 := by
-      field_simp [hC.ne', hD.ne', (show 0 < C + D by positivity).ne']
-    rw [← hinv]
-    exact mul_le_mul_of_nonneg_right hprod (by positivity)
-  have h2 : (C + D) / (C ^ 2 * D ^ 2) ≤ phiF3 C D / 1000 := by
-    have := div_le_div_of_nonneg_right hfl (by norm_num : (0 : ℝ) ≤ 1000)
-    exact (le_of_eq (by ring)).trans this
-  exact h1.trans ((mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring))
+private theorem min_le_of_dot {C D u v S B : ℝ} (hC : 0 < C) (hD : 0 < D) (hu : 0 < u) (hv : 0 < v)
+    (hS : 0 < S) (hsum : S ≤ u + v) (hdot : C * u + D * v ≤ B) : min C D ≤ B / S := by
+  rw [le_div_iff₀ hS]
+  have h1 : min C D * (u + v) ≤ C * u + D * v := by
+    linarith [mul_le_mul_of_nonneg_right (min_le_left C D) hu.le,
+              mul_le_mul_of_nonneg_right (min_le_right C D) hv.le]
+  exact (mul_le_mul_of_nonneg_left hsum (le_min hC.le hD.le)).trans (h1.trans hdot)
 
-theorem badEnv_drop_bound (i d K : Nat) (hi1 : 1 ≤ i) (hd : d ≤ 255) (hK : 1 ≤ K) (hKi : 2 * (K - 1) < i) :
-    let rA : ℝ := rhoEO3 / rhoF3 ^ 2
-    let rB : ℝ := 1 / (4 * rhoF3 ^ 2)
-    let C0 : ℝ := (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3
-    let CA : ℝ := (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rA / (rA - 1))
-    let CB : ℝ := (4 / 1000 : ℝ) * phiF3 1 1 * (rB / (1 - rB))
-    ((BadDrop i d K).card : ℝ) ≤ (2 : ℝ) ^ 256 *
-      (CA * (2 * rA) ^ d * rhoF3 ^ i + (C0 + CB) * (4 : ℝ) ^ d * rhoF3 ^ i) := by
-  dsimp only
-  set rA : ℝ := rhoEO3 / rhoF3 ^ 2
-  set rB : ℝ := 1 / (4 * rhoF3 ^ 2)
-  set C0 : ℝ := (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3
-  set CA : ℝ := (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rA / (rA - 1))
-  set CB : ℝ := (4 / 1000 : ℝ) * phiF3 1 1 * (rB / (1 - rB))
-  have hrF3_pos : 0 < rhoF3 := by unfold rhoF3; norm_num
-  have hrEO3_pos : 0 < rhoEO3 := by unfold rhoEO3; norm_num
-  have hrA_gt1 : 1 < rA := by dsimp [rA]; unfold rhoEO3 rhoF3; norm_num
-  have hrB_nn : 0 ≤ rB := by dsimp [rB]; unfold rhoF3; positivity
-  have hrB_lt1 : rB < 1 := by dsimp [rB]; unfold rhoF3; norm_num
-  -- Every `x ∈ BadDrop i d K` has `u_i > 0`!
-  have halive_drop : ∀ x ∈ BadDrop i d K, 0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := by
+private theorem badDrop_alive (i d : Nat) (hd : d ≤ 255) {x : Nat} (hx : x ∈ BadDrop i d) :
+    0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := by
+  have hmem := Finset.mem_filter.mp hx
+  obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
+  by_contra hu0
+  have hzu : (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by omega
+  have hval := SkywalkNat.iter_valid i (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
+  have hcop := hval.2.2.trans (canonical_coprime_p hx0 hxp)
+  rw [hzu, Nat.gcd_zero_left] at hcop
+  have hpow2 : 2 ≤ 2 ^ (256 - d) := by simpa using Nat.pow_le_pow_right (by decide : 1 ≤ 2) (show 1 ≤ 256 - d by omega)
+  have hsum := hmem.2; omega
+
+private theorem badDrop_k0_zero_bound (i d : Nat) (hi1 : 1 ≤ i) (hd : d ≤ 255) :
+    ((BadDrop_k0 i d 0).card : ℝ) ≤
+      (2 : ℝ) ^ 256 * ((if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 1)) +
+      (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (7 / 4 + 3 * (i : ℝ) / 8)) := by
+  set S0 := BadDrop_k0 i d 0
+  let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) (i - 1)
+  let c1Pred : Nat → Prop := fun x =>
+    let γ := traceKinds (SkywalkNat.init x ECDSAAdd.p) i
+    (runF (0, 1) γ).1 * (runF (0, 1) γ).2 ≤ ECDSAAdd.p
+  set D1 := S0.filter c1Pred
+  set D2 := S0.filter (fun x => ¬ c1Pred x)
+  have hsplit : (S0.card : ℝ) ≤ (D1.card : ℝ) + (D2.card : ℝ) := by
+    have hsub : S0 ⊆ D1 ∪ D2 := fun x hx => by
+      by_cases h : c1Pred x
+      · exact Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h⟩)
+      · exact Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h⟩)
+    exact_mod_cast (Finset.card_le_card hsub).trans (Finset.card_union_le _ _)
+  have htr_fact : ∀ x ∈ S0, traceKinds (SkywalkNat.init x ECDSAAdd.p) i = .O1 :: f1 x ∧
+      0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := by
     intro x hx
-    have hmem := Finset.mem_filter.mp hx
-    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
-    by_contra hu0
-    have hzu : (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u = 0 := by omega
-    have hval := SkywalkNat.iter_valid i (SkywalkNat.init x ECDSAAdd.p) p_pos p_odd
-    have hcop := hval.2.2.trans (canonical_coprime_p hx0 hxp)
-    rw [hzu, Nat.gcd_zero_left] at hcop
-    have hpow2 : 2 ≤ 2 ^ (256 - d) := by
-      have h1 : 1 ≤ 256 - d := by omega
-      have h2 := Nat.pow_le_pow_right (by decide : 1 ≤ 2) h1
-      simpa using h2
-    have hsum := hmem.2.2
-    omega
-  -- Cover `BadDrop i d K` by `k0 = 0` and `k0 ∈ Icc 1 d` (because monotonicity forces `k0 ≤ d`!)
-  have hcov : BadDrop i d K ⊆ BadDrop_k0 i d K 0 ∪ (Finset.Icc 1 d).biUnion (fun k0 => BadDrop_k0 i d K k0) := by
-    intro x hx
-    have hmem := Finset.mem_filter.mp hx
-    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
-    have hndivK : ¬ 2 ^ K ∣ x := hmem.2.1
-    have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨K - 1, by rwa [Nat.sub_add_cancel hK]⟩
-    let k0 := Nat.find hex
-    have hk0_lt : k0 < K := by
-      have hle := Nat.find_min' hex (show ¬ 2 ^ ((K - 1) + 1) ∣ x by rwa [Nat.sub_add_cancel hK])
-      omega
-    have hdiv : 2 ^ k0 ∣ x := by
-      cases hk : k0 with
-      | zero => simp
-      | succ j =>
-        have hnj := Nat.find_min hex (show j < k0 by omega)
-        push_neg at hnj; exact hnj
-    have hodd : (x / 2 ^ k0) % 2 = 1 := by
-      have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
-      by_contra he
-      apply hndiv
-      obtain ⟨q, hq⟩ := hdiv
-      have hq_even : q % 2 = 0 := by
-        have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
-        omega
-      refine ⟨q / 2, ?_⟩
-      rw [hq, pow_succ, mul_assoc]; congr 1; omega
-    have hmem_k0 : x ∈ BadDrop_k0 i d K k0 := Finset.mem_filter.mpr ⟨hx, hdiv, hodd⟩
-    by_cases hz : k0 = 0
-    · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
-    · have hk0_ge1 : 1 ≤ k0 := by omega
-      have hk0_le_d : k0 ≤ d := by
-        have h2k_le : 2 * k0 ≤ i := by omega
-        have hmono := skywalkNat_iter_sum_le x (2 * k0) i h2k_le
-        have hsum_le : 2 ^ (256 - d) ≤
-            (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
-            (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v := hmem.2.2.trans hmono
-        have hfeo := (forced_eo0_phase x k0 hk0_ge1 hdiv hodd hxp).2.2.2
-        have hsum_R : ((2 : ℝ) ^ (256 - d)) < 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
-          have h1 : (2 : ℝ) ^ (256 - d) ≤
-              ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
-              ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) := by exact_mod_cast hsum_le
-          have hp : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-          have h2 : 2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 ≤ 2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 :=
-            div_le_div_of_nonneg_right (by linarith) (by positivity)
-          linarith
-        have hmul : (2 : ℝ) ^ (256 - d + k0) < (2 : ℝ) ^ 257 := by
-          have h1 := (lt_div_iff₀ (by positivity : (0 : ℝ) < (2 : ℝ) ^ k0)).mp hsum_R
-          rw [pow_add]
-          exact lt_of_lt_of_eq h1 (by rw [← pow_succ'])
-        have hnat : 2 ^ (256 - d + k0) < 2 ^ 257 := by exact_mod_cast hmul
-        by_contra hgt
-        have hle' : 257 ≤ 256 - d + k0 := by omega
-        have hpow_le := Nat.pow_le_pow_right (by decide : 1 ≤ 2) hle'
-        omega
-      exact Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨k0, Finset.mem_Icc.mpr ⟨hk0_ge1, hk0_le_d⟩, hmem_k0⟩)
-  have hcard_split : ((BadDrop i d K).card : ℝ) ≤
-      ((BadDrop_k0 i d K 0).card : ℝ) + ∑ k0 ∈ Finset.Icc 1 d, ((BadDrop_k0 i d K k0).card : ℝ) := by
-    have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
-    have h2 := Finset.card_biUnion_le (s := Finset.Icc 1 d) (t := fun k0 => BadDrop_k0 i d K k0)
-    have hnat : (BadDrop i d K).card ≤ (BadDrop_k0 i d K 0).card + ∑ k0 ∈ Finset.Icc 1 d, (BadDrop_k0 i d K k0).card := by omega
-    exact_mod_cast hnat
-  -- Bound `k0 = 0`:
-  have h0_bound : ((BadDrop_k0 i d K 0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (C0 * (4 : ℝ) ^ d * rhoF3 ^ i) := by
-    set S0 := BadDrop_k0 i d K 0
-    let f1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[1] (SkywalkNat.init x ECDSAAdd.p)) (i - 1)
-    have hfib := card_le_list_sum_fiber S0 (pathsOf allKinds (i - 1)) f1
-      (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
+    have hxD := (Finset.mem_filter.mp hx).1
+    obtain ⟨_, hxp⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp hxD).1
+    obtain ⟨_, _, htr1, _⟩ := leading_E_steps x 0 (by simp) (Finset.mem_filter.mp hx).2.2 hxp
+    have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 (i - 1)
+    rw [show 1 + (i - 1) = i by omega, htr1] at h1
+    exact ⟨by simpa only [List.replicate_zero, List.nil_append, List.cons_append] using h1, badDrop_alive i d hd hxD⟩
+  -- Shared geometric facts on a nonempty fiber `F ⊆ S0` with `f1 x = γ`
+  have hgeom : ∀ (γ : List StepKind), γ.length = i - 1 → ∀ x0 ∈ S0, f1 x0 = γ →
+      min ((runF (2, 1) γ).1 : ℝ) ((runF (2, 1) γ).2 : ℝ) ≤ (2 : ℝ) ^ d ∧
+      (runF (2, 1) γ).1 * (runF (2, 1) γ).2 ≤ 2 ^ (i + d) := by
+    intro γ hγl x0 hx0 hfx0
+    have hx0D := (Finset.mem_filter.mp hx0).1
+    have hpos := runF_pos γ (by omega : 0 < 2) (by omega : 0 < 1)
+    have htf := htr_fact x0 hx0
+    have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i = .O1 :: γ := by rw [htf.1, hfx0]
+    have hval0 := SkywalkNat.iter_valid i (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+    have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i p_pos p_odd
+      (fun j hj => iter_alive_of_u_ne_zero _ hj.le (Nat.ne_of_gt htf.2))
+    rw [htr0] at hB0
+    have hdot0 := runF_runB_dot (.O1 :: γ) 0 1
+      (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
+    rw [hB0] at hdot0; simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
+    have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
+    rw [hF_eq] at hdot0
+    have hdotR : ((runF (2, 1) γ).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+        ((runF (2, 1) γ).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
+      exact_mod_cast hdot0.le.trans p_lt_256.le
+    have hsumR : (2 : ℝ) ^ (256 - d) ≤ ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+        ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by exact_mod_cast (Finset.mem_filter.mp hx0D).2
+    have hmin : min ((runF (2, 1) γ).1 : ℝ) ((runF (2, 1) γ).2 : ℝ) ≤ (2 : ℝ) ^ d := by
+      have h := min_le_of_dot (by exact_mod_cast hpos.1) (by exact_mod_cast hpos.2)
+        (by exact_mod_cast htf.2) (by exact_mod_cast hval0.1) (by positivity) hsumR hdotR
+      refine h.trans_eq ?_
+      rw [show (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) by rw [← pow_add, show d + (256 - d) = 256 by omega]]
+      field_simp
+    have hmin_nat : min (runF (2, 1) γ).1 (runF (2, 1) γ).2 ≤ 2 ^ d := by
+      have : ((min (runF (2, 1) γ).1 (runF (2, 1) γ).2 : Nat) : ℝ) ≤ (2 : ℝ) ^ d := by simpa only [Nat.cast_min] using hmin
+      exact_mod_cast this
+    have hmax_nat : max (runF (2, 1) γ).1 (runF (2, 1) γ).2 ≤ 2 ^ i := by
+      have h := runF_max_le γ 2 1
+      rw [hγl, show max 2 1 = 2 by decide, ← pow_succ, Nat.sub_add_cancel hi1] at h; exact h
+    have hprod : (runF (2, 1) γ).1 * (runF (2, 1) γ).2 ≤ 2 ^ (i + d) := by
+      have hm : (runF (2, 1) γ).1 * (runF (2, 1) γ).2 = min (runF (2, 1) γ).1 (runF (2, 1) γ).2 * max (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+        rcases le_total (runF (2, 1) γ).1 (runF (2, 1) γ).2 with h | h <;> simp [min_eq_left, min_eq_right, max_eq_left, max_eq_right, h, mul_comm]
+      rw [hm, pow_add, mul_comm (2 ^ i) (2 ^ d)]
+      exact Nat.mul_le_mul hmin_nat hmax_nat
+    exact ⟨hmin, hprod⟩
+  -- Bound D1
+  have hD1 : (D1.card : ℝ) ≤
+      (2 : ℝ) ^ 256 * ((if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 1)) := by
+    have hfib := card_le_list_sum_fiber D1 (pathsOf allKinds (i - 1)) f1 (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
+    set fac : ℝ := if i + d ≤ 248 then 129 / 128 else 2
+    have hfac_pos : 0 < fac := by dsimp [fac]; split_ifs <;> norm_num
     have hper : ∀ γ ∈ pathsOf allKinds (i - 1),
-        ((S0.filter (fun x => f1 x = γ)).card : ℝ) ≤
-          (2 : ℝ) ^ 256 * ((2 / 1000 : ℝ) * (4 : ℝ) ^ d) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
-      intro γ _
-      set F := S0.filter (fun x => f1 x = γ)
+        ((D1.filter (fun x => f1 x = γ)).card : ℝ) ≤
+          (2 : ℝ) ^ 256 * (fac * (2 : ℝ) ^ d) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
+      intro γ hγ
+      set F := D1.filter (fun x => f1 x = γ)
       have hpos := runF_pos γ (by omega : 0 < 2) (by omega : 0 < 1)
       have hC_R : (0 : ℝ) < ((runF (2, 1) γ).1 : ℝ) := by exact_mod_cast hpos.1
       have hD_R : (0 : ℝ) < ((runF (2, 1) γ).2 : ℝ) := by exact_mod_cast hpos.2
       by_cases hne : F.Nonempty
       · obtain ⟨x0, hx0⟩ := hne
-        have hx0_S0 := (Finset.mem_filter.mp hx0).1
-        have hx0_D := (Finset.mem_filter.mp hx0_S0).1
+        have hx0D1 := (Finset.mem_filter.mp hx0).1
+        have hx0S0 := (Finset.mem_filter.mp hx0D1).1
+        have hc1_0 : c1Pred x0 := (Finset.mem_filter.mp hx0D1).2
         have hfx0 : f1 x0 = γ := (Finset.mem_filter.mp hx0).2
-        obtain ⟨hx0_0, hx0_p⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp hx0_D).1
-        have hu0 := halive_drop x0 hx0_D
-        have hval0 := SkywalkNat.iter_valid i (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
-        have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
-        have htr_all : ∀ x ∈ F, traceKinds (SkywalkNat.init x ECDSAAdd.p) i = .O1 :: γ ∧
-            0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u := by
-          intro x hxF
-          have hxS0 := (Finset.mem_filter.mp hxF).1
-          have hxD := (Finset.mem_filter.mp hxS0).1
-          obtain ⟨hx_0, hx_p⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp hxD).1
-          obtain ⟨_, _, htr1, _⟩ := leading_E_steps x 0 (by simp) (Finset.mem_filter.mp hxS0).2.2 hx_p
-          have htr_i : traceKinds (SkywalkNat.init x ECDSAAdd.p) i = .O1 :: f1 x := by
-            have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) 1 (i - 1)
-            rw [show 1 + (i - 1) = i by omega, htr1] at h1
-            simpa only [List.replicate_zero, List.nil_append, List.cons_append] using h1
-          exact ⟨htr_i.trans (congrArg (.O1 :: ·) (Finset.mem_filter.mp hxF).2), halive_drop x hxD⟩
+        obtain ⟨hmin, hprod⟩ := hgeom γ (mem_pathsOf.mp hγ).1 x0 hx0S0 hfx0
+        have hCD_le : (runF (2, 1) γ).1 * (runF (2, 1) γ).2 ≤ ECDSAAdd.p := by
+          dsimp only [c1Pred] at hc1_0; rwa [(htr_fact x0 hx0S0).1, hfx0] at hc1_0
         have hcop := (runF_coprime_even_odd γ (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
         have hcF := forward_prefix_fiber_card F
-          (fun x hx => Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1)
-          i (.O1 :: γ) htr_all hpos.1 hpos.2 hcop
+          (fun x hx => Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1).1)
+          i (.O1 :: γ)
+          (fun x hx => by
+            have hxS0 := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
+            have htf := htr_fact x hxS0; exact ⟨by rw [htf.1, (Finset.mem_filter.mp hx).2], htf.2⟩)
+          hpos.1 hpos.2 hcop
+        have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
         rw [hF_eq] at hcF
-        have halive0 : ∀ j < i, 0 < (SkywalkNat.step^[j] (SkywalkNat.init x0 ECDSAAdd.p)).u := fun j hj =>
-          iter_alive_of_u_ne_zero _ hj.le (Nat.ne_of_gt hu0)
-        have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i p_pos p_odd halive0
-        rw [(htr_all x0 hx0).1] at hB0
-        have hdot0 := runF_runB_dot (.O1 :: γ) 0 1
-          (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u
-          (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
-        rw [hB0, hF_eq] at hdot0
-        simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
-        have hdotR : ((runF (2, 1) γ).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-            ((runF (2, 1) γ).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
-          exact_mod_cast hdot0.le.trans p_lt_256.le
-        have hsumR : (2 : ℝ) ^ (256 - d) ≤ ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-            ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by
-          exact_mod_cast (Finset.mem_filter.mp hx0_D).2.2
-        have ht1 := env_term1_le_phiF3 hC_R hD_R (by exact_mod_cast hu0) (by exact_mod_cast hval0.1) d hsumR hdotR hd
-        have ht2 := env_term2_le_phiF3 hC_R hD_R (by exact_mod_cast hu0) (by exact_mod_cast hval0.1) d hsumR hdotR (by positivity) hd
-        have hpow_t2 : ((2 : ℝ) ^ 256) ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 = (2 : ℝ) ^ 256 * (4 : ℝ) ^ d := by
-          have h1 : (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) := by
-            rw [← pow_add, show d + (256 - d) = 256 by omega]
-          have h4 : ((2 : ℝ) ^ d) ^ 2 = (4 : ℝ) ^ d := by
-            rw [← pow_mul, mul_comm, pow_mul]; norm_num
-          rw [pow_succ', h1, mul_pow, h4]; field_simp
-        rw [hpow_t2] at ht2
-        have hdiv : ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) : Nat) : ℝ) ≤
-            (2 : ℝ) ^ 256 * (1 / (((runF (2, 1) γ).1 : ℝ) * ((runF (2, 1) γ).2 : ℝ))) := by
+        have hdiv : ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) + 1 : Nat) : ℝ) ≤
+            fac * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) := by
           have h1 : ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) : Nat) : ℝ) ≤
-              (ECDSAAdd.p : ℝ) / (((runF (2, 1) γ).1 : ℝ) * ((runF (2, 1) γ).2 : ℝ)) := by
+              (ECDSAAdd.p : ℝ) / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) := by
             simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := (runF (2, 1) γ).1 * (runF (2, 1) γ).2))
-          have h2 : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-          exact h1.trans ((div_le_div_of_nonneg_right h2 (by positivity)).trans_eq (by ring))
-        have h2le4 : (2 : ℝ) ^ d ≤ (4 : ℝ) ^ d := pow_le_pow_left₀ (by norm_num) (by norm_num) d
-        have hcR : (F.card : ℝ) ≤ ((ECDSAAdd.p / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) : Nat) : ℝ) + 1 := by
-          exact_mod_cast hcF
-        have hphi_nn : 0 ≤ phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := (phiF3_pos hC_R hD_R).le
-        have hterm1_b : (2 : ℝ) ^ 256 * (1 / (((runF (2, 1) γ).1 : ℝ) * ((runF (2, 1) γ).2 : ℝ))) ≤
-            (2 : ℝ) ^ 256 * ((4 : ℝ) ^ d / 1000) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
-          have h1 := mul_le_mul_of_nonneg_left ht1 (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)
-          have h2 : (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d / 1000 * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2) ≤
-              (2 : ℝ) ^ 256 * ((4 : ℝ) ^ d / 1000) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by
-            have := mul_le_mul_of_nonneg_right (div_le_div_of_nonneg_right h2le4 (by norm_num : (0 : ℝ) ≤ 1000)) hphi_nn
-            exact (mul_le_mul_of_nonneg_left this (by positivity)).trans_eq (by ring)
-          exact h1.trans h2
-        have hterm2_b : (1 : ℝ) ≤ (2 : ℝ) ^ 256 * ((4 : ℝ) ^ d / 1000) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 :=
-          ht2.trans_eq (by ring)
-        linarith
+          have h3 : (ECDSAAdd.p : ℝ) / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) ≤
+              (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) :=
+            div_le_div_of_nonneg_right (by exact_mod_cast p_lt_256.le) (by positivity)
+          dsimp only [fac]; split_ifs with h248
+          · have h128 : 128 * ((runF (2, 1) γ).1 * (runF (2, 1) γ).2) ≤ ECDSAAdd.p := by
+              have hle248 : 2 ^ (i + d) ≤ 2 ^ 248 := Nat.pow_le_pow_right (by decide) h248
+              have hp255 := p_gt_255
+              have h255 : 128 * 2 ^ 248 = 2 ^ 255 := by norm_num
+              nlinarith
+            have h2 : (1 : ℝ) ≤ (1 / 128 : ℝ) * ((ECDSAAdd.p : ℝ) / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) := by
+              have : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / (128 * ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) := by
+                rw [one_le_div (by positivity)]; exact_mod_cast h128
+              linarith [show (ECDSAAdd.p : ℝ) / (128 * ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) =
+                  (1 / 128 : ℝ) * ((ECDSAAdd.p : ℝ) / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) by ring]
+            push_cast
+            linarith [show (129 / 128 : ℝ) * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) =
+                (129 / 128 : ℝ) * ((2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) by ring]
+          · have h2 : (1 : ℝ) ≤ (ECDSAAdd.p : ℝ) / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) :=
+              (one_le_div (by positivity)).mpr (by exact_mod_cast hCD_le)
+            push_cast
+            linarith [show (2 : ℝ) * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) =
+                2 * ((2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) by ring]
+        have hinv := inv_prod_le_phiF3_of_min hC_R hD_R hmin
+        have hcardR : (F.card : ℝ) ≤ fac * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) :=
+          (Nat.cast_le.mpr hcF).trans hdiv
+        calc (F.card : ℝ) ≤ fac * (2 : ℝ) ^ 256 * (1 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) := by
+              linarith [show fac * (2 : ℝ) ^ 256 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ) =
+                  fac * (2 : ℝ) ^ 256 * (1 / ((runF (2, 1) γ).1 * (runF (2, 1) γ).2 : ℝ)) by ring]
+          _ ≤ fac * (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2) :=
+              mul_le_mul_of_nonneg_left hinv (by positivity)
+          _ = (2 : ℝ) ^ 256 * (fac * (2 : ℝ) ^ d) * phiF3 (runF (2, 1) γ).1 (runF (2, 1) γ).2 := by ring
       · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
         have := phiF3_pos hC_R hD_R; positivity
     have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
     rw [list_sum_mul_left] at h1
-    have h2 := h1.trans (mul_le_mul_of_nonneg_left (sum_pathsAll_phiF3 (i - 1) 2 1 (by omega) (by omega)) (by positivity))
-    refine h2.trans_eq ?_
-    have hpow_i : rhoF3 ^ (i - 1) = rhoF3 ^ i / rhoF3 := by
-      have : rhoF3 ^ i = rhoF3 ^ (i - 1) * rhoF3 := by rw [← pow_succ, Nat.sub_add_cancel hi1]
-      rw [this, mul_div_cancel_right₀ _ hrF3_pos.ne']
-    simp only [Nat.cast_ofNat, Nat.cast_one, hpow_i, C0]; ring
-  -- Bound each `1 ≤ k0 ≤ d`:
-  have hpos_bound : ∀ k0 ∈ Finset.Icc 1 d,
-      ((BadDrop_k0 i d K k0).card : ℝ) ≤ (2 : ℝ) ^ 256 *
-        ((1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (2 : ℝ) ^ d * rA ^ k0 * rhoF3 ^ i +
-         (4 / 1000 : ℝ) * phiF3 1 1 * (4 : ℝ) ^ d * rB ^ k0 * rhoF3 ^ i) := by
-    intro k0 hk0_mem
-    obtain ⟨hk0_1, hk0_d⟩ := Finset.mem_Icc.mp hk0_mem
-    set Sk := BadDrop_k0 i d K k0
-    by_cases hk0_K : k0 < K
-    · set m : Nat := i - 2 * k0
-      have hm_add : 2 * k0 + m = i := by omega
-      let pref : List StepKind := List.replicate k0 .E ++ [.O1]
-      let g1 : Nat → List StepKind := fun x =>
-        traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1)
-      let g2 : Nat → List StepKind := fun x =>
-        traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m
-      have hrunF_pref : runF (0, 1) pref = (2, 1) := by
-        have hrep : ∀ n, runF (0, 1) (List.replicate n .E) = (0, 1) := by
-          intro n; induction n with | zero => rfl | succ n ih => simp [List.replicate_succ, runF_cons, stepF, ih]
-        rw [runF_append, hrep]; rfl
-      have hx_facts : ∀ x ∈ Sk,
-          0 < x ∧ x < ECDSAAdd.p ∧
-          0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u ∧
-          traceKinds (SkywalkNat.init x ECDSAAdd.p) i = pref ++ g1 x ++ g2 x ∧
-          g1 x ∈ pathsOf eo0Kinds (k0 - 1) ∧
-          g2 x ∈ pathsOf allKinds m ∧
-          ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u : ℝ) +
-            ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v : ℝ) <
-              2 * (ECDSAAdd.p : ℝ) / (2 : ℝ) ^ k0 := by
-        intro x hx
-        have hmem := Finset.mem_filter.mp hx
-        have hD := Finset.mem_filter.mp hmem.1
-        obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hD.1
-        obtain ⟨_, _, htr1, _⟩ := leading_E_steps x k0 hmem.2.1 hmem.2.2 hxp
-        obtain ⟨hEO, _, _, hsumR⟩ := forced_eo0_phase x k0 hk0_1 hmem.2.1 hmem.2.2 hxp
-        have htr_2k : traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0) = pref ++ g1 x := by
-          have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (k0 + 1) (k0 - 1)
-          rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1; exact h1
-        have htr_i : traceKinds (SkywalkNat.init x ECDSAAdd.p) i = pref ++ g1 x ++ g2 x := by
-          have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m
-          rw [hm_add, htr_2k] at h1; exact h1
-        exact ⟨hx0, hxp, halive_drop x hmem.1, htr_i, mem_pathsOf.mpr ⟨traceKinds_length _ _, hEO⟩,
-          mem_pathsOf_all (traceKinds_length _ _), hsumR⟩
-      let pairList : List (List StepKind × List StepKind) :=
-        (pathsOf eo0Kinds (k0 - 1)).flatMap (fun γ1 => (pathsOf allKinds m).map (fun γ2 => (γ1, γ2)))
-      have hfib := card_le_list_sum_fiber Sk pairList (fun x => (g1 x, g2 x)) (fun x hx => by
-        have hf := hx_facts x hx
-        exact List.mem_flatMap.mpr ⟨g1 x, hf.2.2.2.2.1, List.mem_map.mpr ⟨g2 x, hf.2.2.2.2.2.1, rfl⟩⟩)
-      have hper : ∀ p12 ∈ pairList,
-          ((Sk.filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
-            (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d / 1000) *
-              phiF3 (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2 +
-            (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) *
-              phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2 := by
-        rintro ⟨γ1, γ2⟩ _
-        set F := Sk.filter (fun x => (g1 x, g2 x) = (γ1, γ2))
-        have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
-        have hpos := runF_pos γ2 hpos1.1 hpos1.2
-        have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
-        have hC_R : (0 : ℝ) < ((runF (runF (2, 1) γ1) γ2).1 : ℝ) := by exact_mod_cast hpos.1
-        have hD_R : (0 : ℝ) < ((runF (runF (2, 1) γ1) γ2).2 : ℝ) := by exact_mod_cast hpos.2
-        have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
-        have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+    have h2 := h1.trans (mul_le_mul_of_nonneg_left
+      (sum_pathsAll_F phiF3 rhoF3 (by unfold rhoF3; norm_num) (fun _ _ hC hD => phiF3_contract hC hD) (i - 1) 2 1 (by omega) (by omega))
+      (by positivity))
+    refine h2.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; ring
+  -- Bound D2
+  have hD2 : (D2.card : ℝ) ≤ (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (7 / 4 + 3 * (i : ℝ) / 8)) := by
+    split_ifs with h255
+    · have hempty : D2 = ∅ := by
+        ext x; simp only [Finset.notMem_empty, iff_false]; intro hx
+        have hxS0 := (Finset.mem_filter.mp hx).1
+        have hnc1 : ¬ c1Pred x := (Finset.mem_filter.mp hx).2
+        have hprod := (hgeom (f1 x) (traceKinds_length _ _) x hxS0 rfl).2
+        have hle255 : 2 ^ (i + d) ≤ 2 ^ 255 := Nat.pow_le_pow_right (by decide) h255
+        have hp255 := p_gt_255
+        apply hnc1; dsimp only [c1Pred]; rw [(htr_fact x hxS0).1]
+        change (runF (2, 1) (f1 x)).1 * (runF (2, 1) (f1 x)).2 ≤ ECDSAAdd.p; omega
+      rw [hempty, Finset.card_empty, Nat.cast_zero]
+    · have hfib := card_le_list_sum_fiber D2 (pathsOf allKinds (i - 1)) f1 (fun x _ => mem_pathsOf_all (traceKinds_length _ _))
+      have hper : ∀ γ ∈ pathsOf allKinds (i - 1),
+          ((D2.filter (fun x => f1 x = γ)).card : ℝ) ≤
+            (2 : ℝ) ^ (2 * d) * (1 / ((runF (2, 1) γ).1 : ℝ) ^ 2 + 1 / ((runF (2, 1) γ).2 : ℝ) ^ 2) := by
+        intro γ hγ
+        set F := D2.filter (fun x => f1 x = γ)
+        have hpos := runF_pos γ (by omega : 0 < 2) (by omega : 0 < 1)
+        have hC_R : (0 : ℝ) < ((runF (2, 1) γ).1 : ℝ) := by exact_mod_cast hpos.1
+        have hD_R : (0 : ℝ) < ((runF (2, 1) γ).2 : ℝ) := by exact_mod_cast hpos.2
         by_cases hne : F.Nonempty
         · obtain ⟨x0, hx0⟩ := hne
-          have hx0_Sk := (Finset.mem_filter.mp hx0).1
-          have hx0_D := (Finset.mem_filter.mp hx0_Sk).1
-          have hpair0 := (Finset.mem_filter.mp hx0).2
-          have hf0 := hx_facts x0 hx0_Sk
-          have htr0 : traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i = pref ++ γ1 ++ γ2 := by
-            rw [hf0.2.2.2.1, (Prod.mk.inj hpair0).1, (Prod.mk.inj hpair0).2]
-          have hF_eq : runF (0, 1) (pref ++ γ1 ++ γ2) = runF (runF (2, 1) γ1) γ2 := by
-            rw [runF_append, runF_append, hrunF_pref]
-          have hcop := (runF_coprime_even_odd (γ1 ++ γ2) (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
-          rw [runF_append] at hcop
+          have hx0D2 := (Finset.mem_filter.mp hx0).1
+          have hx0S0 := (Finset.mem_filter.mp hx0D2).1
+          have hnc1 : ¬ c1Pred x0 := (Finset.mem_filter.mp hx0D2).2
+          have hfx0 : f1 x0 = γ := (Finset.mem_filter.mp hx0).2
+          have hmin := (hgeom γ (mem_pathsOf.mp hγ).1 x0 hx0S0 hfx0).1
+          have hCD_gt : ECDSAAdd.p < (runF (2, 1) γ).1 * (runF (2, 1) γ).2 := by
+            dsimp only [c1Pred] at hnc1; rw [(htr_fact x0 hx0S0).1, hfx0] at hnc1
+            change ¬ (runF (2, 1) γ).1 * (runF (2, 1) γ).2 ≤ ECDSAAdd.p at hnc1; omega
+          have hcop := (runF_coprime_even_odd γ (by decide : (2 : Nat).Coprime 1) (by decide) (by decide)).1
           have hcF := forward_prefix_fiber_card F
-            (fun x hx => let hf := hx_facts x (Finset.mem_filter.mp hx).1; ⟨hf.1, hf.2.1⟩)
-            i (pref ++ γ1 ++ γ2)
+            (fun x hx => Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1).1).1)
+            i (.O1 :: γ)
             (fun x hx => by
-              have hxSk := (Finset.mem_filter.mp hx).1
-              have hp := (Finset.mem_filter.mp hx).2
-              have hf := hx_facts x hxSk
-              exact ⟨by rw [hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], hf.2.2.1⟩)
-            (by rw [hF_eq]; exact hpos.1) (by rw [hF_eq]; exact hpos.2) (by rw [hF_eq]; exact hcop)
-          rw [hF_eq] at hcF
-          have hval_i := SkywalkNat.iter_valid i (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
-          have hval_2k := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
-          have halive0 : ∀ j < i, 0 < (SkywalkNat.step^[j] (SkywalkNat.init x0 ECDSAAdd.p)).u := fun j hj =>
-            iter_alive_of_u_ne_zero _ hj.le (Nat.ne_of_gt hf0.2.2.1)
-          have hB0 := runB_traceKinds (SkywalkNat.init x0 ECDSAAdd.p) i p_pos p_odd halive0
-          rw [htr0] at hB0
-          have hdot0 := runF_runB_dot (pref ++ γ1 ++ γ2) 0 1
-            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u
-            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
-          rw [hB0, hF_eq] at hdot0
-          simp only [SkywalkNat.init, zero_mul, one_mul, zero_add] at hdot0
-          have hdotR : ((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-              ((runF (runF (2, 1) γ1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤ (2 : ℝ) ^ 256 := by
-            exact_mod_cast hdot0.le.trans p_lt_256.le
-          have hsumR : (2 : ℝ) ^ (256 - d) ≤ ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-              ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by
-            exact_mod_cast (Finset.mem_filter.mp hx0_D).2.2
-          have ht1 := env_term1_le_phiF3 hC_R hD_R (by exact_mod_cast hf0.2.2.1) (by exact_mod_cast hval_i.1) d hsumR hdotR hd
-          -- Term 2 from `z_{2*k0}`!
-          have halive_m : ∀ j < m, 0 < (SkywalkNat.step^[j] (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p))).u := by
-            intro j hj; rw [← Function.iterate_add_apply]
-            exact iter_alive_of_u_ne_zero _ (show j + 2 * k0 ≤ i by omega) (Nat.ne_of_gt hf0.2.2.1)
-          have hBm := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m hval_2k.1 hval_2k.2.1 halive_m
-          have hg2_eq : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m = γ2 := (Prod.mk.inj hpair0).2
-          rw [← Function.iterate_add_apply, show m + 2 * k0 = i by omega, hg2_eq] at hBm
-          have hdot' := runF_runB_dot γ2 1 1
-            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u
-            (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
-          rw [hBm] at hdot'
-          simp only [one_mul] at hdot'
-          have hdotR' : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-              ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤
-              2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
-            have heqR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-                ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) =
-                ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
-                ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by exact_mod_cast hdot'
-            rw [heqR]
-            have hple : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-            have h2 := div_le_div_of_nonneg_right (by linarith : 2 * (ECDSAAdd.p : ℝ) ≤ 2 * (2 : ℝ) ^ 256) (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ k0)
-            linarith [hf0.2.2.2.2.2.2]
-          have ht2 := env_term2_le_phiF3 hC'_R hD'_R (by exact_mod_cast hf0.2.2.1) (by exact_mod_cast hval_i.1)
-            d hsumR hdotR' (by positivity) hd
-          have hpow_t2 : (2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0) ^ 3 / ((2 : ℝ) ^ (256 - d)) ^ 2 =
-              (2 : ℝ) ^ 256 * (8 * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) := by
-            have h1 : (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) := by
-              rw [← pow_add, show d + (256 - d) = 256 by omega]
-            have h4 : ((2 : ℝ) ^ d) ^ 2 = (4 : ℝ) ^ d := by rw [← pow_mul, mul_comm, pow_mul]; norm_num
-            have h8 : ((2 : ℝ) ^ k0) ^ 3 = (8 : ℝ) ^ k0 := by rw [← pow_mul, mul_comm, pow_mul]; norm_num
-            rw [div_pow, mul_pow, h1, mul_pow, h8, ← h4]
-            have h2ne : (2 : ℝ) ^ (256 - d) ≠ 0 := by positivity
-            have h8ne : (8 : ℝ) ^ k0 ≠ 0 := by positivity
-            field_simp [h2ne, h8ne]; ring
-          rw [hpow_t2] at ht2
-          have hdiv : ((ECDSAAdd.p / ((runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2) : Nat) : ℝ) ≤
-              (2 : ℝ) ^ 256 * (1 / (((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((runF (runF (2, 1) γ1) γ2).2 : ℝ))) := by
-            have h1 : ((ECDSAAdd.p / ((runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2) : Nat) : ℝ) ≤
-                (ECDSAAdd.p : ℝ) / (((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((runF (runF (2, 1) γ1) γ2).2 : ℝ)) := by
-              simpa only [Nat.cast_mul] using (Nat.cast_div_le (α := ℝ) (m := ECDSAAdd.p) (n := (runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2))
-            have h2 : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
-            exact h1.trans ((div_le_div_of_nonneg_right h2 (by positivity)).trans_eq (by ring))
-          have hcR : (F.card : ℝ) ≤ ((ECDSAAdd.p / ((runF (runF (2, 1) γ1) γ2).1 * (runF (runF (2, 1) γ1) γ2).2) : Nat) : ℝ) + 1 := by
-            exact_mod_cast hcF
-          have ht1' : (2 : ℝ) ^ 256 * (1 / (((runF (runF (2, 1) γ1) γ2).1 : ℝ) * ((runF (runF (2, 1) γ1) γ2).2 : ℝ))) ≤
-              (2 : ℝ) ^ 256 * ((2 : ℝ) ^ d / 1000) * phiF3 (runF (runF (2, 1) γ1) γ2).1 (runF (runF (2, 1) γ1) γ2).2 :=
-            (mul_le_mul_of_nonneg_left ht1 (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)).trans_eq (by ring)
-          have ht2' : (1 : ℝ) ≤ (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) *
-              phiF3 (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 :=
-            ht2.trans_eq (by ring)
-          linarith
-        · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
-          have h1 := phiF3_pos hC_R hD_R
-          have h2 := phiF3_pos hC'_R hD'_R
-          positivity
-      have hsum1 := hfib.trans (list_sum_map_le _ _ _ hper)
-      have hadd_map : ∀ (xs : List (List StepKind × List StepKind)) (f g : List StepKind × List StepKind → ℝ),
-          (xs.map (fun x => f x + g x)).sum = (xs.map f).sum + (xs.map g).sum := by
-        intro xs f g; induction xs with | nil => simp | cons _ _ ih => simp [ih]; ring
-      rw [hadd_map, list_sum_mul_left, list_sum_mul_left] at hsum1
-      -- Sum 1: `EO0` + `all` with `phiF3`:
-      have hS1_sum : (pairList.map (fun p12 =>
-          phiF3 (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
-          phiF3 2 1 * rhoEO3 ^ (k0 - 1) * rhoF3 ^ m := by
-        dsimp only [pairList]; rw [list_sum_flatMap_real]
-        have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
-            (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
-              (fun p12 => phiF3 (runF (runF (2, 1) p12.1) p12.2).1 (runF (runF (2, 1) p12.1) p12.2).2)).sum ≤
-            phiF3 (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * rhoF3 ^ m := fun γ1 _ => by
-          simp only [List.map_map, Function.comp_def]
-          have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
-          simpa only [Prod.mk.eta] using sum_pathsAll_phiF3 m (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 hpos1.1 hpos1.2
-        have h2 := list_sum_map_le _ _ _ hinner
-        have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => phiF3 (runF (2, 1) γ1).1 (runF (2, 1) γ1).2 * rhoF3 ^ m)).sum =
-            rhoF3 ^ m * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => phiF3 (runF (2, 1) γ1).1 (runF (2, 1) γ1).2)).sum := by
-          rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
-        rw [hpull] at h2
-        have h3 := h2.trans (mul_le_mul_of_nonneg_left (sum_pathsEO0_phiF3 (k0 - 1) 2 1 (by omega) (by omega)) (by positivity))
-        refine h3.trans_eq ?_; simp only [Nat.cast_ofNat, Nat.cast_one]; ring
-      -- Sum 2: `2^(k0 - 1) * phiF3 1 1 * rhoF3 ^ m`:
-      have hS2_sum : (pairList.map (fun p12 => phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤
-          (2 : ℝ) ^ (k0 - 1) * (phiF3 1 1 * rhoF3 ^ m) := by
-        dsimp only [pairList]; rw [list_sum_flatMap_real]
-        have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
-            (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
-              (fun p12 => phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤ phiF3 1 1 * rhoF3 ^ m := fun γ1 _ => by
-          simp only [List.map_map, Function.comp_def]
-          simpa only [Nat.cast_one] using sum_pathsAll_phiF3 m 1 1 (by omega) (by omega)
-        have h2 := list_sum_map_le _ _ _ hinner
-        have hconst : ((pathsOf eo0Kinds (k0 - 1)).map (fun _ => phiF3 1 1 * rhoF3 ^ m)).sum =
-            (2 : ℝ) ^ (k0 - 1) * (phiF3 1 1 * rhoF3 ^ m) := by
-          rw [List.map_const', List.sum_replicate, nsmul_eq_mul, pathsOf_length]
-          have hl : eo0Kinds.length = 2 := rfl; rw [hl]; norm_cast
-        rwa [hconst] at h2
-      have hcomb := hsum1.trans (add_le_add
-        (mul_le_mul_of_nonneg_left hS1_sum (by positivity))
-        (mul_le_mul_of_nonneg_left hS2_sum (by positivity)))
-      refine hcomb.trans_eq ?_
-      have hpow_m : rhoF3 ^ m = rhoF3 ^ i / (rhoF3 ^ 2) ^ k0 := by
-        have h1 : rhoF3 ^ i = (rhoF3 ^ 2) ^ k0 * rhoF3 ^ m := by
-          rw [← pow_mul, ← pow_add, hm_add]
-        rw [h1]; field_simp [hrF3_pos.ne']
-      have hpow_eo : rhoEO3 ^ (k0 - 1) = rhoEO3 ^ k0 / rhoEO3 := by
-        have h1 : rhoEO3 ^ k0 = rhoEO3 ^ (k0 - 1) * rhoEO3 := by rw [← pow_succ, Nat.sub_add_cancel hk0_1]
-        rw [h1, mul_div_cancel_right₀ _ hrEO3_pos.ne']
-      have hpow_2 : (2 : ℝ) ^ (k0 - 1) / (8 : ℝ) ^ k0 = 1 / (2 * (4 : ℝ) ^ k0) := by
-        have h8 : (8 : ℝ) ^ k0 = (2 : ℝ) ^ k0 * (4 : ℝ) ^ k0 := by rw [← mul_pow]; norm_num
-        have h2k : (2 : ℝ) ^ k0 = 2 * (2 : ℝ) ^ (k0 - 1) := by rw [← pow_succ', Nat.sub_add_cancel hk0_1]
-        rw [h8, h2k]; field_simp
-      have hrA_p : rA ^ k0 = rhoEO3 ^ k0 / (rhoF3 ^ 2) ^ k0 := div_pow _ _ _
-      have hrB_p : rB ^ k0 = 1 / ((4 : ℝ) ^ k0 * (rhoF3 ^ 2) ^ k0) := by dsimp [rB]; rw [one_div_pow, mul_pow, one_div]
-      rw [hpow_m, hpow_eo, hrA_p, hrB_p]
-      have h2eq : (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d / (8 : ℝ) ^ k0) *
-          ((2 : ℝ) ^ (k0 - 1) * (phiF3 1 1 * (rhoF3 ^ i / (rhoF3 ^ 2) ^ k0))) =
-          (2 : ℝ) ^ 256 * ((8 / 1000 : ℝ) * (4 : ℝ) ^ d * ((2 : ℝ) ^ (k0 - 1) / (8 : ℝ) ^ k0) *
-            (phiF3 1 1 * (rhoF3 ^ i / (rhoF3 ^ 2) ^ k0))) := by ring
-      rw [h2eq, hpow_2]
-      field_simp [hrF3_pos.ne', hrEO3_pos.ne']; ring
-    · -- `K ≤ k0`: `Sk` is empty because every element of `BadDrop i d K` satisfies `¬ 2^K ∣ x`!
-      have hempty : Sk = ∅ := by
-        ext x; simp only [Finset.notMem_empty, iff_false]
-        intro hx
-        have hmem := Finset.mem_filter.mp hx
-        have hndivK := (Finset.mem_filter.mp hmem.1).2.1
-        exact hndivK (dvd_trans (Nat.pow_dvd_pow 2 (by omega)) hmem.2.1)
-      rw [hempty, Finset.card_empty, Nat.cast_zero]
-      have h1 := phiF3_pos (by norm_num : (0 : ℝ) < 2) (by norm_num : (0 : ℝ) < 1)
-      have h2 := phiF3_pos (by norm_num : (0 : ℝ) < 1) (by norm_num : (0 : ℝ) < 1)
-      have hrA_nn : 0 ≤ rA := by linarith
-      positivity
-  -- Sum `hpos_bound` over `k0 ∈ Finset.Icc 1 d`:
-  have hsum_pos := Finset.sum_le_sum hpos_bound
-  have hsum_A : ∑ k0 ∈ Finset.Icc 1 d, rA ^ k0 ≤ (rA / (rA - 1)) * rA ^ d := by
-    have hshift : ∀ n, ∑ k0 ∈ Finset.Icc 1 n, rA ^ k0 = rA * ∑ j ∈ Finset.range n, rA ^ j := by
-      intro n; induction n with
-      | zero => simp
-      | succ n ih =>
-        rw [Finset.sum_Icc_succ_top (by omega), Finset.sum_range_succ, mul_add, ← ih, pow_succ']
-    rw [hshift d]
-    exact (mul_le_mul_of_nonneg_left (geom_sum_gt1_le hrA_gt1 d) (by linarith)).trans_eq (by ring)
-  have hsum_B : ∑ k0 ∈ Finset.Icc 1 d, rB ^ k0 ≤ rB / (1 - rB) := by
-    have hshift : ∀ n, ∑ k0 ∈ Finset.Icc 1 n, rB ^ k0 = rB * ∑ j ∈ Finset.range n, rB ^ j := by
-      intro n; induction n with
-      | zero => simp
-      | succ n ih =>
-        rw [Finset.sum_Icc_succ_top (by omega), Finset.sum_range_succ, mul_add, ← ih, pow_succ']
-    rw [hshift d]
-    exact (mul_le_mul_of_nonneg_left (geom_sum_le_inv hrB_nn hrB_lt1 d) hrB_nn).trans_eq (by ring)
-  have hpull : ∑ k0 ∈ Finset.Icc 1 d, (2 : ℝ) ^ 256 *
-      ((1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (2 : ℝ) ^ d * rA ^ k0 * rhoF3 ^ i +
-       (4 / 1000 : ℝ) * phiF3 1 1 * (4 : ℝ) ^ d * rB ^ k0 * rhoF3 ^ i) =
-      (2 : ℝ) ^ 256 * (
-        ((1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (2 : ℝ) ^ d * rhoF3 ^ i) * (∑ k0 ∈ Finset.Icc 1 d, rA ^ k0) +
-        ((4 / 1000 : ℝ) * phiF3 1 1 * (4 : ℝ) ^ d * rhoF3 ^ i) * (∑ k0 ∈ Finset.Icc 1 d, rB ^ k0)) := by
-    rw [← Finset.mul_sum, Finset.sum_add_distrib]
-    congr 1; congr 1
-    · rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
-    · rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
-  rw [hpull] at hsum_pos
-  have hphiF321_nn : 0 ≤ phiF3 2 1 := (phiF3_pos (by norm_num) (by norm_num)).le
-  have hphiF311_nn : 0 ≤ phiF3 1 1 := (phiF3_pos (by norm_num) (by norm_num)).le
-  have hpos_final : (∑ k0 ∈ Finset.Icc 1 d, ((BadDrop_k0 i d K k0).card : ℝ)) ≤
-      (2 : ℝ) ^ 256 * (CA * (2 * rA) ^ d * rhoF3 ^ i + CB * (4 : ℝ) ^ d * rhoF3 ^ i) := by
-    have h1 := hsum_pos.trans (mul_le_mul_of_nonneg_left (add_le_add
-      (mul_le_mul_of_nonneg_left hsum_A (by positivity))
-      (mul_le_mul_of_nonneg_left hsum_B (by positivity))) (by positivity))
-    refine h1.trans_eq ?_
-    dsimp only [CA, CB]; rw [mul_pow]; ring
-  have htot := hcard_split.trans (add_le_add h0_bound hpos_final)
-  exact htot.trans_eq (by ring)
+              have hxS0 := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
+              have htf := htr_fact x hxS0; exact ⟨by rw [htf.1, (Finset.mem_filter.mp hx).2], htf.2⟩)
+            hpos.1 hpos.2 hcop
+          have hF_eq : runF (0, 1) (.O1 :: γ) = runF (2, 1) γ := rfl
+          rw [hF_eq, Nat.div_eq_of_lt hCD_gt] at hcF
+          have hc1 : (F.card : ℝ) ≤ 1 := by exact_mod_cast hcF
+          have h1le : (1 : ℝ) ≤ (2 : ℝ) ^ (2 * d) * (1 / ((runF (2, 1) γ).1 : ℝ) ^ 2 + 1 / ((runF (2, 1) γ).2 : ℝ) ^ 2) := by
+            have hsq : (min ((runF (2, 1) γ).1 : ℝ) ((runF (2, 1) γ).2 : ℝ)) ^ 2 ≤ (2 : ℝ) ^ (2 * d) := by
+              have h := pow_le_pow_left₀ (le_min hC_R.le hD_R.le) hmin 2
+              exact h.trans_eq (by rw [← pow_mul, mul_comm])
+            rcases le_total ((runF (2, 1) γ).1 : ℝ) ((runF (2, 1) γ).2 : ℝ) with hle | hle
+            · rw [min_eq_left hle] at hsq
+              have h1 : (1 : ℝ) ≤ (2 : ℝ) ^ (2 * d) / ((runF (2, 1) γ).1 : ℝ) ^ 2 := (one_le_div (by positivity)).mpr hsq
+              have : (0 : ℝ) ≤ (2 : ℝ) ^ (2 * d) * (1 / ((runF (2, 1) γ).2 : ℝ) ^ 2) := by positivity
+              linarith [show (2 : ℝ) ^ (2 * d) / ((runF (2, 1) γ).1 : ℝ) ^ 2 = (2 : ℝ) ^ (2 * d) * (1 / ((runF (2, 1) γ).1 : ℝ) ^ 2) by ring]
+            · rw [min_eq_right hle] at hsq
+              have h1 : (1 : ℝ) ≤ (2 : ℝ) ^ (2 * d) / ((runF (2, 1) γ).2 : ℝ) ^ 2 := (one_le_div (by positivity)).mpr hsq
+              have : (0 : ℝ) ≤ (2 : ℝ) ^ (2 * d) * (1 / ((runF (2, 1) γ).1 : ℝ) ^ 2) := by positivity
+              linarith [show (2 : ℝ) ^ (2 * d) / ((runF (2, 1) γ).2 : ℝ) ^ 2 = (2 : ℝ) ^ (2 * d) * (1 / ((runF (2, 1) γ).2 : ℝ) ^ 2) by ring]
+          exact hc1.trans h1le
+        · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]; positivity
+      have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
+      rw [list_sum_mul_left, list_sum_add_real] at h1
+      have hC := sum_pathsAll_invCSq (i - 1) 2 1 (by omega) (by omega)
+      have hD := sum_pathsAll_invDSq (i - 1) 2 1 (by omega) (by omega)
+      have hiR : ((i - 1 : Nat) : ℝ) ≤ (i : ℝ) := by exact_mod_cast Nat.sub_le i 1
+      have hsum_le : ((pathsOf allKinds (i - 1)).map (fun γ => 1 / ((runF (2, 1) γ).1 : ℝ) ^ 2)).sum +
+          ((pathsOf allKinds (i - 1)).map (fun γ => 1 / ((runF (2, 1) γ).2 : ℝ) ^ 2)).sum ≤ 7 / 4 + 3 * (i : ℝ) / 8 := by
+        simp only [Nat.cast_ofNat, Nat.cast_one] at hC hD; linarith
+      exact h1.trans (mul_le_mul_of_nonneg_left hsum_le (by positivity))
+  exact hsplit.trans (add_le_add hD1 hD2)
 
-/-! ### 8. Repeated-squaring numeric bounds, `BadStack`, and final `env475` / `env490` bounds -/
-
-private theorem pow_step {x : ℝ} {n : Nat} {a b : ℝ} {e1 e2 : Int}
-    (hx : 0 ≤ x) (h1 : x ^ n ≤ a * (2 : ℝ) ^ e1) (hsq : a ^ 2 * (2 : ℝ) ^ (2 * e1 - e2) ≤ b) :
-    x ^ (2 * n) ≤ b * (2 : ℝ) ^ e2 := by
-  have h2 : x ^ (2 * n) = (x ^ n) ^ 2 := by rw [mul_comm, pow_mul]
-  rw [h2]
-  have h3 := pow_le_pow_left₀ (pow_nonneg hx n) h1 2
-  have hpow2 : ((2 : ℝ) ^ e1) ^ 2 = (2 : ℝ) ^ (2 * e1) := by
-    rw [← zpow_natCast ((2 : ℝ) ^ e1), ← zpow_mul]; congr 1; ring
-  calc (x ^ n) ^ 2 ≤ (a * (2 : ℝ) ^ e1) ^ 2 := h3
-    _ = a ^ 2 * (2 : ℝ) ^ (2 * e1) := by rw [mul_pow, hpow2]
-    _ = (a ^ 2 * (2 : ℝ) ^ (2 * e1 - e2)) * (2 : ℝ) ^ e2 := by
-        rw [mul_assoc, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), sub_add_cancel]
-    _ ≤ b * (2 : ℝ) ^ e2 := mul_le_mul_of_nonneg_right hsq (by positivity)
-
-private theorem pow_mul2 {x : ℝ} (hx : 0 ≤ x) (n1 n2 : Nat) (a1 a2 b : ℝ) (e1 e2 e3 : Int)
-    (h1 : x ^ n1 ≤ a1 * (2 : ℝ) ^ e1) (h2 : x ^ n2 ≤ a2 * (2 : ℝ) ^ e2)
-    (ha1 : 0 ≤ a1) (_ha2 : 0 ≤ a2) (hab : a1 * a2 * (2 : ℝ) ^ (e1 + e2 - e3) ≤ b) :
-    x ^ (n1 + n2) ≤ b * (2 : ℝ) ^ e3 := by
-  rw [pow_add]
-  have hmul := mul_le_mul h1 h2 (pow_nonneg hx n2) (by positivity)
-  calc x ^ n1 * x ^ n2 ≤ (a1 * (2 : ℝ) ^ e1) * (a2 * (2 : ℝ) ^ e2) := hmul
-    _ = (a1 * a2 * (2 : ℝ) ^ (e1 + e2 - e3)) * (2 : ℝ) ^ e3 := by
-        have h2 : (2 : ℝ) ^ e1 * (2 : ℝ) ^ e2 = (2 : ℝ) ^ (e1 + e2 - e3) * (2 : ℝ) ^ e3 := by
-          rw [← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), sub_add_cancel]
-        linear_combination a1 * a2 * h2
-    _ ≤ b * (2 : ℝ) ^ e3 := mul_le_mul_of_nonneg_right hab (by positivity)
-
-private theorem rhoF_pows_w10 :
-    rhoF ^ 236 ≤ (117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int) ∧
-    rhoF ^ 237 ≤ (134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int) ∧
-    rhoF ^ 245 ≤ (102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int) ∧
-    rhoF ^ 246 ≤ (117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int) := by
-  have h0 : 0 ≤ rhoF := by unfold rhoF; positivity
-  have p1 : rhoF ^ 1 ≤ (114880 / 100000 : ℝ) * (2 : ℝ) ^ (-2 : Int) := by unfold rhoF; norm_num
-  have p2 : rhoF ^ 2 ≤ (131975 / 100000 : ℝ) * (2 : ℝ) ^ (-4 : Int) := pow_step h0 p1 (by norm_num)
-  have p4 : rhoF ^ 4 ≤ (174175 / 100000 : ℝ) * (2 : ℝ) ^ (-8 : Int) := pow_step h0 p2 (by norm_num)
-  have p8 : rhoF ^ 8 ≤ (151685 / 100000 : ℝ) * (2 : ℝ) ^ (-15 : Int) := pow_step h0 p4 (by norm_num)
-  have p16 : rhoF ^ 16 ≤ (115042 / 100000 : ℝ) * (2 : ℝ) ^ (-29 : Int) := pow_step h0 p8 (by norm_num)
-  have p32 : rhoF ^ 32 ≤ (132347 / 100000 : ℝ) * (2 : ℝ) ^ (-58 : Int) := pow_step h0 p16 (by norm_num)
-  have p64 : rhoF ^ 64 ≤ (175158 / 100000 : ℝ) * (2 : ℝ) ^ (-116 : Int) := pow_step h0 p32 (by norm_num)
-  have p128 : rhoF ^ 128 ≤ (153402 / 100000 : ℝ) * (2 : ℝ) ^ (-231 : Int) := pow_step h0 p64 (by norm_num)
-  have p192 := pow_mul2 h0 128 64 _ _ (134348 / 100000) _ _ (-346) p128 p64 (by norm_num) (by norm_num) (by norm_num)
-  have p224 := pow_mul2 h0 192 32 _ _ (177806 / 100000) _ _ (-404) p192 p32 (by norm_num) (by norm_num) (by norm_num)
-  have p232 := pow_mul2 h0 224 8 _ _ (134853 / 100000) _ _ (-418) p224 p8 (by norm_num) (by norm_num) (by norm_num)
-  have p236 := pow_mul2 h0 232 4 _ _ (117441 / 100000) _ _ (-425) p232 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p237 := pow_mul2 h0 236 1 _ _ (134917 / 100000) _ _ (-427) p236 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p240 := pow_mul2 h0 224 16 _ _ (102276 / 100000) _ _ (-432) p224 p16 (by norm_num) (by norm_num) (by norm_num)
-  have p244 := pow_mul2 h0 240 4 _ _ (178140 / 100000) _ _ (-440) p240 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p245 := pow_mul2 h0 244 1 _ _ (102324 / 100000) _ _ (-441) p244 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p246 := pow_mul2 h0 244 2 _ _ (117551 / 100000) _ _ (-443) p244 p2 (by norm_num) (by norm_num) (by norm_num)
-  exact ⟨p236, p237, p245, p246⟩
-
-private theorem rhoB_pows_w10 :
-    rhoB ^ 237 ≤ (141541 / 100000 : ℝ) * (2 : ℝ) ^ (-426 : Int) ∧
-    rhoB ^ 239 ≤ (187971 / 100000 : ℝ) * (2 : ℝ) ^ (-430 : Int) ∧
-    rhoB ^ 243 ≤ (165759 / 100000 : ℝ) * (2 : ℝ) ^ (-437 : Int) ∧
-    rhoB ^ 245 ≤ (110067 / 100000 : ℝ) * (2 : ℝ) ^ (-440 : Int) := by
-  have h0 : 0 ≤ rhoB := by unfold rhoB; positivity
-  have p1 : rhoB ^ 1 ≤ (115240 / 100000 : ℝ) * (2 : ℝ) ^ (-2 : Int) := by unfold rhoB; norm_num
-  have p2 : rhoB ^ 2 ≤ (132803 / 100000 : ℝ) * (2 : ℝ) ^ (-4 : Int) := pow_step h0 p1 (by norm_num)
-  have p4 : rhoB ^ 4 ≤ (176367 / 100000 : ℝ) * (2 : ℝ) ^ (-8 : Int) := pow_step h0 p2 (by norm_num)
-  have p8 : rhoB ^ 8 ≤ (155527 / 100000 : ℝ) * (2 : ℝ) ^ (-15 : Int) := pow_step h0 p4 (by norm_num)
-  have p16 : rhoB ^ 16 ≤ (120944 / 100000 : ℝ) * (2 : ℝ) ^ (-29 : Int) := pow_step h0 p8 (by norm_num)
-  have p32 : rhoB ^ 32 ≤ (146275 / 100000 : ℝ) * (2 : ℝ) ^ (-58 : Int) := pow_step h0 p16 (by norm_num)
-  have p64 : rhoB ^ 64 ≤ (106982 / 100000 : ℝ) * (2 : ℝ) ^ (-115 : Int) := pow_step h0 p32 (by norm_num)
-  have p128 : rhoB ^ 128 ≤ (114452 / 100000 : ℝ) * (2 : ℝ) ^ (-230 : Int) := pow_step h0 p64 (by norm_num)
-  have p192 := pow_mul2 h0 128 64 _ _ (122444 / 100000) _ _ (-345) p128 p64 (by norm_num) (by norm_num) (by norm_num)
-  have p224 := pow_mul2 h0 192 32 _ _ (179105 / 100000) _ _ (-403) p192 p32 (by norm_num) (by norm_num) (by norm_num)
-  have p232 := pow_mul2 h0 224 8 _ _ (139279 / 100000) _ _ (-417) p224 p8 (by norm_num) (by norm_num) (by norm_num)
-  have p236 := pow_mul2 h0 232 4 _ _ (122822 / 100000) _ _ (-424) p232 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p237 := pow_mul2 h0 236 1 _ _ (141541 / 100000) _ _ (-426) p236 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p238 := pow_mul2 h0 236 2 _ _ (163112 / 100000) _ _ (-428) p236 p2 (by norm_num) (by norm_num) (by norm_num)
-  have p239 := pow_mul2 h0 238 1 _ _ (187971 / 100000) _ _ (-430) p238 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p240 := pow_mul2 h0 224 16 _ _ (108309 / 100000) _ _ (-431) p224 p16 (by norm_num) (by norm_num) (by norm_num)
-  have p242 := pow_mul2 h0 240 2 _ _ (143838 / 100000) _ _ (-435) p240 p2 (by norm_num) (by norm_num) (by norm_num)
-  have p243 := pow_mul2 h0 242 1 _ _ (165759 / 100000) _ _ (-437) p242 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p244 := pow_mul2 h0 240 4 _ _ (191022 / 100000) _ _ (-439) p240 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p245 := pow_mul2 h0 244 1 _ _ (110067 / 100000) _ _ (-440) p244 p1 (by norm_num) (by norm_num) (by norm_num)
-  exact ⟨p237, p239, p243, p245⟩
-
-private theorem rhoB7_pows_w10 :
-    rhoB7 ^ 237 ≤ (105600 / 100000 : ℝ) * (2 : ℝ) ^ (-677 : Int) ∧
-    rhoB7 ^ 239 ≤ (128895 / 100000 : ℝ) * (2 : ℝ) ^ (-683 : Int) ∧
-    rhoB7 ^ 243 ≤ (192036 / 100000 : ℝ) * (2 : ℝ) ^ (-695 : Int) ∧
-    rhoB7 ^ 245 ≤ (117199 / 100000 : ℝ) * (2 : ℝ) ^ (-700 : Int) := by
-  have h0 : 0 ≤ rhoB7 := by unfold rhoB7; positivity
-  have p1 : rhoB7 ^ 1 ≤ (110480 / 100000 : ℝ) * (2 : ℝ) ^ (-3 : Int) := by unfold rhoB7; norm_num
-  have p2 : rhoB7 ^ 2 ≤ (122059 / 100000 : ℝ) * (2 : ℝ) ^ (-6 : Int) := pow_step h0 p1 (by norm_num)
-  have p4 : rhoB7 ^ 4 ≤ (148984 / 100000 : ℝ) * (2 : ℝ) ^ (-12 : Int) := pow_step h0 p2 (by norm_num)
-  have p8 : rhoB7 ^ 8 ≤ (110982 / 100000 : ℝ) * (2 : ℝ) ^ (-23 : Int) := pow_step h0 p4 (by norm_num)
-  have p16 : rhoB7 ^ 16 ≤ (123171 / 100000 : ℝ) * (2 : ℝ) ^ (-46 : Int) := pow_step h0 p8 (by norm_num)
-  have p32 : rhoB7 ^ 32 ≤ (151711 / 100000 : ℝ) * (2 : ℝ) ^ (-92 : Int) := pow_step h0 p16 (by norm_num)
-  have p64 : rhoB7 ^ 64 ≤ (115082 / 100000 : ℝ) * (2 : ℝ) ^ (-183 : Int) := pow_step h0 p32 (by norm_num)
-  have p128 : rhoB7 ^ 128 ≤ (132439 / 100000 : ℝ) * (2 : ℝ) ^ (-366 : Int) := pow_step h0 p64 (by norm_num)
-  have p192 := pow_mul2 h0 128 64 _ _ (152414 / 100000) _ _ (-549) p128 p64 (by norm_num) (by norm_num) (by norm_num)
-  have p224 := pow_mul2 h0 192 32 _ _ (115615 / 100000) _ _ (-640) p192 p32 (by norm_num) (by norm_num) (by norm_num)
-  have p232 := pow_mul2 h0 224 8 _ _ (128312 / 100000) _ _ (-663) p224 p8 (by norm_num) (by norm_num) (by norm_num)
-  have p236 := pow_mul2 h0 232 4 _ _ (191165 / 100000) _ _ (-675) p232 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p237 := pow_mul2 h0 236 1 _ _ (105600 / 100000) _ _ (-677) p236 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p238 := pow_mul2 h0 236 2 _ _ (116668 / 100000) _ _ (-680) p236 p2 (by norm_num) (by norm_num) (by norm_num)
-  have p239 := pow_mul2 h0 238 1 _ _ (128895 / 100000) _ _ (-683) p238 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p240 := pow_mul2 h0 224 16 _ _ (142405 / 100000) _ _ (-686) p224 p16 (by norm_num) (by norm_num) (by norm_num)
-  have p242 := pow_mul2 h0 240 2 _ _ (173819 / 100000) _ _ (-692) p240 p2 (by norm_num) (by norm_num) (by norm_num)
-  have p243 := pow_mul2 h0 242 1 _ _ (192036 / 100000) _ _ (-695) p242 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p244 := pow_mul2 h0 240 4 _ _ (106081 / 100000) _ _ (-697) p240 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p245 := pow_mul2 h0 244 1 _ _ (117199 / 100000) _ _ (-700) p244 p1 (by norm_num) (by norm_num) (by norm_num)
-  exact ⟨p237, p239, p243, p245⟩
-
-private theorem rhoF3_pows_w10 :
-    rhoF3 ^ 37 ≤ (184634 / 100000 : ℝ) * (2 : ℝ) ^ (-25 : Int) ∧
-    rhoF3 ^ 65 ≤ (155319 / 100000 : ℝ) * (2 : ℝ) ^ (-43 : Int) ∧
-    rhoF3 ^ 87 ≤ (122807 / 100000 : ℝ) * (2 : ℝ) ^ (-57 : Int) := by
-  have h0 : 0 ≤ rhoF3 := by unfold rhoF3; positivity
-  have p1 : rhoF3 ^ 1 ≤ (127300 / 100000 : ℝ) * (2 : ℝ) ^ (-1 : Int) := by unfold rhoF3; norm_num
-  have p2 : rhoF3 ^ 2 ≤ (162053 / 100000 : ℝ) * (2 : ℝ) ^ (-2 : Int) := pow_step h0 p1 (by norm_num)
-  have p4 : rhoF3 ^ 4 ≤ (131306 / 100000 : ℝ) * (2 : ℝ) ^ (-3 : Int) := pow_step h0 p2 (by norm_num)
-  have p8 : rhoF3 ^ 8 ≤ (172413 / 100000 : ℝ) * (2 : ℝ) ^ (-6 : Int) := pow_step h0 p4 (by norm_num)
-  have p16 : rhoF3 ^ 16 ≤ (148632 / 100000 : ℝ) * (2 : ℝ) ^ (-11 : Int) := pow_step h0 p8 (by norm_num)
-  have p32 : rhoF3 ^ 32 ≤ (110458 / 100000 : ℝ) * (2 : ℝ) ^ (-21 : Int) := pow_step h0 p16 (by norm_num)
-  have p64 : rhoF3 ^ 64 ≤ (122010 / 100000 : ℝ) * (2 : ℝ) ^ (-42 : Int) := pow_step h0 p32 (by norm_num)
-  have p36 := pow_mul2 h0 32 4 _ _ (145038 / 100000) _ _ (-24) p32 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p37 := pow_mul2 h0 36 1 _ _ (184634 / 100000) _ _ (-25) p36 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p65 := pow_mul2 h0 64 1 _ _ (155319 / 100000) _ _ (-43) p64 p1 (by norm_num) (by norm_num) (by norm_num)
-  have p80 := pow_mul2 h0 64 16 _ _ (181346 / 100000) _ _ (-53) p64 p16 (by norm_num) (by norm_num) (by norm_num)
-  have p84 := pow_mul2 h0 80 4 _ _ (119060 / 100000) _ _ (-55) p80 p4 (by norm_num) (by norm_num) (by norm_num)
-  have p86 := pow_mul2 h0 84 2 _ _ (192941 / 100000) _ _ (-57) p84 p2 (by norm_num) (by norm_num) (by norm_num)
-  have p87 := pow_mul2 h0 86 1 _ _ (122807 / 100000) _ _ (-57) p86 p1 (by norm_num) (by norm_num) (by norm_num)
-  exact ⟨p37, p65, p87⟩
-
-private theorem tail_k0_ge (K : Nat) (hK : K ≤ 256) :
-    (((Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)).card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ K := by
-  set S := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)
-  have hinj : Set.InjOn (fun x => x / 2 ^ K) (S : Set Nat) := by
+private theorem badDrop_k0_one_reduce (i d : Nat) (hi1 : 1 ≤ i) :
+    (BadDrop_k0 i d 1).card ≤ (BadDrop_k0 (i - 1) d 0).card := by
+  have hinj : Set.InjOn (fun x => x / 2) (BadDrop_k0 i d 1 : Set Nat) := by
     intro a ha b hb heq
-    dsimp only at heq
-    have ha' := Nat.mul_div_cancel' (Finset.mem_filter.mp (Finset.mem_coe.mp ha)).2
-    have hb' := Nat.mul_div_cancel' (Finset.mem_filter.mp (Finset.mem_coe.mp hb)).2
-    rw [← ha', ← hb', heq]
-  have hpow : 2 ^ 256 = 2 ^ (256 - K) * 2 ^ K := by rw [← pow_add, show 256 - K + K = 256 by omega]
-  have h2K : 0 < 2 ^ K := Nat.two_pow_pos K
-  generalize hM : (2 ^ (256 - K) : Nat) = M at hpow
-  have hmap : Set.MapsTo (fun x => x / 2 ^ K) (S : Set Nat) (Finset.range M : Set Nat) := by
+    have ha2 : 2 ∣ a := by simpa using (Finset.mem_filter.mp (Finset.mem_coe.mp ha)).2.1
+    have hb2 : 2 ∣ b := by simpa using (Finset.mem_filter.mp (Finset.mem_coe.mp hb)).2.1
+    dsimp only at heq; omega
+  have hmap : Set.MapsTo (fun x => x / 2) (BadDrop_k0 i d 1 : Set Nat) (BadDrop_k0 (i - 1) d 0 : Set Nat) := by
     intro x hx
-    rw [Finset.mem_coe, Finset.mem_range]
-    have hxp : x < 2 ^ 256 := (Finset.mem_Ioo.mp (Finset.mem_filter.mp (Finset.mem_coe.mp hx)).1).2.trans p_lt_256
-    exact (Nat.div_lt_iff_lt_mul h2K).mpr (hpow ▸ hxp)
-  have hc := Finset.card_le_card_of_injOn (fun x => x / 2 ^ K) hmap hinj
-  rw [Finset.card_range, ← hM] at hc
-  have hR : (S.card : ℝ) ≤ (2 : ℝ) ^ (256 - K) := by exact_mod_cast hc
-  refine hR.trans_eq ?_
-  rw [show (2 : ℝ) ^ 256 = (2 : ℝ) ^ (256 - K) * (2 : ℝ) ^ K by rw [← pow_add, show 256 - K + K = 256 by omega]]
-  field_simp
+    have hmem := Finset.mem_filter.mp (Finset.mem_coe.mp hx)
+    have hbad := Finset.mem_filter.mp hmem.1
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hbad.1
+    have h2dvd : 2 ∣ x := by simpa using hmem.2.1
+    have h2mod : x % 2 = 0 := Nat.dvd_iff_mod_eq_zero.mp h2dvd
+    have hxge2 : 2 ≤ x := Nat.le_of_dvd hx0 h2dvd
+    have hodd : (x / 2) % 2 = 1 := by simpa using hmem.2.2
+    have hstep1 : SkywalkNat.step (SkywalkNat.init x ECDSAAdd.p) = SkywalkNat.init (x / 2) ECDSAAdd.p := by
+      unfold SkywalkNat.step SkywalkNat.init; dsimp only; rw [if_neg (by omega), if_pos (by omega)]
+    have hiter : SkywalkNat.step^[i - 1] (SkywalkNat.init (x / 2) ECDSAAdd.p) =
+        SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p) := by
+      rw [← hstep1, ← Function.iterate_succ_apply, Nat.succ_eq_add_one, Nat.sub_add_cancel hi1]
+    rw [Finset.mem_coe]; dsimp only
+    exact Finset.mem_filter.mpr ⟨Finset.mem_filter.mpr ⟨Finset.mem_Ioo.mpr ⟨by omega, by omega⟩, by rw [hiter]; exact hbad.2⟩,
+      by simp, by simpa using hodd⟩
+  exact Finset.card_le_card_of_injOn (fun x => x / 2) hmap hinj
+
+private theorem badDrop_k0_pos_bound (i d k0 : Nat) (hk0 : 2 ≤ k0) (h2k : 2 * k0 ≤ i) (hd : d ≤ 255) :
+    ((BadDrop_k0 i d k0).card : ℝ) ≤
+      (2 : ℝ) ^ 256 * ((if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 *
+        phiF3 1 1 * rhoF3 ^ (i - 2 * k0)) +
+      (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (2 / (2 : ℝ) ^ k0) * (5 / 2 + 3 * (i : ℝ) / 4)) := by
+  set Sk := BadDrop_k0 i d k0
+  set m : Nat := i - 2 * k0
+  let pref : List StepKind := List.replicate k0 .E ++ [.O1]
+  let g1 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) (k0 - 1)
+  let g2 : Nat → List StepKind := fun x => traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)) m
+  let c1Pred : Nat → Prop := fun x =>
+    2 ^ k0 * (runF (2, 1) (g1 x)).2 * (runF (1, 1) (g2 x)).1 * (runF (1, 1) (g2 x)).2 ≤ 2 * ECDSAAdd.p
+  set D1 := Sk.filter c1Pred
+  set D2 := Sk.filter (fun x => ¬ c1Pred x)
+  have hsplit : (Sk.card : ℝ) ≤ (D1.card : ℝ) + (D2.card : ℝ) := by
+    have hsub : Sk ⊆ D1 ∪ D2 := fun x hx => by
+      by_cases h : c1Pred x
+      · exact Finset.mem_union_left _ (Finset.mem_filter.mpr ⟨hx, h⟩)
+      · exact Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hx, h⟩)
+    exact_mod_cast (Finset.card_le_card hsub).trans (Finset.card_union_le _ _)
+  have hEO_props : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+      γ1.length = k0 - 1 ∧ (runF (2, 1) γ1).1 = 2 ^ k0 ∧ (runF (2, 1) γ1).2 < 2 ^ k0 := by
+    intro γ1 hγ1
+    have hlen1 := (mem_pathsOf.mp hγ1).1; have hEO1 := (mem_pathsOf.mp hγ1).2
+    have hind : ∀ (l : List StepKind), (∀ k ∈ l, k ∈ eo0Kinds) →
+        (runF (2, 1) l).1 = 2 ^ (l.length + 1) ∧ (runF (2, 1) l).2 < 2 ^ (l.length + 1) := by
+      intro l hl
+      induction l using List.reverseRecOn with
+      | nil => simp [runF]
+      | append_singleton l k ih =>
+        obtain ⟨hCl, hDl⟩ := ih (fun x hx => hl x (List.mem_append_left _ hx))
+        have hk : k ∈ eo0Kinds := hl k (List.mem_append_right _ List.mem_cons_self)
+        rw [runF_append, runF_cons, runF_nil, List.length_append, List.length_singleton]
+        simp only [eo0Kinds, List.mem_cons, List.not_mem_nil, or_false] at hk
+        rcases hk with rfl | rfl <;> (simp only [stepF]; rw [hCl, pow_succ']; constructor <;> omega)
+    have h := hind γ1 hEO1; rw [hlen1, Nat.sub_add_cancel (by omega)] at h; exact ⟨hlen1, h.1, h.2⟩
+  have hx_facts : ∀ x ∈ Sk,
+      0 < x ∧ x < ECDSAAdd.p ∧
+      0 < (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u ∧
+      traceKinds (SkywalkNat.init x ECDSAAdd.p) i = pref ++ g1 x ++ g2 x ∧
+      g1 x ∈ pathsOf eo0Kinds (k0 - 1) ∧
+      g2 x ∈ pathsOf allKinds m ∧
+      ((SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+       (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v) * 2 ^ k0 < 2 * ECDSAAdd.p := by
+    intro x hx
+    have hmem := Finset.mem_filter.mp hx
+    have hxD := hmem.1
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp (Finset.mem_filter.mp hxD).1
+    obtain ⟨_, _, htr1, _⟩ := leading_E_steps x k0 hmem.2.1 hmem.2.2 hxp
+    obtain ⟨hEO, _, _, hnat_lt, _⟩ := forced_eo0_phase x k0 (by omega) hmem.2.1 hmem.2.2 hxp
+    have hu_i := badDrop_alive i d hd hxD
+    have htr_2k : traceKinds (SkywalkNat.init x ECDSAAdd.p) (2 * k0) = pref ++ g1 x := by
+      have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (k0 + 1) (k0 - 1)
+      rw [show (k0 + 1) + (k0 - 1) = 2 * k0 by omega, htr1] at h1; exact h1
+    have htr_i : traceKinds (SkywalkNat.init x ECDSAAdd.p) i = pref ++ g1 x ++ g2 x := by
+      have h1 := traceKinds_add (SkywalkNat.init x ECDSAAdd.p) (2 * k0) m
+      rw [show 2 * k0 + m = i by omega, htr_2k] at h1; exact h1
+    exact ⟨hx0, hxp, hu_i, htr_i, mem_pathsOf.mpr ⟨traceKinds_length _ _, hEO⟩, mem_pathsOf_all (traceKinds_length _ _), hnat_lt⟩
+  let pairList : List (List StepKind × List StepKind) :=
+    (pathsOf eo0Kinds (k0 - 1)).flatMap (fun γ1 => (pathsOf allKinds m).map (fun γ2 => (γ1, γ2)))
+  have hpair_mem : ∀ x ∈ Sk, (g1 x, g2 x) ∈ pairList := fun x hx => by
+    have hf := hx_facts x hx
+    exact List.mem_flatMap.mpr ⟨g1 x, hf.2.2.2.2.1, List.mem_map.mpr ⟨g2 x, hf.2.2.2.2.2.1, rfl⟩⟩
+  have hgeom : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1), ∀ γ2 ∈ pathsOf allKinds m,
+      ∀ x0 ∈ Sk, g1 x0 = γ1 → g2 x0 = γ2 →
+      min ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) ≤ 2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0 ∧
+      2 ^ k0 * (runF (2, 1) γ1).2 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 < 2 * 2 ^ (i + d - k0) := by
+    intro γ1 hγ1 γ2 hγ2 x0 hx0 hg1 hg2
+    have hf0 := hx_facts x0 hx0
+    have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+    have hval2 := SkywalkNat.iter_valid (2 * k0) (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+    have hval_i := SkywalkNat.iter_valid i (SkywalkNat.init x0 ECDSAAdd.p) p_pos p_odd
+    have hB2 := runB_traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m hval2.1 hval2.2.1
+      (fun j hj => by rw [← Function.iterate_add_apply]; exact iter_alive_of_u_ne_zero _ (show j + 2 * k0 ≤ i by omega) (Nat.ne_of_gt hf0.2.2.1))
+    rw [← Function.iterate_add_apply, show m + 2 * k0 = i by omega] at hB2
+    have htr_g2 : traceKinds (SkywalkNat.step^[2 * k0] (SkywalkNat.init x0 ECDSAAdd.p)) m = γ2 := hg2
+    rw [htr_g2] at hB2
+    have hdot' := runF_runB_dot γ2 1 1 (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v
+    rw [hB2] at hdot'; simp only [one_mul] at hdot'
+    have hdotR : ((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+        ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) ≤
+        2 * (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 := by
+      have h1 : (((runF (1, 1) γ2).1 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+          ((runF (1, 1) γ2).2 : ℝ) * ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ)) * (2 : ℝ) ^ k0 ≤
+          2 * (2 : ℝ) ^ 256 := by
+        have hlt : ((runF (1, 1) γ2).1 * (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u +
+            (runF (1, 1) γ2).2 * (SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v) * 2 ^ k0 ≤ 2 * 2 ^ 256 := by
+          rw [hdot']; have := p_lt_256; linarith [hf0.2.2.2.2.2.2]
+        exact_mod_cast hlt
+      exact (le_div_iff₀ (by positivity)).mpr h1
+    have hsumR : (2 : ℝ) ^ (256 - d) ≤ ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).u : ℝ) +
+        ((SkywalkNat.step^[i] (SkywalkNat.init x0 ECDSAAdd.p)).v : ℝ) := by
+      exact_mod_cast (Finset.mem_filter.mp (Finset.mem_filter.mp hx0).1).2
+    have hmin : min ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) ≤ 2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0 := by
+      have h := min_le_of_dot (by exact_mod_cast hpos'.1) (by exact_mod_cast hpos'.2)
+        (by exact_mod_cast hf0.2.2.1) (by exact_mod_cast hval_i.1) (by positivity) hsumR hdotR
+      refine h.trans_eq ?_
+      rw [show (2 : ℝ) ^ 256 = (2 : ℝ) ^ d * (2 : ℝ) ^ (256 - d) by rw [← pow_add, show d + (256 - d) = 256 by omega]]
+      field_simp
+    have hD0_lt := (hEO_props γ1 hγ1).2.2
+    have hmax_nat : max (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 ≤ 2 ^ m := by
+      have h := runF_max_le γ2 1 1; rw [(mem_pathsOf.mp hγ2).1] at h; simpa using h
+    have hprodR : ((2 ^ k0 * (runF (2, 1) γ1).2 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 : Nat) : ℝ) <
+        ((2 * 2 ^ (i + d - k0) : Nat) : ℝ) := by
+      have hCD'_eq : ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) =
+          min ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) * max ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) := by
+        rcases le_total ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) with h | h <;>
+          simp [min_eq_left, min_eq_right, max_eq_left, max_eq_right, h, mul_comm]
+      have hmaxR : max ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) ≤ (2 : ℝ) ^ m := by
+        have : ((max (runF (1, 1) γ2).1 (runF (1, 1) γ2).2 : Nat) : ℝ) ≤ (2 : ℝ) ^ m := by exact_mod_cast hmax_nat
+        simpa only [Nat.cast_max] using this
+      have hD0R : ((runF (2, 1) γ1).2 : ℝ) < (2 : ℝ) ^ k0 := by exact_mod_cast hD0_lt
+      have hCD'_le : ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) ≤ (2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0) * (2 : ℝ) ^ m := by
+        rw [hCD'_eq]; exact mul_le_mul hmin hmaxR (by positivity) (by positivity)
+      have h1 : (2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) <
+          (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 * ((2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0) * (2 : ℝ) ^ m) := by
+        have hpos_cd : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) := mul_pos (Nat.cast_pos.mpr hpos'.1) (Nat.cast_pos.mpr hpos'.2)
+        calc (2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))
+            < (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 * (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) := by
+              exact mul_lt_mul_of_pos_right (mul_lt_mul_of_pos_left hD0R (by positivity)) hpos_cd
+          _ ≤ (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 * ((2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0) * (2 : ℝ) ^ m) :=
+              mul_le_mul_of_nonneg_left hCD'_le (by positivity)
+      have h2 : (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 * ((2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0) * (2 : ℝ) ^ m) =
+          2 * (2 : ℝ) ^ (i + d - k0) := by
+        have hpow : (2 : ℝ) ^ k0 * (2 : ℝ) ^ d * (2 : ℝ) ^ m = (2 : ℝ) ^ (i + d - k0) := by
+          rw [← pow_add, ← pow_add]; congr 1; dsimp [m]; omega
+        rw [← hpow]; field_simp
+      push_cast; linarith
+    exact ⟨hmin, by exact_mod_cast hprodR⟩
+  -- Bound D1
+  have hD1 : (D1.card : ℝ) ≤ (2 : ℝ) ^ 256 *
+      ((if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 * phiF3 1 1 * rhoF3 ^ m) := by
+    have hfib := card_le_list_sum_fiber D1 pairList (fun x => (g1 x, g2 x))
+      (fun x hx => hpair_mem x (Finset.mem_filter.mp hx).1)
+    set fac2 : ℝ := if i + d ≤ 248 then 257 / 256 else 2
+    have hfac2_pos : 0 < fac2 := by dsimp [fac2]; split_ifs <;> norm_num
+    have hper : ∀ p12 ∈ pairList,
+        ((D1.filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
+          ((2 : ℝ) ^ 256 * (4 * fac2 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0)) *
+            ((1 / ((runF (2, 1) p12.1).2 : ℝ)) * phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2) := by
+      rintro ⟨γ1, γ2⟩ hp12
+      set F := D1.filter (fun x => (g1 x, g2 x) = (γ1, γ2))
+      have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+      have hpos1 := runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)
+      have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
+      have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+      have hD0_R : (0 : ℝ) < ((runF (2, 1) γ1).2 : ℝ) := by exact_mod_cast hpos1.2
+      obtain ⟨γ1', hγ1', hγ2'⟩ := List.mem_flatMap.mp hp12
+      obtain ⟨γ2'', hγ2'', heqp⟩ := List.mem_map.mp hγ2'
+      have hγ1_mem : γ1 ∈ pathsOf eo0Kinds (k0 - 1) := (Prod.mk.inj heqp).1 ▸ hγ1'
+      have hγ2_mem : γ2 ∈ pathsOf allKinds m := (Prod.mk.inj heqp).2 ▸ hγ2''
+      obtain ⟨hγ1_len, hC1, hD1_lt⟩ := hEO_props γ1 hγ1_mem
+      by_cases hne : F.Nonempty
+      · obtain ⟨x0, hx0⟩ := hne
+        have hx0D1 := (Finset.mem_filter.mp hx0).1
+        have hx0Sk := (Finset.mem_filter.mp hx0D1).1
+        have hc1_0 : c1Pred x0 := (Finset.mem_filter.mp hx0D1).2
+        have hp0 := (Finset.mem_filter.mp hx0).2
+        obtain ⟨hmin, hprod⟩ := hgeom γ1 hγ1_mem γ2 hγ2_mem x0 hx0Sk (Prod.mk.inj hp0).1 (Prod.mk.inj hp0).2
+        have hM_le : 2 ^ k0 * (runF (2, 1) γ1).2 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 ≤ 2 * ECDSAAdd.p := by
+          dsimp only [c1Pred] at hc1_0; rwa [(Prod.mk.inj hp0).1, (Prod.mk.inj hp0).2] at hc1_0
+        have hcF := forward_opt2_fiber_card F k0 m (by omega) γ1 γ2 hγ1_len (mem_pathsOf.mp hγ2_mem).1 hC1 hD1_lt
+          (fun x hx => by
+            have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
+            have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
+            have hi_eq : 2 * k0 + m = i := by omega
+            exact ⟨hf.1, hf.2.1, by rw [hi_eq, hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], by rw [hi_eq]; exact hf.2.2.1, hf.2.2.2.2.2.2⟩)
+        have hdiv : (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) + 1 ≤
+            fac2 * (2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) := by
+          have hpR : (ECDSAAdd.p : ℝ) ≤ (2 : ℝ) ^ 256 := by exact_mod_cast p_lt_256.le
+          have hden_pos : (0 : ℝ) < (2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ) := by positivity
+          have hle256 : (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) ≤
+              (2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) :=
+            div_le_div_of_nonneg_right (by linarith) hden_pos.le
+          dsimp only [fac2]; split_ifs with h248
+          · have h256 : 256 * (2 ^ k0 * (runF (2, 1) γ1).2 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2) ≤ 2 * ECDSAAdd.p := by
+              have hle246 : 2 ^ (i + d - k0) ≤ 2 ^ 246 := Nat.pow_le_pow_right (by decide) (by omega)
+              have hp255 := p_gt_255
+              have h256eq : 256 * (2 * 2 ^ 246) = 2 ^ 255 := by norm_num
+              nlinarith
+            have h1le : (1 : ℝ) ≤ (1 / 256 : ℝ) * ((2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) := by
+              have h256R : 256 * ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) ≤ 2 * (ECDSAAdd.p : ℝ) := by exact_mod_cast h256
+              have h : (1 : ℝ) ≤ (2 * (ECDSAAdd.p : ℝ)) / (256 * ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) :=
+                (one_le_div (by positivity)).mpr h256R
+              linarith [show (2 * (ECDSAAdd.p : ℝ)) / (256 * ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) =
+                  (1 / 256 : ℝ) * ((2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) by ring]
+            linarith [show (257 / 256 : ℝ) * (2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) =
+                (257 / 256 : ℝ) * ((2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) by ring]
+          · have h1le : (1 : ℝ) ≤ (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) :=
+              (one_le_div hden_pos).mpr (by exact_mod_cast hM_le)
+            linarith [show (2 : ℝ) * (2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) =
+                2 * ((2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) by ring]
+        have hinv := inv_prod_le_phiF3_of_min hC'_R hD'_R hmin
+        have hcardR := hcF.trans hdiv
+        have h4 : (4 : ℝ) ^ k0 = (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 := by rw [← mul_pow]; norm_num
+        calc (F.card : ℝ) ≤ (fac2 * (2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ))) * (1 / (((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ))) := by
+              exact hcardR.trans_eq (by ring)
+          _ ≤ (fac2 * (2 * (2 : ℝ) ^ 256) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ))) * ((2 * (2 : ℝ) ^ d / (2 : ℝ) ^ k0) * phiF3 (runF (1, 1) γ2).1 (runF (1, 1) γ2).2) :=
+              mul_le_mul_of_nonneg_left hinv (by positivity)
+          _ = ((2 : ℝ) ^ 256 * (4 * fac2 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0)) * ((1 / ((runF (2, 1) γ1).2 : ℝ)) * phiF3 (runF (1, 1) γ2).1 (runF (1, 1) γ2).2) := by
+              rw [h4]; ring
+      · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]
+        have := phiF3_pos hC'_R hD'_R; positivity
+    have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
+    rw [list_sum_mul_left] at h1; dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
+    have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+        (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+          (fun p12 => (1 / ((runF (2, 1) p12.1).2 : ℝ)) * phiF3 (runF (1, 1) p12.2).1 (runF (1, 1) p12.2).2)).sum ≤
+        (1 / ((runF (2, 1) γ1).2 : ℝ)) * (phiF3 1 1 * rhoF3 ^ m) := fun γ1 _ => by
+      simp only [List.map_map, Function.comp_def]; rw [list_sum_mul_left]
+      exact mul_le_mul_of_nonneg_left
+        (by simpa only [Nat.cast_one] using sum_pathsAll_F phiF3 rhoF3 (by unfold rhoF3; norm_num) (fun _ _ hC hD => phiF3_contract hC hD) m 1 1 (by omega) (by omega))
+        (by positivity)
+    have h2 := list_sum_map_le _ _ _ hinner
+    have hpull : ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => (1 / ((runF (2, 1) γ1).2 : ℝ)) * (phiF3 1 1 * rhoF3 ^ m))).sum =
+        (phiF3 1 1 * rhoF3 ^ m) * ((pathsOf eo0Kinds (k0 - 1)).map (fun γ1 => 1 / ((runF (2, 1) γ1).2 : ℝ))).sum := by
+      rw [← list_sum_mul_left]; apply congrArg List.sum; apply List.map_congr_left; intro _ _; ring
+    rw [hpull, eo0_sum_eq (k0 - 1) (fun d0 => (1 : ℝ) / (d0 : ℝ))] at h2
+    refine (h1.trans (mul_le_mul_of_nonneg_left h2 (by positivity))).trans_eq ?_
+    have h4f : 4 * fac2 = (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) := by dsimp [fac2]; split_ifs <;> norm_num
+    rw [h4f]; simp only [H_odd]; ring
+  -- Bound D2
+  have hD2 : (D2.card : ℝ) ≤ (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (2 / (2 : ℝ) ^ k0) * (5 / 2 + 3 * (i : ℝ) / 4)) := by
+    split_ifs with h255
+    · have hempty : D2 = ∅ := by
+        ext x; simp only [Finset.notMem_empty, iff_false]; intro hx
+        have hxSk := (Finset.mem_filter.mp hx).1
+        have hnc1 : ¬ c1Pred x := (Finset.mem_filter.mp hx).2
+        have hf := hx_facts x hxSk
+        have hprod := (hgeom (g1 x) hf.2.2.2.2.1 (g2 x) hf.2.2.2.2.2.1 x hxSk rfl rfl).2
+        have hle253 : 2 ^ (i + d - k0) ≤ 2 ^ 253 := Nat.pow_le_pow_right (by decide) (by omega)
+        have hp255 := p_gt_255
+        have h254 : 2 * 2 ^ 253 ≤ 2 * 2 ^ 255 := by norm_num
+        apply hnc1; dsimp only [c1Pred]; omega
+      rw [hempty, Finset.card_empty, Nat.cast_zero]
+    · have hfib := card_le_list_sum_fiber D2 pairList (fun x => (g1 x, g2 x))
+        (fun x hx => hpair_mem x (Finset.mem_filter.mp hx).1)
+      have hper : ∀ p12 ∈ pairList,
+          ((D2.filter (fun x => (g1 x, g2 x) = p12)).card : ℝ) ≤
+            (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) *
+              (1 / ((runF (1, 1) p12.2).1 : ℝ) ^ 2 + 1 / ((runF (1, 1) p12.2).2 : ℝ) ^ 2) := by
+        rintro ⟨γ1, γ2⟩ hp12
+        set F := D2.filter (fun x => (g1 x, g2 x) = (γ1, γ2))
+        have hpos' := runF_pos γ2 (by omega : 0 < 1) (by omega : 0 < 1)
+        have hC'_R : (0 : ℝ) < ((runF (1, 1) γ2).1 : ℝ) := by exact_mod_cast hpos'.1
+        have hD'_R : (0 : ℝ) < ((runF (1, 1) γ2).2 : ℝ) := by exact_mod_cast hpos'.2
+        obtain ⟨γ1', hγ1', hγ2'⟩ := List.mem_flatMap.mp hp12
+        obtain ⟨γ2'', hγ2'', heqp⟩ := List.mem_map.mp hγ2'
+        have hγ1_mem : γ1 ∈ pathsOf eo0Kinds (k0 - 1) := (Prod.mk.inj heqp).1 ▸ hγ1'
+        have hγ2_mem : γ2 ∈ pathsOf allKinds m := (Prod.mk.inj heqp).2 ▸ hγ2''
+        obtain ⟨hγ1_len, hC1, hD1_lt⟩ := hEO_props γ1 hγ1_mem
+        by_cases hne : F.Nonempty
+        · obtain ⟨x0, hx0⟩ := hne
+          have hx0D2 := (Finset.mem_filter.mp hx0).1
+          have hx0Sk := (Finset.mem_filter.mp hx0D2).1
+          have hnc1 : ¬ c1Pred x0 := (Finset.mem_filter.mp hx0D2).2
+          have hp0 := (Finset.mem_filter.mp hx0).2
+          have hmin := (hgeom γ1 hγ1_mem γ2 hγ2_mem x0 hx0Sk (Prod.mk.inj hp0).1 (Prod.mk.inj hp0).2).1
+          -- `F.card ≤ 1` because `2 * p < 2^k0 * D0 * C' * D' ≤ 2^k0 * C' * D`!
+          have hM_gt : 2 * ECDSAAdd.p < 2 ^ k0 * (runF (2, 1) γ1).2 * (runF (1, 1) γ2).1 * (runF (1, 1) γ2).2 := by
+            dsimp only [c1Pred] at hnc1; rw [(Prod.mk.inj hp0).1, (Prod.mk.inj hp0).2] at hnc1; omega
+          -- Actually `F.card` is a Nat! If `F.card < 2`, then `F.card ≤ 1`!
+          have hcF := forward_opt2_fiber_card F k0 m (by omega) γ1 γ2 hγ1_len (mem_pathsOf.mp hγ2_mem).1 hC1 hD1_lt
+            (fun x hx => by
+              have hxSk := (Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1
+              have hp := (Finset.mem_filter.mp hx).2; have hf := hx_facts x hxSk
+              have hi_eq : 2 * k0 + m = i := by omega
+              exact ⟨hf.1, hf.2.1, by rw [hi_eq, hf.2.2.2.1, (Prod.mk.inj hp).1, (Prod.mk.inj hp).2], by rw [hi_eq]; exact hf.2.2.1, hf.2.2.2.2.2.2⟩)
+          have hfrac_lt1 : (2 * (ECDSAAdd.p : ℝ)) / ((2 : ℝ) ^ k0 * ((runF (2, 1) γ1).2 : ℝ) * ((runF (1, 1) γ2).1 : ℝ) * ((runF (1, 1) γ2).2 : ℝ)) < 1 := by
+            have hD0_R : (0 : ℝ) < ((runF (2, 1) γ1).2 : ℝ) := Nat.cast_pos.mpr (runF_pos γ1 (by omega : 0 < 2) (by omega : 0 < 1)).2
+            rw [div_lt_one (by positivity)]; exact_mod_cast hM_gt
+          have hF_lt2 : (F.card : ℝ) < 2 := by linarith
+          have hF_nat : F.card ≤ 1 := by
+            have : F.card < 2 := by exact_mod_cast hF_lt2
+            omega
+          have hc1 : (F.card : ℝ) ≤ 1 := by exact_mod_cast hF_nat
+          have hsq : (min ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ)) ^ 2 ≤ 4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0 := by
+            have h := pow_le_pow_left₀ (le_min hC'_R.le hD'_R.le) hmin 2
+            refine h.trans_eq ?_
+            rw [div_pow, mul_pow, ← pow_mul, mul_comm d 2, show ((2 : ℝ) ^ k0) ^ 2 = (4 : ℝ) ^ k0 by rw [← pow_mul, mul_comm, pow_mul]; norm_num]; norm_num
+          have h1le : (1 : ℝ) ≤ (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) *
+              (1 / ((runF (1, 1) γ2).1 : ℝ) ^ 2 + 1 / ((runF (1, 1) γ2).2 : ℝ) ^ 2) := by
+            rcases le_total ((runF (1, 1) γ2).1 : ℝ) ((runF (1, 1) γ2).2 : ℝ) with hle | hle
+            · rw [min_eq_left hle] at hsq
+              have h1 : (1 : ℝ) ≤ (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) / ((runF (1, 1) γ2).1 : ℝ) ^ 2 := (one_le_div (by positivity)).mpr hsq
+              have : (0 : ℝ) ≤ (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) * (1 / ((runF (1, 1) γ2).2 : ℝ) ^ 2) := by positivity
+              linarith [show (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) / ((runF (1, 1) γ2).1 : ℝ) ^ 2 =
+                  (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) * (1 / ((runF (1, 1) γ2).1 : ℝ) ^ 2) by ring]
+            · rw [min_eq_right hle] at hsq
+              have h1 : (1 : ℝ) ≤ (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) / ((runF (1, 1) γ2).2 : ℝ) ^ 2 := (one_le_div (by positivity)).mpr hsq
+              have : (0 : ℝ) ≤ (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) * (1 / ((runF (1, 1) γ2).1 : ℝ) ^ 2) := by positivity
+              linarith [show (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) / ((runF (1, 1) γ2).2 : ℝ) ^ 2 =
+                  (4 * (2 : ℝ) ^ (2 * d) / (4 : ℝ) ^ k0) * (1 / ((runF (1, 1) γ2).2 : ℝ) ^ 2) by ring]
+          exact hc1.trans h1le
+        · rw [Finset.not_nonempty_iff_eq_empty.mp hne, Finset.card_empty, Nat.cast_zero]; positivity
+      have h1 := hfib.trans (list_sum_map_le _ _ _ hper)
+      rw [list_sum_mul_left] at h1; dsimp only [pairList] at h1; rw [list_sum_flatMap_real] at h1
+      have hC := sum_pathsAll_invCSq m 1 1 (by omega) (by omega)
+      have hD := sum_pathsAll_invDSq m 1 1 (by omega) (by omega)
+      have hmR : (m : ℝ) ≤ (i : ℝ) := by exact_mod_cast Nat.sub_le i (2 * k0)
+      have hsum_le : ((pathsOf allKinds m).map (fun γ => 1 / ((runF (1, 1) γ).1 : ℝ) ^ 2 + 1 / ((runF (1, 1) γ).2 : ℝ) ^ 2)).sum ≤
+          5 / 2 + 3 * (i : ℝ) / 4 := by
+        rw [list_sum_add_real]; simp only [Nat.cast_one] at hC hD; linarith
+      have hinner : ∀ γ1 ∈ pathsOf eo0Kinds (k0 - 1),
+          (((pathsOf allKinds m).map (fun γ2 => (γ1, γ2))).map
+            (fun p12 => 1 / ((runF (1, 1) p12.2).1 : ℝ) ^ 2 + 1 / ((runF (1, 1) p12.2).2 : ℝ) ^ 2)).sum ≤
+          5 / 2 + 3 * (i : ℝ) / 4 := fun γ1 _ => by
+        simp only [List.map_map, Function.comp_def]; exact hsum_le
+      have h2 := list_sum_map_le _ _ _ hinner
+      have hconst : ((pathsOf eo0Kinds (k0 - 1)).map (fun _ => 5 / 2 + 3 * (i : ℝ) / 4)).sum =
+          (2 : ℝ) ^ (k0 - 1) * (5 / 2 + 3 * (i : ℝ) / 4) := by
+        rw [List.map_const', List.sum_replicate, nsmul_eq_mul, pathsOf_length]
+        have hl : eo0Kinds.length = 2 := rfl; rw [hl]; norm_cast
+      rw [hconst] at h2
+      refine (h1.trans (mul_le_mul_of_nonneg_left h2 (by positivity))).trans_eq ?_
+      have h4 : (4 : ℝ) ^ k0 = (2 : ℝ) ^ k0 * (2 : ℝ) ^ k0 := by rw [← mul_pow]; norm_num
+      have h2k : (2 : ℝ) ^ k0 = 2 * (2 : ℝ) ^ (k0 - 1) := by rw [← pow_succ', Nat.sub_add_cancel (by omega)]
+      rw [h4, h2k]; field_simp; ring
+  exact hsplit.trans (add_le_add hD1 hD2)
+
+theorem badDrop_step_bound_w11 (i d : Nat) (hi2 : 2 ≤ i) (hd : d ≤ 255) (pick : Nat → Bool) :
+    ((BadDrop i d).card : ℝ) ≤ (2 : ℝ) ^ 256 * (
+      (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 1) +
+      (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 2) +
+      (∑ k0 ∈ Finset.Icc 2 (min d (i / 2)),
+        if pick k0 then
+          (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 * phiF3 1 1 * rhoF3 ^ (i - 2 * k0)
+        else 1 / (2 : ℝ) ^ k0) +
+      (if d < i / 2 then 1 / (2 : ℝ) ^ (i - d) else 1 / (2 : ℝ) ^ (i / 2 + 1)) +
+      (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) / (2 : ℝ) ^ 256 * (6 + 3 * (i : ℝ) / 2))) := by
+  set kmax := min d (i / 2)
+  set Ktail := if d < i / 2 then i - d else i / 2 + 1
+  set Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ Ktail ∣ x)
+  have hcov : BadDrop i d ⊆ BadDrop_k0 i d 0 ∪ BadDrop_k0 i d 1 ∪
+      (Finset.Icc 2 kmax).biUnion (fun k0 => BadDrop_k0 i d k0) ∪ Stail := by
+    intro x hx
+    have hmem := Finset.mem_filter.mp hx
+    obtain ⟨hx0, hxp⟩ := Finset.mem_Ioo.mp hmem.1
+    by_cases ht : 2 ^ Ktail ∣ x
+    · exact Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hmem.1, ht⟩)
+    · apply Finset.mem_union_left
+      have hKpos : 1 ≤ Ktail := by dsimp [Ktail]; split_ifs <;> omega
+      have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨Ktail - 1, by rwa [Nat.sub_add_cancel hKpos]⟩
+      let k0 := Nat.find hex
+      have hk0_lt : k0 < Ktail := by
+        have := Nat.find_min' hex (show ¬ 2 ^ ((Ktail - 1) + 1) ∣ x by rwa [Nat.sub_add_cancel hKpos]); omega
+      have hdiv : 2 ^ k0 ∣ x := by
+        cases hk : k0 with
+        | zero => simp
+        | succ j => have hnj := Nat.find_min hex (show j < k0 by omega); push_neg at hnj; exact hnj
+      have hodd : (x / 2 ^ k0) % 2 = 1 := by
+        have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
+        by_contra he; apply hndiv; obtain ⟨q, hq⟩ := hdiv
+        have hq_even : q % 2 = 0 := by
+          have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
+          omega
+        refine ⟨q / 2, ?_⟩; rw [hq, pow_succ, mul_assoc]; congr 1; omega
+      have hmk : x ∈ BadDrop_k0 i d k0 := Finset.mem_filter.mpr ⟨hx, hdiv, hodd⟩
+      by_cases h0 : k0 = 0
+      · rw [h0] at hmk; exact Finset.mem_union_left _ (Finset.mem_union_left _ hmk)
+      · by_cases h1 : k0 = 1
+        · rw [h1] at hmk; exact Finset.mem_union_left _ (Finset.mem_union_right _ hmk)
+        · -- Must have `k0 ≤ kmax`! (For `d < i / 2`, rule out `d < k0 < i - d`!)
+          have hk0_le : k0 ≤ kmax := by
+            dsimp only [kmax]
+            by_cases hdi : d < i / 2
+            · have hk_lt_id : k0 < i - d := by dsimp [Ktail] at hk0_lt; rw [if_pos hdi] at hk0_lt; exact hk0_lt
+              suffices hle_d : k0 ≤ d by omega
+              by_contra hgt_d
+              by_cases h2k : 2 * k0 ≤ i
+              · have hmono := skywalkNat_iter_sum_le x (2 * k0) i h2k
+                have hsum_le : 2 ^ (256 - d) ≤ (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).u +
+                    (SkywalkNat.step^[2 * k0] (SkywalkNat.init x ECDSAAdd.p)).v := hmem.2.trans hmono
+                have hnat_lt := (forced_eo0_phase x k0 (by omega) hdiv hodd hxp).2.2.2.1
+                have h256 := p_lt_256
+                have hpow : 2 ^ (256 - d) * 2 ^ k0 ≥ 2 * 2 ^ 256 := by
+                  rw [← pow_add, show 256 - d + k0 = (256 - d + k0 - 1) + 1 by omega, pow_succ']
+                  exact Nat.mul_le_mul_left 2 (Nat.pow_le_pow_right (by decide) (by omega))
+                have hmul := Nat.mul_le_mul_right (2 ^ k0) hsum_le; omega
+              · -- `i / 2 < k0 < i - d`, so `k0 + 1 ≤ i < 2 * k0`! Use `forced_eo0_step` at `j = i - (k0 + 1)`!
+                set j := i - (k0 + 1)
+                have hj : j ≤ k0 - 1 := by omega
+                have hst := forced_eo0_step x k0 (by omega) hdiv hodd hxp j hj
+                rw [← Function.iterate_add_apply, show j + (k0 + 1) = i by omega] at hst
+                obtain ⟨_, hv_eq, _, _, hlin⟩ := hst
+                set u_i := (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u
+                set v_i := (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v
+                have hv_bd : 2 ^ (d + 1) * v_i < ECDSAAdd.p := by
+                  have hxv : 2 ^ k0 * (x / 2 ^ k0) = x := Nat.mul_div_cancel' hdiv
+                  have hp1 : 2 ^ (d + 1) ≤ 2 ^ k0 := Nat.pow_le_pow_right (by decide) (by omega)
+                  have hm := Nat.mul_le_mul_right (x / 2 ^ k0) hp1
+                  rw [hv_eq]; omega
+                have hu_bd : 2 ^ (d + 1) * u_i < ECDSAAdd.p := by
+                  have hp2 : 2 ^ (d + 1) ≤ 2 ^ (j + 1) := Nat.pow_le_pow_right (by decide) (by omega)
+                  have hm := Nat.mul_le_mul_right u_i hp2
+                  have hDpos : 0 < (runF (2, 1) (traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) j)).2 :=
+                    (runF_pos _ (by omega : 0 < 2) (by omega : 0 < 1)).2
+                  have hv0pos : 0 < x / 2 ^ k0 := by
+                    by_contra h0'
+                    have hz : x / 2 ^ k0 = 0 := by omega
+                    rw [hz] at hodd; simp at hodd
+                  have hterm : 1 ≤ (runF (2, 1) (traceKinds (SkywalkNat.step^[k0 + 1] (SkywalkNat.init x ECDSAAdd.p)) j)).2 * (x / 2 ^ k0) :=
+                    Nat.mul_pos hDpos hv0pos
+                  omega
+                have hsum_lt : 2 ^ d * (u_i + v_i) < ECDSAAdd.p := by
+                  have h2 : 2 * (2 ^ d * (u_i + v_i)) = 2 ^ (d + 1) * u_i + 2 ^ (d + 1) * v_i := by rw [pow_succ']; ring
+                  omega
+                have h256 := p_lt_256
+                have hpow : 2 ^ d * 2 ^ (256 - d) = 2 ^ 256 := by rw [← pow_add, show d + (256 - d) = 256 by omega]
+                have hge := Nat.mul_le_mul_left (2 ^ d) hmem.2
+                omega
+            · dsimp [Ktail] at hk0_lt; rw [if_neg hdi] at hk0_lt; omega
+          exact Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨k0, Finset.mem_Icc.mpr ⟨by omega, hk0_le⟩, hmk⟩)
+  have hcard_split : ((BadDrop i d).card : ℝ) ≤
+      ((BadDrop_k0 i d 0).card : ℝ) + ((BadDrop_k0 i d 1).card : ℝ) +
+      (∑ k0 ∈ Finset.Icc 2 kmax, ((BadDrop_k0 i d k0).card : ℝ)) + (Stail.card : ℝ) := by
+    have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
+    have h2 := Finset.card_union_le (BadDrop_k0 i d 0 ∪ BadDrop_k0 i d 1) ((Finset.Icc 2 kmax).biUnion (fun k0 => BadDrop_k0 i d k0))
+    have h3 := Finset.card_union_le (BadDrop_k0 i d 0) (BadDrop_k0 i d 1)
+    have h4 := Finset.card_biUnion_le (s := Finset.Icc 2 kmax) (t := fun k0 => BadDrop_k0 i d k0)
+    have hnat : (BadDrop i d).card ≤ (BadDrop_k0 i d 0).card + (BadDrop_k0 i d 1).card +
+        (∑ k0 ∈ Finset.Icc 2 kmax, (BadDrop_k0 i d k0).card) + Stail.card := by omega
+    exact_mod_cast hnat
+  have h0 := badDrop_k0_zero_bound i d (by omega) hd
+  have h1 : ((BadDrop_k0 i d 1).card : ℝ) ≤
+      (2 : ℝ) ^ 256 * ((if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 2)) +
+      (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (7 / 4 + 3 * (i : ℝ) / 8)) := by
+    have hr : ((BadDrop_k0 i d 1).card : ℝ) ≤ ((BadDrop_k0 (i - 1) d 0).card : ℝ) := by exact_mod_cast badDrop_k0_one_reduce i d (by omega)
+    have hb := badDrop_k0_zero_bound (i - 1) d (by omega) hd
+    rw [show i - 1 - 1 = i - 2 by omega] at hb
+    refine (hr.trans hb).trans (add_le_add ?_ ?_)
+    · apply mul_le_mul_of_nonneg_left _ (by positivity)
+      have hphi := (phiF3_pos (C := 2) (D := 1) (by norm_num) (by norm_num)).le
+      have hrf : 0 ≤ rhoF3 ^ (i - 2) := by unfold rhoF3; positivity
+      have hfac : (if i - 1 + d ≤ 248 then (129 / 128 : ℝ) else 2) ≤ (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) := by
+        split_ifs <;> first | (exfalso; omega) | norm_num
+      exact mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_right hfac (by positivity)) hphi) hrf
+    · split_ifs with h1 h2
+      · rfl
+      · positivity
+      · omega
+      · have hiR : ((i - 1 : Nat) : ℝ) ≤ (i : ℝ) := by exact_mod_cast Nat.sub_le i 1
+        apply mul_le_mul_of_nonneg_left _ (by positivity); linarith
+  have hpos_k : ∀ k0 ∈ Finset.Icc 2 kmax,
+      ((BadDrop_k0 i d k0).card : ℝ) ≤
+        (2 : ℝ) ^ 256 * (if pick k0 then
+            (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 * phiF3 1 1 * rhoF3 ^ (i - 2 * k0)
+          else 1 / (2 : ℝ) ^ k0) +
+        (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (2 / (2 : ℝ) ^ k0) * (5 / 2 + 3 * (i : ℝ) / 4)) := by
+    intro k0 hk0
+    have h2le : 2 ≤ k0 := (Finset.mem_Icc.mp hk0).1
+    have hle : k0 ≤ kmax := (Finset.mem_Icc.mp hk0).2
+    cases hp : pick k0 with
+    | true =>
+      simpa only [↓reduceIte] using badDrop_k0_pos_bound i d k0 h2le (by omega) hd
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hsub : BadDrop_k0 i d k0 ⊆ (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ k0 ∣ x) := fun x hx =>
+        Finset.mem_filter.mpr ⟨(Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1, (Finset.mem_filter.mp hx).2.1⟩
+      have hc : ((BadDrop_k0 i d k0).card : ℝ) ≤ (2 : ℝ) ^ 256 * (1 / (2 : ℝ) ^ k0) :=
+        ((Nat.cast_le.mpr (Finset.card_le_card hsub)).trans (tail_k0_ge k0)).trans_eq (by ring)
+      have hnn : 0 ≤ (if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) * (2 / (2 : ℝ) ^ k0) * (5 / 2 + 3 * (i : ℝ) / 4)) := by
+        split_ifs <;> positivity
+      linarith
+  have hsum_pos := Finset.sum_le_sum hpos_k
+  rw [Finset.sum_add_distrib, ← Finset.mul_sum] at hsum_pos
+  have hd2_pos_sum : (∑ k0 ∈ Finset.Icc 2 kmax,
+      if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) * (2 / (2 : ℝ) ^ k0) * (5 / 2 + 3 * (i : ℝ) / 4)) ≤
+      (if i + d ≤ 255 then 0 else (2 : ℝ) ^ (2 * d) * (5 / 2 + 3 * (i : ℝ) / 4)) := by
+    split_ifs with h255
+    · simp
+    · have hfact : ∑ k0 ∈ Finset.Icc 2 kmax, (2 : ℝ) ^ (2 * d) * (2 / (2 : ℝ) ^ k0) * (5 / 2 + 3 * (i : ℝ) / 4) =
+          ((2 : ℝ) ^ (2 * d) * (5 / 2 + 3 * (i : ℝ) / 4)) * (∑ k0 ∈ Finset.Icc 2 kmax, 2 / (2 : ℝ) ^ k0) := by
+        rw [Finset.mul_sum]; apply Finset.sum_congr rfl; intro _ _; ring
+      rw [hfact]
+      have hgeom2 : ∑ k0 ∈ Finset.Icc 2 kmax, (2 : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := by
+        by_cases hk2 : kmax < 2
+        · rw [Finset.Icc_eq_empty (by omega), Finset.sum_empty]; norm_num
+        · have hrew : ∑ k0 ∈ Finset.Icc 2 kmax, (2 : ℝ) / (2 : ℝ) ^ k0 =
+              (1 / 2 : ℝ) * ∑ j ∈ Finset.range (kmax - 1), (1 / 2 : ℝ) ^ j := by
+            clear hfact hsum_pos hpos_k h1 h0 hcard_split hcov
+            obtain ⟨n, hn⟩ := Nat.exists_eq_add_of_le (show 2 ≤ kmax by omega)
+            rw [hn, show 2 + n - 1 = n + 1 by omega]; clear hn
+            induction n with
+            | zero => simp; norm_num
+            | succ n ih =>
+              rw [show 2 + (n + 1) = (2 + n) + 1 by omega, Finset.sum_Icc_succ_top (by omega),
+                  Finset.sum_range_succ, mul_add, ← ih, pow_add, pow_add, one_div_pow]; ring
+          rw [hrew]
+          have hg := geom_sum_le_inv (r := (1 / 2 : ℝ)) (by norm_num) (by norm_num) (kmax - 1)
+          linarith [show (1 / 2 : ℝ) * (1 / (1 - 1 / 2 : ℝ)) = 1 by norm_num]
+      exact (mul_le_mul_of_nonneg_left hgeom2 (by positivity)).trans_eq (mul_one _)
+  have htail : (Stail.card : ℝ) ≤ (2 : ℝ) ^ 256 * (if d < i / 2 then 1 / (2 : ℝ) ^ (i - d) else 1 / (2 : ℝ) ^ (i / 2 + 1)) := by
+    have ht := tail_k0_ge Ktail
+    refine ht.trans_eq ?_
+    dsimp only [Ktail]; split_ifs <;> ring
+  have hd2_comb : (if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) * (7 / 4 + 3 * (i : ℝ) / 8)) +
+      (if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) * (7 / 4 + 3 * (i : ℝ) / 8)) +
+      (if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) * (5 / 2 + 3 * (i : ℝ) / 4)) =
+      (2 : ℝ) ^ 256 * (if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) / (2 : ℝ) ^ 256 * (6 + 3 * (i : ℝ) / 2)) := by
+    split_ifs <;> [ring; (field_simp; ring)]
+  linarith
+
+/-! ### 9. Sound 32-bit `DyadicHi` evaluator & `decide +kernel` bounds for all 5 Wave 11 envelopes -/
+
+structure DyadicHi where
+  m : Nat
+  e : Int
+  deriving Repr, DecidableEq
+
+def DyadicHi.toReal (x : DyadicHi) : ℝ := (x.m : ℝ) * (2 : ℝ) ^ x.e
+
+def DyadicHi.zero : DyadicHi := ⟨0, 0⟩
+def DyadicHi.one : DyadicHi := ⟨1, 0⟩
+
+def bitLen (n : Nat) : Nat :=
+  let (n, a) := if n ≥ 18446744073709551616 then (n / 18446744073709551616, 64) else (n, 0)
+  let (n, b) := if n ≥ 4294967296 then (n / 4294967296, a + 32) else (n, a)
+  let (n, c) := if n ≥ 65536 then (n / 65536, b + 16) else (n, b)
+  let (n, d) := if n ≥ 256 then (n / 256, c + 8) else (n, c)
+  let (n, e) := if n ≥ 16 then (n / 16, d + 4) else (n, d)
+  let (n, f) := if n ≥ 4 then (n / 4, e + 2) else (n, e)
+  let (n, g) := if n ≥ 2 then (n / 2, f + 1) else (n, f)
+  if n > 0 then g + 1 else g
+
+def DyadicHi.norm (m : Nat) (e : Int) : DyadicHi :=
+  if m = 0 then ⟨0, 0⟩
+  else if m < 4294967296 then ⟨m, e⟩
+  else
+    let s := bitLen m - 32
+    let p := 2 ^ s
+    ⟨(m + p - 1) / p, e + (s : Int)⟩
+
+def DyadicHi.ofNat (n : Nat) : DyadicHi := DyadicHi.norm n 0
+
+def DyadicHi.shift (x : DyadicHi) (k : Int) : DyadicHi :=
+  if x.m = 0 then ⟨0, 0⟩ else ⟨x.m, x.e + k⟩
+
+def DyadicHi.mul (x y : DyadicHi) : DyadicHi := DyadicHi.norm (x.m * y.m) (x.e + y.e)
+
+def DyadicHi.add (x y : DyadicHi) : DyadicHi :=
+  if x.m = 0 then y
+  else if y.m = 0 then x
+  else if x.e ≥ y.e then
+    let d := (x.e - y.e).toNat
+    if d > 40 ∧ y.m ≤ 1099511627776 then DyadicHi.norm (x.m + 1) x.e
+    else DyadicHi.norm (x.m * 2 ^ d + y.m) y.e
+  else
+    let d := (y.e - x.e).toNat
+    if d > 40 ∧ x.m ≤ 1099511627776 then DyadicHi.norm (y.m + 1) y.e
+    else DyadicHi.norm (y.m * 2 ^ d + x.m) x.e
+
+def DyadicHi.ofRat (num den : Nat) : DyadicHi :=
+  if num = 0 ∨ den = 0 then ⟨0, 0⟩
+  else
+    let bn := bitLen num
+    let bd := bitLen den
+    let s := if 32 + bd > bn then 32 + bd - bn else 0
+    let m := (num * 2 ^ s + den - 1) / den
+    DyadicHi.norm m (-(s : Int))
+
+def DyadicHi.powAux : Nat → DyadicHi → DyadicHi → Nat → DyadicHi
+  | 0, acc, _, _ => acc
+  | fuel + 1, acc, base, n =>
+    if n = 0 then acc
+    else
+      let acc' := if n % 2 = 1 then acc.mul base else acc
+      DyadicHi.powAux fuel acc' (base.mul base) (n / 2)
+
+def DyadicHi.pow (x : DyadicHi) (n : Nat) : DyadicHi := DyadicHi.powAux 12 DyadicHi.one x n
+
+def DyadicHi.leRat (x : DyadicHi) (num den : Nat) : Bool :=
+  if x.e ≥ 0 then x.m * 2 ^ x.e.toNat * den ≤ num
+  else x.m * den ≤ num * 2 ^ (-x.e).toNat
+
+def DyadicHi.leOracle (x y : DyadicHi) : Bool :=
+  if x.m = 0 then true
+  else if y.m = 0 then false
+  else if x.e ≥ y.e then
+    let d := (x.e - y.e).toNat
+    if d > 40 then false else x.m * 2 ^ d ≤ y.m
+  else
+    let d := (y.e - x.e).toNat
+    if d > 40 then true else x.m ≤ y.m * 2 ^ d
+
+-- Soundness proofs for `DyadicHi` (each 3-8 lines!)
+theorem DyadicHi.toReal_nonneg (x : DyadicHi) : 0 ≤ x.toReal := by
+  unfold DyadicHi.toReal; positivity
+
+theorem DyadicHi.toReal_zero : DyadicHi.zero.toReal = 0 := by simp [DyadicHi.zero, DyadicHi.toReal]
+theorem DyadicHi.toReal_one : DyadicHi.one.toReal = 1 := by simp [DyadicHi.one, DyadicHi.toReal]
+
+theorem DyadicHi.norm_sound (m : Nat) (e : Int) : (m : ℝ) * (2 : ℝ) ^ e ≤ (DyadicHi.norm m e).toReal := by
+  unfold DyadicHi.norm DyadicHi.toReal
+  by_cases h0 : m = 0
+  · rw [if_pos h0]; subst h0; simp
+  · rw [if_neg h0]
+    by_cases hlt : m < 4294967296
+    · rw [if_pos hlt]
+    · rw [if_neg hlt]; dsimp only
+      set s := bitLen m - 32
+      have h1 : m ≤ ((m + 2 ^ s - 1) / 2 ^ s) * 2 ^ s := by
+        have hpos : 0 < 2 ^ s := Nat.two_pow_pos s
+        have h := Nat.div_add_mod (m + 2 ^ s - 1) (2 ^ s)
+        rw [Nat.mul_comm] at h
+        have hmod := Nat.mod_lt (m + 2 ^ s - 1) hpos
+        omega
+      rw [zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast]
+      have h1R : (m : ℝ) ≤ (((m + 2 ^ s - 1) / 2 ^ s : Nat) : ℝ) * (2 : ℝ) ^ s := by exact_mod_cast h1
+      have hmul := mul_le_mul_of_nonneg_right h1R (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ e)
+      linarith
+
+theorem DyadicHi.ofNat_sound (n : Nat) : (n : ℝ) ≤ (DyadicHi.ofNat n).toReal := by
+  simpa using DyadicHi.norm_sound n 0
+
+theorem DyadicHi.shift_sound (x : DyadicHi) (k : Int) : x.toReal * (2 : ℝ) ^ k ≤ (x.shift k).toReal := by
+  unfold DyadicHi.shift DyadicHi.toReal
+  split_ifs with h0
+  · rw [h0]; simp
+  · rw [zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; ring_nf; exact le_rfl
+
+theorem DyadicHi.mul_sound (x y : DyadicHi) : x.toReal * y.toReal ≤ (x.mul y).toReal := by
+  unfold DyadicHi.mul
+  have h := DyadicHi.norm_sound (x.m * y.m) (x.e + y.e)
+  refine le_trans ?_ h
+  unfold DyadicHi.toReal
+  rw [Nat.cast_mul, zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; ring_nf; exact le_rfl
+
+private theorem dyadic_add_aux (x y : DyadicHi) (hge : x.e ≥ y.e) :
+    x.toReal + y.toReal ≤
+      (if (x.e - y.e).toNat > 40 ∧ y.m ≤ 1099511627776 then DyadicHi.norm (x.m + 1) x.e
+       else DyadicHi.norm (x.m * 2 ^ (x.e - y.e).toNat + y.m) y.e).toReal := by
+  set d := (x.e - y.e).toNat
+  have hd_eq : x.e = y.e + (d : Int) := by dsimp [d]; omega
+  split_ifs with hbig
+  · refine le_trans ?_ (DyadicHi.norm_sound (x.m + 1) x.e)
+    unfold DyadicHi.toReal; rw [Nat.cast_add, Nat.cast_one, add_mul, one_mul]
+    have h1 : (y.m : ℝ) ≤ (2 : ℝ) ^ d := by
+      have : y.m ≤ 2 ^ d := hbig.2.trans ((by decide : 1099511627776 ≤ 2 ^ 40).trans (Nat.pow_le_pow_right (by decide) (by omega)))
+      exact_mod_cast this
+    rw [hd_eq, zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast]
+    have hm := mul_le_mul_of_nonneg_right h1 (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ y.e)
+    linarith
+  · refine le_trans ?_ (DyadicHi.norm_sound (x.m * 2 ^ d + y.m) y.e)
+    unfold DyadicHi.toReal
+    rw [Nat.cast_add, Nat.cast_mul, Nat.cast_pow, Nat.cast_ofNat, hd_eq,
+        zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast]
+    ring_nf; exact le_rfl
+
+theorem DyadicHi.add_sound (x y : DyadicHi) : x.toReal + y.toReal ≤ (x.add y).toReal := by
+  unfold DyadicHi.add
+  split_ifs with hx0 hy0 hge
+  · simp [DyadicHi.toReal, hx0]
+  · simp [DyadicHi.toReal, hy0]
+  · exact dyadic_add_aux x y hge
+  · rw [add_comm]; exact dyadic_add_aux y x (by omega)
+
+theorem DyadicHi.ofRat_sound (num den : Nat) (hden : 0 < den) :
+    (num : ℝ) / (den : ℝ) ≤ (DyadicHi.ofRat num den).toReal := by
+  unfold DyadicHi.ofRat
+  by_cases hn0 : num = 0
+  · subst hn0; simp [DyadicHi.toReal]
+  · have hcond : ¬ (num = 0 ∨ den = 0) := by omega
+    rw [if_neg hcond]; dsimp only
+    set s := if 32 + bitLen den > bitLen num then 32 + bitLen den - bitLen num else 0
+    refine le_trans ?_ (DyadicHi.norm_sound ((num * 2 ^ s + den - 1) / den) (-(s : Int)))
+    have h1 : num * 2 ^ s ≤ ((num * 2 ^ s + den - 1) / den) * den := by
+      have h := Nat.div_add_mod (num * 2 ^ s + den - 1) den
+      rw [Nat.mul_comm] at h
+      have hmod := Nat.mod_lt (num * 2 ^ s + den - 1) hden
+      omega
+    have h1R : (num : ℝ) * (2 : ℝ) ^ s ≤ (((num * 2 ^ s + den - 1) / den : Nat) : ℝ) * (den : ℝ) := by exact_mod_cast h1
+    rw [zpow_neg, zpow_natCast]
+    rw [div_le_iff₀ (by exact_mod_cast hden : (0 : ℝ) < den)]
+    have h2 := mul_le_mul_of_nonneg_right h1R (by positivity : (0 : ℝ) ≤ ((2 : ℝ) ^ s)⁻¹)
+    have h2ne : (2 : ℝ) ^ s ≠ 0 := by positivity
+    calc (num : ℝ) = ((num : ℝ) * (2 : ℝ) ^ s) * ((2 : ℝ) ^ s)⁻¹ := by field_simp [h2ne]
+      _ ≤ ((((num * 2 ^ s + den - 1) / den : Nat) : ℝ) * (den : ℝ)) * ((2 : ℝ) ^ s)⁻¹ := h2
+      _ = (((num * 2 ^ s + den - 1) / den : Nat) : ℝ) * ((2 : ℝ) ^ s)⁻¹ * (den : ℝ) := by ring
+
+theorem DyadicHi.powAux_sound : ∀ (fuel : Nat) (acc base : DyadicHi) (n : Nat),
+    n < 2 ^ fuel → acc.toReal * base.toReal ^ n ≤ (DyadicHi.powAux fuel acc base n).toReal
+  | 0, acc, base, n, hn => by
+    have hn0 : n = 0 := by simp at hn; omega
+    subst hn0; simp [DyadicHi.powAux]
+  | fuel + 1, acc, base, n, hn => by
+    dsimp only [DyadicHi.powAux]
+    by_cases h0 : n = 0
+    · rw [if_pos h0]; subst h0; simp
+    · rw [if_neg h0]
+      have hn2 : n / 2 < 2 ^ fuel := by rw [pow_succ'] at hn; omega
+      have hih := DyadicHi.powAux_sound fuel (if n % 2 = 1 then acc.mul base else acc) (base.mul base) (n / 2) hn2
+      refine le_trans ?_ hih
+      have hb2 : (base.toReal ^ 2) ^ (n / 2) ≤ (base.mul base).toReal ^ (n / 2) := by
+        apply pow_le_pow_left₀ (by positivity)
+        simpa only [sq] using DyadicHi.mul_sound base base
+      split_ifs with hmod
+      · have hne : n = 2 * (n / 2) + 1 := by omega
+        have h1 : acc.toReal * base.toReal ^ n = (acc.toReal * base.toReal) * (base.toReal ^ 2) ^ (n / 2) := by
+          conv_lhs => rw [hne]
+          rw [pow_succ, pow_mul]; ring
+        rw [h1]
+        exact mul_le_mul (DyadicHi.mul_sound acc base) hb2 (by positivity) (DyadicHi.toReal_nonneg _)
+      · have hne : n = 2 * (n / 2) := by omega
+        have h1 : acc.toReal * base.toReal ^ n = acc.toReal * (base.toReal ^ 2) ^ (n / 2) := by
+          conv_lhs => rw [hne]
+          rw [pow_mul]
+        rw [h1]
+        exact mul_le_mul_of_nonneg_left hb2 (DyadicHi.toReal_nonneg _)
+
+theorem DyadicHi.pow_sound (x : DyadicHi) (n : Nat) (hn : n < 4096) :
+    x.toReal ^ n ≤ (x.pow n).toReal := by
+  simpa only [DyadicHi.toReal_one, one_mul] using DyadicHi.powAux_sound 12 DyadicHi.one x n (by omega)
+
+theorem DyadicHi.leRat_sound (x : DyadicHi) (num den : Nat) (hden : 0 < den)
+    (h : x.leRat num den = true) : x.toReal ≤ (num : ℝ) / (den : ℝ) := by
+  unfold DyadicHi.leRat at h
+  unfold DyadicHi.toReal
+  rw [le_div_iff₀ (by exact_mod_cast hden : (0 : ℝ) < den)]
+  split_ifs at h with hge
+  · have hnat : x.m * 2 ^ x.e.toNat * den ≤ num := by simpa only [decide_eq_true_eq] using h
+    have hR : (x.m : ℝ) * (2 : ℝ) ^ x.e.toNat * (den : ℝ) ≤ (num : ℝ) := by exact_mod_cast hnat
+    have he : (x.e.toNat : Int) = x.e := Int.toNat_of_nonneg hge
+    rwa [← zpow_natCast, he] at hR
+  · have hnat : x.m * den ≤ num * 2 ^ (-x.e).toNat := by simpa only [decide_eq_true_eq] using h
+    have hR : (x.m : ℝ) * (den : ℝ) ≤ (num : ℝ) * (2 : ℝ) ^ (-x.e).toNat := by exact_mod_cast hnat
+    have he : ((-x.e).toNat : Int) = -x.e := Int.toNat_of_nonneg (by omega)
+    rw [← zpow_natCast, he, zpow_neg] at hR
+    have h2 : (2 : ℝ) ^ x.e ≠ 0 := by positivity
+    have hm := mul_le_mul_of_nonneg_right hR (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ x.e)
+    calc (x.m : ℝ) * (2 : ℝ) ^ x.e * (den : ℝ) = ((x.m : ℝ) * (den : ℝ)) * (2 : ℝ) ^ x.e := by ring
+      _ ≤ ((num : ℝ) * ((2 : ℝ) ^ x.e)⁻¹) * (2 : ℝ) ^ x.e := hm
+      _ = (num : ℝ) := by field_simp [h2]
+
+-- Precomputed computable `DyadicHi` constants matching all 8 potentials!
+def d_rhoF3 : DyadicHi := ⟨2729494667, -32⟩
+def d_f11_3 : DyadicHi := ⟨3772286973, -29⟩
+def d_f21_3 : DyadicHi := ⟨2905930447, -30⟩
+
+def d_rhoF (a : Nat) : DyadicHi :=
+  if a = 4 then DyadicHi.ofRat 42109 100000
+  else if a = 5 then DyadicHi.ofRat 14331 50000
+  else if a = 7 then DyadicHi.ofRat 13763 100000
+  else DyadicHi.ofRat 6743 100000
+
+def d_rhoEO (a : Nat) : DyadicHi :=
+  if a = 4 then DyadicHi.ofRat 17917 50000
+  else if a = 5 then DyadicHi.ofRat 25523 100000
+  else if a = 7 then DyadicHi.ofRat 6487 50000
+  else DyadicHi.ofRat 409 6250
+
+def d_f11 (a : Nat) : DyadicHi :=
+  if a = 4 then DyadicHi.ofRat 1519387 256000
+  else if a = 5 then DyadicHi.ofRat 21568541 3840000
+  else if a = 7 then DyadicHi.ofRat 23104807 3840000
+  else DyadicHi.ofRat 4320337 640000
+
+def d_f21 (a : Nat) : DyadicHi :=
+  if a = 4 then DyadicHi.ofRat 3318463247 1890000000
+  else if a = 5 then DyadicHi.ofRat 305695253 243000000
+  else if a = 7 then DyadicHi.ofRat 356527757 486000000
+  else DyadicHi.ofRat 416512637 972000000
+
+def d_rhoB (a2 : Nat) : DyadicHi :=
+  if a2 = 4 then DyadicHi.ofRat 19841 100000
+  else if a2 = 5 then DyadicHi.ofRat 13797 100000
+  else DyadicHi.ofRat 1351 20000
+
+def d_S2fac (a2 : Nat) : DyadicHi :=
+  if a2 = 4 then DyadicHi.ofRat 20000 155111
+  else if a2 = 5 then DyadicHi.ofRat 48 875
+  else DyadicHi.ofRat 345600 30471091
+
+def d_S3o1 (a2 : Nat) : DyadicHi :=
+  if a2 = 4 then DyadicHi.ofRat 2090185875 296272384
+  else if a2 = 5 then DyadicHi.ofRat 1699786401 273238528
+  else DyadicHi.ofRat 38612275 7554304
+
+def d_S3o2 (a2 : Nat) : DyadicHi :=
+  if a2 = 4 then DyadicHi.ofRat 1254111525 148136192
+  else if a2 = 5 then DyadicHi.ofRat 5099359203 683096320
+  else DyadicHi.ofRat 23167365 3777152
+
+def d_opt1C (a2 : Nat) : DyadicHi :=
+  if a2 = 4 then DyadicHi.ofRat 4209 128
+  else if a2 = 5 then DyadicHi.ofRat 15119 256
+  else DyadicHi.ofRat 819689 4096
+
+def d_opt2C (a2 : Nat) : DyadicHi :=
+  if a2 = 4 then DyadicHi.ofRat 243 16
+  else if a2 = 5 then DyadicHi.ofRat 729 32
+  else DyadicHi.ofRat 6561 128
+
+def d_sqrt2Hi : DyadicHi := DyadicHi.ofRat 14143 10000
+
+def d_powHalfHi (n : Nat) : DyadicHi :=
+  if n % 2 = 0 then DyadicHi.one.shift ((n / 2 : Nat) : Int)
+  else d_sqrt2Hi.shift ((n / 2 : Nat) : Int)
+
+def d_sumRange (f : Nat → DyadicHi) : Nat → DyadicHi
+  | 0 => DyadicHi.zero
+  | n + 1 => (d_sumRange f n).add (f n)
+
+theorem d_sumRange_sound (f : Nat → DyadicHi) (g : Nat → ℝ) (h : ∀ j, g j ≤ (f j).toReal) (N : Nat) :
+    ∑ j ∈ Finset.range N, g j ≤ (d_sumRange f N).toReal := by
+  induction N with
+  | zero => simp [d_sumRange, DyadicHi.toReal_zero]
+  | succ n ih =>
+    rw [Finset.sum_range_succ, d_sumRange]
+    exact (add_le_add ih (h n)).trans (DyadicHi.add_sound _ _)
+
+def d_H_odd_small (k0 : Nat) : DyadicHi :=
+  d_sumRange (fun j => DyadicHi.ofRat 1 (2 * j + 1)) (2 ^ (k0 - 1))
+
+def d_H_odd_val : Nat → DyadicHi
+  | 0 => ⟨2147483648, -31⟩
+  | 1 => ⟨2147483648, -31⟩
+  | 2 => ⟨2863311531, -31⟩
+  | 3 => ⟨3599591640, -31⟩
+  | 4 => ⟨2170891675, -30⟩
+  | 5 => ⟨2542760983, -30⟩
+  | 6 => ⟨2914826069, -30⟩
+  | 7 => ⟨3286940265, -30⟩
+  | _ => ⟨3659066761, -30⟩
+
+private theorem d_H_odd_val_eq (k0 : Nat) (hk : k0 ≤ 8) : d_H_odd_val k0 = d_H_odd_small k0 := by
+  interval_cases k0 <;> decide +kernel
+
+def d_H_odd (k0 : Nat) : DyadicHi :=
+  if k0 ≤ 8 then d_H_odd_val k0
+  else (d_H_odd_val 8).add (DyadicHi.ofRat (5 * (k0 - 8)) 12)
+
+def d_opt1Sum (k0 a2 : Nat) : DyadicHi :=
+  if k0 ≤ 8 then
+    d_sumRange (fun j => (DyadicHi.ofRat (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0)).pow a2) (2 ^ (k0 - 1))
+  else (d_opt1C a2).shift (((k0 - 3 : Nat) : Int))
+
+def d_opt2Sum (k0 a2 : Nat) : DyadicHi :=
+  if k0 ≤ 8 then
+    d_sumRange (fun j =>
+      (DyadicHi.ofRat (2 ^ k0 + (2 * j + 1)) (2 * j + 1)).mul
+        ((DyadicHi.ofRat (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0)).pow a2)) (2 ^ (k0 - 1))
+  else
+    let h1 := (((d_H_odd (k0 - 1)).shift (k0 : Int)).add (DyadicHi.one.shift ((k0 - 2 : Nat) : Int))).shift (a2 : Int)
+    let h2 := (d_opt2C a2).shift ((k0 - 2 : Nat) : Int)
+    h1.add h2
+
+def fwdOfNat (a : Nat) : FwdSpec :=
+  if a = 4 then fwdSpec4 else if a = 5 then fwdSpec5 else if a = 7 then fwdSpec7 else fwdSpec9
+
+def backOfNat (a2 : Nat) : BackSpec :=
+  if a2 = 4 then backSpec4 else if a2 = 5 then backSpec5 else backSpec7
+
+def isValidFwd (a : Nat) : Bool := a == 4 || a == 5 || a == 7 || a == 9
+def isValidBack (a2 : Nat) : Bool := a2 == 4 || a2 == 5 || a2 == 7
+
+-- Soundness of the `DyadicHi` helper evaluators
+theorem d_H_odd_small_sound (k0 : Nat) : H_odd k0 ≤ (d_H_odd_small k0).toReal :=
+  d_sumRange_sound _ _ (fun j => by simpa only [Nat.cast_one] using DyadicHi.ofRat_sound 1 (2 * j + 1) (by omega)) _
+
+theorem d_H_odd_sound (k0 : Nat) : H_odd k0 ≤ (d_H_odd k0).toReal := by
+  unfold d_H_odd; split_ifs with h8
+  · rw [d_H_odd_val_eq k0 h8]; exact d_H_odd_small_sound k0
+  · rw [d_H_odd_val_eq 8 (by decide)]
+    refine (H_odd_ge8 k0 (by omega)).trans ((add_le_add (d_H_odd_small_sound 8) ?_).trans (DyadicHi.add_sound _ _))
+    simpa only [Nat.cast_mul, Nat.cast_ofNat] using DyadicHi.ofRat_sound (5 * (k0 - 8)) 12 (by decide)
+
+theorem d_powHalfHi_sound (n : Nat) : powHalfHi n ≤ (d_powHalfHi n).toReal := by
+  unfold powHalfHi d_powHalfHi
+  split_ifs with h
+  · have h1 := DyadicHi.shift_sound DyadicHi.one ((n / 2 : Nat) : Int)
+    simpa only [DyadicHi.toReal_one, one_mul, zpow_natCast] using h1
+  · have h1 : (14143 / 10000 : ℝ) ≤ d_sqrt2Hi.toReal := by
+      simpa only [Nat.cast_ofNat] using DyadicHi.ofRat_sound 14143 10000 (by decide)
+    have h2 := mul_le_mul_of_nonneg_right h1 (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ (n / 2))
+    exact h2.trans (by simpa only [zpow_natCast] using DyadicHi.shift_sound d_sqrt2Hi ((n / 2 : Nat) : Int))
+
+theorem d_opt1Sum_sound (k0 a2 : Nat) (ha2 : isValidBack a2 = true) : opt1Sum k0 a2 ≤ (d_opt1Sum k0 a2).toReal := by
+  unfold d_opt1Sum; split_ifs with h8
+  · unfold opt1Sum
+    have ha2_lt' : a2 < 4096 := by
+      simp only [isValidBack, Bool.or_eq_true, beq_iff_eq] at ha2; omega
+    have hper : ∀ j < 2 ^ (k0 - 1),
+        (2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+        ((DyadicHi.ofRat (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0)).pow a2).toReal := by
+      intro j hj
+      have hle : 2 * j + 1 ≤ 2 * 2 ^ k0 := by
+        have : 2 ^ (k0 - 1) ≤ 2 ^ k0 := Nat.pow_le_pow_right (by decide) (by omega); omega
+      have hrat : 2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 =
+          ((2 * 2 ^ k0 - (2 * j + 1) : Nat) : ℝ) / ((2 ^ k0 : Nat) : ℝ) := by
+        rw [Nat.cast_sub hle]; push_cast; field_simp
+      rw [hrat]
+      have h1 := DyadicHi.ofRat_sound (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0) (Nat.two_pow_pos k0)
+      exact (pow_le_pow_left₀ (by positivity) h1 a2).trans (DyadicHi.pow_sound _ a2 ha2_lt')
+    -- Apply `Finset.sum_le_sum` then `d_sumRange_sound` via `Finset.sum_le_sum`!
+    have hsum1 : ∑ j ∈ Finset.range (2 ^ (k0 - 1)), (2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+        ∑ j ∈ Finset.range (2 ^ (k0 - 1)), ((DyadicHi.ofRat (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0)).pow a2).toReal :=
+      Finset.sum_le_sum (fun j hj => hper j (Finset.mem_range.mp hj))
+    exact hsum1.trans (d_sumRange_sound _ _ (fun _ => le_rfl) _)
+  · refine (opt1Sum_ge3 k0 a2 (by omega)).trans ?_
+    have hc : ((2 : ℝ) ^ a2 + (7 / 4 : ℝ) ^ a2 + (3 / 2 : ℝ) ^ a2 + (5 / 4 : ℝ) ^ a2) ≤ (d_opt1C a2).toReal := by
+      simp only [isValidBack, Bool.or_eq_true, beq_iff_eq] at ha2
+      rcases ha2 with (rfl | rfl) | rfl
+      · exact (by norm_num : _ ≤ (4209 : ℝ) / (128 : ℝ)).trans (by simpa [d_opt1C] using DyadicHi.ofRat_sound 4209 128 (by decide))
+      · exact (by norm_num : _ ≤ (15119 : ℝ) / (256 : ℝ)).trans (by simpa [d_opt1C] using DyadicHi.ofRat_sound 15119 256 (by decide))
+      · exact (by norm_num : _ ≤ (819689 : ℝ) / (4096 : ℝ)).trans (by simpa [d_opt1C] using DyadicHi.ofRat_sound 819689 4096 (by decide))
+    have hmul := mul_le_mul_of_nonneg_left hc (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ (k0 - 3))
+    rw [mul_comm ((2 : ℝ) ^ (k0 - 3)) (d_opt1C a2).toReal] at hmul
+    exact hmul.trans (by simpa only [zpow_natCast] using DyadicHi.shift_sound (d_opt1C a2) ((k0 - 3 : Nat) : Int))
+
+theorem d_opt2Sum_sound (k0 a2 : Nat) (ha2 : isValidBack a2 = true) : opt2Sum k0 a2 ≤ (d_opt2Sum k0 a2).toReal := by
+  unfold d_opt2Sum; split_ifs with h8
+  · unfold opt2Sum
+    have ha2_lt : a2 < 4096 := by simp only [isValidBack, Bool.or_eq_true, beq_iff_eq] at ha2; omega
+    have hsum1 : ∑ j ∈ Finset.range (2 ^ (k0 - 1)),
+          ((2 : ℝ) ^ k0 / ((2 * j + 1 : Nat) : ℝ) + 1) * (2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0) ^ a2 ≤
+        ∑ j ∈ Finset.range (2 ^ (k0 - 1)),
+          ((DyadicHi.ofRat (2 ^ k0 + (2 * j + 1)) (2 * j + 1)).mul
+            ((DyadicHi.ofRat (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0)).pow a2)).toReal := by
+      apply Finset.sum_le_sum; intro j hj
+      have hjlt := Finset.mem_range.mp hj
+      have hle : 2 * j + 1 ≤ 2 * 2 ^ k0 := by
+        have : 2 ^ (k0 - 1) ≤ 2 ^ k0 := Nat.pow_le_pow_right (by decide) (by omega); omega
+      have hrat1 : (2 : ℝ) ^ k0 / ((2 * j + 1 : Nat) : ℝ) + 1 =
+          ((2 ^ k0 + (2 * j + 1) : Nat) : ℝ) / ((2 * j + 1 : Nat) : ℝ) := by
+        push_cast; field_simp
+      have hrat2 : 2 - ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 =
+          ((2 * 2 ^ k0 - (2 * j + 1) : Nat) : ℝ) / ((2 ^ k0 : Nat) : ℝ) := by
+        rw [Nat.cast_sub hle]; push_cast; field_simp
+      rw [hrat1, hrat2]
+      have hf1 := DyadicHi.ofRat_sound (2 ^ k0 + (2 * j + 1)) (2 * j + 1) (by omega)
+      have hf2 := (pow_le_pow_left₀ (by positivity) (DyadicHi.ofRat_sound (2 * 2 ^ k0 - (2 * j + 1)) (2 ^ k0) (Nat.two_pow_pos k0)) a2).trans (DyadicHi.pow_sound _ a2 ha2_lt)
+      exact (mul_le_mul hf1 hf2 (by positivity) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+    exact hsum1.trans (d_sumRange_sound _ _ (fun _ => le_rfl) _)
+  · refine (opt2Sum_ge2 k0 a2 (by omega)).trans ?_
+    have hA1 : (2 : ℝ) ^ k0 * H_odd (k0 - 1) ≤ ((d_H_odd (k0 - 1)).shift (k0 : Int)).toReal := by
+      rw [mul_comm]
+      exact (mul_le_mul_of_nonneg_right (d_H_odd_sound (k0 - 1)) (by positivity)).trans
+        (by simpa only [zpow_natCast] using DyadicHi.shift_sound (d_H_odd (k0 - 1)) (k0 : Int))
+    have hA2 : (2 : ℝ) ^ (k0 - 2) ≤ (DyadicHi.one.shift ((k0 - 2 : Nat) : Int)).toReal := by
+      simpa only [DyadicHi.toReal_one, one_mul, zpow_natCast] using DyadicHi.shift_sound DyadicHi.one ((k0 - 2 : Nat) : Int)
+    have hA : (2 : ℝ) ^ a2 * ((2 : ℝ) ^ k0 * H_odd (k0 - 1) + (2 : ℝ) ^ (k0 - 2)) ≤
+        ((((d_H_odd (k0 - 1)).shift (k0 : Int)).add (DyadicHi.one.shift ((k0 - 2 : Nat) : Int))).shift (a2 : Int)).toReal := by
+      rw [mul_comm]
+      exact (mul_le_mul_of_nonneg_right ((add_le_add hA1 hA2).trans (DyadicHi.add_sound _ _)) (by positivity)).trans
+        (by simpa only [zpow_natCast] using DyadicHi.shift_sound _ (a2 : Int))
+    have hc2 : 3 * (3 / 2 : ℝ) ^ a2 ≤ (d_opt2C a2).toReal := by
+      simp only [isValidBack, Bool.or_eq_true, beq_iff_eq] at ha2
+      rcases ha2 with (rfl | rfl) | rfl
+      · exact (by norm_num : _ ≤ (243 : ℝ) / (16 : ℝ)).trans (by simpa [d_opt2C] using DyadicHi.ofRat_sound 243 16 (by decide))
+      · exact (by norm_num : _ ≤ (729 : ℝ) / (32 : ℝ)).trans (by simpa [d_opt2C] using DyadicHi.ofRat_sound 729 32 (by decide))
+      · exact (by norm_num : _ ≤ (6561 : ℝ) / (128 : ℝ)).trans (by simpa [d_opt2C] using DyadicHi.ofRat_sound 6561 128 (by decide))
+    have hB : (2 : ℝ) ^ (k0 - 2) * (3 * (3 / 2 : ℝ) ^ a2) ≤ ((d_opt2C a2).shift ((k0 - 2 : Nat) : Int)).toReal := by
+      rw [mul_comm]
+      exact (mul_le_mul_of_nonneg_right hc2 (by positivity)).trans
+        (by simpa only [zpow_natCast] using DyadicHi.shift_sound (d_opt2C a2) ((k0 - 2 : Nat) : Int))
+    exact (add_le_add hA hB).trans (DyadicHi.add_sound _ _)
+
+-- Soundness of the per-potential `DyadicHi` constants
+theorem fwd_consts_sound (a : Nat) (ha : isValidFwd a = true) :
+    (fwdOfNat a).a = a ∧
+    (fwdOfNat a).rho ≤ (d_rhoF a).toReal ∧
+    (fwdOfNat a).rhoEO ≤ (d_rhoEO a).toReal ∧
+    (fwdOfNat a).phi 1 1 ≤ (d_f11 a).toReal ∧
+    (fwdOfNat a).phi 2 1 ≤ (d_f21 a).toReal := by
+  simp only [isValidFwd, Bool.or_eq_true, beq_iff_eq] at ha
+  rcases ha with ((rfl | rfl) | rfl) | rfl
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [fwdOfNat, fwdSpec4, rhoF4, d_rhoF] using DyadicHi.ofRat_sound 42109 100000 (by decide)
+    · simpa [fwdOfNat, fwdSpec4, rhoEO4, d_rhoEO] using DyadicHi.ofRat_sound 17917 50000 (by decide)
+    · exact phiF4_11_le.trans (by simpa [fwdOfNat, fwdSpec4, d_f11] using DyadicHi.ofRat_sound 1519387 256000 (by decide))
+    · exact phiF4_21_le.trans (by simpa [fwdOfNat, fwdSpec4, d_f21] using DyadicHi.ofRat_sound 3318463247 1890000000 (by decide))
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [fwdOfNat, fwdSpec5, rhoF5, d_rhoF] using DyadicHi.ofRat_sound 14331 50000 (by decide)
+    · simpa [fwdOfNat, fwdSpec5, rhoEO5, d_rhoEO] using DyadicHi.ofRat_sound 25523 100000 (by decide)
+    · exact phiF5_11_le.trans (by simpa [fwdOfNat, fwdSpec5, d_f11] using DyadicHi.ofRat_sound 21568541 3840000 (by decide))
+    · exact phiF5_21_le.trans (by simpa [fwdOfNat, fwdSpec5, d_f21] using DyadicHi.ofRat_sound 305695253 243000000 (by decide))
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [fwdOfNat, fwdSpec7, rhoF7, d_rhoF] using DyadicHi.ofRat_sound 13763 100000 (by decide)
+    · simpa [fwdOfNat, fwdSpec7, rhoEO7, d_rhoEO] using DyadicHi.ofRat_sound 6487 50000 (by decide)
+    · exact phiF7_11_le.trans (by simpa [fwdOfNat, fwdSpec7, d_f11] using DyadicHi.ofRat_sound 23104807 3840000 (by decide))
+    · exact phiF7_21_le.trans (by simpa [fwdOfNat, fwdSpec7, d_f21] using DyadicHi.ofRat_sound 356527757 486000000 (by decide))
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [fwdOfNat, fwdSpec9, rhoF9, d_rhoF] using DyadicHi.ofRat_sound 6743 100000 (by decide)
+    · simpa [fwdOfNat, fwdSpec9, rhoEO9, d_rhoEO] using DyadicHi.ofRat_sound 409 6250 (by decide)
+    · exact phiF9_11_le.trans (by simpa [fwdOfNat, fwdSpec9, d_f11] using DyadicHi.ofRat_sound 4320337 640000 (by decide))
+    · exact phiF9_21_le.trans (by simpa [fwdOfNat, fwdSpec9, d_f21] using DyadicHi.ofRat_sound 416512637 972000000 (by decide))
+
+theorem back_consts_sound (a2 : Nat) (ha2 : isValidBack a2 = true) :
+    (backOfNat a2).fwd = fwdOfNat a2 ∧
+    (backOfNat a2).rhoB ≤ (d_rhoB a2).toReal ∧
+    (1 / (backOfNat a2).K) / (1 - (backOfNat a2).qL) ≤ (d_S2fac a2).toReal ∧
+    (5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) ≤ (d_S3o1 a2).toReal ∧
+    (3 : ℝ) * (backOfNat a2).psiB 1 1 / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) ≤ (d_S3o2 a2).toReal := by
+  simp only [isValidBack, Bool.or_eq_true, beq_iff_eq] at ha2
+  rcases ha2 with (rfl | rfl) | rfl
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [backOfNat, backSpec4, rhoB6, d_rhoB] using DyadicHi.ofRat_sound 19841 100000 (by decide)
+    · exact (by unfold backOfNat backSpec4; norm_num : _ ≤ (20000 : ℝ) / (155111 : ℝ)).trans (by simpa [d_S2fac] using DyadicHi.ofRat_sound 20000 155111 (by decide))
+    · have h1 : (5 / 2 : ℝ) * psiB6 1 1 / (1 - rhoB6 / (45 / 100)) ≤ (2090185875 : ℝ) / (296272384 : ℝ) := by
+        have hp := psiB6_11_le; unfold rhoB6; norm_num at *; linarith
+      exact h1.trans (by simpa [d_S3o1] using DyadicHi.ofRat_sound 2090185875 296272384 (by decide))
+    · have h1 : (3 : ℝ) * psiB6 1 1 / (1 - rhoB6 / (45 / 100)) ≤ (1254111525 : ℝ) / (148136192 : ℝ) := by
+        have hp := psiB6_11_le; unfold rhoB6; norm_num at *; linarith
+      exact h1.trans (by simpa [d_S3o2] using DyadicHi.ofRat_sound 1254111525 148136192 (by decide))
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [backOfNat, backSpec5, rhoB7, d_rhoB] using DyadicHi.ofRat_sound 13797 100000 (by decide)
+    · exact (by unfold backOfNat backSpec5; norm_num : _ ≤ (48 : ℝ) / (875 : ℝ)).trans (by simpa [d_S2fac] using DyadicHi.ofRat_sound 48 875 (by decide))
+    · have h1 : (5 / 2 : ℝ) * psiB7 1 1 / (1 - rhoB7 / (37 / 100)) ≤ (1699786401 : ℝ) / (273238528 : ℝ) := by
+        have hp := psiB7_11_le; unfold rhoB7; norm_num at *; linarith
+      exact h1.trans (by simpa [d_S3o1] using DyadicHi.ofRat_sound 1699786401 273238528 (by decide))
+    · have h1 : (3 : ℝ) * psiB7 1 1 / (1 - rhoB7 / (37 / 100)) ≤ (5099359203 : ℝ) / (683096320 : ℝ) := by
+        have hp := psiB7_11_le; unfold rhoB7; norm_num at *; linarith
+      exact h1.trans (by simpa [d_S3o2] using DyadicHi.ofRat_sound 5099359203 683096320 (by decide))
+  · refine ⟨rfl, ?_, ?_, ?_, ?_⟩
+    · simpa [backOfNat, backSpec7, rhoB9, d_rhoB] using DyadicHi.ofRat_sound 1351 20000 (by decide)
+    · exact (by unfold backOfNat backSpec7; norm_num : _ ≤ (345600 : ℝ) / (30471091 : ℝ)).trans (by simpa [d_S2fac] using DyadicHi.ofRat_sound 345600 30471091 (by decide))
+    · have h1 : (5 / 2 : ℝ) * psiB9 1 1 / (1 - rhoB9 / (26 / 100)) ≤ (38612275 : ℝ) / (7554304 : ℝ) := by
+        have hp := psiB9_11_le; unfold rhoB9; norm_num at *; linarith
+      exact h1.trans (by simpa [d_S3o1] using DyadicHi.ofRat_sound 38612275 7554304 (by decide))
+    · have h1 : (3 : ℝ) * psiB9 1 1 / (1 - rhoB9 / (26 / 100)) ≤ (23167365 : ℝ) / (3777152 : ℝ) := by
+        have hp := psiB9_11_le; unfold rhoB9; norm_num at *; linarith
+      exact h1.trans (by simpa [d_S3o2] using DyadicHi.ofRat_sound 23167365 3777152 (by decide))
+
+/-! ### 10. Executable plan evaluator (`evalEnvTotal`) & master soundness theorem (`badStack_of_dyadic`) -/
+
+inductive BadSEntry where
+  | k0 (a1 a2 m e : Nat)
+  | k1Red (a1 a2 m e : Nat)
+  | opt1 (a1 a2 m e : Nat) (wb : Bool)
+  | opt2 (a1 a2 m e : Nat)
+  | triv
+  deriving Repr, DecidableEq
+
+def validEntry (S k0 : Nat) : BadSEntry → Bool
+  | .k0 a1 a2 m _ => decide (k0 = 0 ∧ 1 + m ≤ S ∧ S ≤ 512) && isValidFwd a1 && isValidBack a2
+  | .k1Red a1 a2 m _ => decide (k0 = 1 ∧ 1 ≤ S ∧ 1 + m ≤ S - 1 ∧ S ≤ 512) && isValidFwd a1 && isValidBack a2
+  | .opt1 a1 a2 m _ _ => decide (2 ≤ k0 ∧ 2 * k0 + m ≤ S ∧ S ≤ 512) && isValidFwd a1 && isValidBack a2
+  | .opt2 a1 a2 m _ => decide (2 ≤ k0 ∧ 2 * k0 + m ≤ S ∧ S ≤ 512) && isValidFwd a1 && isValidBack a2
+  | .triv => true
+
+def evalK0Zero (S a1 a2 m e : Nat) : DyadicHi :=
+  let mb := S - (1 + m)
+  let s1 := ((d_f21 a1).mul ((d_rhoF a1).pow m)).shift ((128 * (a1 - 2) : Nat) : Int)
+  let s2 := ((d_S2fac a2).mul ((d_f21 a2).mul ((d_rhoF a2).pow m))).shift (((256 * (a2 - 1) : Nat) : Int) - (e : Int))
+  let s3 := ((d_S3o1 a2).mul ((d_rhoB a2).pow mb)).shift (e : Int)
+  (s1.add s2).add s3
+
+def evalEntry (S k0 : Nat) : BadSEntry → DyadicHi
+  | .k0 a1 a2 m e => evalK0Zero S a1 a2 m e
+  | .k1Red a1 a2 m e => evalK0Zero (S - 1) a1 a2 m e
+  | .opt1 a1 a2 m e wb =>
+    let mb := S - (2 * k0 + m)
+    let s1 := ((d_f21 a1).mul (((d_rhoEO a1).pow (k0 - 1)).mul ((d_rhoF a1).pow m))).shift ((128 * (a1 - 2) : Nat) : Int)
+    let s2p := if wb then ((d_f11 a2).mul (d_opt1Sum k0 a2)).shift (-((a2 * k0 : Nat) : Int))
+               else (d_f21 a2).mul ((d_rhoEO a2).pow (k0 - 1))
+    let s2 := ((d_S2fac a2).mul (s2p.mul ((d_rhoF a2).pow m))).shift (((256 * (a2 - 1) : Nat) : Int) - (e : Int))
+    let s3 := ((d_S3o1 a2).mul ((d_rhoB a2).pow mb)).shift (e : Int)
+    (s1.add s2).add s3
+  | .opt2 a1 a2 m e =>
+    let mb := S - (2 * k0 + m)
+    let hfac := (d_H_odd k0).add (DyadicHi.one.shift (-1))
+    let s1 := (hfac.mul ((d_powHalfHi (a1 - 2)).mul ((d_f11 a1).mul ((d_rhoF a1).pow m)))).shift
+      (((128 * (a1 - 2) : Nat) : Int) - (((a1 - 1) * k0 : Nat) : Int))
+    let s2 := ((d_S2fac a2).mul ((d_opt2Sum k0 a2).mul ((d_f11 a2).mul ((d_rhoF a2).pow m)))).shift
+      (((256 * (a2 - 1) : Nat) : Int) - ((a2 * k0 : Nat) : Int) - (e : Int))
+    let s3 := ((d_S3o2 a2).mul ((d_rhoB a2).pow mb)).shift (e : Int)
+    (s1.add s2).add s3
+  | .triv => DyadicHi.one.shift (-(k0 : Int))
+
+def validPlanAux (S : Nat) : Nat → List BadSEntry → Bool
+  | _, [] => true
+  | k0, e :: es => validEntry S k0 e && validPlanAux S (k0 + 1) es
+
+def evalPlanAux (S : Nat) : Nat → List BadSEntry → DyadicHi
+  | k0, [] => DyadicHi.one.shift (-(k0 : Int))
+  | k0, e :: es => (evalEntry S k0 e).add (evalPlanAux S (k0 + 1) es)
+
+def d_dropC_small : DyadicHi := ⟨3581204226, -27⟩
+def d_dropC_big : DyadicHi := ⟨3564957965, -26⟩
+
+def evalBadDropStep (i d : Nat) : DyadicHi :=
+  let c : DyadicHi := if i + d ≤ 248 then d_dropC_small else d_dropC_big
+  let d1 := (c.mul (d_rhoF3.pow (i - 2))).shift (d : Int)
+  let d1_tail := DyadicHi.one.shift (-(if d < i / 2 then ((i - d : Nat) : Int) else ((i / 2 + 1 : Nat) : Int)))
+  let d2 := if i + d ≤ 255 then DyadicHi.zero else (DyadicHi.ofNat (12 + 3 * i)).shift ((2 * d : Int) - 257)
+  (d1.add d1_tail).add d2
+
+def evalBadDropRange (S : Nat) (pw : Nat → Nat) : Nat → DyadicHi
+  | 0 => DyadicHi.zero
+  | n + 1 =>
+    let acc := evalBadDropRange S pw n
+    if 1 ≤ n ∧ n < S ∧ pw n < (if n = 0 then 258 else pw (n - 1)) ∧ pw n < S - n + 1 then
+      acc.add (evalBadDropStep n (257 - pw n))
+    else acc
+
+def evalEnvTotal (S : Nat) (pw : Nat → Nat) (plan : List BadSEntry) : DyadicHi :=
+  (evalPlanAux S 0 plan).add (evalBadDropRange S pw S)
+
+-- Soundness of `evalK0Zero`, `evalEntry`, `evalBadDropStep`, and `badStack_of_dyadic`
+private theorem evalK0Zero_sound (S a1 a2 m e : Nat)
+    (hS : S ≤ 512) (hm : 1 + m ≤ S) (ha1 : isValidFwd a1 = true) (ha2 : isValidBack a2 = true) :
+    ((BadS_k0 S 0).card : ℝ) ≤ (evalK0Zero S a1 a2 m e).toReal * (2 : ℝ) ^ 256 := by
+  have hb := badS_k0_zero_gen (fwdOfNat a1) (backOfNat a2) S m e hS hm
+  obtain ⟨ha1_eq, hrF1, _, _, hf21_1⟩ := fwd_consts_sound a1 ha1
+  obtain ⟨ha2_eq, hrF2, _, _, hf21_2⟩ := fwd_consts_sound a2 (by simp only [isValidBack, isValidFwd, Bool.or_eq_true, beq_iff_eq] at ha2 ⊢; omega)
+  obtain ⟨hbfwd, hrB, hS2f, hS3f, _⟩ := back_consts_sound a2 ha2
+  rw [hbfwd, ha1_eq, ha2_eq] at hb
+  have hm_lt : m < 4096 := by omega
+  have hmb_lt : S - (1 + m) < 4096 := by omega
+  have h1 : (2 : ℝ) ^ (128 * (a1 - 2)) * (fwdOfNat a1).phi 2 1 * (fwdOfNat a1).rho ^ m ≤
+      (((d_f21 a1).mul ((d_rhoF a1).pow m)).shift ((128 * (a1 - 2) : Nat) : Int)).toReal := by
+    have hp := (pow_le_pow_left₀ (fwdOfNat a1).hrho_nn hrF1 m).trans (DyadicHi.pow_sound _ m hm_lt)
+    have hmul := (mul_le_mul hf21_1 hp (pow_nonneg (fwdOfNat a1).hrho_nn m) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+    rw [mul_assoc, mul_comm ((2 : ℝ) ^ (128 * (a1 - 2)))]
+    exact (mul_le_mul_of_nonneg_right hmul (by positivity)).trans
+      (by simpa only [zpow_natCast] using DyadicHi.shift_sound _ ((128 * (a1 - 2) : Nat) : Int))
+  have h2 : (1 / (backOfNat a2).K) * (2 : ℝ) ^ (256 * (a2 - 1)) * (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rho ^ m / (1 - (backOfNat a2).qL) / (2 : ℝ) ^ e ≤
+      (((d_S2fac a2).mul ((d_f21 a2).mul ((d_rhoF a2).pow m))).shift (((256 * (a2 - 1) : Nat) : Int) - (e : Int))).toReal := by
+    have hp := (pow_le_pow_left₀ (fwdOfNat a2).hrho_nn hrF2 m).trans (DyadicHi.pow_sound _ m hm_lt)
+    have h1' := (mul_le_mul hf21_2 hp (pow_nonneg (fwdOfNat a2).hrho_nn m) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+    have h2' := (mul_le_mul hS2f h1' (mul_nonneg ((fwdOfNat a2).hpos 2 1 (by norm_num) (by norm_num)).le (pow_nonneg (fwdOfNat a2).hrho_nn m)) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+    have hrew : (1 / (backOfNat a2).K) * (2 : ℝ) ^ (256 * (a2 - 1)) * (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rho ^ m / (1 - (backOfNat a2).qL) / (2 : ℝ) ^ e =
+        ((1 / (backOfNat a2).K) / (1 - (backOfNat a2).qL) * ((fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rho ^ m)) *
+          (2 : ℝ) ^ (((256 * (a2 - 1) : Nat) : Int) - (e : Int)) := by
+      rw [zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast, zpow_natCast]; ring
+    rw [hrew]
+    exact (mul_le_mul_of_nonneg_right h2' (by positivity)).trans (DyadicHi.shift_sound _ _)
+  have h3 : (5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 * (backOfNat a2).rhoB ^ (S - (1 + m)) / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) * (2 : ℝ) ^ e ≤
+      (((d_S3o1 a2).mul ((d_rhoB a2).pow (S - (1 + m)))).shift (e : Int)).toReal := by
+    have hp := (pow_le_pow_left₀ (backOfNat a2).hrhoB_nn hrB (S - (1 + m))).trans (DyadicHi.pow_sound _ _ hmb_lt)
+    have h1' := (mul_le_mul hS3f hp (pow_nonneg (backOfNat a2).hrhoB_nn _) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+    have hrew : (5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 * (backOfNat a2).rhoB ^ (S - (1 + m)) / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) * (2 : ℝ) ^ e =
+        (((5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL)) * (backOfNat a2).rhoB ^ (S - (1 + m))) * (2 : ℝ) ^ (e : Int) := by
+      rw [zpow_natCast]; ring
+    rw [hrew]
+    exact (mul_le_mul_of_nonneg_right h1' (by positivity)).trans (DyadicHi.shift_sound _ _)
+  have hsum : _ ≤ (evalK0Zero S a1 a2 m e).toReal :=
+    (add_le_add ((add_le_add h1 h2).trans (DyadicHi.add_sound _ _)) h3).trans (DyadicHi.add_sound _ _)
+  exact hb.trans ((mul_le_mul_of_nonneg_left hsum (by positivity)).trans_eq (mul_comm _ _))
+
+private theorem evalEntry_sound (S k0 : Nat) (ent : BadSEntry) (hv : validEntry S k0 ent = true) :
+    ((BadS_k0 S k0).card : ℝ) ≤ (evalEntry S k0 ent).toReal * (2 : ℝ) ^ 256 := by
+  cases ent with
+  | k0 a1 a2 m e =>
+    simp only [validEntry, Bool.and_eq_true, decide_eq_true_eq] at hv
+    rcases hv with ⟨⟨⟨rfl, hm, hS⟩, ha1⟩, ha2⟩
+    exact evalK0Zero_sound S a1 a2 m e hS hm ha1 ha2
+  | k1Red a1 a2 m e =>
+    simp only [validEntry, Bool.and_eq_true, decide_eq_true_eq] at hv
+    rcases hv with ⟨⟨⟨rfl, hS1, hm, hS⟩, ha1⟩, ha2⟩
+    have hr : ((BadS_k0 S 1).card : ℝ) ≤ ((BadS_k0 (S - 1) 0).card : ℝ) := by exact_mod_cast badS_k0_one_reduce S hS1
+    exact hr.trans (evalK0Zero_sound (S - 1) a1 a2 m e (by omega) hm ha1 ha2)
+  | opt1 a1 a2 m e wb =>
+    simp only [validEntry, Bool.and_eq_true, decide_eq_true_eq] at hv
+    rcases hv with ⟨⟨⟨hk0, ht, hS⟩, ha1⟩, ha2⟩
+    have hb := badS_k0_opt1_gen (fwdOfNat a1) (backOfNat a2) S k0 m e wb hS hk0 ht
+    obtain ⟨ha1_eq, hrF1, hrEO1, _, hf21_1⟩ := fwd_consts_sound a1 ha1
+    obtain ⟨ha2_eq, hrF2, hrEO2, hf11_2, hf21_2⟩ := fwd_consts_sound a2 (by simp only [isValidBack, isValidFwd, Bool.or_eq_true, beq_iff_eq] at ha2 ⊢; omega)
+    obtain ⟨hbfwd, hrB, hS2f, hS3f, _⟩ := back_consts_sound a2 ha2
+    rw [hbfwd, ha1_eq, ha2_eq] at hb
+    have h1 : (2 : ℝ) ^ (128 * (a1 - 2)) * (fwdOfNat a1).phi 2 1 * (fwdOfNat a1).rhoEO ^ (k0 - 1) * (fwdOfNat a1).rho ^ m ≤
+        (((d_f21 a1).mul (((d_rhoEO a1).pow (k0 - 1)).mul ((d_rhoF a1).pow m))).shift ((128 * (a1 - 2) : Nat) : Int)).toReal := by
+      have hp1 := (pow_le_pow_left₀ (fwdOfNat a1).hrhoEO_nn hrEO1 (k0 - 1)).trans (DyadicHi.pow_sound _ _ (by omega))
+      have hp2 := (pow_le_pow_left₀ (fwdOfNat a1).hrho_nn hrF1 m).trans (DyadicHi.pow_sound _ _ (by omega))
+      have h12 := (mul_le_mul hp1 hp2 (pow_nonneg (fwdOfNat a1).hrho_nn m) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have h123 := (mul_le_mul hf21_1 h12 (mul_nonneg (pow_nonneg (fwdOfNat a1).hrhoEO_nn _) (pow_nonneg (fwdOfNat a1).hrho_nn _)) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hrew : (2 : ℝ) ^ (128 * (a1 - 2)) * (fwdOfNat a1).phi 2 1 * (fwdOfNat a1).rhoEO ^ (k0 - 1) * (fwdOfNat a1).rho ^ m =
+          ((fwdOfNat a1).phi 2 1 * ((fwdOfNat a1).rhoEO ^ (k0 - 1) * (fwdOfNat a1).rho ^ m)) * (2 : ℝ) ^ ((128 * (a1 - 2) : Nat) : Int) := by
+        rw [zpow_natCast]; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right h123 (by positivity)).trans (DyadicHi.shift_sound _ _)
+    set s2pD : DyadicHi := if wb then ((d_f11 a2).mul (d_opt1Sum k0 a2)).shift (-((a2 * k0 : Nat) : Int))
+                           else (d_f21 a2).mul ((d_rhoEO a2).pow (k0 - 1))
+    have hs2p : (if wb then (fwdOfNat a2).phi 1 1 * opt1Sum k0 a2 / (2 : ℝ) ^ (a2 * k0)
+                 else (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rhoEO ^ (k0 - 1)) ≤ s2pD.toReal := by
+      dsimp only [s2pD]; cases wb
+      · simp only [Bool.false_eq_true, ↓reduceIte]
+        have hp := (pow_le_pow_left₀ (fwdOfNat a2).hrhoEO_nn hrEO2 (k0 - 1)).trans (DyadicHi.pow_sound _ _ (by omega))
+        exact (mul_le_mul hf21_2 hp (pow_nonneg (fwdOfNat a2).hrhoEO_nn _) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      · simp only [↓reduceIte]
+        have ho1 := d_opt1Sum_sound k0 a2 ha2
+        have ho1_nn : 0 ≤ opt1Sum k0 a2 := Finset.sum_nonneg (fun j hj => by
+          have hjlt := Finset.mem_range.mp hj
+          have hlt : 2 * j + 1 ≤ 2 ^ k0 := by rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+          have : ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+          exact pow_nonneg (by linarith) _)
+        have hm := (mul_le_mul hf11_2 ho1 ho1_nn (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+        have hrew : (fwdOfNat a2).phi 1 1 * opt1Sum k0 a2 / (2 : ℝ) ^ (a2 * k0) =
+            ((fwdOfNat a2).phi 1 1 * opt1Sum k0 a2) * (2 : ℝ) ^ (-((a2 * k0 : Nat) : Int)) := by
+          rw [zpow_neg, zpow_natCast, div_eq_mul_inv]
+        rw [hrew]; exact (mul_le_mul_of_nonneg_right hm (by positivity)).trans (DyadicHi.shift_sound _ _)
+    have hs2p_nn : 0 ≤ (if wb then (fwdOfNat a2).phi 1 1 * opt1Sum k0 a2 / (2 : ℝ) ^ (a2 * k0)
+                        else (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rhoEO ^ (k0 - 1)) := by
+      cases wb
+      · simp only [Bool.false_eq_true, ↓reduceIte]
+        exact mul_nonneg ((fwdOfNat a2).hpos 2 1 (by norm_num) (by norm_num)).le (pow_nonneg (fwdOfNat a2).hrhoEO_nn _)
+      · simp only [↓reduceIte]
+        have h11 := ((fwdOfNat a2).hpos 1 1 (by norm_num) (by norm_num)).le
+        have ho1_nn : 0 ≤ opt1Sum k0 a2 := Finset.sum_nonneg (fun j hj => by
+          have hjlt := Finset.mem_range.mp hj
+          have hlt : 2 * j + 1 ≤ 2 ^ k0 := by rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+          have : ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+          exact pow_nonneg (by linarith) _)
+        positivity
+    have h2 : (1 / (backOfNat a2).K) * (2 : ℝ) ^ (256 * (a2 - 1)) *
+        (if wb then (fwdOfNat a2).phi 1 1 * opt1Sum k0 a2 / (2 : ℝ) ^ (a2 * k0)
+         else (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rhoEO ^ (k0 - 1)) * (fwdOfNat a2).rho ^ m / (1 - (backOfNat a2).qL) / (2 : ℝ) ^ e ≤
+        (((d_S2fac a2).mul (s2pD.mul ((d_rhoF a2).pow m))).shift (((256 * (a2 - 1) : Nat) : Int) - (e : Int))).toReal := by
+      have hp := (pow_le_pow_left₀ (fwdOfNat a2).hrho_nn hrF2 m).trans (DyadicHi.pow_sound _ _ (by omega))
+      have hm1 := (mul_le_mul hs2p hp (pow_nonneg (fwdOfNat a2).hrho_nn m) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hm2 := (mul_le_mul hS2f hm1 (mul_nonneg hs2p_nn (pow_nonneg (fwdOfNat a2).hrho_nn m)) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hrew : (1 / (backOfNat a2).K) * (2 : ℝ) ^ (256 * (a2 - 1)) *
+          (if wb then (fwdOfNat a2).phi 1 1 * opt1Sum k0 a2 / (2 : ℝ) ^ (a2 * k0)
+           else (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rhoEO ^ (k0 - 1)) * (fwdOfNat a2).rho ^ m / (1 - (backOfNat a2).qL) / (2 : ℝ) ^ e =
+          (((1 / (backOfNat a2).K) / (1 - (backOfNat a2).qL)) *
+            ((if wb then (fwdOfNat a2).phi 1 1 * opt1Sum k0 a2 / (2 : ℝ) ^ (a2 * k0)
+              else (fwdOfNat a2).phi 2 1 * (fwdOfNat a2).rhoEO ^ (k0 - 1)) * (fwdOfNat a2).rho ^ m)) *
+            (2 : ℝ) ^ (((256 * (a2 - 1) : Nat) : Int) - (e : Int)) := by
+        rw [zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast, zpow_natCast]; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right hm2 (by positivity)).trans (DyadicHi.shift_sound _ _)
+    have h3 : (5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 * (backOfNat a2).rhoB ^ (S - (2 * k0 + m)) / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) * (2 : ℝ) ^ e ≤
+        (((d_S3o1 a2).mul ((d_rhoB a2).pow (S - (2 * k0 + m)))).shift (e : Int)).toReal := by
+      have hp := (pow_le_pow_left₀ (backOfNat a2).hrhoB_nn hrB (S - (2 * k0 + m))).trans (DyadicHi.pow_sound _ _ (by omega))
+      have hm1 := (mul_le_mul hS3f hp (pow_nonneg (backOfNat a2).hrhoB_nn _) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hrew : (5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 * (backOfNat a2).rhoB ^ (S - (2 * k0 + m)) / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) * (2 : ℝ) ^ e =
+          (((5 / 2 : ℝ) * (backOfNat a2).psiB 1 1 / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL)) * (backOfNat a2).rhoB ^ (S - (2 * k0 + m))) * (2 : ℝ) ^ (e : Int) := by
+        rw [zpow_natCast]; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right hm1 (by positivity)).trans (DyadicHi.shift_sound _ _)
+    have hsum : _ ≤ (evalEntry S k0 (.opt1 a1 a2 m e wb)).toReal :=
+      (add_le_add ((add_le_add h1 h2).trans (DyadicHi.add_sound _ _)) h3).trans (DyadicHi.add_sound _ _)
+    exact hb.trans ((mul_le_mul_of_nonneg_left hsum (by positivity)).trans_eq (mul_comm _ _))
+  | opt2 a1 a2 m e =>
+    simp only [validEntry, Bool.and_eq_true, decide_eq_true_eq] at hv
+    rcases hv with ⟨⟨⟨hk0, ht, hS⟩, ha1⟩, ha2⟩
+    have hb := badS_k0_opt2_gen (fwdOfNat a1) (backOfNat a2) S k0 m e hS hk0 ht
+    obtain ⟨ha1_eq, hrF1, _, hf11_1, _⟩ := fwd_consts_sound a1 ha1
+    obtain ⟨ha2_eq, hrF2, _, hf11_2, _⟩ := fwd_consts_sound a2 (by simp only [isValidBack, isValidFwd, Bool.or_eq_true, beq_iff_eq] at ha2 ⊢; omega)
+    obtain ⟨hbfwd, hrB, hS2f, _, hS3f⟩ := back_consts_sound a2 ha2
+    rw [hbfwd, ha1_eq, ha2_eq] at hb
+    have h1 : (H_odd k0 + 1 / 2) * powHalfHi (a1 - 2) * (2 : ℝ) ^ (128 * (a1 - 2)) / (2 : ℝ) ^ ((a1 - 1) * k0) *
+        (fwdOfNat a1).phi 1 1 * (fwdOfNat a1).rho ^ m ≤
+        ((((d_H_odd k0).add (DyadicHi.one.shift (-1))).mul
+          ((d_powHalfHi (a1 - 2)).mul ((d_f11 a1).mul ((d_rhoF a1).pow m)))).shift
+          (((128 * (a1 - 2) : Nat) : Int) - (((a1 - 1) * k0 : Nat) : Int))).toReal := by
+      have hh : H_odd k0 + 1 / 2 ≤ ((d_H_odd k0).add (DyadicHi.one.shift (-1))).toReal := by
+        have hhalf : (1 / 2 : ℝ) ≤ (DyadicHi.one.shift (-1)).toReal := by
+          have := DyadicHi.shift_sound DyadicHi.one (-1); norm_num [DyadicHi.toReal_one] at this; exact this
+        exact (add_le_add (d_H_odd_sound k0) hhalf).trans (DyadicHi.add_sound _ _)
+      have hp1 := (pow_le_pow_left₀ (fwdOfNat a1).hrho_nn hrF1 m).trans (DyadicHi.pow_sound _ _ (by omega))
+      have hm1 := (mul_le_mul hf11_1 hp1 (pow_nonneg (fwdOfNat a1).hrho_nn m) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hm2 := (mul_le_mul (d_powHalfHi_sound (a1 - 2)) hm1 (mul_nonneg ((fwdOfNat a1).hpos 1 1 (by norm_num) (by norm_num)).le (pow_nonneg (fwdOfNat a1).hrho_nn m)) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hm3 := (mul_le_mul hh hm2 (mul_nonneg (powHalfHi_pos _).le (mul_nonneg ((fwdOfNat a1).hpos 1 1 (by norm_num) (by norm_num)).le (pow_nonneg (fwdOfNat a1).hrho_nn m))) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hrew : (H_odd k0 + 1 / 2) * powHalfHi (a1 - 2) * (2 : ℝ) ^ (128 * (a1 - 2)) / (2 : ℝ) ^ ((a1 - 1) * k0) *
+          (fwdOfNat a1).phi 1 1 * (fwdOfNat a1).rho ^ m =
+          ((H_odd k0 + 1 / 2) * (powHalfHi (a1 - 2) * ((fwdOfNat a1).phi 1 1 * (fwdOfNat a1).rho ^ m))) *
+            (2 : ℝ) ^ (((128 * (a1 - 2) : Nat) : Int) - (((a1 - 1) * k0 : Nat) : Int)) := by
+        rw [zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast, zpow_natCast]; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right hm3 (by positivity)).trans (DyadicHi.shift_sound _ _)
+    have h2 : (1 / (backOfNat a2).K) * opt2Sum k0 a2 * (2 : ℝ) ^ (256 * (a2 - 1)) / (2 : ℝ) ^ (a2 * k0) *
+        (fwdOfNat a2).phi 1 1 * (fwdOfNat a2).rho ^ m / (1 - (backOfNat a2).qL) / (2 : ℝ) ^ e ≤
+        (((d_S2fac a2).mul ((d_opt2Sum k0 a2).mul ((d_f11 a2).mul ((d_rhoF a2).pow m)))).shift
+          (((256 * (a2 - 1) : Nat) : Int) - ((a2 * k0 : Nat) : Int) - (e : Int))).toReal := by
+      have ho2 := d_opt2Sum_sound k0 a2 ha2
+      have ho2_nn : 0 ≤ opt2Sum k0 a2 := Finset.sum_nonneg (fun j hj => by
+        have hjlt := Finset.mem_range.mp hj
+        have hlt : 2 * j + 1 ≤ 2 ^ k0 := by rw [show 2 ^ k0 = 2 * 2 ^ (k0 - 1) by rw [← pow_succ', Nat.sub_add_cancel (by omega)]]; omega
+        have : ((2 * j + 1 : Nat) : ℝ) / (2 : ℝ) ^ k0 ≤ 1 := (div_le_one (by positivity)).mpr (by exact_mod_cast hlt)
+        exact mul_nonneg (by positivity) (pow_nonneg (by linarith) _))
+      have hp := (pow_le_pow_left₀ (fwdOfNat a2).hrho_nn hrF2 m).trans (DyadicHi.pow_sound _ _ (by omega))
+      have hm1 := (mul_le_mul hf11_2 hp (pow_nonneg (fwdOfNat a2).hrho_nn m) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hm2 := (mul_le_mul ho2 hm1 (mul_nonneg ((fwdOfNat a2).hpos 1 1 (by norm_num) (by norm_num)).le (pow_nonneg (fwdOfNat a2).hrho_nn m)) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hm3 := (mul_le_mul hS2f hm2 (mul_nonneg ho2_nn (mul_nonneg ((fwdOfNat a2).hpos 1 1 (by norm_num) (by norm_num)).le (pow_nonneg (fwdOfNat a2).hrho_nn m))) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hrew : (1 / (backOfNat a2).K) * opt2Sum k0 a2 * (2 : ℝ) ^ (256 * (a2 - 1)) / (2 : ℝ) ^ (a2 * k0) *
+          (fwdOfNat a2).phi 1 1 * (fwdOfNat a2).rho ^ m / (1 - (backOfNat a2).qL) / (2 : ℝ) ^ e =
+          (((1 / (backOfNat a2).K) / (1 - (backOfNat a2).qL)) * (opt2Sum k0 a2 * ((fwdOfNat a2).phi 1 1 * (fwdOfNat a2).rho ^ m))) *
+            (2 : ℝ) ^ (((256 * (a2 - 1) : Nat) : Int) - ((a2 * k0 : Nat) : Int) - (e : Int)) := by
+        rw [zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_natCast, zpow_natCast, zpow_natCast]; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right hm3 (by positivity)).trans (DyadicHi.shift_sound _ _)
+    have h3 : (3 : ℝ) * (backOfNat a2).psiB 1 1 * (backOfNat a2).rhoB ^ (S - (2 * k0 + m)) / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) * (2 : ℝ) ^ e ≤
+        (((d_S3o2 a2).mul ((d_rhoB a2).pow (S - (2 * k0 + m)))).shift (e : Int)).toReal := by
+      have hp := (pow_le_pow_left₀ (backOfNat a2).hrhoB_nn hrB (S - (2 * k0 + m))).trans (DyadicHi.pow_sound _ _ (by omega))
+      have hm1 := (mul_le_mul hS3f hp (pow_nonneg (backOfNat a2).hrhoB_nn _) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+      have hrew : (3 : ℝ) * (backOfNat a2).psiB 1 1 * (backOfNat a2).rhoB ^ (S - (2 * k0 + m)) / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL) * (2 : ℝ) ^ e =
+          (((3 : ℝ) * (backOfNat a2).psiB 1 1 / (1 - (backOfNat a2).rhoB / (backOfNat a2).qL)) * (backOfNat a2).rhoB ^ (S - (2 * k0 + m))) * (2 : ℝ) ^ (e : Int) := by
+        rw [zpow_natCast]; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right hm1 (by positivity)).trans (DyadicHi.shift_sound _ _)
+    have hsum : _ ≤ (evalEntry S k0 (.opt2 a1 a2 m e)).toReal :=
+      (add_le_add ((add_le_add h1 h2).trans (DyadicHi.add_sound _ _)) h3).trans (DyadicHi.add_sound _ _)
+    exact hb.trans ((mul_le_mul_of_nonneg_left hsum (by positivity)).trans_eq (mul_comm _ _))
+  | triv =>
+    have hsub : BadS_k0 S k0 ⊆ (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ k0 ∣ x) := fun x hx =>
+      Finset.mem_filter.mpr ⟨(Finset.mem_filter.mp (Finset.mem_filter.mp hx).1).1, (Finset.mem_filter.mp hx).2.1⟩
+    have hc : ((BadS_k0 S k0).card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ k0 :=
+      (Nat.cast_le.mpr (Finset.card_le_card hsub)).trans (tail_k0_ge k0)
+    have hsh : (1 / (2 : ℝ) ^ k0) ≤ (DyadicHi.one.shift (-(k0 : Int))).toReal := by
+      have := DyadicHi.shift_sound DyadicHi.one (-(k0 : Int))
+      simpa only [DyadicHi.toReal_one, one_mul, zpow_neg, zpow_natCast, one_div] using this
+    exact hc.trans ((mul_le_mul_of_nonneg_right hsh (by positivity)).trans_eq' (by ring))
+
+private theorem sum_lin_geom_le {a b r : ℝ} (ha : 0 ≤ a) (hb : 0 ≤ b) (hr0 : 0 ≤ r) (hr1 : r < 1) (N : Nat) :
+    ∑ j ∈ Finset.range N, (a + b * (j : ℝ)) * r ^ j ≤ a / (1 - r) + b * r / (1 - r) ^ 2 := by
+  have h1r : 1 - r ≠ 0 := by linarith
+  have htel : ∀ j : Nat, (a + b * (j : ℝ)) * r ^ j =
+      ((a + b * (j : ℝ)) * r ^ j / (1 - r) + b * r ^ (j + 1) / (1 - r) ^ 2) -
+      ((a + b * ((j + 1 : Nat) : ℝ)) * r ^ (j + 1) / (1 - r) + b * r ^ (j + 1 + 1) / (1 - r) ^ 2) := by
+    intro j; push_cast; rw [pow_succ, pow_succ]; field_simp [h1r]; ring
+  rw [Finset.sum_congr rfl (fun j _ => htel j)]
+  rw [Finset.sum_range_sub' (fun j => (a + b * (j : ℝ)) * r ^ j / (1 - r) + b * r ^ (j + 1) / (1 - r) ^ 2) N]
+  have h0 : (a + b * ((0 : Nat) : ℝ)) * r ^ 0 / (1 - r) + b * r ^ (0 + 1) / (1 - r) ^ 2 =
+      a / (1 - r) + b * r / (1 - r) ^ 2 := by
+    simp only [Nat.cast_zero, mul_zero, add_zero, pow_zero, mul_one, zero_add, pow_one]
+  rw [h0]
+  have hnn : 0 ≤ (a + b * (N : ℝ)) * r ^ N / (1 - r) + b * r ^ (N + 1) / (1 - r) ^ 2 := by
+    have : 0 < 1 - r := by linarith
+    positivity
+  linarith
+
+private theorem H_odd_ge4 (k0 : Nat) (hk : 4 ≤ k0) :
+    H_odd k0 ≤ H_odd 4 + (5 / 12 : ℝ) * ((k0 - 4 : Nat) : ℝ) := by
+  obtain ⟨j, rfl⟩ := Nat.exists_eq_add_of_le hk
+  clear hk
+  induction j with
+  | zero => simp
+  | succ j ih =>
+    have h1 := H_odd_step (k0 := 4 + j) (by omega)
+    rw [show 4 + j - 4 = j by omega] at ih
+    rw [show 4 + (j + 1) - 4 = j + 1 by omega, show 4 + (j + 1) = 4 + j + 1 by omega]
+    push_cast; linarith
+
+private theorem sum_H_odd_drop_le (kmax : Nat) :
+    ∑ k0 ∈ Finset.Icc 2 kmax, H_odd k0 / (4 * rhoF3 ^ 2) ^ k0 ≤ 195 / 100 := by
+  set r : ℝ := 1 / (4 * rhoF3 ^ 2)
+  have hr0 : 0 ≤ r := by dsimp [r]; unfold rhoF3; positivity
+  have hr1 : r < 1 := by dsimp [r]; unfold rhoF3; norm_num
+  have hH2 : H_odd 2 = 4 / 3 := by unfold H_odd; norm_num [Finset.sum_range_succ]
+  have hH3 : H_odd 3 = 176 / 105 := by unfold H_odd; norm_num [Finset.sum_range_succ]
+  have hH4 : H_odd 4 = 91072 / 45045 := by unfold H_odd; norm_num [Finset.sum_range_succ]
+  have hpad : ∑ k0 ∈ Finset.Icc 2 kmax, H_odd k0 / (4 * rhoF3 ^ 2) ^ k0 ≤
+      ∑ k0 ∈ Finset.Icc 2 (max kmax 4), H_odd k0 / (4 * rhoF3 ^ 2) ^ k0 := by
+    apply Finset.sum_le_sum_of_subset_of_nonneg (Finset.Icc_subset_Icc_right (le_max_left _ _))
+    intro k _ _; exact div_nonneg (H_odd_nonneg k) (by unfold rhoF3; positivity)
+  obtain ⟨n, hn⟩ := Nat.exists_eq_add_of_le (le_max_right kmax 4)
+  rw [hn] at hpad
+  have hsplit : Finset.Icc 2 (4 + n) = insert 2 (insert 3 (Finset.Icc 4 (4 + n))) := by
+    ext x; simp only [Finset.mem_Icc, Finset.mem_insert]; omega
+  rw [hsplit, Finset.sum_insert (by simp), Finset.sum_insert (by simp)] at hpad
+  have htail : ∑ k0 ∈ Finset.Icc 4 (4 + n), H_odd k0 / (4 * rhoF3 ^ 2) ^ k0 ≤
+      r ^ 4 * (H_odd 4 / (1 - r) + (5 / 12 : ℝ) * r / (1 - r) ^ 2) := by
+    have hbij : ∑ k0 ∈ Finset.Icc 4 (4 + n), H_odd k0 / (4 * rhoF3 ^ 2) ^ k0 =
+        ∑ j ∈ Finset.range (n + 1), H_odd (4 + j) * r ^ (4 + j) := by
+      refine Finset.sum_bij (fun k _ => k - 4) ?_ ?_ ?_ ?_
+      · intro k hk; dsimp only; rw [Finset.mem_Icc] at hk; rw [Finset.mem_range]; omega
+      · intro a ha b hb hab; dsimp only at hab; rw [Finset.mem_Icc] at ha hb; omega
+      · intro j hj; rw [Finset.mem_range] at hj
+        exact ⟨4 + j, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, by dsimp only; omega⟩
+      · intro k hk; dsimp only; rw [Finset.mem_Icc] at hk
+        rw [show 4 + (k - 4) = k by omega]; dsimp [r]; rw [one_div_pow, mul_one_div]
+    rw [hbij]
+    have hle : ∑ j ∈ Finset.range (n + 1), H_odd (4 + j) * r ^ (4 + j) ≤
+        r ^ 4 * ∑ j ∈ Finset.range (n + 1), (H_odd 4 + (5 / 12 : ℝ) * (j : ℝ)) * r ^ j := by
+      rw [Finset.mul_sum]
+      apply Finset.sum_le_sum; intro j _
+      have hH := H_odd_ge4 (4 + j) (by omega)
+      rw [show 4 + j - 4 = j by omega] at hH
+      have hpow : r ^ (4 + j) = r ^ 4 * r ^ j := pow_add r 4 j
+      rw [hpow, show r ^ 4 * ((H_odd 4 + (5 / 12 : ℝ) * (j : ℝ)) * r ^ j) =
+          (H_odd 4 + (5 / 12 : ℝ) * (j : ℝ)) * (r ^ 4 * r ^ j) by ring]
+      exact mul_le_mul_of_nonneg_right hH (mul_nonneg (pow_nonneg hr0 4) (pow_nonneg hr0 j))
+    exact hle.trans (mul_le_mul_of_nonneg_left
+      (sum_lin_geom_le (H_odd_nonneg 4) (by norm_num) hr0 hr1 (n + 1)) (pow_nonneg hr0 4))
+  have h2_eq : H_odd 2 / (4 * rhoF3 ^ 2) ^ 2 = (4 / 3 : ℝ) * r ^ 2 := by
+    rw [hH2]; dsimp [r]; rw [one_div_pow, mul_one_div]
+  have h3_eq : H_odd 3 / (4 * rhoF3 ^ 2) ^ 3 = (176 / 105 : ℝ) * r ^ 3 := by
+    rw [hH3]; dsimp [r]; rw [one_div_pow, mul_one_div]
+  have hnum : (4 / 3 : ℝ) * r ^ 2 + (176 / 105 : ℝ) * r ^ 3 +
+      r ^ 4 * ((91072 / 45045 : ℝ) / (1 - r) + (5 / 12 : ℝ) * r / (1 - r) ^ 2) ≤ 195 / 100 := by
+    dsimp [r]; unfold rhoF3; norm_num
+  rw [h2_eq, h3_eq] at hpad
+  rw [hH4] at htail
+  linarith
+
+private theorem evalBadDropStep_sound (i d : Nat) (hi2 : 2 ≤ i) (hi_lt : i < 4096) (hd : d ≤ 255) :
+    ((BadDrop i d).card : ℝ) ≤ (evalBadDropStep i d).toReal * (2 : ℝ) ^ 256 := by
+  have hb := badDrop_step_bound_w11 i d hi2 hd (fun _ => true)
+  simp only [↓reduceIte] at hb
+  have hrF3 : rhoF3 ≤ d_rhoF3.toReal := by unfold rhoF3 d_rhoF3 DyadicHi.toReal; norm_num
+  have hrF3_nn : 0 ≤ rhoF3 := by unfold rhoF3; norm_num
+  have hrF3_ne : rhoF3 ≠ 0 := by unfold rhoF3; norm_num
+  have hpos_le : (∑ k0 ∈ Finset.Icc 2 (min d (i / 2)),
+      (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 * phiF3 1 1 * rhoF3 ^ (i - 2 * k0)) ≤
+      (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (195 / 100 : ℝ) * (2 : ℝ) ^ d * phiF3 1 1 * rhoF3 ^ i := by
+    have hfactor : ∀ k0 ∈ Finset.Icc 2 (min d (i / 2)),
+        (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 * phiF3 1 1 * rhoF3 ^ (i - 2 * k0) =
+        ((if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (2 : ℝ) ^ d * phiF3 1 1 * rhoF3 ^ i) *
+          (H_odd k0 / (4 * rhoF3 ^ 2) ^ k0) := by
+      intro k0 hk0
+      have h2k : 2 * k0 ≤ i := by have := (Finset.mem_Icc.mp hk0).2; omega
+      have hpow_i : rhoF3 ^ i = rhoF3 ^ (i - 2 * k0) * (rhoF3 ^ 2) ^ k0 := by
+        rw [← pow_mul, ← pow_add, Nat.sub_add_cancel h2k]
+      have hmul_pow : (4 * rhoF3 ^ 2) ^ k0 = (4 : ℝ) ^ k0 * (rhoF3 ^ 2) ^ k0 := mul_pow 4 (rhoF3 ^ 2) k0
+      have hne4 : (4 : ℝ) ^ k0 ≠ 0 := by positivity
+      have hner : (rhoF3 ^ 2) ^ k0 ≠ 0 := pow_ne_zero _ (pow_ne_zero _ hrF3_ne)
+      rw [hpow_i, hmul_pow]
+      field_simp [hne4, hner]
+    rw [Finset.sum_congr rfl hfactor, ← Finset.mul_sum]
+    have hnn : 0 ≤ (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (2 : ℝ) ^ d * phiF3 1 1 * rhoF3 ^ i := by
+      have hf := (phiF3_pos (C := 1) (D := 1) (by norm_num) (by norm_num)).le
+      split_ifs <;> positivity
+    exact (mul_le_mul_of_nonneg_left (sum_H_odd_drop_le (min d (i / 2))) hnn).trans_eq (by ring)
+  have hd1_comb :
+      (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 1) +
+      (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 2) +
+      (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (195 / 100 : ℝ) * (2 : ℝ) ^ d * phiF3 1 1 * rhoF3 ^ i ≤
+      (((if i + d ≤ 248 then d_dropC_small else d_dropC_big).mul (d_rhoF3.pow (i - 2))).shift (d : Int)).toReal := by
+    have hr1 : rhoF3 ^ (i - 1) = rhoF3 * rhoF3 ^ (i - 2) := by
+      rw [← pow_succ', show i - 2 + 1 = i - 1 by omega]
+    have hr2 : rhoF3 ^ i = rhoF3 ^ 2 * rhoF3 ^ (i - 2) := by
+      rw [← pow_add, show 2 + (i - 2) = i by omega]
+    have hc_le : (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * phiF3 2 1 * (1 + rhoF3) +
+        (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (195 / 100 : ℝ) * phiF3 1 1 * rhoF3 ^ 2 ≤
+        (if i + d ≤ 248 then d_dropC_small else d_dropC_big).toReal := by
+      have hf1 := phiF3_11_le
+      have hf2 := phiF3_21_le
+      split_ifs
+      · unfold d_dropC_small DyadicHi.toReal rhoF3; norm_num at *; linarith
+      · unfold d_dropC_big DyadicHi.toReal rhoF3; norm_num at *; linarith
+    have hp := (pow_le_pow_left₀ hrF3_nn hrF3 (i - 2)).trans (DyadicHi.pow_sound _ (i - 2) (by omega))
+    have hmul := (mul_le_mul hc_le hp (pow_nonneg hrF3_nn _) (DyadicHi.toReal_nonneg _)).trans (DyadicHi.mul_sound _ _)
+    have hrew : (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 1) +
+        (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 2) +
+        (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (195 / 100 : ℝ) * (2 : ℝ) ^ d * phiF3 1 1 * rhoF3 ^ i =
+        (((if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * phiF3 2 1 * (1 + rhoF3) +
+          (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * (195 / 100 : ℝ) * phiF3 1 1 * rhoF3 ^ 2) *
+          rhoF3 ^ (i - 2)) * (2 : ℝ) ^ (d : Int) := by
+      rw [hr1, hr2, zpow_natCast]; ring
+    rw [hrew]; exact (mul_le_mul_of_nonneg_right hmul (by positivity)).trans (DyadicHi.shift_sound _ _)
+  have htail : (if d < i / 2 then 1 / (2 : ℝ) ^ (i - d) else 1 / (2 : ℝ) ^ (i / 2 + 1)) ≤
+      (DyadicHi.one.shift (-(if d < i / 2 then ((i - d : Nat) : Int) else ((i / 2 + 1 : Nat) : Int)))).toReal := by
+    have := DyadicHi.shift_sound DyadicHi.one (-(if d < i / 2 then ((i - d : Nat) : Int) else ((i / 2 + 1 : Nat) : Int)))
+    simp only [DyadicHi.toReal_one, one_mul, zpow_neg] at this
+    split_ifs at this ⊢ <;> simpa only [zpow_natCast, one_div] using this
+  have hd2 : (if i + d ≤ 255 then (0 : ℝ) else (2 : ℝ) ^ (2 * d) / (2 : ℝ) ^ 256 * (6 + 3 * (i : ℝ) / 2)) ≤
+      (if i + d ≤ 255 then DyadicHi.zero else (DyadicHi.ofNat (12 + 3 * i)).shift ((2 * d : Int) - 257)).toReal := by
+    split_ifs
+    · rw [DyadicHi.toReal_zero]
+    · have hn : ((12 + 3 * i : Nat) : ℝ) ≤ (DyadicHi.ofNat (12 + 3 * i)).toReal := DyadicHi.ofNat_sound _
+      have hrew : (2 : ℝ) ^ (2 * d) / (2 : ℝ) ^ 256 * (6 + 3 * (i : ℝ) / 2) =
+          ((12 + 3 * i : Nat) : ℝ) * (2 : ℝ) ^ ((2 * d : Int) - 257) := by
+        have he : ((2 * d : Int) - 257) = ((2 * d : Nat) : Int) - ((256 : Nat) : Int) - (1 : Int) := by push_cast; omega
+        rw [he, zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0),
+            zpow_natCast, zpow_natCast, zpow_one]
+        push_cast; ring
+      rw [hrew]; exact (mul_le_mul_of_nonneg_right hn (by positivity)).trans (DyadicHi.shift_sound _ _)
+  have hd1_le :
+      (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 1) +
+      (if i + d ≤ 248 then (129 / 128 : ℝ) else 2) * (2 : ℝ) ^ d * phiF3 2 1 * rhoF3 ^ (i - 2) +
+      (∑ k0 ∈ Finset.Icc 2 (min d (i / 2)),
+        (if i + d ≤ 248 then (257 / 64 : ℝ) else 8) * H_odd k0 * (2 : ℝ) ^ d / (4 : ℝ) ^ k0 * phiF3 1 1 * rhoF3 ^ (i - 2 * k0)) ≤
+      (((if i + d ≤ 248 then d_dropC_small else d_dropC_big).mul (d_rhoF3.pow (i - 2))).shift (d : Int)).toReal := by
+    linarith
+  have hsum : _ ≤ (evalBadDropStep i d).toReal :=
+    (add_le_add ((add_le_add hd1_le htail).trans (DyadicHi.add_sound _ _)) hd2).trans (DyadicHi.add_sound _ _)
+  exact hb.trans ((mul_le_mul_of_nonneg_left hsum (by positivity)).trans_eq (mul_comm _ _))
 
 def BadStack (E : LocalKernel.EnvSchedule) : Finset Nat :=
   (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => ¬ LocalKernel.GoodStack E x)
 
-private theorem env_drop_consts :
-    let rA : ℝ := rhoEO3 / rhoF3 ^ 2
-    let rB : ℝ := 1 / (4 * rhoF3 ^ 2)
-    let C0 : ℝ := (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3
-    let CA : ℝ := (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rA / (rA - 1))
-    let CB : ℝ := (4 / 1000 : ℝ) * phiF3 1 1 * (rB / (1 - rB))
-    CA ≤ 244 / 10 ∧ C0 + CB ≤ 514 / 10 ∧
-    (2 * rA) ^ 12 * rhoF3 ^ 37 ≤ 37 / 10000 ∧
-    (4 : ℝ) ^ 12 * rhoF3 ^ 37 ≤ 924 / 1000 := by
-  dsimp only
-  obtain ⟨_, _, _, _, hF321, hF311⟩ := phi_consts
-  obtain ⟨hrF37, _, _⟩ := rhoF3_pows_w10
-  have hrF3_pos : (0 : ℝ) < rhoF3 := by unfold rhoF3; norm_num
-  have hrEO3_pos : (0 : ℝ) < rhoEO3 := by unfold rhoEO3; norm_num
-  have hrA_gt : (0 : ℝ) < rhoEO3 / rhoF3 ^ 2 - 1 := by unfold rhoEO3 rhoF3; norm_num
-  have hrB_lt : (0 : ℝ) < 1 - 1 / (4 * rhoF3 ^ 2) := by unfold rhoF3; norm_num
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · have h1 : (1 / 1000 : ℝ) * phiF3 2 1 / rhoEO3 * (rhoEO3 / rhoF3 ^ 2 / (rhoEO3 / rhoF3 ^ 2 - 1)) ≤
-        (1 / 1000 : ℝ) * 2589 / rhoEO3 * (rhoEO3 / rhoF3 ^ 2 / (rhoEO3 / rhoF3 ^ 2 - 1)) := by
-      have hnn : 0 ≤ rhoEO3 / rhoF3 ^ 2 / (rhoEO3 / rhoF3 ^ 2 - 1) := by positivity
-      gcongr
-    refine h1.trans ?_; unfold rhoEO3 rhoF3; norm_num
-  · have h1 : (2 / 1000 : ℝ) * phiF3 2 1 / rhoF3 + (4 / 1000 : ℝ) * phiF3 1 1 * (1 / (4 * rhoF3 ^ 2) / (1 - 1 / (4 * rhoF3 ^ 2))) ≤
-        (2 / 1000 : ℝ) * 2589 / rhoF3 + (4 / 1000 : ℝ) * 6703 * (1 / (4 * rhoF3 ^ 2) / (1 - 1 / (4 * rhoF3 ^ 2))) := by
-      have hnn : 0 ≤ 1 / (4 * rhoF3 ^ 2) / (1 - 1 / (4 * rhoF3 ^ 2)) := by positivity
-      gcongr
-    refine h1.trans ?_; unfold rhoF3; norm_num
-  · have h1 : (2 * (rhoEO3 / rhoF3 ^ 2)) ^ 12 * rhoF3 ^ 37 ≤
-        (2 * (rhoEO3 / rhoF3 ^ 2)) ^ 12 * ((184634 / 100000 : ℝ) * (2 : ℝ) ^ (-25 : Int)) :=
-      mul_le_mul_of_nonneg_left hrF37 (by positivity)
-    refine h1.trans ?_; unfold rhoEO3 rhoF3; norm_num
-  · have h1 : (4 : ℝ) ^ 12 * rhoF3 ^ 37 ≤ (4 : ℝ) ^ 12 * ((184634 / 100000 : ℝ) * (2 : ℝ) ^ (-25 : Int)) :=
-      mul_le_mul_of_nonneg_left hrF37 (by positivity)
-    refine h1.trans ?_; norm_num
-
-private theorem env475_drop_formula (i : Nat) (h1 : 1 ≤ i) (h2 : i < 475)
-    (hdrop : LocalKernel.env475PostW i < (if i = 0 then 258 else LocalKernel.env475PostW (i - 1)))
-    (hramp : LocalKernel.env475PostW i < 475 - i + 1) :
-    let d := 257 - LocalKernel.env475PostW i
-    let q := d / 12
-    let r := d % 12
-    q < 7 ∧ r < 12 ∧ LocalKernel.env475PostW i ≤ 257 ∧
-    i = 37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0) := by
-  rw [if_neg (by omega)] at hdrop
-  unfold LocalKernel.env475PostW at hdrop hramp ⊢
-  dsimp only
-  split_ifs <;> omega
-
-private theorem env490_drop_formula (i : Nat) (h1 : 1 ≤ i) (h2 : i < 490)
-    (hdrop : LocalKernel.env490PostW i < (if i = 0 then 258 else LocalKernel.env490PostW (i - 1)))
-    (hramp : LocalKernel.env490PostW i < 490 - i + 1) :
-    let d := 257 - LocalKernel.env490PostW i
-    let q := d / 12
-    let r := d % 12
-    q < 6 ∧ r < 12 ∧ LocalKernel.env490PostW i ≤ 257 ∧
-    i = 37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0) := by
-  rw [if_neg (by omega)] at hdrop
-  unfold LocalKernel.env490PostW at hdrop hramp ⊢
-  dsimp only
-  split_ifs <;> omega
-
-theorem skywalk_badStack475_card :
-    ((BadStack LocalKernel.env475).card : ℝ) ≤ (47 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256 := by
-  let Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 31 ∣ x)
-  let Smid := (Finset.range 6).biUnion (fun q => (Finset.Icc 1 5).biUnion (fun r => BadS_k0 475 (5 * q + r)))
-  let Senv := (Finset.range 7).biUnion (fun q => (Finset.range 12).biUnion (fun r =>
-    BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31))
-  have hcov : BadStack LocalKernel.env475 ⊆ BadS_k0 475 0 ∪ Smid ∪ Stail ∪ Senv := by
+theorem badStack_of_dyadic (E : LocalKernel.EnvSchedule) (S : Nat) (pw : Nat → Nat)
+    (plan : List BadSEntry) (num den : Nat)
+    (hS_eq : E.S = S) (hpw_eq : E.postW = pw)
+    (hden : 0 < den)
+    (hdrops_ok : ∀ i, 1 ≤ i → i < S → pw i < (if i = 0 then 258 else pw (i - 1)) → pw i < S - i + 1 →
+      2 ≤ i ∧ 2 ≤ pw i ∧ pw i ≤ 257)
+    (hvalid : validPlanAux S 0 plan = true)
+    (hle : (evalEnvTotal S pw plan).leRat num den = true) :
+    ((BadStack E).card : ℝ) ≤ (num : ℝ) / (den : ℝ) * (2 : ℝ) ^ 256 := by
+  have hS_bd : S ≤ 510 := hS_eq ▸ E.S_bounds.2
+  set K := plan.length
+  let Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ K ∣ x)
+  let SbadS := (Finset.range K).biUnion (fun k0 => BadS_k0 S k0)
+  let dropIdx := (Finset.range S).filter (fun i =>
+    1 ≤ i ∧ pw i < (if i = 0 then 258 else pw (i - 1)) ∧ pw i < S - i + 1)
+  let Senv := dropIdx.biUnion (fun i => BadDrop i (257 - pw i))
+  have hcov : BadStack E ⊆ SbadS ∪ Stail ∪ Senv := by
     intro x hx
     have hxI := (Finset.mem_filter.mp hx).1
     have hng := (Finset.mem_filter.mp hx).2
-    by_cases h31 : 2 ^ 31 ∣ x
-    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hxI, h31⟩))
-    · by_cases hterm : (SkywalkNat.step^[475] (SkywalkNat.init x ECDSAAdd.p)).u = 0
-      · -- Must fail an envelope drop!
-        apply Finset.mem_union_right
-        have hne : ¬ ∀ i, 1 ≤ i → i < LocalKernel.env475.S →
-            LocalKernel.env475.postW i < LocalKernel.env475.preW i →
-            LocalKernel.env475.postW i < LocalKernel.env475.S - i + 1 →
-            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
-            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v < 2 ^ (LocalKernel.env475.postW i - 1) :=
-          fun hall => hng ⟨hterm, hall⟩
-        push_neg at hne
-        obtain ⟨i, hi1, hi2, hdrop, hramp, hge⟩ := hne
-        have hf := env475_drop_formula i hi1 hi2 hdrop hramp
-        set d := 257 - LocalKernel.env475PostW i
-        have hd_eq : 12 * (d / 12) + d % 12 = d := by omega
-        have hw_eq : LocalKernel.env475PostW i - 1 = 256 - (12 * (d / 12) + d % 12) := by omega
-        refine Finset.mem_biUnion.mpr ⟨d / 12, Finset.mem_range.mpr hf.1,
-          Finset.mem_biUnion.mpr ⟨d % 12, Finset.mem_range.mpr hf.2.1,
-            Finset.mem_filter.mpr ⟨hxI, h31, ?_⟩⟩⟩
-        rw [← hf.2.2.2, ← hw_eq]; exact hge
-      · -- In `BadS 475` with `¬ 2^31 ∣ x`, so `k0 ∈ 0..30`!
-        apply Finset.mem_union_left; apply Finset.mem_union_left
-        have hbad : x ∈ BadS 475 := Finset.mem_filter.mpr ⟨hxI, hterm⟩
-        have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨30, h31⟩
-        let k0 := Nat.find hex
-        have hk0_lt : k0 < 31 := by have := Nat.find_min' hex h31; omega
-        have hdiv : 2 ^ k0 ∣ x := by
-          cases hk : k0 with
-          | zero => simp
-          | succ j =>
-            have hnj := Nat.find_min hex (show j < k0 by omega)
-            push_neg at hnj; exact hnj
-        have hodd : (x / 2 ^ k0) % 2 = 1 := by
-          have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
-          by_contra he; apply hndiv
-          obtain ⟨q, hq⟩ := hdiv
-          have hq_even : q % 2 = 0 := by
-            have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
-            omega
-          refine ⟨q / 2, ?_⟩; rw [hq, pow_succ, mul_assoc]; congr 1; omega
-        have hmem_k0 : x ∈ BadS_k0 475 k0 := Finset.mem_filter.mpr ⟨hbad, hdiv, hodd⟩
-        by_cases hz : k0 = 0
-        · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
-        · refine Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨(k0 - 1) / 5, Finset.mem_range.mpr (by omega),
-            Finset.mem_biUnion.mpr ⟨(k0 - 1) % 5 + 1, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩⟩)
-          rwa [show 5 * ((k0 - 1) / 5) + ((k0 - 1) % 5 + 1) = k0 by omega]
-  have hcard_total : ((BadStack LocalKernel.env475).card : ℝ) ≤
-      ((BadS_k0 475 0).card : ℝ) +
-      (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 475 (5 * q + r)).card : ℝ)) +
-      (Stail.card : ℝ) +
-      (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
-        ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ)) := by
-    have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
-    have h2 := Finset.card_union_le (BadS_k0 475 0 ∪ Smid) Stail
-    have h3 := Finset.card_union_le (BadS_k0 475 0) Smid
-    have h4 : Smid.card ≤ ∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 475 (5 * q + r)).card :=
-      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
-    have h5 : Senv.card ≤ ∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
-        (BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card :=
-      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
-    have hnat : (BadStack LocalKernel.env475).card ≤ (BadS_k0 475 0).card +
-        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 475 (5 * q + r)).card) + Stail.card +
-        (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
-          (BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card) := by omega
-    exact_mod_cast hnat
-  obtain ⟨hrF236, hrF237, _, _⟩ := rhoF_pows_w10
-  obtain ⟨hrB237, hrB239, _, _⟩ := rhoB_pows_w10
-  obtain ⟨hrB7237, hrB7239, _, _⟩ := rhoB7_pows_w10
-  obtain ⟨_, hrF365, _⟩ := rhoF3_pows_w10
-  obtain ⟨hphiF21, hphiF11, hphiB11, hpsiB711, _, _⟩ := phi_consts
-  -- Piece 1: `k0 = 0` (`m=237, e=624, Lb=237`) ≤ `2 / 10^12 * 2^256`
-  have h0_bound : ((BadS_k0 475 0).card : ℝ) ≤ (2 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
-    have hb0 := badS_k0_zero_bound 475 237 624 (by decide) (by decide)
-    rw [show 475 - (1 + 237) = 237 by decide] at hb0
-    have ht1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 237 ≤ 2 / 10 ^ 13 := by
-      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 237 ≤
-          (2 : ℝ) ^ 384 / 1000 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) := by
-        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hrF_nn : 0 ≤ rhoF ^ 237 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-427 : Int) = (2 : ℝ) ^ (-43 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) =
-          (1215 * 134917 / 100000000 : ℝ) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-427 : Int)) := by
-        generalize (2 : ℝ) ^ 384 = P384; ring
-      rw [heq, hz]; norm_num
-    have ht2 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 237 / (1 - qL)) / (2 : ℝ) ^ 624 ≤ 7 / 10 ^ 13 := by
-      have h1 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 237 / (1 - qL)) / (2 : ℝ) ^ 624 ≤
-          ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) / (1 - qL)) / (2 : ℝ) ^ 624 := by
-        have hq : 0 < 1 - qL := by unfold qL; norm_num
-        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hrF_nn : 0 ≤ rhoF ^ 237 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-427 : Int) / (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-27 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 624,
-            ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((134917 / 100000 : ℝ) * (2 : ℝ) ^ (-427 : Int)) / (1 - qL)) / (2 : ℝ) ^ 624 =
-          (108 / (3125 * 10 ^ 6 : ℝ) * 1215 * (134917 / 100000 : ℝ) / (1 - qL)) *
-            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-427 : Int) / (2 : ℝ) ^ 624) := by
-        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 624 = P624; ring
-      rw [heq, hz]; unfold qL; norm_num
-    have ht3 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 237 / (1 - rhoB7 / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 237 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 ≤ 8 / 10 ^ 13 := by
-      have h1 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 237 / (1 - rhoB7 / qL) +
-          (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 237 / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 ≤
-          ((246 / 100 : ℝ) * 1536 * ((105600 / 100000 : ℝ) * (2 : ℝ) ^ (-677 : Int)) / (1 - rhoB7 / qL) +
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((141541 / 100000 : ℝ) * (2 : ℝ) ^ (-426 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 := by
-        have hq1 : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
-        have hq2 : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
-        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
-        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-        have hr1 : 0 ≤ rhoB7 ^ 237 := by unfold rhoB7; positivity
-        have hr2 : 0 ≤ rhoB ^ 237 := by unfold rhoB; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz1 : (2 : ℝ) ^ (-677 : Int) * (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-53 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 624, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have hz2 : (2 : ℝ) ^ (-426 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 624 = (2 : ℝ) ^ (-58 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 624,
-            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : ((246 / 100 : ℝ) * 1536 * ((105600 / 100000 : ℝ) * (2 : ℝ) ^ (-677 : Int)) / (1 - rhoB7 / qL) +
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((141541 / 100000 : ℝ) * (2 : ℝ) ^ (-426 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 624 =
-          ((246 / 100 : ℝ) * 1536 * (105600 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-677 : Int) * (2 : ℝ) ^ 624) +
-          (2 * 1539 * (141541 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-426 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 624) := by
-        generalize (2 : ℝ) ^ 624 = P624; ring
-      rw [heq, hz1, hz2]; unfold rhoB7 rhoB qL; norm_num
-    have hsum_t : _ + _ + _ ≤ (2 / 10 ^ 12 : ℝ) := (add_le_add (add_le_add ht1 ht2) ht3).trans (by norm_num)
-    exact hb0.trans ((mul_le_mul_of_nonneg_left hsum_t (by positivity)).trans_eq (mul_comm _ _))
-  -- Piece 2: `1 ≤ k0 ≤ 30` (`q ∈ range 6, r ∈ Icc 1 5`, `m = 236 - 6q - r`, `e = 631 - 10q - 3r`) ≤ `3632 / 10^12 * 2^256`
-  have hmid_bound : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 475 (5 * q + r)).card : ℝ)) ≤
-      (3632 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
-    have hrhoF_ne : rhoF ≠ 0 := by unfold rhoF; norm_num
-    have hrhoB_ne : rhoB ≠ 0 := by unfold rhoB; norm_num
-    have hrhoB7_ne : rhoB7 ≠ 0 := by unfold rhoB7; norm_num
-    have hrhoEO0_ne : rhoEO0 ≠ 0 := by unfold rhoEO0; norm_num
-    let b1 : ℝ := (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 236 / rhoEO0
-    let q1 : ℝ := rhoEO0 ^ 5 / rhoF ^ 6
-    let r1 : ℝ := rhoEO0 / rhoF
-    let b2 : ℝ := (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 236 / (1 - qL) / (2 : ℝ) ^ 631
-    let q2 : ℝ := (2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)
-    let r2 : ℝ := 8 / (16 * rhoF)
-    let b3a : ℝ := (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 239 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631
-    let q3a : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)
-    let r3a : ℝ := 1 / (8 * rhoB7)
-    let b3b : ℝ := (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 239 / (1 - rhoB / qL) * (2 : ℝ) ^ 631
-    let q3b : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)
-    let r3b : ℝ := 1 / (8 * rhoB)
-    have hper_qr : ∀ q ∈ Finset.range 6, ∀ r ∈ Finset.Icc 1 5,
-        ((BadS_k0 475 (5 * q + r)).card : ℝ) ≤
-          (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
-            b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r) := by
-      intro q hq r hr
-      have hq6 : q < 6 := Finset.mem_range.mp hq
-      obtain ⟨hr1, hr5⟩ := Finset.mem_Icc.mp hr
-      set k0 := 5 * q + r
-      set m := 236 - 6 * q - r
-      set e := 631 - 10 * q - 3 * r
-      have hcall := badS_k0_pos_bound 475 k0 m e (by decide) (by omega) (by omega) (by omega)
-      refine hcall.trans_eq ?_
-      apply congrArg ((2 : ℝ) ^ 256 * ·)
-      have hm_add : m + (6 * q + r) = 236 := by omega
-      have he_add : e + (10 * q + 3 * r) = 631 := by omega
-      have hLb_add : (475 - (2 * k0 + m)) + (4 * q + r) = 239 := by omega
-      have hk_sub : (k0 - 1) + 1 = 5 * q + r := by omega
-      have hpow_m : rhoF ^ m = rhoF ^ 236 / (rhoF ^ 6) ^ q / rhoF ^ r := by
-        have h1 : rhoF ^ 236 = rhoF ^ m * ((rhoF ^ 6) ^ q * rhoF ^ r) := by
-          rw [← pow_mul, ← pow_add, ← pow_add, hm_add]
-        rw [h1]; field_simp [hrhoF_ne]
-      have hpow_e : (2 : ℝ) ^ e = (2 : ℝ) ^ 631 / ((2 : ℝ) ^ 10) ^ q / (8 : ℝ) ^ r := by
-        have h1 : (2 : ℝ) ^ 631 = (2 : ℝ) ^ e * (((2 : ℝ) ^ 10) ^ q * (8 : ℝ) ^ r) := by
-          rw [show (8 : ℝ) = (2 : ℝ) ^ 3 by norm_num, ← pow_mul, ← pow_mul, ← pow_add, ← pow_add, he_add]
-        rw [h1]; field_simp
-      have hpow_eo : rhoEO0 ^ (k0 - 1) = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r / rhoEO0 := by
-        have h1 : rhoEO0 ^ (k0 - 1) * rhoEO0 = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r := by
-          rw [← pow_succ, hk_sub, ← pow_mul, ← pow_add]
-        rw [← h1]; field_simp [hrhoEO0_ne]
-      have hpow_16 : (16 : ℝ) ^ k0 = ((16 : ℝ) ^ 5) ^ q * (16 : ℝ) ^ r := by
-        dsimp only [k0]; rw [pow_add, pow_mul]
-      have hpow_Lb1 : rhoB7 ^ (475 - (2 * k0 + m)) = rhoB7 ^ 239 / (rhoB7 ^ 4) ^ q / rhoB7 ^ r := by
-        have h1 : rhoB7 ^ 239 = rhoB7 ^ (475 - (2 * k0 + m)) * ((rhoB7 ^ 4) ^ q * rhoB7 ^ r) := by
-          rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
-        rw [h1]; field_simp [hrhoB7_ne]
-      have hpow_Lb2 : rhoB ^ (475 - (2 * k0 + m)) = rhoB ^ 239 / (rhoB ^ 4) ^ q / rhoB ^ r := by
-        have h1 : rhoB ^ 239 = rhoB ^ (475 - (2 * k0 + m)) * ((rhoB ^ 4) ^ q * rhoB ^ r) := by
-          rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
-        rw [h1]; field_simp [hrhoB_ne]
-      dsimp only [b1, q1, r1, b2, q2, r2, b3a, q3a, r3a, b3b, q3b, r3b]
-      rw [hpow_m, hpow_e, hpow_eo, hpow_16, hpow_Lb1, hpow_Lb2]
-      have hq1_p : (rhoEO0 ^ 5 / rhoF ^ 6) ^ q = (rhoEO0 ^ 5) ^ q / (rhoF ^ 6) ^ q := div_pow _ _ _
-      have hr1_p : (rhoEO0 / rhoF) ^ r = rhoEO0 ^ r / rhoF ^ r := div_pow _ _ _
-      have hq2_p : ((2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)) ^ q = ((2 : ℝ) ^ 10) ^ q / (((16 : ℝ) ^ 5) ^ q * (rhoF ^ 6) ^ q) := by
-        rw [div_pow, mul_pow]
-      have hr2_p : (8 / (16 * rhoF)) ^ r = (8 : ℝ) ^ r / ((16 : ℝ) ^ r * rhoF ^ r) := by rw [div_pow, mul_pow]
-      have hq3a_p : (1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB7 ^ 4) ^ q) := by
-        rw [one_div_pow, mul_pow, one_div]
-      have hr3a_p : (1 / (8 * rhoB7)) ^ r = 1 / ((8 : ℝ) ^ r * rhoB7 ^ r) := by rw [one_div_pow, mul_pow, one_div]
-      have hq3b_p : (1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB ^ 4) ^ q) := by
-        rw [one_div_pow, mul_pow, one_div]
-      have hr3b_p : (1 / (8 * rhoB)) ^ r = 1 / ((8 : ℝ) ^ r * rhoB ^ r) := by rw [one_div_pow, mul_pow, one_div]
-      rw [hq1_p, hr1_p, hq2_p, hr2_p, hq3a_p, hr3a_p, hq3b_p, hr3b_p]
-      have hqL1 : 1 - qL ≠ 0 := by unfold qL; norm_num
-      have hqLa : 1 - rhoB7 / qL ≠ 0 := by unfold rhoB7 qL; norm_num
-      have hqLb : 1 - rhoB / qL ≠ 0 := by unfold rhoB qL; norm_num
-      field_simp [hrhoF_ne, hrhoB_ne, hrhoB7_ne, hrhoEO0_ne, hqL1, hqLa, hqLb]
-      generalize (2 : ℝ) ^ 384 = P384; generalize (2 : ℝ) ^ 631 = P631; generalize (2 : ℝ) ^ 1024 = P1024; ring
-    have hsum_qr := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_qr q hq r hr))
-    have hsep : ∀ (b A B : ℝ),
-        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) =
-        b * (∑ q ∈ Finset.range 6, A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) := fun b A B => by
-      have h1 : ∀ q, (∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) = (b * A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) :=
-        fun q => by rw [Finset.mul_sum]
-      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
-    have hpull : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.Icc 1 5,
-        (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
-          b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r)) =
-        (2 : ℝ) ^ 256 * (
-          b1 * (∑ q ∈ Finset.range 6, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) +
-          b2 * (∑ q ∈ Finset.range 6, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) +
-          b3a * (∑ q ∈ Finset.range 6, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) +
-          b3b * (∑ q ∈ Finset.range 6, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r)) := by
-      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
-    rw [hpull] at hsum_qr
-    have hG1q : ∑ q ∈ Finset.range 6, q1 ^ q ≤ 58 := by
-      dsimp only [q1]; unfold rhoEO0 rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG1r : ∑ r ∈ Finset.Icc 1 5, r1 ^ r ≤ 36 / 10 := by
-      dsimp only [r1]; unfold rhoEO0 rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG2q : ∑ q ∈ Finset.range 6, q2 ^ q ≤ 362 / 10 := by
-      dsimp only [q2]; unfold rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG2r : ∑ r ∈ Finset.Icc 1 5, r2 ^ r ≤ 353 / 10 := by
-      dsimp only [r2]; unfold rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG3aq : ∑ q ∈ Finset.range 6, q3a ^ q ≤ 222 := by
-      dsimp only [q3a]; unfold rhoB7; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG3ar : ∑ r ∈ Finset.Icc 1 5, r3a ^ r ≤ 375 / 100 := by
-      dsimp only [r3a]; unfold rhoB7; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG3bq : ∑ q ∈ Finset.range 6, q3b ^ q ≤ 12 / 10 := by
-      dsimp only [q3b]; unfold rhoB; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hG3br : ∑ r ∈ Finset.Icc 1 5, r3b ^ r ≤ 8 / 10 := by
-      dsimp only [r3b]; unfold rhoB; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hb1 : b1 ≤ 2535 / 10 ^ 15 := by
-      dsimp only [b1]
-      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 236 / rhoEO0 ≤
-          (2 : ℝ) ^ 384 / 1000 * 1215 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / rhoEO0 := by
-        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have heo : 0 < rhoEO0 := by unfold rhoEO0; norm_num
-        have hrF_nn : 0 ≤ rhoF ^ 236 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-425 : Int) = (2 : ℝ) ^ (-41 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / rhoEO0 =
-          (1215 * 117441 / 100000000 / rhoEO0) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-425 : Int)) := by
-        generalize (2 : ℝ) ^ 384 = P384; ring
-      rw [heq, hz]; unfold rhoEO0; norm_num
-    have hb2 : b2 ≤ 1320 / 10 ^ 15 := by
-      dsimp only [b2]
-      have h1 : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 236 / (1 - qL) / (2 : ℝ) ^ 631 ≤
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / (1 - qL) / (2 : ℝ) ^ 631 := by
-        have hphi : 0 ≤ phiF 1 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - qL := by unfold qL; norm_num
-        have hrF_nn : 0 ≤ rhoF ^ 236 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-425 : Int) / (2 : ℝ) ^ 631 = (2 : ℝ) ^ (-32 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 631,
-            ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((117441 / 100000 : ℝ) * (2 : ℝ) ^ (-425 : Int)) / (1 - qL) / (2 : ℝ) ^ 631 =
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ) * 5411 * (117441 / 100000 : ℝ) / (1 - qL)) *
-            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-425 : Int) / (2 : ℝ) ^ 631) := by
-        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 631 = P631; ring
-      rw [heq, hz]; unfold qL; norm_num
-    have hb3a : b3a ≤ 1699 / 10 ^ 15 := by
-      dsimp only [b3a]
-      have h1 : (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 239 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631 ≤
-          (246 / 100 : ℝ) * 1536 * ((128895 / 100000 : ℝ) * (2 : ℝ) ^ (-683 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631 := by
-        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
-        have hr_nn : 0 ≤ rhoB7 ^ 239 := by unfold rhoB7; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ (-683 : Int) * (2 : ℝ) ^ 631 = (2 : ℝ) ^ (-52 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 631, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (246 / 100 : ℝ) * 1536 * ((128895 / 100000 : ℝ) * (2 : ℝ) ^ (-683 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 631 =
-          ((246 / 100 : ℝ) * 1536 * (128895 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-683 : Int) * (2 : ℝ) ^ 631) := by
-        generalize (2 : ℝ) ^ 631 = P631; ring
-      rw [heq, hz]; unfold rhoB7 qL; norm_num
-    have hb3b : b3b ≤ 665 / 10 ^ 15 := by
-      dsimp only [b3b]
-      have h1 : (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 239 / (1 - rhoB / qL) * (2 : ℝ) ^ 631 ≤
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((187971 / 100000 : ℝ) * (2 : ℝ) ^ (-430 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 631 := by
-        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
-        have hr_nn : 0 ≤ rhoB ^ 239 := by unfold rhoB; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ (-430 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 631 = (2 : ℝ) ^ (-55 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 631,
-            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 / (2 : ℝ) ^ 256) * 1539 * ((187971 / 100000 : ℝ) * (2 : ℝ) ^ (-430 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 631 =
-          (2 * 1539 * (187971 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-430 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 631) := by
-        generalize (2 : ℝ) ^ 631 = P631; ring
-      rw [heq, hz]; unfold rhoB qL; norm_num
-    have hq1_nn : 0 ≤ ∑ q ∈ Finset.range 6, q1 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q1]; unfold rhoEO0 rhoF; positivity)
-    have hr1_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r1 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
-    have hq2_nn : 0 ≤ ∑ q ∈ Finset.range 6, q2 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q2]; unfold rhoF; positivity)
-    have hr2_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r2 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
-    have hq3a_nn : 0 ≤ ∑ q ∈ Finset.range 6, q3a ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3a]; unfold rhoB7; positivity)
-    have hr3a_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3a ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3a]; unfold rhoB7; positivity)
-    have hq3b_nn : 0 ≤ ∑ q ∈ Finset.range 6, q3b ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3b]; unfold rhoB; positivity)
-    have hr3b_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3b ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
-    have hterm1 := mul_le_mul (mul_le_mul hb1 hG1q hq1_nn (by norm_num)) hG1r hr1_nn (by norm_num)
-    have hterm2 := mul_le_mul (mul_le_mul hb2 hG2q hq2_nn (by norm_num)) hG2r hr2_nn (by norm_num)
-    have hterm3a := mul_le_mul (mul_le_mul hb3a hG3aq hq3a_nn (by norm_num)) hG3ar hr3a_nn (by norm_num)
-    have hterm3b := mul_le_mul (mul_le_mul hb3b hG3bq hq3b_nn (by norm_num)) hG3br hr3b_nn (by norm_num)
-    have htot_inner : _ ≤ (3632 / 10 ^ 12 : ℝ) :=
-      (add_le_add (add_le_add (add_le_add hterm1 hterm2) hterm3a) hterm3b).trans (by norm_num)
-    exact hsum_qr.trans ((mul_le_mul_of_nonneg_left htot_inner (by positivity)).trans_eq (mul_comm _ _))
-  -- Piece 3: `k0 ≥ 31` ≤ `466 / 10^12 * 2^256`
-  have htail : (Stail.card : ℝ) ≤ (466 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
-    have ht := tail_k0_ge 31 (by decide)
-    have h1 : (1 : ℝ) / (2 : ℝ) ^ 31 ≤ 466 / 10 ^ 12 := by norm_num
-    calc (Stail.card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ 31 := ht
-      _ = (1 / (2 : ℝ) ^ 31) * (2 : ℝ) ^ 256 := by ring
-      _ ≤ (466 / 10 ^ 12) * (2 : ℝ) ^ 256 := mul_le_mul_of_nonneg_right h1 (by positivity)
-  -- Piece 4: `BadEnv(475)` (`q ∈ range 7, r ∈ range 12`) ≤ `553 / 10^12 * 2^256`
-  have henv_bound : (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
-      ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ)) ≤
-      (553 / 10 ^ 12 : ℝ) * (2 : ℝ) ^ 256 := by
-    obtain ⟨hCA, hC0B, hqA, hqB⟩ := env_drop_consts
-    set rA : ℝ := rhoEO3 / rhoF3 ^ 2
-    have hper_drop : ∀ q ∈ Finset.range 7, ∀ r ∈ Finset.range 12,
-        ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ) ≤
-        (2 : ℝ) ^ 256 * rhoF3 ^ 65 *
-          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
-           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)))) := by
-      intro q hq r hr
-      have hq7 : q < 7 := Finset.mem_range.mp hq
-      have hr12 : r < 12 := Finset.mem_range.mp hr
-      have hbd := badEnv_drop_bound (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31
-        (by omega) (by omega) (by decide) (by omega)
-      have hrho_split : rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) =
-          rhoF3 ^ 65 * (rhoF3 ^ 37) ^ q * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) := by
-        rw [← pow_mul, ← pow_add, ← pow_add]; congr 1; omega
-      have hA_split : (2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) =
-          rhoF3 ^ 65 * ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) := by
-        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
-      have hB_split : (4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) =
-          rhoF3 ^ 65 * ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) := by
-        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
-      have hqA_pow : ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q ≤ (37 / 10000 : ℝ) ^ q :=
-        pow_le_pow_left₀ (by dsimp [rA]; unfold rhoEO3 rhoF3; positivity) hqA q
-      have hqB_pow : ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q ≤ (924 / 1000 : ℝ) ^ q :=
-        pow_le_pow_left₀ (by unfold rhoF3; positivity) hqB q
-      have hF3_nn : 0 ≤ rhoF3 ^ 65 := by unfold rhoF3; positivity
-      have hrA_nn : 0 ≤ (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) := by dsimp [rA]; unfold rhoEO3 rhoF3; positivity
-      have hrB_nn : 0 ≤ (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) := by unfold rhoF3; positivity
-      have h1 : ((BadDrop (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)) (12 * q + r) 31).card : ℝ) ≤
-          (2 : ℝ) ^ 256 *
-            ((244 / 10 : ℝ) * ((2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0))) +
-             (514 / 10 : ℝ) * ((4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 65 + (if 4 ≤ r then 1 else 0)))) := by
-        refine hbd.trans (mul_le_mul_of_nonneg_left (add_le_add ?_ ?_) (by positivity))
-        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hCA (by unfold rhoEO3 rhoF3; positivity)
-        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hC0B (by unfold rhoF3; positivity)
-      rw [hA_split, hB_split] at h1
-      refine h1.trans ?_
-      have h2 := add_le_add
-        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqA_pow hF3_nn) hrA_nn) (by norm_num : (0 : ℝ) ≤ 244 / 10))
-        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqB_pow hF3_nn) hrB_nn) (by norm_num : (0 : ℝ) ≤ 514 / 10))
-      exact (mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring)
-    have hsum := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_drop q hq r hr))
-    have hsep : ∀ (c : ℝ) (f g : Nat → ℝ),
-        (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12, c * f q * g r) =
-        c * (∑ q ∈ Finset.range 7, f q) * (∑ r ∈ Finset.range 12, g r) := fun c f g => by
-      have h1 : ∀ q, (∑ r ∈ Finset.range 12, c * f q * g r) = (c * f q) * (∑ r ∈ Finset.range 12, g r) :=
-        fun q => by rw [Finset.mul_sum]
-      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
-    have hpull : (∑ q ∈ Finset.range 7, ∑ r ∈ Finset.range 12,
-        (2 : ℝ) ^ 256 * rhoF3 ^ 65 *
-          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
-           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))))) =
-        (2 : ℝ) ^ 256 * rhoF3 ^ 65 * (
-          (244 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q) *
-            (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
-          (514 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q) *
-            (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)))) := by
-      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
-    rw [hpull] at hsum
-    have hgA : ∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q ≤ 1004 / 1000 := by
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hgB : ∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q ≤ 560 / 100 := by
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hrSA : ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) ≤ 267 / 100 := by
-      dsimp only [rA]; unfold rhoEO3 rhoF3
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hrSB : ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) ≤ 1064 / 100 := by
-      unfold rhoF3
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hinner : (244 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q) *
-          (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) +
-        (514 / 10 : ℝ) * (∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q) *
-          (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0))) ≤ 3130 := by
-      have h1 : 0 ≤ ∑ q ∈ Finset.range 7, (37 / 10000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
-      have h2 : 0 ≤ ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) :=
-        Finset.sum_nonneg (fun _ _ => by dsimp [rA]; unfold rhoEO3 rhoF3; positivity)
-      have h3 : 0 ≤ ∑ q ∈ Finset.range 7, (924 / 1000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
-      have h4 : 0 ≤ ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 4 ≤ r then 1 else 0)) :=
-        Finset.sum_nonneg (fun _ _ => by unfold rhoF3; positivity)
-      have hA := mul_le_mul (mul_le_mul_of_nonneg_left hgA (by norm_num : (0 : ℝ) ≤ 244 / 10)) hrSA h2 (by norm_num)
-      have hB := mul_le_mul (mul_le_mul_of_nonneg_left hgB (by norm_num : (0 : ℝ) ≤ 514 / 10)) hrSB h4 (by norm_num)
-      linarith [show (244 / 10 : ℝ) * (1004 / 1000) * (267 / 100) + (514 / 10) * (560 / 100) * (1064 / 100) ≤ 3130 by norm_num]
-    have hcomb : rhoF3 ^ 65 * 3130 ≤ 553 / 10 ^ 12 := by
-      have h1 := mul_le_mul_of_nonneg_right hrF365 (by norm_num : (0 : ℝ) ≤ 3130)
-      refine h1.trans ?_; norm_num
-    have hF3_nn : 0 ≤ rhoF3 ^ 65 := by unfold rhoF3; positivity
-    exact hsum.trans (by
-      have h1 := mul_le_mul_of_nonneg_left hinner (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * rhoF3 ^ 65)
-      have h2 : (2 : ℝ) ^ 256 * rhoF3 ^ 65 * 3130 = (rhoF3 ^ 65 * 3130) * (2 : ℝ) ^ 256 := by ring
-      rw [h2] at h1
-      exact h1.trans (mul_le_mul_of_nonneg_right hcomb (by positivity)))
-  have hfinal_const : (2 / 10 ^ 12 : ℝ) + (3632 / 10 ^ 12) + (466 / 10 ^ 12) + (553 / 10 ^ 12) ≤ 47 / 10 ^ 10 := by norm_num
-  have h256_pos : (0 : ℝ) ≤ (2 : ℝ) ^ 256 := by positivity
-  have htot := add_le_add (add_le_add (add_le_add h0_bound hmid_bound) htail) henv_bound
-  rw [← add_mul, ← add_mul, ← add_mul] at htot
-  exact hcard_total.trans (htot.trans (mul_le_mul_of_nonneg_right hfinal_const h256_pos))
-
-theorem skywalk_badStack490_card :
-    ((BadStack LocalKernel.env490).card : ℝ) ≤ (37 : ℝ) / 10 ^ 14 * (2 : ℝ) ^ 256 := by
-  let Stail := (Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ 44 ∣ x)
-  let Smid1 := (Finset.range 8).biUnion (fun q => (Finset.Icc 1 5).biUnion (fun r => BadS_k0 490 (5 * q + r)))
-  let Smid2 := (Finset.Icc 1 3).biUnion (fun r => BadS_k0 490 (40 + r))
-  let Senv := (Finset.range 6).biUnion (fun q => (Finset.range 12).biUnion (fun r =>
-    BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44))
-  have hcov : BadStack LocalKernel.env490 ⊆ BadS_k0 490 0 ∪ (Smid1 ∪ Smid2) ∪ Stail ∪ Senv := by
-    intro x hx
-    have hxI := (Finset.mem_filter.mp hx).1
-    have hng := (Finset.mem_filter.mp hx).2
-    by_cases h44 : 2 ^ 44 ∣ x
-    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hxI, h44⟩))
-    · by_cases hterm : (SkywalkNat.step^[490] (SkywalkNat.init x ECDSAAdd.p)).u = 0
+    by_cases hK : 2 ^ K ∣ x
+    · exact Finset.mem_union_left _ (Finset.mem_union_right _ (Finset.mem_filter.mpr ⟨hxI, hK⟩))
+    · by_cases hterm : (SkywalkNat.step^[S] (SkywalkNat.init x ECDSAAdd.p)).u = 0
       · apply Finset.mem_union_right
-        have hne : ¬ ∀ i, 1 ≤ i → i < LocalKernel.env490.S →
-            LocalKernel.env490.postW i < LocalKernel.env490.preW i →
-            LocalKernel.env490.postW i < LocalKernel.env490.S - i + 1 →
+        have hne : ¬ ∀ i, 1 ≤ i → i < E.S → E.postW i < E.preW i → E.postW i < E.S - i + 1 →
             (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).u +
-            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v < 2 ^ (LocalKernel.env490.postW i - 1) :=
-          fun hall => hng ⟨hterm, hall⟩
+            (SkywalkNat.step^[i] (SkywalkNat.init x ECDSAAdd.p)).v < 2 ^ (E.postW i - 1) :=
+          fun hall => hng ⟨hS_eq.symm ▸ hterm, hall⟩
         push_neg at hne
         obtain ⟨i, hi1, hi2, hdrop, hramp, hge⟩ := hne
-        have hf := env490_drop_formula i hi1 hi2 hdrop hramp
-        set d := 257 - LocalKernel.env490PostW i
-        have hw_eq : LocalKernel.env490PostW i - 1 = 256 - (12 * (d / 12) + d % 12) := by omega
-        refine Finset.mem_biUnion.mpr ⟨d / 12, Finset.mem_range.mpr hf.1,
-          Finset.mem_biUnion.mpr ⟨d % 12, Finset.mem_range.mpr hf.2.1,
-            Finset.mem_filter.mpr ⟨hxI, h44, ?_⟩⟩⟩
-        rw [← hf.2.2.2, ← hw_eq]; exact hge
+        rw [hS_eq] at hi2 hramp
+        have hpre_eq : E.preW i = if i = 0 then 258 else pw (i - 1) := by
+          simp [LocalKernel.EnvSchedule.preW, LocalKernel.EnvSchedule.stageW, hpw_eq]
+        rw [hpw_eq, hpre_eq] at hdrop
+        rw [hpw_eq] at hramp hge
+        have hok := hdrops_ok i hi1 hi2 hdrop hramp
+        refine Finset.mem_biUnion.mpr ⟨i, Finset.mem_filter.mpr ⟨Finset.mem_range.mpr hi2, hi1, hdrop, hramp⟩,
+          Finset.mem_filter.mpr ⟨hxI, ?_⟩⟩
+        rwa [show 256 - (257 - pw i) = pw i - 1 by omega]
       · apply Finset.mem_union_left; apply Finset.mem_union_left
-        have hbad : x ∈ BadS 490 := Finset.mem_filter.mpr ⟨hxI, hterm⟩
-        have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨43, h44⟩
+        have hbad : x ∈ BadS S := Finset.mem_filter.mpr ⟨hxI, hterm⟩
+        have hKpos : 1 ≤ K := by
+          by_contra h0; have hKz : K = 0 := by omega
+          rw [hKz] at hK; simp at hK
+        have hex : ∃ k, ¬ 2 ^ (k + 1) ∣ x := ⟨K - 1, by rwa [Nat.sub_add_cancel hKpos]⟩
         let k0 := Nat.find hex
-        have hk0_lt : k0 < 44 := by have := Nat.find_min' hex h44; omega
+        have hk0_lt : k0 < K := by have := Nat.find_min' hex (show ¬ 2 ^ ((K - 1) + 1) ∣ x by rwa [Nat.sub_add_cancel hKpos]); omega
         have hdiv : 2 ^ k0 ∣ x := by
           cases hk : k0 with
           | zero => simp
-          | succ j =>
-            have hnj := Nat.find_min hex (show j < k0 by omega)
-            push_neg at hnj; exact hnj
+          | succ j => have hnj := Nat.find_min hex (show j < k0 by omega); push_neg at hnj; exact hnj
         have hodd : (x / 2 ^ k0) % 2 = 1 := by
           have hndiv : ¬ 2 ^ (k0 + 1) ∣ x := Nat.find_spec hex
-          by_contra he; apply hndiv
-          obtain ⟨q, hq⟩ := hdiv
+          by_contra he; apply hndiv; obtain ⟨q, hq⟩ := hdiv
           have hq_even : q % 2 = 0 := by
             have : x / 2 ^ k0 = q := by rw [hq, Nat.mul_div_cancel_left _ (by positivity)]
             omega
           refine ⟨q / 2, ?_⟩; rw [hq, pow_succ, mul_assoc]; congr 1; omega
-        have hmem_k0 : x ∈ BadS_k0 490 k0 := Finset.mem_filter.mpr ⟨hbad, hdiv, hodd⟩
-        by_cases hz : k0 = 0
-        · rw [hz] at hmem_k0; exact Finset.mem_union_left _ hmem_k0
-        · apply Finset.mem_union_right
-          by_cases hle40 : k0 ≤ 40
-          · refine Finset.mem_union_left _ (Finset.mem_biUnion.mpr ⟨(k0 - 1) / 5, Finset.mem_range.mpr (by omega),
-              Finset.mem_biUnion.mpr ⟨(k0 - 1) % 5 + 1, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩⟩)
-            rwa [show 5 * ((k0 - 1) / 5) + ((k0 - 1) % 5 + 1) = k0 by omega]
-          · refine Finset.mem_union_right _ (Finset.mem_biUnion.mpr ⟨k0 - 40, Finset.mem_Icc.mpr ⟨by omega, by omega⟩, ?_⟩)
-            rwa [show 40 + (k0 - 40) = k0 by omega]
-  have hcard_total : ((BadStack LocalKernel.env490).card : ℝ) ≤
-      ((BadS_k0 490 0).card : ℝ) +
-      ((∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 490 (5 * q + r)).card : ℝ)) +
-       (∑ r ∈ Finset.Icc 1 3, ((BadS_k0 490 (40 + r)).card : ℝ))) +
-      (Stail.card : ℝ) +
-      (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
-        ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ)) := by
+        exact Finset.mem_biUnion.mpr ⟨k0, Finset.mem_range.mpr hk0_lt, Finset.mem_filter.mpr ⟨hbad, hdiv, hodd⟩⟩
+  have hcard_split : ((BadStack E).card : ℝ) ≤
+      ((∑ k0 ∈ Finset.range K, ((BadS_k0 S k0).card : ℝ)) + (Stail.card : ℝ)) +
+      (∑ i ∈ dropIdx, ((BadDrop i (257 - pw i)).card : ℝ)) := by
     have h1 := (Finset.card_le_card hcov).trans (Finset.card_union_le _ _)
-    have h2 := Finset.card_union_le (BadS_k0 490 0 ∪ (Smid1 ∪ Smid2)) Stail
-    have h3 := Finset.card_union_le (BadS_k0 490 0) (Smid1 ∪ Smid2)
-    have h3' := Finset.card_union_le Smid1 Smid2
-    have h4 : Smid1.card ≤ ∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 490 (5 * q + r)).card :=
-      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
-    have h4' : Smid2.card ≤ ∑ r ∈ Finset.Icc 1 3, (BadS_k0 490 (40 + r)).card := Finset.card_biUnion_le
-    have h5 : Senv.card ≤ ∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
-        (BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card :=
-      Finset.card_biUnion_le.trans (Finset.sum_le_sum (fun q _ => Finset.card_biUnion_le))
-    have hnat : (BadStack LocalKernel.env490).card ≤ (BadS_k0 490 0).card +
-        ((∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, (BadS_k0 490 (5 * q + r)).card) +
-         (∑ r ∈ Finset.Icc 1 3, (BadS_k0 490 (40 + r)).card)) + Stail.card +
-        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
-          (BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card) := by omega
+    have h2 := Finset.card_union_le SbadS Stail
+    have h3 := Finset.card_biUnion_le (s := Finset.range K) (t := fun k0 => BadS_k0 S k0)
+    have h4 := Finset.card_biUnion_le (s := dropIdx) (t := fun i => BadDrop i (257 - pw i))
+    have hnat : (BadStack E).card ≤ (∑ k0 ∈ Finset.range K, (BadS_k0 S k0).card) + Stail.card +
+        ∑ i ∈ dropIdx, (BadDrop i (257 - pw i)).card := by dsimp only [SbadS, Senv] at h1 h2; omega
     exact_mod_cast hnat
-  obtain ⟨_, _, hrF245, hrF246⟩ := rhoF_pows_w10
-  obtain ⟨_, _, hrB243, hrB245⟩ := rhoB_pows_w10
-  obtain ⟨_, _, hrB7243, hrB7245⟩ := rhoB7_pows_w10
-  obtain ⟨_, _, hrF387⟩ := rhoF3_pows_w10
-  obtain ⟨hphiF21, hphiF11, hphiB11, hpsiB711, _, _⟩ := phi_consts
-  -- Piece 1: `k0 = 0` (`m=246, e=623, Lb=243`) ≤ `1 / 10^16 * 2^256`
-  have h0_bound : ((BadS_k0 490 0).card : ℝ) ≤ (1 / 10 ^ 16 : ℝ) * (2 : ℝ) ^ 256 := by
-    have hb0 := badS_k0_zero_bound 490 246 623 (by decide) (by decide)
-    rw [show 490 - (1 + 246) = 243 by decide] at hb0
-    have ht1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 246 ≤ 1 / 10 ^ 17 := by
-      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 246 ≤
-          (2 : ℝ) ^ 384 / 1000 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) := by
-        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hrF_nn : 0 ≤ rhoF ^ 246 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-443 : Int) = (2 : ℝ) ^ (-59 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) =
-          (1215 * 117551 / 100000000 : ℝ) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-443 : Int)) := by
-        generalize (2 : ℝ) ^ 384 = P384; ring
-      rw [heq, hz]; norm_num
-    have ht2 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 246 / (1 - qL)) / (2 : ℝ) ^ 623 ≤ 2 / 10 ^ 17 := by
-      have h1 : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 2 1 * rhoF ^ 246 / (1 - qL)) / (2 : ℝ) ^ 623 ≤
-          ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) / (1 - qL)) / (2 : ℝ) ^ 623 := by
-        have hq : 0 < 1 - qL := by unfold qL; norm_num
-        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hrF_nn : 0 ≤ rhoF ^ 246 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-443 : Int) / (2 : ℝ) ^ 623 = (2 : ℝ) ^ (-42 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 623,
-            ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : ((108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 1215 * ((117551 / 100000 : ℝ) * (2 : ℝ) ^ (-443 : Int)) / (1 - qL)) / (2 : ℝ) ^ 623 =
-          (108 / (3125 * 10 ^ 6 : ℝ) * 1215 * (117551 / 100000 : ℝ) / (1 - qL)) *
-            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-443 : Int) / (2 : ℝ) ^ 623) := by
-        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 623 = P623; ring
-      rw [heq, hz]; unfold qL; norm_num
-    have ht3 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 243 / (1 - rhoB7 / qL) +
-        (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 243 / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 ≤ 3 / 10 ^ 17 := by
-      have h1 : ((246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 243 / (1 - rhoB7 / qL) +
-          (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 243 / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 ≤
-          ((246 / 100 : ℝ) * 1536 * ((192036 / 100000 : ℝ) * (2 : ℝ) ^ (-695 : Int)) / (1 - rhoB7 / qL) +
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((165759 / 100000 : ℝ) * (2 : ℝ) ^ (-437 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 := by
-        have hq1 : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
-        have hq2 : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
-        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
-        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-        have hr1 : 0 ≤ rhoB7 ^ 243 := by unfold rhoB7; positivity
-        have hr2 : 0 ≤ rhoB ^ 243 := by unfold rhoB; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz1 : (2 : ℝ) ^ (-695 : Int) * (2 : ℝ) ^ 623 = (2 : ℝ) ^ (-72 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 623, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have hz2 : (2 : ℝ) ^ (-437 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 623 = (2 : ℝ) ^ (-70 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 623,
-            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : ((246 / 100 : ℝ) * 1536 * ((192036 / 100000 : ℝ) * (2 : ℝ) ^ (-695 : Int)) / (1 - rhoB7 / qL) +
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((165759 / 100000 : ℝ) * (2 : ℝ) ^ (-437 : Int)) / (1 - rhoB / qL)) * (2 : ℝ) ^ 623 =
-          ((246 / 100 : ℝ) * 1536 * (192036 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-695 : Int) * (2 : ℝ) ^ 623) +
-          (2 * 1539 * (165759 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-437 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 623) := by
-        generalize (2 : ℝ) ^ 623 = P623; ring
-      rw [heq, hz1, hz2]; unfold rhoB7 rhoB qL; norm_num
-    have hsum_t : _ + _ + _ ≤ (1 / 10 ^ 16 : ℝ) := (add_le_add (add_le_add ht1 ht2) ht3).trans (by norm_num)
-    exact hb0.trans ((mul_le_mul_of_nonneg_left hsum_t (by positivity)).trans_eq (mul_comm _ _))
-  -- Piece 2: `1 ≤ k0 ≤ 43` (`m = 245 - 6q - r`, `e = 627 - 10q - 2r`) ≤ `277 / 10^15 * 2^256`
-  have hmid_bound : ((∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, ((BadS_k0 490 (5 * q + r)).card : ℝ)) +
-      (∑ r ∈ Finset.Icc 1 3, ((BadS_k0 490 (40 + r)).card : ℝ))) ≤ (277 / 10 ^ 15 : ℝ) * (2 : ℝ) ^ 256 := by
-    have hrhoF_ne : rhoF ≠ 0 := by unfold rhoF; norm_num
-    have hrhoB_ne : rhoB ≠ 0 := by unfold rhoB; norm_num
-    have hrhoB7_ne : rhoB7 ≠ 0 := by unfold rhoB7; norm_num
-    have hrhoEO0_ne : rhoEO0 ≠ 0 := by unfold rhoEO0; norm_num
-    let b1 : ℝ := (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 245 / rhoEO0
-    let q1 : ℝ := rhoEO0 ^ 5 / rhoF ^ 6
-    let r1 : ℝ := rhoEO0 / rhoF
-    let b2 : ℝ := (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 245 / (1 - qL) / (2 : ℝ) ^ 627
-    let q2 : ℝ := (2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)
-    let r2 : ℝ := 4 / (16 * rhoF)
-    let b3a : ℝ := (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 245 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627
-    let q3a : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)
-    let r3a : ℝ := 1 / (4 * rhoB7)
-    let b3b : ℝ := (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 245 / (1 - rhoB / qL) * (2 : ℝ) ^ 627
-    let q3b : ℝ := 1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)
-    let r3b : ℝ := 1 / (4 * rhoB)
-    have hper_qr : ∀ q r, q ≤ 8 → 1 ≤ r → r ≤ 5 → 5 * q + r ≤ 43 →
-        ((BadS_k0 490 (5 * q + r)).card : ℝ) ≤
-          (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
-            b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r) := by
-      intro q r hq hr1 hr5 h43
-      set k0 := 5 * q + r
-      set m := 245 - 6 * q - r
-      set e := 627 - 10 * q - 2 * r
-      have hcall := badS_k0_pos_bound 490 k0 m e (by decide) (by omega) (by omega) (by omega)
-      refine hcall.trans_eq ?_
-      apply congrArg ((2 : ℝ) ^ 256 * ·)
-      have hm_add : m + (6 * q + r) = 245 := by omega
-      have he_add : e + (10 * q + 2 * r) = 627 := by omega
-      have hLb_add : (490 - (2 * k0 + m)) + (4 * q + r) = 245 := by omega
-      have hk_sub : (k0 - 1) + 1 = 5 * q + r := by omega
-      have hpow_m : rhoF ^ m = rhoF ^ 245 / (rhoF ^ 6) ^ q / rhoF ^ r := by
-        have h1 : rhoF ^ 245 = rhoF ^ m * ((rhoF ^ 6) ^ q * rhoF ^ r) := by
-          rw [← pow_mul, ← pow_add, ← pow_add, hm_add]
-        rw [h1]; field_simp [hrhoF_ne]
-      have hpow_e : (2 : ℝ) ^ e = (2 : ℝ) ^ 627 / ((2 : ℝ) ^ 10) ^ q / (4 : ℝ) ^ r := by
-        have h1 : (2 : ℝ) ^ 627 = (2 : ℝ) ^ e * (((2 : ℝ) ^ 10) ^ q * (4 : ℝ) ^ r) := by
-          rw [show (4 : ℝ) = (2 : ℝ) ^ 2 by norm_num, ← pow_mul, ← pow_mul, ← pow_add, ← pow_add, he_add]
-        rw [h1]; field_simp
-      have hpow_eo : rhoEO0 ^ (k0 - 1) = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r / rhoEO0 := by
-        have h1 : rhoEO0 ^ (k0 - 1) * rhoEO0 = (rhoEO0 ^ 5) ^ q * rhoEO0 ^ r := by
-          rw [← pow_succ, hk_sub, ← pow_mul, ← pow_add]
-        rw [← h1]; field_simp [hrhoEO0_ne]
-      have hpow_16 : (16 : ℝ) ^ k0 = ((16 : ℝ) ^ 5) ^ q * (16 : ℝ) ^ r := by
-        dsimp only [k0]; rw [pow_add, pow_mul]
-      have hpow_Lb1 : rhoB7 ^ (490 - (2 * k0 + m)) = rhoB7 ^ 245 / (rhoB7 ^ 4) ^ q / rhoB7 ^ r := by
-        have h1 : rhoB7 ^ 245 = rhoB7 ^ (490 - (2 * k0 + m)) * ((rhoB7 ^ 4) ^ q * rhoB7 ^ r) := by
-          rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
-        rw [h1]; field_simp [hrhoB7_ne]
-      have hpow_Lb2 : rhoB ^ (490 - (2 * k0 + m)) = rhoB ^ 245 / (rhoB ^ 4) ^ q / rhoB ^ r := by
-        have h1 : rhoB ^ 245 = rhoB ^ (490 - (2 * k0 + m)) * ((rhoB ^ 4) ^ q * rhoB ^ r) := by
-          rw [← pow_mul, ← pow_add, ← pow_add, hLb_add]
-        rw [h1]; field_simp [hrhoB_ne]
-      dsimp only [b1, q1, r1, b2, q2, r2, b3a, q3a, r3a, b3b, q3b, r3b]
-      rw [hpow_m, hpow_e, hpow_eo, hpow_16, hpow_Lb1, hpow_Lb2]
-      have hq1_p : (rhoEO0 ^ 5 / rhoF ^ 6) ^ q = (rhoEO0 ^ 5) ^ q / (rhoF ^ 6) ^ q := div_pow _ _ _
-      have hr1_p : (rhoEO0 / rhoF) ^ r = rhoEO0 ^ r / rhoF ^ r := div_pow _ _ _
-      have hq2_p : ((2 : ℝ) ^ 10 / ((16 : ℝ) ^ 5 * rhoF ^ 6)) ^ q = ((2 : ℝ) ^ 10) ^ q / (((16 : ℝ) ^ 5) ^ q * (rhoF ^ 6) ^ q) := by
-        rw [div_pow, mul_pow]
-      have hr2_p : (4 / (16 * rhoF)) ^ r = (4 : ℝ) ^ r / ((16 : ℝ) ^ r * rhoF ^ r) := by rw [div_pow, mul_pow]
-      have hq3a_p : (1 / ((2 : ℝ) ^ 10 * rhoB7 ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB7 ^ 4) ^ q) := by
-        rw [one_div_pow, mul_pow, one_div]
-      have hr3a_p : (1 / (4 * rhoB7)) ^ r = 1 / ((4 : ℝ) ^ r * rhoB7 ^ r) := by rw [one_div_pow, mul_pow, one_div]
-      have hq3b_p : (1 / ((2 : ℝ) ^ 10 * rhoB ^ 4)) ^ q = 1 / (((2 : ℝ) ^ 10) ^ q * (rhoB ^ 4) ^ q) := by
-        rw [one_div_pow, mul_pow, one_div]
-      have hr3b_p : (1 / (4 * rhoB)) ^ r = 1 / ((4 : ℝ) ^ r * rhoB ^ r) := by rw [one_div_pow, mul_pow, one_div]
-      rw [hq1_p, hr1_p, hq2_p, hr2_p, hq3a_p, hr3a_p, hq3b_p, hr3b_p]
-      have hqL1 : 1 - qL ≠ 0 := by unfold qL; norm_num
-      have hqLa : 1 - rhoB7 / qL ≠ 0 := by unfold rhoB7 qL; norm_num
-      have hqLb : 1 - rhoB / qL ≠ 0 := by unfold rhoB qL; norm_num
-      field_simp [hrhoF_ne, hrhoB_ne, hrhoB7_ne, hrhoEO0_ne, hqL1, hqLa, hqLb]
-      generalize (2 : ℝ) ^ 384 = P384; generalize (2 : ℝ) ^ 627 = P627; generalize (2 : ℝ) ^ 1024 = P1024; ring
-    have hsum1 := Finset.sum_le_sum (s := Finset.range 8) (fun q hq => Finset.sum_le_sum (s := Finset.Icc 1 5) (fun r hr =>
-      hper_qr q r (by have := Finset.mem_range.mp hq; omega) (Finset.mem_Icc.mp hr).1 (Finset.mem_Icc.mp hr).2 (by have := Finset.mem_range.mp hq; have := Finset.mem_Icc.mp hr; omega)))
-    have hsum2 := Finset.sum_le_sum (s := Finset.Icc 1 3) (fun r hr =>
-      hper_qr 8 r (le_refl 8) (Finset.mem_Icc.mp hr).1 (by have := Finset.mem_Icc.mp hr; omega) (by have := Finset.mem_Icc.mp hr; omega))
-    have hsep1 : ∀ (b A B : ℝ),
-        (∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) =
-        b * (∑ q ∈ Finset.range 8, A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) := fun b A B => by
-      have h1 : ∀ q, (∑ r ∈ Finset.Icc 1 5, b * A ^ q * B ^ r) = (b * A ^ q) * (∑ r ∈ Finset.Icc 1 5, B ^ r) :=
-        fun q => by rw [Finset.mul_sum]
-      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
-    have hsep2 : ∀ (b A B : ℝ),
-        (∑ r ∈ Finset.Icc 1 3, b * A ^ 8 * B ^ r) = b * A ^ 8 * (∑ r ∈ Finset.Icc 1 3, B ^ r) := fun b A B => by
-      rw [Finset.mul_sum]
-    have hpull1 : (∑ q ∈ Finset.range 8, ∑ r ∈ Finset.Icc 1 5,
-        (2 : ℝ) ^ 256 * (b1 * q1 ^ q * r1 ^ r + b2 * q2 ^ q * r2 ^ r +
-          b3a * q3a ^ q * r3a ^ r + b3b * q3b ^ q * r3b ^ r)) =
-        (2 : ℝ) ^ 256 * (
-          b1 * (∑ q ∈ Finset.range 8, q1 ^ q) * (∑ r ∈ Finset.Icc 1 5, r1 ^ r) +
-          b2 * (∑ q ∈ Finset.range 8, q2 ^ q) * (∑ r ∈ Finset.Icc 1 5, r2 ^ r) +
-          b3a * (∑ q ∈ Finset.range 8, q3a ^ q) * (∑ r ∈ Finset.Icc 1 5, r3a ^ r) +
-          b3b * (∑ q ∈ Finset.range 8, q3b ^ q) * (∑ r ∈ Finset.Icc 1 5, r3b ^ r)) := by
-      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep1]
-    have hpull2 : (∑ r ∈ Finset.Icc 1 3,
-        (2 : ℝ) ^ 256 * (b1 * q1 ^ 8 * r1 ^ r + b2 * q2 ^ 8 * r2 ^ r +
-          b3a * q3a ^ 8 * r3a ^ r + b3b * q3b ^ 8 * r3b ^ r)) =
-        (2 : ℝ) ^ 256 * (
-          b1 * q1 ^ 8 * (∑ r ∈ Finset.Icc 1 3, r1 ^ r) +
-          b2 * q2 ^ 8 * (∑ r ∈ Finset.Icc 1 3, r2 ^ r) +
-          b3a * q3a ^ 8 * (∑ r ∈ Finset.Icc 1 3, r3a ^ r) +
-          b3b * q3b ^ 8 * (∑ r ∈ Finset.Icc 1 3, r3b ^ r)) := by
-      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep2]
-    rw [hpull1] at hsum1; rw [hpull2] at hsum2
-    have hG1q : ∑ q ∈ Finset.range 8, q1 ^ q ≤ 226 := by
-      dsimp only [q1]; unfold rhoEO0 rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hq1_8 : q1 ^ 8 ≤ 218 := by dsimp only [q1]; unfold rhoEO0 rhoF; norm_num
-    have hG1r5 : ∑ r ∈ Finset.Icc 1 5, r1 ^ r ≤ 36 / 10 := by
-      dsimp only [r1]; unfold rhoEO0 rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG1r3 : ∑ r ∈ Finset.Icc 1 3, r1 ^ r ≤ 24 / 10 := by
-      dsimp only [r1]; unfold rhoEO0 rhoF; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
-    have hG2q : ∑ q ∈ Finset.range 8, q2 ^ q ≤ 1123 / 10 := by
-      dsimp only [q2]; unfold rhoF; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hq2_8 : q2 ^ 8 ≤ 841 / 10 := by dsimp only [q2]; unfold rhoF; norm_num
-    have hG2r5 : ∑ r ∈ Finset.Icc 1 5, r2 ^ r ≤ 337 / 100 := by
-      dsimp only [r2]; unfold rhoF; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG2r3 : ∑ r ∈ Finset.Icc 1 3, r2 ^ r ≤ 229 / 100 := by
-      dsimp only [r2]; unfold rhoF; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
-    have hG3aq : ∑ q ∈ Finset.range 8, q3a ^ q ≤ 1603 := by
-      dsimp only [q3a]; unfold rhoB7; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hq3a_8 : q3a ^ 8 ≤ 2701 := by dsimp only [q3a]; unfold rhoB7; norm_num
-    have hG3ar5 : ∑ r ∈ Finset.Icc 1 5, r3a ^ r ≤ 413 / 10 := by
-      dsimp only [r3a]; unfold rhoB7; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG3ar3 : ∑ r ∈ Finset.Icc 1 3, r3a ^ r ≤ 111 / 10 := by
-      dsimp only [r3a]; unfold rhoB7; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
-    have hG3bq : ∑ q ∈ Finset.range 8, q3b ^ q ≤ 12 / 10 := by
-      dsimp only [q3b]; unfold rhoB; simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hq3b_8 : q3b ^ 8 ≤ 1 / 100 := by dsimp only [q3b]; unfold rhoB; norm_num
-    have hG3br5 : ∑ r ∈ Finset.Icc 1 5, r3b ^ r ≤ 34 / 10 := by
-      dsimp only [r3b]; unfold rhoB; rw [show (Finset.Icc 1 5 : Finset Nat) = {1, 2, 3, 4, 5} by decide]; simp; norm_num
-    have hG3br3 : ∑ r ∈ Finset.Icc 1 3, r3b ^ r ≤ 23 / 10 := by
-      dsimp only [r3b]; unfold rhoB; rw [show (Finset.Icc 1 3 : Finset Nat) = {1, 2, 3} by decide]; simp; norm_num
-    have hb1 : b1 ≤ 337 / 10 ^ 19 := by
-      dsimp only [b1]
-      have h1 : (2 : ℝ) ^ 384 / 1000 * phiF 2 1 * rhoF ^ 245 / rhoEO0 ≤
-          (2 : ℝ) ^ 384 / 1000 * 1215 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / rhoEO0 := by
-        have hphi : 0 ≤ phiF 2 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have heo : 0 < rhoEO0 := by unfold rhoEO0; norm_num
-        have hrF_nn : 0 ≤ rhoF ^ 245 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 384 * (2 : ℝ) ^ (-441 : Int) = (2 : ℝ) ^ (-57 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 384, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 : ℝ) ^ 384 / 1000 * 1215 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / rhoEO0 =
-          (1215 * 102324 / 100000000 / rhoEO0) * ((2 : ℝ) ^ 384 * (2 : ℝ) ^ (-441 : Int)) := by
-        generalize (2 : ℝ) ^ 384 = P384; ring
-      rw [heq, hz]; unfold rhoEO0; norm_num
-    have hb2 : b2 ≤ 281 / 10 ^ 18 := by
-      dsimp only [b2]
-      have h1 : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * phiF 1 1 * rhoF ^ 245 / (1 - qL) / (2 : ℝ) ^ 627 ≤
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / (1 - qL) / (2 : ℝ) ^ 627 := by
-        have hphi : 0 ≤ phiF 1 1 := (phiF_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - qL := by unfold qL; norm_num
-        have hrF_nn : 0 ≤ rhoF ^ 245 := by unfold rhoF; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-441 : Int) / (2 : ℝ) ^ 627 = (2 : ℝ) ^ (-44 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 1024, ← zpow_natCast (2 : ℝ) 627,
-            ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (16 * 108 / (3125 * 10 ^ 6 : ℝ)) * (2 : ℝ) ^ 1024 * 5411 * ((102324 / 100000 : ℝ) * (2 : ℝ) ^ (-441 : Int)) / (1 - qL) / (2 : ℝ) ^ 627 =
-          (16 * 108 / (3125 * 10 ^ 6 : ℝ) * 5411 * (102324 / 100000 : ℝ) / (1 - qL)) *
-            ((2 : ℝ) ^ 1024 * (2 : ℝ) ^ (-441 : Int) / (2 : ℝ) ^ 627) := by
-        generalize (2 : ℝ) ^ 1024 = P1024; generalize (2 : ℝ) ^ 627 = P627; ring
-      rw [heq, hz]; unfold qL; norm_num
-    have hb3a : b3a ≤ 737 / 10 ^ 21 := by
-      dsimp only [b3a]
-      have h1 : (246 / 100 : ℝ) * psiB7 1 1 * rhoB7 ^ 245 / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627 ≤
-          (246 / 100 : ℝ) * 1536 * ((117199 / 100000 : ℝ) * (2 : ℝ) ^ (-700 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627 := by
-        have hpsi : 0 ≤ psiB7 1 1 := (psiB7_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - rhoB7 / qL := by unfold rhoB7 qL; norm_num
-        have hr_nn : 0 ≤ rhoB7 ^ 245 := by unfold rhoB7; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ (-700 : Int) * (2 : ℝ) ^ 627 = (2 : ℝ) ^ (-73 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 627, ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (246 / 100 : ℝ) * 1536 * ((117199 / 100000 : ℝ) * (2 : ℝ) ^ (-700 : Int)) / (1 - rhoB7 / qL) * (2 : ℝ) ^ 627 =
-          ((246 / 100 : ℝ) * 1536 * (117199 / 100000 : ℝ) / (1 - rhoB7 / qL)) * ((2 : ℝ) ^ (-700 : Int) * (2 : ℝ) ^ 627) := by
-        generalize (2 : ℝ) ^ 627 = P627; ring
-      rw [heq, hz]; unfold rhoB7 qL; norm_num
-    have hb3b : b3b ≤ 238 / 10 ^ 19 := by
-      dsimp only [b3b]
-      have h1 : (2 / (2 : ℝ) ^ 256) * phiB 1 1 * rhoB ^ 245 / (1 - rhoB / qL) * (2 : ℝ) ^ 627 ≤
-          (2 / (2 : ℝ) ^ 256) * 1539 * ((110067 / 100000 : ℝ) * (2 : ℝ) ^ (-440 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 627 := by
-        have hphi : 0 ≤ phiB 1 1 := (phiB_pos (by norm_num) (by norm_num)).le
-        have hq : 0 < 1 - rhoB / qL := by unfold rhoB qL; norm_num
-        have hr_nn : 0 ≤ rhoB ^ 245 := by unfold rhoB; positivity
-        gcongr
-      refine h1.trans ?_
-      have hz : (2 : ℝ) ^ (-440 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 627 = (2 : ℝ) ^ (-69 : Int) := by
-        rw [← zpow_natCast (2 : ℝ) 256, ← zpow_natCast (2 : ℝ) 627,
-            ← zpow_sub₀ (by norm_num : (2 : ℝ) ≠ 0), ← zpow_add₀ (by norm_num : (2 : ℝ) ≠ 0)]; congr 1
-      have heq : (2 / (2 : ℝ) ^ 256) * 1539 * ((110067 / 100000 : ℝ) * (2 : ℝ) ^ (-440 : Int)) / (1 - rhoB / qL) * (2 : ℝ) ^ 627 =
-          (2 * 1539 * (110067 / 100000 : ℝ) / (1 - rhoB / qL)) * ((2 : ℝ) ^ (-440 : Int) / (2 : ℝ) ^ 256 * (2 : ℝ) ^ 627) := by
-        generalize (2 : ℝ) ^ 627 = P627; ring
-      rw [heq, hz]; unfold rhoB qL; norm_num
-    have hq1_nn : 0 ≤ ∑ q ∈ Finset.range 8, q1 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q1]; unfold rhoEO0 rhoF; positivity)
-    have hr15_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r1 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
-    have hr13_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r1 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r1]; unfold rhoEO0 rhoF; positivity)
-    have hq2_nn : 0 ≤ ∑ q ∈ Finset.range 8, q2 ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q2]; unfold rhoF; positivity)
-    have hr25_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r2 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
-    have hr23_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r2 ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r2]; unfold rhoF; positivity)
-    have hq3a_nn : 0 ≤ ∑ q ∈ Finset.range 8, q3a ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3a]; unfold rhoB7; positivity)
-    have hr3a5_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3a ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3a]; unfold rhoB7; positivity)
-    have hr3a3_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r3a ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3a]; unfold rhoB7; positivity)
-    have hq3b_nn : 0 ≤ ∑ q ∈ Finset.range 8, q3b ^ q := Finset.sum_nonneg (fun _ _ => by dsimp [q3b]; unfold rhoB; positivity)
-    have hr3b5_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 5, r3b ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
-    have hr3b3_nn : 0 ≤ ∑ r ∈ Finset.Icc 1 3, r3b ^ r := Finset.sum_nonneg (fun _ _ => by dsimp [r3b]; unfold rhoB; positivity)
-    have ht1a := mul_le_mul (mul_le_mul hb1 hG1q hq1_nn (by norm_num)) hG1r5 hr15_nn (by norm_num)
-    have ht1b := mul_le_mul (mul_le_mul hb1 hq1_8 (by dsimp [q1]; unfold rhoEO0 rhoF; positivity) (by norm_num)) hG1r3 hr13_nn (by norm_num)
-    have ht2a := mul_le_mul (mul_le_mul hb2 hG2q hq2_nn (by norm_num)) hG2r5 hr25_nn (by norm_num)
-    have ht2b := mul_le_mul (mul_le_mul hb2 hq2_8 (by dsimp [q2]; unfold rhoF; positivity) (by norm_num)) hG2r3 hr23_nn (by norm_num)
-    have ht3aa := mul_le_mul (mul_le_mul hb3a hG3aq hq3a_nn (by norm_num)) hG3ar5 hr3a5_nn (by norm_num)
-    have ht3ab := mul_le_mul (mul_le_mul hb3a hq3a_8 (by dsimp [q3a]; unfold rhoB7; positivity) (by norm_num)) hG3ar3 hr3a3_nn (by norm_num)
-    have ht3ba := mul_le_mul (mul_le_mul hb3b hG3bq hq3b_nn (by norm_num)) hG3br5 hr3b5_nn (by norm_num)
-    have ht3bb := mul_le_mul (mul_le_mul hb3b hq3b_8 (by dsimp [q3b]; unfold rhoB; positivity) (by norm_num)) hG3br3 hr3b3_nn (by norm_num)
-    have hadd := add_le_add hsum1 hsum2
-    rw [← mul_add] at hadd
-    have htot_inner : _ ≤ (277 / 10 ^ 15 : ℝ) :=
-      (add_le_add
-        (add_le_add (add_le_add (add_le_add ht1a ht2a) ht3aa) ht3ba)
-        (add_le_add (add_le_add (add_le_add ht1b ht2b) ht3ab) ht3bb)).trans (by norm_num)
-    exact hadd.trans ((mul_le_mul_of_nonneg_left htot_inner (by positivity)).trans_eq (mul_comm _ _))
-  -- Piece 3: `k0 ≥ 44` ≤ `57 / 10^15 * 2^256`
-  have htail : (Stail.card : ℝ) ≤ (57 / 10 ^ 15 : ℝ) * (2 : ℝ) ^ 256 := by
-    have ht := tail_k0_ge 44 (by decide)
-    have h1 : (1 : ℝ) / (2 : ℝ) ^ 44 ≤ 57 / 10 ^ 15 := by norm_num
-    calc (Stail.card : ℝ) ≤ (2 : ℝ) ^ 256 / (2 : ℝ) ^ 44 := ht
-      _ = (1 / (2 : ℝ) ^ 44) * (2 : ℝ) ^ 256 := by ring
-      _ ≤ (57 / 10 ^ 15) * (2 : ℝ) ^ 256 := mul_le_mul_of_nonneg_right h1 (by positivity)
-  -- Piece 4: `BadEnv(490)` (`q ∈ range 6, r ∈ range 12`) ≤ `29 / 10^15 * 2^256`
-  have henv_bound : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
-      ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ)) ≤
-      (29 / 10 ^ 15 : ℝ) * (2 : ℝ) ^ 256 := by
-    obtain ⟨hCA, hC0B, hqA, hqB⟩ := env_drop_consts
-    set rA : ℝ := rhoEO3 / rhoF3 ^ 2
-    have hper_drop : ∀ q ∈ Finset.range 6, ∀ r ∈ Finset.range 12,
-        ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ) ≤
-        (2 : ℝ) ^ 256 * rhoF3 ^ 87 *
-          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
-           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)))) := by
-      intro q hq r hr
-      have hq6 : q < 6 := Finset.mem_range.mp hq
-      have hr12 : r < 12 := Finset.mem_range.mp hr
-      have hbd := badEnv_drop_bound (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44
-        (by omega) (by omega) (by decide) (by omega)
-      have hrho_split : rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) =
-          rhoF3 ^ 87 * (rhoF3 ^ 37) ^ q * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) := by
-        rw [← pow_mul, ← pow_add, ← pow_add]; congr 1; omega
-      have hA_split : (2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) =
-          rhoF3 ^ 87 * ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) := by
-        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
-      have hB_split : (4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) =
-          rhoF3 ^ 87 * ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) := by
-        rw [hrho_split, pow_add, pow_mul, mul_pow]; ring
-      have hqA_pow : ((2 * rA) ^ 12 * rhoF3 ^ 37) ^ q ≤ (37 / 10000 : ℝ) ^ q :=
-        pow_le_pow_left₀ (by dsimp [rA]; unfold rhoEO3 rhoF3; positivity) hqA q
-      have hqB_pow : ((4 : ℝ) ^ 12 * rhoF3 ^ 37) ^ q ≤ (924 / 1000 : ℝ) ^ q :=
-        pow_le_pow_left₀ (by unfold rhoF3; positivity) hqB q
-      have hF3_nn : 0 ≤ rhoF3 ^ 87 := by unfold rhoF3; positivity
-      have hrA_nn : 0 ≤ (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) := by dsimp [rA]; unfold rhoEO3 rhoF3; positivity
-      have hrB_nn : 0 ≤ (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) := by unfold rhoF3; positivity
-      have h1 : ((BadDrop (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)) (12 * q + r) 44).card : ℝ) ≤
-          (2 : ℝ) ^ 256 *
-            ((244 / 10 : ℝ) * ((2 * rA) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0))) +
-             (514 / 10 : ℝ) * ((4 : ℝ) ^ (12 * q + r) * rhoF3 ^ (37 * q + 3 * r + 87 + (if 9 ≤ r then 1 else 0)))) := by
-        refine hbd.trans (mul_le_mul_of_nonneg_left (add_le_add ?_ ?_) (by positivity))
-        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hCA (by unfold rhoEO3 rhoF3; positivity)
-        · rw [mul_assoc]; exact mul_le_mul_of_nonneg_right hC0B (by unfold rhoF3; positivity)
-      rw [hA_split, hB_split] at h1
-      refine h1.trans ?_
-      have h2 := add_le_add
-        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqA_pow hF3_nn) hrA_nn) (by norm_num : (0 : ℝ) ≤ 244 / 10))
-        (mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right (mul_le_mul_of_nonneg_left hqB_pow hF3_nn) hrB_nn) (by norm_num : (0 : ℝ) ≤ 514 / 10))
-      exact (mul_le_mul_of_nonneg_left h2 (by positivity)).trans_eq (by ring)
-    have hsum := Finset.sum_le_sum (fun q hq => Finset.sum_le_sum (fun r hr => hper_drop q hq r hr))
-    have hsep : ∀ (c : ℝ) (f g : Nat → ℝ),
-        (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12, c * f q * g r) =
-        c * (∑ q ∈ Finset.range 6, f q) * (∑ r ∈ Finset.range 12, g r) := fun c f g => by
-      have h1 : ∀ q, (∑ r ∈ Finset.range 12, c * f q * g r) = (c * f q) * (∑ r ∈ Finset.range 12, g r) :=
-        fun q => by rw [Finset.mul_sum]
-      simp_rw [h1, ← Finset.sum_mul, ← Finset.mul_sum]
-    have hpull : (∑ q ∈ Finset.range 6, ∑ r ∈ Finset.range 12,
-        (2 : ℝ) ^ 256 * rhoF3 ^ 87 *
-          ((244 / 10 : ℝ) * (37 / 10000 : ℝ) ^ q * ((2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
-           (514 / 10 : ℝ) * (924 / 1000 : ℝ) ^ q * ((4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))))) =
-        (2 : ℝ) ^ 256 * rhoF3 ^ 87 * (
-          (244 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q) *
-            (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
-          (514 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q) *
-            (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)))) := by
-      simp_rw [← Finset.mul_sum, Finset.sum_add_distrib, hsep]
-    rw [hpull] at hsum
-    have hgA : ∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q ≤ 1004 / 1000 := by
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hgB : ∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q ≤ 497 / 100 := by
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hrSA : ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) ≤ 284 / 100 := by
-      dsimp only [rA]; unfold rhoEO3 rhoF3
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hrSB : ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) ≤ 1283 / 100 := by
-      unfold rhoF3
-      simp only [Finset.sum_range_succ, Finset.range_zero, Finset.sum_empty]; norm_num
-    have hinner : (244 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q) *
-          (∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) +
-        (514 / 10 : ℝ) * (∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q) *
-          (∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0))) ≤ 3350 := by
-      have h1 : 0 ≤ ∑ q ∈ Finset.range 6, (37 / 10000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
-      have h2 : 0 ≤ ∑ r ∈ Finset.range 12, (2 * rA) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) :=
-        Finset.sum_nonneg (fun _ _ => by dsimp [rA]; unfold rhoEO3 rhoF3; positivity)
-      have h3 : 0 ≤ ∑ q ∈ Finset.range 6, (924 / 1000 : ℝ) ^ q := Finset.sum_nonneg (fun _ _ => by positivity)
-      have h4 : 0 ≤ ∑ r ∈ Finset.range 12, (4 : ℝ) ^ r * rhoF3 ^ (3 * r + (if 9 ≤ r then 1 else 0)) :=
-        Finset.sum_nonneg (fun _ _ => by unfold rhoF3; positivity)
-      have hA := mul_le_mul (mul_le_mul_of_nonneg_left hgA (by norm_num : (0 : ℝ) ≤ 244 / 10)) hrSA h2 (by norm_num)
-      have hB := mul_le_mul (mul_le_mul_of_nonneg_left hgB (by norm_num : (0 : ℝ) ≤ 514 / 10)) hrSB h4 (by norm_num)
-      linarith [show (244 / 10 : ℝ) * (1004 / 1000) * (284 / 100) + (514 / 10) * (497 / 100) * (1283 / 100) ≤ 3350 by norm_num]
-    have hcomb : rhoF3 ^ 87 * 3350 ≤ 29 / 10 ^ 15 := by
-      have h1 := mul_le_mul_of_nonneg_right hrF387 (by norm_num : (0 : ℝ) ≤ 3350)
-      refine h1.trans ?_; norm_num
-    exact hsum.trans (by
-      have h1 := mul_le_mul_of_nonneg_left hinner (by unfold rhoF3; positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256 * rhoF3 ^ 87)
-      have h2 : (2 : ℝ) ^ 256 * rhoF3 ^ 87 * 3350 = (rhoF3 ^ 87 * 3350) * (2 : ℝ) ^ 256 := by ring
-      rw [h2] at h1
-      exact h1.trans (mul_le_mul_of_nonneg_right hcomb (by positivity)))
-  have hfinal_const : (1 / 10 ^ 16 : ℝ) + (277 / 10 ^ 15) + (57 / 10 ^ 15) + (29 / 10 ^ 15) ≤ 37 / 10 ^ 14 := by norm_num
-  have h256_pos : (0 : ℝ) ≤ (2 : ℝ) ^ 256 := by positivity
-  have htot := add_le_add (add_le_add (add_le_add h0_bound hmid_bound) htail) henv_bound
-  rw [← add_mul, ← add_mul, ← add_mul] at htot
-  exact hcard_total.trans (htot.trans (mul_le_mul_of_nonneg_right hfinal_const h256_pos))
+  -- Bound BadS + Stail via `evalPlanAux`
+  have hplan_bound : ∀ (l : List BadSEntry) (k0 : Nat), validPlanAux S k0 l = true →
+      (∑ j ∈ Finset.range l.length, ((BadS_k0 S (k0 + j)).card : ℝ)) +
+        (((Finset.Ioo 0 ECDSAAdd.p).filter (fun x => 2 ^ (k0 + l.length) ∣ x)).card : ℝ) ≤
+      (evalPlanAux S k0 l).toReal * (2 : ℝ) ^ 256 := by
+    intro l; induction l with
+    | nil =>
+      intro k0 _
+      simp only [List.length_nil, Finset.range_zero, Finset.sum_empty, zero_add, Nat.add_zero, evalPlanAux]
+      have ht := tail_k0_ge k0
+      have hsh : (1 / (2 : ℝ) ^ k0) ≤ (DyadicHi.one.shift (-(k0 : Int))).toReal := by
+        have := DyadicHi.shift_sound DyadicHi.one (-(k0 : Int))
+        simpa only [DyadicHi.toReal_one, one_mul, zpow_neg, zpow_natCast, one_div] using this
+      exact ht.trans ((mul_le_mul_of_nonneg_right hsh (by positivity)).trans_eq' (by ring))
+    | cons e es ih =>
+      intro k0 hval
+      simp only [validPlanAux, Bool.and_eq_true] at hval
+      have he := evalEntry_sound S k0 e hval.1
+      have hes := ih (k0 + 1) hval.2
+      rw [show (k0 + 1) + es.length = k0 + (e :: es).length by simp; omega] at hes
+      rw [List.length_cons, Finset.sum_range_succ']
+      simp only [Nat.add_zero]
+      rw [List.length_cons] at hes
+      have hshift_sum : ∑ j ∈ Finset.range es.length, ((BadS_k0 S (k0 + (j + 1))).card : ℝ) =
+          ∑ j ∈ Finset.range es.length, ((BadS_k0 S ((k0 + 1) + j)).card : ℝ) := by
+        apply Finset.sum_congr rfl; intro j _; rw [show k0 + (j + 1) = (k0 + 1) + j by omega]
+      rw [hshift_sum]
+      have hadd := add_le_add he hes
+      rw [← add_mul] at hadd
+      have hdy := mul_le_mul_of_nonneg_right (DyadicHi.add_sound (evalEntry S k0 e) (evalPlanAux S (k0 + 1) es)) (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)
+      dsimp only [evalPlanAux]; linarith
+  have hbadS_le : (∑ k0 ∈ Finset.range K, ((BadS_k0 S k0).card : ℝ)) + (Stail.card : ℝ) ≤
+      (evalPlanAux S 0 plan).toReal * (2 : ℝ) ^ 256 := by
+    simpa only [Nat.zero_add] using hplan_bound plan 0 hvalid
+  -- Bound Senv via `evalBadDropRange`
+  have hdrop_bound : ∀ n ≤ S,
+      (∑ i ∈ (Finset.range n).filter (fun i =>
+        1 ≤ i ∧ pw i < (if i = 0 then 258 else pw (i - 1)) ∧ pw i < S - i + 1),
+        ((BadDrop i (257 - pw i)).card : ℝ)) ≤
+      (evalBadDropRange S pw n).toReal * (2 : ℝ) ^ 256 := by
+    intro n hn; induction n with
+    | zero => simp [evalBadDropRange, DyadicHi.toReal_zero]
+    | succ n ih =>
+      rw [Finset.range_add_one, Finset.filter_insert, evalBadDropRange]
+      have hih := ih (by omega)
+      by_cases h1 : 1 ≤ n ∧ pw n < (if n = 0 then 258 else pw (n - 1)) ∧ pw n < S - n + 1
+      · have h2 : 1 ≤ n ∧ n < S ∧ pw n < (if n = 0 then 258 else pw (n - 1)) ∧ pw n < S - n + 1 := ⟨h1.1, by omega, h1.2.1, h1.2.2⟩
+        rw [if_pos h1, if_pos h2, Finset.sum_insert (by simp)]
+        have hok := hdrops_ok n h1.1 (by omega) h1.2.1 h1.2.2
+        have hstep := evalBadDropStep_sound n (257 - pw n) hok.1 (by omega) (by omega)
+        have hadd := add_le_add hih hstep
+        rw [← add_mul] at hadd
+        have hdy := mul_le_mul_of_nonneg_right (DyadicHi.add_sound (evalBadDropRange S pw n) (evalBadDropStep n (257 - pw n))) (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)
+        linarith
+      · have h2 : ¬ (1 ≤ n ∧ n < S ∧ pw n < (if n = 0 then 258 else pw (n - 1)) ∧ pw n < S - n + 1) := fun h => h1 ⟨h.1, h.2.2.1, h.2.2.2⟩
+        rw [if_neg h1, if_neg h2]
+        exact hih
+  have hSenv_le : (∑ i ∈ dropIdx, ((BadDrop i (257 - pw i)).card : ℝ)) ≤
+      (evalBadDropRange S pw S).toReal * (2 : ℝ) ^ 256 := hdrop_bound S (le_refl S)
+  have htot := hcard_split.trans (add_le_add hbadS_le hSenv_le)
+  rw [← add_mul] at htot
+  have hdy := mul_le_mul_of_nonneg_right (DyadicHi.add_sound (evalPlanAux S 0 plan) (evalBadDropRange S pw S)) (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)
+  have hrat := mul_le_mul_of_nonneg_right (DyadicHi.leRat_sound (evalEnvTotal S pw plan) num den hden hle) (by positivity : (0 : ℝ) ≤ (2 : ℝ) ^ 256)
+  exact htot.trans (hdy.trans hrat)
+
+/-! ### 11. Concrete Wave 11 plans and certified `BadStack` theorems (`env460`, `env465`, `env485`, `env500`, `env510`) -/
+
+def plan460 : List BadSEntry := [
+  .k0 4 4 228 509,
+  .k1Red 4 4 227 509,
+  .opt1 4 4 226 508 true,
+  .opt1 4 4 225 506 true,
+  .opt1 4 4 223 505 true,
+  .opt2 4 4 218 512,
+  .opt2 4 4 216 512,
+  .opt2 4 4 214 512,
+  .opt2 4 4 212 511,
+  .opt2 4 4 210 511,
+  .opt2 4 4 208 511,
+  .opt2 4 4 206 511,
+  .opt2 4 4 204 511,
+  .opt2 4 4 201 512,
+  .opt2 4 4 199 512,
+  .opt2 4 4 197 512,
+  .opt2 4 4 195 512,
+  .opt2 4 4 193 512,
+  .opt2 4 4 191 511,
+  .opt2 4 4 189 511,
+  .opt2 4 4 187 511,
+  .opt2 4 4 185 511,
+  .opt2 4 4 182 512,
+  .opt2 4 4 180 512,
+  .opt2 4 4 178 512,
+  .opt2 4 4 176 512,
+  .opt2 4 4 174 512,
+  .opt2 4 4 172 511,
+  .opt2 4 4 170 511,
+  .opt2 4 4 168 511
+]
+
+def plan465 : List BadSEntry := [
+  .k0 5 4 231 509,
+  .k1Red 5 4 231 508,
+  .opt1 5 4 229 508 true,
+  .opt1 4 4 228 506 true,
+  .opt1 4 4 227 504 true,
+  .opt2 4 4 222 511,
+  .opt2 4 4 219 512,
+  .opt2 4 4 217 512,
+  .opt2 4 4 215 512,
+  .opt2 4 4 213 512,
+  .opt2 4 4 211 512,
+  .opt2 4 4 209 512,
+  .opt2 4 4 207 511,
+  .opt2 4 4 205 511,
+  .opt2 4 4 203 511,
+  .opt2 4 4 200 513,
+  .opt2 4 4 198 512,
+  .opt2 4 4 196 512,
+  .opt2 4 4 194 512,
+  .opt2 4 4 192 512,
+  .opt2 4 4 190 512,
+  .opt2 4 4 188 511,
+  .opt2 4 4 186 511,
+  .opt2 4 4 184 511,
+  .opt2 4 4 181 512,
+  .opt2 4 4 179 512,
+  .opt2 4 4 177 512,
+  .opt2 4 4 175 512,
+  .opt2 4 4 173 512,
+  .opt2 4 4 171 511,
+  .opt2 4 4 169 511,
+  .opt2 4 4 167 511,
+  .opt2 4 4 164 512,
+  .opt2 4 4 162 512,
+  .opt2 4 4 160 512
+]
+
+def plan485 : List BadSEntry := [
+  .k0 7 5 242 636,
+  .k1Red 7 5 242 635,
+  .opt1 7 5 241 633 true,
+  .opt1 7 5 240 630 true,
+  .opt1 5 5 238 630 true,
+  .opt2 5 5 233 638,
+  .opt2 5 5 231 638,
+  .opt2 5 5 229 638,
+  .opt2 5 5 227 638,
+  .opt2 5 5 225 638,
+  .opt2 5 5 223 638,
+  .opt2 5 5 221 638,
+  .opt2 5 5 219 638,
+  .opt2 5 5 217 638,
+  .opt2 5 5 214 640,
+  .opt2 5 5 213 637,
+  .opt2 5 5 211 637,
+  .opt2 5 5 208 639,
+  .opt2 5 5 206 639,
+  .opt2 5 5 204 639,
+  .opt2 5 5 202 639,
+  .opt2 5 5 200 639,
+  .opt2 5 5 198 639,
+  .opt2 5 5 196 638,
+  .opt2 5 5 194 638,
+  .opt2 5 5 192 638,
+  .opt2 5 5 190 638,
+  .opt2 5 5 188 638,
+  .opt2 5 5 186 638,
+  .opt2 5 5 183 640,
+  .opt2 5 5 182 637,
+  .opt2 5 5 179 639,
+  .opt2 5 5 177 639,
+  .opt2 5 5 175 639,
+  .opt2 5 5 173 639,
+  .opt2 5 5 171 639,
+  .opt2 5 5 169 639,
+  .opt2 5 5 167 638,
+  .opt2 5 5 165 638,
+  .opt2 5 5 163 638,
+  .opt2 5 5 161 638,
+  .opt2 5 5 159 638,
+  .opt2 5 5 156 640,
+  .opt2 5 5 155 637,
+  .opt2 5 5 152 639,
+  .opt2 5 5 150 639,
+  .opt2 5 5 148 639,
+  .opt2 5 5 146 639,
+  .opt2 5 5 144 639,
+  .opt2 4 4 141 512,
+  .opt2 4 4 139 512,
+  .opt2 4 4 137 512,
+  .opt2 4 4 135 511,
+  .opt2 4 4 133 511,
+  .opt2 4 4 131 511
+]
+
+def plan500 : List BadSEntry := [
+  .k0 9 7 250 890,
+  .k1Red 9 7 250 888,
+  .opt1 9 7 248 888 true,
+  .opt1 9 7 247 885 true,
+  .opt1 9 7 246 881 true,
+  .opt2 9 7 241 893,
+  .opt2 9 7 239 893,
+  .opt2 9 7 237 893,
+  .opt2 9 7 235 893,
+  .opt2 9 7 233 893,
+  .opt2 9 7 231 893,
+  .opt2 9 7 229 893,
+  .opt2 9 7 227 893,
+  .opt2 9 7 225 893,
+  .opt2 9 7 223 893,
+  .opt2 9 7 221 893,
+  .opt2 9 7 219 892,
+  .opt2 9 7 217 892,
+  .opt2 9 7 215 892,
+  .opt2 9 7 213 892,
+  .opt2 9 7 211 892,
+  .opt2 7 7 209 892,
+  .opt2 7 7 207 892,
+  .opt2 7 7 205 892,
+  .opt2 7 7 203 892,
+  .opt2 7 7 201 892,
+  .opt2 7 7 199 891,
+  .opt2 7 7 197 891,
+  .opt2 7 7 195 891,
+  .opt2 7 7 193 891,
+  .opt2 7 7 191 891,
+  .opt2 7 7 189 891,
+  .opt2 7 7 187 891,
+  .opt2 7 7 184 894,
+  .opt2 7 7 182 894,
+  .opt2 7 7 180 894,
+  .opt2 7 7 178 894,
+  .opt2 7 7 176 894,
+  .opt2 7 7 174 893,
+  .opt2 7 7 172 893,
+  .opt2 7 7 170 893,
+  .opt2 7 7 168 893,
+  .opt2 7 7 166 893,
+  .opt2 7 7 164 893,
+  .opt2 7 7 162 893,
+  .opt2 7 7 160 893,
+  .opt2 7 7 158 892,
+  .opt2 7 7 156 892,
+  .opt2 7 7 154 892,
+  .opt2 7 7 152 892,
+  .opt2 7 7 150 892,
+  .opt2 7 7 148 892,
+  .opt2 7 7 146 892,
+  .opt2 7 7 144 892,
+  .opt2 7 7 142 891,
+  .opt2 7 7 140 891,
+  .opt2 7 7 138 891,
+  .opt2 7 7 136 891,
+  .opt2 7 7 134 891,
+  .opt2 7 7 132 891,
+  .opt2 7 7 129 894,
+  .opt2 7 7 127 894,
+  .opt2 7 7 125 894,
+  .opt2 7 7 123 894,
+  .opt2 7 7 121 894,
+  .opt2 7 7 119 893,
+  .opt2 7 7 117 893,
+  .opt2 7 7 115 893,
+  .opt2 7 7 113 893,
+  .opt2 7 7 111 893,
+  .opt2 7 7 109 893,
+  .opt2 7 7 107 893,
+  .opt2 7 7 105 893,
+  .opt2 7 7 103 892,
+  .opt2 7 7 101 892,
+  .opt2 7 7 99 892,
+  .opt2 7 7 97 892,
+  .opt2 7 7 95 892
+]
+
+def plan510 : List BadSEntry := [
+  .k0 9 7 255 892,
+  .k1Red 9 7 254 894,
+  .opt1 9 7 253 891 true,
+  .opt1 9 7 252 887 true,
+  .opt1 9 7 251 884 true,
+  .opt2 9 7 246 895,
+  .opt2 9 7 244 895,
+  .opt2 9 7 242 895,
+  .opt2 9 7 240 895,
+  .opt2 9 7 238 896,
+  .opt2 9 7 235 899,
+  .opt2 9 7 234 895,
+  .opt2 9 7 232 895,
+  .opt2 9 7 230 895,
+  .opt2 9 7 228 895,
+  .opt2 9 7 226 895,
+  .opt2 9 7 224 895,
+  .opt2 9 7 222 895,
+  .opt2 9 7 220 895,
+  .opt2 9 7 217 898,
+  .opt2 9 7 215 898,
+  .opt2 9 7 213 898,
+  .opt2 9 7 211 898,
+  .opt2 9 7 209 898,
+  .opt2 9 7 207 898,
+  .opt2 9 7 205 897,
+  .opt2 9 7 203 897,
+  .opt2 9 7 201 897,
+  .opt2 9 7 199 897,
+  .opt2 9 7 197 897,
+  .opt2 9 7 195 897,
+  .opt2 9 7 193 897,
+  .opt2 9 7 191 897,
+  .opt2 9 7 189 897,
+  .opt2 9 7 187 896,
+  .opt2 9 7 185 896,
+  .opt2 9 7 183 896,
+  .opt2 9 7 181 896,
+  .opt2 9 7 179 896,
+  .opt2 9 7 177 896,
+  .opt2 9 7 175 896,
+  .opt2 9 7 173 896,
+  .opt2 9 7 171 896,
+  .opt2 9 7 169 895,
+  .opt2 9 7 167 895,
+  .opt2 9 7 165 895,
+  .opt2 9 7 163 895,
+  .opt2 9 7 161 895,
+  .opt2 9 7 159 895,
+  .opt2 9 7 157 895,
+  .opt2 9 7 155 895,
+  .opt2 9 7 153 894,
+  .opt2 9 7 151 894,
+  .opt2 9 7 149 894,
+  .opt2 9 7 147 894,
+  .opt2 9 7 145 894,
+  .opt2 9 7 143 894,
+  .opt2 9 7 141 894,
+  .opt2 9 7 139 894,
+  .opt2 9 7 137 893,
+  .opt2 9 7 135 893,
+  .opt2 9 7 133 893,
+  .opt2 9 7 131 893,
+  .opt2 9 7 129 893,
+  .opt2 9 7 127 893,
+  .opt2 9 7 125 893,
+  .opt2 9 7 123 893,
+  .opt2 9 7 121 892,
+  .opt2 9 7 119 892,
+  .opt2 9 7 117 892,
+  .opt2 9 7 115 892,
+  .opt2 9 7 113 892,
+  .opt2 9 7 111 892,
+  .opt2 9 7 109 892,
+  .opt2 9 7 107 891,
+  .opt2 9 7 105 891,
+  .opt2 9 7 103 891,
+  .opt2 9 7 101 891,
+  .opt2 9 7 99 891,
+  .opt2 9 7 97 891,
+  .opt2 9 7 95 891,
+  .opt2 7 7 92 894,
+  .opt2 7 7 90 894,
+  .opt2 7 7 88 894,
+  .opt2 7 7 86 894,
+  .opt2 7 7 84 893,
+  .opt2 7 7 82 893,
+  .opt2 7 7 80 893,
+  .opt2 7 7 78 893,
+  .opt2 7 7 76 893,
+  .opt2 7 7 74 893,
+  .opt2 7 7 72 893,
+  .opt2 7 7 70 893,
+  .opt2 7 7 68 892,
+  .opt2 7 7 66 892,
+  .opt2 7 7 64 892
+]
+
+
+theorem skywalk_badStack460_card :
+    ((BadStack LocalKernel.env460).card : ℝ) ≤ (524 : ℝ) / 10 ^ 9 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env460 460 LocalKernel.env460PostW plan460 524 (10 ^ 9)
+    rfl rfl (by decide)
+    (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env460PostW at *; split_ifs at hdrop <;> omega)
+    (by decide +kernel) (by decide +kernel)
+  push_cast at h
+  exact h.trans_eq (congrArg (· * (2 : ℝ) ^ 256) (by norm_num))
+
+theorem skywalk_badStack465_card :
+    ((BadStack LocalKernel.env465).card : ℝ) ≤ (386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env465 465 LocalKernel.env465PostW plan465 386 (10 ^ 10)
+    rfl rfl (by decide)
+    (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env465PostW at *; split_ifs at hdrop <;> omega)
+    (by decide +kernel) (by decide +kernel)
+  push_cast at h
+  exact h.trans_eq (congrArg (· * (2 : ℝ) ^ 256) (by norm_num))
+
+theorem skywalk_badStack485_card :
+    ((BadStack LocalKernel.env485).card : ℝ) ≤ (341 : ℝ) / 10 ^ 16 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env485 485 LocalKernel.env485PostW plan485 341 (10 ^ 16)
+    rfl rfl (by decide)
+    (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env485PostW at *; split_ifs at hdrop <;> omega)
+    (by decide +kernel) (by decide +kernel)
+  push_cast at h
+  exact h.trans_eq (congrArg (· * (2 : ℝ) ^ 256) (by norm_num))
+
+theorem skywalk_badStack500_card :
+    ((BadStack LocalKernel.env500).card : ℝ) ≤ (109 : ℝ) / 10 ^ 22 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env500 500 LocalKernel.env500PostW plan500 109 (10 ^ 22)
+    rfl rfl (by decide)
+    (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env500PostW at *; split_ifs at hdrop <;> omega)
+    (by decide +kernel) (by decide +kernel)
+  push_cast at h
+  exact h.trans_eq (congrArg (· * (2 : ℝ) ^ 256) (by norm_num))
+
+theorem skywalk_badStack510_card :
+    ((BadStack LocalKernel.env510).card : ℝ) ≤ (75 : ℝ) / 10 ^ 27 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env510 510 LocalKernel.env510PostW plan510 75 (10 ^ 27)
+    rfl rfl (by decide)
+    (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env510PostW at *; split_ifs at hdrop <;> omega)
+    (by decide +kernel) (by decide +kernel)
+  push_cast at h
+  exact h.trans_eq (congrArg (· * (2 : ℝ) ^ 256) (by norm_num))
 
 end
 end ShorECDLP.Entrant.SkywalkTail485
@@ -8393,7 +13224,7 @@ namespace ShorECDLP.Entrant.Schedule25
 open Quantum Challenge Secp256k1 AndGadget WEXCredit ConditionalCatalyst ApproximatePhase34
 open Paper2607_13816 Paper2607_13816.ChallengeMigration
 open Single Single.Distribution Width16Schedule.Specialization
-open SineCircuit SineBounds Trim18 Schedule26Bridge ApproxCat
+open SineCircuit SineBounds SineBoundsTight Trim18 Schedule26Bridge ApproxCat
 open scoped BigOperators
 noncomputable section
 set_option maxRecDepth 20000
@@ -8429,10 +13260,10 @@ def Digit25.width (d : Digit25) : Nat := d.k + 1
 def Digit25.bank (d : Digit25) : List Wire := GenericW.bankW d.k
 
 def Digit25.tof : Digit25 → Nat
-  | .left18 _ => 2320431
-  | .left19 j => if j.val = 1 then 2346489 else 2484527
-  | .right17 _ => 2027056
-  | .right18 _ => 2109231
+  | .left18 j => if j.val = 10 then 2263993 else 2320431
+  | .left19 j => if j.val = 1 then 2277531 else 2366013
+  | .right17 j => if j.val < 3 then 1897790 else 1921892
+  | .right18 _ => 2004067
 
 def Digit25.isRight : Digit25 → Bool
   | .left18 _ | .left19 _ => false
@@ -8628,8 +13459,10 @@ theorem specializeEntry25_certificate (e : StraightEntry)
 attribute [local irreducible] First20Signed.program Single.axis resetProgram
   GenericW.compiledProgramW GenericW.compiledProgramFnW
   GenericW.compiledProgram16 GenericW.compiledProgram17 GenericW.compiledProgram18
-  GenericW.compiledProgramEnv475_16 GenericW.compiledProgramEnv475_17 GenericW.compiledProgramEnv490_18
-  GenericW.arithSpecFull GenericW.arithSpecEnv475 GenericW.arithSpecEnv490
+  GenericW.compiledProgramEnv460_16 GenericW.compiledProgramEnv465_16 GenericW.compiledProgramEnv465_17
+  GenericW.compiledProgramEnv485_18 GenericW.compiledProgramEnv500_18 GenericW.compiledProgramEnv510_17
+  GenericW.arithSpecFull GenericW.arithSpecEnv460 GenericW.arithSpecEnv465
+  GenericW.arithSpecEnv485 GenericW.arithSpecEnv500 GenericW.arithSpecEnv510
   GenericW.fixupSpec16 GenericW.fixupSpec17 GenericW.fixupSpec18
   GenericW.compiledFixup16 GenericW.compiledFixup9 GenericW.rawFixup16 GenericW.rawFixup9
   GenericW.compact1612 Readout5.suffix5
@@ -8732,29 +13565,53 @@ theorem cBody18_eq :
   Classical.choose_spec cBody18_exists
 theorem cBody18_le : cBody18 ≤ 4350000 := cBody18_eq ▸ GenericW.compiledRec18_bound
 
-private theorem cBody16Env475_exists :
-    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec16 0) := ⟨_, rfl⟩
-def cBody16Env475 : Nat := Classical.choose cBody16Env475_exists
-theorem cBody16Env475_eq :
-    cBody16Env475 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec16 0) :=
-  Classical.choose_spec cBody16Env475_exists
-theorem cBody16Env475_le : cBody16Env475 ≤ 3510000 := cBody16Env475_eq ▸ GenericW.compiledRecEnv475_16_bound
+private theorem cBody16Env460_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv460 GenericW.fixupSpec16 0) := ⟨_, rfl⟩
+def cBody16Env460 : Nat := Classical.choose cBody16Env460_exists
+theorem cBody16Env460_eq :
+    cBody16Env460 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv460 GenericW.fixupSpec16 0) :=
+  Classical.choose_spec cBody16Env460_exists
+theorem cBody16Env460_le : cBody16Env460 ≤ 3310000 := cBody16Env460_eq ▸ GenericW.compiledRecEnv460_16_bound
 
-private theorem cBody17Env475_exists :
-    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec17 0) := ⟨_, rfl⟩
-def cBody17Env475 : Nat := Classical.choose cBody17Env475_exists
-theorem cBody17Env475_eq :
-    cBody17Env475 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv475 GenericW.fixupSpec17 0) :=
-  Classical.choose_spec cBody17Env475_exists
-theorem cBody17Env475_le : cBody17Env475 ≤ 3660000 := cBody17Env475_eq ▸ GenericW.compiledRecEnv475_17_bound
+private theorem cBody16Env465_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv465 GenericW.fixupSpec16 0) := ⟨_, rfl⟩
+def cBody16Env465 : Nat := Classical.choose cBody16Env465_exists
+theorem cBody16Env465_eq :
+    cBody16Env465 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv465 GenericW.fixupSpec16 0) :=
+  Classical.choose_spec cBody16Env465_exists
+theorem cBody16Env465_le : cBody16Env465 ≤ 3350000 := cBody16Env465_eq ▸ GenericW.compiledRecEnv465_16_bound
 
-private theorem cBody18Env490_exists :
-    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv490 GenericW.fixupSpec18 0) := ⟨_, rfl⟩
-def cBody18Env490 : Nat := Classical.choose cBody18Env490_exists
-theorem cBody18Env490_eq :
-    cBody18Env490 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv490 GenericW.fixupSpec18 0) :=
-  Classical.choose_spec cBody18Env490_exists
-theorem cBody18Env490_le : cBody18Env490 ≤ 4120000 := cBody18Env490_eq ▸ GenericW.compiledRecEnv490_18_bound
+private theorem cBody17Env465_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv465 GenericW.fixupSpec17 0) := ⟨_, rfl⟩
+def cBody17Env465 : Nat := Classical.choose cBody17Env465_exists
+theorem cBody17Env465_eq :
+    cBody17Env465 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv465 GenericW.fixupSpec17 0) :=
+  Classical.choose_spec cBody17Env465_exists
+theorem cBody17Env465_le : cBody17Env465 ≤ 3500000 := cBody17Env465_eq ▸ GenericW.compiledRecEnv465_17_bound
+
+private theorem cBody18Env485_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv485 GenericW.fixupSpec18 0) := ⟨_, rfl⟩
+def cBody18Env485 : Nat := Classical.choose cBody18Env485_exists
+theorem cBody18Env485_eq :
+    cBody18Env485 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv485 GenericW.fixupSpec18 0) :=
+  Classical.choose_spec cBody18Env485_exists
+theorem cBody18Env485_le : cBody18Env485 ≤ 4010000 := cBody18Env485_eq ▸ GenericW.compiledRecEnv485_18_bound
+
+private theorem cBody18Env500_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv500 GenericW.fixupSpec18 0) := ⟨_, rfl⟩
+def cBody18Env500 : Nat := Classical.choose cBody18Env500_exists
+theorem cBody18Env500_eq :
+    cBody18Env500 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv500 GenericW.fixupSpec18 0) :=
+  Classical.choose_spec cBody18Env500_exists
+theorem cBody18Env500_le : cBody18Env500 ≤ 4160000 := cBody18Env500_eq ▸ GenericW.compiledRecEnv500_18_bound
+
+private theorem cBody17Env510_exists :
+    ∃ n : Nat, n = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv510 GenericW.fixupSpec17 0) := ⟨_, rfl⟩
+def cBody17Env510 : Nat := Classical.choose cBody17Env510_exists
+theorem cBody17Env510_eq :
+    cBody17Env510 = LocalFour.CatProg.finish (GenericW.compiledProgramFnW GenericW.arithSpecEnv510 GenericW.fixupSpec17 0) :=
+  Classical.choose_spec cBody17Env510_exists
+theorem cBody17Env510_le : cBody17Env510 ≤ 3930000 := cBody17Env510_eq ▸ GenericW.compiledRecEnv510_17_bound
 
 private theorem compileLower_finish_zero {n e : Nat} (q y : Wire) (p : Straight n 0 e) (start : Nat) :
     (LocalFour.compileLower q y p start Fin.elim0).finish =
@@ -8794,39 +13651,49 @@ def first20CatWin : Window 3407872 :=
 
 def bodyCatWin : Digit25 → Window 3407872
   | .left18 j =>
-    ⟨(GenericW.bankW 17).reverse, cBody17,
-      fun start => castFinish (congrArg (start + ·) cBody17_eq.symm)
-        (reindexStraight (row25 (.left18 j))
-          (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))⟩
+    if j.val = 10 then
+      ⟨(GenericW.bankW 17).reverse, cBody17Env510,
+        fun start => castFinish (congrArg (start + ·) cBody17Env510_eq.symm)
+          (reindexStraight (row25 (.left18 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv510_17 start)))⟩
+    else
+      ⟨(GenericW.bankW 17).reverse, cBody17,
+        fun start => castFinish (congrArg (start + ·) cBody17_eq.symm)
+          (reindexStraight (row25 (.left18 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))⟩
   | .left19 j =>
     if j.val = 1 then
-      ⟨(GenericW.bankW 18).reverse, cBody18Env490,
-        fun start => castFinish (congrArg (start + ·) cBody18Env490_eq.symm)
+      ⟨(GenericW.bankW 18).reverse, cBody18Env485,
+        fun start => castFinish (congrArg (start + ·) cBody18Env485_eq.symm)
           (reindexStraight (row25 (.left19 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv490_18 start)))⟩
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv485_18 start)))⟩
     else
-      ⟨(GenericW.bankW 18).reverse, cBody18,
-        fun start => castFinish (congrArg (start + ·) cBody18_eq.symm)
+      ⟨(GenericW.bankW 18).reverse, cBody18Env500,
+        fun start => castFinish (congrArg (start + ·) cBody18Env500_eq.symm)
           (reindexStraight (row25 (.left19 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))⟩
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv500_18 start)))⟩
   | .right17 j =>
-    ⟨(GenericW.bankW 16).reverse, cBody16Env475,
-      fun start => castFinish (congrArg (start + ·) cBody16Env475_eq.symm)
-        (reindexStraight (row25 (.right17 j))
-          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_16 start)))⟩
+    if j.val < 3 then
+      ⟨(GenericW.bankW 16).reverse, cBody16Env460,
+        fun start => castFinish (congrArg (start + ·) cBody16Env460_eq.symm)
+          (reindexStraight (row25 (.right17 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv460_16 start)))⟩
+    else
+      ⟨(GenericW.bankW 16).reverse, cBody16Env465,
+        fun start => castFinish (congrArg (start + ·) cBody16Env465_eq.symm)
+          (reindexStraight (row25 (.right17 j))
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv465_16 start)))⟩
   | .right18 j =>
-    ⟨(GenericW.bankW 17).reverse, cBody17Env475,
-      fun start => castFinish (congrArg (start + ·) cBody17Env475_eq.symm)
+    ⟨(GenericW.bankW 17).reverse, cBody17Env465,
+      fun start => castFinish (congrArg (start + ·) cBody17Env465_eq.symm)
         (reindexStraight (row25 (.right18 j))
-          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_17 start)))⟩
+          (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv465_17 start)))⟩
 
 theorem bodyCatWin_wires (d : Digit25) : (bodyCatWin d).wires = d.bank.reverse := by
-  cases d with
-  | left19 j => simp only [bodyCatWin]; split_ifs <;> rfl
-  | _ => rfl
+  cases d <;> simp only [bodyCatWin] <;> (try split_ifs) <;> rfl
 
 def rightHeadCatWin : Window 3407872 :=
-  ⟨(GenericW.bankW 16).reverse, cBody16Env475,
+  ⟨(GenericW.bankW 16).reverse, cBody16Env460,
     fun start => (ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
       ((bodyCatWin rightHeadDigit).program start)⟩
 
@@ -8834,10 +13701,10 @@ def leftWins25Cat : List (Window 3407872) := first20CatWin :: leftDigits25.map b
 def rightWins25Cat : List (Window 3407872) := rightHeadCatWin :: rightTailDigits25.map bodyCatWin
 
 def leftMeta25Cat : List (Nat × Nat) :=
-  (cFirst20, 20) :: List.replicate 11 (cBody17, 18) ++ [(cBody18, 19), (cBody18Env490, 19)]
+  (cFirst20, 20) :: List.replicate 10 (cBody17, 18) ++ [(cBody17Env510, 18), (cBody18Env500, 19), (cBody18Env485, 19)]
 
 def rightMeta25Cat : List (Nat × Nat) :=
-  List.replicate 10 (cBody16Env475, 17) ++ List.replicate 2 (cBody17Env475, 18)
+  List.replicate 3 (cBody16Env460, 17) ++ List.replicate 7 (cBody16Env465, 17) ++ List.replicate 2 (cBody17Env465, 18)
 
 theorem leftWins25Cat_meta : leftWins25Cat.map (fun w => (w.count, w.wires.length)) = leftMeta25Cat := by
   simp only [leftWins25Cat, leftMeta25Cat, leftDigits25, List.map_cons, List.map_append,
@@ -8850,13 +13717,13 @@ theorem rightWins25Cat_meta : rightWins25Cat.map (fun w => (w.count, w.wires.len
   simp [List.ofFn_succ, List.replicate, bodyCatWin, GenericW.bankW_length]
 
 theorem leftWins25Cat_count_eq :
-    axisCount leftWins25Cat = cFirst20 + 20 + 11 * (cBody17 + 18) + (cBody18 + 19) + (cBody18Env490 + 19) := by
+    axisCount leftWins25Cat = cFirst20 + 20 + 10 * (cBody17 + 18) + (cBody17Env510 + 18) + (cBody18Env500 + 19) + (cBody18Env485 + 19) := by
   rw [← recordCount_eq_axisCount, leftWins25Cat_meta]
   simp only [leftMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
 
 theorem rightWins25Cat_count_eq :
-    axisCount rightWins25Cat = 10 * (cBody16Env475 + 17) + 2 * (cBody17Env475 + 18) := by
+    axisCount rightWins25Cat = 3 * (cBody16Env460 + 17) + 7 * (cBody16Env465 + 17) + 2 * (cBody17Env465 + 18) := by
   rw [← recordCount_eq_axisCount, rightWins25Cat_meta]
   simp only [rightMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
@@ -9477,34 +14344,46 @@ theorem first20Core_catCoherent (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0
 theorem bodyCatWin_wellFormed (d : Digit25) (start : Nat) : ((bodyCatWin d).program start).WellFormed := by
   cases d with
   | left18 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).WellFormed
-    rw [castFinish_wellFormed]
-    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled17_wellFormed start))
+    by_cases hj : j.val = 10
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [castFinish_wellFormed]
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv510_17_wellFormed start))
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [castFinish_wellFormed]
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled17_wellFormed start))
   | left19 j =>
     rcases j with ⟨_ | _ | n, hj⟩
-    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).WellFormed
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))).WellFormed
       rw [castFinish_wellFormed]
-      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiled18_wellFormed start))
-    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))).WellFormed
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv500_18_wellFormed start))
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))).WellFormed
       rw [castFinish_wellFormed]
-      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv490_18_wellFormed start))
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv485_18_wellFormed start))
     · omega
   | right17 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))).WellFormed
-    rw [castFinish_wellFormed]
-    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv475_16_wellFormed start))
+    by_cases hj : j.val < 3
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [castFinish_wellFormed]
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv460_16_wellFormed start))
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [castFinish_wellFormed]
+      exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv465_16_wellFormed start))
   | right18 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))).WellFormed
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))).WellFormed
     rw [castFinish_wellFormed]
-    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv475_17_wellFormed start))
+    exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv465_17_wellFormed start))
 
 def Digit25.goodPred (Q : Point) : Digit25 → BasisState → Prop
-  | .left18 j => GenericW.GoodW 17 (wideCoeffs25 (.left18 j)) Q
+  | .left18 j =>
+    if j.val = 10 then GenericW.GoodWEnv510 17 (wideCoeffs25 (.left18 j)) Q
+    else GenericW.GoodW 17 (wideCoeffs25 (.left18 j)) Q
   | .left19 j =>
-    if j.val = 1 then GenericW.GoodWEnv490 18 (wideCoeffs25 (.left19 j)) Q
-    else GenericW.GoodW 18 (wideCoeffs25 (.left19 j)) Q
-  | .right17 j => GenericW.GoodWEnv475 16 (wideCoeffs25 (.right17 j)) Q
-  | .right18 j => GenericW.GoodWEnv475 17 (wideCoeffs25 (.right18 j)) Q
+    if j.val = 1 then GenericW.GoodWEnv485 18 (wideCoeffs25 (.left19 j)) Q
+    else GenericW.GoodWEnv500 18 (wideCoeffs25 (.left19 j)) Q
+  | .right17 j =>
+    if j.val < 3 then GenericW.GoodWEnv460 16 (wideCoeffs25 (.right17 j)) Q
+    else GenericW.GoodWEnv465 16 (wideCoeffs25 (.right17 j)) Q
+  | .right18 j => GenericW.GoodWEnv465 17 (wideCoeffs25 (.right18 j)) Q
 
 def first20ApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     ApproxCatWindow 1 (readConstant coefficientAt25 Q) where
@@ -9544,70 +14423,72 @@ def bodyApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25
   catCoherent := fun start history => by
     cases d with
     | left18 j =>
-      change LocalFour.CatCoherent 1
-        ((castFinish (congrArg (start + ·) cBody17_eq.symm)
-          (reindexStraight (row25 (.left18 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgram17 start)))).instantiate
-              (readConstant coefficientAt25 Q) history)
-        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 17 (wideCoeffs25 (.left18 j)) Q))
-        (GenericW.GoodW 17 (wideCoeffs25 (.left18 j)) Q)
-      rw [castFinish_instantiate, reindexStraight_instantiate,
-        readConstant_reindex (row25 (.left18 j)) (wideCoeffs25 (.left18 j)) coefficientAt25 Q
-          (fun a => coefficientAt25_row (.left18 j) a)]
-      exact GenericW.compiled17_packed_coherent (wideCoeffs25 (.left18 j)) Q
-        (wide25_nonzero Q hQ hn (.left18 j)) start history
+      by_cases hj : j.val = 10
+      · dsimp only [bodyCatWin, Digit25.goodPred]; rw [if_pos hj, if_pos hj]; dsimp only
+        rw [castFinish_instantiate, reindexStraight_instantiate,
+          readConstant_reindex (row25 (.left18 j)) (wideCoeffs25 (.left18 j)) coefficientAt25 Q
+            (fun a => coefficientAt25_row (.left18 j) a)]
+        exact GenericW.compiledEnv510_17_packed_coherent (wideCoeffs25 (.left18 j)) Q
+          (wide25_nonzero Q hQ hn (.left18 j)) start history
+      · dsimp only [bodyCatWin, Digit25.goodPred]; rw [if_neg hj, if_neg hj]; dsimp only
+        rw [castFinish_instantiate, reindexStraight_instantiate,
+          readConstant_reindex (row25 (.left18 j)) (wideCoeffs25 (.left18 j)) coefficientAt25 Q
+            (fun a => coefficientAt25_row (.left18 j) a)]
+        exact GenericW.compiled17_packed_coherent (wideCoeffs25 (.left18 j)) Q
+          (wide25_nonzero Q hQ hn (.left18 j)) start history
     | left19 j =>
       rcases j with ⟨_ | _ | n, hj⟩
       · change LocalFour.CatCoherent 1
-          ((castFinish (congrArg (start + ·) cBody18_eq.symm)
+          ((castFinish (congrArg (start + ·) cBody18Env500_eq.symm)
             (reindexStraight (row25 (.left19 ⟨0, hj⟩))
-              (relabelStraight GenericW.compact1612 (GenericW.compiledProgram18 start)))).instantiate
+              (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv500_18 start)))).instantiate
                 (readConstant coefficientAt25 Q) history)
           (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 18 (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q))
-          (GenericW.GoodW 18 (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q)
+          (GenericW.GoodWEnv500 18 (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q)
         rw [castFinish_instantiate, reindexStraight_instantiate,
           readConstant_reindex (row25 (.left19 ⟨0, hj⟩)) (wideCoeffs25 (.left19 ⟨0, hj⟩)) coefficientAt25 Q
             (fun a => coefficientAt25_row (.left19 ⟨0, hj⟩) a)]
-        exact GenericW.compiled18_packed_coherent (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q
+        exact GenericW.compiledEnv500_18_packed_coherent (wideCoeffs25 (.left19 ⟨0, hj⟩)) Q
           (wide25_nonzero Q hQ hn (.left19 ⟨0, hj⟩)) start history
       · change LocalFour.CatCoherent 1
-          ((castFinish (congrArg (start + ·) cBody18Env490_eq.symm)
+          ((castFinish (congrArg (start + ·) cBody18Env485_eq.symm)
             (reindexStraight (row25 (.left19 ⟨1, hj⟩))
-              (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv490_18 start)))).instantiate
+              (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv485_18 start)))).instantiate
                 (readConstant coefficientAt25 Q) history)
           (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 18 (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q))
-          (GenericW.GoodWEnv490 18 (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q)
+          (GenericW.GoodWEnv485 18 (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q)
         rw [castFinish_instantiate, reindexStraight_instantiate,
           readConstant_reindex (row25 (.left19 ⟨1, hj⟩)) (wideCoeffs25 (.left19 ⟨1, hj⟩)) coefficientAt25 Q
             (fun a => coefficientAt25_row (.left19 ⟨1, hj⟩) a)]
-        exact GenericW.compiledEnv490_18_packed_coherent (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q
+        exact GenericW.compiledEnv485_18_packed_coherent (wideCoeffs25 (.left19 ⟨1, hj⟩)) Q
           (wide25_nonzero Q hQ hn (.left19 ⟨1, hj⟩)) start history
       · omega
     | right17 j =>
-      change LocalFour.CatCoherent 1
-        ((castFinish (congrArg (start + ·) cBody16Env475_eq.symm)
-          (reindexStraight (row25 (.right17 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_16 start)))).instantiate
-              (readConstant coefficientAt25 Q) history)
-        (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 (.right17 j)) Q))
-        (GenericW.GoodWEnv475 16 (wideCoeffs25 (.right17 j)) Q)
-      rw [castFinish_instantiate, reindexStraight_instantiate,
-        readConstant_reindex (row25 (.right17 j)) (wideCoeffs25 (.right17 j)) coefficientAt25 Q
-          (fun a => coefficientAt25_row (.right17 j) a)]
-      exact GenericW.compiledEnv475_16_packed_coherent (wideCoeffs25 (.right17 j)) Q
-        (wide25_nonzero Q hQ hn (.right17 j)) start history
+      by_cases hj : j.val < 3
+      · dsimp only [bodyCatWin, Digit25.goodPred]; rw [if_pos hj, if_pos hj]; dsimp only
+        rw [castFinish_instantiate, reindexStraight_instantiate,
+          readConstant_reindex (row25 (.right17 j)) (wideCoeffs25 (.right17 j)) coefficientAt25 Q
+            (fun a => coefficientAt25_row (.right17 j) a)]
+        exact GenericW.compiledEnv460_16_packed_coherent (wideCoeffs25 (.right17 j)) Q
+          (wide25_nonzero Q hQ hn (.right17 j)) start history
+      · dsimp only [bodyCatWin, Digit25.goodPred]; rw [if_neg hj, if_neg hj]; dsimp only
+        rw [castFinish_instantiate, reindexStraight_instantiate,
+          readConstant_reindex (row25 (.right17 j)) (wideCoeffs25 (.right17 j)) coefficientAt25 Q
+            (fun a => coefficientAt25_row (.right17 j) a)]
+        exact GenericW.compiledEnv465_16_packed_coherent (wideCoeffs25 (.right17 j)) Q
+          (wide25_nonzero Q hQ hn (.right17 j)) start history
     | right18 j =>
       change LocalFour.CatCoherent 1
-        ((castFinish (congrArg (start + ·) cBody17Env475_eq.symm)
+        ((castFinish (congrArg (start + ·) cBody17Env465_eq.symm)
           (reindexStraight (row25 (.right18 j))
-            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv475_17 start)))).instantiate
+            (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv465_17 start)))).instantiate
               (readConstant coefficientAt25 Q) history)
         (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 17 (wideCoeffs25 (.right18 j)) Q))
-        (GenericW.GoodWEnv475 17 (wideCoeffs25 (.right18 j)) Q)
+        (GenericW.GoodWEnv465 17 (wideCoeffs25 (.right18 j)) Q)
       rw [castFinish_instantiate, reindexStraight_instantiate,
         readConstant_reindex (row25 (.right18 j)) (wideCoeffs25 (.right18 j)) coefficientAt25 Q
           (fun a => coefficientAt25_row (.right18 j) a)]
-      exact GenericW.compiledEnv475_17_packed_coherent (wideCoeffs25 (.right18 j)) Q
+      exact GenericW.compiledEnv465_17_packed_coherent (wideCoeffs25 (.right18 j)) Q
         (wide25_nonzero Q hQ hn (.right18 j)) start history
   core_idealY := fun ψ hψ => by
     refine Support.linear _ _ _ (fun s hs => ?_) ψ hψ
@@ -9631,7 +14512,7 @@ def rightHeadApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   ideal_eq := rfl
   wires_eq := rfl
   noY := fun hm => wire1_not_bankW (List.mem_reverse.mp hm)
-  goodPred := GenericW.GoodWEnv475 rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q
+  goodPred := GenericW.GoodWEnv460 rightHeadDigit.k (wideCoeffs25 rightHeadDigit) Q
   catCoherent := (bodyApproxWin Q hQ hn rightHeadDigit).catCoherent
   core_idealY := (bodyApproxWin Q hQ hn rightHeadDigit).core_idealY
   core_wf := bodyCatWin_wellFormed rightHeadDigit
@@ -11452,163 +16333,244 @@ private theorem stepDistW_linear_sum (w : Nat) (wpre : Nat → ℂ) (delta : Nat
   rw [hmul]
   apply mul_le_mul_of_nonneg_left (hD _) (Complex.normSq_nonneg _)
 
-private theorem goodX_env475 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env475 X.val →
-    GenericW.arithSpecEnv475.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv475; exact ⟨h1, h2⟩
+private theorem goodX_env460 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env460 X.val →
+    GenericW.arithSpecEnv460.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv460; exact ⟨h1, h2⟩
 
-private theorem goodX_env490 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env490 X.val →
-    GenericW.arithSpecEnv490.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv490; exact ⟨h1, h2⟩
+private theorem goodX_env465 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env465 X.val →
+    GenericW.arithSpecEnv465.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv465; exact ⟨h1, h2⟩
 
-theorem bodyTail_axisBad_maxBoundEnv475 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (ds : List Digit25) (hright : ∀ d ∈ ds, d.isRight = true)
-    (baseBad : List Bool → State → ℝ) (M Btail : ℝ) (hM : 0 ≤ M)
-    (hbase : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
-      (∀ x ∈ S, PointSupported x.2) → MaxBound M D →
-      (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => baseBad x.1 x.2)).sum ≤ Btail)
+private theorem goodX_env485 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env485 X.val →
+    GenericW.arithSpecEnv485.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv485; exact ⟨h1, h2⟩
+
+private theorem goodX_env500 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env500 X.val →
+    GenericW.arithSpecEnv500.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv500; exact ⟨h1, h2⟩
+
+private theorem goodX_env510 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack LocalKernel.env510 X.val →
+    GenericW.arithSpecEnv510.GoodX X := fun _ h1 h2 => by unfold GenericW.arithSpecEnv510; exact ⟨h1, h2⟩
+
+private theorem badMass_env460_le :
+    (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env460).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
+      (2048 / 1000000 : ℝ) ^ 2 := by
+  have hcard := SkywalkTail485.skywalk_badStack460_card
+  have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env460).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
+      (4 + 4 * ((524 : ℝ) / 10 ^ 9 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
+    mul_le_mul_of_nonneg_right (by linarith) (by positivity)
+  have h2 : (4 + 4 * ((524 : ℝ) / 10 ^ 9 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
+      8 / (2 : ℝ) ^ 256 + 4192 / 10 ^ 9 := by
+    have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
+    field_simp [hp]; ring
+  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 4192 / 10 ^ 9 ≤ (2048 / 1000000 : ℝ) ^ 2 := by norm_num
+  linarith
+
+private theorem badMass_env465_le :
+    (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env465).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
+      (556 / 1000000 : ℝ) ^ 2 := by
+  have hcard := SkywalkTail485.skywalk_badStack465_card
+  have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env465).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
+      (4 + 4 * ((386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
+    mul_le_mul_of_nonneg_right (by linarith) (by positivity)
+  have h2 : (4 + 4 * ((386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
+      8 / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 := by
+    have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
+    field_simp [hp]; ring
+  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 ≤ (556 / 1000000 : ℝ) ^ 2 := by norm_num
+  linarith
+
+private theorem badMass_env485_le :
+    (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env485).card : ℝ)) * (1 / (2 : ℝ) ^ 236) ≤
+      (379 / 1000000 : ℝ) ^ 2 := by
+  have hcard := SkywalkTail485.skywalk_badStack485_card
+  have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env485).card : ℝ)) * (1 / (2 : ℝ) ^ 236) ≤
+      (4 + 4 * ((341 : ℝ) / 10 ^ 16 * (2 : ℝ) ^ 256)) * (1 / (2 : ℝ) ^ 236) :=
+    mul_le_mul_of_nonneg_right (by linarith) (by positivity)
+  have h2 : (4 + 4 * ((341 : ℝ) / 10 ^ 16 * (2 : ℝ) ^ 256)) * (1 / (2 : ℝ) ^ 236) =
+      4 / (2 : ℝ) ^ 236 + 4 * (341 / 10 ^ 16) * (2 : ℝ) ^ 20 := by
+    have hp : (2 : ℝ) ^ 256 = (2 : ℝ) ^ 236 * (2 : ℝ) ^ 20 := by rw [← pow_add]
+    have hp0 : (2 : ℝ) ^ 236 ≠ 0 := by positivity
+    rw [hp]; field_simp [hp0]
+  have h3 : (4 : ℝ) / (2 : ℝ) ^ 236 + 4 * (341 / 10 ^ 16) * (2 : ℝ) ^ 20 ≤ (379 / 1000000 : ℝ) ^ 2 := by norm_num
+  linarith
+
+private theorem badMass_env500_le :
+    (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env500).card : ℝ)) * (1 / (2 : ℝ) ^ 217) ≤
+      (155 / 1000000 : ℝ) ^ 2 := by
+  have hcard := SkywalkTail485.skywalk_badStack500_card
+  have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env500).card : ℝ)) * (1 / (2 : ℝ) ^ 217) ≤
+      (4 + 4 * ((109 : ℝ) / 10 ^ 22 * (2 : ℝ) ^ 256)) * (1 / (2 : ℝ) ^ 217) :=
+    mul_le_mul_of_nonneg_right (by linarith) (by positivity)
+  have h2 : (4 + 4 * ((109 : ℝ) / 10 ^ 22 * (2 : ℝ) ^ 256)) * (1 / (2 : ℝ) ^ 217) =
+      4 / (2 : ℝ) ^ 217 + 4 * (109 / 10 ^ 22) * (2 : ℝ) ^ 39 := by
+    have hp : (2 : ℝ) ^ 256 = (2 : ℝ) ^ 217 * (2 : ℝ) ^ 39 := by rw [← pow_add]
+    have hp0 : (2 : ℝ) ^ 217 ≠ 0 := by positivity
+    rw [hp]; field_simp [hp0]
+  have h3 : (4 : ℝ) / (2 : ℝ) ^ 217 + 4 * (109 / 10 ^ 22) * (2 : ℝ) ^ 39 ≤ (155 / 1000000 : ℝ) ^ 2 := by norm_num
+  linarith
+
+private theorem badMass_env510_le :
+    (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env510).card : ℝ)) * (1 / (2 : ℝ) ^ 199) ≤
+      (208 / 1000000 : ℝ) ^ 2 := by
+  have hcard := SkywalkTail485.skywalk_badStack510_card
+  have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env510).card : ℝ)) * (1 / (2 : ℝ) ^ 199) ≤
+      (4 + 4 * ((75 : ℝ) / 10 ^ 27 * (2 : ℝ) ^ 256)) * (1 / (2 : ℝ) ^ 199) :=
+    mul_le_mul_of_nonneg_right (by linarith) (by positivity)
+  have h2 : (4 + 4 * ((75 : ℝ) / 10 ^ 27 * (2 : ℝ) ^ 256)) * (1 / (2 : ℝ) ^ 199) =
+      4 / (2 : ℝ) ^ 199 + 4 * (75 / 10 ^ 27) * (2 : ℝ) ^ 57 := by
+    have hp : (2 : ℝ) ^ 256 = (2 : ℝ) ^ 199 * (2 : ℝ) ^ 57 := by rw [← pow_add]
+    have hp0 : (2 : ℝ) ^ 199 ≠ 0 := by positivity
+    rw [hp]; field_simp [hp0]
+  have h3 : (4 : ℝ) / (2 : ℝ) ^ 199 + 4 * (75 / 10 ^ 27) * (2 : ℝ) ^ 57 ≤ (208 / 1000000 : ℝ) ^ 2 := by norm_num
+  linarith
+
+private theorem body_sqrt_maxBound_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (d : Digit25) (ax : GenericW.ArithSpec) (E : LocalKernel.EnvSchedule)
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    (hgp : d.goodPred Q = GenericW.GoodWA ax d.k (wideCoeffs25 d) Q)
+    (rest : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)))
+    (baseErr : List Bool → State → ℝ) (M err Btail : ℝ) (hM : 0 ≤ M) (herr : 0 ≤ err)
+    (hcard : (4 + 4 * ((SkywalkTail485.BadStack E).card : ℝ)) * M ≤ err ^ 2)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound M D)
-    (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
-    (S.map (fun x => axisBad (ds.map (bodyApproxWin Q hQ hn)) x.1 baseBad x.2)).sum ≤
-      (ds.length : ℝ) * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M) + Btail := by
-  induction ds generalizing S D with
-  | nil =>
-    simp only [List.map_nil, axisBad, List.length_nil, Nat.cast_zero, zero_mul, zero_add]
-    exact hbase S D hS hD hdom
-  | cons d ds ih =>
-    have hd_r : d.isRight = true := hright d List.mem_cons_self
-    have hds_r : ∀ d' ∈ ds, d'.isRight = true := fun d' hd' => hright d' (List.mem_cons_of_mem _ hd')
-    simp only [List.map_cons, axisBad, List.length_cons, Nat.cast_add, Nat.cast_one]
-    have hadd : (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
-          (Quantum.run (bodyApproxWin Q hQ hn d).pre
-            (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))) +
-        ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
-          axisBad (ds.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ x.1) baseBad
-            ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2))).sum)).sum =
-      (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
-          (Quantum.run (bodyApproxWin Q hQ hn d).pre
-            (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum +
-      (S.map (fun x =>
-        ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
-          axisBad (ds.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ x.1) baseBad
-            ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2))).sum)).sum := by
-      clear ih hbase hdom hS
-      induction S with | nil => simp | cons _ _ ihs => simp [ihs]; ring
-    rw [hadd]
-    have hbad1 : (S.map (fun x =>
+    (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P)
+    (hnext : ∀ (S' : List (List Bool × State)) (D' : Point → ℝ),
+      (∀ x ∈ S', PointSupported x.2) → MaxBound M D' →
+      (∀ P, (S'.map (fun x => pointMass x.2 P)).sum ≤ D' P) →
+      Real.sqrt ((S'.map (fun x => (axisSqrtErr rest x.1 baseErr x.2) ^ 2)).sum) ≤ Btail) :
+    Real.sqrt ((S.map (fun x => (axisSqrtErr (bodyApproxWin Q hQ hn d :: rest) x.1 baseErr x.2) ^ 2)).sum) ≤
+      2 * err + Btail := by
+  have hcons := list_sqrt_axisSqrtErr_cons (bodyApproxWin Q hQ hn d) rest baseErr S
+  have hbad1 : (S.map (fun x =>
+      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
+        (Quantum.run (bodyApproxWin Q hQ hn d).pre
+          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+      err ^ 2 := by
+    have h1 : (S.map (fun x =>
         normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
           (Quantum.run (bodyApproxWin Q hQ hn d).pre
             (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M := by
-      have h1 : (S.map (fun x =>
-          normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
-            (Quantum.run (bodyApproxWin Q hQ hn d).pre
-              (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-          (S.map (fun x => badBoundWEnv LocalKernel.env475 d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2))).sum := by
-        apply list_sum_map_le; intro x hx
-        have hgp_eq : (bodyApproxWin Q hQ hn d).goodPred = GenericW.GoodWA GenericW.arithSpecEnv475 d.k (wideCoeffs25 d) Q := by
-          cases d <;> simp [Digit25.isRight] at hd_r <;> rfl
-        rw [hgp_eq]
-        change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv475 d.k (wideCoeffs25 d) Q s)
-          (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
-        rw [List.reverse_reverse]
-        exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv475 LocalKernel.env475 goodX_env475
-          Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
-      exact (h1.trans (badBoundWEnv_linear_sum LocalKernel.env475 d.width _ _ S D hdom)).trans
-        (maxBound_badBoundWEnv LocalKernel.env475 d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD)
-    let S' : List (List Bool × State) := S.flatMap (fun x =>
-      (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
-    have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
-      intro y hy
-      obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
-      obtain ⟨bits, _, rfl⟩ := List.mem_map.mp hy
-      exact bodyModel_step_pointSupported Q hQ hn d x.1 bits x.2 (hS x hx)
-    let D' := stepDistW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) D
-    have hD' : MaxBound M D' := maxBound_stepDistW d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD
-    have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
-      intro P'
-      dsimp only [S']
-      rw [flatMap_sum_real]
-      have hper : ∀ x ∈ S,
-          (((fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
-            (fun y => pointMass y.2 P')).sum =
-          stepDistW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2) P' := by
-        intro x hx
-        rw [list_map_map_congr (fourierOutcomes d.width)
-          (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))
-          (fun y => pointMass y.2 P')
-          (fun bits => pointMass ((bodyModel Q hQ hn d).step x.1 bits x.2) P')
-          (fun _ => rfl)]
-        exact step_pointMass_sumW Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
-          (by simp [bodyModel, Quantum.run]) (body_pre_expandW d.k d.k_hi)
-          (bodyModel_step_pointSupported Q hQ hn d) x.1 x.2 (hS x hx) P'
-      rw [List.map_congr_left hper]
-      exact stepDistW_linear_sum d.width _ _ S D hdom P'
-    have htail_eq : (S.map (fun x =>
-        ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
-          axisBad (ds.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ x.1) baseBad
-            ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2))).sum)).sum =
-        (S'.map (fun y => axisBad (ds.map (bodyApproxWin Q hQ hn)) y.1 baseBad y.2)).sum := by
-      dsimp only [S']
-      rw [flatMap_sum_real]
-      apply congrArg List.sum; apply List.map_congr_left; intro x _
-      have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = d.width := by
-        simp only [bodyApproxWin, bodyModel, List.length_reverse, Digit25.bank, Digit25.width, GenericW.bankW_length]
-      rw [hwl]
-      apply congrArg List.sum; symm
-      exact list_map_map_congr _ _ _ _ (fun _ => rfl)
-    rw [htail_eq]
-    have h2 := ih hds_r S' D' hS'_pt hD' hdom'
-    linarith
+        (S.map (fun x => badBoundWEnv E d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2))).sum := by
+      apply list_sum_map_le; intro x hx
+      change normSq (restrictState (fun s => ¬ d.goodPred Q s)
+        (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
+      rw [hgp, List.reverse_reverse]
+      exact badStepEnv_le_badBoundWEnv ax E hGoodX Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
+    exact ((h1.trans (badBoundWEnv_linear_sum E d.width _ _ S D hdom)).trans
+      (maxBound_badBoundWEnv E d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD)).trans hcard
+  have hbad_sqrt : Real.sqrt ((S.map (fun x =>
+      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
+        (Quantum.run (bodyApproxWin Q hQ hn d).pre
+          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum) ≤ err :=
+    (Real.sqrt_le_sqrt hbad1).trans_eq (Real.sqrt_sq herr)
+  let S' : List (List Bool × State) := S.flatMap (fun x =>
+    (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
+  have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
+    intro y hy
+    obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
+    obtain ⟨bits, _, rfl⟩ := List.mem_map.mp hy
+    exact bodyModel_step_pointSupported Q hQ hn d x.1 bits x.2 (hS x hx)
+  let D' := stepDistW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) D
+  have hD' : MaxBound M D' := maxBound_stepDistW d.width _ _ M hM (sum_fourierOutcomes_one d.width) D hD
+  have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
+    intro P'
+    dsimp only [S']
+    rw [flatMap_sum_real]
+    have hper : ∀ x ∈ S,
+        (((fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
+          (fun y => pointMass y.2 P')).sum =
+        stepDistW d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2) P' := by
+      intro x hx
+      rw [list_map_map_congr (fourierOutcomes d.width)
+        (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))
+        (fun y => pointMass y.2 P')
+        (fun bits => pointMass ((bodyModel Q hQ hn d).step x.1 bits x.2) P')
+        (fun _ => rfl)]
+      exact step_pointMass_sumW Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
+        (by simp [bodyModel, Quantum.run]) (body_pre_expandW d.k d.k_hi)
+        (bodyModel_step_pointSupported Q hQ hn d) x.1 x.2 (hS x hx) P'
+    rw [List.map_congr_left hper]
+    exact stepDistW_linear_sum d.width _ _ S D hdom P'
+  have htail_eq : (S.map (fun x =>
+      ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
+        (axisSqrtErr rest (bits.reverse ++ x.1) baseErr
+          ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2)) ^ 2)).sum)).sum =
+      (S'.map (fun y => (axisSqrtErr rest y.1 baseErr y.2) ^ 2)).sum := by
+    dsimp only [S']
+    rw [flatMap_sum_real]
+    apply congrArg List.sum; apply List.map_congr_left; intro x _
+    have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = d.width := by
+      simp only [bodyApproxWin, bodyModel, List.length_reverse, Digit25.bank, Digit25.width, GenericW.bankW_length]
+    rw [hwl]
+    apply congrArg List.sum; symm
+    exact list_map_map_congr _ _ _ _ (fun _ => rfl)
+  rw [htail_eq] at hcons
+  have h2 := hnext S' D' hS'_pt hD' hdom'
+  linarith
 
-theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
-    (M : ℝ) (hM : 0 ≤ M)
+private theorem bodyList_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (ax : GenericW.ArithSpec) (E : LocalKernel.EnvSchedule)
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    (ds : List Digit25)
+    (hgp : ∀ d ∈ ds, d.goodPred Q = GenericW.GoodWA ax d.k (wideCoeffs25 d) Q)
+    (M err : ℝ) (hM : 0 ≤ M) (herr : 0 ≤ err)
+    (hcard : (4 + 4 * ((SkywalkTail485.BadStack E).card : ℝ)) * M ≤ err ^ 2)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound M D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
-    (S.map (fun x => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2)).sum ≤
-      12 * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M) := by
-  unfold rightApprox25
-  simp only [axisBad]
-  have hadd : (S.map (fun x =>
-      normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
-        (Quantum.run (rightHeadApproxWin Q hQ hn).pre
-          (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))) +
-      ((fourierOutcomes (rightHeadApproxWin Q hQ hn).model.physical.wires.length).map (fun bits =>
-        axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
-          ((rightHeadApproxWin Q hQ hn).model.step List.nil bits x.2))).sum)).sum =
-    (S.map (fun x =>
-      normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
-        (Quantum.run (rightHeadApproxWin Q hQ hn).pre
-          (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum +
-    (S.map (fun x =>
-      ((fourierOutcomes (rightHeadApproxWin Q hQ hn).model.physical.wires.length).map (fun bits =>
-        axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
-          ((rightHeadApproxWin Q hQ hn).model.step List.nil bits x.2))).sum)).sum := by
-    clear hdom hS
-    induction S with | nil => simp | cons _ _ ihs => simp [ihs]; ring
-  rw [hadd]
-  have hbad1 : (S.map (fun x =>
+    Real.sqrt ((S.map (fun x => (axisSqrtErr (ds.map (bodyApproxWin Q hQ hn)) x.1 (fun _ _ => 0) x.2) ^ 2)).sum) ≤
+      (ds.length : ℝ) * (2 * err) := by
+  induction ds generalizing S D with
+  | nil =>
+    simp only [List.map_nil, axisSqrtErr, List.length_nil, Nat.cast_zero, zero_mul]
+    have h0 : (S.map (fun _ => ((0 : ℝ) ^ 2))).sum = 0 := by
+      induction S with | nil => rfl | cons _ _ ih => simp [ih]
+    rw [h0, Real.sqrt_zero]
+  | cons d ds ih =>
+    simp only [List.map_cons, List.length_cons, Nat.cast_add, Nat.cast_one]
+    have hstep := body_sqrt_maxBound_step Q hQ hn d ax E hGoodX (hgp d List.mem_cons_self)
+      (ds.map (bodyApproxWin Q hQ hn)) (fun _ _ => 0) M err ((ds.length : ℝ) * (2 * err)) hM herr hcard
+      S D hS hD hdom (fun S' D' hS' hD' hdom' => ih (fun d' hd' => hgp d' (List.mem_cons_of_mem _ hd')) S' D' hS' hD' hdom')
+    linarith
+
+theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (S : List (List Bool × State)) (D : Point → ℝ)
+    (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound (2 / (2 : ℝ) ^ 256) D)
+    (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
+    Real.sqrt ((S.map (fun x => (axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2) ^ 2)).sum) ≤
+      2 * (3 * (2048 / 1000000 : ℝ) + 9 * (556 / 1000000 : ℝ)) := by
+  have hcons := list_sqrt_axisSqrtErr_cons (rightHeadApproxWin Q hQ hn)
+    (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (fun _ _ => 0) (S.map (fun x => (List.nil, x.2)))
+  have hmap_lhs : ((S.map (fun x => ((List.nil : List Bool), x.2))).map (fun x =>
+      (axisSqrtErr (rightHeadApproxWin Q hQ hn :: rightTailDigits25.map (bodyApproxWin Q hQ hn)) x.1 (fun _ _ => 0) x.2) ^ 2)).sum =
+      (S.map (fun x => (axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2) ^ 2)).sum := by
+    rw [list_map_map_congr _ _ _ _ (fun _ => rfl)]; rfl
+  rw [hmap_lhs] at hcons
+  have hbad1 : ((S.map (fun x => ((List.nil : List Bool), x.2))).map (fun x =>
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
         (Quantum.run (rightHeadApproxWin Q hQ hn).pre
           (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-      (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * M := by
+      (2048 / 1000000 : ℝ) ^ 2 := by
+    rw [list_map_map_congr _ _ _ _ (fun _ => rfl)]
     have h1 : (S.map (fun x =>
         normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
           (Quantum.run (rightHeadApproxWin Q hQ hn).pre
             (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (S.map (fun x => badBoundWEnv LocalKernel.env475 17 (fun v => sineWeight 10 (v / 2 ^ 7))
+        (S.map (fun x => badBoundWEnv LocalKernel.env460 17 (fun v => sineWeight 10 (v / 2 ^ 7))
           (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) (pointMass x.2))).sum := by
       apply list_sum_map_le; intro x hx
-      change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv475 16 (wideCoeffs25 rightHeadDigit) Q s)
+      change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv460 16 (wideCoeffs25 rightHeadDigit) Q s)
         (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) x.2))) ≤ _
       rw [List.reverse_reverse]
-      exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv475 LocalKernel.env475 goodX_env475
+      exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv460 LocalKernel.env460 goodX_env460
         Q hQ rightHeadDigit (sineFromPlus top10Right)
         (fun v => sineWeight 10 (v / 2 ^ 7)) rightHead_pre_expand x.2 (hS x hx)
-    exact (h1.trans (badBoundWEnv_linear_sum LocalKernel.env475 17 _ _ S D hdom)).trans
-      (maxBound_badBoundWEnv LocalKernel.env475 17 _ _ M hM sum_fourierOutcomes17_sine D hD)
+    exact ((h1.trans (badBoundWEnv_linear_sum LocalKernel.env460 17 _ _ S D hdom)).trans
+      (maxBound_badBoundWEnv LocalKernel.env460 17 _ _ (2 / (2 : ℝ) ^ 256) (by positivity) sum_fourierOutcomes17_sine D hD)).trans
+      badMass_env460_le
+  have hbad_sqrt : Real.sqrt (((S.map (fun x => ((List.nil : List Bool), x.2))).map (fun x =>
+      normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
+        (Quantum.run (rightHeadApproxWin Q hQ hn).pre
+          (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum) ≤
+      2048 / 1000000 :=
+    (Real.sqrt_le_sqrt hbad1).trans_eq (Real.sqrt_sq (by norm_num))
   let S' : List (List Bool × State) := S.flatMap (fun x =>
     (fourierOutcomes 17).map (fun bits => (bits.reverse ++ List.nil, (rightHeadModel Q hQ hn).step List.nil bits x.2)))
   have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -11618,7 +16580,8 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
     exact rightHeadModel_step_pointSupported Q hQ hn List.nil bits x.2 (hS x hx)
   let D' := stepDistW 17 (fun v => sineWeight 10 (v / 2 ^ 7))
     (Width16Schedule.increment (rightHeadDigit.base Q) 17 rightHeadDigit.exponent) D
-  have hD' : MaxBound M D' := maxBound_stepDistW 17 _ _ M hM sum_fourierOutcomes17_sine D hD
+  have hD' : MaxBound (2 / (2 : ℝ) ^ 256) D' :=
+    maxBound_stepDistW 17 _ _ (2 / (2 : ℝ) ^ 256) (by positivity) sum_fourierOutcomes17_sine D hD
   have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
     intro P'
     dsimp only [S']
@@ -11639,11 +16602,12 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
         rightHead_pre_expand (rightHeadModel_step_pointSupported Q hQ hn) List.nil x.2 (hS x hx) P'
     rw [List.map_congr_left hper]
     exact stepDistW_linear_sum 17 _ _ S D hdom P'
-  have htail_eq : (S.map (fun x =>
+  have htail_eq : ((S.map (fun x => ((List.nil : List Bool), x.2))).map (fun x =>
       ((fourierOutcomes (rightHeadApproxWin Q hQ hn).model.physical.wires.length).map (fun bits =>
-        axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ List.nil) (fun _ _ => 0)
-          ((rightHeadApproxWin Q hQ hn).model.step List.nil bits x.2))).sum)).sum =
-      (S'.map (fun y => axisBad (rightTailDigits25.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2)).sum := by
+        (axisSqrtErr (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (bits.reverse ++ x.1) (fun _ _ => 0)
+          ((rightHeadApproxWin Q hQ hn).model.step x.1 bits x.2)) ^ 2)).sum)).sum =
+      (S'.map (fun y => (axisSqrtErr (rightTailDigits25.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2) ^ 2)).sum := by
+    rw [list_map_map_congr _ _ _ _ (fun _ => rfl)]
     dsimp only [S']
     rw [flatMap_sum_real]
     apply congrArg List.sum; apply List.map_congr_left; intro x _
@@ -11652,53 +16616,54 @@ theorem rightApprox25_axisBad_maxBound (Q : Point) (hQ : order • Q = 0) (hn : 
     rw [hwl]
     apply congrArg List.sum; symm
     exact list_map_map_congr _ _ _ _ (fun _ => rfl)
-  rw [htail_eq]
-  have hright_tail : ∀ d ∈ rightTailDigits25, d.isRight = true := by
+  rw [htail_eq] at hcons
+  -- Split `rightTailDigits25` into `r17 1 :: r17 2 :: rightTailEnv465` (2 × env460 + 9 × env465)
+  let r465 : List Digit25 :=
+    List.ofFn (fun j : Fin 7 => Digit25.right17 ⟨j.val + 3, by omega⟩) ++ List.ofFn (fun j : Fin 2 => Digit25.right18 j)
+  have hrt_eq : rightTailDigits25 = Digit25.right17 ⟨1, by decide⟩ :: Digit25.right17 ⟨2, by decide⟩ :: r465 := by
+    simp [rightTailDigits25, r465, List.ofFn_succ]
+  have hr465_len : r465.length = 9 := by simp [r465]
+  have hr465_gp : ∀ d ∈ r465, d.goodPred Q = GenericW.GoodWA GenericW.arithSpecEnv465 d.k (wideCoeffs25 d) Q := by
     intro d hd
-    simp only [rightTailDigits25, List.mem_append, List.mem_ofFn] at hd
-    rcases hd with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
-  have h2 := bodyTail_axisBad_maxBoundEnv475 Q hQ hn rightTailDigits25 hright_tail (fun _ _ => 0) M 0 hM
-    (fun S₀ _ _ _ _ => by
-      induction S₀ with | nil => simp | cons _ _ ih => simp [ih])
-    S' D' hS'_pt hD' hdom'
-  have hlen11 : rightTailDigits25.length = 11 := by simp [rightTailDigits25]
-  rw [hlen11] at h2
-  norm_num only [Nat.cast_ofNat] at h2
+    simp only [r465, List.mem_append, List.mem_ofFn] at hd
+    rcases hd with ⟨j, rfl⟩ | ⟨j, rfl⟩
+    · have hge : ¬ (j.val + 3 < 3) := by omega
+      dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg hge]; rfl
+    · rfl
+  have htail_le : Real.sqrt ((S'.map (fun y => (axisSqrtErr (rightTailDigits25.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2) ^ 2)).sum) ≤
+      2 * (2048 / 1000000 : ℝ) + (2 * (2048 / 1000000 : ℝ) + 9 * (2 * (556 / 1000000 : ℝ))) := by
+    rw [hrt_eq, List.map_cons, List.map_cons]
+    refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨1, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
+      goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
+      (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
+      S' D' hS'_pt hD' hdom' ?_
+    intro S1 D1 hS1 hD1 hdom1
+    refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨2, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
+      goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
+      (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
+      S1 D1 hS1 hD1 hdom1 ?_
+    intro S2 D2 hS2 hD2 hdom2
+    have h9 := bodyList_sqrt_maxBound Q hQ hn GenericW.arithSpecEnv465 LocalKernel.env465
+      goodX_env465 r465 hr465_gp (2 / (2 : ℝ) ^ 256) (556 / 1000000) (by positivity) (by norm_num) badMass_env465_le
+      S2 D2 hS2 hD2 hdom2
+    rw [hr465_len] at h9; exact h9.trans_eq (by norm_num)
   linarith
 
-theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+theorem leftPhase1_sqrt_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     (d : Digit25) (hbaseG : d.base Q = G) (hfull : d.goodPred Q = GenericW.GoodW d.k (wideCoeffs25 d) Q)
     (acc : Nat) (hacc : 9 ≤ acc) (hsum : acc + d.width ≤ 240)
     (rest : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)))
-    (baseBad : List Bool → State → ℝ) (B : ℝ)
+    (baseErr : List Bool → State → ℝ) (B : ℝ)
     (S : List (List Bool × State)) (D : Point → ℝ)
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : OddSupport acc (d.exponent + d.width) D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P)
     (hnext : ∀ (S' : List (List Bool × State)) (D' : Point → ℝ),
       (∀ x ∈ S', PointSupported x.2) → OddSupport (acc + d.width) d.exponent D' →
       (∀ P, (S'.map (fun x => pointMass x.2 P)).sum ≤ D' P) →
-      (S'.map (fun x => axisBad rest x.1 baseBad x.2)).sum ≤ B) :
-    (S.map (fun x => axisBad (bodyApproxWin Q hQ hn d :: rest) x.1 baseBad x.2)).sum ≤ B := by
+      Real.sqrt ((S'.map (fun x => (axisSqrtErr rest x.1 baseErr x.2) ^ 2)).sum) ≤ B) :
+    Real.sqrt ((S.map (fun x => (axisSqrtErr (bodyApproxWin Q hQ hn d :: rest) x.1 baseErr x.2) ^ 2)).sum) ≤ B := by
   have hw2 : 2 ≤ d.width := by cases d <;> dsimp only [Digit25.width, Digit25.k] <;> decide
-  simp only [axisBad]
-  have hadd : (S.map (fun x =>
-      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
-        (Quantum.run (bodyApproxWin Q hQ hn d).pre
-          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))) +
-      ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
-        axisBad rest (bits.reverse ++ x.1) baseBad
-          ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2))).sum)).sum =
-    (S.map (fun x =>
-      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
-        (Quantum.run (bodyApproxWin Q hQ hn d).pre
-          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum +
-    (S.map (fun x =>
-      ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
-        axisBad rest (bits.reverse ++ x.1) baseBad
-          ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2))).sum)).sum := by
-    clear hnext hdom hS
-    induction S with | nil => simp | cons _ _ ihs => simp [ihs]; ring
-  rw [hadd]
+  have hcons := list_sqrt_axisSqrtErr_cons (bodyApproxWin Q hQ hn d) rest baseErr S
   have hbad0 : (S.map (fun x =>
       normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
         (Quantum.run (bodyApproxWin Q hQ hn d).pre
@@ -11717,6 +16682,11 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
       exact badStep_le_badBoundW Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
     exact (h1.trans (badBoundW_linear_sum d.width _ _ S D hdom)).trans_eq
       (oddSupport_badBound_zero acc d.exponent d.width hw2 hsum D hD)
+  have hsqrt0 : Real.sqrt ((S.map (fun x =>
+      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
+        (Quantum.run (bodyApproxWin Q hQ hn d).pre
+          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum) = 0 :=
+    Real.sqrt_eq_zero_of_nonpos hbad0
   let S' : List (List Bool × State) := S.flatMap (fun x =>
     (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
   have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -11748,9 +16718,9 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     exact stepDistW_linear_sum d.width _ _ S D hdom P'
   have htail_eq : (S.map (fun x =>
       ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
-        axisBad rest (bits.reverse ++ x.1) baseBad
-          ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2))).sum)).sum =
-      (S'.map (fun y => axisBad rest y.1 baseBad y.2)).sum := by
+        (axisSqrtErr rest (bits.reverse ++ x.1) baseErr
+          ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2)) ^ 2)).sum)).sum =
+      (S'.map (fun y => (axisSqrtErr rest y.1 baseErr y.2) ^ 2)).sum := by
     dsimp only [S']
     rw [flatMap_sum_real]
     apply congrArg List.sum; apply List.map_congr_left; intro x _
@@ -11759,40 +16729,113 @@ theorem leftPhase1_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     rw [hwl]
     apply congrArg List.sum; symm
     exact list_map_map_congr _ _ _ _ (fun _ => rfl)
-  rw [htail_eq]
+  rw [hsqrt0, mul_zero, zero_add, htail_eq] at hcons
+  exact hcons.trans (hnext S' D' hS'_pt hD' hdom')
+
+private theorem leftEnv_sqrt_step (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
+    (d : Digit25) (hbaseG : d.base Q = G)
+    (ax : GenericW.ArithSpec) (E : LocalKernel.EnvSchedule)
+    (hGoodX : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.GoodStack E X.val → ax.GoodX X)
+    (hgp : d.goodPred Q = GenericW.GoodWA ax d.k (wideCoeffs25 d) Q)
+    (acc : Nat) (hacc : 9 ≤ acc) (hsum : acc + d.width ≤ 240)
+    (err : ℝ) (herr : 0 ≤ err)
+    (hcard : (4 + 4 * ((SkywalkTail485.BadStack E).card : ℝ)) * (1 / (2 : ℝ) ^ (acc - 1)) ≤ err ^ 2)
+    (rest : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)))
+    (baseErr : List Bool → State → ℝ) (B : ℝ)
+    (S : List (List Bool × State)) (D : Point → ℝ)
+    (hS : ∀ x ∈ S, PointSupported x.2) (hD : OddSupport acc (d.exponent + d.width) D)
+    (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P)
+    (hnext : ∀ (S' : List (List Bool × State)) (D' : Point → ℝ),
+      (∀ x ∈ S', PointSupported x.2) → OddSupport (acc + d.width) d.exponent D' →
+      (∀ P, (S'.map (fun x => pointMass x.2 P)).sum ≤ D' P) →
+      Real.sqrt ((S'.map (fun x => (axisSqrtErr rest x.1 baseErr x.2) ^ 2)).sum) ≤ B) :
+    Real.sqrt ((S.map (fun x => (axisSqrtErr (bodyApproxWin Q hQ hn d :: rest) x.1 baseErr x.2) ^ 2)).sum) ≤
+      2 * err + B := by
+  have hw2 : 2 ≤ d.width := by cases d <;> dsimp only [Digit25.width, Digit25.k] <;> decide
+  have hcons := list_sqrt_axisSqrtErr_cons (bodyApproxWin Q hQ hn d) rest baseErr S
+  have hM : MaxBound (1 / (2 : ℝ) ^ (acc - 1)) D := by
+    refine ⟨hD.1, fun P => (hD.2.1 P).trans_eq ?_⟩
+    have hpow : (2 : ℝ) ^ acc = 2 * (2 : ℝ) ^ (acc - 1) := by rw [← pow_succ', Nat.sub_add_cancel (by omega)]
+    rw [hpow]; field_simp
+  have hbad1 : (S.map (fun x =>
+      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
+        (Quantum.run (bodyApproxWin Q hQ hn d).pre
+          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+      err ^ 2 := by
+    have h1 : (S.map (fun x =>
+        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
+          (Quantum.run (bodyApproxWin Q hQ hn d).pre
+            (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+        (S.map (fun x => badBoundWEnv E d.width (fun _ => 1) (Width16Schedule.increment (d.base Q) d.width d.exponent) (pointMass x.2))).sum := by
+      apply list_sum_map_le; intro x hx
+      change normSq (restrictState (fun s => ¬ d.goodPred Q s)
+        (Quantum.run List.nil (Quantum.run (d.bank.reverse.reverse.map Gate.H) x.2))) ≤ _
+      rw [hgp, List.reverse_reverse]
+      exact badStepEnv_le_badBoundWEnv ax E hGoodX Q hQ d List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi) x.2 (hS x hx)
+    exact ((h1.trans (badBoundWEnv_linear_sum E d.width _ _ S D hdom)).trans
+      (maxBound_badBoundWEnv E d.width _ _ (1 / (2 : ℝ) ^ (acc - 1)) (by positivity) (sum_fourierOutcomes_one d.width) D hM)).trans
+      hcard
+  have hbad_sqrt : Real.sqrt ((S.map (fun x =>
+      normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn d).goodPred s)
+        (Quantum.run (bodyApproxWin Q hQ hn d).pre
+          (Quantum.run ((bodyApproxWin Q hQ hn d).model.physical.wires.reverse.map Gate.H) x.2))))).sum) ≤ err :=
+    (Real.sqrt_le_sqrt hbad1).trans_eq (Real.sqrt_sq herr)
+  let S' : List (List Bool × State) := S.flatMap (fun x =>
+    (fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2)))
+  have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
+    intro y hy
+    obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
+    obtain ⟨bits, _, rfl⟩ := List.mem_map.mp hy
+    exact bodyModel_step_pointSupported Q hQ hn d x.1 bits x.2 (hS x hx)
+  let D' := stepDistW d.width (fun _ => 1) (Width16Schedule.increment G d.width d.exponent) D
+  have hD' : OddSupport (acc + d.width) d.exponent D' :=
+    oddSupport_stepDist acc d.exponent d.width hacc hw2 hsum D hD
+  have hdom' : ∀ P', (S'.map (fun y => pointMass y.2 P')).sum ≤ D' P' := by
+    intro P'
+    dsimp only [S']
+    rw [flatMap_sum_real]
+    have hper : ∀ x ∈ S,
+        (((fourierOutcomes d.width).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))).map
+          (fun y => pointMass y.2 P')).sum =
+        stepDistW d.width (fun _ => 1) (Width16Schedule.increment G d.width d.exponent) (pointMass x.2) P' := by
+      intro x hx
+      rw [list_map_map_congr (fourierOutcomes d.width)
+        (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn d).step x.1 bits x.2))
+        (fun y => pointMass y.2 P')
+        (fun bits => pointMass ((bodyModel Q hQ hn d).step x.1 bits x.2) P')
+        (fun _ => rfl), ← hbaseG]
+      exact step_pointMass_sumW Q hQ hn d List.nil (fun _ => 1) (bodyModel Q hQ hn d) rfl
+        (by simp [bodyModel, Quantum.run]) (body_pre_expandW d.k d.k_hi)
+        (bodyModel_step_pointSupported Q hQ hn d) x.1 x.2 (hS x hx) P'
+    rw [List.map_congr_left hper]
+    exact stepDistW_linear_sum d.width _ _ S D hdom P'
+  have htail_eq : (S.map (fun x =>
+      ((fourierOutcomes (bodyApproxWin Q hQ hn d).model.physical.wires.length).map (fun bits =>
+        (axisSqrtErr rest (bits.reverse ++ x.1) baseErr
+          ((bodyApproxWin Q hQ hn d).model.step x.1 bits x.2)) ^ 2)).sum)).sum =
+      (S'.map (fun y => (axisSqrtErr rest y.1 baseErr y.2) ^ 2)).sum := by
+    dsimp only [S']
+    rw [flatMap_sum_real]
+    apply congrArg List.sum; apply List.map_congr_left; intro x _
+    have hwl : (bodyApproxWin Q hQ hn d).model.physical.wires.length = d.width := by
+      simp only [bodyApproxWin, bodyModel, List.length_reverse, Digit25.bank, Digit25.width, GenericW.bankW_length]
+    rw [hwl]
+    apply congrArg List.sum; symm
+    exact list_map_map_congr _ _ _ _ (fun _ => rfl)
+  rw [htail_eq] at hcons
   have h2 := hnext S' D' hS'_pt hD' hdom'
   linarith
 
-def leftInitDigits25 : List Digit25 :=
-  List.ofFn (fun j : Fin 11 => .left18 j) ++ [.left19 ⟨0, by decide⟩]
-
-def leftInitApprox25 (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
-  leftInitDigits25.map (bodyApproxWin Q hQ hn)
-
-theorem leftRestApprox25_split (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
-    leftRestApprox25 Q hQ hn =
-      leftInitApprox25 Q hQ hn ++ [bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)] := by
-  simp [leftRestApprox25, leftInitApprox25, leftInitDigits25, leftDigits25, List.ofFn_succ]
-
-theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cLast cR : ℝ)
-    (hcLast : 0 ≤ cLast) (hcR : 0 ≤ cR) :
-    let wLast := bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)
+theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     let baseR : List Bool → State → ℝ :=
-      fun _ φ => cR * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
-    let baseLast : List Bool → State → ℝ :=
-      fun tag φ => cLast * axisBad [wLast] tag baseR φ
-    ((fourierOutcomes 20).map (fun bits =>
-      axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast
-        ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))).sum ≤
-      cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
+      fun _ φ => axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
+    Real.sqrt (((fourierOutcomes 20).map (fun bits =>
+      (axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR
+        ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))) ^ 2)).sum) ≤
+      23780 / 1000000 := by
   dsimp only
-  let dLast : Digit25 := .left19 ⟨1, by decide⟩
-  let wLast := bodyApproxWin Q hQ hn dLast
   let baseR : List Bool → State → ℝ :=
-    fun _ φ => cR * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
-  let baseLast : List Bool → State → ℝ :=
-    fun tag φ => cLast * axisBad [wLast] tag baseR φ
+    fun _ φ => axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
   let S₀ : List (List Bool × State) := (fourierOutcomes 20).map (fun bits =>
     (bits.reverse, (first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
   have hS₀_pt : ∀ x ∈ S₀, PointSupported x.2 := by
@@ -11811,73 +16854,48 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cLas
       (fun _ => rfl)]
   rw [← list_map_map_congr (fourierOutcomes 20)
     (fun bits => (bits.reverse, (first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
-    (fun x => axisBad (leftInitApprox25 Q hQ hn) x.1 baseLast x.2)
-    (fun bits => axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
+    (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)
+    (fun bits => (axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))) ^ 2)
     (fun _ => rfl)]
-  change (S₀.map (fun x => axisBad (leftInitApprox25 Q hQ hn) x.1 baseLast x.2)).sum ≤
-    cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9))
-  -- Phase 2: starting before `left19 1` (`env490`), `OddSupport 237 19 D` gives `156 / 10^8` on `left19 1`
-  -- and tight `MaxBound (2 / 2^256)` after `left19 1` for the 12 `env475` Right windows (`452 / 10^9`).
-  have hphase2 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
+  change Real.sqrt ((S₀.map (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)).sum) ≤ 23780 / 1000000
+  -- Tail: `left19 1` (`env485`, `379/10^6`) -> `rightApprox25` (`3*2048 + 9*556 = 11148 / 10^6`)
+  let dLast : Digit25 := .left19 ⟨1, by decide⟩
+  let tailLast : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) := [bodyApproxWin Q hQ hn dLast]
+  have htailLast : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport 237 19 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => axisBad (List.nil : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q))) x.1 baseLast x.2)).sum ≤
-        cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
+      Real.sqrt ((S.map (fun x => (axisSqrtErr tailLast x.1 baseR x.2) ^ 2)).sum) ≤
+        2 * (379 / 1000000 : ℝ) + 2 * (3 * (2048 / 1000000 : ℝ) + 9 * (556 / 1000000 : ℝ)) := by
     intro S D hS hD hdom
-    have hmul : ∀ (xs : List (List Bool × State)) (r : ℝ) (f : (List Bool × State) → ℝ),
-        (xs.map (fun x => r * f x)).sum = r * (xs.map f).sum := fun xs r f => by
-      induction xs with | nil => simp | cons _ _ ih => simp [ih, mul_add]
-    simp only [axisBad, baseLast]
-    rw [hmul]
-    apply mul_le_mul_of_nonneg_left _ hcLast
-    have hadd : (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ wLast.goodPred s)
-          (Quantum.run wLast.pre
-            (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))) +
-        ((fourierOutcomes wLast.model.physical.wires.length).map (fun bits =>
-          baseR (bits.reverse ++ x.1) (wLast.model.step x.1 bits x.2))).sum)).sum =
-      (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ wLast.goodPred s)
-          (Quantum.run wLast.pre
-            (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))))).sum +
-      (S.map (fun x =>
-        ((fourierOutcomes wLast.model.physical.wires.length).map (fun bits =>
-          baseR (bits.reverse ++ x.1) (wLast.model.step x.1 bits x.2))).sum)).sum := by
-      clear hdom hS
-      induction S with | nil => simp | cons _ _ ihs => simp [ihs]; ring
-    rw [hadd]
-    have hM : MaxBound ((1 : ℝ) / (2 : ℝ) ^ 236) D := by
+    have hcons := list_sqrt_axisSqrtErr_cons (bodyApproxWin Q hQ hn dLast) List.nil baseR S
+    have hM : MaxBound (1 / (2 : ℝ) ^ 236) D := by
       refine ⟨hD.1, fun P => (hD.2.1 P).trans_eq ?_⟩
       norm_num [pow_succ]
     have hbad1 : (S.map (fun x =>
-        normSq (restrictState (fun s => ¬ wLast.goodPred s)
-          (Quantum.run wLast.pre
-            (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-        (156 : ℝ) / 10 ^ 8 := by
+        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
+          (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
+            (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+        (379 / 1000000 : ℝ) ^ 2 := by
       have h1 : (S.map (fun x =>
-          normSq (restrictState (fun s => ¬ wLast.goodPred s)
-            (Quantum.run wLast.pre
-              (Quantum.run (wLast.model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-          (S.map (fun x => badBoundWEnv LocalKernel.env490 19 (fun _ => 1) (Width16Schedule.increment G 19 0) (pointMass x.2))).sum := by
+          normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
+            (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
+              (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
+          (S.map (fun x => badBoundWEnv LocalKernel.env485 19 (fun _ => 1) (Width16Schedule.increment G 19 0) (pointMass x.2))).sum := by
         apply list_sum_map_le; intro x hx
-        change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv490 18 (wideCoeffs25 dLast) Q s)
+        change normSq (restrictState (fun s => ¬ GenericW.GoodWA GenericW.arithSpecEnv485 18 (wideCoeffs25 dLast) Q s)
           (Quantum.run List.nil (Quantum.run ((GenericW.bankW 18).reverse.reverse.map Gate.H) x.2))) ≤ _
         rw [List.reverse_reverse]
-        exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv490 LocalKernel.env490 goodX_env490
+        exact badStepEnv_le_badBoundWEnv GenericW.arithSpecEnv485 LocalKernel.env485 goodX_env485
           Q hQ dLast List.nil (fun _ => 1) (body_pre_expandW 18 (by decide)) x.2 (hS x hx)
-      have h2 := (h1.trans (badBoundWEnv_linear_sum LocalKernel.env490 19 _ _ S D hdom)).trans
-        (maxBound_badBoundWEnv LocalKernel.env490 19 _ _ _ (by positivity) (sum_fourierOutcomes_one 19) D hM)
-      have hcard := SkywalkTail485.skywalk_badStack490_card
-      have h3 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env490).card : ℝ)) * ((1 : ℝ) / (2 : ℝ) ^ 236) ≤
-          (4 + 4 * ((37 : ℝ) / 10 ^ 14 * (2 : ℝ) ^ 256)) * ((1 : ℝ) / (2 : ℝ) ^ 236) := by
-        apply mul_le_mul_of_nonneg_right _ (by positivity); linarith
-      have h4 : (4 + 4 * ((37 : ℝ) / 10 ^ 14 * (2 : ℝ) ^ 256)) * ((1 : ℝ) / (2 : ℝ) ^ 236) =
-          4 / (2 : ℝ) ^ 236 + 4 * (37 / 10 ^ 14) * (2 : ℝ) ^ 20 := by
-        have hp : (2 : ℝ) ^ 256 = (2 : ℝ) ^ 236 * (2 : ℝ) ^ 20 := by rw [← pow_add]
-        have hp0 : (2 : ℝ) ^ 236 ≠ 0 := by positivity
-        rw [hp]; field_simp [hp0]
-      have h5 : (4 : ℝ) / (2 : ℝ) ^ 236 + 4 * (37 / 10 ^ 14) * (2 : ℝ) ^ 20 ≤ 156 / 10 ^ 8 := by norm_num
-      linarith
+      exact ((h1.trans (badBoundWEnv_linear_sum LocalKernel.env485 19 _ _ S D hdom)).trans
+        (maxBound_badBoundWEnv LocalKernel.env485 19 _ _ _ (by positivity) (sum_fourierOutcomes_one 19) D hM)).trans
+        badMass_env485_le
+    have hbad_sqrt : Real.sqrt ((S.map (fun x =>
+        normSq (restrictState (fun s => ¬ (bodyApproxWin Q hQ hn dLast).goodPred s)
+          (Quantum.run (bodyApproxWin Q hQ hn dLast).pre
+            (Quantum.run ((bodyApproxWin Q hQ hn dLast).model.physical.wires.reverse.map Gate.H) x.2))))).sum) ≤
+        379 / 1000000 :=
+      (Real.sqrt_le_sqrt hbad1).trans_eq (Real.sqrt_sq (by norm_num))
     let S' : List (List Bool × State) := S.flatMap (fun x =>
       (fourierOutcomes 19).map (fun bits => (bits.reverse ++ x.1, (bodyModel Q hQ hn dLast).step x.1 bits x.2)))
     have hS'_pt : ∀ y ∈ S', PointSupported y.2 := by
@@ -11907,92 +16925,93 @@ theorem totalBad25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (cLas
       rw [List.map_congr_left hper]
       exact stepDistW_linear_sum 19 _ _ S D hdom P'
     have htail_eq : (S.map (fun x =>
-        ((fourierOutcomes wLast.model.physical.wires.length).map (fun bits =>
-          baseR (bits.reverse ++ x.1) (wLast.model.step x.1 bits x.2))).sum)).sum =
-        cR * (S'.map (fun y => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) y.2)).sum := by
-      rw [← hmul]
-      dsimp only [S', baseR]
+        ((fourierOutcomes (bodyApproxWin Q hQ hn dLast).model.physical.wires.length).map (fun bits =>
+          (axisSqrtErr (List.nil : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q))) (bits.reverse ++ x.1) baseR
+            ((bodyApproxWin Q hQ hn dLast).model.step x.1 bits x.2)) ^ 2)).sum)).sum =
+        (S'.map (fun y => (axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) y.2) ^ 2)).sum := by
+      dsimp only [S', axisSqrtErr, baseR]
       rw [flatMap_sum_real]
       apply congrArg List.sum; apply List.map_congr_left; intro x _
-      have hwl : wLast.model.physical.wires.length = 19 := by
-        simp only [wLast, bodyApproxWin, bodyModel, dLast, List.length_reverse, Digit25.bank, Digit25.k, GenericW.bankW_length]
+      have hwl : (bodyApproxWin Q hQ hn dLast).model.physical.wires.length = 19 := by
+        simp only [bodyApproxWin, bodyModel, dLast, List.length_reverse, Digit25.bank, Digit25.k, GenericW.bankW_length]
       rw [hwl]
       apply congrArg List.sum; symm
       exact list_map_map_congr _ _ _ _ (fun _ => rfl)
-    rw [htail_eq]
-    have hR := rightApprox25_axisBad_maxBound Q hQ hn (2 / (2 : ℝ) ^ 256) (by positivity) S' D' hS'_pt hD' hdom'
-    have hR_num : 12 * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * (2 / (2 : ℝ) ^ 256)) ≤ (452 : ℝ) / 10 ^ 9 := by
-      have hcard := SkywalkTail485.skywalk_badStack475_card
-      have h1 : 12 * ((4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env475).card : ℝ)) * (2 / (2 : ℝ) ^ 256)) ≤
-          12 * ((4 + 4 * ((47 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256)) := by
-        apply mul_le_mul_of_nonneg_left _ (by norm_num)
-        apply mul_le_mul_of_nonneg_right _ (by positivity)
-        linarith
-      have h2 : 12 * ((4 + 4 * ((47 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256)) =
-          96 / (2 : ℝ) ^ 256 + 4512 / 10 ^ 10 := by
-        have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
-        field_simp [hp]; ring
-      have h3 : (96 : ℝ) / (2 : ℝ) ^ 256 + 4512 / 10 ^ 10 ≤ 452 / 10 ^ 9 := by norm_num
-      linarith
-    have htail_le : cR * (S'.map (fun y => axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) y.2)).sum ≤
-        cR * ((452 : ℝ) / 10 ^ 9) :=
-      mul_le_mul_of_nonneg_left (hR.trans hR_num) hcR
+    rw [htail_eq] at hcons
+    have hR := rightApprox25_sqrt_maxBound Q hQ hn S' D' hS'_pt hD' hdom'
+    dsimp only [tailLast]
     linarith
-  -- Phase 1b: `left19 0` (full 512-step `GoodW`) advances `OddSupport 218 38` to `OddSupport 237 19`
-  let tail1 : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
-    [bodyApproxWin Q hQ hn (.left19 ⟨0, by decide⟩)]
-  have hphase1b : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
+  -- `left19 0` (`env500`, `155/10^6`): `OddSupport 218 38 -> OddSupport 237 19`
+  let tail2 : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+    bodyApproxWin Q hQ hn (.left19 ⟨0, by decide⟩) :: tailLast
+  have htail2 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport 218 38 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => axisBad tail1 x.1 baseLast x.2)).sum ≤
-        cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
+      Real.sqrt ((S.map (fun x => (axisSqrtErr tail2 x.1 baseR x.2) ^ 2)).sum) ≤
+        2 * (155 / 1000000 : ℝ) + (2 * (379 / 1000000 : ℝ) + 2 * (3 * (2048 / 1000000 : ℝ) + 9 * (556 / 1000000 : ℝ))) := by
     intro S D hS hD hdom
-    exact leftPhase1_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl (by simp [Digit25.goodPred, Digit25.k]) 218 (by decide) (by decide)
-      List.nil baseLast _ S D hS hD hdom hphase2
-  -- Phase 1a: induction over `m = 11 - j` steps of `left18`
-  have hphase1a : ∀ (m : Nat) (hm : m ≤ 11) (S : List (List Bool × State)) (D : Point → ℝ),
-      (∀ x ∈ S, PointSupported x.2) → OddSupport (20 + 18 * (11 - m)) (236 - 18 * (11 - m)) D →
+    exact leftEnv_sqrt_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl GenericW.arithSpecEnv500 LocalKernel.env500
+      goodX_env500 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg (by decide)]; rfl) 218 (by decide) (by decide)
+      (155 / 1000000) (by norm_num) badMass_env500_le tailLast baseR _ S D hS hD hdom htailLast
+  -- `left18 10` (`env510`, `208/10^6`): `OddSupport 200 56 -> OddSupport 218 38`
+  let tail3 : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) :=
+    bodyApproxWin Q hQ hn (.left18 ⟨10, by decide⟩) :: tail2
+  have htail3 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
+      (∀ x ∈ S, PointSupported x.2) → OddSupport 200 56 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      (S.map (fun x => axisBad
-        ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail1)
-        x.1 baseLast x.2)).sum ≤ cLast * ((156 : ℝ) / 10 ^ 8 + cR * ((452 : ℝ) / 10 ^ 9)) := by
+      Real.sqrt ((S.map (fun x => (axisSqrtErr tail3 x.1 baseR x.2) ^ 2)).sum) ≤ 23780 / 1000000 := by
+    intro S D hS hD hdom
+    have h := leftEnv_sqrt_step Q hQ hn (.left18 ⟨10, by decide⟩) rfl GenericW.arithSpecEnv510 LocalKernel.env510
+      goodX_env510 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) 200 (by decide) (by decide)
+      (208 / 1000000) (by norm_num) badMass_env510_le tail2 baseR _ S D hS hD hdom htail2
+    linarith
+  -- Induction over the 10 full-512-step `left18 0..9` windows (`+ 0` error!)
+  have hphase1a : ∀ (m : Nat) (hm : m ≤ 10) (S : List (List Bool × State)) (D : Point → ℝ),
+      (∀ x ∈ S, PointSupported x.2) → OddSupport (20 + 18 * (10 - m)) (236 - 18 * (10 - m)) D →
+      (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
+      Real.sqrt ((S.map (fun x => (axisSqrtErr
+        ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(10 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail3)
+        x.1 baseR x.2) ^ 2)).sum) ≤ 23780 / 1000000 := by
     intro m
     induction m with
     | zero =>
       intro _ S D hS hD hdom
-      simpa using hphase1b S D hS hD hdom
+      simpa using htail3 S D hS hD hdom
     | succ m ih =>
       intro hm S D hS hD hdom
-      have hlist : (List.ofFn (fun j : Fin (m + 1) => Digit25.left18 ⟨(11 - (m + 1)) + j.val, by omega⟩)).map
-          (bodyApproxWin Q hQ hn) ++ tail1 =
-        bodyApproxWin Q hQ hn (.left18 ⟨11 - (m + 1), by omega⟩) ::
-          ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(11 - m) + j.val, by omega⟩)).map
-            (bodyApproxWin Q hQ hn) ++ tail1) := by
+      have hlist : (List.ofFn (fun j : Fin (m + 1) => Digit25.left18 ⟨(10 - (m + 1)) + j.val, by omega⟩)).map
+          (bodyApproxWin Q hQ hn) ++ tail3 =
+        bodyApproxWin Q hQ hn (.left18 ⟨10 - (m + 1), by omega⟩) ::
+          ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(10 - m) + j.val, by omega⟩)).map
+            (bodyApproxWin Q hQ hn) ++ tail3) := by
         rw [List.ofFn_succ, List.map_cons, List.cons_append]
         apply congrArg (List.cons _)
-        apply congrArg (fun l => l ++ tail1)
+        apply congrArg (fun l => l ++ tail3)
         apply congrArg (List.map _)
         apply congrArg List.ofFn; funext j
         apply congrArg Digit25.left18; apply Fin.ext; simp only [Fin.val_succ]; omega
       rw [hlist]
-      have hexp_eq : 236 - 18 * (11 - (m + 1)) = (Digit25.left18 ⟨11 - (m + 1), by omega⟩).exponent + (Digit25.left18 ⟨11 - (m + 1), by omega⟩).width := by
+      have hexp_eq : 236 - 18 * (10 - (m + 1)) =
+          (Digit25.left18 ⟨10 - (m + 1), by omega⟩).exponent + (Digit25.left18 ⟨10 - (m + 1), by omega⟩).width := by
         simp only [Digit25.exponent, Digit25.width, Digit25.k]; omega
       rw [hexp_eq] at hD
-      refine leftPhase1_step Q hQ hn (.left18 ⟨11 - (m + 1), by omega⟩) rfl rfl (20 + 18 * (11 - (m + 1))) (by omega)
-        (by simp only [Digit25.width, Digit25.k]; omega) _ baseLast _ S D hS hD hdom ?_
+      have hne10 : ¬ (10 - (m + 1) = 10) := by omega
+      refine leftPhase1_sqrt_step Q hQ hn (.left18 ⟨10 - (m + 1), by omega⟩) rfl
+        (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg hne10]) (20 + 18 * (10 - (m + 1))) (by omega)
+        (by simp only [Digit25.width, Digit25.k]; omega) _ baseR _ S D hS hD hdom ?_
       intro S' D' hS' hD' hdom'
-      have hacc_eq : 20 + 18 * (11 - (m + 1)) + (Digit25.left18 ⟨11 - (m + 1), by omega⟩).width = 20 + 18 * (11 - m) := by
+      have hacc_eq : 20 + 18 * (10 - (m + 1)) + (Digit25.left18 ⟨10 - (m + 1), by omega⟩).width = 20 + 18 * (10 - m) := by
         simp only [Digit25.width, Digit25.k]; omega
-      have hexp_next : (Digit25.left18 ⟨11 - (m + 1), by omega⟩).exponent = 236 - 18 * (11 - m) := by
+      have hexp_next : (Digit25.left18 ⟨10 - (m + 1), by omega⟩).exponent = 236 - 18 * (10 - m) := by
         simp only [Digit25.exponent]; omega
       rw [hacc_eq, hexp_next] at hD'
       exact ih (by omega) S' D' hS' hD' hdom'
-  have hinit_eq : leftInitApprox25 Q hQ hn =
-      (List.ofFn (fun j : Fin 11 => Digit25.left18 j)).map (bodyApproxWin Q hQ hn) ++ tail1 := by
-    simp [leftInitApprox25, leftInitDigits25, tail1]
-  rw [hinit_eq]
-  have h11 := hphase1a 11 (le_refl 11) S₀ D₀ hS₀_pt hD₀ hdom₀
-  simpa using h11
+  have hrest_eq : leftRestApprox25 Q hQ hn =
+      (List.ofFn (fun j : Fin 10 => Digit25.left18 ⟨j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail3 := by
+    simp [leftRestApprox25, leftDigits25, tail3, tail2, tailLast, dLast, List.ofFn_succ]
+  rw [hrest_eq]
+  have h10 := hphase1a 10 (le_refl 10) S₀ D₀ hS₀_pt hD₀ hdom₀
+  simpa using h10
 
 /-! ### Physical program execution, lower bound (`≥ 99239 / 100000`), and dual `Readout5` readout -/
 
@@ -12065,12 +17084,12 @@ private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
     exact hfor d (d.goodPred Q) List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi)
   · rcases List.mem_cons.mp hwR with rfl | hwR
     · change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW 16 (wideCoeffs25 rightHeadDigit) Q)
-        (restrictState (fun s => ¬ GenericW.GoodWEnv475 16 (wideCoeffs25 rightHeadDigit) Q s)
+        (restrictState (fun s => ¬ GenericW.GoodWEnv460 16 (wideCoeffs25 rightHeadDigit) Q s)
           (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) φ)))) ≤
-        normSq (restrictState (fun s => ¬ GenericW.GoodWEnv475 16 (wideCoeffs25 rightHeadDigit) Q s)
+        normSq (restrictState (fun s => ¬ GenericW.GoodWEnv460 16 (wideCoeffs25 rightHeadDigit) Q s)
           (Quantum.run (sineFromPlus top10Right) (Quantum.run ((GenericW.bankW 16).reverse.reverse.map Gate.H) φ)))
       rw [List.reverse_reverse]
-      exact hfor rightHeadDigit (GenericW.GoodWEnv475 16 (wideCoeffs25 rightHeadDigit) Q)
+      exact hfor rightHeadDigit (GenericW.GoodWEnv460 16 (wideCoeffs25 rightHeadDigit) Q)
         (sineFromPlus top10Right) (fun v => sineWeight 10 (v / 2 ^ 7)) rightHead_pre_expand
     · obtain ⟨d, _, rfl⟩ := List.mem_map.mp hwR
       change normSq (Finsupp.lmapDomain ℂ ℂ (GenericW.updateW d.k (wideCoeffs25 d) Q)
@@ -12081,36 +17100,13 @@ private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
       rw [List.reverse_reverse]
       exact hfor d (d.goodPred Q) List.nil (fun _ => 1) (body_pre_expandW d.k d.k_hi)
 
-theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
-    Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
-      (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState) ≤
-      ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
-        windowedEventMass Q zeroBasisState 256 206 accept +
-      ((1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 * (2 + 1 / 75) * (1 + 1 / (1 / 75))) *
-        ((156 : ℝ) / 10 ^ 8) +
-      (((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
-        (2 + 1 / 460) * (1 + 1 / (1 / 460))) * ((452 : ℝ) / 10 ^ 9) := by
-  set epsR : ℝ := 1 / 460
-  set αR : ℝ := (1 + epsR) ^ 2
-  set B0R : ℝ := (2 + epsR) * (1 + 1 / epsR)
-  set epsLast : ℝ := 1 / 75
-  set αLast : ℝ := (1 + epsLast) ^ 2
-  set B0Last : ℝ := (2 + epsLast) * (1 + 1 / epsLast)
-  set epsInit : ℝ := 1 / 10 ^ 8
-  set αInit : ℝ := (1 + epsInit) ^ 2
-  set B0Init : ℝ := (2 + epsInit) * (1 + 1 / epsInit)
-  have hepsR : 0 < epsR := by dsimp [epsR]; positivity
-  have hepsLast : 0 < epsLast := by dsimp [epsLast]; positivity
-  have hepsInit : 0 < epsInit := by dsimp [epsInit]; positivity
-  have hB0R_nn : 0 ≤ B0R := by dsimp [B0R, epsR]; positivity
-  have hB0Last_pos : 0 < B0Last := by dsimp [B0Last, epsLast]; positivity
-  have hB0Init_pos : 0 < B0Init := by dsimp [B0Init, epsInit]; positivity
+theorem program25Cat_event_sqrt_upper (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
+    Real.sqrt (Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
+      (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState)) ≤
+      Real.sqrt (windowedEventMass Q zeroBasisState 256 206 accept) + 23780 / 1000000 := by
   have hterm_sub : ∀ (lhs rhs : List Bool), SubUnital
       (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil) :=
     fun _ _ => subUnital_ite _ _ (fun φ => le_of_eq (resetTerminal25_mass φ))
-  have hlenR : (rightApprox25 Q hQ hn).length = 12 := by simp [rightApprox25, rightTailDigits25]
-  have hlenInit : (leftInitApprox25 Q hQ hn).length = 12 := by simp [leftInitApprox25, leftInitDigits25]
-  let wLast := bodyApproxWin Q hQ hn (.left19 ⟨1, by decide⟩)
   have hR_step : ∀ w ∈ rightApprox25 Q hQ hn, ∀ pr bits φ, PointSupported φ → PointSupported (w.model.step pr bits φ) := by
     intro w hw pr bits φ hφ
     rcases List.mem_cons.mp hw with rfl | hw
@@ -12121,10 +17117,6 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
     intro w hw pr bits φ hφ
     obtain ⟨d, _, rfl⟩ := List.mem_map.mp hw
     exact bodyModel_step_pointSupported Q hQ hn d pr bits φ hφ
-  have hInit_sub : ∀ w ∈ leftInitApprox25 Q hQ hn, w ∈ leftRestApprox25 Q hQ hn := fun w hw => by
-    rw [leftRestApprox25_split]; exact List.mem_append_left _ hw
-  have hLast_mem : wLast ∈ leftRestApprox25 Q hQ hn := by
-    rw [leftRestApprox25_split]; exact List.mem_append_right _ List.mem_cons_self
   let physTermL : List Bool → List Bool → Instrument := fun lHist lhs =>
     selectedAxisDep (rightApprox25 Q hQ hn)
       (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
@@ -12133,52 +17125,27 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
   let idealTermL : List Bool → Instrument := fun lhs =>
     idealAxis ((rightApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil
       (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
-  -- Stage 1: Right 12 windows (`env475`, `epsR = 1/460`)
+  let baseR : List Bool → State → ℝ :=
+    fun _ φ => axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
+  have hbaseR_nn : ∀ pr φ, 0 ≤ baseR pr φ := fun _ φ => axisSqrtErr_nonneg _ _ _ (fun _ _ => le_rfl) φ
   have hR_bound (lHist lhs : List Bool) (φ : State) (hφ : PointSupported φ) :
-      (physTermL lHist lhs).bornMass (LocalFour.Prep 1 φ) ≤
-      αR ^ 12 * (idealTermL lhs).bornMass φ +
-      B0Last * ((B0R * αR ^ 12 / B0Last) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ) := by
-    have h := selectedAxisDep_mass_upper (rightApprox25 Q hQ hn)
+      Real.sqrt ((physTermL lHist lhs).bornMass (LocalFour.Prep 1 φ)) ≤
+      Real.sqrt ((idealTermL lhs).bornMass φ) + baseR lhs φ := by
+    have h := selectedAxisDep_sqrt_upper (rightApprox25 Q hQ hn)
       (0 + axisCount ((leftApprox25 Q hQ hn).map ApproxCatWindow.catPhys))
       (Single.historyAfter _ Fin.elim0 lHist) List.nil
       (fun _ rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
       (fun rhs => if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil)
-      (fun _ _ => 0) PointSupported epsR 1 B0R hepsR (by norm_num) hB0R_nn le_rfl hR_step
+      (fun _ _ => 0) (fun _ _ => le_rfl) PointSupported hR_step
       (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inr hw) φ' hφ')
       (fun _ rhs => hterm_sub lhs rhs)
       (fun _ rhs φ' _ _ => by
-        simp only [one_mul, mul_zero, add_zero]
+        simp only [add_zero]
         split_ifs
         · rw [resetTerminal25_mass, resetTerminal25_mass, LocalFour.normSq_prep]
         · simp [Instrument.bornMass])
       φ hφ (pointSupported_y1 φ hφ)
-    have hcancel : B0Last * ((B0R * αR ^ 12 / B0Last) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ) =
-        (B0R * αR ^ 12) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ := by
-      field_simp [hB0Last_pos.ne']
-    rw [hcancel]
-    simpa [hlenR, physTermL, idealTermL] using h
-  -- Stage 2: Final Left window `left19 1` (`env490`, `epsLast = 1/75`)
-  let baseR : List Bool → State → ℝ :=
-    fun _ φ => (B0R * αR ^ 12 / B0Last) * axisBad (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
-  let baseLast : List Bool → State → ℝ :=
-    fun tag φ => (B0Last * αLast / B0Init) * axisBad [wLast] tag baseR φ
-  have hLast_bound (st : Nat) (hist : Fin st → Bool) (pr : List (Fin st)) (hPref : List Bool)
-      (φ : State) (hφ : PointSupported φ) (hφY : SupportedOn (fun s => s 1 = false) φ) :
-      (selectedAxisDep [wLast] st hist pr (fun hRest lhs => physTermL (hPref ++ hRest) lhs)).bornMass (LocalFour.Prep 1 φ) ≤
-      (αR ^ 12 * αLast) * (idealAxis ([wLast].map ApproxCatWindow.model) (pr.map hist) idealTermL).bornMass φ +
-      B0Init * baseLast (pr.map hist) φ := by
-    have h := selectedAxisDep_mass_upper [wLast] st hist pr
-      (fun hRest lhs => physTermL (hPref ++ hRest) lhs) idealTermL baseR
-      PointSupported epsLast (αR ^ 12) B0Last hepsLast (by positivity) hB0Last_pos.le le_rfl
-      (fun w hw => hL_step w (by rw [List.mem_singleton.mp hw]; exact hLast_mem))
-      (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl (by rw [List.mem_singleton.mp hw]; exact hLast_mem)) φ' hφ')
-      (fun _ lhs => selectedAxisDep_subUnital _ _ _ _ _ (fun _ rhs => hterm_sub lhs rhs))
-      (fun hRest lhs φ' hφ' _ => hR_bound (hPref ++ hRest) lhs φ' hφ')
-      φ hφ hφY
-    have hcancel : B0Init * baseLast (pr.map hist) φ = (B0Last * αLast) * axisBad [wLast] (pr.map hist) baseR φ := by
-      dsimp only [baseLast]; field_simp [hB0Init_pos.ne']
-    rw [hcancel]
-    simpa [List.length_singleton, pow_one] using h
+    simpa [physTermL, idealTermL, baseR] using h
   have hfirst_good : SupportedOn First20Input0
       (Quantum.run (sineFromPlus top10Left)
         (Quantum.run (First20Signed.bits.reverse.reverse.map Gate.H) (ket zeroBasisState))) := by
@@ -12196,12 +17163,12 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
         (fun t w b hw ht => first20Input0_upd t w b
           (top10Left_sub_bits (sineFromPlus_wires top10Left top10Left_length hw)) ht) s hs)
       _ hH
-  -- Stage 3: First 12 body Left windows (`leftInitApprox25`, full 512-step `GoodW`, `epsInit = 1/10^8`) via `selectedAxisDep_mass_upper_split`
-  have hmain := selectedAxisDep_cons_exact_upper (first20ApproxWin Q hQ hn) (leftRestApprox25 Q hQ hn)
+  have hmain := selectedAxisDep_cons_exact_sqrt (first20ApproxWin Q hQ hn) (leftRestApprox25 Q hQ hn)
     0 Fin.elim0 List.nil physTermL idealTermL
-    (fun bits => axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast
+    (fun bits => axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR
       ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))
-    (αR ^ 12 * αLast * αInit ^ 12) (B0Init * αInit ^ 12) (ket zeroBasisState) (supportedOn_ket _ _ rfl) hfirst_good (by
+    (fun bits => axisSqrtErr_nonneg _ _ _ hbaseR_nn _)
+    (ket zeroBasisState) (supportedOn_ket _ _ rfl) hfirst_good (by
       intro a bits ha_mem hb_mem
       have ha_len : a.history.length = cFirst20 := by
         change a.history.length = (first20ApproxWin Q hQ hn).catPhys.count
@@ -12211,22 +17178,16 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
             (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits) = bits.reverse := by
         simpa using nextPrior_map cFirst20 20 List.nil Fin.elim0 a.history bits ha_len
           ((fourierOutcomes_mem 20 bits).mp hb_mem)
-      rw [leftRestApprox25_split]
-      have hL := selectedAxisDep_mass_upper_split (leftInitApprox25 Q hQ hn) (wLast :: List.nil)
+      have hL := selectedAxisDep_sqrt_upper (leftRestApprox25 Q hQ hn)
         (0 + cFirst20 + First20Signed.bits.reverse.length)
         (Single.historyAfter (0 + cFirst20 + First20Signed.bits.reverse.length)
           (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits)
         (nextPrior cFirst20 First20Signed.bits.reverse.length List.nil)
         (fun hRest lhs => physTermL (a.history ++ bits ++ hRest) lhs)
-        idealTermL baseLast PointSupported epsInit (αR ^ 12 * αLast) B0Init hepsInit (by positivity) hB0Init_pos.le le_rfl
-        (fun w hw => hL_step w (hInit_sub w hw))
-        (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl (hInit_sub w hw)) φ' hφ')
+        idealTermL baseR hbaseR_nn PointSupported hL_step
+        (fun w hw φ' hφ' => approx_bad_iso Q hQ hn w (Or.inl hw) φ' hφ')
         (fun _ lhs => selectedAxisDep_subUnital _ _ _ _ _ (fun _ rhs => hterm_sub lhs rhs))
-        (fun st hist pr hPref φ' hφ' hφY' => by
-          have heq : (fun hRest lhs => physTermL (a.history ++ bits ++ (hPref ++ hRest)) lhs) =
-              (fun hRest lhs => physTermL ((a.history ++ bits ++ hPref) ++ hRest) lhs) := by
-            funext hRest lhs; simp only [List.append_assoc]
-          rw [heq]; exact hLast_bound st hist pr (a.history ++ bits ++ hPref) φ' hφ' hφY')
+        (fun hRest lhs φ' hφ' _ => hR_bound (a.history ++ bits ++ hRest) lhs φ' hφ')
         ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))
         (first20Model_step_pointSupported Q hQ hn List.nil bits)
         (pointSupported_y1 _ (first20Model_step_pointSupported Q hQ hn List.nil bits))
@@ -12234,7 +17195,7 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
           (Single.historyAfter (0 + cFirst20 + First20Signed.bits.reverse.length)
             (Single.historyAfter (0 + cFirst20) Fin.elim0 a.history) bits) = bits.reverse := by
         simpa [First20Signed.bits_length] using hnp
-      rw [hnp', hlenInit] at hL
+      rw [hnp'] at hL
       simpa [List.append_nil] using hL)
   have hlhs : (idealAxis ((leftApprox25 Q hQ hn).map ApproxCatWindow.model) List.nil idealTermL).bornMass (ket zeroBasisState) =
       windowedEventMass Q zeroBasisState 256 206 accept := by
@@ -12274,34 +17235,13 @@ theorem program25Cat_event_mass_upper (Q : Point) (hQ : order • Q = 0) (hn : Q
       rw [Single.axisPositions, rightWins25Cat_meta]; rfl
     rw [hposL, hposR]
     rfl
-  have hbad := totalBad25_bound Q hQ hn (B0Last * αLast / B0Init) (B0R * αR ^ 12 / B0Last)
-    (div_nonneg (mul_nonneg hB0Last_pos.le (by positivity)) hB0Init_pos.le)
-    (div_nonneg (mul_nonneg hB0R_nn (by positivity)) hB0Last_pos.le)
-  have hmb := mul_le_mul_of_nonneg_left hbad (mul_nonneg hB0Init_pos.le (by positivity) : 0 ≤ B0Init * αInit ^ 12)
-  have hsimp : (B0Init * αInit ^ 12) * ((B0Last * αLast / B0Init) *
-        ((156 : ℝ) / 10 ^ 8 + (B0R * αR ^ 12 / B0Last) * ((452 : ℝ) / 10 ^ 9))) =
-      (αLast * αInit ^ 12 * B0Last) * ((156 : ℝ) / 10 ^ 8) +
-      (αR ^ 12 * αLast * αInit ^ 12 * B0R) * ((452 : ℝ) / 10 ^ 9) := by
-    field_simp [hB0Init_pos.ne', hB0Last_pos.ne']
-  rw [hsimp] at hmb
-  change _ ≤ αR ^ 12 * αLast * αInit ^ 12 * _ + (B0Init * αInit ^ 12) * _ at hmain
   rw [show (first20ApproxWin Q hQ hn :: leftRestApprox25 Q hQ hn) = leftApprox25 Q hQ hn from rfl,
     List.map_nil, hlhs, hrhs] at hmain
   have hlen20 : (first20ApproxWin Q hQ hn).model.physical.wires.length = 20 := by
     simp [first20ApproxWin, first20Model, First20Signed.bits_length]
   rw [hlen20] at hmain
-  change _ ≤ αR ^ 12 * αLast * αInit ^ 12 * _ +
-    (αLast * αInit ^ 12 * (2 + epsLast) * (1 + 1 / epsLast)) * _ +
-    (αR ^ 12 * αLast * αInit ^ 12 * (2 + epsR) * (1 + 1 / epsR)) * _
-  have heq_l : αLast * αInit ^ 12 * B0Last = αLast * αInit ^ 12 * (2 + epsLast) * (1 + 1 / epsLast) := by dsimp [B0Last]; ring
-  have heq_r : αR ^ 12 * αLast * αInit ^ 12 * B0R = αR ^ 12 * αLast * αInit ^ 12 * (2 + epsR) * (1 + 1 / epsR) := by dsimp [B0R]; ring
-  rw [heq_l, heq_r] at hmb
-  have hmb' : (B0Init * αInit ^ 12) * ((fourierOutcomes 20).map (fun bits =>
-      axisBad (leftInitApprox25 Q hQ hn) bits.reverse baseLast
-        ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState)))).sum ≤
-      (αLast * αInit ^ 12 * (2 + epsLast) * (1 + 1 / epsLast)) * ((156 : ℝ) / 10 ^ 8) +
-      (αR ^ 12 * αLast * αInit ^ 12 * (2 + epsR) * (1 + 1 / epsR)) * ((452 : ℝ) / 10 ^ 9) := hmb
-  exact hmain.trans ((add_le_add (le_refl _) hmb').trans_eq (add_assoc _ _ _).symm)
+  have hbad := totalSqrtErr25_bound Q hQ hn
+  linarith
 
 theorem program25Cat_clean (read : ConstantBit 3407872 → Bool) (b : InstrumentBranch)
     (hb : b ∈ (program25Cat.instantiate read Fin.elim0).run) (ψ : State) :
@@ -12422,65 +17362,93 @@ theorem bodyCatWin_support (d : Digit25) (start : Nat) :
     straightWires ((bodyCatWin d).program start) ⊆ List.range 1612 := by
   cases d with
   | left18 j =>
-    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) ⊆ _
-    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled17_packed_support start
+    by_cases hj : j.val = 10
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [straightWires_castFinish, straightWires_reindex]
+      exact GenericW.compiledEnv510_17_packed_support start
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [straightWires_castFinish, straightWires_reindex]
+      exact GenericW.compiled17_packed_support start
   | left19 j =>
     rcases j with ⟨_ | _ | n, hj⟩
-    · change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) ⊆ _
-      rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiled18_packed_support start
-    · change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))) ⊆ _
-      rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv490_18_packed_support start
+    · change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))) ⊆ _
+      rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv500_18_packed_support start
+    · change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))) ⊆ _
+      rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv485_18_packed_support start
     · omega
   | right17 j =>
-    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))) ⊆ _
-    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv475_16_packed_support start
+    by_cases hj : j.val < 3
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [straightWires_castFinish, straightWires_reindex]
+      exact GenericW.compiledEnv460_16_packed_support start
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [straightWires_castFinish, straightWires_reindex]
+      exact GenericW.compiledEnv465_16_packed_support start
   | right18 j =>
-    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))) ⊆ _
-    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv475_17_packed_support start
+    change straightWires (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))) ⊆ _
+    rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv465_17_packed_support start
 
 theorem bodyCatWin_slots (d : Digit25) (start : Nat) : ((bodyCatWin d).program start).gateSlots ≤ 80000000000 := by
   cases d with
   | left18 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).gateSlots ≤ _
-    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled17_slots start
+    by_cases hj : j.val = 10
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
+      exact GenericW.compiledEnv510_17_slots start
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
+      exact GenericW.compiled17_slots start
   | left19 j =>
     rcases j with ⟨_ | _ | n, hj⟩
-    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).gateSlots ≤ _
-      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiled18_slots start
-    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))).gateSlots ≤ _
-      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv490_18_slots start
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))).gateSlots ≤ _
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv500_18_slots start
+    · change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))).gateSlots ≤ _
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv485_18_slots start
     · omega
   | right17 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))).gateSlots ≤ _
-    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv475_16_slots start
+    by_cases hj : j.val < 3
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
+      exact GenericW.compiledEnv460_16_slots start
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
+      exact GenericW.compiledEnv465_16_slots start
   | right18 j =>
-    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))).gateSlots ≤ _
-    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv475_17_slots start
+    change (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))).gateSlots ≤ _
+    rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv465_17_slots start
 
 theorem bodyCatWin_tCount (d : Digit25) (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
     (((bodyCatWin d).program start).instantiate read h).tCount ≤ 4 * d.tof := by
   cases d with
   | left18 j =>
-    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))).instantiate read h).tCount ≤ _
-    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-    exact GenericW.compiled17_tCount start _ h
+    by_cases hj : j.val = 10
+    · dsimp only [bodyCatWin, Digit25.tof]; rw [if_pos hj, if_pos hj]; dsimp only
+      rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+      exact GenericW.compiledEnv510_17_tCount start _ h
+    · dsimp only [bodyCatWin, Digit25.tof]; rw [if_neg hj, if_neg hj]; dsimp only
+      rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+      exact GenericW.compiled17_tCount start _ h
   | left19 j =>
     rcases j with ⟨_ | _ | n, hj⟩
-    · change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))).instantiate read h).tCount ≤ _
+    · change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))).instantiate read h).tCount ≤ _
       rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-      exact GenericW.compiled18_tCount start _ h
-    · change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))).instantiate read h).tCount ≤ _
+      exact GenericW.compiledEnv500_18_tCount start _ h
+    · change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))).instantiate read h).tCount ≤ _
       rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-      exact GenericW.compiledEnv490_18_tCount start _ h
+      exact GenericW.compiledEnv485_18_tCount start _ h
     · omega
   | right17 j =>
-    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))).instantiate read h).tCount ≤ _
-    rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-    exact GenericW.compiledEnv475_16_tCount start _ h
+    by_cases hj : j.val < 3
+    · dsimp only [bodyCatWin, Digit25.tof]; rw [if_pos hj, if_pos hj]; dsimp only
+      rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+      exact GenericW.compiledEnv460_16_tCount start _ h
+    · dsimp only [bodyCatWin, Digit25.tof]; rw [if_neg hj, if_neg hj]; dsimp only
+      rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
+      exact GenericW.compiledEnv465_16_tCount start _ h
   | right18 j =>
-    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))).instantiate read h).tCount ≤ _
+    change ((castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))).instantiate read h).tCount ≤ _
     rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
-    exact GenericW.compiledEnv475_17_tCount start _ h
+    exact GenericW.compiledEnv465_17_tCount start _ h
 
 theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).program start) = 0 := by
   apply CatAxis.cost18_zero_of_removed18
@@ -12496,21 +17464,31 @@ theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).p
       | whenBit r v g => cases g <;> simp [relabelStraight, relabelTemplateGate, Gate.relabel, removed, largePhase, ih]
   cases d with
   | left18 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram17 start)))) = 0
-    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled17_removed18 start
+    by_cases hj : j.val = 10
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]
+      exact GenericW.compiledEnv510_17_removed18 start
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]
+      exact GenericW.compiled17_removed18 start
   | left19 j =>
     rcases j with ⟨_ | _ | n, hj⟩
-    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgram18 start)))) = 0
-      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiled18_removed18 start
-    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv490_18 start)))) = 0
-      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv490_18_removed18 start
+    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))) = 0
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv500_18_removed18 start
+    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))) = 0
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv485_18_removed18 start
     · omega
   | right17 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_16 start)))) = 0
-    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv475_16_removed18 start
+    by_cases hj : j.val < 3
+    · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]
+      exact GenericW.compiledEnv460_16_removed18 start
+    · dsimp only [bodyCatWin]; rw [if_neg hj]; dsimp only
+      rw [LocalFour.removed_castFinish, removed18_reindex, hrel]
+      exact GenericW.compiledEnv465_16_removed18 start
   | right18 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv475_17 start)))) = 0
-    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv475_17_removed18 start
+    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))) = 0
+    rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv465_17_removed18 start
 
 theorem first20CatWin_wellFormed (start : Nat) : (first20CatWin.program start).WellFormed := by
   apply straight_append_wellFormed
@@ -12658,12 +17636,12 @@ theorem rightHeadCatWin_slots (start : Nat) : (rightHeadCatWin.program start).ga
   exact (Nat.add_le_add hs (bodyCatWin_slots rightHeadDigit start)).trans (by decide)
 
 theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
-    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 2027056 + 28 := by
+    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 1897790 + 28 := by
   change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
     ((bodyCatWin rightHeadDigit).program start)).instantiate read h).tCount ≤ _
   have h1 := CatAxis.append_tCount_le
     (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)))
-    ((bodyCatWin rightHeadDigit).program start) read h (4 * 2027056)
+    ((bodyCatWin rightHeadDigit).program start) read h (4 * 1897790)
     (fun h' => bodyCatWin_tCount rightHeadDigit start read h')
   have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start)
       (sineFromPlus top10Right))).instantiate read h).tCount ≤ 28 := by
@@ -12792,17 +17770,17 @@ theorem full25Cat_wellFormed : fullProgram25Cat.WellFormed :=
   straight_append_wellFormed _ _ program25Cat_wellFormed readout25Cat_wellFormed
 
 theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99107 / 100000 : ℝ) ≤ Instrument.bornMass
+    1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((rawEntry25Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout25Cat Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
   rw [rawEntry25Cat, Single.fixedEntry_instantiate]
-  have hneighbor : (99107 / 100000 : ℝ) ≤ Instrument.bornMass
+  have hneighbor : 1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
         (fun b => fineEvent25Cat (pairRecovered256 d) b.history)) (ket zeroBasisState) := by
-    have hideal_succ : (9924 / 10000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
+    have hideal_succ : (99497 / 100000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
       rw [windowedEventMass_distribution Q d hd zeroBasisState 256 206]
-      exact sine_pair_success_256_206 Q d hn hd
+      exact SineBoundsTight.sine_pair_success_256_206_tight Q d hn hd
     have hideal_compl : windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) +
         windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) = 1 := by
       rw [windowedEventMass_distribution Q d hd zeroBasisState 256 206,
@@ -12844,7 +17822,7 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
       simp_rw [hswap]
       simp only [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul, mul_one]
       exact inv_mul_cancel₀ (Nat.cast_ne_zero.mpr order_prime.ne_zero)
-    have hideal_fail : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ 76 / 10000 := by
+    have hideal_fail : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ 503 / 100000 := by
       linarith
     have hread_some : ∀ (h : List Bool) (ws : List Nat), (∀ i ∈ ws, i < h.length) → ∃ v, readWord h ws = some v := by
       intro h ws
@@ -12885,45 +17863,17 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
         (program25Cat.instantiate_wellFormed (readConstant coefficientAt25 Q) Fin.elim0 program25Cat_wellFormed)
         (ket zeroBasisState)
       simpa only [runL, normSq_ket] using hp
-    have hup := program25Cat_event_mass_upper Q hQ hn (fun a b => !pairRecovered256 d a b)
-    have hpowR : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 ≤ 10535 / 10000 := by norm_num
-    have hpowLast : (1 + (1 / 75 : ℝ)) ^ 2 ≤ 102685 / 100000 := by norm_num
-    have hpowInit : ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 ≤ 1 + 48 / 10 ^ 8 := by
-      rw [← pow_mul]
-      have h1 := one_add_pow_le (1 / 10 ^ 8 : ℝ) 24 (by positivity) (by norm_num)
+    have hup := program25Cat_event_sqrt_upper Q hQ hn (fun a b => !pairRecovered256 d a b)
+    have hideal_sqrt : Real.sqrt (windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b)) ≤ 70923 / 1000000 := by
+      have hsq : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ (70923 / 1000000 : ℝ) ^ 2 :=
+        hideal_fail.trans (by norm_num)
+      exact (Real.sqrt_le_sqrt hsq).trans_eq (Real.sqrt_sq (by norm_num))
+    have hphys_sqrt : Real.sqrt (Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState)) ≤ 94703 / 1000000 := by
       linarith
-    have hpowRL : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 ≤ 108179 / 100000 := by
-      have h0 : 0 ≤ ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 := by positivity
-      have h1 : 0 ≤ (1 + (1 / 75 : ℝ)) ^ 2 := by positivity
-      nlinarith
-    have hpowAll : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 ≤ 108180 / 100000 := by
-      have h0 : 0 ≤ ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 := by positivity
-      have h1 : 0 ≤ ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 := by positivity
-      nlinarith
-    have hF_nn : 0 ≤ windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) := by
-      rw [windowedEventMass_distribution Q d hd zeroBasisState 256 206]
-      apply Finset.sum_nonneg; intro a _
-      apply Finset.sum_nonneg; intro b _
-      split_ifs
-      · unfold sinePairMass
-        apply mul_nonneg (by positivity)
-        apply Finset.sum_nonneg; intro k _
-        exact mul_nonneg (Complex.normSq_nonneg _) (Complex.normSq_nonneg _)
-      · exact le_rfl
-    have herrLast : ((1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
-        (2 + 1 / 75) * (1 + 1 / (1 / 75))) * ((156 : ℝ) / 10 ^ 8) ≤ 247 / 10 ^ 6 := by
-      have h0 : 0 ≤ (1 + (1 / 75 : ℝ)) ^ 2 := by positivity
-      have h1 : 0 ≤ ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 := by positivity
-      have hpowLI : (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 ≤ 102686 / 100000 := by nlinarith
-      have hBL : (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
-          (2 + 1 / 75) * (1 + 1 / (1 / 75)) ≤ 158 := by nlinarith
-      nlinarith
-    have herrR : (((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
-        (2 + 1 / 460) * (1 + 1 / (1 / 460))) * ((452 : ℝ) / 10 ^ 9) ≤ 452 / 10 ^ 6 := by
-      have hBR : ((1 + (1 / 460 : ℝ)) ^ 2) ^ 12 * (1 + (1 / 75 : ℝ)) ^ 2 * ((1 + (1 / 10 ^ 8 : ℝ)) ^ 2) ^ 12 *
-          (2 + 1 / 460) * (1 + 1 / (1 / 460)) ≤ 999 := by nlinarith
-      nlinarith
-    nlinarith
+    have hphys_fail : Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState) ≤ (94703 / 1000000 : ℝ) ^ 2 := by
+      have h := pow_le_pow_left₀ (Real.sqrt_nonneg _) hphys_sqrt 2
+      rwa [Real.sq_sqrt (instrument_bornMass_nonneg _ _)] at h
+    linarith
   apply hneighbor.trans
   unfold fullProgram25Cat
   rw [Single.append_run_history]
@@ -13045,14 +17995,14 @@ theorem source25Cat_within : Within (List.range 1612) rawEntry25Cat.program := b
     (within_of_instantiate fullProgram25Cat (List.range 1612) full25Cat_support)
 
 def leftTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 193625 + 28, 20) :: List.replicate 11 (4 * 2320431, 18) ++ [(4 * 2484527, 19), (4 * 2346489, 19)]
+  (4 * 193625 + 28, 20) :: List.replicate 10 (4 * 2320431, 18) ++ [(4 * 2263993, 18), (4 * 2366013, 19), (4 * 2277531, 19)]
 
 def rightTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 2027056 + 28, 17) :: List.replicate 9 (4 * 2027056, 17) ++ List.replicate 2 (4 * 2109231, 18)
+  (4 * 1897790 + 28, 17) :: List.replicate 2 (4 * 1897790, 17) ++ List.replicate 7 (4 * 1921892, 17) ++ List.replicate 2 (4 * 2004067, 18)
 
 theorem exact_trimmed_tCount25Cat :
     CatAxis.metadataTrimmedWeight leftTCountMeta25Cat 0 +
-      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 220160760 := by
+      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 213848024 := by
   decide +kernel
 
 theorem left25Cat_tCount_relation :
@@ -13060,10 +18010,10 @@ theorem left25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       leftWins25Cat leftTCountMeta25Cat := by
   refine .cons ⟨by simp [first20CatWin, First20Signed.bits_length], first20CatWin_tCount⟩ ?_
-  have hmap : List.replicate 11 (4 * 2320431, 18) ++ [(4 * 2484527, 19), (4 * 2346489, 19)] =
+  have hmap : List.replicate 10 (4 * 2320431, 18) ++ [(4 * 2263993, 18), (4 * 2366013, 19), (4 * 2277531, 19)] =
       leftDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [leftDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 11 (4 * 2320431, 18) ++ [(4 * 2484527, 19), (4 * 2346489, 19)])
+  change List.Forall₂ _ (leftDigits25.map bodyCatWin) (List.replicate 10 (4 * 2320431, 18) ++ [(4 * 2263993, 18), (4 * 2366013, 19), (4 * 2277531, 19)])
   rw [hmap]
   induction leftDigits25 with
   | nil => exact .nil
@@ -13075,10 +18025,10 @@ theorem right25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       rightWins25Cat rightTCountMeta25Cat := by
   refine .cons ⟨by simp [rightHeadCatWin, GenericW.bankW_length], rightHeadCatWin_tCount⟩ ?_
-  have hmap : List.replicate 9 (4 * 2027056, 17) ++ List.replicate 2 (4 * 2109231, 18) =
+  have hmap : List.replicate 2 (4 * 1897790, 17) ++ List.replicate 7 (4 * 1921892, 17) ++ List.replicate 2 (4 * 2004067, 18) =
       rightTailDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [rightTailDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 9 (4 * 2027056, 17) ++ List.replicate 2 (4 * 2109231, 18))
+  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 2 (4 * 1897790, 17) ++ List.replicate 7 (4 * 1921892, 17) ++ List.replicate 2 (4 * 2004067, 18))
   rw [hmap]
   induction rightTailDigits25 with
   | nil => exact .nil
@@ -13086,7 +18036,7 @@ theorem right25Cat_tCount_relation :
     exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
 theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0 → Bool) :
-    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 220160761 := by
+    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 213848025 := by
   unfold fullProgram25Cat program25Cat
   have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 18 g = false := by decide
   rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
@@ -13113,7 +18063,7 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
   have hbody_t : ((trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
       (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
         (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
-          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 220160760 := by
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 213848024 := by
     rw [CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append, CatAxis.trim18_append]
     have hres_t : ∀ h' : Fin (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) → Bool,
         ((trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
@@ -13153,7 +18103,7 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
     omega
   omega
 
-theorem source25Cat_cost18 : cost18 rawEntry25Cat.program ≤ 51 / 10000 := by
+theorem source25Cat_cost18 : cost18 rawEntry25Cat.program ≤ 5085 / 1000000 := by
   have hL := CatAxis.axisCat_cost18_exact 1 leftWins25Cat
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
@@ -13194,24 +18144,26 @@ theorem source25Cat_cost18 : cost18 rawEntry25Cat.program ≤ 51 / 10000 := by
   simp only [fullProgram25Cat, cost18_append, program25Cat]
   rw [CatAxis.cost18_literals _ _ (by decide)]
   simp only [cost18_cast, cost18_append, zero_add, add_zero, hreset, hro, hL, hR]
-  exact joint_error18_256_206
+  exact joint_error18_256_206_tight
 
 theorem source25Cat_cursor_le : rawEntry25Cat.finalCursor ≤ 99000000 := by
   have hfc : rawEntry25Cat.finalCursor = cursor25Cat + 6472 := by
     unfold rawEntry25Cat; rw [Single.fixedEntry_cursor]
   have h1 := first20Cat_count_le
-  have h16e := cBody16Env475_le
+  have h16e460 := cBody16Env460_le
+  have h16e465 := cBody16Env465_le
   have h17 := cBody17_le
-  have h17e := cBody17Env475_le
-  have h18 := cBody18_le
-  have h18e := cBody18Env490_le
+  have h17e465 := cBody17Env465_le
+  have h17e510 := cBody17Env510_le
+  have h18e485 := cBody18Env485_le
+  have h18e500 := cBody18Env500_le
   have hL := leftWins25Cat_count_eq
   have hR := rightWins25Cat_count_eq
   have hres : resetWires.length ≤ 2000 := by simp [resetWires]
   unfold cursor25Cat at hfc
   omega
 
-/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,612 × 220,160,761` certificate -/
+/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,612 × 213,848,025` certificate -/
 
 section Cert25
 attribute [local irreducible] rawEntry25Cat fullProgram25Cat program25Cat readout25Cat
@@ -13252,7 +18204,7 @@ theorem raw_certificate25Cat : Certificate rawLimits25 rawLayout25Cat rawEntry25
       rw [Straight.measurementCount]; omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99 / 100 : ℝ) ≤ 99107 / 100000).trans (strong_success25Cat Q d hn hd)
+    exact (by norm_num : (99 / 100 : ℝ) ≤ 1 - (94703 / 1000000 : ℝ) ^ 2).trans (strong_success25Cat Q d hn hd)
 
 def entryTrim18 (e : StraightEntry) : StraightEntry where
   coefficients := e.coefficients
@@ -13261,9 +18213,9 @@ def entryTrim18 (e : StraightEntry) : StraightEntry where
 
 theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
     (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (hcost : cost18 entry.program ≤ 51 / 10000)
+    (hs : Within ws entry.program) (hcost : cost18 entry.program ≤ 5085 / 1000000)
     (hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
-      (99107 / 100000 : ℝ) ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
     Certificate limits layout (entryTrim18 entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
   gateBudget := (trim18_slots entry.program).trans cert.gateBudget
@@ -13288,11 +18240,10 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
     simpa only [Nat.add_zero] using he.le
   success := by
     intro Q d hn hd
-    have hcn := cost18_nonneg entry.program
     let acc : (Fin entry.finalCursor → Bool) → Bool :=
       fun h => (verifiedCandidate layout Q (List.ofFn h)).isSome
-    have h := trim18_expectation (readConstant entry.coefficients.get Q) entry.program
-      Fin.elim0 (ket zeroBasisState) (fun h => !acc h) cert.wellFormed hcost
+    have h := trim18_expectation_sqrt (readConstant entry.coefficients.get Q) entry.program
+      Fin.elim0 (ket zeroBasisState) (fun h => !acc h) cert.wellFormed
     have hA := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q)
       entry.program Fin.elim0 (ket zeroBasisState) acc cert.wellFormed
     have hB := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q)
@@ -13300,20 +18251,30 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
       (trim18_wellFormed entry.program cert.wellFormed)
     dsimp only [acc] at hA hB h
     rw [expectation_verified, normSq_ket] at hA hB
-    rw [normSq_ket] at h
+    rw [normSq_ket, Real.sqrt_one, mul_one] at h
     have hS := hstrong Q d hn hd
-    change 99107 / 100000 ≤ Instrument.bornMass
+    change 1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) at hS
     have hf : expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤
-        1 - 99107 / 100000 := by linarith
-    have hm := mul_le_mul_of_nonneg_left hf
-      (show 0 ≤ 1 + (106 / 10) * cost18 entry.program by positivity)
+        (94703 / 1000000 : ℝ) ^ 2 := by linarith
+    have hf_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
+        (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome)) ≤
+        94703 / 1000000 :=
+      (Real.sqrt_le_sqrt hf).trans_eq (Real.sqrt_sq (by norm_num))
+    have ht_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) (trim 18 entry.program) Fin.elim0
+        (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome)) ≤ 1 / 10 := by
+      linarith
+    have ht_fail : expectation (readConstant entry.coefficients.get Q) (trim 18 entry.program) Fin.elim0
+        (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤ 1 / 100 := by
+      have hsq := pow_le_pow_left₀ (Real.sqrt_nonneg _) ht_sqrt 2
+      rw [Real.sq_sqrt (ComplementLoss.expectation_nonneg _ _ _ _ _)] at hsq
+      linarith [show ((1 / 10 : ℝ) ^ 2) = 1 / 100 by norm_num]
     change 99 / 100 ≤ Instrument.bornMass
       (((trim 18 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
-    nlinarith
+    linarith
 
 theorem trimmed25Cat_coefficients :
     (entryTrim18 rawEntry25Cat).coefficients = List.ofFn coefficientAt25 := by
@@ -13343,13 +18304,13 @@ private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCo
   exact hp _
 
 theorem trimmed25Cat_tCount (Q : Point) :
-    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 220160761 := by
+    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 213848025 := by
   rw [rawEntry25Cat]
-  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 220160761
+  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 213848025
     (fun r => full25Cat_trim18_tCount r Fin.elim0)
 
 theorem trim18_certificate25Cat :
-    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 220160761, 99000000⟩ := by
+    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 213848025, 99000000⟩ := by
   have hbase := trim18_certificate_generic rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat
     (List.range 1612) raw_certificate25Cat source25Cat_within source25Cat_cost18 strong_success25Cat
   refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
@@ -13377,8 +18338,10 @@ set_option linter.unusedSimpArgs false
 attribute [local irreducible] List.ofFn Single.axis Single.fixedEntry
   GenericW.compiledProgramW GenericW.compiledProgramFnW
   GenericW.compiledProgram16 GenericW.compiledProgram17 GenericW.compiledProgram18
-  GenericW.compiledProgramEnv475_16 GenericW.compiledProgramEnv475_17 GenericW.compiledProgramEnv490_18
-  GenericW.arithSpecFull GenericW.arithSpecEnv475 GenericW.arithSpecEnv490
+  GenericW.compiledProgramEnv460_16 GenericW.compiledProgramEnv465_16 GenericW.compiledProgramEnv465_17
+  GenericW.compiledProgramEnv485_18 GenericW.compiledProgramEnv500_18 GenericW.compiledProgramEnv510_17
+  GenericW.arithSpecFull GenericW.arithSpecEnv460 GenericW.arithSpecEnv465
+  GenericW.arithSpecEnv485 GenericW.arithSpecEnv500 GenericW.arithSpecEnv510
   GenericW.fixupSpec16 GenericW.fixupSpec17 GenericW.fixupSpec18
   GenericW.compiledFixup16 GenericW.compiledFixup9 GenericW.rawFixup16 GenericW.rawFixup9
   GenericW.compact1612 Readout5.suffix5
@@ -13392,7 +18355,7 @@ def entry : StraightEntry :=
 
 def layout : DecodeLayout := rawLayout25Cat
 
-def bounds : Bounds := ⟨1612, 220160761, 99000000⟩
+def bounds : Bounds := ⟨1612, 213848025, 99000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
   specializeEntry25_certificate (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
@@ -13409,7 +18372,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1612, 220160761, 99000000⟩
+def bounds : Bounds := ⟨1612, 213848025, 99000000⟩
 def entry : StraightEntry := Schedule25Actual.entry
 def layout : DecodeLayout := Schedule25Actual.layout
 set_option maxRecDepth 30000 in

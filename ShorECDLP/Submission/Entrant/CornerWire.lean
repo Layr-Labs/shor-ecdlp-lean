@@ -12075,7 +12075,7 @@ attribute [local irreducible] Nat.iterate
 structure EnvSchedule where
   nGroups : Nat
   hGroups_pos : 55 ≤ nGroups
-  hGroups_le : nGroups ≤ 100
+  hGroups_le : nGroups ≤ 101
   postW : Nat → Nat
   hPost0 : postW 0 = 258
   hPostLast : postW (5 * (nGroups + 1) - 1) = 2
@@ -12092,7 +12092,7 @@ def EnvSchedule.stageW (E : EnvSchedule) (i : Nat) : Nat :=
 
 def EnvSchedule.preW (E : EnvSchedule) (i : Nat) : Nat := E.stageW i
 
-theorem EnvSchedule.S_bounds (E : EnvSchedule) : 280 ≤ E.S ∧ E.S ≤ 505 := by
+theorem EnvSchedule.S_bounds (E : EnvSchedule) : 280 ≤ E.S ∧ E.S ≤ 510 := by
   have h1 := E.hGroups_pos; have h2 := E.hGroups_le
   unfold EnvSchedule.S; omega
 
@@ -13502,7 +13502,7 @@ private theorem mem_envDiffIds_iff (S l : Nat) (hS : S ≤ 510) :
     · exact Or.inl ⟨h1, by omega⟩
     · exact Or.inr ⟨⟨h1, by omega⟩, hnh⟩
 
-private theorem envDiffIds_not_zeroRegion (S l : Nat) (hS1 : 10 ≤ S) (hS2 : S ≤ 505)
+private theorem envDiffIds_not_zeroRegion (S l : Nat) (hS1 : 10 ≤ S) (hS2 : S ≤ 510)
     (hl : l ∈ envDiffIds S) : ¬Placement5.zeroRegion l := by
   rw [mem_envDiffIds_iff S l (by omega)] at hl
   unfold Placement5.zeroRegion Placement5.workRegion Placement5.holeRegion
@@ -13796,29 +13796,29 @@ theorem segmentOB5Trunc_wires_sub (nGroups : Nat) (hn : nGroups ≤ 101) (divide
 
 -- Wire support of `kernelPreEnv` and `kernelSufEnv`:
 private theorem envStack_wires_pool (E : EnvSchedule) :
-    (∀ q ∈ ECDSAAdd.wires (envForwardOB5 E 1 (E.S - 1)), ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
-    (∀ q ∈ ECDSAAdd.wires (envReverseOB5 E 1 (E.S - 1)), ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
-    (∀ q ∈ ECDSAAdd.wires (envClear E), ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
-    (∀ q ∈ ECDSAAdd.wires (envPackLast E), ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
-    (∀ q ∈ ECDSAAdd.wires (envDecodeLast E), ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) := by
+    (∀ q ∈ ECDSAAdd.wires (envForwardOB5 E 1 (E.S - 1)), ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
+    (∀ q ∈ ECDSAAdd.wires (envReverseOB5 E 1 (E.S - 1)), ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
+    (∀ q ∈ ECDSAAdd.wires (envClear E), ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
+    (∀ q ∈ ECDSAAdd.wires (envPackLast E), ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) ∧
+    (∀ q ∈ ECDSAAdd.wires (envDecodeLast E), ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) := by
   have hS := E.S_bounds
-  have hsig_pres (m l : Nat) (hm : m ≤ 511) (hl : l < 510 ∨ (770 ≤ l ∧ l ≤ 1028 + m) ∨ (1540 ≤ l ∧ l + m < 2053 ∧ l < 1798)) :
-      ∃ k, OB5.sig m (base l) = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798)) := by
+  have hsig_pres (m l : Nat) (hm : m ≤ 511) (hl : l < 515 ∨ (770 ≤ l ∧ l ≤ 1028 + m) ∨ (1540 ≤ l ∧ l + m < 2053 ∧ l < 1798)) :
+      ∃ k, OB5.sig m (base l) = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798)) := by
     rw [OB5.sig_base m l hm]; refine ⟨_, rfl, ?_⟩; split_ifs <;> omega
   have htick_idx (i : Nat) (hi1 : 1 ≤ i) (hi : i < E.S) (q : Wire) (hq : q ∈ (envTickLayout E base i).wires) :
-      ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k ≤ 1028 + i) ∨ (1540 ≤ k ∧ k + i < 2053 ∧ k < 1798)) := by
+      ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k ≤ 1028 + i) ∨ (1540 ≤ k ∧ k + i < 2053 ∧ k < 1798)) := by
     obtain ⟨k, rfl, hk⟩ := envTickLayout_mem E base i hi q hq
     have hp : skywalkPoolPreviousId i = i - 1 := by simp [skywalkPoolPreviousId, show i ≠ 0 by omega]
     rw [hp] at hk; have hb := E.width_bounds i hi
     exact ⟨k, rfl, by omega⟩
   have hhist_idx (start m : Nat) (hs : start + 5 ≤ m + 1) (hm : m < E.S) (P : ECDSAAdd.Program)
       (hP : P = History5.encode base start ∨ P = History5.decode base start) (q : Wire) (hq : q ∈ ECDSAAdd.wires P) :
-      ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k ≤ 1028 + m) ∨ (1540 ≤ k ∧ k + m < 2053 ∧ k < 1798)) := by
+      ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k ≤ 1028 + m) ∨ (1540 ≤ k ∧ k + m < 2053 ∧ k < 1798)) := by
     obtain ⟨r, rfl⟩ := History5.history_gate_mem base start P hP q hq
     refine ⟨History5.historyId start r, rfl, ?_⟩
     have hr := r.isLt; unfold History5.historyId; split_ifs <;> omega
   have hfwd : ∀ n i, 1 ≤ i → i + n ≤ E.S → ∀ q ∈ ECDSAAdd.wires (envForwardOB5 E i n),
-      ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798)) := by
+      ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798)) := by
     intro n; induction n with
     | zero => intro _ _ _ q hq; rw [envForwardOB5] at hq; simp [ECDSAAdd.wires] at hq
     | succ n ih =>
@@ -13839,7 +13839,7 @@ private theorem envStack_wires_pool (E : EnvSchedule) :
             exact hsig_pres i l (by omega) hl
       · exact ih (i + 1) (by omega) (by omega) q h
   have hrev : ∀ n i, 1 ≤ i → i + n ≤ E.S → ∀ q ∈ ECDSAAdd.wires (envReverseOB5 E i n),
-      ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798)) := by
+      ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798)) := by
     intro n; induction n with
     | zero => intro _ _ _ q hq; rw [envReverseOB5] at hq; simp [ECDSAAdd.wires] at hq
     | succ n ih =>
@@ -13876,7 +13876,7 @@ theorem kernelPreSufEnv_sites (E : EnvSchedule) :
     ECDSAAdd.wires (kernelPreEnv E) ⊆ OB5Support.logicalSites ∧
     ECDSAAdd.wires (kernelSufEnv E) ⊆ OB5Support.logicalSites := by
   have hst := envStack_wires_pool E
-  have htoLog (q : Wire) (hq : ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) :
+  have htoLog (q : Wire) (hq : ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) :
       q ∈ OB5Support.logicalSites := by
     obtain ⟨k, rfl, hk⟩ := hq
     apply List.mem_toFinset.mpr; apply List.mem_map.mpr; refine ⟨k, ?_, rfl⟩
@@ -13900,7 +13900,7 @@ theorem kernelPreSufEnv_sites (E : EnvSchedule) :
 theorem kernelPreSufEnv_avoid (E : EnvSchedule) (i : Nat) (hi : i = 717 ∨ i = 718 ∨ i = 2400 ∨ i = 765 ∨ i = 766 ∨ i = 767 ∨ i = 2312) :
     base i ∉ ECDSAAdd.wires (kernelPreEnv E) ∧ base i ∉ ECDSAAdd.wires (kernelSufEnv E) := by
   have hst := envStack_wires_pool E
-  have hno_st (h : ∃ k, base i = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) : False := by
+  have hno_st (h : ∃ k, base i = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) : False := by
     obtain ⟨k, he, hk⟩ := h; have := MappedCompressed.base_injective he; omega
   have hno_pref : base i ∉ (NativeFirstDirect.prefixSites base).toFinset := by
     intro hm
@@ -14803,7 +14803,7 @@ private theorem envPre_facts (E : EnvSchedule) (x : Nat) (Y : ECDSAAdd.Fp)
   -- Note: `wires (kernelSufEnv E) ⊆ (skywalkPoolWires base).toFinset`!
   have hsuf_pool : ECDSAAdd.wires (kernelSufEnv E) ⊆ (skywalkPoolWires base).toFinset := by
     have hst := envStack_wires_pool E
-    have htoPool (q : Wire) (hq : ∃ k, q = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) :
+    have htoPool (q : Wire) (hq : ∃ k, q = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) :
         q ∈ (skywalkPoolWires base).toFinset := by
       obtain ⟨k, rfl, hk⟩ := hq; exact List.mem_toFinset.mpr (List.mem_map.mpr ⟨k, by simp only [List.mem_range'_1]; omega, rfl⟩)
     intro q hq; rw [kernelSufEnv, ECDSAAdd.wires_append, ECDSAAdd.wires_append, ECDSAAdd.wires_append] at hq
@@ -15096,7 +15096,7 @@ theorem kernelSEnv_spec (E : EnvSchedule) (divide : Bool)
           rw [h1, ← h2, ← hag3 q hd, ← hst3]
           have hpre_pool : ECDSAAdd.wires (kernelPreEnv E) ⊆ (skywalkPoolWires base).toFinset := by
             have hst := envStack_wires_pool E
-            have htoPool (u : Wire) (hu : ∃ k, u = base k ∧ (k < 510 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) :
+            have htoPool (u : Wire) (hu : ∃ k, u = base k ∧ (k < 515 ∨ (770 ≤ k ∧ k < 1285) ∨ (1540 ≤ k ∧ k < 1798))) :
                 u ∈ (skywalkPoolWires base).toFinset := by
               obtain ⟨k, rfl, hk⟩ := hu; exact List.mem_toFinset.mpr (List.mem_map.mpr ⟨k, by simp only [List.mem_range'_1]; omega, rfl⟩)
             intro u hu; rw [kernelPreEnv, ECDSAAdd.wires_append, ECDSAAdd.wires_append, ECDSAAdd.wires_append] at hu
@@ -15185,7 +15185,7 @@ theorem arithSEnv_correct (E : EnvSchedule) (L : ControlledPointLayout) (hw : L.
   cases multiply <;>
     simpa only [arithSEnv, skywalkArithmeticResult, Bool.not_false, Bool.not_true, Bool.false_eq_true, if_false, if_true] using result
 
-/-! ### 8. Exact polymorphic resource counts & concrete `env475` / `env490` instances -/
+/-! ### 8. Exact polymorphic resource counts & concrete `env460` / `env465` / `env485` / `env500` / `env510` instances -/
 
 theorem envStack_counts (E : EnvSchedule) :
     ECDSAAdd.toffoliCount (envForwardOB5 E 1 (E.S - 1)) =
@@ -15308,32 +15308,71 @@ theorem arithSEnv_counts_formula (E : EnvSchedule) (L : ControlledPointLayout) :
   simp only [arithSEnv, Bool.not_false, Bool.not_true, h1.1, h1.2, h2.1, h2.2]
   exact ⟨by omega, by omega, by omega, by omega⟩
 
--- Concrete Wave 10 schedules: `env475` (`nGroups = 94`, `S = 475`, Right 12) and `env490` (`nGroups = 97`, `S = 490`, Left `left19 1`)!
-def env475PostW (i : Nat) : Nat := min 258 (min (476 - i) (278 - 12 * i / 37))
+-- Concrete Wave 11 schedules (`env460`, `env465`, `env485`, `env500`, `env510`) with 2-piece envelopes!
+def env460PostW (i : Nat) : Nat := min 258 (min (461 - i) (max 146 (293 - 13 * i / 20)))
 
-def env475 : EnvSchedule where
-  nGroups := 94
+def env460 : EnvSchedule where
+  nGroups := 91
   hGroups_pos := by decide
   hGroups_le := by decide
-  postW := env475PostW
+  postW := env460PostW
   hPost0 := by decide
   hPostLast := by decide
-  hPost_inner := fun i hi => by unfold env475PostW; omega
-  hPost_bounds := fun i hi => by unfold env475PostW; omega
-  hPost_step := fun i h1 hi => by unfold env475PostW; omega
+  hPost_inner := fun i hi => by unfold env460PostW; omega
+  hPost_bounds := fun i hi => by unfold env460PostW; omega
+  hPost_step := fun i h1 hi => by unfold env460PostW; omega
 
-def env490PostW (i : Nat) : Nat := min 258 (min (491 - i) (285 - 12 * i / 37))
+def env465PostW (i : Nat) : Nat := min 258 (min (466 - i) (max 147 (295 - 16 * i / 25)))
 
-def env490 : EnvSchedule where
-  nGroups := 97
+def env465 : EnvSchedule where
+  nGroups := 92
   hGroups_pos := by decide
   hGroups_le := by decide
-  postW := env490PostW
+  postW := env465PostW
   hPost0 := by decide
   hPostLast := by decide
-  hPost_inner := fun i hi => by unfold env490PostW; omega
-  hPost_bounds := fun i hi => by unfold env490PostW; omega
-  hPost_step := fun i h1 hi => by unfold env490PostW; omega
+  hPost_inner := fun i hi => by unfold env465PostW; omega
+  hPost_bounds := fun i hi => by unfold env465PostW; omega
+  hPost_step := fun i h1 hi => by unfold env465PostW; omega
+
+def env485PostW (i : Nat) : Nat := min 258 (min (486 - i) (max 158 (315 - 16 * i / 25)))
+
+def env485 : EnvSchedule where
+  nGroups := 96
+  hGroups_pos := by decide
+  hGroups_le := by decide
+  postW := env485PostW
+  hPost0 := by decide
+  hPostLast := by decide
+  hPost_inner := fun i hi => by unfold env485PostW; omega
+  hPost_bounds := fun i hi => by unfold env485PostW; omega
+  hPost_step := fun i h1 hi => by unfold env485PostW; omega
+
+def env500PostW (i : Nat) : Nat := min 258 (min (501 - i) (max 169 (337 - 13 * i / 20)))
+
+def env500 : EnvSchedule where
+  nGroups := 99
+  hGroups_pos := by decide
+  hGroups_le := by decide
+  postW := env500PostW
+  hPost0 := by decide
+  hPostLast := by decide
+  hPost_inner := fun i hi => by unfold env500PostW; omega
+  hPost_bounds := fun i hi => by unfold env500PostW; omega
+  hPost_step := fun i h1 hi => by unfold env500PostW; omega
+
+def env510PostW (i : Nat) : Nat := min 258 (min (511 - i) (max 178 (352 - 16 * i / 25)))
+
+def env510 : EnvSchedule where
+  nGroups := 101
+  hGroups_pos := by decide
+  hGroups_le := by decide
+  postW := env510PostW
+  hPost0 := by decide
+  hPostLast := by decide
+  hPost_inner := fun i hi => by unfold env510PostW; omega
+  hPost_bounds := fun i hi => by unfold env510PostW; omega
+  hPost_step := fun i h1 hi => by unfold env510PostW; omega
 
 def envPreWFn (pw : Nat → Nat) (i : Nat) : Nat := if i = 0 then 258 else pw (i - 1)
 def envTickFTofFn (pw : Nat → Nat) (i : Nat) : Nat :=
@@ -15344,43 +15383,103 @@ def envTickRTofFn (pw : Nat → Nat) (i : Nat) : Nat :=
   (envPreWFn pw i - 1) + (pw i - 2)
 def envTickRMeasFn (pw : Nat → Nat) (i : Nat) : Nat := pw i - 1
 
-theorem arithSEnv_env475_counts (L : ControlledPointLayout) :
-    ECDSAAdd.toffoliCount (arithSEnv env475 L false) = 942351 ∧
-    ECDSAAdd.measurementCount (arithSEnv env475 L false) = 654159 ∧
-    ECDSAAdd.toffoliCount (arithSEnv env475 L true) = 942350 ∧
-    ECDSAAdd.measurementCount (arithSEnv env475 L true) = 654415 := by
-  have hf := arithSEnv_counts_formula env475 L
-  have h1 : envSumRange (envTickFTofFn env475PostW) 1 474 = 166336 := by decide +kernel
-  have h2 : envSumRange (envTickFMeasFn env475PostW) 1 474 = 83424 := by decide +kernel
-  have h3 : envSumRange (envTickRTofFn env475PostW) 1 474 = 166118 := by decide +kernel
-  have h4 : envSumRange (envTickRMeasFn env475PostW) 1 474 = 83168 := by decide +kernel
-  have h5 : envPackCount 1 474 = 94 := by decide +kernel
-  have e1 : envSumRange (envTickFTof env475) 1 (env475.S - 1) = 166336 := h1
-  have e2 : envSumRange (envTickFMeas env475) 1 (env475.S - 1) = 83424 := h2
-  have e3 : envSumRange (envTickRTof env475) 1 (env475.S - 1) = 166118 := h3
-  have e4 : envSumRange (envTickRMeas env475) 1 (env475.S - 1) = 83168 := h4
-  have e5 : envPackCount 1 (env475.S - 1) = 94 := h5
-  have h6 : env475.nGroups = 94 := rfl
+theorem arithSEnv_env460_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSEnv env460 L false) = 877718 ∧
+    ECDSAAdd.measurementCount (arithSEnv env460 L false) = 616084 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env460 L true) = 877717 ∧
+    ECDSAAdd.measurementCount (arithSEnv env460 L true) = 616340 := by
+  have hf := arithSEnv_counts_formula env460 L
+  have h1 : envSumRange (envTickFTofFn env460PostW) 1 459 = 143642 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env460PostW) 1 459 = 72077 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env460PostW) 1 459 = 143439 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env460PostW) 1 459 = 71821 := by decide +kernel
+  have h5 : envPackCount 1 459 = 91 := by decide +kernel
+  have e1 : envSumRange (envTickFTof env460) 1 (env460.S - 1) = 143642 := h1
+  have e2 : envSumRange (envTickFMeas env460) 1 (env460.S - 1) = 72077 := h2
+  have e3 : envSumRange (envTickRTof env460) 1 (env460.S - 1) = 143439 := h3
+  have e4 : envSumRange (envTickRMeas env460) 1 (env460.S - 1) = 71821 := h4
+  have e5 : envPackCount 1 (env460.S - 1) = 91 := h5
+  have h6 : env460.nGroups = 91 := rfl
   simp only [e1, e2, e3, e4, e5, h6] at hf
   omega
 
-theorem arithSEnv_env490_counts (L : ControlledPointLayout) :
-    ECDSAAdd.toffoliCount (arithSEnv env490 L false) = 978932 ∧
-    ECDSAAdd.measurementCount (arithSEnv env490 L false) = 678208 ∧
-    ECDSAAdd.toffoliCount (arithSEnv env490 L true) = 978931 ∧
-    ECDSAAdd.measurementCount (arithSEnv env490 L true) = 678464 := by
-  have hf := arithSEnv_counts_formula env490 L
-  have h1 : envSumRange (envTickFTofFn env490PostW) 1 489 = 175004 := by decide +kernel
-  have h2 : envSumRange (envTickFMeasFn env490PostW) 1 489 = 87758 := by decide +kernel
-  have h3 : envSumRange (envTickRTofFn env490PostW) 1 489 = 174771 := by decide +kernel
-  have h4 : envSumRange (envTickRMeasFn env490PostW) 1 489 = 87502 := by decide +kernel
-  have h5 : envPackCount 1 489 = 97 := by decide +kernel
-  have e1 : envSumRange (envTickFTof env490) 1 (env490.S - 1) = 175004 := h1
-  have e2 : envSumRange (envTickFMeas env490) 1 (env490.S - 1) = 87758 := h2
-  have e3 : envSumRange (envTickRTof env490) 1 (env490.S - 1) = 174771 := h3
-  have e4 : envSumRange (envTickRMeas env490) 1 (env490.S - 1) = 87502 := h4
-  have e5 : envPackCount 1 (env490.S - 1) = 97 := h5
-  have h6 : env490.nGroups = 97 := rfl
+theorem arithSEnv_env465_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSEnv env465 L false) = 889769 ∧
+    ECDSAAdd.measurementCount (arithSEnv env465 L false) = 624029 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env465 L true) = 889768 ∧
+    ECDSAAdd.measurementCount (arithSEnv env465 L true) = 624285 := by
+  have hf := arithSEnv_counts_formula env465 L
+  have h1 : envSumRange (envTickFTofFn env465PostW) 1 464 = 146460 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env465PostW) 1 464 = 73486 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env465PostW) 1 464 = 146252 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env465PostW) 1 464 = 73230 := by decide +kernel
+  have h5 : envPackCount 1 464 = 92 := by decide +kernel
+  have e1 : envSumRange (envTickFTof env465) 1 (env465.S - 1) = 146460 := h1
+  have e2 : envSumRange (envTickFMeas env465) 1 (env465.S - 1) = 73486 := h2
+  have e3 : envSumRange (envTickRTof env465) 1 (env465.S - 1) = 146252 := h3
+  have e4 : envSumRange (envTickRMeas env465) 1 (env465.S - 1) = 73230 := h4
+  have e5 : envPackCount 1 (env465.S - 1) = 92 := h5
+  have h6 : env465.nGroups = 92 := rfl
+  simp only [e1, e2, e3, e4, e5, h6] at hf
+  omega
+
+theorem arithSEnv_env485_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSEnv env485 L false) = 944453 ∧
+    ECDSAAdd.measurementCount (arithSEnv env485 L false) = 659049 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env485 L true) = 944452 ∧
+    ECDSAAdd.measurementCount (arithSEnv env485 L true) = 659305 := by
+  have hf := arithSEnv_counts_formula env485 L
+  have h1 : envSumRange (envTickFTofFn env485PostW) 1 484 = 160972 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env485PostW) 1 484 = 80742 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env485PostW) 1 484 = 160744 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env485PostW) 1 484 = 80486 := by decide +kernel
+  have h5 : envPackCount 1 484 = 96 := by decide +kernel
+  have e1 : envSumRange (envTickFTof env485) 1 (env485.S - 1) = 160972 := h1
+  have e2 : envSumRange (envTickFMeas env485) 1 (env485.S - 1) = 80742 := h2
+  have e3 : envSumRange (envTickRTof env485) 1 (env485.S - 1) = 160744 := h3
+  have e4 : envSumRange (envTickRMeas env485) 1 (env485.S - 1) = 80486 := h4
+  have e5 : envPackCount 1 (env485.S - 1) = 96 := h5
+  have h6 : env485.nGroups = 96 := rfl
+  simp only [e1, e2, e3, e4, e5, h6] at hf
+  omega
+
+theorem arithSEnv_env500_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSEnv env500 L false) = 988694 ∧
+    ECDSAAdd.measurementCount (arithSEnv env500 L false) = 686928 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env500 L true) = 988693 ∧
+    ECDSAAdd.measurementCount (arithSEnv env500 L true) = 687184 := by
+  have hf := arithSEnv_counts_formula env500 L
+  have h1 : envSumRange (envTickFTofFn env500PostW) 1 499 = 173470 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env500PostW) 1 499 = 86991 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env500PostW) 1 499 = 173227 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env500PostW) 1 499 = 86735 := by decide +kernel
+  have h5 : envPackCount 1 499 = 99 := by decide +kernel
+  have e1 : envSumRange (envTickFTof env500) 1 (env500.S - 1) = 173470 := h1
+  have e2 : envSumRange (envTickFMeas env500) 1 (env500.S - 1) = 86991 := h2
+  have e3 : envSumRange (envTickRTof env500) 1 (env500.S - 1) = 173227 := h3
+  have e4 : envSumRange (envTickRMeas env500) 1 (env500.S - 1) = 86735 := h4
+  have e5 : envPackCount 1 (env500.S - 1) = 99 := h5
+  have h6 : env500.nGroups = 99 := rfl
+  simp only [e1, e2, e3, e4, e5, h6] at hf
+  omega
+
+theorem arithSEnv_env510_counts (L : ControlledPointLayout) :
+    ECDSAAdd.toffoliCount (arithSEnv env510 L false) = 1019732 ∧
+    ECDSAAdd.measurementCount (arithSEnv env510 L false) = 706286 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env510 L true) = 1019731 ∧
+    ECDSAAdd.measurementCount (arithSEnv env510 L true) = 706542 := by
+  have hf := arithSEnv_counts_formula env510 L
+  have h1 : envSumRange (envTickFTofFn env510PostW) 1 509 = 182574 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env510PostW) 1 509 = 91543 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env510PostW) 1 509 = 182321 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env510PostW) 1 509 = 91287 := by decide +kernel
+  have h5 : envPackCount 1 509 = 101 := by decide +kernel
+  have e1 : envSumRange (envTickFTof env510) 1 (env510.S - 1) = 182574 := h1
+  have e2 : envSumRange (envTickFMeas env510) 1 (env510.S - 1) = 91543 := h2
+  have e3 : envSumRange (envTickRTof env510) 1 (env510.S - 1) = 182321 := h3
+  have e4 : envSumRange (envTickRMeas env510) 1 (env510.S - 1) = 91287 := h4
+  have e5 : envPackCount 1 (env510.S - 1) = 101 := h5
+  have h6 : env510.nGroups = 101 := rfl
   simp only [e1, e2, e3, e4, e5, h6] at hf
   omega
 
@@ -16380,7 +16479,7 @@ attribute [local irreducible] Quantum.run Quantum.applyGate Quantum.ket
   LocalKernel.compiledKernelSEnv LocalKernel.compiledSegHSEnv LocalKernel.compiledSegmentSEnv
   LocalKernel.compiledReplaySEnv LocalKernel.compiledLogicalReplaySEnv
   LocalKernel.kernelPreEnv LocalKernel.kernelSufEnv LocalKernel.kernelSEnv LocalKernel.arithSEnv
-  LocalKernel.env475 LocalKernel.env490
+  LocalKernel.env460 LocalKernel.env465 LocalKernel.env485 LocalKernel.env500 LocalKernel.env510
   LocalKernel.compiledPacket LocalKernel.compiledFirstPacket LocalKernel.compiledEndPacket
   LocalKernel.compiledBasePacket LocalKernel.compiledBaseFirstPacket LocalKernel.compiledRawEnd
   LocalKernel.compiledRawReplay LocalKernel.compiledGroups
@@ -19699,49 +19798,115 @@ def arithSpecFull : ArithSpec where
   wellFormed := fun mul s => compiledDirectArith_wellFormed mul s
   ket_sim := fun mul s read h => compiledDirectArith_ket_sim mul s read h
 
-def arithSpecEnv475 : ArithSpec where
-  prog := fun mul => compiledDirectArithEnv env475 mul
-  GoodX := fun X => X ≠ 0 ∧ GoodStack env475 X.val
+def arithSpecEnv460 : ArithSpec where
+  prog := fun mul => compiledDirectArithEnv env460 mul
+  GoodX := fun X => X ≠ 0 ∧ GoodStack env460 X.val
   good_ne_zero := fun _ h => h.1
-  finDiv := 1596510
-  finMul := 1596765
-  tofDiv := 942351
-  tofMul := 942350
-  removed18 := fun mul s => compiledDirectArithEnv_removed18 env475 mul s
+  finDiv := 1493802
+  finMul := 1494057
+  tofDiv := 877718
+  tofMul := 877717
+  removed18 := fun mul s => compiledDirectArithEnv_removed18 env460 mul s
   shiftFin := fun mul => by
-    have hc := arithSEnv_env475_counts streamLayout
-    refine (compiledDirectArithEnv_shiftFin env475 mul).mono ?_
+    have hc := arithSEnv_env460_counts streamLayout
+    refine (compiledDirectArithEnv_shiftFin env460 mul).mono ?_
     cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.1, hc.2.2.1, hc.2.2.2] <;> omega
   tCount := fun mul s read h => by
-    have hc := arithSEnv_env475_counts streamLayout
-    refine (compiledDirectArithEnv_tCount env475 mul s read h).trans ?_
+    have hc := arithSEnv_env460_counts streamLayout
+    refine (compiledDirectArithEnv_tCount env460 mul s read h).trans ?_
     cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.2.1] <;> omega
-  slots := fun mul s => compiledDirectArithEnv_slots env475 mul s
-  wires := fun mul s => compiledDirectArithEnv_wires env475 mul s
-  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env475 mul s
-  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env475 mul s read h
+  slots := fun mul s => compiledDirectArithEnv_slots env460 mul s
+  wires := fun mul s => compiledDirectArithEnv_wires env460 mul s
+  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env460 mul s
+  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env460 mul s read h
 
-def arithSpecEnv490 : ArithSpec where
-  prog := fun mul => compiledDirectArithEnv env490 mul
-  GoodX := fun X => X ≠ 0 ∧ GoodStack env490 X.val
+def arithSpecEnv465 : ArithSpec where
+  prog := fun mul => compiledDirectArithEnv env465 mul
+  GoodX := fun X => X ≠ 0 ∧ GoodStack env465 X.val
   good_ne_zero := fun _ h => h.1
-  finDiv := 1657140
-  finMul := 1657395
-  tofDiv := 978932
-  tofMul := 978931
-  removed18 := fun mul s => compiledDirectArithEnv_removed18 env490 mul s
+  finDiv := 1513798
+  finMul := 1514053
+  tofDiv := 889769
+  tofMul := 889768
+  removed18 := fun mul s => compiledDirectArithEnv_removed18 env465 mul s
   shiftFin := fun mul => by
-    have hc := arithSEnv_env490_counts streamLayout
-    refine (compiledDirectArithEnv_shiftFin env490 mul).mono ?_
+    have hc := arithSEnv_env465_counts streamLayout
+    refine (compiledDirectArithEnv_shiftFin env465 mul).mono ?_
     cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.1, hc.2.2.1, hc.2.2.2] <;> omega
   tCount := fun mul s read h => by
-    have hc := arithSEnv_env490_counts streamLayout
-    refine (compiledDirectArithEnv_tCount env490 mul s read h).trans ?_
+    have hc := arithSEnv_env465_counts streamLayout
+    refine (compiledDirectArithEnv_tCount env465 mul s read h).trans ?_
     cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.2.1] <;> omega
-  slots := fun mul s => compiledDirectArithEnv_slots env490 mul s
-  wires := fun mul s => compiledDirectArithEnv_wires env490 mul s
-  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env490 mul s
-  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env490 mul s read h
+  slots := fun mul s => compiledDirectArithEnv_slots env465 mul s
+  wires := fun mul s => compiledDirectArithEnv_wires env465 mul s
+  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env465 mul s
+  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env465 mul s read h
+
+def arithSpecEnv485 : ArithSpec where
+  prog := fun mul => compiledDirectArithEnv env485 mul
+  GoodX := fun X => X ≠ 0 ∧ GoodStack env485 X.val
+  good_ne_zero := fun _ h => h.1
+  finDiv := 1603502
+  finMul := 1603757
+  tofDiv := 944453
+  tofMul := 944452
+  removed18 := fun mul s => compiledDirectArithEnv_removed18 env485 mul s
+  shiftFin := fun mul => by
+    have hc := arithSEnv_env485_counts streamLayout
+    refine (compiledDirectArithEnv_shiftFin env485 mul).mono ?_
+    cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.1, hc.2.2.1, hc.2.2.2] <;> omega
+  tCount := fun mul s read h => by
+    have hc := arithSEnv_env485_counts streamLayout
+    refine (compiledDirectArithEnv_tCount env485 mul s read h).trans ?_
+    cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.2.1] <;> omega
+  slots := fun mul s => compiledDirectArithEnv_slots env485 mul s
+  wires := fun mul s => compiledDirectArithEnv_wires env485 mul s
+  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env485 mul s
+  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env485 mul s read h
+
+def arithSpecEnv500 : ArithSpec where
+  prog := fun mul => compiledDirectArithEnv env500 mul
+  GoodX := fun X => X ≠ 0 ∧ GoodStack env500 X.val
+  good_ne_zero := fun _ h => h.1
+  finDiv := 1675622
+  finMul := 1675877
+  tofDiv := 988694
+  tofMul := 988693
+  removed18 := fun mul s => compiledDirectArithEnv_removed18 env500 mul s
+  shiftFin := fun mul => by
+    have hc := arithSEnv_env500_counts streamLayout
+    refine (compiledDirectArithEnv_shiftFin env500 mul).mono ?_
+    cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.1, hc.2.2.1, hc.2.2.2] <;> omega
+  tCount := fun mul s read h => by
+    have hc := arithSEnv_env500_counts streamLayout
+    refine (compiledDirectArithEnv_tCount env500 mul s read h).trans ?_
+    cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.2.1] <;> omega
+  slots := fun mul s => compiledDirectArithEnv_slots env500 mul s
+  wires := fun mul s => compiledDirectArithEnv_wires env500 mul s
+  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env500 mul s
+  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env500 mul s read h
+
+def arithSpecEnv510 : ArithSpec where
+  prog := fun mul => compiledDirectArithEnv env510 mul
+  GoodX := fun X => X ≠ 0 ∧ GoodStack env510 X.val
+  good_ne_zero := fun _ h => h.1
+  finDiv := 1726018
+  finMul := 1726273
+  tofDiv := 1019732
+  tofMul := 1019731
+  removed18 := fun mul s => compiledDirectArithEnv_removed18 env510 mul s
+  shiftFin := fun mul => by
+    have hc := arithSEnv_env510_counts streamLayout
+    refine (compiledDirectArithEnv_shiftFin env510 mul).mono ?_
+    cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.1, hc.2.2.1, hc.2.2.2] <;> omega
+  tCount := fun mul s read h => by
+    have hc := arithSEnv_env510_counts streamLayout
+    refine (compiledDirectArithEnv_tCount env510 mul s read h).trans ?_
+    cases mul <;> simp only [Bool.false_eq_true, if_false, if_true, hc.1, hc.2.2.1] <;> omega
+  slots := fun mul s => compiledDirectArithEnv_slots env510 mul s
+  wires := fun mul s => compiledDirectArithEnv_wires env510 mul s
+  wellFormed := fun mul s => compiledDirectArithEnv_wellFormed env510 mul s
+  ket_sim := fun mul s read h => compiledDirectArithEnv_ket_sim env510 mul s read h
 
 def GoodPointA (ax : ArithSpec) (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
   GoodPoint R Δ ∧
@@ -19751,24 +19916,27 @@ def GoodPointA (ax : ArithSpec) (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
     R = .some hnsR → Δ = .some hnsC →
     ax.GoodX (x - cx) ∧ ax.GoodX (cx - genericX x y cx cy)
 
-def GoodPointEnv475 (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
-  GoodPointA arithSpecEnv475 R Δ
-
-def GoodPointEnv490 (R Δ : ShorECDLP.Secp256k1.Point) : Prop :=
-  GoodPointA arithSpecEnv490 R Δ
+def GoodPointEnv460 (R Δ : ShorECDLP.Secp256k1.Point) : Prop := GoodPointA arithSpecEnv460 R Δ
+def GoodPointEnv465 (R Δ : ShorECDLP.Secp256k1.Point) : Prop := GoodPointA arithSpecEnv465 R Δ
+def GoodPointEnv485 (R Δ : ShorECDLP.Secp256k1.Point) : Prop := GoodPointA arithSpecEnv485 R Δ
+def GoodPointEnv500 (R Δ : ShorECDLP.Secp256k1.Point) : Prop := GoodPointA arithSpecEnv500 R Δ
+def GoodPointEnv510 (R Δ : ShorECDLP.Secp256k1.Point) : Prop := GoodPointA arithSpecEnv510 R Δ
 
 def GoodWA (ax : ArithSpec) (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (bs : BasisState) : Prop :=
   CleanOutsideXYBank bs ∧
   ∃ R : ShorECDLP.Secp256k1.Point, HasFinitePoint R bs ∧ GoodPointA ax R (signedDeltaW k coeffs Q bs)
 
-def GoodWEnv475 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (bs : BasisState) : Prop :=
-  GoodWA arithSpecEnv475 k coeffs Q bs
-
-def GoodWEnv490 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
-    (bs : BasisState) : Prop :=
-  GoodWA arithSpecEnv490 k coeffs Q bs
+def GoodWEnv460 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) : Prop :=
+  GoodWA arithSpecEnv460 k coeffs Q bs
+def GoodWEnv465 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) : Prop :=
+  GoodWA arithSpecEnv465 k coeffs Q bs
+def GoodWEnv485 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) : Prop :=
+  GoodWA arithSpecEnv485 k coeffs Q bs
+def GoodWEnv500 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) : Prop :=
+  GoodWA arithSpecEnv500 k coeffs Q bs
+def GoodWEnv510 (k : Nat) (coeffs : Fin (2 ^ k) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point) (bs : BasisState) : Prop :=
+  GoodWA arithSpecEnv510 k coeffs Q bs
 
 private theorem genericX_neg (x y cx cy : ECDSAAdd.Fp) :
     ECDSAAdd.Secp256k1.genericX x (-y) cx (-cy) = ECDSAAdd.Secp256k1.genericX x y cx cy := by
@@ -23591,76 +23759,139 @@ theorem compiled18_packed_coherent (coeffs : Fin (2 ^ 18) → PointCoeff) (Q : S
   obtain ⟨cs, al, hm⟩ := compiledW_packed_coherent (by decide) (by decide) arithSpecFull fixupSpec18 coeffs Q hn start h
   exact ⟨cs, al.imp (fun b c hb bs hgd => hb bs (goodW_to_goodWA_full hgd)), hm⟩
 
-def compiledProgramEnv475_16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW arithSpecEnv475 fixupSpec16 0).finish) :=
-  compiledProgramW (by decide) (by decide) arithSpecEnv475 fixupSpec16 start
-def compiledProgramEnv475_17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW arithSpecEnv475 fixupSpec17 0).finish) :=
-  compiledProgramW (by decide) (by decide) arithSpecEnv475 fixupSpec17 start
-def compiledProgramEnv490_18 (start : Nat) : Straight (2 ^ 18) start (start + (compiledProgramFnW arithSpecEnv490 fixupSpec18 0).finish) :=
-  compiledProgramW (by decide) (by decide) arithSpecEnv490 fixupSpec18 start
+def compiledProgramEnv460_16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW arithSpecEnv460 fixupSpec16 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecEnv460 fixupSpec16 start
+def compiledProgramEnv465_16 (start : Nat) : Straight (2 ^ 16) start (start + (compiledProgramFnW arithSpecEnv465 fixupSpec16 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecEnv465 fixupSpec16 start
+def compiledProgramEnv465_17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW arithSpecEnv465 fixupSpec17 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecEnv465 fixupSpec17 start
+def compiledProgramEnv485_18 (start : Nat) : Straight (2 ^ 18) start (start + (compiledProgramFnW arithSpecEnv485 fixupSpec18 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecEnv485 fixupSpec18 start
+def compiledProgramEnv500_18 (start : Nat) : Straight (2 ^ 18) start (start + (compiledProgramFnW arithSpecEnv500 fixupSpec18 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecEnv500 fixupSpec18 start
+def compiledProgramEnv510_17 (start : Nat) : Straight (2 ^ 17) start (start + (compiledProgramFnW arithSpecEnv510 fixupSpec17 0).finish) :=
+  compiledProgramW (by decide) (by decide) arithSpecEnv510 fixupSpec17 start
 
-theorem compiledRecEnv475_16_bound : (compiledProgramFnW arithSpecEnv475 fixupSpec16 0).finish ≤ 3510000 :=
-  (compiledRecW_bound (by decide) (by decide) arithSpecEnv475 fixupSpec16).trans (by decide)
-theorem compiledRecEnv475_17_bound : (compiledProgramFnW arithSpecEnv475 fixupSpec17 0).finish ≤ 3660000 :=
-  (compiledRecW_bound (by decide) (by decide) arithSpecEnv475 fixupSpec17).trans (by decide)
-theorem compiledRecEnv490_18_bound : (compiledProgramFnW arithSpecEnv490 fixupSpec18 0).finish ≤ 4120000 :=
-  (compiledRecW_bound (by decide) (by decide) arithSpecEnv490 fixupSpec18).trans (by decide)
+theorem compiledRecEnv460_16_bound : (compiledProgramFnW arithSpecEnv460 fixupSpec16 0).finish ≤ 3310000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecEnv460 fixupSpec16).trans (by decide)
+theorem compiledRecEnv465_16_bound : (compiledProgramFnW arithSpecEnv465 fixupSpec16 0).finish ≤ 3350000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecEnv465 fixupSpec16).trans (by decide)
+theorem compiledRecEnv465_17_bound : (compiledProgramFnW arithSpecEnv465 fixupSpec17 0).finish ≤ 3500000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecEnv465 fixupSpec17).trans (by decide)
+theorem compiledRecEnv485_18_bound : (compiledProgramFnW arithSpecEnv485 fixupSpec18 0).finish ≤ 4010000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecEnv485 fixupSpec18).trans (by decide)
+theorem compiledRecEnv500_18_bound : (compiledProgramFnW arithSpecEnv500 fixupSpec18 0).finish ≤ 4160000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecEnv500 fixupSpec18).trans (by decide)
+theorem compiledRecEnv510_17_bound : (compiledProgramFnW arithSpecEnv510 fixupSpec17 0).finish ≤ 3930000 :=
+  (compiledRecW_bound (by decide) (by decide) arithSpecEnv510 fixupSpec17).trans (by decide)
 
-theorem compiledEnv475_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramEnv475_16 start).instantiate read h).tCount ≤ 4 * 2027056 :=
-  (compiledW_tCount (by decide) (by decide) arithSpecEnv475 fixupSpec16 start read h).trans (by decide)
-theorem compiledEnv475_17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramEnv475_17 start).instantiate read h).tCount ≤ 4 * 2109231 :=
-  (compiledW_tCount (by decide) (by decide) arithSpecEnv475 fixupSpec17 start read h).trans (by decide)
-theorem compiledEnv490_18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramEnv490_18 start).instantiate read h).tCount ≤ 4 * 2346489 :=
-  (compiledW_tCount (by decide) (by decide) arithSpecEnv490 fixupSpec18 start read h).trans (by decide)
+theorem compiledEnv460_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramEnv460_16 start).instantiate read h).tCount ≤ 4 * 1897790 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecEnv460 fixupSpec16 start read h).trans (by decide)
+theorem compiledEnv465_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramEnv465_16 start).instantiate read h).tCount ≤ 4 * 1921892 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecEnv465 fixupSpec16 start read h).trans (by decide)
+theorem compiledEnv465_17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramEnv465_17 start).instantiate read h).tCount ≤ 4 * 2004067 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecEnv465 fixupSpec17 start read h).trans (by decide)
+theorem compiledEnv485_18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramEnv485_18 start).instantiate read h).tCount ≤ 4 * 2277531 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecEnv485 fixupSpec18 start read h).trans (by decide)
+theorem compiledEnv500_18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramEnv500_18 start).instantiate read h).tCount ≤ 4 * 2366013 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecEnv500 fixupSpec18 start read h).trans (by decide)
+theorem compiledEnv510_17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
+    ((compiledProgramEnv510_17 start).instantiate read h).tCount ≤ 4 * 2263993 :=
+  (compiledW_tCount (by decide) (by decide) arithSpecEnv510 fixupSpec17 start read h).trans (by decide)
 
-theorem compiledEnv475_16_slots (start : Nat) : (compiledProgramEnv475_16 start).gateSlots ≤ 80000000000 :=
-  (compiledW_slots (by decide) (by decide) arithSpecEnv475 fixupSpec16 start).trans (by decide)
-theorem compiledEnv475_17_slots (start : Nat) : (compiledProgramEnv475_17 start).gateSlots ≤ 80000000000 :=
-  (compiledW_slots (by decide) (by decide) arithSpecEnv475 fixupSpec17 start).trans (by decide)
-theorem compiledEnv490_18_slots (start : Nat) : (compiledProgramEnv490_18 start).gateSlots ≤ 80000000000 :=
-  (compiledW_slots (by decide) (by decide) arithSpecEnv490 fixupSpec18 start).trans (by decide)
+theorem compiledEnv460_16_slots (start : Nat) : (compiledProgramEnv460_16 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecEnv460 fixupSpec16 start).trans (by decide)
+theorem compiledEnv465_16_slots (start : Nat) : (compiledProgramEnv465_16 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecEnv465 fixupSpec16 start).trans (by decide)
+theorem compiledEnv465_17_slots (start : Nat) : (compiledProgramEnv465_17 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecEnv465 fixupSpec17 start).trans (by decide)
+theorem compiledEnv485_18_slots (start : Nat) : (compiledProgramEnv485_18 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecEnv485 fixupSpec18 start).trans (by decide)
+theorem compiledEnv500_18_slots (start : Nat) : (compiledProgramEnv500_18 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecEnv500 fixupSpec18 start).trans (by decide)
+theorem compiledEnv510_17_slots (start : Nat) : (compiledProgramEnv510_17 start).gateSlots ≤ 80000000000 :=
+  (compiledW_slots (by decide) (by decide) arithSpecEnv510 fixupSpec17 start).trans (by decide)
 
-theorem compiledEnv475_16_wellFormed (start : Nat) : (compiledProgramEnv475_16 start).WellFormed :=
-  compiledW_wellFormed (by decide) (by decide) arithSpecEnv475 fixupSpec16 start
-theorem compiledEnv475_17_wellFormed (start : Nat) : (compiledProgramEnv475_17 start).WellFormed :=
-  compiledW_wellFormed (by decide) (by decide) arithSpecEnv475 fixupSpec17 start
-theorem compiledEnv490_18_wellFormed (start : Nat) : (compiledProgramEnv490_18 start).WellFormed :=
-  compiledW_wellFormed (by decide) (by decide) arithSpecEnv490 fixupSpec18 start
+theorem compiledEnv460_16_wellFormed (start : Nat) : (compiledProgramEnv460_16 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecEnv460 fixupSpec16 start
+theorem compiledEnv465_16_wellFormed (start : Nat) : (compiledProgramEnv465_16 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecEnv465 fixupSpec16 start
+theorem compiledEnv465_17_wellFormed (start : Nat) : (compiledProgramEnv465_17 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecEnv465 fixupSpec17 start
+theorem compiledEnv485_18_wellFormed (start : Nat) : (compiledProgramEnv485_18 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecEnv485 fixupSpec18 start
+theorem compiledEnv500_18_wellFormed (start : Nat) : (compiledProgramEnv500_18 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecEnv500 fixupSpec18 start
+theorem compiledEnv510_17_wellFormed (start : Nat) : (compiledProgramEnv510_17 start).WellFormed :=
+  compiledW_wellFormed (by decide) (by decide) arithSpecEnv510 fixupSpec17 start
 
-theorem compiledEnv475_16_removed18 (start : Nat) : removed 18 (compiledProgramEnv475_16 start) = 0 :=
-  compiledW_removed18 (by decide) (by decide) arithSpecEnv475 fixupSpec16 start
-theorem compiledEnv475_17_removed18 (start : Nat) : removed 18 (compiledProgramEnv475_17 start) = 0 :=
-  compiledW_removed18 (by decide) (by decide) arithSpecEnv475 fixupSpec17 start
-theorem compiledEnv490_18_removed18 (start : Nat) : removed 18 (compiledProgramEnv490_18 start) = 0 :=
-  compiledW_removed18 (by decide) (by decide) arithSpecEnv490 fixupSpec18 start
+theorem compiledEnv460_16_removed18 (start : Nat) : removed 18 (compiledProgramEnv460_16 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecEnv460 fixupSpec16 start
+theorem compiledEnv465_16_removed18 (start : Nat) : removed 18 (compiledProgramEnv465_16 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecEnv465 fixupSpec16 start
+theorem compiledEnv465_17_removed18 (start : Nat) : removed 18 (compiledProgramEnv465_17 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecEnv465 fixupSpec17 start
+theorem compiledEnv485_18_removed18 (start : Nat) : removed 18 (compiledProgramEnv485_18 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecEnv485 fixupSpec18 start
+theorem compiledEnv500_18_removed18 (start : Nat) : removed 18 (compiledProgramEnv500_18 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecEnv500 fixupSpec18 start
+theorem compiledEnv510_17_removed18 (start : Nat) : removed 18 (compiledProgramEnv510_17 start) = 0 :=
+  compiledW_removed18 (by decide) (by decide) arithSpecEnv510 fixupSpec17 start
 
-theorem compiledEnv475_16_packed_support (start : Nat) :
-    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv475_16 start)) ⊆ List.range 1612 :=
-  compiledW_packed_support (by decide) (by decide) arithSpecEnv475 fixupSpec16 start
-theorem compiledEnv475_17_packed_support (start : Nat) :
-    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv475_17 start)) ⊆ List.range 1612 :=
-  compiledW_packed_support (by decide) (by decide) arithSpecEnv475 fixupSpec17 start
-theorem compiledEnv490_18_packed_support (start : Nat) :
-    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv490_18 start)) ⊆ List.range 1612 :=
-  compiledW_packed_support (by decide) (by decide) arithSpecEnv490 fixupSpec18 start
+theorem compiledEnv460_16_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv460_16 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecEnv460 fixupSpec16 start
+theorem compiledEnv465_16_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv465_16 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecEnv465 fixupSpec16 start
+theorem compiledEnv465_17_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv465_17 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecEnv465 fixupSpec17 start
+theorem compiledEnv485_18_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv485_18 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecEnv485 fixupSpec18 start
+theorem compiledEnv500_18_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv500_18 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecEnv500 fixupSpec18 start
+theorem compiledEnv510_17_packed_support (start : Nat) :
+    ChallengeMigration.straightWires (relabelStraight compact1612 (compiledProgramEnv510_17 start)) ⊆ List.range 1612 :=
+  compiledW_packed_support (by decide) (by decide) arithSpecEnv510 fixupSpec17 start
 
-theorem compiledEnv475_16_packed_coherent (coeffs : Fin (2 ^ 16) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+theorem compiledEnv460_16_packed_coherent (coeffs : Fin (2 ^ 16) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv475_16 start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodWEnv475 16 coeffs Q) :=
-  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv475 fixupSpec16 coeffs Q hn start h
-theorem compiledEnv475_17_packed_coherent (coeffs : Fin (2 ^ 17) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv460_16 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodWEnv460 16 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv460 fixupSpec16 coeffs Q hn start h
+theorem compiledEnv465_16_packed_coherent (coeffs : Fin (2 ^ 16) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv475_17 start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodWEnv475 17 coeffs Q) :=
-  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv475 fixupSpec17 coeffs Q hn start h
-theorem compiledEnv490_18_packed_coherent (coeffs : Fin (2 ^ 18) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv465_16 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 16 coeffs Q)) (GoodWEnv465 16 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv465 fixupSpec16 coeffs Q hn start h
+theorem compiledEnv465_17_packed_coherent (coeffs : Fin (2 ^ 17) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
     (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
-    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv490_18 start)).instantiate (readConstant coeffs Q) h)
-      (Finsupp.lmapDomain ℂ ℂ (updateW 18 coeffs Q)) (GoodWEnv490 18 coeffs Q) :=
-  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv490 fixupSpec18 coeffs Q hn start h
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv465_17 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodWEnv465 17 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv465 fixupSpec17 coeffs Q hn start h
+theorem compiledEnv485_18_packed_coherent (coeffs : Fin (2 ^ 18) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv485_18 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 18 coeffs Q)) (GoodWEnv485 18 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv485 fixupSpec18 coeffs Q hn start h
+theorem compiledEnv500_18_packed_coherent (coeffs : Fin (2 ^ 18) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv500_18 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 18 coeffs Q)) (GoodWEnv500 18 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv500 fixupSpec18 coeffs Q hn start h
+theorem compiledEnv510_17_packed_coherent (coeffs : Fin (2 ^ 17) → PointCoeff) (Q : ShorECDLP.Secp256k1.Point)
+    (hn : ∀ i, constantPoint Q (coeffs i) ≠ 0) (start : Nat) (h : Fin start → Bool) :
+    CatCoherent 1 ((relabelStraight compact1612 (compiledProgramEnv510_17 start)).instantiate (readConstant coeffs Q) h)
+      (Finsupp.lmapDomain ℂ ℂ (updateW 17 coeffs Q)) (GoodWEnv510 17 coeffs Q) :=
+  compiledW_packed_coherent (by decide) (by decide) arithSpecEnv510 fixupSpec17 coeffs Q hn start h
 
 end
 end ShorECDLP.Entrant.GenericW
