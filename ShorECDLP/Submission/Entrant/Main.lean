@@ -18,9 +18,9 @@ section
   exception mass `≤ 52 · 2⁻²⁴⁰` across the remaining `13` windows (`MaxBound` convexity),
   yielding pre-trim recovery `≥ 99109 / 100000`.
 - Top-10 centered sine window prepended to the left head (`First20Signed`) and right head (`right17 0`),
-  `2 × 28 = 56` T-model gates (`k ≤ 11`, untouched by `trim 18`), compiled against catalyst wire `1`.
+  `2 × 28 = 56` T-model gates (`k ≤ 11`, untouched by `trim 23`), compiled against catalyst wire `1`.
 - `K = 3` neighbour readout (`Readout3`, `-1, 0, +1`, `1,634` records, `0` T-gates).
-- Exact `trim 18` affine loss: `cost18 ≤ 425 * unit18 ≤ 51 / 10000`, `46,311` Fourier phase gates
+- Exact `trim 23` affine loss: `cost18 ≤ 425 * unit18 ≤ 51 / 10000`, `46,311` Fourier phase gates
   dropped (`7,088` kept), recovery probability `≥ 99 / 100`.
 - Certified resource bounds: `1,610` qubits, `233,560,269` T-model gates (`Q×T = 376,032,033,090`),
   `≤ 105,000,000` measurements. -/
@@ -693,7 +693,7 @@ set_option linter.unusedVariables false
 attribute [local irreducible] List.ofFn
 
 def charge18 : Gate → ℝ
-  | .P _ k _ => if 18 < k then (6283186 / 1000000 : ℝ) / 2 ^ (k + 1) else 0
+  | .P _ k _ => if 23 < k then (6283186 / 1000000 : ℝ) / 2 ^ (k + 1) else 0
   | _ => 0
 
 def cost18 {n s e} : Straight n s e → ℝ
@@ -713,13 +713,13 @@ theorem cost18_nonneg {n s e} (p : Straight n s e) : 0 ≤ cost18 p := by
   | recordGate i v g p ih => exact add_nonneg (charge18_nonneg _) ih
   | measure w p ih => exact ih
 
-theorem charge18_false (g : Gate) (h : largePhase 18 g = false) : charge18 g = 0 := by
+theorem charge18_false (g : Gate) (h : largePhase 23 g = false) : charge18 g = 0 := by
   cases g <;> simp_all [largePhase, charge18]
 
 theorem dropped_affine18 {n s e} (read : ConstantBit n → Bool)
     (p : Straight n s e) (history : Fin s → Bool) (psi : State)
     (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
-    (g : Gate) (hg : largePhase 18 g = true) :
+    (g : Gate) (hg : largePhase 23 g = true) :
     expectation read p history psi accept ≤
       (1 + 10 * charge18 g) * expectation read p history (applyGate g psi) accept +
         (charge18 g / 10 + (charge18 g) ^ 2) * normSq psi := by
@@ -759,7 +759,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
     (p : Straight n s e) (history : Fin s → Bool) (psi : State)
     (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
     (hb : cost18 p ≤ 51 / 10000) :
-    expectation read (trim 18 p) history psi accept ≤
+    expectation read (trim 23 p) history psi accept ≤
       (1 + (106 / 10) * cost18 p) * expectation read p history psi accept +
         (112 / 1000) * cost18 p * normSq psi := by
   induction p generalizing psi with
@@ -772,7 +772,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
     apply (add_le_add h0 h1).trans_eq
     rw [← hm]; ring
   | recordGate i v g p ih =>
-    by_cases hg : largePhase 18 g = true
+    by_cases hg : largePhase 23 g = true
     · have hc := charge18_nonneg g
       have ht := cost18_nonneg p
       have hb' : cost18 p ≤ 51 / 10000 := by
@@ -792,7 +792,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
         simpa only [add_comm] using compose_bound18 (cost18 p) (charge18 g) _ _ _ _ ht hc
           (show cost18 p + charge18 g ≤ 51 / 10000 by simpa only [cost18, add_comm] using hb)
           (expectation_nonneg read p history psi accept) hM hidle hi
-    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
       have hz := charge18_false g hgf
       have hb' : cost18 p ≤ 51 / 10000 := by simpa only [cost18, hz, zero_add] using hb
       have hi := ih history (Quantum.run (if history i = v then [g] else []) psi) accept hp.2 hb'
@@ -806,7 +806,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hc := charge18_nonneg g
         have ht := cost18_nonneg p
         have hb' : cost18 p ≤ 51 / 10000 := by
@@ -818,7 +818,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
         simp only [trim, hg, if_true, cost18, expectation, TemplateGate.instantiate, run_singleton]
         simpa only [add_comm] using compose_bound18 (cost18 p) (charge18 g) _ _ _ _ ht hc
           (show cost18 p + charge18 g ≤ 51 / 10000 by simpa only [cost18, add_comm] using hb) hE hM hs hi
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         have hz := charge18_false g hgf
         have hb' : cost18 p ≤ 51 / 10000 := by simpa only [cost18, hz, zero_add] using hb
         have hi := ih history (Quantum.run [g] psi) accept hp.2 hb'
@@ -828,7 +828,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
         simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation,
           TemplateGate.instantiate] using hi
     | whenBit r v g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hc := charge18_nonneg g
         have ht := cost18_nonneg p
         have hb' : cost18 p ≤ 51 / 10000 := by
@@ -848,7 +848,7 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
           simpa only [add_comm] using compose_bound18 (cost18 p) (charge18 g) _ _ _ _ ht hc
             (show cost18 p + charge18 g ≤ 51 / 10000 by simpa only [cost18, add_comm] using hb)
             (expectation_nonneg read p history psi accept) hM hidle hi
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         have hz := charge18_false g hgf
         have hb' : cost18 p ≤ 51 / 10000 := by simpa only [cost18, hz, zero_add] using hb
         have hi := ih history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2 hb'
@@ -858,8 +858,8 @@ theorem trim18_expectation {n s e} (read : ConstantBit n → Bool)
         simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation,
           TemplateGate.instantiate] using hi
 
-def potential18 (k : Nat) : ℝ := (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ (max 19 k)
-def unit18 : ℝ := (6283186 / 1000000 : ℝ) / 2 ^ 19
+def potential18 (k : Nat) : ℝ := (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ (max 24 k)
+def unit18 : ℝ := (6283186 / 1000000 : ℝ) / 2 ^ 24
 
 theorem cost18_zero_of_residue {n s e} (p : Straight n s e) (h : residue p = 0) : cost18 p = 0 := by
   induction p with
@@ -879,7 +879,7 @@ theorem cost18_zero_of_residue {n s e} (p : Straight n s e) (h : residue p = 0) 
       have hg : charge18 g = 0 := by cases g <;> simp_all [residue, tCost, charge18]
       simp [cost18, hg, ih ht]
 
-theorem cost18_literal_zero {n s} (c : Circuit) (h : ∀ g ∈ c, largePhase 18 g = false) :
+theorem cost18_literal_zero {n s} (c : Circuit) (h : ∀ g ∈ c, largePhase 23 g = false) :
     cost18 (literalProgram (n := n) (s := s) c) = 0 := by
   induction c with
   | nil => rfl
@@ -915,14 +915,14 @@ theorem cost18_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
 
 theorem charge18_balance (dir : PhaseDir) (w : Wire) (k : Nat) :
     charge18 (.P dir k w) + potential18 (k + 1) = potential18 k := by
-  by_cases hk : 18 < k
-  · have h1 : max 19 k = k := max_eq_right (by omega)
-    have h2 : max 19 (k + 1) = k + 1 := max_eq_right (by omega)
+  by_cases hk : 23 < k
+  · have h1 : max 24 k = k := max_eq_right (by omega)
+    have h2 : max 24 (k + 1) = k + 1 := max_eq_right (by omega)
     simp only [charge18, hk, if_true, potential18, h1, h2, pow_succ]
     have hp : (2 : ℝ) ^ k ≠ 0 := by positivity
     field_simp; ring
-  · have h1 : max 19 k = 19 := max_eq_left (by omega)
-    have h2 : max 19 (k + 1) = 19 := max_eq_left (by omega)
+  · have h1 : max 24 k = 24 := max_eq_left (by omega)
+    have h2 : max 24 (k + 1) = 24 := max_eq_left (by omega)
     simp [charge18, hk, potential18, h1, h2]
 
 theorem cost18_feedback_balance {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
@@ -969,13 +969,13 @@ theorem cost18_fourier_exact (n : Nat) (dir : PhaseDir) (ws : List Wire)
     rw [hn] at hf
     linarith
 
-theorem potential18_half (k : Nat) (hk : 19 ≤ k) :
+theorem potential18_half (k : Nat) (hk : 24 ≤ k) :
     2 * potential18 (k + 1) = potential18 k := by
-  have h1 : max 19 k = k := max_eq_right hk
-  have h2 : max 19 (k + 1) = k + 1 := max_eq_right (by omega)
+  have h1 : max 24 k = k := max_eq_right hk
+  have h2 : max 24 (k + 1) = k + 1 := max_eq_right (by omega)
   simp only [potential18, h1, h2, pow_succ]; ring
 
-theorem account18_geometric (n p : Nat) (hp : 17 ≤ p) :
+theorem account18_geometric (n p : Nat) (hp : 22 ≤ p) :
     account18 n p + 2 * potential18 (p + 2) = (n : ℝ) * unit18 + 2 * potential18 (p + n + 2) := by
   induction n generalizing p with
   | zero => simp [account18]
@@ -987,56 +987,6 @@ theorem account18_geometric (n p : Nat) (hp : 17 ≤ p) :
     have he2 : p + (n + 1) + 2 = (p + 1) + n + 2 := by omega
     simp only [account18, Nat.cast_add, Nat.cast_one, he2]
     linarith
-
-theorem joint_error18 : account18 258 0 + account18 204 0 ≤ 51 / 10000 := by
-  have hz : account18 17 0 = 0 := by norm_num [account18, potential18, unit18]
-  rw [show 258 = 17 + 241 from rfl, show 204 = 17 + 187 from rfl,
-    account18_append, account18_append, hz]
-  norm_num only [zero_add]
-  have h1 := account18_geometric 241 17 (by decide)
-  have h2 := account18_geometric 187 17 (by decide)
-  have hp1 : potential18 (17 + 241 + 2) ≤ unit18 / 4 := by
-    unfold potential18 unit18
-    rw [show max 19 (17 + 241 + 2) = 260 by decide]
-    have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 260 := pow_le_pow_right₀ (by norm_num) (by decide)
-    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
-    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
-  have hp2 : potential18 (17 + 187 + 2) ≤ unit18 / 4 := by
-    unfold potential18 unit18
-    rw [show max 19 (17 + 187 + 2) = 206 by decide]
-    have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 206 := pow_le_pow_right₀ (by norm_num) (by decide)
-    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
-    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
-  have hp19 : potential18 (17 + 2) = unit18 := by norm_num [potential18, unit18]
-  rw [hp19] at h1 h2
-  norm_num only [Nat.cast_ofNat] at h1 h2
-  have hu : (425 : ℝ) * unit18 ≤ 51 / 10000 := by norm_num [unit18]
-  linarith
-
-theorem joint_error18_256_206 : account18 256 0 + account18 206 0 ≤ 51 / 10000 := by
-  have hz : account18 17 0 = 0 := by norm_num [account18, potential18, unit18]
-  rw [show 256 = 17 + 239 from rfl, show 206 = 17 + 189 from rfl,
-    account18_append, account18_append, hz]
-  norm_num only [zero_add]
-  have h1 := account18_geometric 239 17 (by decide)
-  have h2 := account18_geometric 189 17 (by decide)
-  have hp1 : potential18 (17 + 239 + 2) ≤ unit18 / 4 := by
-    unfold potential18 unit18
-    rw [show max 19 (17 + 239 + 2) = 258 by decide]
-    have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 258 := pow_le_pow_right₀ (by norm_num) (by decide)
-    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
-    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
-  have hp2 : potential18 (17 + 189 + 2) ≤ unit18 / 4 := by
-    unfold potential18 unit18
-    rw [show max 19 (17 + 189 + 2) = 208 by decide]
-    have h21 : (2 : ℝ) ^ 21 ≤ (2 : ℝ) ^ 208 := pow_le_pow_right₀ (by norm_num) (by decide)
-    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 4 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 21 by norm_num]
-    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h21
-  have hp19 : potential18 (17 + 2) = unit18 := by norm_num [potential18, unit18]
-  rw [hp19] at h1 h2
-  norm_num only [Nat.cast_ofNat] at h1 h2
-  have hu : (425 : ℝ) * unit18 ≤ 51 / 10000 := by norm_num [unit18]
-  linarith
 
 /-! ### Wave 11 Minkowski `ℓ^2` phase-trimming lemmas (`Trim18`) -/
 
@@ -1113,7 +1063,7 @@ theorem expectation_sqrt_add {n s e} (read : ConstantBit n → Bool)
 theorem dropped_sqrt18 {n s e} (read : ConstantBit n → Bool)
     (p : Straight n s e) (history : Fin s → Bool) (psi : State)
     (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed)
-    (g : Gate) (hg : largePhase 18 g = true) :
+    (g : Gate) (hg : largePhase 23 g = true) :
     Real.sqrt (expectation read p history psi accept) ≤
       Real.sqrt (expectation read p history (applyGate g psi) accept) +
         charge18 g * Real.sqrt (normSq psi) := by
@@ -1154,7 +1104,7 @@ theorem dropped_sqrt18 {n s e} (read : ConstantBit n → Bool)
 theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
     (p : Straight n s e) (history : Fin s → Bool) (psi : State)
     (accept : (Fin e → Bool) → Bool) (hp : p.WellFormed) :
-    Real.sqrt (expectation read (trim 18 p) history psi accept) ≤
+    Real.sqrt (expectation read (trim 23 p) history psi accept) ≤
       Real.sqrt (expectation read p history psi accept) + cost18 p * Real.sqrt (normSq psi) := by
   induction p generalizing psi with
   | done => simp [trim, cost18, expectation]
@@ -1163,8 +1113,8 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
     have h1 := ih (Fin.lastCases true history) (xResetKraus w true psi) accept hp
     have hm := normSq_xResetKraus_false_add_true w psi
     have hc := cost18_nonneg p
-    set E0' := expectation read (trim 18 p) (Fin.lastCases false history) (xResetKraus w false psi) accept
-    set E1' := expectation read (trim 18 p) (Fin.lastCases true history) (xResetKraus w true psi) accept
+    set E0' := expectation read (trim 23 p) (Fin.lastCases false history) (xResetKraus w false psi) accept
+    set E1' := expectation read (trim 23 p) (Fin.lastCases true history) (xResetKraus w true psi) accept
     set E0 := expectation read p (Fin.lastCases false history) (xResetKraus w false psi) accept
     set E1 := expectation read p (Fin.lastCases true history) (xResetKraus w true psi) accept
     set M0 := normSq (xResetKraus w false psi)
@@ -1197,7 +1147,7 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
     rw [heq1, heq2] at hmink
     exact hsum.trans hmink
   | recordGate i v g p ih =>
-    by_cases hg : largePhase 18 g = true
+    by_cases hg : largePhase 23 g = true
     · have hi := ih history psi accept hp.2
       have hs := dropped_sqrt18 read p history psi accept hp.2 g hg
       have hc := charge18_nonneg g
@@ -1207,7 +1157,7 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
       · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
         have : 0 ≤ charge18 g * Real.sqrt (normSq psi) := mul_nonneg hc (Real.sqrt_nonneg _)
         linarith
-    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
       have hz := charge18_false g hgf
       have hi := ih history (Quantum.run (if history i = v then [g] else []) psi) accept hp.2
       have hn : normSq (Quantum.run (if history i = v then [g] else []) psi) = normSq psi := by
@@ -1220,12 +1170,12 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hi := ih history psi accept hp.2
         have hs := dropped_sqrt18 read p history psi accept hp.2 g hg
         simp only [trim, hg, if_true, cost18, expectation, TemplateGate.instantiate, run_singleton]
         linarith
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         have hz := charge18_false g hgf
         have hi := ih history (Quantum.run [g] psi) accept hp.2
         have hn : normSq (Quantum.run [g] psi) = normSq psi := by
@@ -1234,7 +1184,7 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
         simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation,
           TemplateGate.instantiate] using hi
     | whenBit r v g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hi := ih history psi accept hp.2
         have hs := dropped_sqrt18 read p history psi accept hp.2 g hg
         have hc := charge18_nonneg g
@@ -1244,7 +1194,7 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
         · simp only [hr, if_false, run_nil, LinearMap.id_coe, id_eq]
           have : 0 ≤ charge18 g * Real.sqrt (normSq psi) := mul_nonneg hc (Real.sqrt_nonneg _)
           linarith
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         have hz := charge18_false g hgf
         have hi := ih history (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) accept hp.2
         have hn : normSq (Quantum.run ((TemplateGate.whenBit r v g).instantiate read) psi) = normSq psi :=
@@ -1253,29 +1203,29 @@ theorem trim18_expectation_sqrt {n s e} (read : ConstantBit n → Bool)
         simpa only [trim, hgf, Bool.false_eq_true, if_false, cost18, hz, zero_add, expectation,
           TemplateGate.instantiate] using hi
 
-theorem joint_error18_256_206_tight : account18 256 0 + account18 206 0 ≤ 5085 / 1000000 := by
-  have hz : account18 17 0 = 0 := by norm_num [account18, potential18, unit18]
-  rw [show 256 = 17 + 239 from rfl, show 206 = 17 + 189 from rfl,
+theorem joint_error18_256_206_tight : account18 256 0 + account18 206 0 ≤ 156 / 1000000 := by
+  have hz : account18 22 0 = 0 := by norm_num [account18, potential18, unit18]
+  rw [show 256 = 22 + 234 from rfl, show 206 = 22 + 184 from rfl,
     account18_append, account18_append, hz]
   norm_num only [zero_add]
-  have h1 := account18_geometric 239 17 (by decide)
-  have h2 := account18_geometric 189 17 (by decide)
-  have hp1 : potential18 (17 + 239 + 2) ≤ unit18 / 16 := by
+  have h1 := account18_geometric 234 22 (by decide)
+  have h2 := account18_geometric 184 22 (by decide)
+  have hp1 : potential18 (22 + 234 + 2) ≤ unit18 / 16 := by
     unfold potential18 unit18
-    rw [show max 19 (17 + 239 + 2) = 258 by decide]
-    have h23 : (2 : ℝ) ^ 23 ≤ (2 : ℝ) ^ 258 := pow_le_pow_right₀ (by norm_num) (by decide)
-    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 16 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 23 by norm_num]
-    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h23
-  have hp2 : potential18 (17 + 189 + 2) ≤ unit18 / 16 := by
+    rw [show max 24 (22 + 234 + 2) = 258 by decide]
+    have h28 : (2 : ℝ) ^ 28 ≤ (2 : ℝ) ^ 258 := pow_le_pow_right₀ (by norm_num) (by decide)
+    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 24 / 16 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 28 by norm_num]
+    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h28
+  have hp2 : potential18 (22 + 184 + 2) ≤ unit18 / 16 := by
     unfold potential18 unit18
-    rw [show max 19 (17 + 189 + 2) = 208 by decide]
-    have h23 : (2 : ℝ) ^ 23 ≤ (2 : ℝ) ^ 208 := pow_le_pow_right₀ (by norm_num) (by decide)
-    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 19 / 16 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 23 by norm_num]
-    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h23
-  have hp19 : potential18 (17 + 2) = unit18 := by norm_num [potential18, unit18]
-  rw [hp19] at h1 h2
+    rw [show max 24 (22 + 184 + 2) = 208 by decide]
+    have h28 : (2 : ℝ) ^ 28 ≤ (2 : ℝ) ^ 208 := pow_le_pow_right₀ (by norm_num) (by decide)
+    rw [show (6283186 / 1000000 : ℝ) / 2 ^ 24 / 16 = (6283186 / 1000000 : ℝ) / (2 : ℝ) ^ 28 by norm_num]
+    exact div_le_div_of_nonneg_left (by norm_num) (by positivity) h28
+  have hp24 : potential18 (22 + 2) = unit18 := by norm_num [potential18, unit18]
+  rw [hp24] at h1 h2
   norm_num only [Nat.cast_ofNat] at h1 h2
-  have hu : (424 + 1 / 4 : ℝ) * unit18 ≤ 5085 / 1000000 := by norm_num [unit18]
+  have hu : (414 + 1 / 4 : ℝ) * unit18 ≤ 156 / 1000000 := by norm_num [unit18]
   linarith
 
 theorem cost18_axis_exact [body : Single.WindowBody] [ledger : Single.ProducerResources body]
@@ -1299,14 +1249,14 @@ theorem cost18_axis_exact [body : Single.WindowBody] [ledger : Single.ProducerRe
 
 def droppedSlots18 : Nat → Nat → Nat
   | 0, _ => 0
-  | width + 1, prior => (prior - 17) + droppedSlots18 width (prior + 1)
+  | width + 1, prior => (prior - 22) + droppedSlots18 width (prior + 1)
 
 def metadataDropped18 : List Nat → Nat → Nat
   | [], _ => 0
   | width :: ws, prior => droppedSlots18 width prior + metadataDropped18 ws (prior + width)
 
 theorem removed18_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
-    removed 18 (p.append q) = removed 18 p + removed 18 q := by
+    removed 23 (p.append q) = removed 23 p + removed 23 q := by
   induction p with
   | done => simp [Straight.append, removed]
   | gate g p ih => cases g <;> simp [Straight.append, removed, ih, Nat.add_assoc]
@@ -1314,10 +1264,10 @@ theorem removed18_append {n s m e} (p : Straight n s m) (q : Straight n m e) :
   | measure w p ih => simp_all [Straight.append, removed]
 
 theorem removed18_cast {n s e f} (p : Straight n s e) (h : e = f) :
-    removed 18 (castFinish h p) = removed 18 p := by subst f; rfl
+    removed 23 (castFinish h p) = removed 23 p := by subst f; rfl
 
 theorem removed18_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
-    removed 18 (reindexStraight f p) = removed 18 p := by
+    removed 23 (reindexStraight f p) = removed 23 p := by
   induction p with
   | done => rfl
   | gate g p ih =>
@@ -1329,25 +1279,25 @@ theorem removed18_reindex {n m s e} (p : Straight n s e) (f : Fin n → Fin m) :
 
 theorem removed18_feedback {n s e} (dir : PhaseDir) (w : Wire) (indices : List (Fin s))
     (k : Nat) (p : Straight n s e) :
-    removed 18 (feedbackProgram dir w indices k p) =
-      (indices.length - min indices.length (19 - k)) + removed 18 p := by
+    removed 23 (feedbackProgram dir w indices k p) =
+      (indices.length - min indices.length (24 - k)) + removed 23 p := by
   induction indices generalizing k with
   | nil => simp [feedbackProgram]
   | cons i is ih =>
     simp only [feedbackProgram, removed, largePhase, ih, List.length_cons]
-    by_cases hk : 18 < k
+    by_cases hk : 23 < k
     · simp only [hk, decide_true, Bool.toNat_true]; omega
     · simp only [hk, decide_false, Bool.toNat_false]; omega
 
 theorem removed18_prepare {n s e} (ws : List Wire) (p : Straight n s e) :
-    removed 18 (prepareOuterBank ws p) = removed 18 p := by
+    removed 23 (prepareOuterBank ws p) = removed 23 p := by
   induction ws with
   | nil => rfl
   | cons w ws ih => simpa [prepareOuterBank, removed, largePhase] using ih
 
 theorem removed_fourier18 (n : Nat) (dir : PhaseDir) (ws : List Wire)
     (start : Nat) (prior : List (Fin start)) :
-    removed 18 (fourierProgram n dir ws start prior) = droppedSlots18 ws.length prior.length := by
+    removed 23 (fourierProgram n dir ws start prior) = droppedSlots18 ws.length prior.length := by
   induction ws generalizing start with
   | nil => rfl
   | cons w ws ih =>
@@ -1355,14 +1305,14 @@ theorem removed_fourier18 (n : Nat) (dir : PhaseDir) (ws : List Wire)
 
 theorem removed18_framed {n s m k e f} (p : Straight n s m) (q : Straight n m k)
     (r : Straight n k e) (h : e = f) :
-    removed 18 (Single.framed p q r h) = removed 18 p + removed 18 q + removed 18 r := by
+    removed 23 (Single.framed p q r h) = removed 23 p + removed 23 q + removed 23 r := by
   simp [Single.framed, removed, removed18_cast, removed18_append, largePhase, Nat.add_assoc]
 
 theorem removed_axis18 [body : Single.WindowBody] [ledger : Single.ProducerResources body] {n}
     (ws : List (Single.Window n)) (widths : List Nat)
     (hw : List.Forall₂ (fun w c => w.wires.length = c) ws widths)
     (start : Nat) (prior : List (Fin start)) :
-    metadataDropped18 widths prior.length ≤ removed 18 (Single.axis ws start prior) := by
+    metadataDropped18 widths prior.length ≤ removed 23 (Single.axis ws start prior) := by
   induction ws generalizing widths start with
   | nil => cases hw; simp [metadataDropped18, Single.axis, removed]
   | cons w ws ih =>
@@ -1377,7 +1327,7 @@ theorem removed_axis18 [body : Single.WindowBody] [ledger : Single.ProducerResou
       rw [head] at *
       omega
 
-theorem dropped_weight18 (g : Gate) (hg : largePhase 18 g = true) :
+theorem dropped_weight18 (g : Gate) (hg : largePhase 23 g = true) :
     ConditionalCatalyst.weightedGate g = 1 ∧ ConditionalCatalyst.weightedLiteral g = 1 := by
   cases g <;> simp only [largePhase, Bool.false_eq_true, decide_eq_true_eq] at hg
   case P dir k t =>
@@ -1386,36 +1336,36 @@ theorem dropped_weight18 (g : Gate) (hg : largePhase 18 g = true) :
       ConditionalCatalyst.phaseTwoGate_P, hk, tCost]
 
 theorem weight4_trim18 {n s e} (p : Straight n s e) :
-    ConditionalCatalyst.weight4 (trim 18 p) + removed 18 p = ConditionalCatalyst.weight4 p := by
+    ConditionalCatalyst.weight4 (trim 23 p) + removed 23 p = ConditionalCatalyst.weight4 p := by
   induction p with
   | done => rfl
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hw := (dropped_weight18 g hg).2
         simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]; omega
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
           ConditionalCatalyst.weight4]; omega
     | whenBit r v g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hw := (dropped_weight18 g hg).1
         simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]; omega
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
           ConditionalCatalyst.weight4]; omega
   | recordGate i v g p ih =>
-    by_cases hg : largePhase 18 g = true
+    by_cases hg : largePhase 23 g = true
     · have hw := (dropped_weight18 g hg).1
       simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight4, hw]; omega
-    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
       simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
         ConditionalCatalyst.weight4]; omega
   | measure w p ih => exact ih
 
 theorem trim18_t {n s e} (p : Straight n s e) (read : ConstantBit n → Bool) (history : Fin s → Bool) :
-    ((trim 18 p).instantiate read history).tCount ≤ (p.instantiate read history).tCount := by
+    ((trim 23 p).instantiate read history).tCount ≤ (p.instantiate read history).tCount := by
   induction p with
   | done => rfl
   | gate g p ih =>
@@ -1428,7 +1378,7 @@ theorem trim18_t {n s e} (p : Straight n s e) (read : ConstantBit n → Bool) (h
     simp only [trim, Straight.instantiate, AdaptiveCircuit.tCount]
     exact max_le_max (ih _) (ih _)
 
-theorem trim18_added {n s e} (p : Straight n s e) : added (trim 18 p) = added p := by
+theorem trim18_added {n s e} (p : Straight n s e) : added (trim 23 p) = added p := by
   induction p with
   | done => rfl
   | gate g p ih =>
@@ -1438,7 +1388,7 @@ theorem trim18_added {n s e} (p : Straight n s e) : added (trim 18 p) = added p 
   | recordGate i v g p ih => simp only [trim]; split_ifs <;> simpa only [added] using ih
   | measure w p ih => exact ih
 
-theorem trim18_slots {n s e} (p : Straight n s e) : (trim 18 p).gateSlots ≤ p.gateSlots := by
+theorem trim18_slots {n s e} (p : Straight n s e) : (trim 23 p).gateSlots ≤ p.gateSlots := by
   induction p with
   | done => exact le_rfl
   | gate g p ih =>
@@ -1449,7 +1399,7 @@ theorem trim18_slots {n s e} (p : Straight n s e) : (trim 18 p).gateSlots ≤ p.
   | measure w p ih => exact ih
 
 theorem trim18_wellFormed {n s e} (p : Straight n s e) (hp : p.WellFormed) :
-    (trim 18 p).WellFormed := by
+    (trim 23 p).WellFormed := by
   induction p with
   | done => trivial
   | gate g p ih =>
@@ -1460,7 +1410,7 @@ theorem trim18_wellFormed {n s e} (p : Straight n s e) (hp : p.WellFormed) :
   | measure w p ih => exact ih hp
 
 theorem trim18_within {n s e} (p : Straight n s e) (ws : List Wire) (hp : Within ws p) :
-    Within ws (trim 18 p) := by
+    Within ws (trim 23 p) := by
   induction p with
   | done => trivial
   | gate g p ih =>
@@ -4177,33 +4127,33 @@ theorem selectedTwoAxesCat_mass {n : Nat} {y : Wire} {read : ConstantBit n → B
     ψ (Ready.append_left _ _ ψ hψ) hψY
   simpa only [List.map_nil, idealTwoAxes] using hres
 
-/-! #### Static properties of `axisCat`, `trim 18`, `cost18`, and `tCount` -/
+/-! #### Static properties of `axisCat`, `trim 23`, `cost18`, and `tCount` -/
 
-theorem cost18_zero_of_removed18 {n s e : Nat} (p : Straight n s e) (h : removed 18 p = 0) :
+theorem cost18_zero_of_removed18 {n s e : Nat} (p : Straight n s e) (h : removed 23 p = 0) :
     cost18 p = 0 := by
   induction p with
   | done => rfl
   | measure w p ih => exact ih h
   | recordGate i v g p ih =>
     simp only [removed] at h
-    have hg : largePhase 18 g = false := by cases h1 : largePhase 18 g <;> simp [h1] at h ⊢
-    have hp : removed 18 p = 0 := by simp [hg] at h; exact h
+    have hg : largePhase 23 g = false := by cases h1 : largePhase 23 g <;> simp [h1] at h ⊢
+    have hp : removed 23 p = 0 := by simp [hg] at h; exact h
     simp only [cost18, charge18_false g hg, ih hp, add_zero]
   | gate g p ih =>
     cases g with
     | literal g =>
       simp only [removed] at h
-      have hg : largePhase 18 g = false := by cases h1 : largePhase 18 g <;> simp [h1] at h ⊢
-      have hp : removed 18 p = 0 := by simp [hg] at h; exact h
+      have hg : largePhase 23 g = false := by cases h1 : largePhase 23 g <;> simp [h1] at h ⊢
+      have hp : removed 23 p = 0 := by simp [hg] at h; exact h
       simp only [cost18, charge18_false g hg, ih hp, add_zero]
     | whenBit r v g =>
       simp only [removed] at h
-      have hg : largePhase 18 g = false := by cases h1 : largePhase 18 g <;> simp [h1] at h ⊢
-      have hp : removed 18 p = 0 := by simp [hg] at h; exact h
+      have hg : largePhase 23 g = false := by cases h1 : largePhase 23 g <;> simp [h1] at h ⊢
+      have hp : removed 23 p = 0 := by simp [hg] at h; exact h
       simp only [cost18, charge18_false g hg, ih hp, add_zero]
 
 theorem cost18_literals {n s e : Nat} (gs : Circuit) (p : Straight n s e)
-    (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    (h : ∀ g ∈ gs, largePhase 23 g = false) :
     cost18 (AndGadget.literals gs p) = cost18 p := by
   induction gs with
   | nil => rfl
@@ -4213,7 +4163,7 @@ theorem cost18_literals {n s e : Nat} (gs : Circuit) (p : Straight n s e)
       ih (fun x hx => h x (List.mem_cons_of_mem _ hx)), zero_add]
 
 theorem cost18_whenLiterals {n s e : Nat} (r : ConstantBit n) (v : Bool) (gs : Circuit)
-    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 23 g = false) :
     cost18 (ConditionalCatalyst.whenLiterals r v gs p) = cost18 p := by
   induction gs with
   | nil => rfl
@@ -4223,7 +4173,7 @@ theorem cost18_whenLiterals {n s e : Nat} (r : ConstantBit n) (v : Bool) (gs : C
       ih (fun x hx => h x (List.mem_cons_of_mem _ hx)), zero_add]
 
 theorem cost18_recordLiterals {n s e : Nat} (i : Fin s) (v : Bool) (gs : Circuit)
-    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 23 g = false) :
     cost18 (ConditionalCatalyst.recordLiterals i v gs p) = cost18 p := by
   induction gs with
   | nil => rfl
@@ -4232,8 +4182,8 @@ theorem cost18_recordLiterals {n s e : Nat} (i : Fin s) (v : Bool) (gs : Circuit
     rw [charge18_false g (h g List.mem_cons_self),
       ih (fun x hx => h x (List.mem_cons_of_mem _ hx)), zero_add]
 
-private theorem replacement_largePhase18_false (y : Wire) (g : Gate) (hg : largePhase 18 g = false) :
-    ∀ x ∈ ConditionalCatalyst.replacement y g, largePhase 18 x = false := by
+private theorem replacement_largePhase18_false (y : Wire) (g : Gate) (hg : largePhase 23 g = false) :
+    ∀ x ∈ ConditionalCatalyst.replacement y g, largePhase 23 x = false := by
   intro x hx
   unfold ConditionalCatalyst.replacement at hx
   split at hx
@@ -4243,7 +4193,7 @@ private theorem replacement_largePhase18_false (y : Wire) (g : Gate) (hg : large
     rcases hx with rfl | rfl | rfl | rfl <;> rfl
   · simp only [List.mem_singleton] at hx; subst hx; exact hg
 
-private theorem replacement_of_largePhase18_true (y : Wire) (g : Gate) (hg : largePhase 18 g = true) :
+private theorem replacement_of_largePhase18_true (y : Wire) (g : Gate) (hg : largePhase 23 g = true) :
     ConditionalCatalyst.replacement y g = [g] := by
   cases g with
   | P d k t =>
@@ -4259,31 +4209,31 @@ theorem cost18_compile {n s e : Nat} (y : Wire) (p : Straight n s e) :
   | done => rfl
   | measure w p ih => exact ih
   | recordGate i v g p ih =>
-    by_cases hg : largePhase 18 g = true
+    by_cases hg : largePhase 23 g = true
     · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
         ConditionalCatalyst.recordLiterals, cost18, ih]
-    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
       simp only [ConditionalCatalyst.compile, cost18, charge18_false g hgf, zero_add]
       rw [cost18_recordLiterals i v _ _ (replacement_largePhase18_false y g hgf), ih]
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
           AndGadget.literals, List.foldr_cons, List.foldr_nil, cost18, ih]
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [ConditionalCatalyst.compile, cost18, charge18_false g hgf, zero_add]
         rw [cost18_literals _ _ (replacement_largePhase18_false y g hgf), ih]
     | whenBit r v g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
           ConditionalCatalyst.whenLiterals, cost18, ih]
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [ConditionalCatalyst.compile, cost18, charge18_false g hgf, zero_add]
         rw [cost18_whenLiterals r v _ _ (replacement_largePhase18_false y g hgf), ih]
 
 theorem trim18_append {n s m e : Nat} (p : Straight n s m) (q : Straight n m e) :
-    trim 18 (p.append q) = (trim 18 p).append (trim 18 q) := by
+    trim 23 (p.append q) = (trim 23 p).append (trim 23 q) := by
   induction p with
   | done => rfl
   | gate g p ih =>
@@ -4294,33 +4244,33 @@ theorem trim18_append {n s m e : Nat} (p : Straight n s m) (q : Straight n m e) 
   | measure w p ih => simp only [Straight.append, trim, ih]
 
 theorem trim18_castFinish {n s e f : Nat} (h : e = f) (p : Straight n s e) :
-    trim 18 (castFinish h p) = castFinish h (trim 18 p) := by
+    trim 23 (castFinish h p) = castFinish h (trim 23 p) := by
   subst f; rfl
 
 theorem trim18_prepareOuterBank {n s e : Nat} (ws : List Wire) (p : Straight n s e) :
-    trim 18 (prepareOuterBank ws p) = prepareOuterBank ws (trim 18 p) := by
+    trim 23 (prepareOuterBank ws p) = prepareOuterBank ws (trim 23 p) := by
   induction ws with
   | nil => rfl
   | cons w ws ih =>
-    change trim 18 (.gate (.literal (.H w)) (prepareOuterBank ws p)) =
-      .gate (.literal (.H w)) (prepareOuterBank ws (trim 18 p))
+    change trim 23 (.gate (.literal (.H w)) (prepareOuterBank ws p)) =
+      .gate (.literal (.H w)) (prepareOuterBank ws (trim 23 p))
     simp [trim, largePhase, ih]
 
 theorem trim18_literals_false {n s e : Nat} (gs : Circuit) (p : Straight n s e)
-    (h : ∀ g ∈ gs, largePhase 18 g = false) :
-    trim 18 (AndGadget.literals gs p) = AndGadget.literals gs (trim 18 p) := by
+    (h : ∀ g ∈ gs, largePhase 23 g = false) :
+    trim 23 (AndGadget.literals gs p) = AndGadget.literals gs (trim 23 p) := by
   induction gs with
   | nil => rfl
   | cons g gs ih =>
-    change trim 18 (.gate (.literal g) (AndGadget.literals gs p)) =
-      .gate (.literal g) (AndGadget.literals gs (trim 18 p))
+    change trim 23 (.gate (.literal g) (AndGadget.literals gs p)) =
+      .gate (.literal g) (AndGadget.literals gs (trim 23 p))
     simp only [trim, h g List.mem_cons_self, Bool.false_eq_true, ↓reduceIte,
       ih (fun x hx => h x (List.mem_cons_of_mem _ hx))]
 
 theorem trim18_whenLiterals_false {n s e : Nat} (r : ConstantBit n) (v : Bool) (gs : Circuit)
-    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
-    trim 18 (ConditionalCatalyst.whenLiterals r v gs p) =
-      ConditionalCatalyst.whenLiterals r v gs (trim 18 p) := by
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 23 g = false) :
+    trim 23 (ConditionalCatalyst.whenLiterals r v gs p) =
+      ConditionalCatalyst.whenLiterals r v gs (trim 23 p) := by
   induction gs with
   | nil => rfl
   | cons g gs ih =>
@@ -4328,9 +4278,9 @@ theorem trim18_whenLiterals_false {n s e : Nat} (r : ConstantBit n) (v : Bool) (
       ih (fun x hx => h x (List.mem_cons_of_mem _ hx))]
 
 theorem trim18_recordLiterals_false {n s e : Nat} (i : Fin s) (v : Bool) (gs : Circuit)
-    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 18 g = false) :
-    trim 18 (ConditionalCatalyst.recordLiterals i v gs p) =
-      ConditionalCatalyst.recordLiterals i v gs (trim 18 p) := by
+    (p : Straight n s e) (h : ∀ g ∈ gs, largePhase 23 g = false) :
+    trim 23 (ConditionalCatalyst.recordLiterals i v gs p) =
+      ConditionalCatalyst.recordLiterals i v gs (trim 23 p) := by
   induction gs with
   | nil => rfl
   | cons g gs ih =>
@@ -4338,60 +4288,60 @@ theorem trim18_recordLiterals_false {n s e : Nat} (i : Fin s) (v : Bool) (gs : C
       ih (fun x hx => h x (List.mem_cons_of_mem _ hx))]
 
 theorem trim18_compile {n s e : Nat} (y : Wire) (p : Straight n s e) :
-    trim 18 (ConditionalCatalyst.compile y p) = ConditionalCatalyst.compile y (trim 18 p) := by
+    trim 23 (ConditionalCatalyst.compile y p) = ConditionalCatalyst.compile y (trim 23 p) := by
   induction p with
   | done => rfl
   | measure w p ih => simp only [ConditionalCatalyst.compile, trim, ih]
   | recordGate i v g p ih =>
-    by_cases hg : largePhase 18 g = true
+    by_cases hg : largePhase 23 g = true
     · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
         ConditionalCatalyst.recordLiterals, trim, hg, ↓reduceIte, ih]
-    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
       simp only [ConditionalCatalyst.compile, trim, hgf, Bool.false_eq_true, ↓reduceIte]
       rw [trim18_recordLiterals_false i v _ _ (replacement_largePhase18_false y g hgf), ih]
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
           AndGadget.literals, List.foldr_cons, List.foldr_nil, trim, hg, ↓reduceIte, ih]
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [ConditionalCatalyst.compile, trim, hgf, Bool.false_eq_true, ↓reduceIte]
         rw [trim18_literals_false _ _ (replacement_largePhase18_false y g hgf), ih]
     | whenBit r v g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · simp only [ConditionalCatalyst.compile, replacement_of_largePhase18_true y g hg,
           ConditionalCatalyst.whenLiterals, trim, hg, ↓reduceIte, ih]
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [ConditionalCatalyst.compile, trim, hgf, Bool.false_eq_true, ↓reduceIte]
         rw [trim18_whenLiterals_false r v _ _ (replacement_largePhase18_false y g hgf), ih]
 
 theorem weight7_trim18 {n s e : Nat} (p : Straight n s e) :
-    ConditionalCatalyst.weight7 (trim 18 p) + removed 18 p = ConditionalCatalyst.weight7 p := by
+    ConditionalCatalyst.weight7 (trim 23 p) + removed 23 p = ConditionalCatalyst.weight7 p := by
   induction p with
   | done => rfl
   | measure w p ih => exact ih
   | recordGate i v g p ih =>
-    by_cases hg : largePhase 18 g = true
+    by_cases hg : largePhase 23 g = true
     · have hw := (Trim18.dropped_weight18 g hg).1
       simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight7, hw]; omega
-    · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+    · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
       simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
         ConditionalCatalyst.weight7]; omega
   | gate g p ih =>
     cases g with
     | literal g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hw := (Trim18.dropped_weight18 g hg).1
         simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight7, hw]; omega
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
           ConditionalCatalyst.weight7]; omega
     | whenBit r v g =>
-      by_cases hg : largePhase 18 g = true
+      by_cases hg : largePhase 23 g = true
       · have hw := (Trim18.dropped_weight18 g hg).1
         simp only [trim, hg, if_true, removed, Bool.toNat_true, ConditionalCatalyst.weight7, hw]; omega
-      · have hgf : largePhase 18 g = false := Bool.eq_false_iff.mpr hg
+      · have hgf : largePhase 23 g = false := Bool.eq_false_iff.mpr hg
         simp only [trim, hgf, Bool.false_eq_true, if_false, removed, Bool.toNat_false, zero_add,
           ConditionalCatalyst.weight7]; omega
 
@@ -4437,10 +4387,10 @@ theorem weight7_fourierProgram (n : Nat) (dir : PhaseDir) (ws : List Wire)
 
 theorem tCount_trim18_compile_fourier (y : Wire) (n : Nat) (dir : PhaseDir) (ws : List Wire)
     (start : Nat) (prior : List (Fin start)) (read : ConstantBit n → Bool) (h : Fin start → Bool) :
-    ((trim 18 (ConditionalCatalyst.compile y (fourierProgram n dir ws start prior))).instantiate read h).tCount ≤
+    ((trim 23 (ConditionalCatalyst.compile y (fourierProgram n dir ws start prior))).instantiate read h).tCount ≤
       fourierWeight ws.length prior.length - droppedSlots18 ws.length prior.length := by
   rw [trim18_compile]
-  have ht := ConditionalCatalyst.compile_t y (trim 18 (fourierProgram n dir ws start prior)) read h
+  have ht := ConditionalCatalyst.compile_t y (trim 23 (fourierProgram n dir ws start prior)) read h
   have hw := weight7_trim18 (fourierProgram n dir ws start prior)
   rw [weight7_fourierProgram, removed_fourier18] at hw
   omega
@@ -4490,7 +4440,7 @@ theorem axisCat_tCount_trim18 {n : Nat} (y : Wire) (ws : List (Single.Window n))
     (hrel : List.Forall₂ (fun w k => w.wires.length = k.2 ∧
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1) ws spec)
     (start : Nat) (prior : List (Fin start)) (read : ConstantBit n → Bool) (h : Fin start → Bool) :
-    ((trim 18 (axisCat y ws start prior)).instantiate read h).tCount ≤
+    ((trim 23 (axisCat y ws start prior)).instantiate read h).tCount ≤
       metadataTrimmedWeight spec prior.length := by
   induction ws generalizing spec start with
   | nil =>
@@ -4503,7 +4453,7 @@ theorem axisCat_tCount_trim18 {n : Nat} (y : Wire) (ws : List (Single.Window n))
       simp only [axisCat, trim18_castFinish, castFinish_instantiate, trim18_append,
         trim18_prepareOuterBank, metadataTrimmedWeight]
       have htail : ∀ h' : Fin (start + w.count + w.wires.length) → Bool,
-          ((trim 18 (axisCat y ws (start + w.count + w.wires.length)
+          ((trim 23 (axisCat y ws (start + w.count + w.wires.length)
               (nextPrior w.count w.wires.length prior))).instantiate read h').tCount ≤
             metadataTrimmedWeight rest (prior.length + k.2) := by
         intro h'
@@ -4511,26 +4461,26 @@ theorem axisCat_tCount_trim18 {n : Nat} (y : Wire) (ws : List (Single.Window n))
         rw [nextPrior_length] at this
         exact this.trans (le_of_eq (congrArg (fun m => metadataTrimmedWeight rest (prior.length + m)) hhd.1))
       have hmid : ∀ h' : Fin (start + w.count) → Bool,
-          (((castFinish (by simp) (trim 18 (ConditionalCatalyst.compile y
+          (((castFinish (by simp) (trim 23 (ConditionalCatalyst.compile y
               (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior))))).append
-            (trim 18 (axisCat y ws (start + w.count + w.wires.length)
+            (trim 23 (axisCat y ws (start + w.count + w.wires.length)
               (nextPrior w.count w.wires.length prior)))).instantiate read h').tCount ≤
             (fourierWeight k.2 prior.length - droppedSlots18 k.2 prior.length) +
               metadataTrimmedWeight rest (prior.length + k.2) := by
         intro h'
         have h1 := append_tCount_le
-          (castFinish (by simp) (trim 18 (ConditionalCatalyst.compile y
+          (castFinish (by simp) (trim 23 (ConditionalCatalyst.compile y
             (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)))))
           _ read h' _ htail
         rw [castFinish_instantiate] at h1
         have hf := tCount_trim18_compile_fourier y n .inverse w.wires (start + w.count) (bankPrior w.count prior) read h'
         rw [bankPrior_length] at hf
-        have hf' : ((trim 18 (ConditionalCatalyst.compile y
+        have hf' : ((trim 23 (ConditionalCatalyst.compile y
             (fourierProgram n .inverse w.wires (start + w.count) (bankPrior w.count prior)))).instantiate read h').tCount ≤
             fourierWeight k.2 prior.length - droppedSlots18 k.2 prior.length :=
           hf.trans (le_of_eq (congrArg (fun m => fourierWeight m prior.length - droppedSlots18 m prior.length) hhd.1))
         omega
-      have h1 := append_tCount_le (prepareOuterBank w.wires.reverse (trim 18 (w.program start))) _ read h _ hmid
+      have h1 := append_tCount_le (prepareOuterBank w.wires.reverse (trim 23 (w.program start))) _ read h _ hmid
       rw [prepareOuterBank_tCount] at h1
       have hw := (trim18_t (w.program start) read h).trans (hhd.2 start read h)
       omega
@@ -12913,7 +12863,7 @@ def plan465 : List BadSEntry := [
   .opt2 4 4 196 512,
   .opt2 4 4 194 512,
   .opt2 4 4 192 512,
-  .opt2 4 4 190 512,
+  .opt2 4 4 190 511,
   .opt2 4 4 188 511,
   .opt2 4 4 186 511,
   .opt2 4 4 184 511,
@@ -12921,13 +12871,15 @@ def plan465 : List BadSEntry := [
   .opt2 4 4 179 512,
   .opt2 4 4 177 512,
   .opt2 4 4 175 512,
-  .opt2 4 4 173 512,
+  .opt2 4 4 173 511,
   .opt2 4 4 171 511,
   .opt2 4 4 169 511,
   .opt2 4 4 167 511,
   .opt2 4 4 164 512,
   .opt2 4 4 162 512,
-  .opt2 4 4 160 512
+  .opt2 4 4 160 512,
+  .opt2 4 4 158 512,
+  .opt2 4 4 156 511
 ]
 
 def plan485 : List BadSEntry := [
@@ -13179,8 +13131,8 @@ theorem skywalk_badStack460_card :
   exact h.trans_eq (congrArg (· * (2 : ℝ) ^ 256) (by norm_num))
 
 theorem skywalk_badStack465_card :
-    ((BadStack LocalKernel.env465).card : ℝ) ≤ (386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256 := by
-  have h := badStack_of_dyadic LocalKernel.env465 465 LocalKernel.env465PostW plan465 386 (10 ^ 10)
+    ((BadStack LocalKernel.env465).card : ℝ) ≤ (595 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env465 465 LocalKernel.env465PostW plan465 595 (10 ^ 10)
     rfl rfl (by decide)
     (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env465PostW at *; split_ifs at hdrop <;> omega)
     (by decide +kernel) (by decide +kernel)
@@ -13262,8 +13214,8 @@ def Digit25.bank (d : Digit25) : List Wire := GenericW.bankW d.k
 def Digit25.tof : Digit25 → Nat
   | .left18 j => if j.val = 10 then 2263993 else 2320431
   | .left19 j => if j.val = 1 then 2277531 else 2366013
-  | .right17 j => if j.val < 3 then 1897790 else 1921892
-  | .right18 _ => 2004067
+  | .right17 j => if j.val < 4 then 1897790 else 1919100
+  | .right18 _ => 2001275
 
 def Digit25.isRight : Digit25 → Bool
   | .left18 _ | .left19 _ => false
@@ -13673,7 +13625,7 @@ def bodyCatWin : Digit25 → Window 3407872
           (reindexStraight (row25 (.left19 j))
             (relabelStraight GenericW.compact1612 (GenericW.compiledProgramEnv500_18 start)))⟩
   | .right17 j =>
-    if j.val < 3 then
+    if j.val < 4 then
       ⟨(GenericW.bankW 16).reverse, cBody16Env460,
         fun start => castFinish (congrArg (start + ·) cBody16Env460_eq.symm)
           (reindexStraight (row25 (.right17 j))
@@ -13704,7 +13656,7 @@ def leftMeta25Cat : List (Nat × Nat) :=
   (cFirst20, 20) :: List.replicate 10 (cBody17, 18) ++ [(cBody17Env510, 18), (cBody18Env500, 19), (cBody18Env485, 19)]
 
 def rightMeta25Cat : List (Nat × Nat) :=
-  List.replicate 3 (cBody16Env460, 17) ++ List.replicate 7 (cBody16Env465, 17) ++ List.replicate 2 (cBody17Env465, 18)
+  List.replicate 4 (cBody16Env460, 17) ++ List.replicate 6 (cBody16Env465, 17) ++ List.replicate 2 (cBody17Env465, 18)
 
 theorem leftWins25Cat_meta : leftWins25Cat.map (fun w => (w.count, w.wires.length)) = leftMeta25Cat := by
   simp only [leftWins25Cat, leftMeta25Cat, leftDigits25, List.map_cons, List.map_append,
@@ -13723,7 +13675,7 @@ theorem leftWins25Cat_count_eq :
   omega
 
 theorem rightWins25Cat_count_eq :
-    axisCount rightWins25Cat = 3 * (cBody16Env460 + 17) + 7 * (cBody16Env465 + 17) + 2 * (cBody17Env465 + 18) := by
+    axisCount rightWins25Cat = 4 * (cBody16Env460 + 17) + 6 * (cBody16Env465 + 17) + 2 * (cBody17Env465 + 18) := by
   rw [← recordCount_eq_axisCount, rightWins25Cat_meta]
   simp only [rightMeta25Cat, List.replicate, List.cons_append, List.nil_append, recordCount]
   omega
@@ -14361,7 +14313,7 @@ theorem bodyCatWin_wellFormed (d : Digit25) (start : Nat) : ((bodyCatWin d).prog
       exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv485_18_wellFormed start))
     · omega
   | right17 j =>
-    by_cases hj : j.val < 3
+    by_cases hj : j.val < 4
     · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
       rw [castFinish_wellFormed]
       exact (reindexStraight_wellFormed _ _).mpr ((relabelStraight_wellFormed _ _).mpr (GenericW.compiledEnv460_16_wellFormed start))
@@ -14381,7 +14333,7 @@ def Digit25.goodPred (Q : Point) : Digit25 → BasisState → Prop
     if j.val = 1 then GenericW.GoodWEnv485 18 (wideCoeffs25 (.left19 j)) Q
     else GenericW.GoodWEnv500 18 (wideCoeffs25 (.left19 j)) Q
   | .right17 j =>
-    if j.val < 3 then GenericW.GoodWEnv460 16 (wideCoeffs25 (.right17 j)) Q
+    if j.val < 4 then GenericW.GoodWEnv460 16 (wideCoeffs25 (.right17 j)) Q
     else GenericW.GoodWEnv465 16 (wideCoeffs25 (.right17 j)) Q
   | .right18 j => GenericW.GoodWEnv465 17 (wideCoeffs25 (.right18 j)) Q
 
@@ -14464,7 +14416,7 @@ def bodyApproxWin (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (d : Digit25
           (wide25_nonzero Q hQ hn (.left19 ⟨1, hj⟩)) start history
       · omega
     | right17 j =>
-      by_cases hj : j.val < 3
+      by_cases hj : j.val < 4
       · dsimp only [bodyCatWin, Digit25.goodPred]; rw [if_pos hj, if_pos hj]; dsimp only
         rw [castFinish_instantiate, reindexStraight_instantiate,
           readConstant_reindex (row25 (.right17 j)) (wideCoeffs25 (.right17 j)) coefficientAt25 Q
@@ -16364,16 +16316,16 @@ private theorem badMass_env460_le :
 
 private theorem badMass_env465_le :
     (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env465).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
-      (556 / 1000000 : ℝ) ^ 2 := by
+      (690 / 1000000 : ℝ) ^ 2 := by
   have hcard := SkywalkTail485.skywalk_badStack465_card
   have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env465).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
-      (4 + 4 * ((386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
+      (4 + 4 * ((595 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
     mul_le_mul_of_nonneg_right (by linarith) (by positivity)
   have h2 : (4 + 4 * ((386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
       8 / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 := by
     have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
     field_simp [hp]; ring
-  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 ≤ (556 / 1000000 : ℝ) ^ 2 := by norm_num
+  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 ≤ (690 / 1000000 : ℝ) ^ 2 := by norm_num
   linarith
 
 private theorem badMass_env485_le :
@@ -16535,7 +16487,7 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound (2 / (2 : ℝ) ^ 256) D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
     Real.sqrt ((S.map (fun x => (axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2) ^ 2)).sum) ≤
-      2 * (3 * (2048 / 1000000 : ℝ) + 9 * (556 / 1000000 : ℝ)) := by
+      2 * (4 * (2048 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ)) := by
   have hcons := list_sqrt_axisSqrtErr_cons (rightHeadApproxWin Q hQ hn)
     (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (fun _ _ => 0) (S.map (fun x => (List.nil, x.2)))
   have hmap_lhs : ((S.map (fun x => ((List.nil : List Bool), x.2))).map (fun x =>
@@ -16619,20 +16571,20 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
   rw [htail_eq] at hcons
   -- Split `rightTailDigits25` into `r17 1 :: r17 2 :: rightTailEnv465` (2 × env460 + 9 × env465)
   let r465 : List Digit25 :=
-    List.ofFn (fun j : Fin 7 => Digit25.right17 ⟨j.val + 3, by omega⟩) ++ List.ofFn (fun j : Fin 2 => Digit25.right18 j)
-  have hrt_eq : rightTailDigits25 = Digit25.right17 ⟨1, by decide⟩ :: Digit25.right17 ⟨2, by decide⟩ :: r465 := by
+    List.ofFn (fun j : Fin 6 => Digit25.right17 ⟨j.val + 4, by omega⟩) ++ List.ofFn (fun j : Fin 2 => Digit25.right18 j)
+  have hrt_eq : rightTailDigits25 = Digit25.right17 ⟨1, by decide⟩ :: Digit25.right17 ⟨2, by decide⟩ :: Digit25.right17 ⟨3, by decide⟩ :: r465 := by
     simp [rightTailDigits25, r465, List.ofFn_succ]
-  have hr465_len : r465.length = 9 := by simp [r465]
+  have hr465_len : r465.length = 8 := by simp [r465]
   have hr465_gp : ∀ d ∈ r465, d.goodPred Q = GenericW.GoodWA GenericW.arithSpecEnv465 d.k (wideCoeffs25 d) Q := by
     intro d hd
     simp only [r465, List.mem_append, List.mem_ofFn] at hd
     rcases hd with ⟨j, rfl⟩ | ⟨j, rfl⟩
-    · have hge : ¬ (j.val + 3 < 3) := by omega
+    · have hge : ¬ (j.val + 4 < 4) := by omega
       dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg hge]; rfl
     · rfl
   have htail_le : Real.sqrt ((S'.map (fun y => (axisSqrtErr (rightTailDigits25.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2) ^ 2)).sum) ≤
-      2 * (2048 / 1000000 : ℝ) + (2 * (2048 / 1000000 : ℝ) + 9 * (2 * (556 / 1000000 : ℝ))) := by
-    rw [hrt_eq, List.map_cons, List.map_cons]
+      2 * (2048 / 1000000 : ℝ) + (2 * (2048 / 1000000 : ℝ) + (2 * (2048 / 1000000 : ℝ) + 8 * (2 * (690 / 1000000 : ℝ)))) := by
+    rw [hrt_eq, List.map_cons, List.map_cons, List.map_cons]
     refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨1, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
       goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
       (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
@@ -16643,9 +16595,14 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
       (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
       S1 D1 hS1 hD1 hdom1 ?_
     intro S2 D2 hS2 hD2 hdom2
+    refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨3, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
+      goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
+      (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
+      S2 D2 hS2 hD2 hdom2 ?_
+    intro S3 D3 hS3 hD3 hdom3
     have h9 := bodyList_sqrt_maxBound Q hQ hn GenericW.arithSpecEnv465 LocalKernel.env465
-      goodX_env465 r465 hr465_gp (2 / (2 : ℝ) ^ 256) (556 / 1000000) (by positivity) (by norm_num) badMass_env465_le
-      S2 D2 hS2 hD2 hdom2
+      goodX_env465 r465 hr465_gp (2 / (2 : ℝ) ^ 256) (690 / 1000000) (by positivity) (by norm_num) badMass_env465_le
+      S3 D3 hS3 hD3 hdom3
     rw [hr465_len] at h9; exact h9.trans_eq (by norm_num)
   linarith
 
@@ -16832,7 +16789,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     Real.sqrt (((fourierOutcomes 20).map (fun bits =>
       (axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR
         ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))) ^ 2)).sum) ≤
-      23780 / 1000000 := by
+      28908 / 1000000 := by
   dsimp only
   let baseR : List Bool → State → ℝ :=
     fun _ φ => axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
@@ -16857,7 +16814,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)
     (fun bits => (axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))) ^ 2)
     (fun _ => rfl)]
-  change Real.sqrt ((S₀.map (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)).sum) ≤ 23780 / 1000000
+  change Real.sqrt ((S₀.map (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)).sum) ≤ 28908 / 1000000
   -- Tail: `left19 1` (`env485`, `379/10^6`) -> `rightApprox25` (`3*2048 + 9*556 = 11148 / 10^6`)
   let dLast : Digit25 := .left19 ⟨1, by decide⟩
   let tailLast : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) := [bodyApproxWin Q hQ hn dLast]
@@ -16865,7 +16822,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (∀ x ∈ S, PointSupported x.2) → OddSupport 237 19 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       Real.sqrt ((S.map (fun x => (axisSqrtErr tailLast x.1 baseR x.2) ^ 2)).sum) ≤
-        2 * (379 / 1000000 : ℝ) + 2 * (3 * (2048 / 1000000 : ℝ) + 9 * (556 / 1000000 : ℝ)) := by
+        2 * (379 / 1000000 : ℝ) + 2 * (4 * (2048 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ)) := by
     intro S D hS hD hdom
     have hcons := list_sqrt_axisSqrtErr_cons (bodyApproxWin Q hQ hn dLast) List.nil baseR S
     have hM : MaxBound (1 / (2 : ℝ) ^ 236) D := by
@@ -16948,7 +16905,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (∀ x ∈ S, PointSupported x.2) → OddSupport 218 38 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       Real.sqrt ((S.map (fun x => (axisSqrtErr tail2 x.1 baseR x.2) ^ 2)).sum) ≤
-        2 * (155 / 1000000 : ℝ) + (2 * (379 / 1000000 : ℝ) + 2 * (3 * (2048 / 1000000 : ℝ) + 9 * (556 / 1000000 : ℝ))) := by
+        2 * (155 / 1000000 : ℝ) + (2 * (379 / 1000000 : ℝ) + 2 * (4 * (2048 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ))) := by
     intro S D hS hD hdom
     exact leftEnv_sqrt_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl GenericW.arithSpecEnv500 LocalKernel.env500
       goodX_env500 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg (by decide)]; rfl) 218 (by decide) (by decide)
@@ -16959,7 +16916,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   have htail3 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport 200 56 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      Real.sqrt ((S.map (fun x => (axisSqrtErr tail3 x.1 baseR x.2) ^ 2)).sum) ≤ 23780 / 1000000 := by
+      Real.sqrt ((S.map (fun x => (axisSqrtErr tail3 x.1 baseR x.2) ^ 2)).sum) ≤ 28908 / 1000000 := by
     intro S D hS hD hdom
     have h := leftEnv_sqrt_step Q hQ hn (.left18 ⟨10, by decide⟩) rfl GenericW.arithSpecEnv510 LocalKernel.env510
       goodX_env510 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) 200 (by decide) (by decide)
@@ -16971,7 +16928,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       Real.sqrt ((S.map (fun x => (axisSqrtErr
         ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(10 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail3)
-        x.1 baseR x.2) ^ 2)).sum) ≤ 23780 / 1000000 := by
+        x.1 baseR x.2) ^ 2)).sum) ≤ 28908 / 1000000 := by
     intro m
     induction m with
     | zero =>
@@ -17103,7 +17060,7 @@ private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
 theorem program25Cat_event_sqrt_upper (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
     Real.sqrt (Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
       (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState)) ≤
-      Real.sqrt (windowedEventMass Q zeroBasisState 256 206 accept) + 23780 / 1000000 := by
+      Real.sqrt (windowedEventMass Q zeroBasisState 256 206 accept) + 28908 / 1000000 := by
   have hterm_sub : ∀ (lhs rhs : List Bool), SubUnital
       (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil) :=
     fun _ _ => subUnital_ite _ _ (fun φ => le_of_eq (resetTerminal25_mass φ))
@@ -17377,7 +17334,7 @@ theorem bodyCatWin_support (d : Digit25) (start : Nat) :
       rw [straightWires_castFinish, straightWires_reindex]; exact GenericW.compiledEnv485_18_packed_support start
     · omega
   | right17 j =>
-    by_cases hj : j.val < 3
+    by_cases hj : j.val < 4
     · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
       rw [straightWires_castFinish, straightWires_reindex]
       exact GenericW.compiledEnv460_16_packed_support start
@@ -17406,7 +17363,7 @@ theorem bodyCatWin_slots (d : Digit25) (start : Nat) : ((bodyCatWin d).program s
       rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]; exact GenericW.compiledEnv485_18_slots start
     · omega
   | right17 j =>
-    by_cases hj : j.val < 3
+    by_cases hj : j.val < 4
     · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
       rw [castFinish_gateSlots, reindexStraight_gateSlots, relabelStraight_slots]
       exact GenericW.compiledEnv460_16_slots start
@@ -17438,7 +17395,7 @@ theorem bodyCatWin_tCount (d : Digit25) (start : Nat) (read : ConstantBit 340787
       exact GenericW.compiledEnv485_18_tCount start _ h
     · omega
   | right17 j =>
-    by_cases hj : j.val < 3
+    by_cases hj : j.val < 4
     · dsimp only [bodyCatWin, Digit25.tof]; rw [if_pos hj, if_pos hj]; dsimp only
       rw [castFinish_instantiate, reindexStraight_instantiate, relabelStraight_instantiate, AdaptiveCircuit.relabel_tCount]
       exact GenericW.compiledEnv460_16_tCount start _ h
@@ -17452,7 +17409,7 @@ theorem bodyCatWin_tCount (d : Digit25) (start : Nat) (read : ConstantBit 340787
 
 theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).program start) = 0 := by
   apply CatAxis.cost18_zero_of_removed18
-  have hrel : ∀ {n s e} (f : Wire ≃ Wire) (p : Straight n s e), removed 18 (relabelStraight f p) = removed 18 p := by
+  have hrel : ∀ {n s e} (f : Wire ≃ Wire) (p : Straight n s e), removed 23 (relabelStraight f p) = removed 23 p := by
     intro n s e f p
     induction p with
     | done => rfl
@@ -17473,13 +17430,13 @@ theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).p
       exact GenericW.compiled17_removed18 start
   | left19 j =>
     rcases j with ⟨_ | _ | n, hj⟩
-    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))) = 0
+    · change removed 23 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv500_18 start)))) = 0
       rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv500_18_removed18 start
-    · change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))) = 0
+    · change removed 23 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv485_18 start)))) = 0
       rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv485_18_removed18 start
     · omega
   | right17 j =>
-    by_cases hj : j.val < 3
+    by_cases hj : j.val < 4
     · dsimp only [bodyCatWin]; rw [if_pos hj]; dsimp only
       rw [LocalFour.removed_castFinish, removed18_reindex, hrel]
       exact GenericW.compiledEnv460_16_removed18 start
@@ -17487,7 +17444,7 @@ theorem bodyCatWin_cost18 (d : Digit25) (start : Nat) : cost18 ((bodyCatWin d).p
       rw [LocalFour.removed_castFinish, removed18_reindex, hrel]
       exact GenericW.compiledEnv465_16_removed18 start
   | right18 j =>
-    change removed 18 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))) = 0
+    change removed 23 (castFinish _ (reindexStraight _ (relabelStraight _ (GenericW.compiledProgramEnv465_17 start)))) = 0
     rw [LocalFour.removed_castFinish, removed18_reindex, hrel]; exact GenericW.compiledEnv465_17_removed18 start
 
 theorem first20CatWin_wellFormed (start : Nat) : (first20CatWin.program start).WellFormed := by
@@ -17723,7 +17680,7 @@ theorem win25Cat_cost18 (w : Window 3407872) (hw : IsWin25Cat w) (start : Nat) :
   · change cost18 ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Left))).append
       (first20Core start)) = 0
     rw [cost18_append, CatAxis.cost18_compile,
-      cost18_literal_zero _ (sineFromPlus_largePhase_false top10Left 18 (by decide)), zero_add]
+      cost18_literal_zero _ (sineFromPlus_largePhase_false top10Left 23 (by decide)), zero_add]
     unfold first20Core
     rw [cost18_append, cost18_append,
       cost18_literal_zero [.X 836] (by decide), cost18_literal_zero [.X 836] (by decide),
@@ -17733,7 +17690,7 @@ theorem win25Cat_cost18 (w : Window 3407872) (hw : IsWin25Cat w) (start : Nat) :
     exact LocalFour.removed18_zero_of_residue _ (First20Signed.window_residue firstRow25 0)
   · change cost18 ((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append _) = 0
     rw [cost18_append, CatAxis.cost18_compile,
-      cost18_literal_zero _ (sineFromPlus_largePhase_false top10Right 18 (by decide)), zero_add]
+      cost18_literal_zero _ (sineFromPlus_largePhase_false top10Right 23 (by decide)), zero_add]
     exact bodyCatWin_cost18 rightHeadDigit start
   · exact bodyCatWin_cost18 d start
 
@@ -17770,12 +17727,12 @@ theorem full25Cat_wellFormed : fullProgram25Cat.WellFormed :=
   straight_append_wellFormed _ _ program25Cat_wellFormed readout25Cat_wellFormed
 
 theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
+    1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((rawEntry25Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout25Cat Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
   rw [rawEntry25Cat, Single.fixedEntry_instantiate]
-  have hneighbor : 1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
+  have hneighbor : 1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
         (fun b => fineEvent25Cat (pairRecovered256 d) b.history)) (ket zeroBasisState) := by
     have hideal_succ : (99497 / 100000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
@@ -17868,9 +17825,9 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
       have hsq : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ (70923 / 1000000 : ℝ) ^ 2 :=
         hideal_fail.trans (by norm_num)
       exact (Real.sqrt_le_sqrt hsq).trans_eq (Real.sqrt_sq (by norm_num))
-    have hphys_sqrt : Real.sqrt (Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState)) ≤ 94703 / 1000000 := by
+    have hphys_sqrt : Real.sqrt (Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState)) ≤ 99831 / 1000000 := by
       linarith
-    have hphys_fail : Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState) ≤ (94703 / 1000000 : ℝ) ^ 2 := by
+    have hphys_fail : Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState) ≤ (99831 / 1000000 : ℝ) ^ 2 := by
       have h := pow_le_pow_left₀ (Real.sqrt_nonneg _) hphys_sqrt 2
       rwa [Real.sq_sqrt (instrument_bornMass_nonneg _ _)] at h
     linarith
@@ -17998,11 +17955,11 @@ def leftTCountMeta25Cat : List (Nat × Nat) :=
   (4 * 193625 + 28, 20) :: List.replicate 10 (4 * 2320431, 18) ++ [(4 * 2263993, 18), (4 * 2366013, 19), (4 * 2277531, 19)]
 
 def rightTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 1897790 + 28, 17) :: List.replicate 2 (4 * 1897790, 17) ++ List.replicate 7 (4 * 1921892, 17) ++ List.replicate 2 (4 * 2004067, 18)
+  (4 * 1897790 + 28, 17) :: List.replicate 3 (4 * 1897790, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18)
 
 theorem exact_trimmed_tCount25Cat :
     CatAxis.metadataTrimmedWeight leftTCountMeta25Cat 0 +
-      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 213848024 := by
+      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 213664382 := by
   decide +kernel
 
 theorem left25Cat_tCount_relation :
@@ -18025,10 +17982,10 @@ theorem right25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       rightWins25Cat rightTCountMeta25Cat := by
   refine .cons ⟨by simp [rightHeadCatWin, GenericW.bankW_length], rightHeadCatWin_tCount⟩ ?_
-  have hmap : List.replicate 2 (4 * 1897790, 17) ++ List.replicate 7 (4 * 1921892, 17) ++ List.replicate 2 (4 * 2004067, 18) =
+  have hmap : List.replicate 3 (4 * 1897790, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18) =
       rightTailDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [rightTailDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 2 (4 * 1897790, 17) ++ List.replicate 7 (4 * 1921892, 17) ++ List.replicate 2 (4 * 2004067, 18))
+  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 3 (4 * 1897790, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18))
   rw [hmap]
   induction rightTailDigits25 with
   | nil => exact .nil
@@ -18036,11 +17993,11 @@ theorem right25Cat_tCount_relation :
     exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
 theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0 → Bool) :
-    ((trim 18 fullProgram25Cat).instantiate read h).tCount ≤ 213848025 := by
+    ((trim 23 fullProgram25Cat).instantiate read h).tCount ≤ 213664383 := by
   unfold fullProgram25Cat program25Cat
-  have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 18 g = false := by decide
+  have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 23 g = false := by decide
   rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
-  have hro_t : ∀ h' : Fin cursor25Cat → Bool, ((trim 18 readout25Cat).instantiate read h').tCount ≤ 0 := by
+  have hro_t : ∀ h' : Fin cursor25Cat → Bool, ((trim 23 readout25Cat).instantiate read h').tCount ≤ 0 := by
     intro h'
     have h1 := trim18_t readout25Cat read h'
     have h2 : (readout25Cat.instantiate read h').tCount = 0 := by
@@ -18052,21 +18009,21 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
     omega
   have h1 := CatAxis.append_tCount_le
     (AndGadget.literals (Catalyst.prepare 1)
-      (trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
+      (trim 23 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
         (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
           (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
             (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))))
-    (trim 18 readout25Cat) read h 0 hro_t
+    (trim 23 readout25Cat) read h 0 hro_t
   rw [Catalyst.literals_t] at h1
   have hprep_t : ShorECDLP.tCount (Catalyst.prepare 1) = 1 := by decide
   rw [hprep_t] at h1
-  have hbody_t : ((trim 18 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
+  have hbody_t : ((trim 23 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
       (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
         (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
-          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 213848024 := by
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 213664382 := by
     rw [CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append, CatAxis.trim18_append]
     have hres_t : ∀ h' : Fin (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) → Bool,
-        ((trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
+        ((trim 23 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
       intro h'
       have hrt : ∀ (n start : Nat) (ws : List Wire) (r : ConstantBit n → Bool) (hist : Fin start → Bool),
           ((resetProgram n start ws).instantiate r hist).tCount = 0 := by
@@ -18082,19 +18039,19 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
       rw [hrt] at hle
       exact hle
     have hLR := CatAxis.append_tCount_le
-      ((trim 18 (CatAxis.axisCat 1 leftWins25Cat 0 List.nil)).append
-        (trim 18 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)))
-      (trim 18 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires))
+      ((trim 23 (CatAxis.axisCat 1 leftWins25Cat 0 List.nil)).append
+        (trim 23 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)))
+      (trim 23 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires))
       read h 0 hres_t
     have hR_t : ∀ h' : Fin (0 + axisCount leftWins25Cat) → Bool,
-        ((trim 18 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).instantiate read h').tCount ≤
+        ((trim 23 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).instantiate read h').tCount ≤
           CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 := fun h' => by
       have hax := CatAxis.axisCat_tCount_trim18 1 rightWins25Cat rightTCountMeta25Cat
         right25Cat_tCount_relation (0 + axisCount leftWins25Cat) List.nil read h'
       rwa [List.length_nil] at hax
     have hL := CatAxis.append_tCount_le
-      (trim 18 (CatAxis.axisCat 1 leftWins25Cat 0 List.nil))
-      (trim 18 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil))
+      (trim 23 (CatAxis.axisCat 1 leftWins25Cat 0 List.nil))
+      (trim 23 (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil))
       read h _ hR_t
     have hLax := CatAxis.axisCat_tCount_trim18 1 leftWins25Cat leftTCountMeta25Cat
       left25Cat_tCount_relation 0 List.nil read h
@@ -18103,7 +18060,7 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
     omega
   omega
 
-theorem source25Cat_cost18 : cost18 rawEntry25Cat.program ≤ 5085 / 1000000 := by
+theorem source25Cat_cost18 : cost18 rawEntry25Cat.program ≤ 156 / 1000000 := by
   have hL := CatAxis.axisCat_cost18_exact 1 leftWins25Cat
     (fun w hw start => by
       rcases List.mem_cons.mp hw with rfl | hw
@@ -18163,7 +18120,7 @@ theorem source25Cat_cursor_le : rawEntry25Cat.finalCursor ≤ 99000000 := by
   unfold cursor25Cat at hfc
   omega
 
-/-! ### Part 5: Raw certificate, `trim 18`, specialization, and final `1,612 × 213,848,025` certificate -/
+/-! ### Part 5: Raw certificate, `trim 23`, specialization, and final `1,612 × 213,848,025` certificate -/
 
 section Cert25
 attribute [local irreducible] rawEntry25Cat fullProgram25Cat program25Cat readout25Cat
@@ -18204,18 +18161,18 @@ theorem raw_certificate25Cat : Certificate rawLimits25 rawLayout25Cat rawEntry25
       rw [Straight.measurementCount]; omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99 / 100 : ℝ) ≤ 1 - (94703 / 1000000 : ℝ) ^ 2).trans (strong_success25Cat Q d hn hd)
+    exact (by norm_num : (99 / 100 : ℝ) ≤ 1 - (99831 / 1000000 : ℝ) ^ 2).trans (strong_success25Cat Q d hn hd)
 
 def entryTrim18 (e : StraightEntry) : StraightEntry where
   coefficients := e.coefficients
   finalCursor := e.finalCursor
-  program := trim 18 e.program
+  program := trim 23 e.program
 
 theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (entry : StraightEntry)
     (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
-    (hs : Within ws entry.program) (hcost : cost18 entry.program ≤ 5085 / 1000000)
+    (hs : Within ws entry.program) (hcost : cost18 entry.program ≤ 156 / 1000000)
     (hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
-      1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
     Certificate limits layout (entryTrim18 entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
   gateBudget := (trim18_slots entry.program).trans cert.gateBudget
@@ -18247,32 +18204,32 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
     have hA := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q)
       entry.program Fin.elim0 (ket zeroBasisState) acc cert.wellFormed
     have hB := ComplementLoss.expectation_compl (readConstant entry.coefficients.get Q)
-      (trim 18 entry.program) Fin.elim0 (ket zeroBasisState) acc
+      (trim 23 entry.program) Fin.elim0 (ket zeroBasisState) acc
       (trim18_wellFormed entry.program cert.wellFormed)
     dsimp only [acc] at hA hB h
     rw [expectation_verified, normSq_ket] at hA hB
     rw [normSq_ket, Real.sqrt_one, mul_one] at h
     have hS := hstrong Q d hn hd
-    change 1 - (94703 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
+    change 1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) at hS
     have hf : expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤
-        (94703 / 1000000 : ℝ) ^ 2 := by linarith
+        (99831 / 1000000 : ℝ) ^ 2 := by linarith
     have hf_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome)) ≤
-        94703 / 1000000 :=
+        99831 / 1000000 :=
       (Real.sqrt_le_sqrt hf).trans_eq (Real.sqrt_sq (by norm_num))
-    have ht_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) (trim 18 entry.program) Fin.elim0
+    have ht_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) (trim 23 entry.program) Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome)) ≤ 1 / 10 := by
       linarith
-    have ht_fail : expectation (readConstant entry.coefficients.get Q) (trim 18 entry.program) Fin.elim0
+    have ht_fail : expectation (readConstant entry.coefficients.get Q) (trim 23 entry.program) Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤ 1 / 100 := by
       have hsq := pow_le_pow_left₀ (Real.sqrt_nonneg _) ht_sqrt 2
       rw [Real.sq_sqrt (ComplementLoss.expectation_nonneg _ _ _ _ _)] at hsq
       linarith [show ((1 / 10 : ℝ) ^ 2) = 1 / 100 by norm_num]
     change 99 / 100 ≤ Instrument.bornMass
-      (((trim 18 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
+      (((trim 23 entry.program).instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)
     linarith
 
@@ -18281,7 +18238,7 @@ theorem trimmed25Cat_coefficients :
   unfold entryTrim18 rawEntry25Cat Single.fixedEntry; rfl
 
 theorem trim18_reindex {n m s e : Nat} (f : Fin n → Fin m) (p : Straight n s e) :
-    trim 18 (reindexStraight f p) = reindexStraight f (trim 18 p) := by
+    trim 23 (reindexStraight f p) = reindexStraight f (trim 23 p) := by
   induction p with
   | done => rfl
   | measure w p ih => simp only [reindexStraight, trim, ih]
@@ -18289,28 +18246,28 @@ theorem trim18_reindex {n m s e : Nat} (f : Fin n → Fin m) (p : Straight n s e
   | gate g p ih =>
     cases g with
     | literal g =>
-      cases h : largePhase 18 g <;> simp [reindexStraight, reindexGate, trim, h, ih]
+      cases h : largePhase 23 g <;> simp [reindexStraight, reindexGate, trim, h, ih]
     | whenBit r v g =>
-      cases h : largePhase 18 g <;> simp [reindexStraight, reindexGate, trim, h, ih]
+      cases h : largePhase 23 g <;> simp [reindexStraight, reindexGate, trim, h, ih]
 
 private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCoeff)
     (p : Straight n 0 e) (Q : Point) (B : Nat)
-    (hp : ∀ read, ((trim 18 p).instantiate read Fin.elim0).tCount ≤ B) :
+    (hp : ∀ read, ((trim 23 p).instantiate read Fin.elim0).tCount ≤ B) :
     ((entryTrim18 (Single.fixedEntry coeffs p)).instantiate Q).tCount ≤ B := by
-  change ((trim 18 (Single.fixedEntry coeffs p).program).instantiate _ Fin.elim0).tCount ≤ B
+  change ((trim 23 (Single.fixedEntry coeffs p).program).instantiate _ Fin.elim0).tCount ≤ B
   unfold Single.fixedEntry
   dsimp only
   rw [trim18_reindex, reindexStraight_instantiate]
   exact hp _
 
 theorem trimmed25Cat_tCount (Q : Point) :
-    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 213848025 := by
+    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 213664383 := by
   rw [rawEntry25Cat]
-  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 213848025
+  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 213664383
     (fun r => full25Cat_trim18_tCount r Fin.elim0)
 
 theorem trim18_certificate25Cat :
-    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 213848025, 99000000⟩ := by
+    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 213664383, 99000000⟩ := by
   have hbase := trim18_certificate_generic rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat
     (List.range 1612) raw_certificate25Cat source25Cat_within source25Cat_cost18 strong_success25Cat
   refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
@@ -18355,7 +18312,7 @@ def entry : StraightEntry :=
 
 def layout : DecodeLayout := rawLayout25Cat
 
-def bounds : Bounds := ⟨1612, 213848025, 99000000⟩
+def bounds : Bounds := ⟨1612, 213664383, 99000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
   specializeEntry25_certificate (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
@@ -18372,7 +18329,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1612, 213848025, 99000000⟩
+def bounds : Bounds := ⟨1612, 213664383, 99000000⟩
 def entry : StraightEntry := Schedule25Actual.entry
 def layout : DecodeLayout := Schedule25Actual.layout
 set_option maxRecDepth 30000 in

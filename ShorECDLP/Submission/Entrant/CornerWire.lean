@@ -2182,7 +2182,7 @@ private theorem parityPhase_wellFormed (a b c : Wire) (hac : a ≠ c) (hbc : b �
 private theorem parityPhase_tCount (a b c : Wire) : ShorECDLP.tCount (AndGadget.parityPhase a b c) = 4 := rfl
 
 private theorem parityPhase_removed18 (a b c : Wire) :
-    ((AndGadget.parityPhase a b c).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+    ((AndGadget.parityPhase a b c).map (fun g => (largePhase 23 g).toNat)).sum = 0 := by
   simp only [AndGadget.parityPhase, AndGadget.xorPhase, List.cons_append, List.nil_append,
     List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, largePhase]
   rfl
@@ -2713,11 +2713,11 @@ theorem removed_lower {n s e : Nat} (cutoff : Nat) (hc : 3 ≤ cutoff) (q : Wire
 
 theorem compileLower_removed18 {n s e : Nat} (q y : Wire) (p : Straight n s e)
     (start : Nat) (records : Fin s → Fin start) :
-    removed 18 (compileLower q y p start records).program = removed 18 p := by
-  rw [compileLower, removed_compile 18 (by decide), removed_lower 18 (by decide)]
+    removed 23 (compileLower q y p start records).program = removed 23 p := by
+  rw [compileLower, removed_compile 23 (by decide), removed_lower 23 (by decide)]
 
 theorem removed18_zero_of_residue {n s e : Nat} (p : Straight n s e) (hz : AndGadget.residue p = 0) :
-    removed 18 p = 0 := by
+    removed 23 p = 0 := by
   induction p with
   | done => rfl
   | gate g p ih =>
@@ -2725,36 +2725,36 @@ theorem removed18_zero_of_residue {n s e : Nat} (p : Straight n s e) (hz : AndGa
     | literal g =>
       simp only [AndGadget.residue] at hz
       have h1 : primitivePhaseCost g = 0 := by omega
-      have h2 : largePhase 18 g = false := by
+      have h2 : largePhase 23 g = false := by
         cases g with
         | P dir k t =>
           simp only [primitivePhaseCost, tCost] at h1
           have : k < 2 := by by_contra hc; simp [show 2 ≤ k by omega] at h1
-          simp [largePhase, show ¬(18 < k) by omega]
+          simp [largePhase, show ¬(23 < k) by omega]
         | _ => rfl
       simp only [removed, h2, Bool.toNat_false, Nat.zero_add]
       exact ih (by omega)
     | whenBit r v g =>
       simp only [AndGadget.residue] at hz
       have h1 : tCost g = 0 := by omega
-      have h2 : largePhase 18 g = false := by
+      have h2 : largePhase 23 g = false := by
         cases g with
         | P dir k t =>
           simp only [tCost] at h1
           have : k < 2 := by by_contra hc; simp [show 2 ≤ k by omega] at h1
-          simp [largePhase, show ¬(18 < k) by omega]
+          simp [largePhase, show ¬(23 < k) by omega]
         | _ => rfl
       simp only [removed, h2, Bool.toNat_false, Nat.zero_add]
       exact ih (by omega)
   | recordGate i v g p ih =>
     simp only [AndGadget.residue] at hz
     have h1 : tCost g = 0 := by omega
-    have h2 : largePhase 18 g = false := by
+    have h2 : largePhase 23 g = false := by
       cases g with
       | P dir k t =>
         simp only [tCost] at h1
         have : k < 2 := by by_contra hc; simp [show 2 ≤ k by omega] at h1
-        simp [largePhase, show ¬(18 < k) by omega]
+        simp [largePhase, show ¬(23 < k) by omega]
       | _ => rfl
     simp only [removed, h2, Bool.toNat_false, Nat.zero_add]
     exact ih (by omega)
@@ -2956,7 +2956,7 @@ theorem andComputeCat_wires (y a b c : Wire) : circuitWires (andComputeCat y a b
     tauto
 
 theorem andComputeCat_removed18 (y a b c : Wire) :
-    ((andComputeCat y a b c).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+    ((andComputeCat y a b c).map (fun g => (largePhase 23 g).toNat)).sum = 0 := by
   simp only [andComputeCat, List.map_append, List.sum_append, parityPhase_removed18]
   rfl
 
@@ -3019,7 +3019,7 @@ theorem majorityCat_wires (y a b cin c : Wire) :
   · simp [gateWires, List.mem_cons] at h ⊢; tauto
 
 theorem majorityCat_removed18 (y a b cin c : Wire) :
-    ((majorityCat y a b cin c).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+    ((majorityCat y a b cin c).map (fun g => (largePhase 23 g).toNat)).sum = 0 := by
   simp only [majorityCat, List.map_append, List.sum_append, andComputeCat_removed18]; rfl
 
 theorem majorityCat_prep_ket (y a b cin c : Wire) (hnd : [y, a, b, cin, c].Nodup)
@@ -3370,7 +3370,7 @@ attribute [local irreducible] Quantum.run Quantum.applyGate Quantum.ket
 /-! #### `LocalFour` extensions: `flipSwap`, `fresh_prep_comm`, `Indep`, `CatProg` -/
 
 theorem swapCircuit_removed18 (y₁ y₂ : Wire) :
-    ((swapCircuit y₁ y₂).map (fun g => (largePhase 18 g).toNat)).sum = 0 := rfl
+    ((swapCircuit y₁ y₂).map (fun g => (largePhase 23 g).toNat)).sum = 0 := rfl
 
 def flipSwapCircuit (y w : Wire) : Circuit := [.X w] ++ swapCircuit y w
 
@@ -3389,9 +3389,9 @@ theorem unflipSwapCircuit_tCount (y w : Wire) : ShorECDLP.tCount (unflipSwapCirc
 theorem flipSwapCircuit_length (y w : Wire) : (flipSwapCircuit y w).length = 4 := rfl
 theorem unflipSwapCircuit_length (y w : Wire) : (unflipSwapCircuit y w).length = 4 := rfl
 theorem flipSwapCircuit_removed18 (y w : Wire) :
-    ((flipSwapCircuit y w).map (fun g => (largePhase 18 g).toNat)).sum = 0 := rfl
+    ((flipSwapCircuit y w).map (fun g => (largePhase 23 g).toNat)).sum = 0 := rfl
 theorem unflipSwapCircuit_removed18 (y w : Wire) :
-    ((unflipSwapCircuit y w).map (fun g => (largePhase 18 g).toNat)).sum = 0 := rfl
+    ((unflipSwapCircuit y w).map (fun g => (largePhase 23 g).toNat)).sum = 0 := rfl
 
 theorem flipSwapCircuit_wires (y w : Wire) : circuitWires (flipSwapCircuit y w) ⊆ [y, w] := by
   intro u hu; simp [flipSwapCircuit, swapCircuit, circuitWires, gateWires] at hu ⊢; tauto
@@ -3813,7 +3813,7 @@ theorem noT_wellFormed {n start : Nat} (P : ECDSAAdd.Program) (hp : ECDSAAdd.Ari
   exact ECDSAAdd.Baselines.normalize_physical P hp j hj
 
 theorem noT_removed18 {n start : Nat} (P : ECDSAAdd.Program) :
-    removed 18 (noT (n := n) (start := start) P).prog = 0 :=
+    removed 23 (noT (n := n) (start := start) P).prog = 0 :=
   removed18_zero_of_residue _ (WEXCredit.literal_residue _ _)
 
 theorem noT_finish {n start : Nat} (P : ECDSAAdd.Program) :
@@ -3906,7 +3906,7 @@ theorem compileProg_wellFormed {n start : Nat} (q y : Wire) (P : ECDSAAdd.Progra
   · exact noT_wellFormed (start := 0) P hp
 
 theorem compileProg_removed18 {n start : Nat} (q y : Wire) (P : ECDSAAdd.Program) :
-    removed 18 (compileProg (n := n) (start := start) q y P).prog = 0 := by
+    removed 23 (compileProg (n := n) (start := start) q y P).prog = 0 := by
   rw [compileProg, compileLower_removed18]
   exact removed18_zero_of_residue _ (WEXCredit.literal_residue _ _)
 
@@ -4294,8 +4294,8 @@ theorem lit_indep {n : Nat} (gs : Circuit) (s : Nat) : Indep (lit (n := n) gs s)
   CatProg.lit_indep gs
 
 theorem lit_removed18 {n : Nat} (gs : Circuit)
-    (h : (gs.map (fun g => (largePhase 18 g).toNat)).sum = 0) (s : Nat) :
-    removed 18 (lit (n := n) gs s).prog = 0 := by
+    (h : (gs.map (fun g => (largePhase 23 g).toNat)).sum = 0) (s : Nat) :
+    removed 23 (lit (n := n) gs s).prog = 0 := by
   rw [lit, CatProg.lit_removed, h]
 
 theorem lit_finish {n : Nat} (gs : Circuit) (s : Nat) : (lit (n := n) gs s).finish = s + 0 := rfl
@@ -4329,7 +4329,7 @@ theorem lit_catLitSim {n : Nat} {y : Wire} (gs : Circuit) (P : ECDSAAdd.Program)
 theorem noT_indep {n : Nat} (P : ECDSAAdd.Program) (s : Nat) : Indep (noT (n := n) P s).prog :=
   CatProg.noT_indep P
 
-theorem noT_removed18 {n : Nat} (P : ECDSAAdd.Program) (s : Nat) : removed 18 (noT (n := n) P s).prog = 0 :=
+theorem noT_removed18 {n : Nat} (P : ECDSAAdd.Program) (s : Nat) : removed 23 (noT (n := n) P s).prog = 0 :=
   CatProg.noT_removed18 P
 
 theorem noT_finish {n : Nat} (P : ECDSAAdd.Program) (s : Nat) :
@@ -4369,7 +4369,7 @@ theorem compileProg_indep {n : Nat} (q y : Wire) (P : ECDSAAdd.Program) (s : Nat
   CatProg.compileProg_indep q y P
 
 theorem compileProg_removed18 {n : Nat} (q y : Wire) (P : ECDSAAdd.Program) (s : Nat) :
-    removed 18 (compileProg (n := n) q y P s).prog = 0 :=
+    removed 23 (compileProg (n := n) q y P s).prog = 0 :=
   CatProg.compileProg_removed18 q y P
 
 theorem compileProg_shiftFin {n : Nat} (q y : Wire) (P : ECDSAAdd.Program) :
@@ -4415,8 +4415,8 @@ theorem seq_indep {n : Nat} (a b : CatFn n)
   indep_append (a s).prog (b (a s).finish).prog (ha s) (hb (a s).finish)
 
 theorem seq_removed18 {n : Nat} (a b : CatFn n)
-    (ha : ∀ s, removed 18 (a s).prog = 0) (hb : ∀ s, removed 18 (b s).prog = 0) (s : Nat) :
-    removed 18 (seq a b s).prog = 0 := by
+    (ha : ∀ s, removed 23 (a s).prog = 0) (hb : ∀ s, removed 23 (b s).prog = 0) (s : Nat) :
+    removed 23 (seq a b s).prog = 0 := by
   simp only [seq, CatProg.append, LocalFour.removed_append, ha, hb]
 
 theorem seq_shiftFin {n : Nat} (a b : CatFn n) {Ba Bb : Nat}
@@ -4472,8 +4472,8 @@ theorem map_indep {n : Nat} (f : Wire → Wire) (a : CatFn n)
   indep_mapStraight f (a s).prog (ha s) (hinj s)
 
 theorem map_removed18 {n : Nat} (f : Wire → Wire) (a : CatFn n)
-    (ha : ∀ s, removed 18 (a s).prog = 0) (s : Nat) :
-    removed 18 (map f a s).prog = 0 := by
+    (ha : ∀ s, removed 23 (a s).prog = 0) (s : Nat) :
+    removed 23 (map f a s).prog = 0 := by
   rw [map, CatProg.map, mapStraight_removed, ha s]
 
 theorem map_shiftFin {n : Nat} (f : Wire → Wire) (a : CatFn n) {B : Nat} (ha : ShiftFin a B) :
@@ -4522,7 +4522,7 @@ theorem swapSurround_indep {n : Nat} (y₁ y₂ : Wire) (body : CatFn n)
   seq_indep _ _ (seq_indep _ _ (lit_indep _) hb) (lit_indep _) s
 
 theorem swapSurround_removed18 {n : Nat} (y₁ y₂ : Wire) (body : CatFn n)
-    (hb : ∀ s, removed 18 (body s).prog = 0) (s : Nat) : removed 18 (swapSurround y₁ y₂ body s).prog = 0 :=
+    (hb : ∀ s, removed 23 (body s).prog = 0) (s : Nat) : removed 23 (swapSurround y₁ y₂ body s).prog = 0 :=
   seq_removed18 _ _ (seq_removed18 _ _ (lit_removed18 _ (swapCircuit_removed18 y₁ y₂)) hb)
     (lit_removed18 _ (swapCircuit_removed18 y₂ y₁)) s
 
@@ -4580,7 +4580,7 @@ theorem flipSwapSurround_indep {n : Nat} (y w : Wire) (body : CatFn n)
   seq_indep _ _ (seq_indep _ _ (lit_indep _) hb) (lit_indep _) s
 
 theorem flipSwapSurround_removed18 {n : Nat} (y w : Wire) (body : CatFn n)
-    (hb : ∀ s, removed 18 (body s).prog = 0) (s : Nat) : removed 18 (flipSwapSurround y w body s).prog = 0 :=
+    (hb : ∀ s, removed 23 (body s).prog = 0) (s : Nat) : removed 23 (flipSwapSurround y w body s).prog = 0 :=
   seq_removed18 _ _ (seq_removed18 _ _ (lit_removed18 _ (flipSwapCircuit_removed18 y w)) hb)
     (lit_removed18 _ (unflipSwapCircuit_removed18 y w)) s
 
@@ -4709,7 +4709,7 @@ theorem compileAddInPlaceTop_indep {n : Nat} (y : Wire) :
 
 theorem compileAddInPlace_removed18 {n : Nat} (y : Wire) :
     ∀ (x ys carry : List Wire) (cin start : Nat),
-      removed 18 (compileAddInPlace (n := n) y x ys carry cin start).prog = 0
+      removed 23 (compileAddInPlace (n := n) y x ys carry cin start).prog = 0
   | a :: a' :: as, b :: b' :: bs, c :: cs, cin, start => by
       simp only [compileAddInPlace, CatProg.append, LocalFour.removed_append, CatProg.lit_removed,
         majorityCat_removed18, CatProg.noT_removed18, compileAddInPlace_removed18 y (a' :: as) (b' :: bs) cs c]
@@ -4722,7 +4722,7 @@ theorem compileAddInPlace_removed18 {n : Nat} (y : Wire) :
 
 theorem compileAddInPlaceTop_removed18 {n : Nat} (y : Wire) :
     ∀ (x ys carry : List Wire) (cin start : Nat),
-      removed 18 (compileAddInPlaceTop (n := n) y x ys carry cin start).prog = 0
+      removed 23 (compileAddInPlaceTop (n := n) y x ys carry cin start).prog = 0
   | [a, a'], b :: b' :: bs, c :: cs, cin, start => by
       simp only [compileAddInPlaceTop, CatProg.append, LocalFour.removed_append, CatProg.lit_removed,
         CatProg.noT_removed18, compileAddInPlaceTop_removed18 y ([a']) (b' :: bs) cs c]
@@ -5410,7 +5410,7 @@ theorem compileCompareChain_indep {n : Nat} :
 
 theorem compileCompareChain_removed18 {n : Nat} :
     ∀ (top : Bool) (y : Wire) (x ys carry : List Wire) (cin target start : Nat),
-      removed 18 (compileCompareChain (n := n) top y x ys carry cin target start).prog = 0
+      removed 23 (compileCompareChain (n := n) top y x ys carry cin target start).prog = 0
   | true, _, [a], b :: _, c :: _, cin, target, start => by
       simp only [compileCompareChain, CatProg.append, LocalFour.removed_append, CatProg.noT_removed18]; rfl
   | true, y, a :: a' :: as, b :: bs, c :: cs, cin, target, start => by
@@ -5910,7 +5910,7 @@ theorem compileCompareLt_indep {n : Nat} (top : Bool) (y : Wire) (x ys carry : L
           (CatProg.noT_indep _)
 
 theorem compileCompareLt_removed18 {n : Nat} (top : Bool) (y : Wire) (x ys carry : List Wire) (cin target start : Nat) :
-    removed 18 (compileCompareLt (n := n) top y x ys carry cin target start).prog = 0 := by
+    removed 23 (compileCompareLt (n := n) top y x ys carry cin target start).prog = 0 := by
   cases x with
   | nil => rfl
   | cons a0 as =>
@@ -7538,14 +7538,14 @@ private theorem cell_restoreRaw_pres (st : ECDSAAdd.State) (m : List Bool)
 /-! ##### Full 7-property verification of `compiledRawAdd` and `compiledRawSub` -/
 
 theorem compiledRawAdd_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledRawAdd (n := n) start).prog = 0 := by
+    removed 23 (compiledRawAdd (n := n) start).prog = 0 := by
   rw [compiledRawAdd]
   exact CatFn.swapSurround_removed18 _ _ _
     (CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) (compileAddInPlace_removed18 _ _ _ _ _))
       (CatFn.noT_removed18 _)) start
 
 theorem compiledRawSub_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledRawSub (n := n) start).prog = 0 := by
+    removed 23 (compiledRawSub (n := n) start).prog = 0 := by
   rw [compiledRawSub]
   exact CatFn.swapSurround_removed18 _ _ _
     (CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) (compileAddInPlaceTop_removed18 _ _ _ _ _))
@@ -7771,34 +7771,34 @@ private theorem cell_carry_cons : cellLayout.carry = base 512 :: (wireBlock base
   rw [wireBlock, wireBlock, List.range'_succ, List.map_cons, List.cons_append]
 
 theorem compiledForwardPrefix_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledForwardPrefix (n := n) start).prog = 0 := by
+    removed 23 (compiledForwardPrefix (n := n) start).prog = 0 := by
   rw [compiledForwardPrefix]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) compiledRawAdd_removed18)
     (CatFn.compileProg_removed18 _ _ _) start
 
 theorem compiledCleanup_removed18 {n : Nat} (isE : Bool) (start : Nat) :
-    removed 18 (compiledCleanup (n := n) isE start).prog = 0 := by
+    removed 23 (compiledCleanup (n := n) isE start).prog = 0 := by
   rw [compiledCleanup]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) (compileCompareLt_removed18 _ _ _ _ _ _ _))
     (CatFn.compileProg_removed18 _ _ _) start
 
 theorem compiledForward_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledForward (n := n) start).prog = 0 := by
+    removed 23 (compiledForward (n := n) start).prog = 0 := by
   rw [compiledForward]
   exact CatFn.seq_removed18 _ _ compiledForwardPrefix_removed18 (compiledCleanup_removed18 false) start
 
 theorem compiledForwardE_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledForwardE (n := n) start).prog = 0 := by
+    removed 23 (compiledForwardE (n := n) start).prog = 0 := by
   rw [compiledForwardE]
   exact CatFn.seq_removed18 _ _ compiledForwardPrefix_removed18 (compiledCleanup_removed18 true) start
 
 theorem compiledZForward_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledZForward (n := n) start).prog = 0 := by
+    removed 23 (compiledZForward (n := n) start).prog = 0 := by
   rw [compiledZForward]
   exact CatFn.seq_removed18 _ _ compiledForwardPrefix_removed18 (CatFn.compileProg_removed18 _ _ _) start
 
 theorem compiledInverse_removed18 {n : Nat} (start : Nat) :
-    removed 18 (compiledInverse (n := n) start).prog = 0 := by
+    removed 23 (compiledInverse (n := n) start).prog = 0 := by
   rw [compiledInverse]
   exact CatFn.seq_removed18 _ _
     (CatFn.seq_removed18 _ _
@@ -8570,8 +8570,8 @@ theorem compiledSelW_indep {n : Nat} (source flag : Wire) (body : CatFn n)
   exact CatFn.seq_indep _ _ (CatFn.seq_indep _ _ (CatFn.noT_indep _) hb) (CatFn.noT_indep _) s
 
 theorem compiledSelW_removed18 {n : Nat} (source flag : Wire) (body : CatFn n)
-    (hb : ∀ s, removed 18 (body s).prog = 0) (s : Nat) :
-    removed 18 (compiledSelW source flag body s).prog = 0 := by
+    (hb : ∀ s, removed 23 (body s).prog = 0) (s : Nat) :
+    removed 23 (compiledSelW source flag body s).prog = 0 := by
   rw [compiledSelW]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) hb) (CatFn.noT_removed18 _) s
 
@@ -8930,44 +8930,44 @@ theorem compiledZCell_indep {n : Nat} (g sw : Wire) (s : Nat) :
   exact compiledSelW_indep _ _ _ (compiledSelW_indep _ _ _ compiledZBody_indep) s
 
 -- Removed18
-theorem compiledSwapBody_removed18 {n : Nat} (s : Nat) : removed 18 (compiledSwapBody (n := n) s).prog = 0 := by
+theorem compiledSwapBody_removed18 {n : Nat} (s : Nat) : removed 23 (compiledSwapBody (n := n) s).prog = 0 := by
   rw [compiledSwapBody]; exact CatFn.compileProg_removed18 _ _ _ s
 
 theorem compiledHalf_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledHalf (n := n) divide s).prog = 0 := by
+    removed 23 (compiledHalf (n := n) divide s).prog = 0 := by
   rw [compiledHalf]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _)
     (fun s' => by cases divide <;> [exact compiledInverse_removed18 s'; exact compiledForward_removed18 s']))
     (CatFn.noT_removed18 _) s
 
 theorem compiledHalfE_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledHalfE (n := n) divide s).prog = 0 := by
+    removed 23 (compiledHalfE (n := n) divide s).prog = 0 := by
   rw [compiledHalfE]; cases divide
   · exact compiledHalf_removed18 false s
   · exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) compiledForwardE_removed18)
       (CatFn.noT_removed18 _) s
 
-theorem compiledZHalf_removed18 {n : Nat} (s : Nat) : removed 18 (compiledZHalf (n := n) s).prog = 0 := by
+theorem compiledZHalf_removed18 {n : Nat} (s : Nat) : removed 23 (compiledZHalf (n := n) s).prog = 0 := by
   rw [compiledZHalf]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) compiledZForward_removed18)
     (CatFn.noT_removed18 _) s
 
 theorem compiledBody_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledBody (n := n) divide s).prog = 0 := by
+    removed 23 (compiledBody (n := n) divide s).prog = 0 := by
   rw [compiledBody]; cases divide
   · exact CatFn.seq_removed18 _ _ compiledSwapBody_removed18 (compiledHalf_removed18 false) s
   · exact CatFn.seq_removed18 _ _ (compiledHalf_removed18 true) compiledSwapBody_removed18 s
 
-theorem compiledZBody_removed18 {n : Nat} (s : Nat) : removed 18 (compiledZBody (n := n) s).prog = 0 := by
+theorem compiledZBody_removed18 {n : Nat} (s : Nat) : removed 23 (compiledZBody (n := n) s).prog = 0 := by
   rw [compiledZBody]; exact CatFn.seq_removed18 _ _ compiledZHalf_removed18 compiledSwapBody_removed18 s
 
 theorem compiledCell_removed18 {n : Nat} (divide : Bool) (g sw : Wire) (s : Nat) :
-    removed 18 (compiledCell (n := n) divide g sw s).prog = 0 := by
+    removed 23 (compiledCell (n := n) divide g sw s).prog = 0 := by
   rw [compiledCell]
   exact compiledSelW_removed18 _ _ _ (compiledSelW_removed18 _ _ _ (compiledBody_removed18 divide)) s
 
 theorem compiledZCell_removed18 {n : Nat} (g sw : Wire) (s : Nat) :
-    removed 18 (compiledZCell (n := n) g sw s).prog = 0 := by
+    removed 23 (compiledZCell (n := n) g sw s).prog = 0 := by
   rw [compiledZCell]
   exact compiledSelW_removed18 _ _ _ (compiledSelW_removed18 _ _ _ compiledZBody_removed18) s
 
@@ -9785,7 +9785,7 @@ theorem compiledReplayS_indep {n : Nat} (divide : Bool) (s : Nat) :
 
 -- Removed18 for replay hierarchy
 theorem compiledRawReplay_removed18 {n : Nat} (divide : Bool) (ls : List MixedTranscriptLetter) (s : Nat) :
-    removed 18 (compiledRawReplay (n := n) divide ls s).prog = 0 := by
+    removed 23 (compiledRawReplay (n := n) divide ls s).prog = 0 := by
   induction ls generalizing s with
   | nil => exact CatFn.noT_removed18 List.nil s
   | cons l ls ih =>
@@ -9794,17 +9794,17 @@ theorem compiledRawReplay_removed18 {n : Nat} (divide : Bool) (ls : List MixedTr
     · exact CatFn.seq_removed18 _ _ (compiledCell_removed18 true l.1.1 l.1.2) (fun s' => ih s') s
 
 theorem compiledBasePacket_removed18 {n : Nat} (divide : Bool) (j s : Nat) :
-    removed 18 (compiledBasePacket (n := n) divide j s).prog = 0 := by
+    removed 23 (compiledBasePacket (n := n) divide j s).prog = 0 := by
   rw [compiledBasePacket]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
     (compiledRawReplay_removed18 divide _)) (CatFn.compileProg_removed18 _ _ _) s
 
 theorem compiledPacket_removed18 {n : Nat} (divide : Bool) (j s : Nat) :
-    removed 18 (compiledPacket (n := n) divide j s).prog = 0 := by
+    removed 23 (compiledPacket (n := n) divide j s).prog = 0 := by
   rw [compiledPacket]; exact CatFn.map_removed18 _ _ (compiledBasePacket_removed18 divide j) s
 
 theorem compiledGroups_removed18 {n : Nat} (divide : Bool) (j m s : Nat) :
-    removed 18 (compiledGroups (n := n) divide j m s).prog = 0 := by
+    removed 23 (compiledGroups (n := n) divide j m s).prog = 0 := by
   induction m generalizing j s with
   | zero => exact CatFn.noT_removed18 List.nil s
   | succ m ih =>
@@ -9812,39 +9812,39 @@ theorem compiledGroups_removed18 {n : Nat} (divide : Bool) (j m s : Nat) :
     · exact CatFn.seq_removed18 _ _ (fun s' => ih (j + 1) s') (compiledPacket_removed18 false j) s
     · exact CatFn.seq_removed18 _ _ (compiledPacket_removed18 true j) (fun s' => ih (j + 1) s') s
 
-theorem compiledFirstSwap_removed18 {n : Nat} (s : Nat) : removed 18 (compiledFirstSwap (n := n) s).prog = 0 := by
+theorem compiledFirstSwap_removed18 {n : Nat} (s : Nat) : removed 23 (compiledFirstSwap (n := n) s).prog = 0 := by
   rw [compiledFirstSwap]; exact compiledSelW_removed18 _ _ _ compiledSwapBody_removed18 s
 
-theorem compiledFirstSwapM_removed18 {n : Nat} (s : Nat) : removed 18 (compiledFirstSwapM (n := n) s).prog = 0 := by
+theorem compiledFirstSwapM_removed18 {n : Nat} (s : Nat) : removed 23 (compiledFirstSwapM (n := n) s).prog = 0 := by
   rw [compiledFirstSwapM]; exact compiledSelW_removed18 _ _ _ (CatFn.noT_removed18 _) s
 
 theorem compiledFirstBody_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledFirstBody (n := n) divide s).prog = 0 := by
+    removed 23 (compiledFirstBody (n := n) divide s).prog = 0 := by
   rw [compiledFirstBody]; cases divide
   · exact CatFn.seq_removed18 _ _ (compiledRawReplay_removed18 false _) compiledFirstSwapM_removed18 s
   · exact CatFn.seq_removed18 _ _ compiledFirstSwap_removed18
       (CatFn.seq_removed18 _ _ (compiledZCell_removed18 _ _) (compiledRawReplay_removed18 true _)) s
 
 theorem compiledBaseFirstPacket_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledBaseFirstPacket (n := n) divide s).prog = 0 := by
+    removed 23 (compiledBaseFirstPacket (n := n) divide s).prog = 0 := by
   rw [compiledBaseFirstPacket]
   exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
     (compiledFirstBody_removed18 divide)) (CatFn.compileProg_removed18 _ _ _) s
 
 theorem compiledFirstPacket_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledFirstPacket (n := n) divide s).prog = 0 := by
+    removed 23 (compiledFirstPacket (n := n) divide s).prog = 0 := by
   rw [compiledFirstPacket]; exact CatFn.map_removed18 _ _ (compiledBaseFirstPacket_removed18 divide) s
 
 theorem compiledRawEnd_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledRawEnd (n := n) divide s).prog = 0 := by
+    removed 23 (compiledRawEnd (n := n) divide s).prog = 0 := by
   rw [compiledRawEnd]; exact compiledSelW_removed18 _ _ _ (compiledHalfE_removed18 divide) s
 
 theorem compiledEndPacket_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledEndPacket (n := n) divide s).prog = 0 := by
+    removed 23 (compiledEndPacket (n := n) divide s).prog = 0 := by
   rw [compiledEndPacket]; exact CatFn.map_removed18 _ _ (compiledRawEnd_removed18 divide) s
 
 theorem compiledLogicalReplayS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledLogicalReplayS (n := n) divide s).prog = 0 := by
+    removed 23 (compiledLogicalReplayS (n := n) divide s).prog = 0 := by
   rw [compiledLogicalReplayS]; cases divide
   · exact CatFn.seq_removed18 _ _ (CatFn.seq_removed18 _ _ (compiledEndPacket_removed18 false)
       (compiledGroups_removed18 false 1 101)) (compiledFirstPacket_removed18 false) s
@@ -9852,7 +9852,7 @@ theorem compiledLogicalReplayS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
       (compiledGroups_removed18 true 1 101)) (compiledEndPacket_removed18 true) s
 
 theorem compiledReplayS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledReplayS (n := n) divide s).prog = 0 := by
+    removed 23 (compiledReplayS (n := n) divide s).prog = 0 := by
   rw [compiledReplayS]; exact CatFn.map_removed18 _ _ (compiledLogicalReplayS_removed18 divide) s
 
 -- ShiftFin for replay hierarchy (bounded by `measurementCount + toffoliCount`)
@@ -11233,7 +11233,7 @@ theorem compiledKernelS_indep {n : Nat} (divide : Bool) (s : Nat) :
 
 -- Removed18 for segmentS, segHS, kernelS
 theorem compiledSegmentS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledSegmentS (n := n) divide s).prog = 0 := by
+    removed 23 (compiledSegmentS (n := n) divide s).prog = 0 := by
   rw [compiledSegmentS]; cases divide
   · exact CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
       (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _)
@@ -11244,14 +11244,14 @@ theorem compiledSegmentS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
         (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) (CatFn.compileProg_removed18 _ _ _))) s
 
 theorem compiledSegHS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledSegHS (n := n) divide s).prog = 0 := by
+    removed 23 (compiledSegHS (n := n) divide s).prog = 0 := by
   rw [compiledSegHS]
   exact CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _)
     (CatFn.seq_removed18 _ _ (CatFn.map_removed18 _ _ (compiledSegmentS_removed18 divide))
       (CatFn.noT_removed18 _)) s
 
 theorem compiledKernelS_removed18 {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledKernelS (n := n) divide s).prog = 0 := by
+    removed 23 (compiledKernelS (n := n) divide s).prog = 0 := by
   rw [compiledKernelS]
   exact CatFn.seq_removed18 _ _
     (CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
@@ -15322,7 +15322,7 @@ def env460 : EnvSchedule where
   hPost_bounds := fun i hi => by unfold env460PostW; omega
   hPost_step := fun i h1 hi => by unfold env460PostW; omega
 
-def env465PostW (i : Nat) : Nat := min 258 (min (466 - i) (max 147 (295 - 16 * i / 25)))
+def env465PostW (i : Nat) : Nat := min 258 (min (466 - i) (max 147 (294 - 11 * i / 17)))
 
 def env465 : EnvSchedule where
   nGroups := 92
@@ -15404,20 +15404,20 @@ theorem arithSEnv_env460_counts (L : ControlledPointLayout) :
   omega
 
 theorem arithSEnv_env465_counts (L : ControlledPointLayout) :
-    ECDSAAdd.toffoliCount (arithSEnv env465 L false) = 889769 ∧
-    ECDSAAdd.measurementCount (arithSEnv env465 L false) = 624029 ∧
-    ECDSAAdd.toffoliCount (arithSEnv env465 L true) = 889768 ∧
-    ECDSAAdd.measurementCount (arithSEnv env465 L true) = 624285 := by
+    ECDSAAdd.toffoliCount (arithSEnv env465 L false) = 888373 ∧
+    ECDSAAdd.measurementCount (arithSEnv env465 L false) = 623331 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env465 L true) = 888372 ∧
+    ECDSAAdd.measurementCount (arithSEnv env465 L true) = 623587 := by
   have hf := arithSEnv_counts_formula env465 L
-  have h1 : envSumRange (envTickFTofFn env465PostW) 1 464 = 146460 := by decide +kernel
-  have h2 : envSumRange (envTickFMeasFn env465PostW) 1 464 = 73486 := by decide +kernel
-  have h3 : envSumRange (envTickRTofFn env465PostW) 1 464 = 146252 := by decide +kernel
-  have h4 : envSumRange (envTickRMeasFn env465PostW) 1 464 = 73230 := by decide +kernel
+  have h1 : envSumRange (envTickFTofFn env465PostW) 1 464 = 145762 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env465PostW) 1 464 = 73137 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env465PostW) 1 464 = 145554 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env465PostW) 1 464 = 72881 := by decide +kernel
   have h5 : envPackCount 1 464 = 92 := by decide +kernel
-  have e1 : envSumRange (envTickFTof env465) 1 (env465.S - 1) = 146460 := h1
-  have e2 : envSumRange (envTickFMeas env465) 1 (env465.S - 1) = 73486 := h2
-  have e3 : envSumRange (envTickRTof env465) 1 (env465.S - 1) = 146252 := h3
-  have e4 : envSumRange (envTickRMeas env465) 1 (env465.S - 1) = 73230 := h4
+  have e1 : envSumRange (envTickFTof env465) 1 (env465.S - 1) = 145762 := h1
+  have e2 : envSumRange (envTickFMeas env465) 1 (env465.S - 1) = 73137 := h2
+  have e3 : envSumRange (envTickRTof env465) 1 (env465.S - 1) = 145554 := h3
+  have e4 : envSumRange (envTickRMeas env465) 1 (env465.S - 1) = 72881 := h4
   have e5 : envPackCount 1 (env465.S - 1) = 92 := h5
   have h6 : env465.nGroups = 92 := rfl
   simp only [e1, e2, e3, e4, e5, h6] at hf
@@ -15556,17 +15556,17 @@ theorem compiledKernelSEnv_indep (E : EnvSchedule) {n : Nat} (divide : Bool) (s 
     (CatFn.compileProg_indep _ _ _) s
 
 theorem compiledLogicalReplaySEnv_removed18 (E : EnvSchedule) {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledLogicalReplaySEnv E (n := n) divide s).prog = 0 := by
+    removed 23 (compiledLogicalReplaySEnv E (n := n) divide s).prog = 0 := by
   rw [compiledLogicalReplaySEnv]; cases divide
   · exact CatFn.seq_removed18 _ _ (compiledGroups_removed18 false 1 E.nGroups) (compiledFirstPacket_removed18 false) s
   · exact CatFn.seq_removed18 _ _ (compiledFirstPacket_removed18 true) (compiledGroups_removed18 true 1 E.nGroups) s
 
 theorem compiledReplaySEnv_removed18 (E : EnvSchedule) {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledReplaySEnv E (n := n) divide s).prog = 0 := by
+    removed 23 (compiledReplaySEnv E (n := n) divide s).prog = 0 := by
   rw [compiledReplaySEnv]; exact CatFn.map_removed18 _ _ (compiledLogicalReplaySEnv_removed18 E divide) s
 
 theorem compiledSegmentSEnv_removed18 (E : EnvSchedule) {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledSegmentSEnv E (n := n) divide s).prog = 0 := by
+    removed 23 (compiledSegmentSEnv E (n := n) divide s).prog = 0 := by
   rw [compiledSegmentSEnv]; cases divide
   · exact CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
       (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _)
@@ -15577,11 +15577,11 @@ theorem compiledSegmentSEnv_removed18 (E : EnvSchedule) {n : Nat} (divide : Bool
         (CatFn.seq_removed18 _ _ (CatFn.noT_removed18 _) (CatFn.compileProg_removed18 _ _ _))) s
 
 theorem compiledSegHSEnv_removed18 (E : EnvSchedule) {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledSegHSEnv E (n := n) divide s).prog = 0 := by
+    removed 23 (compiledSegHSEnv E (n := n) divide s).prog = 0 := by
   rw [compiledSegHSEnv]; exact CatFn.map_removed18 _ _ (compiledSegmentSEnv_removed18 E divide) s
 
 theorem compiledKernelSEnv_removed18 (E : EnvSchedule) {n : Nat} (divide : Bool) (s : Nat) :
-    removed 18 (compiledKernelSEnv E (n := n) divide s).prog = 0 := by
+    removed 23 (compiledKernelSEnv E (n := n) divide s).prog = 0 := by
   rw [compiledKernelSEnv]
   exact CatFn.seq_removed18 _ _
     (CatFn.seq_removed18 _ _ (CatFn.compileProg_removed18 _ _ _)
@@ -16663,7 +16663,7 @@ theorem CatFn.lower_indep {n R : Nat} (q y : Wire) (p0 : Straight n 0 R) (s : Na
 
 theorem CatFn.lower_removed18 {n R : Nat} (q y : Wire) (p0 : Straight n 0 R)
     (hres : AndGadget.residue p0 = 0) (s : Nat) :
-    removed 18 (CatFn.lower q y p0 s).prog = 0 := by
+    removed 23 (CatFn.lower q y p0 s).prog = 0 := by
   rw [CatFn.lower, compileLower_removed18]
   exact removed18_zero_of_residue p0 hres
 
@@ -17057,9 +17057,9 @@ theorem CatProg.measureThen_finish {n : Nat}
 
 theorem CatProg.measureThen_removed18 {n : Nat}
     (k : (cur : Nat) → List (Fin cur) → CatProg n cur)
-    (hk : ∀ c rs, removed 18 (k c rs).prog = 0) :
+    (hk : ∀ c rs, removed 23 (k c rs).prog = 0) :
     ∀ (ws : List Wire) (start : Nat) (refs : List (Fin start)),
-      removed 18 (CatProg.measureThen k ws start refs).prog = 0
+      removed 23 (CatProg.measureThen k ws start refs).prog = 0
   | [], start, refs => hk start refs
   | w :: ws, start, refs => CatProg.measureThen_removed18 k hk ws (start + 1) _
 
@@ -17936,10 +17936,10 @@ private theorem stepCatFn_finish {n : Nat} (f : CatFn n) (k : (c : Nat) → List
   rw [hk, hf, Nat.add_assoc]
 
 private theorem stepCatFn_removed18 {n : Nat} (f : CatFn n) (k : (c : Nat) → List (Fin c) → CatProg n c)
-    (hf : ∀ s, removed 18 (f s).prog = 0) (hk : ∀ c rs, removed 18 (k c rs).prog = 0)
+    (hf : ∀ s, removed 23 (f s).prog = 0) (hk : ∀ c rs, removed 23 (k c rs).prog = 0)
     (start : Nat) (refs : List (Fin start)) :
-    removed 18 (stepCatFn f k start refs).prog = 0 := by
-  change removed 18 ((f start).prog.append _) = 0
+    removed 23 (stepCatFn f k start refs).prog = 0 := by
+  change removed 23 ((f start).prog.append _) = 0
   rw [LocalFour.removed_append, hf, hk]
 
 private theorem stepCatFn_tCount_le {n : Nat} (f : CatFn n) (k : (c : Nat) → List (Fin c) → CatProg n c)
@@ -18775,7 +18775,7 @@ private theorem cxMap_tCount (c : Wire) (ws : List Wire) : ShorECDLP.tCount (ws.
     exact ih
 
 private theorem cxMap_removed18 (c : Wire) (ws : List Wire) :
-    ((ws.map (fun w => .CX c w)).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+    ((ws.map (fun w => .CX c w)).map (fun g => (largePhase 23 g).toNat)).sum = 0 := by
   induction ws with
   | nil => rfl
   | cons w ws ih =>
@@ -18794,9 +18794,9 @@ theorem flipAddrW_length (k : Nat) : (flipAddrW k).length = k + 1 := by
   simp [flipAddrW, bitsW_length]
 theorem unflipAddrW_length (k : Nat) : (unflipAddrW k).length = k + 1 := by
   simp [unflipAddrW, bitsW_length]
-theorem flipAddrW_removed18 (k : Nat) : ((flipAddrW k).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+theorem flipAddrW_removed18 (k : Nat) : ((flipAddrW k).map (fun g => (largePhase 23 g).toNat)).sum = 0 := by
   rw [flipAddrW, List.map_append, List.sum_append, cxMap_removed18]; rfl
-theorem unflipAddrW_removed18 (k : Nat) : ((unflipAddrW k).map (fun g => (largePhase 18 g).toNat)).sum = 0 := by
+theorem unflipAddrW_removed18 (k : Nat) : ((unflipAddrW k).map (fun g => (largePhase 23 g).toNat)).sum = 0 := by
   rw [unflipAddrW, List.map_append, List.sum_append, cxMap_removed18]; rfl
 
 theorem flipAddrW_wires {k : Nat} (hk : k ≤ 18) : circuitWires (flipAddrW k) ⊆ support1612 := by
@@ -19124,7 +19124,7 @@ theorem compiledSign_tCount {n : Nat} (signBit : Wire) (s : Nat) (read : Constan
   exact (b_catFn_compileProg_tCount 14832 14833 (signProg signBit) s read h).trans (by rw [(signProg_counts signBit).1])
 
 theorem compiledSign_removed18 {n : Nat} (signBit : Wire) (s : Nat) :
-    removed 18 (compiledSign (n := n) signBit s).prog = 0 := by
+    removed 23 (compiledSign (n := n) signBit s).prog = 0 := by
   rw [compiledSign]; exact CatFn.compileProg_removed18 14832 14833 (signProg signBit) s
 
 theorem compiledSign_wellFormed {n : Nat} (signBit : Wire) (hsb : 855 ≤ signBit ∧ signBit < 874) (s : Nat) :
@@ -19295,10 +19295,10 @@ theorem compiledYAdd_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) 
     ((compiledYAdd (n := n) s).prog.instantiate read h).tCount ≤ 4 * 1023 := by
   rw [compiledYAdd]; exact (b_catFn_compileProg_tCount _ _ _ s read h).trans (by rw [yAddProg_counts.1])
 
-theorem compiledXAdd_removed18 {n : Nat} (s : Nat) : removed 18 (compiledXAdd (n := n) s).prog = 0 := by
+theorem compiledXAdd_removed18 {n : Nat} (s : Nat) : removed 23 (compiledXAdd (n := n) s).prog = 0 := by
   rw [compiledXAdd]; exact CatFn.compileProg_removed18 _ _ _ s
 
-theorem compiledYAdd_removed18 {n : Nat} (s : Nat) : removed 18 (compiledYAdd (n := n) s).prog = 0 := by
+theorem compiledYAdd_removed18 {n : Nat} (s : Nat) : removed 23 (compiledYAdd (n := n) s).prog = 0 := by
   rw [compiledYAdd]; exact CatFn.compileProg_removed18 _ _ _ s
 
 theorem compiledXAdd_wellFormed {n : Nat} (s : Nat) : (compiledXAdd (n := n) s).prog.WellFormed := by
@@ -19443,7 +19443,7 @@ theorem compiledDirectArith_indep {n : Nat} (multiply : Bool) (s : Nat) :
       b (Finset.mem_toList.mp (compiledKernelS_wires (!multiply) s' hb))) s
 
 theorem compiledDirectArith_removed18 {n : Nat} (multiply : Bool) (s : Nat) :
-    removed 18 (compiledDirectArith (n := n) multiply s).prog = 0 := by
+    removed 23 (compiledDirectArith (n := n) multiply s).prog = 0 := by
   rw [compiledDirectArith]
   exact CatFn.map_removed18 _ _ (compiledKernelS_removed18 (!multiply)) s
 
@@ -19571,7 +19571,7 @@ theorem compiledDirectArithEnv_indep (E : EnvSchedule) {n : Nat} (multiply : Boo
       b (Finset.mem_toList.mp (compiledKernelSEnv_wires E (!multiply) s' hb))) s
 
 theorem compiledDirectArithEnv_removed18 (E : EnvSchedule) {n : Nat} (multiply : Bool) (s : Nat) :
-    removed 18 (compiledDirectArithEnv E (n := n) multiply s).prog = 0 := by
+    removed 23 (compiledDirectArithEnv E (n := n) multiply s).prog = 0 := by
   rw [compiledDirectArithEnv]
   exact CatFn.map_removed18 _ _ (compiledKernelSEnv_removed18 E (!multiply)) s
 
@@ -19758,7 +19758,7 @@ structure ArithSpec where
   finMul : Nat
   tofDiv : Nat
   tofMul : Nat
-  removed18 : ∀ {n : Nat} (mul : Bool) (s : Nat), removed 18 (prog (n := n) mul s).prog = 0
+  removed18 : ∀ {n : Nat} (mul : Bool) (s : Nat), removed 23 (prog (n := n) mul s).prog = 0
   shiftFin : ∀ {n : Nat} (mul : Bool), ShiftFin (prog (n := n) mul) (if mul then finMul else finDiv)
   tCount : ∀ {n : Nat} (mul : Bool) (s : Nat) (read : ConstantBit n → Bool) (h : Fin s → Bool),
     ((prog (n := n) mul s).prog.instantiate read h).tCount ≤ 4 * (if mul then tofMul else tofDiv)
@@ -19824,10 +19824,10 @@ def arithSpecEnv465 : ArithSpec where
   prog := fun mul => compiledDirectArithEnv env465 mul
   GoodX := fun X => X ≠ 0 ∧ GoodStack env465 X.val
   good_ne_zero := fun _ h => h.1
-  finDiv := 1513798
-  finMul := 1514053
-  tofDiv := 889769
-  tofMul := 889768
+  finDiv := 1511704
+  finMul := 1511959
+  tofDiv := 888373
+  tofMul := 888372
   removed18 := fun mul s => compiledDirectArithEnv_removed18 env465 mul s
   shiftFin := fun mul => by
     have hc := arithSEnv_env465_counts streamLayout
@@ -20205,7 +20205,7 @@ theorem compiledSquare_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool
   have hlt : ShorECDLP.tCount [.X 15651] = 0 := rfl
   rw [hlt, sqProg_counts.1]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledSquare_removed18 {n : Nat} (s : Nat) : removed 18 (compiledSquare (n := n) s).prog = 0 := by
+theorem compiledSquare_removed18 {n : Nat} (s : Nat) : removed 23 (compiledSquare (n := n) s).prog = 0 := by
   rw [compiledSquare]
   exact CatFn.swapSurround_removed18 _ _ _
     (CatFn.seq_removed18 _ _
@@ -20584,7 +20584,7 @@ theorem compiledNegX_tCount {n : Nat} (s : Nat) (read : ConstantBit n → Bool) 
   have hlt : ShorECDLP.tCount [.X 15651] = 0 := rfl
   rw [hlt, negXProg_counts.1]; try (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
-theorem compiledNegX_removed18 {n : Nat} (s : Nat) : removed 18 (compiledNegX (n := n) s).prog = 0 := by
+theorem compiledNegX_removed18 {n : Nat} (s : Nat) : removed 23 (compiledNegX (n := n) s).prog = 0 := by
   rw [compiledNegX]
   exact CatFn.seq_removed18 _ _
     (CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ rfl) (CatFn.compileProg_removed18 _ _ _))
@@ -21019,7 +21019,7 @@ def wrapSS {n R : Nat} (p0 : Straight n 0 R) : CatFn n :=
 attribute [local irreducible] wrapSS
 
 theorem wrapSS_removed18 {n R : Nat} (p0 : Straight n 0 R) (hres : AndGadget.residue p0 = 0) (s : Nat) :
-    removed 18 (wrapSS p0 s).prog = 0 := by
+    removed 23 (wrapSS p0 s).prog = 0 := by
   rw [wrapSS]
   exact CatFn.seq_removed18 _ _
     (CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ rfl)
@@ -21619,7 +21619,7 @@ structure FixupSpec (k : Nat) where
   fin : Nat
   slots : Nat
   finish_eq : ∀ cur rs, (prog cur rs).finish = cur + fin
-  removed18 : ∀ cur rs, removed 18 (prog cur rs).prog = 0
+  removed18 : ∀ cur rs, removed 23 (prog cur rs).prog = 0
   tCount : ∀ read cur rs hh, ((prog cur rs).prog.instantiate read hh).tCount ≤ 4 * tof
   slots_le : ∀ cur rs, (prog cur rs).prog.gateSlots ≤ slots
   wires_sub : ∀ cur rs, ChallengeMigration.straightWires (prog cur rs).prog ⊆ support1612
@@ -21740,7 +21740,7 @@ private theorem compiledFixup16_finish (cur : Nat) (rs : List (Fin cur)) :
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 private theorem compiledFixup16_removed18 (cur : Nat) (rs : List (Fin cur)) :
-    removed 18 (compiledFixup16 cur rs).prog = 0 := by
+    removed 23 (compiledFixup16 cur rs).prog = 0 := by
   rw [compiledFixup16]; dsimp only [CatProg.append]
   rw [LocalFour.removed_append, LocalFour.removed_append, CatProg.lit_removed, CatProg.lit_removed,
     compileLower_removed18 14832 14833 (rawFixup16 cur rs) cur id,
@@ -21975,7 +21975,7 @@ private theorem compiledFixup9_finish {k : Nat} (hk : k = 17 ∨ k = 18) (cur : 
   (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega))
 
 private theorem compiledFixup9_removed18 {k : Nat} (cur : Nat) (rs : List (Fin cur)) :
-    removed 18 (compiledFixup9 k cur rs).prog = 0 := by
+    removed 23 (compiledFixup9 k cur rs).prog = 0 := by
   rw [compiledFixup9]; dsimp only [CatProg.append]
   rw [LocalFour.removed_append, LocalFour.removed_append, CatProg.lit_removed, CatProg.lit_removed,
     compileLower_removed18 14832 14833 (rawFixup9 k cur rs) cur id,
@@ -22208,24 +22208,24 @@ theorem compiledGenericCoreW_shiftFin {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k �
   exact ShiftFin.of_exact (fun s => by rw [compiledGenericCoreW]; exact hD1 s List.nil) (by dsimp only [b1, b2] at hD2; (first | omega | (dsimp -zeta -zetaDelta -iota -proj only [Wire, ECDSAAdd.Wire] at *; omega)))
 
 theorem compiledGenericCoreW_removed18 {k : Nat} (ax : ArithSpec) (fx : FixupSpec k) (s : Nat) (rs : List (Fin s)) :
-    removed 18 (compiledGenericCoreW ax fx s rs).prog = 0 := by
-  have h18 (c : Nat) (r : List (Fin c)) : removed 18 (gStep18W fx c r).prog = 0 := by rw [gStep18W]; exact CatProg.measureThen_removed18 _ fx.removed18 _ c r
-  have h17 (c : Nat) (r : List (Fin c)) : removed 18 (gStep17W fx c r).prog = 0 := by rw [gStep17W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h18 c r
-  have h16 (c : Nat) (r : List (Fin c)) : removed 18 (gStep16W fx c r).prog = 0 := by rw [gStep16W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h17 c r
-  have h15 (c : Nat) (r : List (Fin c)) : removed 18 (gStep15W fx c r).prog = 0 := by rw [gStep15W]; exact CatProg.measureThen_removed18 _ h16 _ c r
-  have h14 (c : Nat) (r : List (Fin c)) : removed 18 (gStep14W fx c r).prog = 0 := by rw [gStep14W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1RecW k).loadProg_residue 0)) h15 c r
-  have h13 (c : Nat) (r : List (Fin c)) : removed 18 (gStep13W fx c r).prog = 0 := by rw [gStep13W]; exact stepCatFn_removed18 _ _ compiledNegX_removed18 h14 c r
-  have h12 (c : Nat) (r : List (Fin c)) : removed 18 (gStep12W ax fx c r).prog = 0 := by rw [gStep12W]; exact stepCatFn_removed18 _ _ (ax.removed18 true) h13 c r
-  have h11 (c : Nat) (r : List (Fin c)) : removed 18 (gStep11W ax fx c r).prog = 0 := by rw [gStep11W]; exact CatProg.measureThen_removed18 _ h12 _ c r
-  have h10 (c : Nat) (r : List (Fin c)) : removed 18 (gStep10W ax fx c r).prog = 0 := by rw [gStep10W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h11 c r
-  have h9  (c : Nat) (r : List (Fin c)) : removed 18 (gStep9W ax fx c r).prog = 0  := by rw [gStep9W]; exact CatProg.measureThen_removed18 _ h10 _ c r
-  have h8  (c : Nat) (r : List (Fin c)) : removed 18 (gStep8W ax fx c r).prog = 0  := by rw [gStep8W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss2TripleW k).loadProg_residue 0)) h9 c r
-  have h7  (c : Nat) (r : List (Fin c)) : removed 18 (gStep7W ax fx c r).prog = 0  := by rw [gStep7W]; exact stepCatFn_removed18 _ _ compiledSquare_removed18 h8 c r
-  have h6  (c : Nat) (r : List (Fin c)) : removed 18 (gStep6W ax fx c r).prog = 0  := by rw [gStep6W]; exact stepCatFn_removed18 _ _ (ax.removed18 false) h7 c r
-  have h5  (c : Nat) (r : List (Fin c)) : removed 18 (gStep5W ax fx c r).prog = 0  := by rw [gStep5W]; exact CatProg.measureThen_removed18 _ h6 _ c r
-  have h4  (c : Nat) (r : List (Fin c)) : removed 18 (gStep4W ax fx c r).prog = 0  := by rw [gStep4W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h5 c r
-  have h3  (c : Nat) (r : List (Fin c)) : removed 18 (gStep3W ax fx c r).prog = 0  := by rw [gStep3W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h4 c r
-  have h2  (c : Nat) (r : List (Fin c)) : removed 18 (gStep2W ax fx c r).prog = 0  := by rw [gStep2W]; exact CatProg.measureThen_removed18 _ h3 _ c r
+    removed 23 (compiledGenericCoreW ax fx s rs).prog = 0 := by
+  have h18 (c : Nat) (r : List (Fin c)) : removed 23 (gStep18W fx c r).prog = 0 := by rw [gStep18W]; exact CatProg.measureThen_removed18 _ fx.removed18 _ c r
+  have h17 (c : Nat) (r : List (Fin c)) : removed 23 (gStep17W fx c r).prog = 0 := by rw [gStep17W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h18 c r
+  have h16 (c : Nat) (r : List (Fin c)) : removed 23 (gStep16W fx c r).prog = 0 := by rw [gStep16W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h17 c r
+  have h15 (c : Nat) (r : List (Fin c)) : removed 23 (gStep15W fx c r).prog = 0 := by rw [gStep15W]; exact CatProg.measureThen_removed18 _ h16 _ c r
+  have h14 (c : Nat) (r : List (Fin c)) : removed 23 (gStep14W fx c r).prog = 0 := by rw [gStep14W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1RecW k).loadProg_residue 0)) h15 c r
+  have h13 (c : Nat) (r : List (Fin c)) : removed 23 (gStep13W fx c r).prog = 0 := by rw [gStep13W]; exact stepCatFn_removed18 _ _ compiledNegX_removed18 h14 c r
+  have h12 (c : Nat) (r : List (Fin c)) : removed 23 (gStep12W ax fx c r).prog = 0 := by rw [gStep12W]; exact stepCatFn_removed18 _ _ (ax.removed18 true) h13 c r
+  have h11 (c : Nat) (r : List (Fin c)) : removed 23 (gStep11W ax fx c r).prog = 0 := by rw [gStep11W]; exact CatProg.measureThen_removed18 _ h12 _ c r
+  have h10 (c : Nat) (r : List (Fin c)) : removed 23 (gStep10W ax fx c r).prog = 0 := by rw [gStep10W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h11 c r
+  have h9  (c : Nat) (r : List (Fin c)) : removed 23 (gStep9W ax fx c r).prog = 0  := by rw [gStep9W]; exact CatProg.measureThen_removed18 _ h10 _ c r
+  have h8  (c : Nat) (r : List (Fin c)) : removed 23 (gStep8W ax fx c r).prog = 0  := by rw [gStep8W]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss2TripleW k).loadProg_residue 0)) h9 c r
+  have h7  (c : Nat) (r : List (Fin c)) : removed 23 (gStep7W ax fx c r).prog = 0  := by rw [gStep7W]; exact stepCatFn_removed18 _ _ compiledSquare_removed18 h8 c r
+  have h6  (c : Nat) (r : List (Fin c)) : removed 23 (gStep6W ax fx c r).prog = 0  := by rw [gStep6W]; exact stepCatFn_removed18 _ _ (ax.removed18 false) h7 c r
+  have h5  (c : Nat) (r : List (Fin c)) : removed 23 (gStep5W ax fx c r).prog = 0  := by rw [gStep5W]; exact CatProg.measureThen_removed18 _ h6 _ c r
+  have h4  (c : Nat) (r : List (Fin c)) : removed 23 (gStep4W ax fx c r).prog = 0  := by rw [gStep4W]; exact stepCatFn_removed18 _ _ compiledYAdd_removed18 h5 c r
+  have h3  (c : Nat) (r : List (Fin c)) : removed 23 (gStep3W ax fx c r).prog = 0  := by rw [gStep3W]; exact stepCatFn_removed18 _ _ compiledXAdd_removed18 h4 c r
+  have h2  (c : Nat) (r : List (Fin c)) : removed 23 (gStep2W ax fx c r).prog = 0  := by rw [gStep2W]; exact CatProg.measureThen_removed18 _ h3 _ c r
   rw [compiledGenericCoreW]; exact stepCatFn_removed18 _ _ (wrapSS_removed18 _ ((ss1NegW k).loadProg_residue 0)) h2 s rs
 
 theorem compiledGenericCoreW_tCount {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k)
@@ -23256,7 +23256,7 @@ theorem compiledRecW_bound {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax :
   (compiledProgramFnW_shiftFin hk_lo hk_hi ax fx).2
 
 theorem compiledW_removed18 {k : Nat} (hk_lo : 16 ≤ k) (hk_hi : k ≤ 18) (ax : ArithSpec) (fx : FixupSpec k) (start : Nat) :
-    removed 18 (compiledProgramW hk_lo hk_hi ax fx start) = 0 := by
+    removed 23 (compiledProgramW hk_lo hk_hi ax fx start) = 0 := by
   rw [compiledProgramW, LocalFour.removed_castFinish, compiledProgramFnW]
   exact CatFn.seq_removed18 _ _ (CatFn.lit_removed18 _ (flipAddrW_removed18 k))
     (CatFn.seq_removed18 _ _ (compiledSign_removed18 (signBitW k))
@@ -23723,11 +23723,11 @@ theorem compiled17_wellFormed (start : Nat) : (compiledProgram17 start).WellForm
 theorem compiled18_wellFormed (start : Nat) : (compiledProgram18 start).WellFormed :=
   compiledW_wellFormed (by decide) (by decide) arithSpecFull fixupSpec18 start
 
-theorem compiled16_removed18 (start : Nat) : removed 18 (compiledProgram16 start) = 0 :=
+theorem compiled16_removed18 (start : Nat) : removed 23 (compiledProgram16 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecFull fixupSpec16 start
-theorem compiled17_removed18 (start : Nat) : removed 18 (compiledProgram17 start) = 0 :=
+theorem compiled17_removed18 (start : Nat) : removed 23 (compiledProgram17 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecFull fixupSpec17 start
-theorem compiled18_removed18 (start : Nat) : removed 18 (compiledProgram18 start) = 0 :=
+theorem compiled18_removed18 (start : Nat) : removed 23 (compiledProgram18 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecFull fixupSpec18 start
 
 theorem compiled16_packed_support (start : Nat) :
@@ -23789,10 +23789,10 @@ theorem compiledEnv460_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → 
     ((compiledProgramEnv460_16 start).instantiate read h).tCount ≤ 4 * 1897790 :=
   (compiledW_tCount (by decide) (by decide) arithSpecEnv460 fixupSpec16 start read h).trans (by decide)
 theorem compiledEnv465_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramEnv465_16 start).instantiate read h).tCount ≤ 4 * 1921892 :=
+    ((compiledProgramEnv465_16 start).instantiate read h).tCount ≤ 4 * 1919100 :=
   (compiledW_tCount (by decide) (by decide) arithSpecEnv465 fixupSpec16 start read h).trans (by decide)
 theorem compiledEnv465_17_tCount (start : Nat) (read : ConstantBit (2 ^ 17) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramEnv465_17 start).instantiate read h).tCount ≤ 4 * 2004067 :=
+    ((compiledProgramEnv465_17 start).instantiate read h).tCount ≤ 4 * 2001275 :=
   (compiledW_tCount (by decide) (by decide) arithSpecEnv465 fixupSpec17 start read h).trans (by decide)
 theorem compiledEnv485_18_tCount (start : Nat) (read : ConstantBit (2 ^ 18) → Bool) (h : Fin start → Bool) :
     ((compiledProgramEnv485_18 start).instantiate read h).tCount ≤ 4 * 2277531 :=
@@ -23830,17 +23830,17 @@ theorem compiledEnv500_18_wellFormed (start : Nat) : (compiledProgramEnv500_18 s
 theorem compiledEnv510_17_wellFormed (start : Nat) : (compiledProgramEnv510_17 start).WellFormed :=
   compiledW_wellFormed (by decide) (by decide) arithSpecEnv510 fixupSpec17 start
 
-theorem compiledEnv460_16_removed18 (start : Nat) : removed 18 (compiledProgramEnv460_16 start) = 0 :=
+theorem compiledEnv460_16_removed18 (start : Nat) : removed 23 (compiledProgramEnv460_16 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecEnv460 fixupSpec16 start
-theorem compiledEnv465_16_removed18 (start : Nat) : removed 18 (compiledProgramEnv465_16 start) = 0 :=
+theorem compiledEnv465_16_removed18 (start : Nat) : removed 23 (compiledProgramEnv465_16 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecEnv465 fixupSpec16 start
-theorem compiledEnv465_17_removed18 (start : Nat) : removed 18 (compiledProgramEnv465_17 start) = 0 :=
+theorem compiledEnv465_17_removed18 (start : Nat) : removed 23 (compiledProgramEnv465_17 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecEnv465 fixupSpec17 start
-theorem compiledEnv485_18_removed18 (start : Nat) : removed 18 (compiledProgramEnv485_18 start) = 0 :=
+theorem compiledEnv485_18_removed18 (start : Nat) : removed 23 (compiledProgramEnv485_18 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecEnv485 fixupSpec18 start
-theorem compiledEnv500_18_removed18 (start : Nat) : removed 18 (compiledProgramEnv500_18 start) = 0 :=
+theorem compiledEnv500_18_removed18 (start : Nat) : removed 23 (compiledProgramEnv500_18 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecEnv500 fixupSpec18 start
-theorem compiledEnv510_17_removed18 (start : Nat) : removed 18 (compiledProgramEnv510_17 start) = 0 :=
+theorem compiledEnv510_17_removed18 (start : Nat) : removed 23 (compiledProgramEnv510_17 start) = 0 :=
   compiledW_removed18 (by decide) (by decide) arithSpecEnv510 fixupSpec17 start
 
 theorem compiledEnv460_16_packed_support (start : Nat) :
