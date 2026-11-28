@@ -3006,6 +3006,134 @@ theorem sinePhaseAmplitude_small_bound (M : ℕ) (hM : 204 ≤ M) (β : ℝ) (a 
       (2 * (3141591 / 1000000 : ℝ) ^ 2 * (314005 / 100000 : ℝ) ^ 4) ≤ 508 / 10000 := by norm_num
   exact div_le_div_of_nonneg_right (mul_le_mul_of_nonneg_right hconst (sq_nonneg _)) (sq_nonneg _)
 
+/-- Medium-low range pointwise bound (`16 ≤ φ ≤ 64`, `M ≥ 204`), sharper than Jordan. -/
+theorem sinePhaseAmplitude_med1_bound (M : ℕ) (hM : 204 ≤ M) (β : ℝ) (a : ℕ) (φ : ℝ)
+    (hlo : 16 ≤ φ) (hhi : φ ≤ 64)
+    (hφ : φ = phiR (2 ^ M) ((2 ^ M : ℕ) * β) a ∨ φ = phiL (2 ^ M) ((2 ^ M : ℕ) * β) a) :
+    Complex.normSq (sinePhaseAmplitude M β a) ≤
+      (521 / 10000 : ℝ) * Real.cos (Real.pi * ((2 ^ M : ℕ) : ℝ) * β) ^ 2 / (φ - 1 / 2) ^ 4 := by
+  set N := (2 ^ M : ℕ)
+  have hNbig : (2 ^ 204 : ℝ) ≤ (N : ℝ) := by
+    have : 2 ^ 204 ≤ 2 ^ M := Nat.pow_le_pow_right (by decide) hM
+    exact_mod_cast this
+  have hNR : (0 : ℝ) < N := by linarith [show (0 : ℝ) < 2 ^ 204 by positivity]
+  rw [sinePhaseAmplitude_closed_form M hM β a φ (by linarith) (by linarith) hφ]
+  have hpi_lo : (3141592 / 1000000 : ℝ) < Real.pi := by
+    have := Real.pi_gt_d6; norm_num at this ⊢; linarith
+  have hpi_hi : Real.pi < (3141593 / 1000000 : ℝ) := by
+    have := Real.pi_lt_d6; norm_num at this ⊢; linarith
+  -- Upper bounds on numerator sines
+  have hnum1 : Real.sin (Real.pi / 1024) ^ 2 ≤ (3141593 / 1000000 / 1024 : ℝ) ^ 2 := by
+    have h0 : 0 ≤ Real.sin (Real.pi / 1024) :=
+      Real.sin_nonneg_of_nonneg_of_le_pi (by positivity) (by linarith)
+    have hle : Real.sin (Real.pi / 1024) ≤ 3141593 / 1000000 / 1024 :=
+      (Real.sin_le (by positivity)).trans (by linarith)
+    exact pow_le_pow_left₀ h0 hle 2
+  have hnum2 : Real.sin (Real.pi * φ / 1024) ^ 2 ≤ ((3141593 / 1000000 : ℝ) * φ / 1024) ^ 2 := by
+    have h0 : 0 ≤ Real.sin (Real.pi * φ / 1024) :=
+      Real.sin_nonneg_of_nonneg_of_le_pi (by positivity) (by nlinarith)
+    have hle : Real.sin (Real.pi * φ / 1024) ≤ (3141593 / 1000000 : ℝ) * φ / 1024 :=
+      (Real.sin_le (by positivity)).trans (by nlinarith)
+    exact pow_le_pow_left₀ h0 hle 2
+  -- Lower bound on `N * sin(π φ / N)`
+  have hNsin : (3141591 / 1000000 : ℝ) * φ ≤ (N : ℝ) * Real.sin (Real.pi * φ / N) := by
+    have hu : φ / N ≤ 1 / 2 ^ 20 := by
+      rw [div_le_iff₀ hNR]
+      have : (2 : ℝ) ^ 20 * 64 ≤ (2 : ℝ) ^ 204 := by norm_num
+      nlinarith
+    have h := sin_pi_mul_ge_sharp (φ / N) (by positivity) hu
+    have hm := mul_le_mul_of_nonneg_left h hNR.le
+    rw [show Real.pi * (φ / N) = Real.pi * φ / N by ring] at hm
+    calc (3141591 / 1000000 : ℝ) * φ = (N : ℝ) * ((3141591 / 1000000 : ℝ) * (φ / N)) := by
+          field_simp [hNR.ne']
+      _ ≤ _ := hm
+  -- Lower bound on `sin(π u / 1024)` for `0 ≤ u ≤ 35/2`:
+  -- `1 - (3.141593 * 17.5 / 1024)^2 / 6 > 99347 / 100000`
+  have hsin_small (u : ℝ) (hu0 : 0 ≤ u) (hu : u ≤ 129 / 2) :
+      (312107 / 100000 : ℝ) * (u / 1024) ≤ Real.sin (Real.pi * u / 1024) := by
+    have hx0 : 0 ≤ Real.pi * u / 1024 := by positivity
+    have hx_le : Real.pi * u / 1024 ≤ (3141593 / 1000000 : ℝ) * (129 / 2) / 1024 := by nlinarith
+    have hx_ge : (3141592 / 1000000 : ℝ) * (u / 1024) ≤ Real.pi * u / 1024 := by nlinarith
+    have hc := sin_ge_cubic (Real.pi * u / 1024) hx0
+    have hsq : (Real.pi * u / 1024) ^ 2 ≤ ((3141593 / 1000000 : ℝ) * (129 / 2) / 1024) ^ 2 :=
+      pow_le_pow_left₀ hx0 hx_le 2
+    have hfac : 1 - (Real.pi * u / 1024) ^ 2 / 6 ≥ 99347 / 100000 := by
+      have : ((3141593 / 1000000 : ℝ) * (129 / 2) / 1024) ^ 2 / 6 ≤ 653 / 100000 := by norm_num
+      linarith
+    have hprod : (Real.pi * u / 1024) * (99347 / 100000 : ℝ) ≤
+        Real.pi * u / 1024 - (Real.pi * u / 1024) ^ 3 / 6 := by nlinarith
+    have hcoef : (312107 / 100000 : ℝ) ≤ (3141592 / 1000000 : ℝ) * (99347 / 100000 : ℝ) := by norm_num
+    nlinarith
+  have hsp := hsin_small (φ + 1 / 2) (by linarith) (by linarith)
+  have hsm := hsin_small (φ - 1 / 2) (by linarith) (by linarith)
+  have hφm : 0 < φ - 1 / 2 := by linarith
+  have hden_ge :
+      2 * ((3141591 / 1000000 : ℝ) * φ) ^ 2 *
+        ((312107 / 100000 : ℝ) * ((φ + 1 / 2) / 1024)) ^ 2 *
+        ((312107 / 100000 : ℝ) * ((φ - 1 / 2) / 1024)) ^ 2 ≤
+      2 * (N : ℝ) ^ 2 * Real.sin (Real.pi * φ / N) ^ 2 *
+        Real.sin (Real.pi * (φ + 1 / 2) / 1024) ^ 2 * Real.sin (Real.pi * (φ - 1 / 2) / 1024) ^ 2 := by
+    have h1 : ((3141591 / 1000000 : ℝ) * φ) ^ 2 ≤ (N : ℝ) ^ 2 * Real.sin (Real.pi * φ / N) ^ 2 := by
+      rw [← mul_pow]; exact pow_le_pow_left₀ (by positivity) hNsin 2
+    have h2 : ((312107 / 100000 : ℝ) * ((φ + 1 / 2) / 1024)) ^ 2 ≤ Real.sin (Real.pi * (φ + 1 / 2) / 1024) ^ 2 :=
+      pow_le_pow_left₀ (by positivity) hsp 2
+    have h3 : ((312107 / 100000 : ℝ) * ((φ - 1 / 2) / 1024)) ^ 2 ≤ Real.sin (Real.pi * (φ - 1 / 2) / 1024) ^ 2 :=
+      pow_le_pow_left₀ (by positivity) hsm 2
+    have h12 : 2 * ((3141591 / 1000000 : ℝ) * φ) ^ 2 *
+          ((312107 / 100000 : ℝ) * ((φ + 1 / 2) / 1024)) ^ 2 ≤
+        2 * ((N : ℝ) ^ 2 * Real.sin (Real.pi * φ / N) ^ 2) *
+          Real.sin (Real.pi * (φ + 1 / 2) / 1024) ^ 2 :=
+      mul_le_mul (by linarith) h2 (by positivity) (by positivity)
+    have h123 := mul_le_mul h12 h3 (by positivity) (by positivity)
+    linarith [show 2 * ((N : ℝ) ^ 2 * Real.sin (Real.pi * φ / N) ^ 2) *
+        Real.sin (Real.pi * (φ + 1 / 2) / 1024) ^ 2 * Real.sin (Real.pi * (φ - 1 / 2) / 1024) ^ 2 =
+      2 * (N : ℝ) ^ 2 * Real.sin (Real.pi * φ / N) ^ 2 *
+        Real.sin (Real.pi * (φ + 1 / 2) / 1024) ^ 2 * Real.sin (Real.pi * (φ - 1 / 2) / 1024) ^ 2 by ring]
+  have hnum_le :
+      Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * Real.sin (Real.pi / 1024) ^ 2 *
+        Real.sin (Real.pi * φ / 1024) ^ 2 ≤
+      Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * (3141593 / 1000000 / 1024 : ℝ) ^ 2 *
+        ((3141593 / 1000000 : ℝ) * φ / 1024) ^ 2 := by
+    have h12 := mul_le_mul hnum1 hnum2 (by positivity) (by positivity)
+    have := mul_le_mul_of_nonneg_left h12 (sq_nonneg (Real.cos (Real.pi * (N : ℝ) * β)))
+    linarith [show Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * (Real.sin (Real.pi / 1024) ^ 2 * Real.sin (Real.pi * φ / 1024) ^ 2) =
+      Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * Real.sin (Real.pi / 1024) ^ 2 * Real.sin (Real.pi * φ / 1024) ^ 2 by ring,
+      show Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * ((3141593 / 1000000 / 1024 : ℝ) ^ 2 * ((3141593 / 1000000 : ℝ) * φ / 1024) ^ 2) =
+      Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * (3141593 / 1000000 / 1024 : ℝ) ^ 2 * ((3141593 / 1000000 : ℝ) * φ / 1024) ^ 2 by ring]
+  have hφ_pos : 0 < φ := by linarith
+  have hsq_pos : 0 < φ ^ 2 - 1 / 4 := by nlinarith
+  have hden_pos : 0 < 2 * ((3141591 / 1000000 : ℝ) * φ) ^ 2 *
+      ((312107 / 100000 : ℝ) * ((φ + 1 / 2) / 1024)) ^ 2 *
+      ((312107 / 100000 : ℝ) * ((φ - 1 / 2) / 1024)) ^ 2 := by positivity
+  refine (div_le_div₀ (by positivity) hnum_le hden_pos hden_ge).trans ?_
+  have hsimp :
+      Real.cos (Real.pi * (N : ℝ) * β) ^ 2 * (3141593 / 1000000 / 1024 : ℝ) ^ 2 *
+        ((3141593 / 1000000 : ℝ) * φ / 1024) ^ 2 /
+      (2 * ((3141591 / 1000000 : ℝ) * φ) ^ 2 *
+        ((312107 / 100000 : ℝ) * ((φ + 1 / 2) / 1024)) ^ 2 *
+        ((312107 / 100000 : ℝ) * ((φ - 1 / 2) / 1024)) ^ 2) =
+      ((3141593 / 1000000 : ℝ) ^ 4 / (2 * (3141591 / 1000000 : ℝ) ^ 2 * (312107 / 100000 : ℝ) ^ 4)) *
+        Real.cos (Real.pi * (N : ℝ) * β) ^ 2 / (φ ^ 2 - 1 / 4) ^ 2 := by
+    have hpm : (φ + 1 / 2) * (φ - 1 / 2) = φ ^ 2 - 1 / 4 := by ring
+    have h1 : φ + 1 / 2 ≠ 0 := by linarith
+    have h2 : φ - 1 / 2 ≠ 0 := by linarith
+    rw [← hpm]
+    field_simp [hφ_pos.ne', h1, h2]
+  rw [hsimp]
+  have hconst : (3141593 / 1000000 : ℝ) ^ 4 /
+      (2 * (3141591 / 1000000 : ℝ) ^ 2 * (312107 / 100000 : ℝ) ^ 4) ≤ 521 / 10000 := by norm_num
+  have hm4 : 0 < φ - 1 / 2 := by linarith
+  have hden4 : (φ - 1 / 2) ^ 4 ≤ (φ ^ 2 - 1 / 4) ^ 2 := by
+    have he : (φ ^ 2 - 1 / 4) ^ 2 - (φ - 1 / 2) ^ 4 = (φ - 1 / 2) ^ 2 * (2 * φ) := by ring
+    have : 0 ≤ (φ - 1 / 2) ^ 2 * (2 * φ) := by positivity
+    linarith
+  calc ((3141593 / 1000000 : ℝ) ^ 4 / (2 * (3141591 / 1000000 : ℝ) ^ 2 * (312107 / 100000 : ℝ) ^ 4)) *
+        Real.cos (Real.pi * (N : ℝ) * β) ^ 2 / (φ ^ 2 - 1 / 4) ^ 2
+      ≤ (521 / 10000 : ℝ) * Real.cos (Real.pi * (N : ℝ) * β) ^ 2 / (φ ^ 2 - 1 / 4) ^ 2 :=
+        div_le_div_of_nonneg_right (mul_le_mul_of_nonneg_right hconst (sq_nonneg _)) (sq_nonneg _)
+    _ ≤ (521 / 10000 : ℝ) * Real.cos (Real.pi * (N : ℝ) * β) ^ 2 / (φ - 1 / 2) ^ 4 :=
+        div_le_div_of_nonneg_left (by positivity) (by positivity) hden4
+
 /-- Medium-range pointwise bound (`16 ≤ φ ≤ 512`, `M ≥ 204`). -/
 theorem sinePhaseAmplitude_med_bound (M : ℕ) (hM : 204 ≤ M) (β : ℝ) (a : ℕ) (φ : ℝ)
     (hlo : 16 ≤ φ) (hhi : φ ≤ 512)
@@ -3334,6 +3462,205 @@ theorem sine_circular_mass_two (M : ℕ) (hM : 204 ≤ M) (β : ℝ)
       cs * ((508 / 10000 : ℝ) *
           ((∑ k ∈ range K1, 1 / ((R1 + k) ^ 2 - 1 / 4) ^ 2) +
            (∑ k ∈ range K2, 1 / ((R2 + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000) + 12 / 1000000 := by
+    have hsum := Finset.sum_le_sum (fun a (_ : a ∈ range N) => hcov a)
+    simp only [Finset.sum_add_distrib] at hsum
+    have h1 := hRSs
+    simp only [RSs, Finset.sum_filter] at h1
+    have h2 := hRSm
+    simp only [RSm, Finset.sum_filter] at h2
+    have h3 := hLSs
+    simp only [LSs, Finset.sum_filter] at h3
+    have h4 := hLSm
+    simp only [LSm, Finset.sum_filter] at h4
+    linarith
+  have htot : (∑ a ∈ range N,
+      if phiR N c a < R1 ∨ phiL N c a < R2 then Complex.normSq (sinePhaseAmplitude M β a) else 0) +
+    (∑ a ∈ range N,
+      if ¬ (phiR N c a < R1 ∨ phiL N c a < R2) then Complex.normSq (sinePhaseAmplitude M β a) else 0) = 1 := by
+    rw [← Finset.sum_add_distrib]
+    convert sinePhaseAmplitude_parseval M hM10 β using 1
+    apply Finset.sum_congr rfl; intro a _; split_ifs <;> ring
+  linarith
+
+theorem sine_circular_mass_two_tight (M : ℕ) (hM : 204 ≤ M) (β : ℝ)
+    (R1 R2 : ℝ) (K1 K2 : ℕ)
+    (hR1_lo : 3 / 2 ≤ R1) (hR2_lo : 3 / 2 ≤ R2)
+    (hR1_hi : R1 + K1 ≤ 17) (hR2_hi : R2 + K2 ≤ 17)
+    (hM1 : 16 ≤ R1 + K1) (hM2 : 16 ≤ R2 + K2) :
+    1 - Real.cos (Real.pi * ((2 ^ M : ℕ) : ℝ) * β) ^ 2 *
+        ((508 / 10000 : ℝ) *
+          ((∑ k ∈ range K1, 1 / ((R1 + k) ^ 2 - 1 / 4) ^ 2) +
+           (∑ k ∈ range K2, 1 / ((R2 + k) ^ 2 - 1 / 4) ^ 2)) + 14 / 1000000) -
+        12 / 1000000 ≤
+      ∑ a ∈ range (2 ^ M),
+        if phiR (2 ^ M) ((2 ^ M : ℕ) * β) a < R1 ∨ phiL (2 ^ M) ((2 ^ M : ℕ) * β) a < R2
+        then Complex.normSq (sinePhaseAmplitude M β a) else 0 := by
+  classical
+  set N := 2 ^ M
+  set c := ((N : ℕ) : ℝ) * β
+  set cs := Real.cos (Real.pi * (N : ℝ) * β) ^ 2
+  have hcs0 : 0 ≤ cs := sq_nonneg _
+  have hM10 : 10 ≤ M := by omega
+  have hM11 : 11 ≤ M := by omega
+  let RSs := (range N).filter (fun a => R1 ≤ phiR N c a ∧ phiR N c a < R1 + K1)
+  let RSm := (range N).filter (fun a => R1 + K1 ≤ phiR N c a ∧ phiR N c a ≤ 512)
+  let LSs := (range N).filter (fun a => R2 ≤ phiL N c a ∧ phiL N c a < R2 + K2)
+  let LSm := (range N).filter (fun a => R2 + K2 ≤ phiL N c a ∧ phiL N c a ≤ 512)
+  have hRSs : ∑ a ∈ RSs, Complex.normSq (sinePhaseAmplitude M β a) ≤
+      (508 / 10000 : ℝ) * cs * ∑ k ∈ range K1, 1 / ((R1 + k) ^ 2 - 1 / 4) ^ 2 := by
+    have hpt : ∀ a ∈ RSs, Complex.normSq (sinePhaseAmplitude M β a) ≤
+        ((508 / 10000 : ℝ) * cs) * (1 / (phiR N c a ^ 2 - 1 / 4) ^ 2) := by
+      intro a ha
+      have hd := (Finset.mem_filter.mp ha).2
+      have h := sinePhaseAmplitude_small_bound M hM β a (phiR N c a) (by linarith [hd.1])
+        (by linarith [hd.2]) (Or.inl rfl)
+      linarith [show ((508 / 10000 : ℝ) * cs) * (1 / (phiR N c a ^ 2 - 1 / 4) ^ 2) =
+        (508 / 10000 : ℝ) * cs / (phiR N c a ^ 2 - 1 / 4) ^ 2 by ring]
+    calc
+      _ ≤ ∑ a ∈ RSs, ((508 / 10000 : ℝ) * cs) * (1 / (phiR N c a ^ 2 - 1 / 4) ^ 2) :=
+        Finset.sum_le_sum hpt
+      _ = ((508 / 10000 : ℝ) * cs) * ∑ a ∈ RSs, 1 / (phiR N c a ^ 2 - 1 / 4) ^ 2 := by
+        rw [← Finset.mul_sum]
+      _ ≤ _ := mul_le_mul_of_nonneg_left
+        (sum_small_tail RSs (phiR N c) R1 K1 (by linarith)
+          (fun a ha => (Finset.mem_filter.mp ha).2)
+          (fun a ha b hb => phiR_sep N c a b (mem_range.mp (Finset.mem_filter.mp ha).1)
+            (mem_range.mp (Finset.mem_filter.mp hb).1))) (by positivity)
+  have hLSs : ∑ a ∈ LSs, Complex.normSq (sinePhaseAmplitude M β a) ≤
+      (508 / 10000 : ℝ) * cs * ∑ k ∈ range K2, 1 / ((R2 + k) ^ 2 - 1 / 4) ^ 2 := by
+    have hpt : ∀ a ∈ LSs, Complex.normSq (sinePhaseAmplitude M β a) ≤
+        ((508 / 10000 : ℝ) * cs) * (1 / (phiL N c a ^ 2 - 1 / 4) ^ 2) := by
+      intro a ha
+      have hd := (Finset.mem_filter.mp ha).2
+      have h := sinePhaseAmplitude_small_bound M hM β a (phiL N c a) (by linarith [hd.1])
+        (by linarith [hd.2]) (Or.inr rfl)
+      linarith [show ((508 / 10000 : ℝ) * cs) * (1 / (phiL N c a ^ 2 - 1 / 4) ^ 2) =
+        (508 / 10000 : ℝ) * cs / (phiL N c a ^ 2 - 1 / 4) ^ 2 by ring]
+    calc
+      _ ≤ ∑ a ∈ LSs, ((508 / 10000 : ℝ) * cs) * (1 / (phiL N c a ^ 2 - 1 / 4) ^ 2) :=
+        Finset.sum_le_sum hpt
+      _ = ((508 / 10000 : ℝ) * cs) * ∑ a ∈ LSs, 1 / (phiL N c a ^ 2 - 1 / 4) ^ 2 := by
+        rw [← Finset.mul_sum]
+      _ ≤ _ := mul_le_mul_of_nonneg_left
+        (sum_small_tail LSs (phiL N c) R2 K2 (by linarith)
+          (fun a ha => (Finset.mem_filter.mp ha).2)
+          (fun a ha b hb => phiL_sep N c a b (mem_range.mp (Finset.mem_filter.mp ha).1)
+            (mem_range.mp (Finset.mem_filter.mp hb).1))) (by positivity)
+  have hRSm : ∑ a ∈ RSm, Complex.normSq (sinePhaseAmplitude M β a) ≤ (7 / 1000000 : ℝ) * cs := by
+    let RSa := RSm.filter (fun a => phiR N c a ≤ 64)
+    let RSb := RSm.filter (fun a => ¬ phiR N c a ≤ 64)
+    have hsplit := Finset.sum_filter_add_sum_filter_not RSm (fun a => phiR N c a ≤ 64)
+      (fun a => Complex.normSq (sinePhaseAmplitude M β a))
+    have hA : ∑ a ∈ RSa, Complex.normSq (sinePhaseAmplitude M β a) ≤ (521 / 10000 : ℝ) * cs * (1 / (3 * (16 - 3 / 2 : ℝ) ^ 3)) := by
+      have hpt : ∀ a ∈ RSa, Complex.normSq (sinePhaseAmplitude M β a) ≤
+          ((521 / 10000 : ℝ) * cs) * (1 / (phiR N c a - 1 / 2) ^ 4) := by
+        intro a ha
+        have h64 := (Finset.mem_filter.mp ha).2
+        have hd := (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).2
+        have h := sinePhaseAmplitude_med1_bound M hM β a (phiR N c a) (by linarith [hd.1]) h64 (Or.inl rfl)
+        linarith [show ((521 / 10000 : ℝ) * cs) * (1 / (phiR N c a - 1 / 2) ^ 4) =
+          (521 / 10000 : ℝ) * cs / (phiR N c a - 1 / 2) ^ 4 by ring]
+      have hsum := sum_inv_fourth_ge RSa (phiR N c) 16 (by norm_num)
+        (fun a ha => by linarith [(Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).2.1])
+        (fun a ha b hb => phiR_sep N c a b (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).1)
+          (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hb).1).1))
+      calc
+        _ ≤ ((521 / 10000 : ℝ) * cs) * ∑ a ∈ RSa, 1 / (phiR N c a - 1 / 2) ^ 4 := by
+          rw [Finset.mul_sum]; exact Finset.sum_le_sum hpt
+        _ ≤ _ := mul_le_mul_of_nonneg_left hsum (by positivity)
+    have hB : ∑ a ∈ RSb, Complex.normSq (sinePhaseAmplitude M β a) ≤ (31 / 100 : ℝ) * cs * (1 / (3 * (64 - 3 / 2 : ℝ) ^ 3)) := by
+      have hpt : ∀ a ∈ RSb, Complex.normSq (sinePhaseAmplitude M β a) ≤
+          ((31 / 100 : ℝ) * cs) * (1 / (phiR N c a - 1 / 2) ^ 4) := by
+        intro a ha
+        have hd := (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).2
+        have h := sinePhaseAmplitude_med_bound M hM β a (phiR N c a) (by linarith [hd.1]) hd.2 (Or.inl rfl)
+        linarith [show ((31 / 100 : ℝ) * cs) * (1 / (phiR N c a - 1 / 2) ^ 4) =
+          (31 / 100 : ℝ) * cs / (phiR N c a - 1 / 2) ^ 4 by ring]
+      have hsum := sum_inv_fourth_ge RSb (phiR N c) 64 (by norm_num)
+        (fun a ha => by have := (Finset.mem_filter.mp ha).2; push_neg at this; linarith)
+        (fun a ha b hb => phiR_sep N c a b (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).1)
+          (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hb).1).1))
+      calc
+        _ ≤ ((31 / 100 : ℝ) * cs) * ∑ a ∈ RSb, 1 / (phiR N c a - 1 / 2) ^ 4 := by
+          rw [Finset.mul_sum]; exact Finset.sum_le_sum hpt
+        _ ≤ _ := mul_le_mul_of_nonneg_left hsum (by positivity)
+    have hc : (521 / 10000 : ℝ) * (1 / (3 * (16 - 3 / 2 : ℝ) ^ 3)) + (31 / 100 : ℝ) * (1 / (3 * (64 - 3 / 2 : ℝ) ^ 3)) ≤ 7 / 1000000 := by
+      norm_num
+    rw [← hsplit]
+    nlinarith
+  have hLSm : ∑ a ∈ LSm, Complex.normSq (sinePhaseAmplitude M β a) ≤ (7 / 1000000 : ℝ) * cs := by
+    let LSa := LSm.filter (fun a => phiL N c a ≤ 64)
+    let LSb := LSm.filter (fun a => ¬ phiL N c a ≤ 64)
+    have hsplit := Finset.sum_filter_add_sum_filter_not LSm (fun a => phiL N c a ≤ 64)
+      (fun a => Complex.normSq (sinePhaseAmplitude M β a))
+    have hA : ∑ a ∈ LSa, Complex.normSq (sinePhaseAmplitude M β a) ≤ (521 / 10000 : ℝ) * cs * (1 / (3 * (16 - 3 / 2 : ℝ) ^ 3)) := by
+      have hpt : ∀ a ∈ LSa, Complex.normSq (sinePhaseAmplitude M β a) ≤
+          ((521 / 10000 : ℝ) * cs) * (1 / (phiL N c a - 1 / 2) ^ 4) := by
+        intro a ha
+        have h64 := (Finset.mem_filter.mp ha).2
+        have hd := (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).2
+        have h := sinePhaseAmplitude_med1_bound M hM β a (phiL N c a) (by linarith [hd.1]) h64 (Or.inr rfl)
+        linarith [show ((521 / 10000 : ℝ) * cs) * (1 / (phiL N c a - 1 / 2) ^ 4) =
+          (521 / 10000 : ℝ) * cs / (phiL N c a - 1 / 2) ^ 4 by ring]
+      have hsum := sum_inv_fourth_ge LSa (phiL N c) 16 (by norm_num)
+        (fun a ha => by linarith [(Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).2.1])
+        (fun a ha b hb => phiL_sep N c a b (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).1)
+          (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hb).1).1))
+      calc
+        _ ≤ ((521 / 10000 : ℝ) * cs) * ∑ a ∈ LSa, 1 / (phiL N c a - 1 / 2) ^ 4 := by
+          rw [Finset.mul_sum]; exact Finset.sum_le_sum hpt
+        _ ≤ _ := mul_le_mul_of_nonneg_left hsum (by positivity)
+    have hB : ∑ a ∈ LSb, Complex.normSq (sinePhaseAmplitude M β a) ≤ (31 / 100 : ℝ) * cs * (1 / (3 * (64 - 3 / 2 : ℝ) ^ 3)) := by
+      have hpt : ∀ a ∈ LSb, Complex.normSq (sinePhaseAmplitude M β a) ≤
+          ((31 / 100 : ℝ) * cs) * (1 / (phiL N c a - 1 / 2) ^ 4) := by
+        intro a ha
+        have hd := (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).2
+        have h := sinePhaseAmplitude_med_bound M hM β a (phiL N c a) (by linarith [hd.1]) hd.2 (Or.inr rfl)
+        linarith [show ((31 / 100 : ℝ) * cs) * (1 / (phiL N c a - 1 / 2) ^ 4) =
+          (31 / 100 : ℝ) * cs / (phiL N c a - 1 / 2) ^ 4 by ring]
+      have hsum := sum_inv_fourth_ge LSb (phiL N c) 64 (by norm_num)
+        (fun a ha => by have := (Finset.mem_filter.mp ha).2; push_neg at this; linarith)
+        (fun a ha b hb => phiL_sep N c a b (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp ha).1).1)
+          (mem_range.mp (Finset.mem_filter.mp (Finset.mem_filter.mp hb).1).1))
+      calc
+        _ ≤ ((31 / 100 : ℝ) * cs) * ∑ a ∈ LSb, 1 / (phiL N c a - 1 / 2) ^ 4 := by
+          rw [Finset.mul_sum]; exact Finset.sum_le_sum hpt
+        _ ≤ _ := mul_le_mul_of_nonneg_left hsum (by positivity)
+    have hc : (521 / 10000 : ℝ) * (1 / (3 * (16 - 3 / 2 : ℝ) ^ 3)) + (31 / 100 : ℝ) * (1 / (3 * (64 - 3 / 2 : ℝ) ^ 3)) ≤ 7 / 1000000 := by
+      norm_num
+    rw [← hsplit]
+    nlinarith
+  have hfar := sinePhaseAmplitude_far_tail M hM11 β
+  have hcov (a : ℕ) :
+      (if ¬ (phiR N c a < R1 ∨ phiL N c a < R2) then Complex.normSq (sinePhaseAmplitude M β a) else 0) ≤
+      (if R1 ≤ phiR N c a ∧ phiR N c a < R1 + K1 then Complex.normSq (sinePhaseAmplitude M β a) else 0) +
+      (if R1 + K1 ≤ phiR N c a ∧ phiR N c a ≤ 512 then Complex.normSq (sinePhaseAmplitude M β a) else 0) +
+      (if R2 ≤ phiL N c a ∧ phiL N c a < R2 + K2 then Complex.normSq (sinePhaseAmplitude M β a) else 0) +
+      (if R2 + K2 ≤ phiL N c a ∧ phiL N c a ≤ 512 then Complex.normSq (sinePhaseAmplitude M β a) else 0) +
+      (if 512 < phiR N c a ∧ 512 < phiL N c a then Complex.normSq (sinePhaseAmplitude M β a) else 0) := by
+    have ha0 : 0 ≤ Complex.normSq (sinePhaseAmplitude M β a) := Complex.normSq_nonneg _
+    by_cases hb : ¬ (phiR N c a < R1 ∨ phiL N c a < R2)
+    · rw [if_pos hb]
+      have hr : R1 ≤ phiR N c a := le_of_not_gt (fun h => hb (Or.inl h))
+      have hl : R2 ≤ phiL N c a := le_of_not_gt (fun h => hb (Or.inr h))
+      by_cases h1 : phiR N c a < R1 + K1
+      · rw [if_pos ⟨hr, h1⟩]; split_ifs <;> linarith
+      · rw [if_neg (fun h => h1 h.2)]
+        by_cases h2 : phiR N c a ≤ 512
+        · rw [if_pos ⟨le_of_not_gt h1, h2⟩]; split_ifs <;> linarith
+        · rw [if_neg (fun h => h2 h.2)]
+          by_cases h3 : phiL N c a < R2 + K2
+          · rw [if_pos ⟨hl, h3⟩]; split_ifs <;> linarith
+          · rw [if_neg (fun h => h3 h.2)]
+            by_cases h4 : phiL N c a ≤ 512
+            · rw [if_pos ⟨le_of_not_gt h3, h4⟩]; split_ifs <;> linarith
+            · rw [if_neg (fun h => h4 h.2), if_pos ⟨lt_of_not_ge h2, lt_of_not_ge h4⟩]; linarith
+    · rw [if_neg hb]; split_ifs <;> linarith
+  have hbad : (∑ a ∈ range N,
+      if ¬ (phiR N c a < R1 ∨ phiL N c a < R2) then Complex.normSq (sinePhaseAmplitude M β a) else 0) ≤
+      cs * ((508 / 10000 : ℝ) *
+          ((∑ k ∈ range K1, 1 / ((R1 + k) ^ 2 - 1 / 4) ^ 2) +
+           (∑ k ∈ range K2, 1 / ((R2 + k) ^ 2 - 1 / 4) ^ 2)) + 14 / 1000000) + 12 / 1000000 := by
     have hsum := Finset.sum_le_sum (fun a (_ : a ∈ range N) => hcov a)
     simp only [Finset.sum_add_distrib] at hsum
     have h1 := hRSs
