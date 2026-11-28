@@ -15309,7 +15309,7 @@ theorem arithSEnv_counts_formula (E : EnvSchedule) (L : ControlledPointLayout) :
   exact ⟨by omega, by omega, by omega, by omega⟩
 
 -- Concrete Wave 11 schedules (`env460`, `env465`, `env485`, `env500`, `env510`) with 2-piece envelopes!
-def env460PostW (i : Nat) : Nat := min 258 (min (461 - i) (max 146 (293 - 13 * i / 20)))
+def env460PostW (i : Nat) : Nat := min 258 (min (461 - i) (max 146 (291 - 23 * i / 36)))
 
 def env460 : EnvSchedule where
   nGroups := 91
@@ -15384,20 +15384,20 @@ def envTickRTofFn (pw : Nat → Nat) (i : Nat) : Nat :=
 def envTickRMeasFn (pw : Nat → Nat) (i : Nat) : Nat := pw i - 1
 
 theorem arithSEnv_env460_counts (L : ControlledPointLayout) :
-    ECDSAAdd.toffoliCount (arithSEnv env460 L false) = 877718 ∧
-    ECDSAAdd.measurementCount (arithSEnv env460 L false) = 616084 ∧
-    ECDSAAdd.toffoliCount (arithSEnv env460 L true) = 877717 ∧
-    ECDSAAdd.measurementCount (arithSEnv env460 L true) = 616340 := by
+    ECDSAAdd.toffoliCount (arithSEnv env460 L false) = 877418 ∧
+    ECDSAAdd.measurementCount (arithSEnv env460 L false) = 615934 ∧
+    ECDSAAdd.toffoliCount (arithSEnv env460 L true) = 877417 ∧
+    ECDSAAdd.measurementCount (arithSEnv env460 L true) = 616190 := by
   have hf := arithSEnv_counts_formula env460 L
-  have h1 : envSumRange (envTickFTofFn env460PostW) 1 459 = 143642 := by decide +kernel
-  have h2 : envSumRange (envTickFMeasFn env460PostW) 1 459 = 72077 := by decide +kernel
-  have h3 : envSumRange (envTickRTofFn env460PostW) 1 459 = 143439 := by decide +kernel
-  have h4 : envSumRange (envTickRMeasFn env460PostW) 1 459 = 71821 := by decide +kernel
+  have h1 : envSumRange (envTickFTofFn env460PostW) 1 459 = 143492 := by decide +kernel
+  have h2 : envSumRange (envTickFMeasFn env460PostW) 1 459 = 72002 := by decide +kernel
+  have h3 : envSumRange (envTickRTofFn env460PostW) 1 459 = 143289 := by decide +kernel
+  have h4 : envSumRange (envTickRMeasFn env460PostW) 1 459 = 71746 := by decide +kernel
   have h5 : envPackCount 1 459 = 91 := by decide +kernel
-  have e1 : envSumRange (envTickFTof env460) 1 (env460.S - 1) = 143642 := h1
-  have e2 : envSumRange (envTickFMeas env460) 1 (env460.S - 1) = 72077 := h2
-  have e3 : envSumRange (envTickRTof env460) 1 (env460.S - 1) = 143439 := h3
-  have e4 : envSumRange (envTickRMeas env460) 1 (env460.S - 1) = 71821 := h4
+  have e1 : envSumRange (envTickFTof env460) 1 (env460.S - 1) = 143492 := h1
+  have e2 : envSumRange (envTickFMeas env460) 1 (env460.S - 1) = 72002 := h2
+  have e3 : envSumRange (envTickRTof env460) 1 (env460.S - 1) = 143289 := h3
+  have e4 : envSumRange (envTickRMeas env460) 1 (env460.S - 1) = 71746 := h4
   have e5 : envPackCount 1 (env460.S - 1) = 91 := h5
   have h6 : env460.nGroups = 91 := rfl
   simp only [e1, e2, e3, e4, e5, h6] at hf
@@ -19802,10 +19802,10 @@ def arithSpecEnv460 : ArithSpec where
   prog := fun mul => compiledDirectArithEnv env460 mul
   GoodX := fun X => X ≠ 0 ∧ GoodStack env460 X.val
   good_ne_zero := fun _ h => h.1
-  finDiv := 1493802
-  finMul := 1494057
-  tofDiv := 877718
-  tofMul := 877717
+  finDiv := 1493352
+  finMul := 1493607
+  tofDiv := 877418
+  tofMul := 877417
   removed18 := fun mul s => compiledDirectArithEnv_removed18 env460 mul s
   shiftFin := fun mul => by
     have hc := arithSEnv_env460_counts streamLayout
@@ -23786,7 +23786,7 @@ theorem compiledRecEnv510_17_bound : (compiledProgramFnW arithSpecEnv510 fixupSp
   (compiledRecW_bound (by decide) (by decide) arithSpecEnv510 fixupSpec17).trans (by decide)
 
 theorem compiledEnv460_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
-    ((compiledProgramEnv460_16 start).instantiate read h).tCount ≤ 4 * 1897790 :=
+    ((compiledProgramEnv460_16 start).instantiate read h).tCount ≤ 4 * 1897190 :=
   (compiledW_tCount (by decide) (by decide) arithSpecEnv460 fixupSpec16 start read h).trans (by decide)
 theorem compiledEnv465_16_tCount (start : Nat) (read : ConstantBit (2 ^ 16) → Bool) (h : Fin start → Bool) :
     ((compiledProgramEnv465_16 start).instantiate read h).tCount ≤ 4 * 1919100 :=

@@ -1423,7 +1423,7 @@ theorem trim18_within {n s e} (p : Straight n s e) (ws : List Wire) (hp : Within
 end
 end ShorECDLP.Entrant.Trim18
 
-/-! ### Part 1b: Tight deg-2 sine-windowed ideal recovery (`SineBoundsTight`, `≥ 99497 / 100000`) -/
+/-! ### Part 1b: Tight deg-2 sine-windowed ideal recovery (`SineBoundsTight`, `≥ 995038 / 1000000`) -/
 
 namespace ShorECDLP.Entrant.SineBoundsTight
 open Finset Classical Quantum Quantum.PhaseEstimation Secp256k1 Challenge
@@ -1734,25 +1734,25 @@ def reLoQ (t : ℚ) : ℚ :=
     (2 * sqrt2LoQ / piHiQ) * cosLoQ t / (1 - 4 * t ^ 2) -
       (15 / 10) * piHiQ / 4194304 - (15 / 10) * (2 * piHiQ * t) * (652 / 1048576)
 
-def U3a0Q : ℚ := 139 / 500000
-def U3a1Q : ℚ := 6003 / 500000
-def U3a2Q : ℚ := 2819 / 1000000
+def U3a0Q : ℚ := 1757 / 5000000
+def U3a1Q : ℚ := 116127 / 10000000
+def U3a2Q : ℚ := 12783 / 5000000
 
-def U5d0Q : ℚ := 19 / 1000000
-def U5d1Q : ℚ := 2397 / 1000000
-def U5d2Q : ℚ := 119 / 500000
+def U5d0Q : ℚ := 161 / 10000000
+def U5d1Q : ℚ := 4701 / 2000000
+def U5d2Q : ℚ := 1231 / 5000000
 
-def L1b0Q : ℚ := 495779 / 1000000
-def L1b1Q : ℚ := 131799 / 250000
-def L1b2Q : ℚ := 45303 / 200000
+def L1b0Q : ℚ := 1239483 / 2500000
+def L1b1Q : ℚ := 1266403 / 2500000
+def L1b2Q : ℚ := 399913 / 2000000
 
 def subOK64 (j : Fin 64) : Bool :=
   let t0 : ℚ := (j.val : ℚ) / 128
   let t1 : ℚ := ((j.val + 1 : ℕ) : ℚ) / 128
   let clo : ℚ := (cosLoQ t1) ^ 2
   let chi : ℚ := (cosHiQ t0) ^ 2
-  let k3 : ℚ := (508 / 10000) * (smallSumQ 15 (2 - t1) + smallSumQ 14 (2 + t0)) + 68 / 1000000
-  let k5 : ℚ := (508 / 10000) * (smallSumQ 14 (3 - t1) + smallSumQ 13 (3 + t0)) + 68 / 1000000
+  let k3 : ℚ := (508 / 10000) * (smallSumQ 15 (2 - t1) + smallSumQ 14 (2 + t0)) + 14 / 1000000
+  let k5 : ℚ := (508 / 10000) * (smallSumQ 14 (3 - t1) + smallSumQ 13 (3 + t0)) + 14 / 1000000
   let rlo : ℚ := reLoQ t1
   decide (0 ≤ cosLoQ t1 ∧ cosHiQ t0 ≤ 1 ∧ 0 ≤ rlo ∧
     k3 * clo ≤ U3a0Q + U3a1Q * clo - U3a2Q * clo ^ 2 ∧
@@ -1923,10 +1923,10 @@ private theorem cos_sq_bounds_sub64 (j : Fin 64) {t : ℝ}
 private theorem box3_tight_deg2 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
     ((508 / 10000 : ℝ) *
       ((∑ k ∈ range 15, 1 / ((2 - t + k) ^ 2 - 1 / 4) ^ 2) +
-       (∑ k ∈ range 14, 1 / ((2 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000) *
+       (∑ k ∈ range 14, 1 / ((2 + t + k) ^ 2 - 1 / 4) ^ 2)) + 14 / 1000000) *
       Real.cos (Real.pi * t) ^ 2 ≤
-    (139 / 500000 : ℝ) + (6003 / 500000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
-      (2819 / 1000000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 := by
+    (1757 / 5000000 : ℝ) + (116127 / 10000000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
+      (12783 / 5000000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 := by
   obtain ⟨j, hjt0, hjt1⟩ := exists_sub64 t ht0 ht1
   have hcs := cos_sq_bounds_sub64 j hjt0 hjt1
   have hj := all_subOK64 j
@@ -1946,31 +1946,31 @@ private theorem box3_tight_deg2 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
   have hA := smallSum_antitone 15 ((2 - t1q : ℚ) : ℝ) (2 - t) (by push_cast; linarith) (by push_cast; linarith)
   have hB := smallSum_antitone 14 ((2 + t0q : ℚ) : ℝ) (2 + t) (by push_cast; linarith) (by push_cast; linarith)
   rw [smallSum_cast] at hA hB
-  set K3q : ℚ := (508 / 10000) * (smallSumQ 15 (2 - t1q) + smallSumQ 14 (2 + t0q)) + 68 / 1000000
+  set K3q : ℚ := (508 / 10000) * (smallSumQ 15 (2 - t1q) + smallSumQ 14 (2 + t0q)) + 14 / 1000000
   have hKle : (508 / 10000 : ℝ) *
       ((∑ k ∈ range 15, 1 / ((2 - t + k) ^ 2 - 1 / 4) ^ 2) +
-       (∑ k ∈ range 14, 1 / ((2 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000 ≤ (K3q : ℝ) := by
+       (∑ k ∈ range 14, 1 / ((2 + t + k) ^ 2 - 1 / 4) ^ 2)) + 14 / 1000000 ≤ (K3q : ℝ) := by
     dsimp only [K3q]; push_cast; linarith
   have h1 : (K3q : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ≤
-      (139 / 500000 : ℝ) + (6003 / 500000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) -
-      (2819 / 1000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+      (1757 / 5000000 : ℝ) + (116127 / 10000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) -
+      (12783 / 5000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ^ 2 := by
     have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.1
     dsimp only [U3a0Q, U3a1Q, U3a2Q] at h; push_cast at h ⊢; exact h
   have h2 : (K3q : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ≤
-      (139 / 500000 : ℝ) + (6003 / 500000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
-      (2819 / 1000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+      (1757 / 5000000 : ℝ) + (116127 / 10000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (12783 / 5000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
     have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.1
     dsimp only [U3a0Q, U3a1Q, U3a2Q] at h; push_cast at h ⊢; exact h
-  have hq := concave_quad_ge_lin (by norm_num : (0 : ℝ) ≤ 2819 / 1000000) hcs.1 hcs.2 h1 h2
+  have hq := concave_quad_ge_lin (by norm_num : (0 : ℝ) ≤ 12783 / 5000000) hcs.1 hcs.2 h1 h2
   exact (mul_le_mul_of_nonneg_right hKle (sq_nonneg _)).trans hq
 
 private theorem box5_tight_deg2 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
     ((508 / 10000 : ℝ) *
       ((∑ k ∈ range 14, 1 / ((3 - t + k) ^ 2 - 1 / 4) ^ 2) +
-       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000) *
+       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 14 / 1000000) *
       Real.cos (Real.pi * t) ^ 2 ≤
-    (19 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
-      (119 / 500000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 := by
+    (161 / 10000000 : ℝ) + (4701 / 2000000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
+      (1231 / 5000000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 := by
   obtain ⟨j, hjt0, hjt1⟩ := exists_sub64 t ht0 ht1
   have hcs := cos_sq_bounds_sub64 j hjt0 hjt1
   have hj := all_subOK64 j
@@ -1990,27 +1990,27 @@ private theorem box5_tight_deg2 (t : ℝ) (ht0 : 0 ≤ t) (ht1 : t ≤ 1 / 2) :
   have hA := smallSum_antitone 14 ((3 - t1q : ℚ) : ℝ) (3 - t) (by push_cast; linarith) (by push_cast; linarith)
   have hB := smallSum_antitone 13 ((3 + t0q : ℚ) : ℝ) (3 + t) (by push_cast; linarith) (by push_cast; linarith)
   rw [smallSum_cast] at hA hB
-  set K5q : ℚ := (508 / 10000) * (smallSumQ 14 (3 - t1q) + smallSumQ 13 (3 + t0q)) + 68 / 1000000
+  set K5q : ℚ := (508 / 10000) * (smallSumQ 14 (3 - t1q) + smallSumQ 13 (3 + t0q)) + 14 / 1000000
   have hKle : (508 / 10000 : ℝ) *
       ((∑ k ∈ range 14, 1 / ((3 - t + k) ^ 2 - 1 / 4) ^ 2) +
-       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 68 / 1000000 ≤ (K5q : ℝ) := by
+       (∑ k ∈ range 13, 1 / ((3 + t + k) ^ 2 - 1 / 4) ^ 2)) + 14 / 1000000 ≤ (K5q : ℝ) := by
     dsimp only [K5q]; push_cast; linarith
   have h1 : (K5q : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ≤
-      (19 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) -
-      (119 / 500000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+      (161 / 10000000 : ℝ) + (4701 / 2000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) -
+      (1231 / 5000000 : ℝ) * (((cosLoQ t1q ^ 2 : ℚ) : ℝ)) ^ 2 := by
     have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.2.1
     dsimp only [U5d0Q, U5d1Q, U5d2Q] at h; push_cast at h ⊢; exact h
   have h2 : (K5q : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ≤
-      (19 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
-      (119 / 500000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+      (161 / 10000000 : ℝ) + (4701 / 2000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (1231 / 5000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
     have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.2.2.1
     dsimp only [U5d0Q, U5d1Q, U5d2Q] at h; push_cast at h ⊢; exact h
-  have hq := concave_quad_ge_lin (by norm_num : (0 : ℝ) ≤ 119 / 500000) hcs.1 hcs.2 h1 h2
+  have hq := concave_quad_ge_lin (by norm_num : (0 : ℝ) ≤ 1231 / 5000000) hcs.1 hcs.2 h1 h2
   exact (mul_le_mul_of_nonneg_right hKle (sq_nonneg _)).trans hq
 
 theorem sine_neighbor_mass3_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
     let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
-    1 - ((29 / 100000 : ℝ) + (6003 / 500000 : ℝ) * c - (2819 / 1000000 : ℝ) * c ^ 2) ≤
+    1 - ((1817 / 5000000 : ℝ) + (116127 / 10000000 : ℝ) * c - (12783 / 5000000 : ℝ) * c ^ 2) ≤
       sineNeighborMass m r 1 k := by
   classical
   dsimp only
@@ -2021,13 +2021,13 @@ theorem sine_neighbor_mass3_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 <
   have hcos_eq : Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 = Real.cos (Real.pi * |σ|) ^ 2 := by
     rw [mul_assoc]; exact cos_sq_eq_abs_round x
   have hstep :
-      1 - ((29 / 100000 : ℝ) + (6003 / 500000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
-        (2819 / 1000000 : ℝ) * (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2) ^ 2) ≤
+      1 - ((1817 / 5000000 : ℝ) + (116127 / 10000000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
+        (12783 / 5000000 : ℝ) * (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2) ^ 2) ≤
       ∑ b ∈ range (2 ^ m),
         if phiR (2 ^ m) x b < 2 - σ ∨ phiL (2 ^ m) x b < 2 + σ
         then Complex.normSq (sinePhaseAmplitude m β b) else 0 := by
     by_cases hs : 0 ≤ σ
-    · have hcirc := sine_circular_mass_two m hm β (2 - σ) (2 + σ) 15 14
+    · have hcirc := sine_circular_mass_two_tight m hm β (2 - σ) (2 + σ) 15 14
         (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
         (by push_cast; linarith) (by push_cast; linarith)
       have hbox := box3_tight_deg2 σ hs hσ.2
@@ -2036,7 +2036,7 @@ theorem sine_neighbor_mass3_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 <
         if phiR (2 ^ m) x b < 2 - σ ∨ phiL (2 ^ m) x b < 2 + σ
         then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
       linarith
-    · have hcirc := sine_circular_mass_two m hm β (2 - σ) (2 + σ) 14 15
+    · have hcirc := sine_circular_mass_two_tight m hm β (2 - σ) (2 + σ) 14 15
         (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
         (by push_cast; linarith) (by push_cast; linarith)
       have hbox := box3_tight_deg2 (-σ) (by linarith) (by linarith)
@@ -2070,7 +2070,7 @@ theorem sine_neighbor_mass3_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 <
 
 theorem sine_neighbor_mass5_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
     let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
-    1 - ((31 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * c - (119 / 500000 : ℝ) * c ^ 2) ≤
+    1 - ((281 / 10000000 : ℝ) + (4701 / 2000000 : ℝ) * c - (1231 / 5000000 : ℝ) * c ^ 2) ≤
       sineNeighborMass m r 2 k := by
   classical
   dsimp only
@@ -2081,13 +2081,13 @@ theorem sine_neighbor_mass5_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 <
   have hcos_eq : Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 = Real.cos (Real.pi * |σ|) ^ 2 := by
     rw [mul_assoc]; exact cos_sq_eq_abs_round x
   have hstep :
-      1 - ((31 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
-        (119 / 500000 : ℝ) * (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2) ^ 2) ≤
+      1 - ((281 / 10000000 : ℝ) + (4701 / 2000000 : ℝ) * Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2 -
+        (1231 / 5000000 : ℝ) * (Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2) ^ 2) ≤
       ∑ b ∈ range (2 ^ m),
         if phiR (2 ^ m) x b < 3 - σ ∨ phiL (2 ^ m) x b < 3 + σ
         then Complex.normSq (sinePhaseAmplitude m β b) else 0 := by
     by_cases hs : 0 ≤ σ
-    · have hcirc := sine_circular_mass_two m hm β (3 - σ) (3 + σ) 14 13
+    · have hcirc := sine_circular_mass_two_tight m hm β (3 - σ) (3 + σ) 14 13
         (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
         (by push_cast; linarith) (by push_cast; linarith)
       have hbox := box5_tight_deg2 σ hs hσ.2
@@ -2096,7 +2096,7 @@ theorem sine_neighbor_mass5_tight (m : ℕ) (hm : 204 ≤ m) (r : ℕ) (hr : 0 <
         if phiR (2 ^ m) x b < 3 - σ ∨ phiL (2 ^ m) x b < 3 + σ
         then Complex.normSq (sinePhaseAmplitude m β b) else 0 at hcirc
       linarith
-    · have hcirc := sine_circular_mass_two m hm β (3 - σ) (3 + σ) 13 14
+    · have hcirc := sine_circular_mass_two_tight m hm β (3 - σ) (3 + σ) 13 14
         (by linarith) (by linarith) (by push_cast; linarith) (by push_cast; linarith)
         (by push_cast; linarith) (by push_cast; linarith)
       have hbox := box5_tight_deg2 (-σ) (by linarith) (by linarith)
@@ -2139,7 +2139,7 @@ private theorem cos_add_int_mul_pi_sq (x : ℝ) (k : ℤ) :
 private theorem sinePhaseAmplitude_peak_lower_tight (m : ℕ) (hm : 10 ≤ m) (β : ℝ) (a : ℕ) (z : ℤ)
     (hdist : |((2 ^ m : ℕ) : ℝ) * β - ((a : ℝ) + (z : ℝ) * ((2 ^ m : ℕ) : ℝ))| ≤ 1 / 2) :
     let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * β) ^ 2
-    (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * c - (45303 / 200000 : ℝ) * c ^ 2 ≤
+    (1239483 / 2500000 : ℝ) + (1266403 / 2500000 : ℝ) * c - (399913 / 2000000 : ℝ) * c ^ 2 ≤
       Complex.normSq (sinePhaseAmplitude m β a) := by
   dsimp only
   set N := 2 ^ m
@@ -2431,8 +2431,8 @@ private theorem sinePhaseAmplitude_peak_lower_tight (m : ℕ) (hm : 10 ≤ m) (�
   have hrlo_nn : (0 : ℝ) ≤ ((reLoQ t1q : ℚ) : ℝ) := by simpa using Rat.cast_le (K := ℝ).mpr hj.2.2.1
   have hsq : ((reLoQ t1q : ℚ) : ℝ) ^ 2 ≤ (u₀ * sinePhaseAmplitude m β a).re ^ 2 :=
     pow_le_pow_left₀ hrlo_nn (hre_t1_ge.trans hre_ge_t1) 2
-  have hL1_chi : (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
-      (45303 / 200000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 ≤ ((reLoQ t1q : ℚ) : ℝ) ^ 2 := by
+  have hL1_chi : (1239483 / 2500000 : ℝ) + (1266403 / 2500000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (399913 / 2000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 ≤ ((reLoQ t1q : ℚ) : ℝ) ^ 2 := by
     have h := Rat.cast_le (K := ℝ).mpr hj.2.2.2.2.2.2.2
     dsimp only [L1b0Q, L1b1Q, L1b2Q] at h; push_cast at h ⊢; exact h
   have hchi_le1 : (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ≤ 1 := by
@@ -2448,10 +2448,10 @@ private theorem sinePhaseAmplitude_peak_lower_tight (m : ℕ) (hm : 10 ≤ m) (�
       Real.cos_nonneg_of_mem_Icc ⟨by nlinarith [Real.pi_pos], by nlinarith [Real.pi_pos]⟩
     have h2 : 0 ≤ ((cosHiQ t0q : ℚ) : ℝ) := h0.trans (cos_le_cosHiQ t0q ht0q_nn ht0q_le)
     rw [Rat.cast_pow]; nlinarith
-  have hL1_mono : (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
-      (45303 / 200000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 ≤
-      (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
-      (45303 / 200000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
+  have hL1_mono : (1239483 / 2500000 : ℝ) + (1266403 / 2500000 : ℝ) * Real.cos (Real.pi * t) ^ 2 -
+      (399913 / 2000000 : ℝ) * (Real.cos (Real.pi * t) ^ 2) ^ 2 ≤
+      (1239483 / 2500000 : ℝ) + (1266403 / 2500000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) -
+      (399913 / 2000000 : ℝ) * (((cosHiQ t0q ^ 2 : ℚ) : ℝ)) ^ 2 := by
     have hcc := hcs.2
     have hnn : 0 ≤ Real.cos (Real.pi * t) ^ 2 := sq_nonneg _
     nlinarith
@@ -2460,7 +2460,7 @@ private theorem sinePhaseAmplitude_peak_lower_tight (m : ℕ) (hm : 10 ≤ m) (�
 
 theorem sine_neighbor_mass1_tight (m : ℕ) (hm : 10 ≤ m) (r : ℕ) (hr : 0 < r) (k : Fin r) :
     let c := Real.cos (Real.pi * ((2 ^ m : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
-    (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * c - (45303 / 200000 : ℝ) * c ^ 2 ≤
+    (1239483 / 2500000 : ℝ) + (1266403 / 2500000 : ℝ) * c - (399913 / 2000000 : ℝ) * c ^ 2 ≤
       sineNeighborMass m r 0 k := by
   classical
   dsimp only
@@ -2495,7 +2495,7 @@ theorem sine_neighbor_mass1_tight (m : ℕ) (hm : 10 ≤ m) (r : ℕ) (hr : 0 < 
     rw [hcast]; exact abs_sub_round _
   exact (sinePhaseAmplitude_peak_lower_tight m hm ((k.val : ℝ) / r) a.val z hdist).trans hsingle
 
-/-! ### Part 3: Exact `d`-disjoint cosine Fourier average and `99497 / 100000` theorem -/
+/-! ### Part 3: Exact `d`-disjoint cosine Fourier average and `497519 / 500000` theorem -/
 
 private theorem sum_cos_int_eval (r : ℕ) (hr : 0 < r) (M : ℤ) :
     ∑ k ∈ range r, Real.cos (2 * Real.pi * (M : ℝ) * (k : ℝ) / r) =
@@ -2578,7 +2578,7 @@ private theorem sine_pair_success_256_206_aux (r d : ℕ) (hr : r.Prime) (hrbig 
       neighborWord 256 a.val i = (reducedPeak r 256 k).val →
       neighborWord 206 b.val j = (reducedPeak r 206 ⟨d * k.val % r, Nat.mod_lt _ hr.pos⟩).val →
       pairRecovered256 d a.val b.val = true) :
-    (99497 / 100000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+    (497519 / 500000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
       if pairRecovered256 d a.val b.val then sinePairMass r 256 206 d (a, b) else 0 := by
   classical
   have hrR : (0 : ℝ) < r := by exact_mod_cast hr.pos
@@ -2600,9 +2600,9 @@ private theorem sine_pair_success_256_206_aux (r d : ℕ) (hr : r.Prime) (hrbig 
     if good k a b then A k a * B k b else 0
   let cL : Fin r → ℝ := fun k => Real.cos (Real.pi * ((2 ^ 256 : ℕ) : ℝ) * ((k.val : ℝ) / r)) ^ 2
   let cR : Fin r → ℝ := fun k => Real.cos (Real.pi * ((2 ^ 206 : ℕ) : ℝ) * (((kR k).val : ℝ) / r)) ^ 2
-  let U3 : ℝ → ℝ := fun c => (29 / 100000 : ℝ) + (6003 / 500000 : ℝ) * c - (2819 / 1000000 : ℝ) * c ^ 2
-  let U5 : ℝ → ℝ := fun c => (31 / 1000000 : ℝ) + (2397 / 1000000 : ℝ) * c - (119 / 500000 : ℝ) * c ^ 2
-  let L1 : ℝ → ℝ := fun c => (495779 / 1000000 : ℝ) + (131799 / 250000 : ℝ) * c - (45303 / 200000 : ℝ) * c ^ 2
+  let U3 : ℝ → ℝ := fun c => (1817 / 5000000 : ℝ) + (116127 / 10000000 : ℝ) * c - (12783 / 5000000 : ℝ) * c ^ 2
+  let U5 : ℝ → ℝ := fun c => (281 / 10000000 : ℝ) + (4701 / 2000000 : ℝ) * c - (1231 / 5000000 : ℝ) * c ^ 2
+  let L1 : ℝ → ℝ := fun c => (1239483 / 2500000 : ℝ) + (1266403 / 2500000 : ℝ) * c - (399913 / 2000000 : ℝ) * c ^ 2
   have hrec : ∀ k a b, good k a b → pairRecovered256 d a.val b.val = true := by
     intro k a b ⟨hk, h⟩
     rcases h with ⟨⟨i, hi1, hi2, hi⟩, ⟨j, hj1, hj2, hj⟩⟩ |
@@ -2872,11 +2872,11 @@ private theorem sine_pair_success_256_206_aux (r d : ℕ) (hr : r.Prime) (hrbig 
       ((1 - (U3 (cL k) - (U3 (cL k) - U5 (cL k)) * L1 (cR k)) -
             (U3 (cR k) - (U3 (cR k) - U5 (cR k)) * L1 (cL k))) -
         (if k.val = 0 then (1 : ℝ) else 0)) =
-      (r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-          2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        2 * ((1757 / 500000 : ℝ) * (300681 / 2000000)) * S11 +
-        2 * ((-2581 / 8000000 : ℝ) * (-45303 / 1600000)) * S22 +
-        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * (S12 + S21) - 1 := by
+      (r : ℝ) * (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+          2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        2 * ((34759 / 10000000 : ℝ) * (3066047 / 20000000)) * S11 +
+        2 * ((-361 / 1250000 : ℝ) * (-399913 / 16000000)) * S22 +
+        ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) * (S12 + S21) - 1 := by
     have hz : (∑ k : Fin r, if k.val = 0 then (1 : ℝ) else 0) = 1 := by
       rw [Fin.sum_univ_eq_sum_range (fun k => if k = 0 then (1 : ℝ) else 0)]; simp [hr.pos]
     rw [Finset.sum_sub_distrib, hz]
@@ -2884,16 +2884,16 @@ private theorem sine_pair_success_256_206_aux (r d : ℕ) (hr : r.Prime) (hrbig 
     have hrew : ∀ k : Fin r,
         1 - (U3 (cL k) - (U3 (cL k) - U5 (cL k)) * L1 (cR k)) -
             (U3 (cR k) - (U3 (cR k) - U5 (cR k)) * L1 (cL k)) =
-        (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-          2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        (-(6003 / 500000 - 2819 / 1000000) / 2 + (1757 / 500000) * (5395471 / 8000000) +
-          (6553 / 1600000) * (300681 / 2000000)) * (eL1 k.val + eR1 k.val) +
-        ((2819 / 1000000) / 8 + (-2581 / 8000000) * (5395471 / 8000000) +
-          (6553 / 1600000) * (-45303 / 1600000)) * (eL2 k.val + eR2 k.val) +
-        2 * ((1757 / 500000) * (300681 / 2000000)) * (eL1 k.val * eR1 k.val) +
-        2 * ((-2581 / 8000000) * (-45303 / 1600000)) * (eL2 k.val * eR2 k.val) +
-        ((1757 / 500000) * (-45303 / 1600000)) * (eL1 k.val * eR2 k.val + eL2 k.val * eR1 k.val) +
-        ((-2581 / 8000000) * (300681 / 2000000)) * (eL2 k.val * eR1 k.val + eL1 k.val * eR2 k.val) := by
+        (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+          2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        (-(116127 / 10000000 - 12783 / 5000000) / 2 + (34759 / 10000000) * (53927209 / 80000000) +
+          (41 / 10000) * (3066047 / 20000000)) * (eL1 k.val + eR1 k.val) +
+        ((12783 / 5000000) / 8 + (-361 / 1250000) * (53927209 / 80000000) +
+          (41 / 10000) * (-399913 / 16000000)) * (eL2 k.val + eR2 k.val) +
+        2 * ((34759 / 10000000) * (3066047 / 20000000)) * (eL1 k.val * eR1 k.val) +
+        2 * ((-361 / 1250000) * (-399913 / 16000000)) * (eL2 k.val * eR2 k.val) +
+        ((34759 / 10000000) * (-399913 / 16000000)) * (eL1 k.val * eR2 k.val + eL2 k.val * eR1 k.val) +
+        ((-361 / 1250000) * (3066047 / 20000000)) * (eL2 k.val * eR1 k.val + eL1 k.val * eR2 k.val) := by
       intro k
       obtain ⟨hL1, hL2⟩ := hcL_eq k
       obtain ⟨hR1, hR2⟩ := hcR_eq k
@@ -2921,45 +2921,45 @@ private theorem sine_pair_success_256_206_aux (r d : ℕ) (hr : r.Prime) (hrbig 
     rcases hdisj with h0 | h0
     · rw [h0, zero_add]; exact hS21_bounds.2
     · rw [h0, add_zero]; exact hS12_bounds.2
-  have hcross_ge : ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) *
+  have hcross_ge : ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) *
       ((r : ℝ) / 2) ≤
-      ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * (S12 + S21) := by
+      ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) * (S12 + S21) := by
     nlinarith
-  have hS11_t : 0 ≤ 2 * ((1757 / 500000 : ℝ) * (300681 / 2000000)) * S11 :=
+  have hS11_t : 0 ≤ 2 * ((34759 / 10000000 : ℝ) * (3066047 / 20000000)) * S11 :=
     mul_nonneg (by norm_num) hS11_nn
-  have hS22_t : 0 ≤ 2 * ((-2581 / 8000000 : ℝ) * (-45303 / 1600000)) * S22 :=
+  have hS22_t : 0 ≤ 2 * ((-361 / 1250000 : ℝ) * (-399913 / 16000000)) * S22 :=
     mul_nonneg (by norm_num) hS22_nn
   have hlower := mul_le_mul_of_nonneg_left hsum hrinv
   rw [step2] at hlower
   have hrbigR : (1000000 : ℝ) ≤ (r : ℝ) := by exact_mod_cast hrbig
   have hinv : (r : ℝ)⁻¹ ≤ (1 : ℝ) / 1000000 := by
     rw [one_div]; exact inv_anti₀ (by norm_num) hrbigR
-  have hnum : (99497 / 100000 : ℝ) ≤
-      (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * ((r : ℝ) / 2) - 1) := by
-    have hsimp : (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * ((r : ℝ) / 2) - 1) =
-      (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) / 2 - (r : ℝ)⁻¹ := by
+  have hnum : (497519 / 500000 : ℝ) ≤
+      (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+        2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) * ((r : ℝ) / 2) - 1) := by
+    have hsimp : (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+        2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) * ((r : ℝ) / 2) - 1) =
+      (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+        2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) / 2 - (r : ℝ)⁻¹ := by
       field_simp [hrR.ne']
     rw [hsimp]; linarith
-  have hcomb : (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * ((r : ℝ) / 2) - 1) ≤
-      (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((29 / 100000 : ℝ) + (6003 / 500000) / 2 - (2819 / 1000000) * 3 / 8) +
-        2 * ((6553 / 1600000 : ℝ) * (5395471 / 8000000))) +
-        2 * ((1757 / 500000 : ℝ) * (300681 / 2000000)) * S11 +
-        2 * ((-2581 / 8000000 : ℝ) * (-45303 / 1600000)) * S22 +
-        ((1757 / 500000 : ℝ) * (-45303 / 1600000) + (-2581 / 8000000) * (300681 / 2000000)) * (S12 + S21) - 1) :=
+  have hcomb : (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+        2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) * ((r : ℝ) / 2) - 1) ≤
+      (r : ℝ)⁻¹ * ((r : ℝ) * (1 - 2 * ((1817 / 5000000 : ℝ) + (116127 / 10000000) / 2 - (12783 / 5000000) * 3 / 8) +
+        2 * ((41 / 10000 : ℝ) * (53927209 / 80000000))) +
+        2 * ((34759 / 10000000 : ℝ) * (3066047 / 20000000)) * S11 +
+        2 * ((-361 / 1250000 : ℝ) * (-399913 / 16000000)) * S22 +
+        ((34759 / 10000000 : ℝ) * (-399913 / 16000000) + (-361 / 1250000) * (3066047 / 20000000)) * (S12 + S21) - 1) :=
     mul_le_mul_of_nonneg_left (by linarith) hrinv
   exact hnum.trans (hcomb.trans (hlower.trans step1))
 
-/-- Wave 11 tight ideal recovery lower bound (`≥ 99497 / 100000`) for `(L = 256, R = 206, 13 trials)`. -/
+/-- Wave 11 tight ideal recovery lower bound (`≥ 497519 / 500000`) for `(L = 256, R = 206, 13 trials)`. -/
 theorem sine_pair_success_256_206_tight (Q : Point) (d : ℕ) (hn : Q ≠ 0) (hd : Q = d • G) :
-    (99497 / 100000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
+    (497519 / 500000 : ℝ) ≤ ∑ a : Fin (2 ^ 256), ∑ b : Fin (2 ^ 206),
       if pairRecovered256 d a.val b.val then sinePairMass order 256 206 d (a, b) else 0 :=
   sine_pair_success_256_206_aux order d order_prime (by norm_num [order])
     (order_not_dvd_of_ne_zero Q d hn hd)
@@ -13122,8 +13122,8 @@ def plan510 : List BadSEntry := [
 
 
 theorem skywalk_badStack460_card :
-    ((BadStack LocalKernel.env460).card : ℝ) ≤ (524 : ℝ) / 10 ^ 9 * (2 : ℝ) ^ 256 := by
-  have h := badStack_of_dyadic LocalKernel.env460 460 LocalKernel.env460PostW plan460 524 (10 ^ 9)
+    ((BadStack LocalKernel.env460).card : ℝ) ≤ (5536 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256 := by
+  have h := badStack_of_dyadic LocalKernel.env460 460 LocalKernel.env460PostW plan460 5536 (10 ^ 10)
     rfl rfl (by decide)
     (fun i hi1 hi2 hdrop hramp => by unfold LocalKernel.env460PostW at *; split_ifs at hdrop <;> omega)
     (by decide +kernel) (by decide +kernel)
@@ -13214,7 +13214,7 @@ def Digit25.bank (d : Digit25) : List Wire := GenericW.bankW d.k
 def Digit25.tof : Digit25 → Nat
   | .left18 j => if j.val = 10 then 2263993 else 2320431
   | .left19 j => if j.val = 1 then 2277531 else 2366013
-  | .right17 j => if j.val < 4 then 1897790 else 1919100
+  | .right17 j => if j.val < 4 then 1897190 else 1919100
   | .right18 _ => 2001275
 
 def Digit25.isRight : Digit25 → Bool
@@ -16302,16 +16302,16 @@ private theorem goodX_env510 : ∀ X : ECDSAAdd.Fp, X ≠ 0 → LocalKernel.Good
 
 private theorem badMass_env460_le :
     (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env460).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
-      (2048 / 1000000 : ℝ) ^ 2 := by
+      (2105 / 1000000 : ℝ) ^ 2 := by
   have hcard := SkywalkTail485.skywalk_badStack460_card
   have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env460).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
-      (4 + 4 * ((524 : ℝ) / 10 ^ 9 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
+      (4 + 4 * ((5536 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
     mul_le_mul_of_nonneg_right (by linarith) (by positivity)
-  have h2 : (4 + 4 * ((524 : ℝ) / 10 ^ 9 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
-      8 / (2 : ℝ) ^ 256 + 4192 / 10 ^ 9 := by
+  have h2 : (4 + 4 * ((5536 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
+      8 / (2 : ℝ) ^ 256 + 44288 / 10 ^ 10 := by
     have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
     field_simp [hp]; ring
-  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 4192 / 10 ^ 9 ≤ (2048 / 1000000 : ℝ) ^ 2 := by norm_num
+  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 44288 / 10 ^ 10 ≤ (2105 / 1000000 : ℝ) ^ 2 := by norm_num
   linarith
 
 private theorem badMass_env465_le :
@@ -16321,11 +16321,11 @@ private theorem badMass_env465_le :
   have h1 : (4 + 4 * ((SkywalkTail485.BadStack LocalKernel.env465).card : ℝ)) * (2 / (2 : ℝ) ^ 256) ≤
       (4 + 4 * ((595 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) :=
     mul_le_mul_of_nonneg_right (by linarith) (by positivity)
-  have h2 : (4 + 4 * ((386 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
-      8 / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 := by
+  have h2 : (4 + 4 * ((595 : ℝ) / 10 ^ 10 * (2 : ℝ) ^ 256)) * (2 / (2 : ℝ) ^ 256) =
+      8 / (2 : ℝ) ^ 256 + 4760 / 10 ^ 10 := by
     have hp : (2 : ℝ) ^ 256 ≠ 0 := by positivity
     field_simp [hp]; ring
-  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 3088 / 10 ^ 10 ≤ (690 / 1000000 : ℝ) ^ 2 := by norm_num
+  have h3 : (8 : ℝ) / (2 : ℝ) ^ 256 + 4760 / 10 ^ 10 ≤ (690 / 1000000 : ℝ) ^ 2 := by norm_num
   linarith
 
 private theorem badMass_env485_le :
@@ -16487,7 +16487,7 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
     (hS : ∀ x ∈ S, PointSupported x.2) (hD : MaxBound (2 / (2 : ℝ) ^ 256) D)
     (hdom : ∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) :
     Real.sqrt ((S.map (fun x => (axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) x.2) ^ 2)).sum) ≤
-      2 * (4 * (2048 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ)) := by
+      2 * (4 * (2105 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ)) := by
   have hcons := list_sqrt_axisSqrtErr_cons (rightHeadApproxWin Q hQ hn)
     (rightTailDigits25.map (bodyApproxWin Q hQ hn)) (fun _ _ => 0) (S.map (fun x => (List.nil, x.2)))
   have hmap_lhs : ((S.map (fun x => ((List.nil : List Bool), x.2))).map (fun x =>
@@ -16499,7 +16499,7 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
         (Quantum.run (rightHeadApproxWin Q hQ hn).pre
           (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum ≤
-      (2048 / 1000000 : ℝ) ^ 2 := by
+      (2105 / 1000000 : ℝ) ^ 2 := by
     rw [list_map_map_congr _ _ _ _ (fun _ => rfl)]
     have h1 : (S.map (fun x =>
         normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
@@ -16521,7 +16521,7 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
       normSq (restrictState (fun s => ¬ (rightHeadApproxWin Q hQ hn).goodPred s)
         (Quantum.run (rightHeadApproxWin Q hQ hn).pre
           (Quantum.run ((rightHeadApproxWin Q hQ hn).model.physical.wires.reverse.map Gate.H) x.2))))).sum) ≤
-      2048 / 1000000 :=
+      2105 / 1000000 :=
     (Real.sqrt_le_sqrt hbad1).trans_eq (Real.sqrt_sq (by norm_num))
   let S' : List (List Bool × State) := S.flatMap (fun x =>
     (fourierOutcomes 17).map (fun bits => (bits.reverse ++ List.nil, (rightHeadModel Q hQ hn).step List.nil bits x.2)))
@@ -16583,21 +16583,21 @@ theorem rightApprox25_sqrt_maxBound (Q : Point) (hQ : order • Q = 0) (hn : Q �
       dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg hge]; rfl
     · rfl
   have htail_le : Real.sqrt ((S'.map (fun y => (axisSqrtErr (rightTailDigits25.map (bodyApproxWin Q hQ hn)) y.1 (fun _ _ => 0) y.2) ^ 2)).sum) ≤
-      2 * (2048 / 1000000 : ℝ) + (2 * (2048 / 1000000 : ℝ) + (2 * (2048 / 1000000 : ℝ) + 8 * (2 * (690 / 1000000 : ℝ)))) := by
+      2 * (2105 / 1000000 : ℝ) + (2 * (2105 / 1000000 : ℝ) + (2 * (2105 / 1000000 : ℝ) + 8 * (2 * (690 / 1000000 : ℝ)))) := by
     rw [hrt_eq, List.map_cons, List.map_cons, List.map_cons]
     refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨1, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
       goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
-      (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
+      (2 / (2 : ℝ) ^ 256) (2105 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
       S' D' hS'_pt hD' hdom' ?_
     intro S1 D1 hS1 hD1 hdom1
     refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨2, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
       goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
-      (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
+      (2 / (2 : ℝ) ^ 256) (2105 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
       S1 D1 hS1 hD1 hdom1 ?_
     intro S2 D2 hS2 hD2 hdom2
     refine body_sqrt_maxBound_step Q hQ hn (.right17 ⟨3, by decide⟩) GenericW.arithSpecEnv460 LocalKernel.env460
       goodX_env460 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) _ _
-      (2 / (2 : ℝ) ^ 256) (2048 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
+      (2 / (2 : ℝ) ^ 256) (2105 / 1000000) _ (by positivity) (by norm_num) badMass_env460_le
       S2 D2 hS2 hD2 hdom2 ?_
     intro S3 D3 hS3 hD3 hdom3
     have h9 := bodyList_sqrt_maxBound Q hQ hn GenericW.arithSpecEnv465 LocalKernel.env465
@@ -16789,7 +16789,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     Real.sqrt (((fourierOutcomes 20).map (fun bits =>
       (axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR
         ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))) ^ 2)).sum) ≤
-      28908 / 1000000 := by
+      29364 / 1000000 := by
   dsimp only
   let baseR : List Bool → State → ℝ :=
     fun _ φ => axisSqrtErr (rightApprox25 Q hQ hn) List.nil (fun _ _ => 0) φ
@@ -16814,7 +16814,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
     (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)
     (fun bits => (axisSqrtErr (leftRestApprox25 Q hQ hn) bits.reverse baseR ((first20Model Q hQ hn).step List.nil bits (ket zeroBasisState))) ^ 2)
     (fun _ => rfl)]
-  change Real.sqrt ((S₀.map (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)).sum) ≤ 28908 / 1000000
+  change Real.sqrt ((S₀.map (fun x => (axisSqrtErr (leftRestApprox25 Q hQ hn) x.1 baseR x.2) ^ 2)).sum) ≤ 29364 / 1000000
   -- Tail: `left19 1` (`env485`, `379/10^6`) -> `rightApprox25` (`3*2048 + 9*556 = 11148 / 10^6`)
   let dLast : Digit25 := .left19 ⟨1, by decide⟩
   let tailLast : List (ApproxCatWindow 1 (readConstant coefficientAt25 Q)) := [bodyApproxWin Q hQ hn dLast]
@@ -16822,7 +16822,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (∀ x ∈ S, PointSupported x.2) → OddSupport 237 19 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       Real.sqrt ((S.map (fun x => (axisSqrtErr tailLast x.1 baseR x.2) ^ 2)).sum) ≤
-        2 * (379 / 1000000 : ℝ) + 2 * (4 * (2048 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ)) := by
+        2 * (379 / 1000000 : ℝ) + 2 * (4 * (2105 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ)) := by
     intro S D hS hD hdom
     have hcons := list_sqrt_axisSqrtErr_cons (bodyApproxWin Q hQ hn dLast) List.nil baseR S
     have hM : MaxBound (1 / (2 : ℝ) ^ 236) D := by
@@ -16905,7 +16905,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (∀ x ∈ S, PointSupported x.2) → OddSupport 218 38 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       Real.sqrt ((S.map (fun x => (axisSqrtErr tail2 x.1 baseR x.2) ^ 2)).sum) ≤
-        2 * (155 / 1000000 : ℝ) + (2 * (379 / 1000000 : ℝ) + 2 * (4 * (2048 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ))) := by
+        2 * (155 / 1000000 : ℝ) + (2 * (379 / 1000000 : ℝ) + 2 * (4 * (2105 / 1000000 : ℝ) + 8 * (690 / 1000000 : ℝ))) := by
     intro S D hS hD hdom
     exact leftEnv_sqrt_step Q hQ hn (.left19 ⟨0, by decide⟩) rfl GenericW.arithSpecEnv500 LocalKernel.env500
       goodX_env500 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_neg (by decide)]; rfl) 218 (by decide) (by decide)
@@ -16916,7 +16916,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
   have htail3 : ∀ (S : List (List Bool × State)) (D : Point → ℝ),
       (∀ x ∈ S, PointSupported x.2) → OddSupport 200 56 D →
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
-      Real.sqrt ((S.map (fun x => (axisSqrtErr tail3 x.1 baseR x.2) ^ 2)).sum) ≤ 28908 / 1000000 := by
+      Real.sqrt ((S.map (fun x => (axisSqrtErr tail3 x.1 baseR x.2) ^ 2)).sum) ≤ 29364 / 1000000 := by
     intro S D hS hD hdom
     have h := leftEnv_sqrt_step Q hQ hn (.left18 ⟨10, by decide⟩) rfl GenericW.arithSpecEnv510 LocalKernel.env510
       goodX_env510 (by dsimp only [Digit25.goodPred, Digit25.k]; rw [if_pos (by decide)]; rfl) 200 (by decide) (by decide)
@@ -16928,7 +16928,7 @@ theorem totalSqrtErr25_bound (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) :
       (∀ P, (S.map (fun x => pointMass x.2 P)).sum ≤ D P) →
       Real.sqrt ((S.map (fun x => (axisSqrtErr
         ((List.ofFn (fun j : Fin m => Digit25.left18 ⟨(10 - m) + j.val, by omega⟩)).map (bodyApproxWin Q hQ hn) ++ tail3)
-        x.1 baseR x.2) ^ 2)).sum) ≤ 28908 / 1000000 := by
+        x.1 baseR x.2) ^ 2)).sum) ≤ 29364 / 1000000 := by
     intro m
     induction m with
     | zero =>
@@ -17060,7 +17060,7 @@ private theorem approx_bad_iso (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0)
 theorem program25Cat_event_sqrt_upper (Q : Point) (hQ : order • Q = 0) (hn : Q ≠ 0) (accept : Nat → Nat → Bool) :
     Real.sqrt (Instrument.bornMass ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
       (fun b => fineEvent25Cat accept b.history)) (ket zeroBasisState)) ≤
-      Real.sqrt (windowedEventMass Q zeroBasisState 256 206 accept) + 28908 / 1000000 := by
+      Real.sqrt (windowedEventMass Q zeroBasisState 256 206 accept) + 29364 / 1000000 := by
   have hterm_sub : ∀ (lhs rhs : List Bool), SubUnital
       (if accept (fourierWordLSB lhs.reverse) (fourierWordLSB rhs.reverse) then resetTerminal25 else List.nil) :=
     fun _ _ => subUnital_ite _ _ (fun φ => le_of_eq (resetTerminal25_mass φ))
@@ -17593,12 +17593,12 @@ theorem rightHeadCatWin_slots (start : Nat) : (rightHeadCatWin.program start).ga
   exact (Nat.add_le_add hs (bodyCatWin_slots rightHeadDigit start)).trans (by decide)
 
 theorem rightHeadCatWin_tCount (start : Nat) (read : ConstantBit 3407872 → Bool) (h : Fin start → Bool) :
-    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 1897790 + 28 := by
+    ((rightHeadCatWin.program start).instantiate read h).tCount ≤ 4 * 1897190 + 28 := by
   change (((ConditionalCatalyst.compile 1 (literalProgram (sineFromPlus top10Right))).append
     ((bodyCatWin rightHeadDigit).program start)).instantiate read h).tCount ≤ _
   have h1 := CatAxis.append_tCount_le
     (ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start) (sineFromPlus top10Right)))
-    ((bodyCatWin rightHeadDigit).program start) read h (4 * 1897790)
+    ((bodyCatWin rightHeadDigit).program start) read h (4 * 1897190)
     (fun h' => bodyCatWin_tCount rightHeadDigit start read h')
   have hsine_t : ((ConditionalCatalyst.compile 1 (literalProgram (n := 3407872) (s := start)
       (sineFromPlus top10Right))).instantiate read h).tCount ≤ 28 := by
@@ -17727,15 +17727,15 @@ theorem full25Cat_wellFormed : fullProgram25Cat.WellFormed :=
   straight_append_wellFormed _ _ program25Cat_wellFormed readout25Cat_wellFormed
 
 theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d • G) :
-    1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
+    1 - (99806 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((rawEntry25Cat.instantiate Q).run.filter (fun b => (verifiedCandidate rawLayout25Cat Q b.history).isSome))
       (ket zeroBasisState) := by
   have hQ : order • Q = 0 := by rw [hd, smul_comm order d, generator_nsmul_eq_zero, nsmul_zero]
   rw [rawEntry25Cat, Single.fixedEntry_instantiate]
-  have hneighbor : 1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
+  have hneighbor : 1 - (99806 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((program25Cat.instantiate (readConstant coefficientAt25 Q) Fin.elim0).run.filter
         (fun b => fineEvent25Cat (pairRecovered256 d) b.history)) (ket zeroBasisState) := by
-    have hideal_succ : (99497 / 100000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
+    have hideal_succ : (497519 / 500000 : ℝ) ≤ windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) := by
       rw [windowedEventMass_distribution Q d hd zeroBasisState 256 206]
       exact SineBoundsTight.sine_pair_success_256_206_tight Q d hn hd
     have hideal_compl : windowedEventMass Q zeroBasisState 256 206 (pairRecovered256 d) +
@@ -17779,7 +17779,7 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
       simp_rw [hswap]
       simp only [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul, mul_one]
       exact inv_mul_cancel₀ (Nat.cast_ne_zero.mpr order_prime.ne_zero)
-    have hideal_fail : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ 503 / 100000 := by
+    have hideal_fail : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ 4962 / 1000000 := by
       linarith
     have hread_some : ∀ (h : List Bool) (ws : List Nat), (∀ i ∈ ws, i < h.length) → ∃ v, readWord h ws = some v := by
       intro h ws
@@ -17821,13 +17821,13 @@ theorem strong_success25Cat (Q : Point) (d : Nat) (hn : Q ≠ 0) (hd : Q = d •
         (ket zeroBasisState)
       simpa only [runL, normSq_ket] using hp
     have hup := program25Cat_event_sqrt_upper Q hQ hn (fun a b => !pairRecovered256 d a b)
-    have hideal_sqrt : Real.sqrt (windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b)) ≤ 70923 / 1000000 := by
-      have hsq : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ (70923 / 1000000 : ℝ) ^ 2 :=
+    have hideal_sqrt : Real.sqrt (windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b)) ≤ 70442 / 1000000 := by
+      have hsq : windowedEventMass Q zeroBasisState 256 206 (fun a b => !pairRecovered256 d a b) ≤ (70442 / 1000000 : ℝ) ^ 2 :=
         hideal_fail.trans (by norm_num)
       exact (Real.sqrt_le_sqrt hsq).trans_eq (Real.sqrt_sq (by norm_num))
-    have hphys_sqrt : Real.sqrt (Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState)) ≤ 99831 / 1000000 := by
+    have hphys_sqrt : Real.sqrt (Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState)) ≤ 99806 / 1000000 := by
       linarith
-    have hphys_fail : Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState) ≤ (99831 / 1000000 : ℝ) ^ 2 := by
+    have hphys_fail : Instrument.bornMass (runL.filter (fun b => fineEvent25Cat (fun a c => !pairRecovered256 d a c) b.history)) (ket zeroBasisState) ≤ (99806 / 1000000 : ℝ) ^ 2 := by
       have h := pow_le_pow_left₀ (Real.sqrt_nonneg _) hphys_sqrt 2
       rwa [Real.sq_sqrt (instrument_bornMass_nonneg _ _)] at h
     linarith
@@ -17955,11 +17955,11 @@ def leftTCountMeta25Cat : List (Nat × Nat) :=
   (4 * 193625 + 28, 20) :: List.replicate 10 (4 * 2320431, 18) ++ [(4 * 2263993, 18), (4 * 2366013, 19), (4 * 2277531, 19)]
 
 def rightTCountMeta25Cat : List (Nat × Nat) :=
-  (4 * 1897790 + 28, 17) :: List.replicate 3 (4 * 1897790, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18)
+  (4 * 1897190 + 28, 17) :: List.replicate 3 (4 * 1897190, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18)
 
 theorem exact_trimmed_tCount25Cat :
     CatAxis.metadataTrimmedWeight leftTCountMeta25Cat 0 +
-      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 213664382 := by
+      CatAxis.metadataTrimmedWeight rightTCountMeta25Cat 0 = 213654782 := by
   decide +kernel
 
 theorem left25Cat_tCount_relation :
@@ -17982,10 +17982,10 @@ theorem right25Cat_tCount_relation :
         ∀ start read h, ((w.program start).instantiate read h).tCount ≤ k.1)
       rightWins25Cat rightTCountMeta25Cat := by
   refine .cons ⟨by simp [rightHeadCatWin, GenericW.bankW_length], rightHeadCatWin_tCount⟩ ?_
-  have hmap : List.replicate 3 (4 * 1897790, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18) =
+  have hmap : List.replicate 3 (4 * 1897190, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18) =
       rightTailDigits25.map (fun d => (4 * d.tof, d.width)) := by
     simp [rightTailDigits25, List.ofFn_succ, List.replicate, Digit25.tof, Digit25.width, Digit25.k]
-  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 3 (4 * 1897790, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18))
+  change List.Forall₂ _ (rightTailDigits25.map bodyCatWin) (List.replicate 3 (4 * 1897190, 17) ++ List.replicate 6 (4 * 1919100, 17) ++ List.replicate 2 (4 * 2001275, 18))
   rw [hmap]
   induction rightTailDigits25 with
   | nil => exact .nil
@@ -17993,7 +17993,7 @@ theorem right25Cat_tCount_relation :
     exact .cons ⟨by simp [bodyCatWin_wires, Digit25.bank, Digit25.width, GenericW.bankW_length], bodyCatWin_tCount d⟩ ih
 
 theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0 → Bool) :
-    ((trim 23 fullProgram25Cat).instantiate read h).tCount ≤ 213664383 := by
+    ((trim 23 fullProgram25Cat).instantiate read h).tCount ≤ 213654783 := by
   unfold fullProgram25Cat program25Cat
   have hprep_nf : ∀ g ∈ Catalyst.prepare 1, largePhase 23 g = false := by decide
   rw [CatAxis.trim18_append, CatAxis.trim18_literals_false _ _ hprep_nf]
@@ -18020,7 +18020,7 @@ theorem full25Cat_trim18_tCount (read : ConstantBit 3407872 → Bool) (h : Fin 0
   have hbody_t : ((trim 23 (castFinish (show 0 + axisCount leftWins25Cat + axisCount rightWins25Cat + resetWires.length = cursor25Cat by unfold cursor25Cat; omega)
       (((CatAxis.axisCat 1 leftWins25Cat 0 List.nil).append
         (CatAxis.axisCat 1 rightWins25Cat (0 + axisCount leftWins25Cat) List.nil)).append
-          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 213664382 := by
+          (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)))).instantiate read h).tCount ≤ 213654782 := by
     rw [CatAxis.trim18_castFinish, castFinish_instantiate, CatAxis.trim18_append, CatAxis.trim18_append]
     have hres_t : ∀ h' : Fin (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) → Bool,
         ((trim 23 (resetProgram 3407872 (0 + axisCount leftWins25Cat + axisCount rightWins25Cat) resetWires)).instantiate read h').tCount ≤ 0 := by
@@ -18161,7 +18161,7 @@ theorem raw_certificate25Cat : Certificate rawLimits25 rawLayout25Cat rawEntry25
       rw [Straight.measurementCount]; omega
   success := by
     intro Q d hn hd
-    exact (by norm_num : (99 / 100 : ℝ) ≤ 1 - (99831 / 1000000 : ℝ) ^ 2).trans (strong_success25Cat Q d hn hd)
+    exact (by norm_num : (99 / 100 : ℝ) ≤ 1 - (99806 / 1000000 : ℝ) ^ 2).trans (strong_success25Cat Q d hn hd)
 
 def entryTrim18 (e : StraightEntry) : StraightEntry where
   coefficients := e.coefficients
@@ -18172,7 +18172,7 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
     (bounds : Bounds) (ws : List Wire) (cert : Certificate limits layout entry bounds)
     (hs : Within ws entry.program) (hcost : cost18 entry.program ≤ 156 / 1000000)
     (hstrong : ∀ (Q : Point) (d : Nat), Q ≠ 0 → Q = d • G →
-      1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
+      1 - (99806 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass ((entry.instantiate Q).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState)) :
     Certificate limits layout (entryTrim18 entry) ⟨ws.length, bounds.tModel, entry.finalCursor⟩ where
   gateBudget := (trim18_slots entry.program).trans cert.gateBudget
@@ -18210,15 +18210,15 @@ theorem trim18_certificate_generic (limits : Limits) (layout : DecodeLayout) (en
     rw [expectation_verified, normSq_ket] at hA hB
     rw [normSq_ket, Real.sqrt_one, mul_one] at h
     have hS := hstrong Q d hn hd
-    change 1 - (99831 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
+    change 1 - (99806 / 1000000 : ℝ) ^ 2 ≤ Instrument.bornMass
       ((entry.program.instantiate (readConstant entry.coefficients.get Q) Fin.elim0).run.filter
         (fun b => (verifiedCandidate layout Q b.history).isSome)) (ket zeroBasisState) at hS
     have hf : expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome) ≤
-        (99831 / 1000000 : ℝ) ^ 2 := by linarith
+        (99806 / 1000000 : ℝ) ^ 2 := by linarith
     have hf_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) entry.program Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome)) ≤
-        99831 / 1000000 :=
+        99806 / 1000000 :=
       (Real.sqrt_le_sqrt hf).trans_eq (Real.sqrt_sq (by norm_num))
     have ht_sqrt : Real.sqrt (expectation (readConstant entry.coefficients.get Q) (trim 23 entry.program) Fin.elim0
         (ket zeroBasisState) (fun h => !(verifiedCandidate layout Q (List.ofFn h)).isSome)) ≤ 1 / 10 := by
@@ -18261,13 +18261,13 @@ private theorem trim18_fixedEntry_tCount {n e : Nat} (coeffs : Fin n → PointCo
   exact hp _
 
 theorem trimmed25Cat_tCount (Q : Point) :
-    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 213664383 := by
+    ((entryTrim18 rawEntry25Cat).instantiate Q).tCount ≤ 213654783 := by
   rw [rawEntry25Cat]
-  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 213664383
+  exact trim18_fixedEntry_tCount coefficientAt25 fullProgram25Cat Q 213654783
     (fun r => full25Cat_trim18_tCount r Fin.elim0)
 
 theorem trim18_certificate25Cat :
-    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 213664383, 99000000⟩ := by
+    Certificate rawLimits25 rawLayout25Cat (entryTrim18 rawEntry25Cat) ⟨1612, 213654783, 99000000⟩ := by
   have hbase := trim18_certificate_generic rawLimits25 rawLayout25Cat rawEntry25Cat rawBounds25Cat
     (List.range 1612) raw_certificate25Cat source25Cat_within source25Cat_cost18 strong_success25Cat
   refine ⟨hbase.gateBudget, hbase.recordBudget, hbase.tableBudget, hbase.candidateBudget,
@@ -18312,7 +18312,7 @@ def entry : StraightEntry :=
 
 def layout : DecodeLayout := rawLayout25Cat
 
-def bounds : Bounds := ⟨1612, 213664383, 99000000⟩
+def bounds : Bounds := ⟨1612, 213654783, 99000000⟩
 
 theorem certificate : Certificate officialLimits layout entry bounds :=
   specializeEntry25_certificate (entryTrim18 rawEntry25Cat) trimmed25Cat_coefficients
@@ -18329,7 +18329,7 @@ section
 namespace ShorECDLP.Entrant
 open Challenge
 noncomputable section
-def bounds : Bounds := ⟨1612, 213664383, 99000000⟩
+def bounds : Bounds := ⟨1612, 213654783, 99000000⟩
 def entry : StraightEntry := Schedule25Actual.entry
 def layout : DecodeLayout := Schedule25Actual.layout
 set_option maxRecDepth 30000 in
